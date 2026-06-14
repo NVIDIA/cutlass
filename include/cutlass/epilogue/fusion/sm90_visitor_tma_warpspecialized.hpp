@@ -339,6 +339,7 @@ struct ConsumerStoreArgs {
   ThrResidue residue_tCcD;
   ThrSrcTensor & tCrC;
   int thread_idx;
+  cute::TmaDescriptor const* aux_store_tensormap;
 
   CUTLASS_DEVICE
   ConsumerStoreArgs(
@@ -353,7 +354,8 @@ struct ConsumerStoreArgs {
       ThrCoordTensor tCcD,
       ThrResidue residue_tCcD,
       ThrSrcTensor & tCrC,
-      int thread_idx)
+      int thread_idx,
+      cute::TmaDescriptor const* aux_store_tensormap = nullptr)
   : problem_shape_mnkl(problem_shape_mnkl),
     tile_shape_mnk(tile_shape_mnk),
     tile_coord_mnkl(tile_coord_mnkl),
@@ -365,7 +367,8 @@ struct ConsumerStoreArgs {
     tCcD(tCcD),
     residue_tCcD(residue_tCcD),
     tCrC(tCrC),
-    thread_idx(thread_idx) {}
+    thread_idx(thread_idx),
+    aux_store_tensormap(aux_store_tensormap) {}
 };
 
 template <class... Ops>
@@ -618,6 +621,24 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
     auto callbacks_impl = Sm90VisitorImpl<ChildOps..., NodeOp>::
       template get_consumer_store_callbacks<ReferenceSrc>(args);
     return ConsumerStoreCallbacks<decltype(callbacks_impl)>(cute::move(callbacks_impl));
+  }
+
+  // Forwarding methods for auxiliary TMA store descriptor management.
+  // The root NodeOp (last in the ops tuple) provides the actual implementation.
+  static constexpr int RootIdx = sizeof...(ChildOps);
+
+  CUTLASS_DEVICE auto const&
+  get_aux_tma_descriptor() const {
+    return get<RootIdx>(this->ops).get_aux_tma_descriptor();
+  }
+
+  template <class ProblemShape_MNKL>
+  CUTLASS_DEVICE void
+  aux_tensormaps_replace(
+      cute::TmaDescriptor& smem_desc,
+      ProblemShape_MNKL problem_shape_mnkl,
+      int32_t next_batch) {
+    get<RootIdx>(this->ops).aux_tensormaps_replace(smem_desc, problem_shape_mnkl, next_batch);
   }
 };
 

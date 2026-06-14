@@ -64,3 +64,19 @@ cutlass_example_add_executable(
   TEST_RANDOM_PERF
   TEST_RANDOM_PERF_LARGE_GROUP
   )
+
+# ----------------------------------------------------------------------------
+# Bias + Gated-SwiGLU fused epilogue example (BF16)
+# ----------------------------------------------------------------------------
+set(TEST_SWIGLU_SMALL  --m=256  --n=512  --k=128  --groups=4 --iterations=0)
+set(TEST_SWIGLU_RANDOM                              --groups=8 --iterations=0)
+set(TEST_SWIGLU_FIXED  --m=1024 --n=4096 --k=2048  --groups=8 --iterations=0)
+
+cutlass_example_add_executable(
+  57_hopper_bias_swiglu_grouped_gemm
+  57_hopper_bias_swiglu_grouped_gemm_bf16.cu
+  TEST_COMMAND_OPTIONS
+  TEST_SWIGLU_SMALL
+  TEST_SWIGLU_RANDOM
+  TEST_SWIGLU_FIXED
+  )

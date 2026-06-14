@@ -953,6 +953,7 @@ public:
       bool do_store_tail = false;
       // Get a copy of tensormaps
       auto epi_store_tensormap = get<0>(collective_epilogue.store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx));
+      auto aux_store_tensormap = get<0>(collective_epilogue.aux_store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx));
 
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = false;
@@ -966,12 +967,23 @@ public:
           work_tile_info.L_idx,
           consumer_warp_group_idx
         );
+        collective_epilogue.aux_tensormaps_perform_update(
+          shared_storage.tensormaps.epilogue,
+          params.epilogue,
+          aux_store_tensormap,
+          problem_shape_MNKL,
+          work_tile_info.L_idx,
+          consumer_warp_group_idx
+        );
 
         // Converge before issuing tensormap fence release since fence is aligned
         __syncwarp();
         collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                     epi_store_tensormap,
                                                                     consumer_warp_group_idx);
+        collective_epilogue.aux_tensormaps_cp_fence_release(shared_storage.tensormaps.epilogue,
+                                                    aux_store_tensormap,
+                                                    consumer_warp_group_idx);
       }
 
       do {
@@ -1042,6 +1054,7 @@ public:
 
         if (did_batch_change) {
           collective_epilogue.template tensormaps_fence_acquire<IsEpiLoad>(epi_store_tensormap);
+          collective_epilogue.aux_tensormaps_fence_acquire(aux_store_tensormap);
         }
 
         if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
@@ -1061,6 +1074,7 @@ public:
             mma_thread_idx,
             shared_storage.tensors.epilogue,
             epi_store_tensormap,
+            aux_store_tensormap,
             work_tile_info.reduction_subtile_idx()
           );
 
@@ -1111,12 +1125,23 @@ public:
               work_tile_info.L_idx,
               consumer_warp_group_idx
             );
+            collective_epilogue.aux_tensormaps_perform_update(
+              shared_storage.tensormaps.epilogue,
+              params.epilogue,
+              aux_store_tensormap,
+              problem_shape_MNKL,
+              work_tile_info.L_idx,
+              consumer_warp_group_idx
+            );
 
             // Converge before issuing tensormap fence release since fence is aligned
             __syncwarp();
             collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                        epi_store_tensormap,
                                                                        consumer_warp_group_idx);
+            collective_epilogue.aux_tensormaps_cp_fence_release(shared_storage.tensormaps.epilogue,
+                                                    aux_store_tensormap,
+                                                    consumer_warp_group_idx);
           }
         }
 
