@@ -2,6 +2,13 @@
 
 # CUTLASS 4.x
 
+## [4.2.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.2) (2026-06-20)
+
+### CUTLASS C++
+* Make [version.h](https://github.com/NVIDIA/cutlass/blob/release/4.4/include/cutlass/version.h) NVRTC JIT compilation compatible.
+* Allow linking large cutlass library on 64bit platform.
+* Fix alignment-related miscalculation for pipeline stages of Blackwell blockscaled GEMM.
+
 ## [4.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.1) (2025-09-22)
 
 ### CuTe DSL
