@@ -77,7 +77,7 @@ To get started quickly - please refer :
     - added missing MXFP8MMAOP and MXF8F6F4MMAOP for sm120.
 
 * More examples of authorizing peak-performance kernels
-  - MOE examles
+  - MOE examples
     - A new style of grouped-gemm that aligns to torch's grouped_mm and scaled_groued_mm interface.
     - Expert-wise tensormap descriptor setup by a cheap helper kernel (~2us) to avoid long latency in tile switching, kernel structure is much more closer to a normal GEMM.
     - Compared to torch_210_cu13, very few problem has worse perf in B200.
