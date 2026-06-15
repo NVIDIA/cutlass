@@ -115,6 +115,15 @@ def gemm(
     a_list = _normalize_variadic_tensor_operand(a, "a")
     b_list = _normalize_variadic_tensor_operand(b, "b")
 
+    if len(a_list) == 2 and len(b_list) == 2:
+        from .nvgpu.warp.mma import MmaSM120BlockScaledOp, mma_mxf4nvf4
+
+        if (
+            isinstance(atom.op, MmaSM120BlockScaledOp)
+            and atom.op.is_mxf4nvf4_sm120()
+        ):
+            return mma_mxf4nvf4(atom, d, a_list, b_list, c, loc=loc, ip=ip)
+
     # Rank validations based on the primary A/B tensors (guaranteed non-empty)
     a_rank = rank(a_list[0].shape)
     b_rank = rank(b_list[0].shape)

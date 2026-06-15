@@ -150,6 +150,7 @@ from .tensor import (
     TensorSSA,
     ReductionOp,
     make_tensor,
+    as_position_independent_swizzle_tensor,
     make_identity_tensor,
     make_fragment,
     make_fragment_like,
@@ -288,6 +289,7 @@ __all__ = [
     # Tensor functions
     "make_ptr",
     "make_tensor",
+    "as_position_independent_swizzle_tensor",
     "make_identity_tensor",
     "make_fragment",
     "make_fragment_like",
