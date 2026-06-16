@@ -932,7 +932,7 @@ def run(
     mB, b_torch = create_and_permute_tensor(L, N, K, b_major == "n", ab_dtype)
     mC, c_torch = create_and_permute_tensor(L, M, N, c_major == "m", c_dtype)
     
-    is_m_major_c = c.leading_dim == 0
+    is_m_major_c = c_major == "m"
 
     tensor_op_gemm = TensorOpGemm(
         ab_dtype,
