@@ -102,6 +102,7 @@ class TensorOpGemm:
         c_dtype: Type[cutlass.Numeric],
         acc_dtype: Type[cutlass.Numeric],
         atom_layout_mnk: Tuple[int, int, int],
+        is_m_major_c: bool = False,
     ):
         self.ab_dtype = ab_dtype
         self.c_dtype = c_dtype
@@ -116,12 +117,21 @@ class TensorOpGemm:
         self.mma_inst_shape = (16, 8, 16)
         mmaM, mmaN, mmaK = self.mma_inst_shape
 
-        assert self.bM % (atom_lay_M * mmaM) == 0, (
-            "bM must be divisible by MMA instruction"
-        )
-        assert self.bN % (atom_lay_N * mmaN) == 0, (
-            "bN must be divisible by MMA instruction"
-        )
+        # M-major C uses C^T = B^T * A^T, swapping atom layout M/N roles.
+        if is_m_major_c:
+            assert self.bM % (atom_lay_N * mmaM) == 0, (
+                "bM must be divisible by MMA instruction"
+            )
+            assert self.bN % (atom_lay_M * mmaN) == 0, (
+                "bN must be divisible by MMA instruction"
+            )
+        else:
+            assert self.bM % (atom_lay_M * mmaM) == 0, (
+                "bM must be divisible by MMA instruction"
+            )
+            assert self.bN % (atom_lay_N * mmaN) == 0, (
+                "bN must be divisible by MMA instruction"
+            )
         assert atom_lay_K == 1, "this example does not support atom layout K > 1"
         assert self.bK % mmaK == 0, "bK must be divisible by MMA instruction"
         assert self.num_stages >= 3, "num_stages must be greater than or equal to 3"
@@ -137,6 +147,25 @@ class TensorOpGemm:
         # The grid divides the problems's M, N, and L dimensions by the
         # respective modes of the tile shape (bM, bN, 1). The K dimension is
         # handled within a block via a multistage process.
+
+        # The Ampere MMA atom's accumulator layout writes M along the row
+        # dimension. When C is column-major (M-major), the accumulator does
+        # not naturally align with the contiguous dimension of C, so storing
+        # the result requires non-coalesced register/SMEM traffic. To avoid
+        # this we can compute C^T = B^T * A^T instead of C = A * B:
+        if cutlass.const_expr(
+            utils.LayoutEnum.from_tensor(mC) == utils.LayoutEnum.COL_MAJOR
+        ):
+            mA, mB = mB, mA
+            mC = cute.make_tensor(mC.iterator, cute.select(mC.layout, mode=[1, 0, 2]))
+            atom_layout_mnk = (
+                self.atom_layout_mnk[1],
+                self.atom_layout_mnk[0],
+                self.atom_layout_mnk[2],
+            )
+        else:
+            atom_layout_mnk = self.atom_layout_mnk
+
 
         self.a_major_mode = utils.LayoutEnum.from_tensor(mA)
         self.b_major_mode = utils.LayoutEnum.from_tensor(mB)
@@ -221,17 +250,17 @@ class TensorOpGemm:
         )
 
         permutation_mnk = (
-            self.atom_layout_mnk[0] * self.mma_inst_shape[0],
+            atom_layout_mnk[0] * self.mma_inst_shape[0],
             # if atom layout's N-mode is 1, to leverage the largest coalesced
             # shared memory -> register copy, set the tiled mma's N mode to 16
-            self.atom_layout_mnk[1] * self.mma_inst_shape[1] * 2,
-            self.atom_layout_mnk[2] * self.mma_inst_shape[2],
+            atom_layout_mnk[1] * self.mma_inst_shape[1] * 2,
+            atom_layout_mnk[2] * self.mma_inst_shape[2],
         )
 
         # Created a tiled mma that tiles the atom according to specified layout.
         # For a 2x2x1 atom layout, the mma atom is duplicated 4 times, twice
         # across M and twice across N
-        tC = cute.make_layout(self.atom_layout_mnk)
+        tC = cute.make_layout(atom_layout_mnk)
         tiled_mma = cute.make_tiled_mma(
             op,
             tC,
@@ -902,12 +931,15 @@ def run(
     mA, a_torch = create_and_permute_tensor(L, M, K, a_major == "m", ab_dtype)
     mB, b_torch = create_and_permute_tensor(L, N, K, b_major == "n", ab_dtype)
     mC, c_torch = create_and_permute_tensor(L, M, N, c_major == "m", c_dtype)
+    
+    is_m_major_c = c_major == "m"
 
     tensor_op_gemm = TensorOpGemm(
         ab_dtype,
         c_dtype,
         acc_dtype,
         atom_layout_mnk,
+        is_m_major_c
     )
 
     print("Compiling kernel with cute.compile ...")
