@@ -524,31 +524,35 @@ public:
 
   template <bool IsLoad,
             bool WaitForInflightTmaRequests = true,
-            class ProblemShapeMNKL>
+            class ProblemShapeMNKL,
+            class TensorMaps>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
       [[maybe_unused]] TensorMapStorage& shared_tensormaps,
       [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap,
+      [[maybe_unused]] TensorMaps const& tensormap,
       [[maybe_unused]] ProblemShapeMNKL problem_shape,
       [[maybe_unused]] int32_t next_batch,
       [[maybe_unused]] int32_t warp_group_idx = 0
   ) { }
 
-  template <bool IsLoad, bool WaitForInflightTmaRequests = true>
+  template <bool IsLoad,
+            bool WaitForInflightTmaRequests = true,
+            class TensorMaps>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
       [[maybe_unused]] TensorMapStorage& shared_tensormaps,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap,
+      [[maybe_unused]] TensorMaps const& tensormap,
       [[maybe_unused]] int32_t warp_group_idx = 0
   ) { }
 
-  template <bool IsLoad>
+  template <bool IsLoad,
+            class TensorMaps>
   CUTLASS_DEVICE
   void
-  tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
+  tensormaps_fence_acquire([[maybe_unused]] TensorMaps const& tensormap) { }
 };
 
 
@@ -887,29 +891,31 @@ public:
   }
 
   // Dummy methods to perform different parts of TMA/Tensormap modifications
-  template <bool IsLoad, bool WaitForInflightTmaRequests = true, class ProblemShape>
+  template <bool IsLoad, bool WaitForInflightTmaRequests = true, class ProblemShape, class TensorMaps>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
       [[maybe_unused]] TensorMapStorage& shared_tensormap,
       [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap,
+      [[maybe_unused]] TensorMaps const& tensormap,
       [[maybe_unused]] ProblemShape problem_shape,
       [[maybe_unused]] int32_t next_batch
   ) { }
 
-  template <bool IsLoad, bool WaitForInflightTmaRequests = true>
+  template <bool IsLoad,
+            bool WaitForInflightTmaRequests = true,
+            class TensorMaps>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
       [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap
+      [[maybe_unused]] TensorMaps const& tensormap
   ) { }
 
-  template <bool IsLoad>
+  template <bool IsLoad, class TensorMaps>
   CUTLASS_DEVICE
   void
-  tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
+  tensormaps_fence_acquire([[maybe_unused]] TensorMaps const& tensormap) { }
 };
 
 

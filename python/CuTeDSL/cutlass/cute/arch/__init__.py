@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from .constants import *
 from .elect import *
 from .mbar import *
 from .nvvm_wrappers import *
@@ -18,13 +19,6 @@ from .numeric_conversion import *
 from .clc import *
 
 import cutlass.cutlass_dsl as cutlass_dsl
-
-# Forward from auto-generated nvvm python: only export on 12.9 wheel
-_nvvm_forward_exports_12_9 = (
-    ["ProxyKind", "SharedSpace", "RoundingModeKind", "ReduxKind", "AtomicOpKind"]
-    if cutlass_dsl.target_version(exact_version="12.9")
-    else []
-)
 
 # __all__ is required here for documentation generation
 __all__ = [
@@ -44,6 +38,7 @@ __all__ = [
     "mbarrier_try_wait",
     "mbarrier_conditional_try_wait",
     "mbarrier_arrive",
+    "mbarrier_test_wait",
     #
     # nvvm_wrappers.py
     #
@@ -119,6 +114,7 @@ __all__ = [
     "cvt_i8x2_to_bf16x2",
     "cvt_i8x4_to_bf16x4",
     "cvt_f32x2_bf16x2",
+    "warp_redux_sync",
     "smid",
     "nsmid",
     "clock",
@@ -149,15 +145,19 @@ __all__ = [
     "sub_sat_int",
     "lop3",
     "shf",
-    # Constants
+    #
+    # constants.py
+    #
     "WARP_SIZE",
-    *_nvvm_forward_exports_12_9,
+    "WARPS_PER_WARPGROUP",
+    "THREADS_PER_WARPGROUP",
     #
     # smem.py
     #
     "alloc_smem",
     "get_dyn_smem",
     "get_dyn_smem_size",
+    "store_async_dsmem",
     #
     # tmem.py
     #

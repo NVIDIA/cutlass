@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Sequence, Optional
+from typing import Any, Optional, Sequence
 from pathlib import Path
 from functools import cache
 import logging
@@ -98,9 +98,9 @@ def find_cute_dsl_runtime_library() -> Optional[str]:
                     return lib
 
         # Otherwise try to search for the library inside the wheel
-        def get_libs_cand(start):
+        def get_libs_cand(start: str | Path) -> list[str]:
             libs_cand = find_libs_in_ancestors(
-                start, [_CUTE_DSL_RUNTIME_LIBRARY_NAME], ["lib"]
+                start, {_CUTE_DSL_RUNTIME_LIBRARY_NAME}, ["lib"]
             )
             if libs_cand:
                 return libs_cand
@@ -128,7 +128,7 @@ def find_cute_dsl_runtime_library() -> Optional[str]:
 _FFI_CALLS_REGISTERED = False
 
 
-def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()):
+def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()) -> None:
     """Registers custom calls with Jax/XLA runtime.
 
     A specific version can be requested using `ffi_version` argument. Attempting
@@ -147,9 +147,11 @@ def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()):
 
     lib = ctypes.CDLL(runtime_library)
 
-    def _register_ffi_targets(lib, targets):
+    def _register_ffi_targets(
+        lib: ctypes.CDLL, targets: dict[str, dict[str, str]]
+    ) -> None:
         for target_name, target in targets.items():
-            handler = {}
+            handler: dict[str, Any] = {}
             for stage, fn_name in target.items():
                 fn = getattr(lib, fn_name)
                 fn.restype = ctypes.c_void_p
@@ -157,9 +159,9 @@ def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()):
             logger.debug(f"Registering ffi handler: {target_name}, {handler}")
             jax.ffi.register_ffi_target(target_name, handler, platform="CUDA")
 
-    def _register_ffi_types(lib, types):
+    def _register_ffi_types(lib: ctypes.CDLL, types: dict[str, dict[str, str]]) -> None:
         for type_name, type_dict_targets in types.items():
-            type_dict = {}
+            type_dict: dict[str, Any] = {}
             for field, fn_name in type_dict_targets.items():
                 fn = getattr(lib, fn_name)
                 fn.restype = ctypes.c_void_p
@@ -181,7 +183,7 @@ def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()):
     _FFI_CALLS_REGISTERED = True
 
 
-def is_ffi_registered():
+def is_ffi_registered() -> bool:
     """Returns true if the FFI calls have been registered with Jax/XLA."""
     global _FFI_CALLS_REGISTERED
     return _FFI_CALLS_REGISTERED

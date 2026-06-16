@@ -43,12 +43,12 @@ def cutlass_call(
     output_spec: Any = None,
     input_mode: Any = None,
     output_mode: Any = None,
-    input_output_aliases=None,
-    allow_cuda_graph=True,
-    compile_options=None,
-    use_static_tensors=False,
-    **kwargs,
-):
+    input_output_aliases: dict[int, int] | None = None,
+    allow_cuda_graph: bool = True,
+    compile_options: str | None = None,
+    use_static_tensors: bool = False,
+    **kwargs: Any,
+) -> Callable[..., Any]:
     """Create a callable that invokes a ``@cute.jit`` function from JAX.
 
     Returns a callable that accepts JAX arrays and dispatches to *fn* as part
@@ -91,7 +91,7 @@ def cutlass_call(
             Indices are into the flattened input and output pytrees.
         allow_cuda_graph: If ``False``, prevents XLA from capturing this call
             in a CUDA graph.  Defaults to ``True``.
-        compile_options: Optional dict of compiler flags forwarded to
+        compile_options: Optional string of compiler flags forwarded to
             ``cute.compile``.
         use_static_tensors: If ``True``, tensor shapes and strides are baked in
             as compile-time constants, improving performance when shapes are
@@ -224,17 +224,17 @@ def _validate_specs(label: str, tensors: list, specs: tuple[TensorSpec, ...]) ->
 
 
 def _cutlass_call_impl(
-    fn,
+    fn: Callable[..., None],
     *,
     output_shape_dtype: Any,
     input_spec: Any,
     output_spec: Any,
-    input_output_aliases,
-    allow_cuda_graph,
-    compile_options,
-    use_static_tensors,
-    **kwargs,
-):
+    input_output_aliases: dict[int, int],
+    allow_cuda_graph: bool,
+    compile_options: str | None,
+    use_static_tensors: bool,
+    **kwargs: Any,
+) -> Callable[..., Any]:
     # A single ShapeDtypeStruct means one output; a sequence means multiple.
     multiple_results = isinstance(output_shape_dtype, Sequence)
     if not multiple_results:
@@ -242,7 +242,7 @@ def _cutlass_call_impl(
     output_shape_dtype_flat, output_tree = jax.tree.flatten(output_shape_dtype)
 
     @jax.jit
-    def call_wrapper(*args):
+    def call_wrapper(*args: Any) -> Any:
         args_flat, args_tree = jax.tree.flatten(args)
 
         input_spec_flat = _resolve_spec_flat(input_spec, args_flat)
@@ -273,25 +273,27 @@ def _cutlass_call_impl(
 
 
 @cutlass_call_inner_p.def_abstract_eval
-def cutlass_call_inner_p_abstract(*_, output_shape_dtype_flat, **__):
+def cutlass_call_inner_p_abstract(
+    *_: Any, output_shape_dtype_flat: Any, **__: Any
+) -> list[Any]:
     return [jax.core.ShapedArray(x.shape, x.dtype) for x in output_shape_dtype_flat]
 
 
 def cutlass_call_inner_p_impl(
-    *args_flat,
-    fn,
+    *args_flat: Any,
+    fn: Callable[..., None],
     args_tree: Any,
-    output_shape_dtype_flat: Any,
+    output_shape_dtype_flat: tuple[Any, ...],
     output_tree: Any,
-    input_spec_flat: Any,
-    output_spec_flat: Any,
-    input_output_aliases,
-    allow_cuda_graph,
-    compile_options,
-    use_static_tensors,
-    **kwargs,
-):
-    input_output_aliases = dict(input_output_aliases)
+    input_spec_flat: tuple[TensorSpec, ...],
+    output_spec_flat: tuple[TensorSpec, ...],
+    input_output_aliases: tuple[tuple[int, int], ...],
+    allow_cuda_graph: bool,
+    compile_options: str | None,
+    use_static_tensors: bool,
+    **kwargs: Any,
+) -> Any:
+    aliases_dict = dict(input_output_aliases)
     spec = build_function_spec(
         args_flat,
         args_tree,
@@ -299,7 +301,7 @@ def cutlass_call_inner_p_impl(
         output_tree,
         input_spec_flat,
         output_spec_flat,
-        input_output_aliases,
+        aliases_dict,
         compile_options,
         use_static_tensors,
         kwargs,
@@ -331,7 +333,7 @@ def cutlass_call_inner_p_impl(
     return fun(*args_flat, module=kernel.module, key=kernel.fingerprint)
 
 
-def _cutlass_call_jvp_rule(*args, **kwargs):
+def _cutlass_call_jvp_rule(*args: Any, **kwargs: Any) -> None:
     del args, kwargs
     raise NotImplementedError(
         "cutlass_call does not support VJP. Please use `jax.custom_jvp` for taking gradients."
@@ -341,7 +343,7 @@ def _cutlass_call_jvp_rule(*args, **kwargs):
 ad.primitive_jvps[cutlass_call_inner_p] = _cutlass_call_jvp_rule
 
 
-def _cutlass_call_transpose_rule(*args, **kwargs):
+def _cutlass_call_transpose_rule(*args: Any, **kwargs: Any) -> None:
     del args, kwargs
     raise NotImplementedError(
         "cutlass_call does not support transpose. Please use `jax.custom_vjp` for taking gradients."
@@ -351,7 +353,7 @@ def _cutlass_call_transpose_rule(*args, **kwargs):
 ad.primitive_transposes[cutlass_call_inner_p] = _cutlass_call_transpose_rule
 
 
-def _cutlass_call_vmap_rule(*args, **kwargs):
+def _cutlass_call_vmap_rule(*args: Any, **kwargs: Any) -> None:
     del args, kwargs
     raise NotImplementedError(
         "cutlass_call does not support batching with jax.vmap. Please "

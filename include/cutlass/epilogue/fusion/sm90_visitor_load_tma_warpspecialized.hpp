@@ -603,6 +603,396 @@ struct Sm90AuxLoad<
   }
 };
 
+template <
+  int Stages,
+  int NumEpilogueWarpGroups,
+  class EpilogueTile,
+  class Element,
+  class StrideMNL,
+  class SmemLayoutAtom,
+  class CopyOpS2R,
+  int Alignment = 128 / sizeof_bits_v<Element>,
+  bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
+>
+struct Sm90AuxArrayLoad {
+  static_assert(Alignment * sizeof_bits_v<Element> % 128 == 0, "sub-16B alignment not supported yet");
+
+  using InternalStrideMNL = cute::remove_pointer_t<StrideMNL>;
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideMNL, StrideMNL>;
+
+  constexpr static bool is_m_major = epilogue::collective::detail::is_m_major<StrideMNL>();
+  // Find the max contiguous layout usable by TMA (if EpilogueTile is a non-compact tiler)
+  using SmemShapeTma = decltype(make_shape(
+      max_common_vector(make_layout(get<0>(EpilogueTile{})),make_layout(get<0>(EpilogueTile{}))),
+      max_common_vector(make_layout(get<1>(EpilogueTile{})),make_layout(get<1>(EpilogueTile{})))));
+  using SmemLayoutTma = decltype(tile_to_shape(
+      SmemLayoutAtom{}, SmemShapeTma{},
+      cute::conditional_t<is_m_major, Step<_2,_1>, Step<_1,_2>>{} ));
+  using SmemLayout = decltype(tile_to_shape(
+      SmemLayoutTma{},
+      make_shape(size<0>(shape(EpilogueTile{})), size<1>(shape(EpilogueTile{})), Int<Stages>{}),
+      cute::conditional_t<is_m_major, Step<_2,_1,_3>, Step<_1,_2,_3>>{} ));
+  using CopyOpG2S =
+      SM90_TMA_LOAD
+    ;
+
+  struct SharedStorage {
+    alignas(cutlass::detail::alignment_for_swizzle(SmemLayout{}))
+    array_aligned<Element, size(SmemLayout{})> smem_aux;
+    cute::array<cute::TmaDescriptor, NumEpilogueWarpGroups> smem_tensormap_aux;
+  };
+
+  struct Arguments {
+    Element const** ptr_aux = nullptr;
+    Element null_default = Element(0);
+    StrideMNL dAux = {};
+    int aux_sm_count = 0;
+  };
+
+  struct Params {
+    using TMA_Aux = decltype(make_tma_copy(
+        CopyOpG2S{},
+        make_tensor(make_gmem_ptr(static_cast<Element const*>(nullptr)), repeat_like(StrideMNL{}, int32_t(0)), append<3>(StrideMNL{}, _0{})),
+        take<0,2>(SmemLayoutTma{})));
+    TMA_Aux tma_load_aux;
+    cute::TmaDescriptor* tensormaps{};
+    Element** ptr_aux{};
+    StrideMNL dAux{};
+    Element null_default = Element(0);
+    bool use_default = false;
+  };
+
+  template <bool IsLoad>
+  using TensorMaps = cute::conditional_t<IsLoad, cute::TmaDescriptor*, cute::tuple<>>;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+
+    bool use_default = false;
+    if constexpr (EnableNullptr) {
+      use_default = args.ptr_aux == nullptr;
+    }
+
+    typename Params::TMA_Aux tma_load_aux;
+    if (not use_default) {
+      // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
+      // These will be replaced with correct values before the initial tma load.
+      // auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
+      auto init_shape = repeat_like(append<4>(problem_shape, 1), int32_t(1));
+      auto init_M = get<0>(init_shape);
+      auto init_N = get<1>(init_shape);
+      auto init_L = get<3>(init_shape);
+
+      // Strides for Grouped Gemm will be replaced prior to the first access regardless.
+      InternalStrideMNL stride_mnl{};
+      if constexpr (not IsGroupedGemmKernel) {
+        // Tensor shapes for Ptr-Array are initialized correctly only here.
+        // auto problem_shape_MNKL = append<4>(problem_shape.get_host_problem_shape(0), 1);
+        auto problem_shape_MNKL = append<4>(problem_shape, 1);
+        init_M = get<0>(problem_shape_MNKL);
+        init_N = get<1>(problem_shape_MNKL);
+        init_L = get<3>(problem_shape_MNKL);
+
+        stride_mnl = args.dAux;
+      }
+
+      // Tensor pointers will be fixed before the first access
+      Element* ptr_aux_first_batch = nullptr;
+      Tensor tensor_aux = make_tensor(ptr_aux_first_batch, make_layout(make_shape(init_M,init_N,init_L), stride_mnl));
+      tma_load_aux = make_tma_copy(CopyOpG2S{}, tensor_aux, SmemLayoutTma{}, EpilogueTile{}, Shape<_1,_1,_1>{});
+    }
+
+    return {
+      tma_load_aux,
+      static_cast<cute::TmaDescriptor*>(workspace),
+      args.ptr_aux,
+      args.dAux,
+      args.null_default,
+      use_default
+    };
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    Layout desc_layout = make_layout(make_shape(args.aux_sm_count, Int<NumEpilogueWarpGroups>{}));
+    return sizeof(cute::TmaDescriptor) * cute::cosize(desc_layout);
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
+    return cutlass::Status::kSuccess;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Sm90AuxArrayLoad() { }
+
+  CUTLASS_HOST_DEVICE
+  Sm90AuxArrayLoad(Params const& params, SharedStorage const& shared_storage)
+      : params_ptr(&params),
+        smem_aux(const_cast<Element*>(shared_storage.smem_aux.data())),
+        smem_tensormap_aux(const_cast<cute::TmaDescriptor*>(&shared_storage.smem_tensormap_aux[0])) { }
+
+  Params const* params_ptr;
+  Element* smem_aux;
+  cute::TmaDescriptor* smem_tensormap_aux;
+
+  CUTLASS_DEVICE bool
+  is_producer_load_needed() const {
+    return true;
+  }
+
+  CUTLASS_DEVICE bool
+  is_C_load_needed() const {
+    return false;
+  }
+
+  CUTLASS_DEVICE bool
+  is_zero() const {
+    return (params_ptr->use_default && params_ptr->null_default == Element(0));
+  }
+
+  template <class GTensor, class STensor>
+  struct ProducerLoadCallbacks : EmptyProducerLoadCallbacks {
+    CUTLASS_DEVICE
+    ProducerLoadCallbacks(GTensor&& bGS_gAux, STensor&& bGS_sAux, Params const* params_ptr)
+      : bGS_gAux(cute::forward<GTensor>(bGS_gAux)),
+        bGS_sAux(cute::forward<STensor>(bGS_sAux)),
+        params_ptr(params_ptr) {}
+
+    GTensor bGS_gAux;                                                                  // (TMA,TMA_M,TMA_N,EPI_M,EPI_N)
+    STensor bGS_sAux;                                                                  // (TMA,TMA_M,TMA_N,PIPE)
+    Params const* params_ptr;
+
+    CUTLASS_DEVICE void
+    step(uint64_t* full_mbarrier_ptr, int epi_m, int epi_n, int load_iteration, bool issue_tma_load, TensorMaps<true> tensormap) {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->use_default) {
+          return;
+        }
+      }
+
+      if (issue_tma_load) {
+        // Increment the expected transaction bytes of the current stage's mbarrier by the subtile's byte-size
+        constexpr uint32_t copy_bytes = size(take<0,2>(SmemLayout{})) * sizeof_bits_v<Element> / 8;
+        cutlass::arch::ClusterTransactionBarrier::expect_transaction(full_mbarrier_ptr, copy_bytes);
+        // Issue the TMA load
+        constexpr uint16_t mcast_mask = 0;
+        int load_pipe_index = load_iteration % Stages;
+        copy(params_ptr->tma_load_aux.with(tensormap, *full_mbarrier_ptr, mcast_mask),
+          bGS_gAux(_,_,_,epi_m,epi_n), bGS_sAux(_,_,_,load_pipe_index));
+      }
+    }
+  };
+
+  template <class... Args>
+  CUTLASS_DEVICE auto
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
+
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    auto [m, n, k, l] = args.tile_coord_mnkl;
+    auto coord_shape =
+        make_coord(m, n, l)
+      ;
+    Tensor mAux_mn = params_ptr->tma_load_aux.get_tma_tensor(make_shape(M,N,L));                             // (M,N,L)
+    Tensor mAux = coalesce(mAux_mn, take<0,2>(args.tile_shape_mnk));
+    Tensor gAux = local_tile(mAux, take<0,2>(args.tile_shape_mnk), coord_shape);                       // (CTA_M,CTA_N)
+
+    Tensor gAux_epi = flat_divide(gAux, args.epi_tile);                          // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
+    Tensor sAux_epi = make_tensor(make_smem_ptr(smem_aux), SmemLayout{});        // (EPI_TILE_M,EPI_TILE_N,PIPE)
+
+    ThrCopy thrblk_g2s = params_ptr->tma_load_aux.get_slice(_0{});
+    Tensor bGS_gAux = thrblk_g2s.partition_S(gAux_epi);                                // (TMA,TMA_M,TMA_N,EPI_M,EPI_N)
+    Tensor bGS_sAux = thrblk_g2s.partition_D(sAux_epi);                                // (TMA,TMA_M,TMA_N,PIPE)
+
+    return ProducerLoadCallbacks<decltype(bGS_gAux), decltype(bGS_sAux)>(
+      cute::move(bGS_gAux), cute::move(bGS_sAux), params_ptr);
+  }
+
+  template <class RTensor, class TiledS2R, class STensorS2R>
+  struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
+    CUTLASS_DEVICE
+    ConsumerStoreCallbacks(RTensor&& tC_rAux, TiledS2R tiled_s2r, STensorS2R&& tSR_sAux, Params const* params_ptr)
+      : tC_rAux(cute::forward<RTensor>(tC_rAux)),
+        tiled_s2r(tiled_s2r),
+        tSR_sAux(cute::forward<STensorS2R>(tSR_sAux)),
+        params_ptr(params_ptr) { }
+
+    TiledS2R tiled_s2r;
+    RTensor tC_rAux;                                                                          // (CPY,CPY_M,CPY_N)
+    STensorS2R tSR_sAux;                                                                      // (S2R,S2R_M,S2R_N,PIPE)
+    Params const* params_ptr;
+
+    CUTLASS_DEVICE void
+    previsit(int epi_m, int epi_n, int load_iteration, bool is_producer_load_needed) {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->use_default) {
+          fill(tC_rAux, params_ptr->null_default);
+          return;
+        }
+      }
+
+      using RLayoutS2R = decltype(cute::layout(TiledS2R{}.get_slice(0).retile_S(RTensor{})));
+      Tensor tSR_rAux = make_tensor(tC_rAux.data(), RLayoutS2R{});                                 // (S2R,S2R_M,S2R_N)
+
+      int load_pipe_index = load_iteration % Stages;
+      copy(tiled_s2r, tSR_sAux(_,_,_,load_pipe_index), tSR_rAux);
+    }
+
+    template <typename ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE Array<Element, FragmentSize>
+    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
+      Tensor tC_rAux_frg = recast<Array<Element, FragmentSize>>(coalesce(tC_rAux));                          // (EPI_V)
+
+      return tC_rAux_frg(epi_v);
+    }
+  };
+
+  template <
+    bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class... Args
+  >
+  CUTLASS_DEVICE auto
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+
+    Tensor mAux_mn = params_ptr->tma_load_aux.get_tma_tensor(make_shape(M,N,L));                             // (M,N,L)
+    Tensor mAux = coalesce(mAux_mn, take<0,2>(args.tile_shape_mnk));
+    Tensor tC_gAux = sm90_partition_for_epilogue<ReferenceSrc                          // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+      >(mAux, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
+    Tensor tC_rAux = make_tensor<Element>(take<0,3>(shape(tC_gAux)));                  // (CPY,CPY_M,CPY_N)
+
+    auto tiled_s2r = conditional_return<ReferenceSrc>(
+      make_tiled_copy_S(Copy_Atom<CopyOpS2R,Element>{}, args.tiled_copy),
+      make_tiled_copy_D(Copy_Atom<CopyOpS2R,Element>{}, args.tiled_copy)
+    );
+    Tensor sAux_epi = cute::as_position_independent_swizzle_tensor(
+                        make_tensor(make_smem_ptr(smem_aux), SmemLayout{}));            // (EPI_TILE_M,EPI_TILE_N,PIPE)
+    auto tSR_sAux = tiled_s2r.get_slice(args.thread_idx).partition_S(sAux_epi);               // (S2R,S2R_M,S2R_N,PIPE)
+
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tiled_s2r), decltype(tSR_sAux)>(
+        cute::move(tC_rAux), tiled_s2r, cute::move(tSR_sAux), params_ptr);
+  }
+
+  struct TensorMapCallbacks {
+
+    Params const* params_ptr;
+    cute::TmaDescriptor* smem_tensormap_aux;
+
+    CUTLASS_DEVICE
+    TensorMaps<true>
+    init(
+        int32_t sm_count,
+        int32_t sm_idx,
+        int32_t warp_group_idx)
+    {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->use_default) {
+          return nullptr;
+        }
+      }
+
+      // Bringing tensormaps from params to smem for modification
+      Tensor pAux_tensormap = make_tensor(params_ptr->tma_load_aux.get_tma_descriptor(), Int<1>{}, Int<1>{});
+      Tensor sAux_tensormap = make_tensor(make_smem_ptr(&smem_tensormap_aux[warp_group_idx]), Int<1>{}, Int<1>{});
+      if (cute::elect_one_sync()) {
+        copy(recast<uint128_t>(pAux_tensormap), recast<uint128_t>(sAux_tensormap));
+      }
+      __syncwarp();
+
+      // Return a pointer to gmem tensormap in workspace
+      Layout desc_layout = make_layout(make_shape(sm_count, Int<NumEpilogueWarpGroups>{}));
+      Tensor gmem_tensormap = make_tensor(params_ptr->tensormaps, desc_layout);                  // (SM, WarpGroup)
+
+      return &gmem_tensormap(sm_idx, warp_group_idx);
+    }
+    
+    template <class ProblemShape_MNKL>
+    CUTLASS_DEVICE
+    void
+    perform_update(
+        TensorMaps<true> tensormap,
+        ProblemShape_MNKL problem_shape_mnkl,
+        int32_t next_batch,
+        int32_t warp_group_idx)
+    {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->use_default) {
+          return;
+        }
+      }
+
+      cute::tma_descriptor_replace_addr_in_shared_mem(smem_tensormap_aux[warp_group_idx], params_ptr->ptr_aux[next_batch]);
+
+      if constexpr (IsGroupedGemmKernel) {
+        // Replacing global dims and strides for the next batch
+        constexpr int MaxTensorRank = 5;
+        cute::array<uint32_t, MaxTensorRank> prob_shape  = {1,1,1,1,1};
+        cute::array<uint64_t, MaxTensorRank> prob_stride = {0,0,0,0,0};
+
+        Element const* ptr_Aux = nullptr;
+        Tensor tensor_aux = make_tensor(ptr_Aux, make_layout(append(select<0,1>(problem_shape_mnkl), Int<1>{}), params_ptr->dAux[next_batch]));
+
+        cute::detail::fill_tma_gmem_shape_stride(params_ptr->tma_load_aux, tensor_aux, prob_shape, prob_stride);
+
+        // Convert strides to byte strides
+        for (uint64_t& stride : prob_stride) {
+          stride = (stride * sizeof_bits_v<Element>) / 8;
+        }
+
+        cute::tma_descriptor_replace_dims_strides_in_shared_mem(smem_tensormap_aux[warp_group_idx], prob_shape, prob_stride);
+      }
+    }
+
+    CUTLASS_DEVICE
+    void
+    cp_fence_release(
+        TensorMaps<true> const& tensormap,
+        const int32_t warp_group_idx = 0)
+    {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->use_default) {
+          return;
+        }
+      }
+      cute::tma_descriptor_cp_fence_release(tensormap, smem_tensormap_aux[warp_group_idx]);
+    }
+
+    CUTLASS_DEVICE
+    void
+    fence_acquire(TensorMaps<true> const& tensormap)
+    {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->use_default) {
+          return;
+        }
+      }
+      cute::tma_descriptor_fence_acquire(tensormap);
+    }
+  };
+
+  template <bool IsLoad>
+  CUTLASS_DEVICE constexpr auto
+  get_tensormap_callbacks() {
+    if constexpr (IsLoad) {
+      return TensorMapCallbacks{params_ptr, smem_tensormap_aux};
+    }
+    else {
+      return EmptyTensorMapCallbacks{};
+    }
+  }
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Broadcast Load Operations

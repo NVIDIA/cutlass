@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Tuple
 
-from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+from cutlass._mlir import ir
 from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass.cute as cute
@@ -149,7 +149,7 @@ class TensorMapManager:
                     p.dtype,
                     cute.arch.make_warp_uniform(p.toint(), loc=loc, ip=ip),
                     mem_space=_CuteAddressSpace.smem,
-                    assumed_align=p.alignment,  # type: ignore[attr-defined]
+                    assumed_align=p.alignment,
                 )
                 for p in tensormap_smem_ptr
             )

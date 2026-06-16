@@ -163,9 +163,21 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
     ) -> tuple[ir.Type, ir.Value]:
         """Pack a var parameter to a struct."""
         value: ir.Value = context.matched_var_binding[param]
+        native_struct_type = getattr(param, spec.NATIVE_STRUCT_TYPE_ATTR, None)
+        if native_struct_type is not None:
+            native_struct_mlir_types = native_struct_type.__get_mlir_types__()
+            if len(native_struct_mlir_types) != 1:
+                raise ValueError(
+                    f"native_struct parameter {param.name!r} must map to one MLIR type"
+                )
+            return (native_struct_mlir_types[0], value)
         _, alloca = self.pack_values_to_alloca(
             current_block, context.entry_block, [value]
         )
+
+        if param.alternate_ir_type_fetch_func is not None:
+            return (param.alternate_ir_type_fetch_func(self), alloca)
+
         return (value.type, alloca)
 
     def pack_param_shape(
@@ -211,8 +223,12 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
                 packed_params.append(
                     self.pack_param_var(current_block, context, param.var)
                 )
-            elif isinstance(param, spec.ConstNone):
-                # const none is not packed
+            elif isinstance(
+                param,
+                (spec.ConstNone, spec.ConstInt, spec.ConstBool, spec.ConstFloat),
+            ):
+                # constexpr params are asserted in the wrapper but not forwarded
+                # into the llvm.call
                 continue
             else:
                 raise NotImplementedError(f"Unsupported parameter type: {type(param)}")

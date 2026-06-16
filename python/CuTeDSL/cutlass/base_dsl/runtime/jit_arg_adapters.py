@@ -70,7 +70,7 @@ def is_arg_annotation_constexpr(
 
     return (
         _is_reserved_python_func_arg(arg_index, arg_name, owning_func)
-        or (isinstance(arg_annotation, type) and issubclass(arg_annotation, Constexpr))
+        or (isinstance(arg_annotation, type) and issubclass(arg_annotation, Constexpr))  # type: ignore[misc]
         or (get_origin(arg_annotation) is Constexpr)
     )
 
@@ -177,11 +177,13 @@ class JitArgAdapterRegistry:
         """
         adapter = cls.jit_arg_adapter_registry.get(type(arg), None)
         if adapter is None:
-            if (cls.default_dataclass_adapter
+            if (
+                cls.default_dataclass_adapter
                 and not implements_jit_argument(arg, partial=True)
                 and not implements_dynamic_expression(arg, partial=True)
                 and is_dataclass(arg)
-                and len(vars(arg)) == len(fields(arg))):  # no extra/missing instance attrs
+                and len(vars(arg)) == len(fields(arg))
+            ):  # no extra/missing instance attrs
                 adapter = cls.default_dataclass_adapter
         return adapter
 
@@ -198,25 +200,32 @@ class DefaultDataclassAdapter:
     """
     Adapter for dataclass typed JIT arguments.
     """
+
     def __init__(self, arg: object) -> None:
         self._ir_fields: dict[str, object] = {}
         self._ir_fields_len: dict[str, int] = {}
         self._arg = arg
-        for f in fields(arg): # type: ignore[arg-type]
+        for f in fields(arg):  # type: ignore[arg-type]
             arg_field = getattr(arg, f.name)
             if not is_constexpr_field(f):
-                if isinstance(f.type, NumericMeta) and not isinstance(arg_field, f.type):
-                    self._ir_fields[f.name] = cast(arg_field, f.type) # type: ignore[arg-type]
+                if isinstance(f.type, NumericMeta) and not isinstance(
+                    arg_field, f.type
+                ):
+                    self._ir_fields[f.name] = cast(arg_field, f.type)  # type: ignore[arg-type]
                 else:
                     # Allow the nested fields to be adapted
-                    arg_adapter = JitArgAdapterRegistry.get_registered_adapter(arg_field)
+                    arg_adapter = JitArgAdapterRegistry.get_registered_adapter(
+                        arg_field
+                    )
                     if arg_adapter is not None:
                         self._ir_fields[f.name] = arg_adapter(arg_field)
                     else:
                         self._ir_fields[f.name] = arg_field
 
     def __c_pointers__(self) -> list[Any]:
-        return list(chain.from_iterable(get_c_pointers(v) for v in self._ir_fields.values()))
+        return list(
+            chain.from_iterable(get_c_pointers(v) for v in self._ir_fields.values())
+        )
 
     def __get_mlir_types__(self) -> list[Any]:
         ir_types = []
@@ -231,18 +240,25 @@ class DefaultDataclassAdapter:
 
         kwargs = {}
         idx = 0
-        for f in fields(self._arg): # type: ignore[arg-type]
+        for f in fields(self._arg):  # type: ignore[arg-type]
             if is_constexpr_field(f):
                 kwargs[f.name] = getattr(self._arg, f.name)
             else:
-                kwargs[f.name] = new_from_mlir_values(self._ir_fields[f.name], values[idx : idx + self._ir_fields_len[f.name]])
+                kwargs[f.name] = new_from_mlir_values(
+                    self._ir_fields[f.name],
+                    values[idx : idx + self._ir_fields_len[f.name]],
+                )
                 idx += self._ir_fields_len[f.name]
         return type(self._arg)(**kwargs)
 
     def __extract_mlir_values__(self) -> list[ir.Value]:
         from ..dsl import extract_mlir_values  # deferred to avoid circular import
 
-        return list(chain.from_iterable(extract_mlir_values(v) for v in self._ir_fields.values()))
+        return list(
+            chain.from_iterable(
+                extract_mlir_values(v) for v in self._ir_fields.values()
+            )
+        )
 
 
 JitArgAdapterRegistry.set_default_dataclass_adapter(DefaultDataclassAdapter)

@@ -33,6 +33,9 @@ from .typing import (
     Pointer,
     Tensor,
     SymInt,
+    Numeric,
+    Int32,
+    Int16,
 )
 
 # Import everything else
@@ -151,7 +154,6 @@ from .tensor import (
     ReductionOp,
     make_tensor,
     make_identity_tensor,
-    make_fragment,
     make_fragment_like,
     make_rmem_tensor_like,
     make_rmem_tensor,
@@ -205,6 +207,8 @@ from . import testing
 from . import runtime
 from . import math
 
+from . import experimental
+
 # Export all math ops without "math."
 from .math import *
 
@@ -218,7 +222,9 @@ jit: Callable[..., Any] = _dsl.CuTeDSL.jit
 kernel: Callable[..., Any] = _dsl.CuTeDSL.kernel
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 compile = _dsl.CompileCallable()
+compile_to = compile.compile_to
 OptLevel = _dsl.OptLevel
+
 PtxasOptions = _dsl.PtxasOptions
 EnableAssertions = _dsl.EnableAssertions
 GenerateLineInfo = _dsl.GenerateLineInfo
@@ -227,7 +233,8 @@ KeepPTX = _dsl.KeepPTX
 GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
-
+DeviceTarget = _dsl.DeviceTarget
+RDC = _dsl.RDC
 native_struct = _dsl.native_struct
 make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 
@@ -263,6 +270,7 @@ __all__ = [
     "assume",
     "is_integer",
     "is_int_tuple",
+    "is_int_tuple_type",
     "is_static",
     "size",
     "has_underscore",
@@ -289,7 +297,6 @@ __all__ = [
     "make_ptr",
     "make_tensor",
     "make_identity_tensor",
-    "make_fragment",
     "make_fragment_like",
     "make_rmem_tensor",
     "make_rmem_tensor_like",
@@ -417,6 +424,9 @@ __all__ = [
     "kernel",
     "register_jit_arg_adapter",
     "compile",
+    "compile_to",
+    "ArtifactType",
+    "PreCompiledMlirArtifact",
     # Foreign function interface
     "ffi",
     "extern",

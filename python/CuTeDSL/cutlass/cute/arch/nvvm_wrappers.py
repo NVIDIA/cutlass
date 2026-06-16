@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import enum
+import types
 from functools import partial
 from typing import Any, Optional, Tuple, Union, Callable, Literal, Type, overload
 from typing_extensions import deprecated
@@ -19,7 +21,8 @@ import cutlass.cutlass_dsl as cutlass_dsl
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, builtin, llvm, math, nvvm as _nvvm_raw, vector
-from cutlass.base_dsl._mlir_helpers.dialect_proxy import DialectAutoConvertProxy
+
+from .constants import WARP_SIZE
 
 from ..core import size
 
@@ -42,11 +45,99 @@ from ..typing import (
     as_numeric,
 )
 
-WARP_SIZE = 32
 FULL_MASK = 0xFFFFFFFF
 
+
+# ============================================================================
+# NVVM Auto-Convert Proxy
+# ============================================================================
+
+
+class _NvvmAutoConvertProxy:
+    """
+    Proxy that wraps the raw MLIR nvvm dialect module.
+    Automatically converts Numeric arguments to ir.Value when calling any nvvm operation.
+
+    This enables users to write cleaner code without explicit .ir_value() calls:
+
+    Before:
+        nvvm.tcgen05_mma_smem_desc(
+            Int32(x).ir_value(),
+            Int32(y).ir_value(),
+            ...
+        )
+
+    After:
+        nvvm.tcgen05_mma_smem_desc(
+            Int32(x),
+            Int32(y),
+            ...
+        )
+    """
+
+    def __init__(self, nvvm_module: types.ModuleType) -> None:
+        self._module = nvvm_module
+        self._wrapped_cache: dict[str, Callable[..., Any]] = {}
+
+    @staticmethod
+    def _convert_arg(
+        arg: Any, loc: Optional[ir.Location], ip: Optional[ir.InsertionPoint]
+    ) -> Any:
+        """Recursively convert DSL objects to ir.Value, including inside lists/tuples."""
+        # Check for ir_value method (covers Numeric and other DSL types)
+        if hasattr(arg, "ir_value") and callable(arg.ir_value):
+            return arg.ir_value(loc=loc, ip=ip)
+        if isinstance(arg, (list, tuple)):
+            converted = [
+                _NvvmAutoConvertProxy._convert_arg(item, loc, ip) for item in arg
+            ]
+            return type(arg)(converted)
+        return arg
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._module, name)
+
+        # Non-callable attributes and enum classes pass through unchanged
+        # Enum classes need attribute access (e.g., ShflKind.idx), but MLIR operation
+        # classes should be wrapped for argument conversion when instantiated
+        if (
+            not callable(attr)
+            or isinstance(attr, enum.EnumMeta)
+            or hasattr(attr, "_mock_name")
+        ):
+            return attr
+
+        # Use cache for wrapped callables
+        if name not in self._wrapped_cache:
+
+            def _make_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+                def wrapped(
+                    *args: Any,
+                    loc: Optional[ir.Location] = None,
+                    ip: Optional[ir.InsertionPoint] = None,
+                    **kwargs: Any,
+                ) -> Any:
+                    # Convert Numeric args to ir.Value (recursively handles lists/tuples)
+                    converted_args = tuple(
+                        _NvvmAutoConvertProxy._convert_arg(arg, loc, ip) for arg in args
+                    )
+                    converted_kwargs = {
+                        k: _NvvmAutoConvertProxy._convert_arg(v, loc, ip)
+                        for k, v in kwargs.items()
+                    }
+                    return func(*converted_args, loc=loc, ip=ip, **converted_kwargs)
+
+                return wrapped
+
+            self._wrapped_cache[name] = _make_wrapper(attr)
+
+        return self._wrapped_cache[name]
+
+    def __dir__(self) -> list[str]:
+        return dir(self._module)
+
 # Create the proxy instance to replace the raw nvvm module
-nvvm = DialectAutoConvertProxy(_nvvm_raw)
+nvvm = _NvvmAutoConvertProxy(_nvvm_raw)
 
 
 # ============================================================================
@@ -99,22 +190,11 @@ def _enhance_enum_with_str_mapping(enum_class: Any) -> Any:
         from enum import Enum
 
         if isinstance(s, Enum):
-            if cutlass_dsl.target_version(exact_version="12.9"):
-                import warnings
-
-                warnings.warn(
-                    f"Passing enum member directly to {cls.__name__}.from_str() is deprecated. "
-                    f"Please use string literals instead (e.g., '{str(s)}' instead of {cls.__name__}.{s.name}).",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                return s
-            else:
-                raise TypeError(
-                    f"Expected a string literal for {cls.__name__}, but got enum '{type(s).__name__}.{s.name}'. "
-                    f"Please pass a string instead (e.g., '{str(s)}' instead of {type(s).__name__}.{s.name}). "
-                    f"Valid string options are: {sorted(str_to_enum_map.keys())}"
-                )
+            raise TypeError(
+                f"Expected a string literal for {cls.__name__}, but got enum '{type(s).__name__}.{s.name}'. "
+                f"Please pass a string instead (e.g., '{str(s)}' instead of {type(s).__name__}.{s.name}). "
+                f"Valid string options are: {sorted(str_to_enum_map.keys())}"
+            )
 
         if s not in str_to_enum_map:
             valid_options = sorted(str_to_enum_map.keys())
@@ -245,14 +325,13 @@ def warp_idx(
     """
     Returns the warp index within a CTA.
     """
-    warp_size = 32
     tid_x = Int32(nvvm.read_ptx_sreg_tid_x(T.i32(), loc=loc, ip=ip))
     tid_y = Int32(nvvm.read_ptx_sreg_tid_y(T.i32(), loc=loc, ip=ip))
     tid_z = Int32(nvvm.read_ptx_sreg_tid_z(T.i32(), loc=loc, ip=ip))
     ntid_x = Int32(nvvm.read_ptx_sreg_ntid_x(T.i32(), loc=loc, ip=ip))
     ntid_y = Int32(nvvm.read_ptx_sreg_ntid_y(T.i32(), loc=loc, ip=ip))
     tid = tid_x + tid_y * ntid_x + tid_z * ntid_x * ntid_y
-    return tid // warp_size
+    return tid // WARP_SIZE
 
 
 @dsl_user_op
@@ -406,19 +485,7 @@ def dynamic_smem_size(
     """
     Returns the launch dynamic smem size.
     """
-    return Int32(
-        llvm.inline_asm(
-            Int32.mlir_type,
-            [],
-            "mov.u32 $0, %dynamic_smem_size;\n",
-            "=r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
-    )
+    return Int32(nvvm.read_ptx_sreg_dynamic_smem_size(T.i32(), loc=loc, ip=ip))
 
 
 @dsl_user_op
@@ -476,16 +543,17 @@ def shuffle_sync_op(
     if not isinstance(value, Numeric):
         value = as_numeric(value)
 
-    if value.width > 64:  # type: ignore[attr-defined]
+    if value.width > 64:
         raise ValueError("shuffle_sync only supports values up to 64 bits")
 
     orig_type = type(value)
 
-    if value.width < 32:  # type: ignore[attr-defined]
+    if value.width < 32:
         if value.dtype.is_float:
             value = value.to(Float32)
         else:
-            if value.signed:  # type: ignore[attr-defined]
+            assert isinstance(value, Integer)
+            if value.signed:
                 value = value.to(Int32)
             else:
                 value = value.to(Uint32)
@@ -501,7 +569,7 @@ def shuffle_sync_op(
                 ip=ip,
             )
         )
-    elif value.width == 32:  # type: ignore[attr-defined]
+    elif value.width == 32:
         return orig_type(
             nvvm.shfl_sync(
                 type(value).mlir_type,
@@ -515,7 +583,7 @@ def shuffle_sync_op(
             )
         )
     else:
-        if value.width != 64:  # type: ignore[attr-defined]
+        if value.width != 64:
             raise ValueError(
                 "shuffle_sync only supports 64 bits values when the bit width is larger than 32"
             )
@@ -573,13 +641,13 @@ def warp_reduction(
     val: Numeric,
     op: Callable,
     *,
-    threads_in_group: int = 32,
+    threads_in_group: int = WARP_SIZE,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
     """warp reduction of a Numeric value(e.g.Float32) by shuffle_sync_bfly, accepts custom binary operator.
     The threads_in_group is the number of threads reduction group in a warp.
-    E.g. 32 means the whole warp reduced in one group. 8 means the warp is divided into 4 thread groups, each group has 8 threads in reduction.
+    E.g. WARP_SIZE (32) means the whole warp reduced in one group. 8 means the warp is divided into 4 thread groups, each group has 8 threads in reduction.
 
 
     :param val: register value
@@ -628,30 +696,14 @@ def barrier(
     if number_of_threads is not None:
         number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        if barrier_id is None:
-            barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
-        has_count = number_of_threads is not None
-        operands = [barrier_id, number_of_threads] if has_count else [barrier_id]
-        llvm.inline_asm(
-            None,
-            operands,
-            f"bar.sync {'$0, $1' if has_count else '$0'};",
-            "r,r" if has_count else "r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        # TODO: support barrier with reduction result
-        nvvm.barrier(
-            barrier_id=barrier_id,
-            number_of_threads=number_of_threads,
-            loc=loc,
-            ip=ip,
-        )
+    # TODO: support barrier with reduction result
+    nvvm.barrier(
+        res=None,
+        barrier_id=barrier_id,
+        number_of_threads=number_of_threads,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -659,9 +711,26 @@ def barrier_arrive(
     *,
     barrier_id: Optional[Int] = None,
     number_of_threads: Optional[Int] = None,
+    aligned: bool = True,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    """Issue a non-blocking arrive on a CTA-scoped named barrier.
+
+    The PTX ISA distinguishes two flavors of the arrive instruction:
+
+    - ``aligned=True`` (default) emits ``bar.arrive`` (legacy syntax with
+      implicit ``.aligned``). All threads in the CTA must reach this
+      instruction (i.e. it must lie outside divergent control flow).
+    - ``aligned=False`` emits ``barrier.cta.arrive`` (no ``.aligned``
+      modifier), which is required when the participating threads do not
+      necessarily execute the same instruction (e.g. when only a subset of
+      threads or warps in the CTA issue the arrive).
+
+    See the `PTX documentation
+    <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-bar-barrier>`__
+    for details on the aligned vs. unaligned variants.
+    """
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
     else:
@@ -673,22 +742,21 @@ def barrier_arrive(
         )
     number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        llvm.inline_asm(
-            None,
-            [barrier_id, number_of_threads],
-            "bar.arrive $0, $1;",
-            "r,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
+    if aligned:
+        nvvm.barrier_arrive(
+            barrier_id=barrier_id,
+            number_of_threads=number_of_threads,
             loc=loc,
             ip=ip,
         )
     else:
-        nvvm.barrier_arrive(
+        # The unaligned variant uses `barrier.cta.arrive` (without the
+        # `.aligned` modifier). The legacy `bar.arrive` instruction is
+        # implicitly aligned and cannot express this case.
+        nvvm.barrier_cta_arrive(
             barrier_id=barrier_id,
-            number_of_threads=number_of_threads,
+            thread_count=number_of_threads,
+            aligned=False,
             loc=loc,
             ip=ip,
         )
@@ -701,7 +769,7 @@ def sync_threads(
     """
     Synchronizes all threads within a CTA.
     """
-    nvvm.barrier(loc=loc, ip=ip)
+    nvvm.barrier(res=None, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -726,7 +794,7 @@ def fence_acq_rel_cta(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_cta(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, syncscope="block", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -738,7 +806,7 @@ def fence_acq_rel_cluster(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_cluster(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, syncscope="cluster", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -750,7 +818,7 @@ def fence_acq_rel_gpu(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_gpu(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, syncscope="device", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -762,7 +830,7 @@ def fence_acq_rel_sys(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_sys(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -914,40 +982,7 @@ def vote_sync_op(
     Performs a vote operation across the warp.
     """
     return_type = Int32 if kind == "ballot" else Boolean
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        if kind == "ballot":
-            return return_type(
-                nvvm.vote_ballot_sync(
-                    T.i32(),
-                    Int32(mask).ir_value(loc=loc, ip=ip),
-                    Boolean(pred).ir_value(loc=loc, ip=ip),
-                    loc=loc,
-                    ip=ip,
-                )
-            )
-        else:
-            return return_type(
-                llvm.inline_asm(
-                    T.bool(),
-                    [
-                        Boolean(pred).ir_value(loc=loc, ip=ip),
-                        Int32(mask).ir_value(loc=loc, ip=ip),
-                    ],
-                    f"""{{\n\t
-                    .reg .pred ps;\n\t
-                    .reg .pred pd;\n\t
-                    setp.ne.b32 ps, $1, 0;\n\t
-                    vote.sync.{kind}.pred pd, ps, $2;\n\t
-                    selp.b32 $0, 1, 0, pd;\n\t
-                    }}""",
-                    "=r,r,r",
-                    has_side_effects=True,
-                    is_align_stack=False,
-                    asm_dialect=llvm.AsmDialect.AD_ATT,
-                    loc=loc,
-                    ip=ip,
-                )
-            )
+
     from cutlass._mlir.dialects.nvvm import VoteSyncKind
 
     VoteSyncKind = _enhance_enum_with_str_mapping(VoteSyncKind)
@@ -1276,25 +1311,14 @@ def fmax(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        return Float32(
-            nvvm.fmax(
-                T.f32(),
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
+    return Float32(
+        nvvm.fmax(
+            Float32(a).ir_value(loc=loc, ip=ip),
+            Float32(b).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
         )
-    else:
-        return Float32(
-            nvvm.fmax(
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
-        )
+    )
 
 
 @dsl_user_op
@@ -1305,25 +1329,14 @@ def fmin(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        return Float32(
-            nvvm.fmin(
-                T.f32(),
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
+    return Float32(
+        nvvm.fmin(
+            Float32(a).ir_value(loc=loc, ip=ip),
+            Float32(b).ir_value(loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
         )
-    else:
-        return Float32(
-            nvvm.fmin(
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
-        )
+    )
 
 
 @dsl_user_op
@@ -1395,6 +1408,10 @@ def cvt_i8x2_to_bf16x2(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
+    if not cutlass_dsl.target_version(min_version="13.1"):
+        raise cutlass_dsl.DSLCudaVerNotImplemented(
+            feature="cvt_i8x2_to_bf16x2", required_version="13.1"
+        )
     # pack 2 int8 into 1 int16 value
     src_i16 = llvm.bitcast(Int16.mlir_type, src_vec2, loc=loc, ip=ip)
     val_i32 = llvm.inline_asm(
@@ -1422,6 +1439,10 @@ def cvt_i8x4_to_bf16x4(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
+    if not cutlass_dsl.target_version(min_version="13.1"):
+        raise cutlass_dsl.DSLCudaVerNotImplemented(
+            feature="cvt_i8x4_to_bf16x4", required_version="13.1"
+        )
     # pack 4 int8 into 1 int32 value
     src_i32 = llvm.bitcast(Int32.mlir_type, src_vec4, loc=loc, ip=ip)
     rst01 = llvm.inline_asm(
@@ -1468,12 +1489,8 @@ def cvt_f32x2_bf16x2(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
-    src0 = vector.extractelement(
-        src_vec2, position=arith.constant(Int32.mlir_type, 0, loc=loc, ip=ip)
-    )
-    src1 = vector.extractelement(
-        src_vec2, position=arith.constant(Int32.mlir_type, 1, loc=loc, ip=ip)
-    )
+    src0 = vector.extract(src_vec2, [], [0])
+    src1 = vector.extract(src_vec2, [], [1])
     rst = llvm.inline_asm(
         T.i32(),
         [
@@ -2134,27 +2151,26 @@ def _warp_redux_sync_nvvm(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
-    from cutlass._mlir.dialects.nvvm import ReduxKind
+    from cutlass._mlir.dialects.nvvm import ReductionKind
 
     # Enhance enum and convert string literal to enum type
-    ReduxKind = _enhance_enum_with_str_mapping(ReduxKind)
-    kind = ReduxKind.from_str(kind)
+    ReductionKind = _enhance_enum_with_str_mapping(ReductionKind)
+    kind = ReductionKind.from_str(kind)
 
     value_type = type(value)
-    if value_type.is_integer and not value_type.signed:  # type: ignore[attr-defined]
-        if kind == ReduxKind.MAX:
-            kind = ReduxKind.UMAX
-        elif kind == ReduxKind.MIN:
-            kind = ReduxKind.UMIN
+    if issubclass(value_type, Integer) and not value_type.signed:
+        if kind == ReductionKind.MAX:
+            kind = ReductionKind.UMAX
+        elif kind == ReductionKind.MIN:
+            kind = ReductionKind.UMIN
 
     value_ir = value.ir_value(loc=loc, ip=ip)
 
     return value_type(
         nvvm.redux_sync(
-            res=value_ir.type,
-            val=value_ir,
-            kind=kind,
-            mask_and_clamp=Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+            value_ir,
+            kind,
+            Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
             abs=abs,
             nan=nan,
             loc=loc,
@@ -2179,9 +2195,6 @@ def _warp_redux_sync_ptx(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
-    """
-    **ONLY** support f32 as nvvm compatability
-    """
     value_type = type(value)
     value_ir = value.ir_value(loc=loc, ip=ip)
     mlir_type = value_type.mlir_type
@@ -2326,7 +2339,7 @@ def _atomic(
         "exch",
     ],
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, ir.Value]:
@@ -2345,8 +2358,8 @@ def _atomic(
         "max"/"min" auto-promote to "umax"/"umin" for unsigned types (Uint32/Uint64).
     :type op: Literal["add", "fadd", "max", "min", "umax", "umin", "and", "or", "xor", "exch"]
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Union[Numeric, ir.Value]
     """
@@ -2395,38 +2408,21 @@ def _atomic(
         if val_type.is_float:
             if op == AtomicOpKind.ADD:
                 op = AtomicOpKind.FADD
-        elif val_type.is_integer and not val_type.signed:  # type: ignore[attr-defined]
+        elif issubclass(val_type, Integer) and not val_type.signed:
             if op == AtomicOpKind.MAX:
                 op = AtomicOpKind.UMAX
             elif op == AtomicOpKind.MIN:
                 op = AtomicOpKind.UMIN
 
-    # * NVVM call based on nvvm version
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        # Old API: requires explicit result type as first positional argument
-        # For vectors: pass val_type (ir.VectorType), for scalars: pass val_type.mlir_type
-        result_type = val_type if is_vector else val_type.mlir_type
-        result = nvvm.atomicrmw(
-            result_type,
-            op=op,
-            ptr=ptr,
-            a=val_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        # New API: infers result type automatically
-        result = nvvm.atomicrmw(
-            op=op,
-            ptr=ptr,
-            a=val_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
+    result = nvvm.atomicrmw(
+        op=op,
+        ptr=ptr,
+        a=val_ir,
+        mem_order=sem,
+        syncscope=scope,
+        loc=loc,
+        ip=ip,
+    )
     # Return raw result for vectors, wrapped for scalars
     return result if is_vector else val_type(result)
 
@@ -2436,7 +2432,7 @@ def atomic_add(
     val: Union[Numeric, ir.Value],
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, ir.Value]:
@@ -2450,8 +2446,8 @@ def atomic_add(
     :type val: Union[Numeric, ir.Value]
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Union[Numeric, ir.Value]
     """
@@ -2463,7 +2459,7 @@ def atomic_and(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2477,8 +2473,8 @@ def atomic_and(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2490,7 +2486,7 @@ def atomic_or(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2504,8 +2500,8 @@ def atomic_or(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2517,7 +2513,7 @@ def atomic_xor(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2531,8 +2527,8 @@ def atomic_xor(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2544,7 +2540,7 @@ def atomic_max(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2558,8 +2554,8 @@ def atomic_max(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2571,7 +2567,7 @@ def atomic_min(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2612,12 +2608,12 @@ def atomic_exch(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
-    return _atomic(ptr, val, op="exch", sem=sem, scope=scope, loc=loc, ip=ip)  # type: ignore[arg-type]
+    return _atomic(ptr, val, op="exch", sem=sem, scope=scope, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -2653,20 +2649,10 @@ def atomic_fmax(
     """
     intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
     then_body = lambda: atomic_min(
-        ptr,
-        Uint32(intval),
-        sem=sem,
-        scope=scope,  # type: ignore[arg-type]
-        loc=loc,
-        ip=ip,
+        ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
     )
     else_body = lambda: atomic_max(
-        ptr,
-        Int32(intval),
-        sem=sem,
-        scope=scope,  # type: ignore[arg-type]
-        loc=loc,
-        ip=ip,
+        ptr, Int32(intval), sem=sem, scope=scope, loc=loc, ip=ip
     )
 
     if sign_bit is None:
@@ -2712,7 +2698,7 @@ def atomic_cas(
     cmp: Numeric,
     val: Numeric,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2731,8 +2717,8 @@ def atomic_cas(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2758,29 +2744,16 @@ def atomic_cas(
     val_ir = val.ir_value(loc=loc, ip=ip)
 
     # * NVVM call based on nvvm version
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        result = nvvm.atomicrmw(
-            cmp_type.mlir_type,
-            op=AtomicOpKind.CAS,
-            ptr=ptr,
-            a=val_ir,
-            b=cmp_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        result = nvvm.atomicrmw(
-            op=AtomicOpKind.CAS,
-            ptr=ptr,
-            a=val_ir,
-            b=cmp_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
+    result = nvvm.atomicrmw(
+        op=AtomicOpKind.CAS,
+        ptr=ptr,
+        a=cmp_ir,
+        b=val_ir,
+        mem_order=sem,
+        syncscope=scope,
+        loc=loc,
+        ip=ip,
+    )
     return cmp_type(result)
 
 
@@ -3251,6 +3224,156 @@ def cvt_f4e2m1x8_to_f16x8(
     return vec_f16x8
 
 
+# Type alias for inline_ptx argument types
+ScalarArg = Union[int, float, bool, Numeric]
+
+
+@dsl_user_op
+def inline_ptx(
+    ptx_code: str,
+    *,
+    write_only_types: Optional[list[Type[Numeric]]] = None,
+    read_only_args: Optional[list[ScalarArg]] = None,
+    read_write_args: Optional[list[ScalarArg]] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Numeric, tuple[Numeric, ...], None]:
+    """
+    Inline PTX assembly code into the current kernel.
+
+    This function handles register size selection and sets the correct
+    read/write access for each operand automatically.
+
+    :param ptx_code: PTX assembly code string. Use named operand references (see below).
+    :type ptx_code: str
+    :param write_only_types: List of Numeric types for output-only values (corresponds to {$w0}, {$w1}, ... in PTX).
+    :type write_only_types: list[Type[Numeric]], optional
+    :param read_only_args: List of input values, each int, float, bool, or Numeric.
+                          Python primitives are automatically converted to Numeric types.
+                          These correspond to {$r0}, {$r1}, ... in PTX.
+    :type read_only_args: list[ScalarArg], optional
+    :param read_write_args: List of values that are both read and written (correspond to {$rw0}, {$rw1}, ... in PTX).
+    :type read_write_args: list[ScalarArg], optional
+    :param predicate: Optional Boolean value for conditional execution (corresponds to @$p prefix).
+    :type predicate: Boolean, optional
+    :param loc: MLIR location (advanced use, typically None).
+    :type loc: Any, optional
+    :param ip: MLIR insertion point (advanced use, typically None).
+    :type ip: Any, optional
+
+    :return: None if no outputs; single Numeric if one output; or tuple of Numerics if multiple outputs are declared.
+    :rtype: None or Numeric or tuple[Numeric, ...]
+
+    **Operand Naming Convention:**
+
+    Use curly braces with prefixes inside the PTX to denote operand roles:
+
+        - {$r0}, {$r1}, ...    : Read-only operands (index 0, 1, ...)
+        - {$w0}, {$w1}, ...    : Write-only operands (index 0, 1, ...)
+        - {$rw0}, {$rw1}, ...  : Read-write operands (index 0, 1, ...)
+
+    **Examples**:
+
+    Read-only inputs (mbarrier init):
+
+    .. code-block:: python
+
+        barrier_ptr = ...  # pointer to mbarrier
+        count = Int32(1)
+        inline_ptx(
+            "mbarrier.init.b64 [{$r0}], {$r1};",
+            read_only_args=[barrier_ptr, count],
+        )
+
+    Write-only output (exponential approximation):
+
+    .. code-block:: python
+
+        input_val = Float32(2.0)
+        result = inline_ptx(
+            "ex2.approx.ftz.f32 {$w0}, {$r0};",
+            write_only_types=[Float32],
+            read_only_args=[input_val],
+        )
+
+    Max of two Int32 values:
+
+    .. code-block:: python
+
+        a = Int32(10)
+        b = Int32(20)
+        max_val = inline_ptx(
+            "max.s32 {$w0}, {$r0}, {$r1};",
+            write_only_types=[Int32],
+            read_only_args=[a, b],
+        )
+
+    Read-write operands:
+
+    .. code-block:: python
+
+        tidx = thread_idx()[0]
+        offset = tidx * Int32(4)
+        w0, w1 = inline_ptx(
+            ptx,
+            write_only_types=[Float32, Float32],
+            read_only_args=[tidx, offset],
+            read_write_args=[arr[0], arr[1]],
+        )
+
+    .. note::
+        Refer to the `PTX ISA documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/>`_
+        for instruction syntax.
+    """
+    # Initialize empty lists if None
+    if write_only_types is None:
+        write_only_types = []
+    if read_only_args is None:
+        read_only_args = []
+    if read_write_args is None:
+        read_write_args = []
+
+    # Convert inputs to Numeric types or pass through raw IR values
+    def convert_arg(arg: Union[ir.Value, Numeric]) -> Union[ir.Value, Numeric]:
+        """Convert arg to Numeric, or pass through if already an ir.Value."""
+        if isinstance(arg, ir.Value):
+            return arg
+        return as_numeric(arg)
+
+    read_only_ir = [convert_arg(arg) for arg in read_only_args]
+    read_write_ir = [convert_arg(arg) for arg in read_write_args]
+
+    # Build write_only result types
+    write_only_mlir_types = [dtype.mlir_type for dtype in write_only_types]
+
+    # Get predicate IR value if provided
+    # The nvvm proxy will convert Numeric objects to ir.Value automatically
+    predicate_ir = None
+    if predicate is not None:
+        predicate_ir = as_numeric(predicate)
+        if not isinstance(predicate_ir, Boolean):
+            raise ValueError("Predicate must be a Boolean")
+
+    # Call nvvm.inline_ptx
+    results = nvvm.inline_ptx(
+        write_only_mlir_types,
+        read_only_ir,
+        read_write_ir,
+        ptx_code,
+        predicate=predicate_ir,
+        loc=loc,
+        ip=ip,
+    )
+
+    # Handle return value based on number of outputs
+    if len(write_only_types) == 0:
+        return None
+    elif len(write_only_types) == 1:
+        return write_only_types[0](results)
+    else:
+        # Multiple results - wrap each in its DSL type
+        return tuple(dtype(result) for dtype, result in zip(write_only_types, results))
 
 @dsl_user_op
 def smid(
@@ -5101,46 +5224,14 @@ def prefetch(
         PrefetchCacheLevel = _enhance_enum_with_str_mapping(nvvm.PrefetchCacheLevel)
         cache_level = PrefetchCacheLevel.from_str(cache_level)
 
-    if cutlass_dsl.target_version(min_version="13.2"):
-        nvvm.prefetch(
-            addr,
-            cache_level=cache_level,
-            evict_priority=evict_priority,
-            predicate=predicate,
-            tensormap=tensormap,
-            uniform=uniform,
-            in_param_space=in_param_space,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        # Fallback: inline PTX for builds without nvvm.prefetch op
-        if tensormap:
-            ptr_as_i64 = llvm.ptrtoint(T.i64(), addr, loc=loc, ip=ip)
-            llvm.inline_asm(
-                None,
-                [ptr_as_i64],
-                "prefetch.tensormap [$0];",
-                "l",
-                has_side_effects=True,
-                is_align_stack=False,
-                asm_dialect=llvm.AsmDialect.AD_ATT,
-                loc=loc,
-                ip=ip,
-            )
-        else:
-            level = "L1"
-            if cache_level is not None:
-                level = str(cache_level)
-            ptr_as_i64 = llvm.ptrtoint(T.i64(), addr, loc=loc, ip=ip)
-            llvm.inline_asm(
-                None,
-                [ptr_as_i64],
-                f"prefetch.global.{level} [$0];",
-                "l",
-                has_side_effects=True,
-                is_align_stack=False,
-                asm_dialect=llvm.AsmDialect.AD_ATT,
-                loc=loc,
-                ip=ip,
-            )
+    nvvm.prefetch(
+        addr,
+        cache_level=cache_level,
+        evict_priority=evict_priority,
+        predicate=predicate,
+        tensormap=tensormap,
+        uniform=uniform,
+        in_param_space=in_param_space,
+        loc=loc,
+        ip=ip,
+    )

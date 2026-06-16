@@ -23,7 +23,7 @@ CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 5, 0)
 
 
 @cache
-def is_available():
+def is_available() -> bool:
     """Returns true if JAX extensions are supported and available."""
     try:
         import jax

@@ -13,7 +13,7 @@ from typing import Optional
 
 from cutlass.base_dsl.arch import Arch
 from cutlass.base_dsl.common import DSLRuntimeError
-from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
+from cutlass.cutlass_dsl import BaseDSL, dsl_user_op, target_version
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, vector
@@ -69,6 +69,7 @@ def cvt_i8_bf16_intrinsic(
         ip=ip,
     ).result
     arch = BaseDSL._get_dsl().get_arch_enum()
+    is_ptx9_or_higher = target_version(min_version="13.1")
     # try to use vectorized version
     if length >= 4:
         num_vec4 = length // 4
@@ -76,7 +77,10 @@ def cvt_i8_bf16_intrinsic(
             vec_i8x4 = vector.extract_strided_slice(
                 vec_i8x4_type, vec_i8, [src_pos], [4], [1], loc=loc, ip=ip
             )
-            if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
+            if (
+                is_ptx9_or_higher
+                and arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs  # type: ignore[attr-defined]
+            ):
                 vec_bf16x4 = cvt_i8x4_to_bf16x4(vec_i8x4, loc=loc, ip=ip)
                 vec_dst = vector.insert_strided_slice(
                     vec_bf16x4, vec_dst, [src_pos], [1], loc=loc, ip=ip
@@ -104,7 +108,7 @@ def cvt_i8_bf16_intrinsic(
         vec_i8x2 = vector.extract_strided_slice(
             vec_i8x2_type, vec_i8, [src_pos], [2], [1], loc=loc, ip=ip
         )
-        if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
+        if is_ptx9_or_higher and arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
             vec_bf16x2 = cvt_i8x2_to_bf16x2(vec_i8x2, loc=loc, ip=ip)
         else:
             vec_f32x2 = cvt_i8x2_to_f32x2(vec_i8x2, loc=loc, ip=ip)
@@ -117,9 +121,10 @@ def cvt_i8_bf16_intrinsic(
     if length >= 1:
         if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
             val_bf16 = cvt_i8_bf16(
-                vector.extractelement(
+                vector.extract(
                     vec_i8,
-                    position=arith.constant(Int32.mlir_type, src_pos),
+                    [],
+                    [src_pos],
                     loc=loc,
                     ip=ip,
                 ),
@@ -127,19 +132,21 @@ def cvt_i8_bf16_intrinsic(
                 ip=ip,
             )
         else:
-            src_i8 = vector.extractelement(
+            src_i8 = vector.extract(
                 vec_i8,
-                position=arith.constant(Int32.mlir_type, src_pos),
+                [],
+                [src_pos],
                 loc=loc,
                 ip=ip,
             )
             src_i32 = arith.ExtSIOp(Int32.mlir_type, src_i8, loc=loc, ip=ip)
             src_f32 = arith.SIToFPOp(Float32.mlir_type, src_i32, loc=loc, ip=ip)
             val_bf16 = cvt_f32_bf16(src_f32, loc=loc, ip=ip)
-        vec_dst = vector.insertelement(
+        vec_dst = vector.insert(
             val_bf16,
             vec_dst,
-            position=arith.constant(Int32.mlir_type, src_pos),
+            [],
+            [src_pos],
             loc=loc,
             ip=ip,
         )
@@ -229,19 +236,21 @@ def cvt_i4_bf16_intrinsic(
         length -= 2
     if length >= 1:
         val_bf16 = cvt_i4_bf16(
-            vector.extractelement(
+            vector.extract(
                 vec_i4,
-                position=arith.constant(Int32.mlir_type, src_pos),
+                [],
+                [src_pos],
                 loc=loc,
                 ip=ip,
             ),
             loc=loc,
             ip=ip,
         )
-        vec_dst = vector.insertelement(
+        vec_dst = vector.insert(
             val_bf16,
             vec_dst,
-            position=arith.constant(Int32.mlir_type, src_pos),
+            [],
+            [src_pos],
             loc=loc,
             ip=ip,
         )

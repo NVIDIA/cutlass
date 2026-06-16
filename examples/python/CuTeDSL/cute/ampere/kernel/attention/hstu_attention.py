@@ -49,7 +49,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/hstu_attention.py --batch_size 4 --seqlen_q 8192 --seqlen_kv 8192 --num_head 4 --head_dim 128 --m_block_size 128 --n_block_size 64 --is_causal --perf_test
+    python examples/cute/ampere/kernel/attention/hstu_attention.py --batch_size 4 --seqlen_q 8192 --seqlen_kv 8192 --num_head 4 --head_dim 128 --m_block_size 128 --n_block_size 64 --is_causal --perf_test
 
 The above example tests the performance of HSTU attention with batch size 4, sequence length 8192, 4 attention heads, and head dimension 128. The m_block_size is 128, and n_block_size is 64. The causal masking is enabled.
 
@@ -268,6 +268,104 @@ class HSTUAttentionForwardAmpere(object):
             stream=stream,
         )
 
+    @cute.jit
+    def _copy_with_residue(
+        self,
+        copy_atom,
+        src_tile,
+        dst_tile,
+        coord_tile,
+        head_dim_pred,
+        has_outer_residue: cutlass.Constexpr,
+        has_inner_residue: cutlass.Constexpr,
+        outer_size,
+        block_end,
+        fill_zero_on_oob: cutlass.Constexpr = True,
+        is_known_boundary: cutlass.Constexpr = False,
+    ):
+        # Copy a (CPY_Atom, M, K) tile with optional outer-axis (M) and head-dim (K) residue.
+        # `is_known_boundary=True` skips the runtime boundary check (caller knows the tile straddles outer_size).
+        # `fill_zero_on_oob=False` for stores; loads zero-fill out-of-bounds rows so SMEM contents are well-defined.
+        if cutlass.const_expr(not has_outer_residue and not has_inner_residue):
+            cute.copy(copy_atom, src_tile, dst_tile)
+        elif cutlass.const_expr(not has_outer_residue):
+            cute.copy(copy_atom, src_tile, dst_tile, pred=head_dim_pred)
+        else:
+            if cutlass.const_expr(is_known_boundary):
+                is_boundary = True
+            else:
+                is_boundary = cute.elem_less(outer_size, block_end)
+            if is_boundary:
+                for m in cutlass.range_constexpr(cute.size(dst_tile.shape[1])):
+                    if cute.elem_less(coord_tile[0, m, 0][1], outer_size):
+                        if cutlass.const_expr(has_inner_residue):
+                            cute.copy(
+                                copy_atom,
+                                src_tile[None, m, None],
+                                dst_tile[None, m, None],
+                                pred=head_dim_pred[None, m, None],
+                            )
+                        else:
+                            cute.copy(
+                                copy_atom,
+                                src_tile[None, m, None],
+                                dst_tile[None, m, None],
+                            )
+                    elif cutlass.const_expr(fill_zero_on_oob):
+                        dst_tile[None, m, None].fill(0)
+            else:
+                if cutlass.const_expr(has_inner_residue):
+                    cute.copy(copy_atom, src_tile, dst_tile, pred=head_dim_pred)
+                else:
+                    cute.copy(copy_atom, src_tile, dst_tile)
+
+    @cute.jit
+    def _copy_rab_tile(
+        self,
+        copy_atom,
+        src_tile,
+        dst_tile,
+        coord_tile,
+        has_q_residue: cutlass.Constexpr,
+        has_kv_residue: cutlass.Constexpr,
+        seqlen_q,
+        seqlen_kv,
+        q_block_end,
+        kv_block_end,
+        is_known_kv_interior: cutlass.Constexpr = False,
+    ):
+        # Copy a (CPY_Atom, M, N) RAB tile with optional 2D residue.
+        # Coord entries are 4-tuples from the (B, H, Q, KV) identity tensor; index 2 is q-coord, index 3 is kv-coord.
+        # `is_known_kv_interior=True` skips the kv-side runtime check when the loaded tile is guaranteed inside seqlen_kv.
+        kv_check_active = has_kv_residue and not is_known_kv_interior
+        if cutlass.const_expr(not has_q_residue and not kv_check_active):
+            cute.copy(copy_atom, src_tile, dst_tile)
+        else:
+            # Pick the runtime predicate without mixing cute.Boolean with Python bool.
+            if cutlass.const_expr(has_q_residue and kv_check_active):
+                needs_per_elem = cute.elem_less(
+                    seqlen_q, q_block_end
+                ) or cute.elem_less(seqlen_kv, kv_block_end)
+            elif cutlass.const_expr(has_q_residue):
+                needs_per_elem = cute.elem_less(seqlen_q, q_block_end)
+            else:
+                needs_per_elem = cute.elem_less(seqlen_kv, kv_block_end)
+            if needs_per_elem:
+                for m in cutlass.range_constexpr(cute.size(dst_tile.shape[1])):
+                    for n in cutlass.range_constexpr(cute.size(dst_tile.shape[2])):
+                        if cute.elem_less(
+                            coord_tile[0, m, n][2], seqlen_q
+                        ) and cute.elem_less(coord_tile[0, m, n][3], seqlen_kv):
+                            cute.copy(
+                                copy_atom,
+                                src_tile[None, m, n],
+                                dst_tile[None, m, n],
+                            )
+                        else:
+                            dst_tile[None, m, n].fill(0)
+            else:
+                cute.copy(copy_atom, src_tile, dst_tile)
+
     @cute.kernel
     def kernel(
         self,
@@ -395,7 +493,7 @@ class HSTUAttentionForwardAmpere(object):
         tVsV = gmem_thr_copy_QKV.partition_D(sV)
         # (CPY_Atom, CPY_M, CPY_N, n_block)
         tRABgRAB = gmem_tiled_copy_QKV.get_slice(tidx).partition_S(gRAB)
-        tRabsRAB = gmem_tiled_copy_QKV.get_slice(tidx).partition_D(sRAB)
+        tRABsRAB = gmem_tiled_copy_QKV.get_slice(tidx).partition_D(sRAB)
 
         # ///////////////////////////////////////////////////////////////////////////////
         # Tile MMA compute thread partitions and allocate accumulators
@@ -446,115 +544,118 @@ class HSTUAttentionForwardAmpere(object):
         tOsVt = smem_thr_copy_V.partition_S(sVt)
         tOrVt_copy_view = smem_thr_copy_V.retile(tOrVt)
         tSsRAB = smem_thr_copy_RAB.partition_S(sRAB)
+        has_head_dim_residue = self._head_dim != self._head_dim_padded
+        has_q_residue = self._seqlen_q % self._m_block_size != 0
+        has_kv_residue = self._seqlen_kv % self._n_block_size != 0
+        need_q_predicates = has_head_dim_residue or has_q_residue
+        need_kv_predicates = has_head_dim_residue or has_kv_residue
+        need_rab_predicates = has_q_residue or has_kv_residue
 
         # ///////////////////////////////////////////////////////////////////////////////
         # Predicate: Mark indices that need to copy when problem_shape isn't a multiple
         # of tile_shape
         # ///////////////////////////////////////////////////////////////////////////////
-        # Construct identity layout for Q, KV and RAB
-        mcQ = cute.make_identity_tensor(mQ.layout.shape)
-        mcKV = cute.make_identity_tensor(mK.layout.shape)
-        mcRAB = cute.make_identity_tensor(mRAB.layout.shape)
-
-        cQ = cute.local_tile(
-            mcQ[batch_size, None, num_head, None],
-            (self._m_block_size, self._head_dim_padded),
-            (m_block, 0),
-        )
-        cKV = cute.local_tile(
-            mcKV[batch_size, None, num_head, None],
-            (self._n_block_size, self._head_dim_padded),
-            (n_block, 0),
-        )
-        cRAB = cute.local_tile(
-            mcRAB[batch_size, num_head, None, None],
-            (self._m_block_size, self._n_block_size),
-            (m_block, None),
-        )
-
-        # Repeat the partitioning with identity layouts
-        tQcQ = gmem_thr_copy_QKV.partition_S(cQ)
-        tKVcKV = gmem_thr_copy_QKV.partition_S(cKV)
-        tRABcRAB = gmem_thr_copy_QKV.partition_S(cRAB)
-
-        tQpQ = cute.make_rmem_tensor(
-            cute.make_layout(
-                (
-                    tQsQ.shape[0][1],
-                    cute.size(tQsQ, mode=[1]),
-                    cute.size(tQsQ, mode=[2]),
-                ),
-                stride=(cute.size(tQsQ, mode=[2]), 0, 1),
-            ),
-            cutlass.Boolean,
-        )
-        tKVpKV = cute.make_rmem_tensor(
-            cute.make_layout(
-                (
-                    tKsK.shape[0][1],
-                    cute.size(tKsK, mode=[1]),
-                    cute.size(tKsK, mode=[2]),
-                ),
-                stride=(cute.size(tKsK, mode=[2]), 0, 1),
-            ),
-            cutlass.Boolean,
-        )
-
-        # Set predicates for head_dim bounds, seqlen_q/k/v bounds is processed at the first tile.
-        for rest_v in cutlass.range_constexpr(tQpQ.shape[0]):
-            for rest_k in cutlass.range_constexpr(tQpQ.shape[2]):
-                tQpQ[rest_v, 0, rest_k] = cute.elem_less(
-                    tQcQ[(0, rest_v), 0, rest_k][3], mQ.layout.shape[3]
+        if cutlass.const_expr(need_q_predicates):
+            mcQ = cute.make_identity_tensor(mQ.layout.shape)
+            cQ = cute.local_tile(
+                mcQ[batch_size, None, num_head, None],
+                (self._m_block_size, self._head_dim_padded),
+                (m_block, 0),
+            )
+            tQcQ = gmem_thr_copy_QKV.partition_S(cQ)
+            if cutlass.const_expr(has_head_dim_residue):
+                tQpQ = cute.make_rmem_tensor(
+                    cute.make_layout(
+                        (
+                            tQsQ.shape[0][1],
+                            cute.size(tQsQ, mode=[1]),
+                            cute.size(tQsQ, mode=[2]),
+                        ),
+                        stride=(cute.size(tQsQ, mode=[2]), 0, 1),
+                    ),
+                    cutlass.Boolean,
                 )
-        for rest_v in cutlass.range_constexpr(tKVpKV.shape[0]):
-            for rest_k in cutlass.range_constexpr(tKVpKV.shape[2]):
-                tKVpKV[rest_v, 0, rest_k] = cute.elem_less(
-                    tKVcKV[(0, rest_v), 0, rest_k][3], mK.layout.shape[3]
+                for rest_v in cutlass.range_constexpr(tQpQ.shape[0]):
+                    for rest_k in cutlass.range_constexpr(tQpQ.shape[2]):
+                        tQpQ[rest_v, 0, rest_k] = cute.elem_less(
+                            tQcQ[(0, rest_v), 0, rest_k][3], mQ.layout.shape[3]
+                        )
+
+        if cutlass.const_expr(need_kv_predicates):
+            mcKV = cute.make_identity_tensor(mK.layout.shape)
+            cKV = cute.local_tile(
+                mcKV[batch_size, None, num_head, None],
+                (self._n_block_size, self._head_dim_padded),
+                (n_block, 0),
+            )
+            tKVcKV = gmem_thr_copy_QKV.partition_S(cKV)
+            if cutlass.const_expr(has_head_dim_residue):
+                tKVpKV = cute.make_rmem_tensor(
+                    cute.make_layout(
+                        (
+                            tKsK.shape[0][1],
+                            cute.size(tKsK, mode=[1]),
+                            cute.size(tKsK, mode=[2]),
+                        ),
+                        stride=(cute.size(tKsK, mode=[2]), 0, 1),
+                    ),
+                    cutlass.Boolean,
                 )
+                for rest_v in cutlass.range_constexpr(tKVpKV.shape[0]):
+                    for rest_k in cutlass.range_constexpr(tKVpKV.shape[2]):
+                        tKVpKV[rest_v, 0, rest_k] = cute.elem_less(
+                            tKVcKV[(0, rest_v), 0, rest_k][3], mK.layout.shape[3]
+                        )
+
+        if cutlass.const_expr(need_rab_predicates):
+            mcRAB = cute.make_identity_tensor(mRAB.layout.shape)
+            cRAB = cute.local_tile(
+                mcRAB[batch_size, num_head, None, None],
+                (self._m_block_size, self._n_block_size),
+                (m_block, None),
+            )
+            tRABcRAB = gmem_thr_copy_QKV.partition_S(cRAB)
 
         # ///////////////////////////////////////////////////////////////////////////////
         # Prefetch Prologue
         # ///////////////////////////////////////////////////////////////////////////////
         # Start async loads of the last mn-tile, where we take care of the mn residue
-        for m in cutlass.range_constexpr(cute.size(tQsQ.shape[1])):
-            if cute.elem_less(tQcQ[0, m, 0][1], mQ.layout.shape[1]):
-                cute.copy(
-                    gmem_tiled_copy_QKV,
-                    tQgQ[None, m, None],
-                    tQsQ[None, m, None],
-                    pred=tQpQ[None, m, None],
-                )
-            else:
-                # Clear the smem tiles to account for predicated off loads
-                tQsQ[None, m, None].fill(0)
-
-        for n in cutlass.range_constexpr(cute.size(tKsK.shape[1])):
-            if cute.elem_less(tKVcKV[0, n, 0][1], mK.layout.shape[1]):
-                cute.copy(
-                    gmem_tiled_copy_QKV,
-                    tKgK[None, n, None, n_block],
-                    tKsK[None, n, None],
-                    pred=tKVpKV[None, n, None],
-                )
-            else:
-                # Clear the smem tiles to account for predicated off loads
-                tKsK[None, n, None].fill(0)
-
-        for m in cutlass.range_constexpr(cute.size(tRABcRAB.shape[1])):
-            for n in cutlass.range_constexpr(cute.size(tRABcRAB.shape[2])):
-                if cute.elem_less(
-                    tRABcRAB[0, m, n, n_block][1], mRAB.layout.shape[2]
-                ) and cute.elem_less(
-                    tRABcRAB[0, m, n, n_block][2], mRAB.layout.shape[3]
-                ):
-                    cute.copy(
-                        gmem_tiled_copy_QKV,
-                        tRABgRAB[None, m, n, n_block],
-                        tRabsRAB[None, m, n],
-                    )
-                else:
-                    # Clear the smem tiles to account for predicated off loads
-                    tRabsRAB[None, m, n].fill(0)
+        self._copy_with_residue(
+            gmem_tiled_copy_QKV,
+            tQgQ[None, None, None],
+            tQsQ[None, None, None],
+            tQcQ if has_q_residue else None,
+            tQpQ if has_head_dim_residue else None,
+            has_q_residue,
+            has_head_dim_residue,
+            mQ.layout.shape[1],
+            (m_block + 1) * self._m_block_size,
+        )
+        # n_block is the last n-tile by construction, so any kv-residue is in this tile.
+        self._copy_with_residue(
+            gmem_tiled_copy_QKV,
+            tKgK[None, None, None, n_block],
+            tKsK[None, None, None],
+            tKVcKV if has_kv_residue else None,
+            tKVpKV if has_head_dim_residue else None,
+            has_kv_residue,
+            has_head_dim_residue,
+            mK.layout.shape[1],
+            (n_block + 1) * self._n_block_size,
+            is_known_boundary=has_kv_residue,
+        )
+        self._copy_rab_tile(
+            gmem_tiled_copy_QKV,
+            tRABgRAB[None, None, None, n_block],
+            tRABsRAB[None, None, None],
+            tRABcRAB[None, None, None, n_block] if need_rab_predicates else None,
+            has_q_residue,
+            has_kv_residue,
+            mRAB.layout.shape[2],
+            mRAB.layout.shape[3],
+            (m_block + 1) * self._m_block_size,
+            (n_block + 1) * self._n_block_size,
+        )
         cute.arch.cp_async_commit_group()
 
         # ///////////////////////////////////////////////////////////////////////////////
@@ -565,24 +666,17 @@ class HSTUAttentionForwardAmpere(object):
             cute.arch.cp_async_wait_group(0)
             self.cta_sync_barrier.arrive_and_wait()
 
-            if n_block_idx == n_block:
-                for n in cutlass.range_constexpr(cute.size(tVsV.shape[1])):
-                    if cute.elem_less(tKVcKV[0, n, 0][1], mV.layout.shape[1]):
-                        cute.copy(
-                            gmem_tiled_copy_QKV,
-                            tVgV[None, n, None, n_block_idx],
-                            tVsV[None, n, None],
-                            pred=tKVpKV[None, n, None],
-                        )
-                    else:
-                        tVsV[None, n, None].fill(0)
-            else:
-                cute.copy(
-                    gmem_tiled_copy_QKV,
-                    tVgV[None, None, None, n_block_idx],
-                    tVsV[None, None, None],
-                    pred=tKVpKV[None, None, None],
-                )
+            self._copy_with_residue(
+                gmem_tiled_copy_QKV,
+                tVgV[None, None, None, n_block_idx],
+                tVsV[None, None, None],
+                tKVcKV if has_kv_residue else None,
+                tKVpKV if has_head_dim_residue else None,
+                has_kv_residue,
+                has_head_dim_residue,
+                mV.layout.shape[1],
+                (n_block_idx + 1) * self._n_block_size,
+            )
             cute.arch.cp_async_commit_group()
 
             acc_shape_S = thr_mma.partition_shape_C(
@@ -643,25 +737,33 @@ class HSTUAttentionForwardAmpere(object):
             self.cta_sync_barrier.arrive_and_wait()
 
             if n_block_idx > 0:
-                cute.copy(
+                # tile (n_block_idx - 1) is always inside seqlen_kv, so only head_dim residue can apply
+                self._copy_with_residue(
                     gmem_tiled_copy_QKV,
                     tKgK[None, None, None, n_block_idx - 1],
                     tKsK[None, None, None],
-                    pred=tKVpKV[None, None, None],
+                    None,
+                    tKVpKV[None, None, None] if has_head_dim_residue else None,
+                    False,
+                    has_head_dim_residue,
+                    None,
+                    None,
                 )
-                # m residue handling for RAB
-                for m in cutlass.range_constexpr(cute.size(tRABcRAB.shape[1])):
-                    if cute.elem_less(
-                        tRABcRAB[0, m, 0, n_block_idx - 1][1], mRAB.layout.shape[2]
-                    ):
-                        cute.copy(
-                            gmem_tiled_copy_QKV,
-                            tRABgRAB[None, m, None, n_block_idx - 1],
-                            tRabsRAB[None, m, None],
-                        )
-                    else:
-                        tRabsRAB[None, m, None].fill(0)
-
+                self._copy_rab_tile(
+                    gmem_tiled_copy_QKV,
+                    tRABgRAB[None, None, None, n_block_idx - 1],
+                    tRABsRAB[None, None, None],
+                    tRABcRAB[None, None, None, n_block_idx - 1]
+                    if need_rab_predicates
+                    else None,
+                    has_q_residue,
+                    has_kv_residue,
+                    mRAB.layout.shape[2],
+                    mRAB.layout.shape[3],
+                    (m_block + 1) * self._m_block_size,
+                    None,
+                    is_known_kv_interior=True,
+                )
                 cute.arch.cp_async_commit_group()
 
             # ///////////////////////////////////////////////////////////////////////////////
@@ -695,26 +797,29 @@ class HSTUAttentionForwardAmpere(object):
                 t4 = t1 / t3
                 acc_S.store(t4)
 
-            mACC = cute.make_identity_tensor(
-                (mRAB.layout.shape[2], mRAB.layout.shape[3])
-            )  # (seqlen_q, seqlen_kv)
-            cACC = cute.local_tile(
-                mACC[None, None],
-                (self._m_block_size, self._n_block_size),
-                (m_block, n_block_idx),
-            )
+            if cutlass.const_expr(self._is_causal):
+                mACC = cute.make_identity_tensor(
+                    (mRAB.layout.shape[2], mRAB.layout.shape[3])
+                )  # (seqlen_q, seqlen_kv)
+                cACC = cute.local_tile(
+                    mACC[None, None],
+                    (self._m_block_size, self._n_block_size),
+                    (m_block, n_block_idx),
+                )
 
-            if self._is_causal and (n_block - n_block_idx) < cute.ceil_div(
-                self._m_block_size, self._n_block_size
-            ):
-                tACCcACC = thr_mma.partition_C(cACC)
-                for i in cutlass.range_constexpr(cute.size(tACCcACC.shape[0])):
-                    for j in cutlass.range_constexpr(cute.size(tACCcACC.shape[1])):
-                        for k in cutlass.range_constexpr(cute.size(tACCcACC.shape[2])):
-                            if cute.elem_less(
-                                tACCcACC[i, j, k][0], tACCcACC[i, j, k][1]
+                if (n_block - n_block_idx) < cute.ceil_div(
+                    self._m_block_size, self._n_block_size
+                ):
+                    tACCcACC = thr_mma.partition_C(cACC)
+                    for i in cutlass.range_constexpr(cute.size(tACCcACC.shape[0])):
+                        for j in cutlass.range_constexpr(cute.size(tACCcACC.shape[1])):
+                            for k in cutlass.range_constexpr(
+                                cute.size(tACCcACC.shape[2])
                             ):
-                                acc_S[i, j, k] = 0.0
+                                if cute.elem_less(
+                                    tACCcACC[i, j, k][0], tACCcACC[i, j, k][1]
+                                ):
+                                    acc_S[i, j, k] = 0.0
 
             rP = cute.make_rmem_tensor_like(acc_S, self._dtype)
             rP.store(acc_S.load().to(self._dtype))
@@ -803,35 +908,39 @@ class HSTUAttentionForwardAmpere(object):
             tOsO,
             tOrO,
         )
-        # predicate for O
-        mcO = cute.make_identity_tensor(mO.layout.shape)
-        cO = cute.local_tile(
-            mcO[batch_size, None, num_head, None],
-            (self._m_block_size, self._head_dim_padded),
-            (m_block, 0),
-        )
-        tOcO = gmem_thr_copy_O.partition_D(cO)
-        tOpO = cute.make_rmem_tensor(
-            cute.make_layout(
-                (tOgO.shape[0][1], tOgO.shape[1], tOgO.shape[2]),
-                stride=(tOgO.shape[2], 0, 1),
-            ),
-            cutlass.Boolean,
-        )
-        for rest_v in cutlass.range_constexpr(tOpO.shape[0]):
-            for rest_n in cutlass.range_constexpr(cute.size(tOpO.shape[2])):
-                tOpO[rest_v, 0, rest_n] = cute.elem_less(
-                    tOcO[(0, rest_v), 0, rest_n][3], mO.layout.shape[3]
+        if cutlass.const_expr(need_q_predicates):
+            mcO = cute.make_identity_tensor(mO.layout.shape)
+            cO = cute.local_tile(
+                mcO[batch_size, None, num_head, None],
+                (self._m_block_size, self._head_dim_padded),
+                (m_block, 0),
+            )
+            tOcO = gmem_thr_copy_O.partition_D(cO)
+            if cutlass.const_expr(has_head_dim_residue):
+                tOpO = cute.make_rmem_tensor(
+                    cute.make_layout(
+                        (tOgO.shape[0][1], tOgO.shape[1], tOgO.shape[2]),
+                        stride=(tOgO.shape[2], 0, 1),
+                    ),
+                    cutlass.Boolean,
                 )
-        # copy acc O from rmem to gmem
-        for rest_m in cutlass.range_constexpr(cute.size(tOpO.shape[1])):
-            if cute.elem_less(tOcO[0, rest_m, 0][1], mO.layout.shape[1]):
-                cute.copy(
-                    gmem_tiled_copy_O,
-                    tOrO[None, rest_m, None],
-                    tOgO[None, rest_m, None],
-                    pred=tOpO[None, rest_m, None],
-                )
+                for rest_v in cutlass.range_constexpr(tOpO.shape[0]):
+                    for rest_n in cutlass.range_constexpr(cute.size(tOpO.shape[2])):
+                        tOpO[rest_v, 0, rest_n] = cute.elem_less(
+                            tOcO[(0, rest_v), 0, rest_n][3], mO.layout.shape[3]
+                        )
+        self._copy_with_residue(
+            gmem_tiled_copy_O,
+            tOrO[None, None, None],
+            tOgO[None, None, None],
+            tOcO if has_q_residue else None,
+            tOpO if has_head_dim_residue else None,
+            has_q_residue,
+            has_head_dim_residue,
+            mO.layout.shape[1],
+            (m_block + 1) * self._m_block_size,
+            fill_zero_on_oob=False,
+        )
 
 
 def run_pytorch_hstu_test(

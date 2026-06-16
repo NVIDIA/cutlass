@@ -17,7 +17,7 @@ import itertools as it
 from types import SimpleNamespace
 
 from ..typing import as_numeric, Numeric, Constexpr, implements_dynamic_expression
-from .._mlir_helpers.arith import ArithValue
+from ..._mlir_helpers.arith import ArithValue
 from ..common import DSLBaseError
 from ..._mlir import ir
 
@@ -161,9 +161,7 @@ def is_namedtuple_instance(x: Any) -> bool:
     """
     t = type(x)
     return (
-        issubclass(t, tuple)
-        and hasattr(t, "_fields")
-        and isinstance(t._fields, tuple)
+        issubclass(t, tuple) and hasattr(t, "_fields") and isinstance(t._fields, tuple)
     )
 
 
@@ -762,7 +760,7 @@ def _tree_flatten(
         return [x], [ir.DictAttr.get({})], create_leaf_for_value(x, is_numeric=True)
 
     elif implements_dynamic_expression(x) and isinstance(x, ir.Value):
-        # Only for ir.Value subclasses (e.g. ctm.Pointer). Check before plain ir.Value
+        # Only for ir.Value subclasses (e.g. Pointer). Check before plain ir.Value
         # so they are unflattened via __new_from_mlir_values__. Other dynamic
         # expressions (e.g. TmemAllocator with 2 values) use the registered/node path.
         v = _flatten_mlir_values(x.__extract_mlir_values__())
@@ -821,9 +819,7 @@ def _tree_flatten(
 
             if hasattr(x, "__extract_mlir_attributes__"):
                 # If x has extract mlir attributes it overrides the child's default attributes
-                child_attrs_flat = [x.__extract_mlir_attributes__()] * len(
-                    child_attrs_flat
-                )
+                child_attrs_flat = [x.__extract_mlir_attributes__()]
             child_attrs_flattened = it.chain.from_iterable(child_attrs_flat)
             return (
                 flattened,

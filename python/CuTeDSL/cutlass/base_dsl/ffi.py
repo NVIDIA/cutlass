@@ -34,12 +34,19 @@ Usage:
         ...
 """
 
+import sys
 import typing
 from types import UnionType
 from typing import TypeVar, Any, Union
 import inspect
 from dataclasses import dataclass
 import string
+
+# Typing.get_overloads requires Python 3.11+; fall back to typing_extensions on 3.10.
+if sys.version_info >= (3, 11):
+    from typing import get_overloads
+else:
+    from typing_extensions import get_overloads
 
 from .._mlir import ir
 from .._mlir.dialects import func, gpu, llvm
@@ -221,8 +228,7 @@ class ExternCallHandler:
         self.inited = True
 
         # Note: don't do this in the constructor as MLIR context doesn't exist yet
-        self.overloads = typing.get_overloads(self.func)  # type: ignore[attr-defined]
-        assert isinstance(self.overloads, list)
+        self.overloads = list(get_overloads(self.func))
         if len(self.overloads) == 0:
             self.overloads.append(self.func)
 
@@ -500,7 +506,7 @@ class FFI:
         params_types: list[Any] | None = None,
         return_type: Any = None,
         inline: bool = True,
-        source: Any = None,
+        source: BitCode | None = None,
         overloaded: bool = False,
         name_mangler: Any = None,
         implicit_convert: Any = None,

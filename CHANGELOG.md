@@ -2,6 +2,40 @@
 
 # CUTLASS 4.x
 
+## [4.6.0](https://github.com/NVIDIA/cutlass/tree/main) (2026-06-11)
+
+### CuTe DSL
+* New features
+  - Supported AoT cross-compilation for aarch64‑linux‑gnu
+  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
+  - Supported auto calculating per-kernel shared memory carveout preference, or use new launch option `preferred_smem_carveout` to set manually.
+  - Auto-deduced smem size for launching kernels
+    - Launch config `smem` now defaults to `None` for auto-calculating kernel shared memory usage, which is recommended unless manual control is required.
+    - Warnings will be raised when the manually set shared memory size is insufficient or exceeds the GPU maximum.
+    - The default shared memory usage calculation aligns with CUDA C++ static shared memory behavior, i.e. summing all allocations additively.
+    - An additional launch option `smem_merge_branch_allocs` is provided to merge shared memory allocations across mutually exclusive code branches, which is recommended for inlined mega-kernels to reduce total footprint.
+
+* Bug fixing and improvements
+  - Improvements on linter support with more type ignores cleaned up
+  - Improvements on tvm-ffi CUDA runtime error diagnostics
+  - Improvements on dataclass support for TVM-FFI
+  - Fixed a regression on compilation time
+  - Enhancement on compile time checks to reject mis-aligned smem operand for TMA
+  - Long-deprecated API clean-up, including:
+    - cute.core.ThrMma, please use cute.ThrMma instead
+    - cute.core.ThrCopy, please use cute.ThrCopy instead
+    - cute.make_fragment, please use cute.make_rmem_tensor instead
+
+### CUTLASS C++
+* Add [example 113](https://github.com/NVIDIA/cutlass/tree/main/examples/113_hopper_gemm_activation_fusion) for Hopper GEMM with activation fusion.
+  - Supports standard and gated activations (e.g., SiLu) with fp8 and fp16 inputs.
+  - Covers both regular GEMM and grouped GEMM variants.
+* Improve SM90 grouped/ptr-array GEMM with EVT support.
+  - Adds the EVT (Epilogue Visitor Tree) plumbing required to do activation, bias, and auxiliary-tensor fusion inside SM90 grouped and ptr-array GEMM kernels.
+* Fix `DescriptorIterator::operator+` in `mma_traits_sm100.hpp` to use 32-bit arithmetic on CUDA toolkit version <= 13.3, preserving the high half of the smem descriptor.
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.3.
+
 ## [4.5.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.2) (2026-05-22)
 
 ### CuTe DSL

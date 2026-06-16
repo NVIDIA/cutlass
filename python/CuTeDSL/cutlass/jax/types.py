@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, Optional, Sequence
+from typing import Any, Iterator, Sequence, Union, overload
 from dataclasses import dataclass, field
 
 
@@ -126,7 +126,7 @@ class TensorSpec:
     mode: tuple[int, ...] | None = field(metadata=dict(static=True), default=None)
     # If True, shapes and strides are embedded as compile-time constants.
     # Must be False for symbolic/dynamic shapes (e.g. jax.export).
-    static: bool = field(metadata=dict(static=True), default=None)
+    static: bool | None = field(metadata=dict(static=True), default=None)
     # Assumed alignment (bytes) of the data pointer. Default matches XLA's 256-byte alignment.
     ptr_assumed_align: int = field(
         metadata=dict(static=True), default=DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT
@@ -137,7 +137,7 @@ class TensorSpec:
     )
 
 
-def row_major_layout(shaped):
+def row_major_layout(shaped: Any) -> tuple[int, ...]:
     """Returns the CuTeDSL minor-to-major stride ordering for a row-major (C-contiguous) tensor.
 
     In CuTeDSL convention, ``layout[i]`` is the stride rank of dimension ``i``,
@@ -160,7 +160,7 @@ def row_major_layout(shaped):
     return tuple(reversed(range(len(shaped))))
 
 
-def default_tensor_mode(shaped):
+def default_tensor_mode(shaped: Any) -> tuple[int, ...]:
     """Returns the identity mode permutation for an N-dimensional tensor.
 
     The mode permutation maps JAX input dimensions to ``cute.Layout`` mode
@@ -179,7 +179,7 @@ def default_tensor_mode(shaped):
     return tuple(range(len(shaped)))
 
 
-def default_tensor_spec(shaped) -> TensorSpec:
+def default_tensor_spec(shaped: Any) -> TensorSpec:
     """Returns a :class:`TensorSpec` with row-major layout and identity mode ordering.
 
     Equivalent to::
@@ -223,7 +223,9 @@ def default_tensor_spec(shaped) -> TensorSpec:
 
 
 def _expand_divisibility(
-    divisibility, order: tuple[int, ...], ndim: int
+    divisibility: tuple[int | None, ...] | int | None,
+    order: tuple[int, ...],
+    ndim: int,
 ) -> tuple[int | None, ...] | None:
     """Expand a divisibility spec to a full per-input-dimension tuple.
 
@@ -235,7 +237,7 @@ def _expand_divisibility(
     if divisibility is None or isinstance(divisibility, tuple):
         return divisibility
     leading = order.index(0)
-    result = [None] * ndim
+    result: list[int | None] = [None] * ndim
     result[leading] = divisibility
     return tuple(result)
 
@@ -295,7 +297,7 @@ def jax_to_cutlass_layout_order(
     return tuple(inv)
 
 
-def jax_to_cutlass_dtype(dtype):
+def jax_to_cutlass_dtype(dtype: Any) -> Any:
     """Gets the corresponding cutlass dtype given a jax dtype."""
     dtype = jnp.dtype(dtype)
     if dtype not in JAX_DTYPE_TO_CUTLASS_DTYPE:
@@ -303,14 +305,16 @@ def jax_to_cutlass_dtype(dtype):
     return JAX_DTYPE_TO_CUTLASS_DTYPE[dtype]
 
 
-def cutlass_to_jax_dtype(dtype):
+def cutlass_to_jax_dtype(dtype: Any) -> Any:
     """Gets the corresponding cutlass dtype given a jax dtype."""
     if dtype not in CUTLASS_DTYPE_TO_JAX_DTYPE:
         raise ValueError(f"Cutlass dtype [{dtype}] has no equivalent jax dtype.")
     return CUTLASS_DTYPE_TO_JAX_DTYPE[dtype]
 
 
-def from_dlpack(array, assumed_align: int = DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT):
+def from_dlpack(
+    array: Any, assumed_align: int = DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT
+) -> Any:
     """Convert jax.Array to a DL pack tensor."""
     return _from_dlpack(array, assumed_align=assumed_align)
 
@@ -361,15 +365,15 @@ class JaxArray:
 
     def __init__(
         self,
-        dtype,
-        shape,
-        mem_space,
-        assumed_align,
-        order=None,
-        mode=None,
-        static=False,
-        divisibility=None,
-    ):
+        dtype: type,
+        shape: Sequence[int | Any],
+        mem_space: AddressSpace,
+        assumed_align: int,
+        order: tuple[int, ...] | None = None,
+        mode: tuple[int, ...] | None = None,
+        static: bool = False,
+        divisibility: tuple[int | None, ...] | int | None = None,
+    ) -> None:
         self.dtype = dtype
         self.shape = tuple(shape)
         self.ndim = len(self.shape)
@@ -395,6 +399,7 @@ class JaxArray:
 
         if divisibility is not None:
             divisibility = _expand_divisibility(divisibility, self.order, self.ndim)
+            assert divisibility is not None
             divisibility = tuple(divisibility)
             if len(divisibility) != len(shape):
                 raise ValueError(
@@ -413,35 +418,35 @@ class JaxArrayValue(JaxArray):
 
     def __init__(
         self,
-        ir_value,
-        dtype,
-        shape,
-        mem_space,
-        assumed_align,
-        order,
-        mode,
-        static,
-        divisibility=None,
-    ):
+        ir_value: ir.Value,
+        dtype: type,
+        shape: Sequence[int | Any],
+        mem_space: AddressSpace,
+        assumed_align: int,
+        order: tuple[int, ...],
+        mode: tuple[int, ...],
+        static: bool,
+        divisibility: tuple[int | None, ...] | int | None = None,
+    ) -> None:
         super().__init__(
             dtype, shape, mem_space, assumed_align, order, mode, static, divisibility
         )
         self.value = ir_value
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"JaxArrayValue<{self.value}:{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}:{self.divisibility}>"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self)
 
     def _make_ordered_layout_dynamic_strides(
         self,
-        shape,
+        shape: tuple[ir.Value, ...],
         order: tuple[int, ...],
         *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-    ):
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> ir.Value:
         i32 = ir.IntegerType.get_signless(32)
 
         # Track the divisibility available for each input dimension. Explicit
@@ -500,11 +505,11 @@ class JaxArrayValue(JaxArray):
 
     def _load_dynamic_shapes(
         self,
-        ffi_buffer,
+        ffi_buffer: ir.Value,
         *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-    ):
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> tuple[ir.Value, ...]:
         i64 = ir.IntegerType.get_signless(64)
         shape_array = llvm.extractvalue(
             llvm.PointerType.get(),
@@ -532,11 +537,11 @@ class JaxArrayValue(JaxArray):
 
     def _load_pointer(
         self,
-        ffi_buffer,
+        ffi_buffer: ir.Value,
         *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-    ):
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> ir.Value:
         raw_ptr = llvm.extractvalue(
             llvm.PointerType.get(),
             ffi_buffer,
@@ -554,11 +559,8 @@ class JaxArrayValue(JaxArray):
         )
 
     def get_tensor(
-        self,
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-    ):
+        self, *, loc: ir.Location | None = None, ip: ir.InsertionPoint | None = None
+    ) -> ir.Value:
         ffi_buffer_type = llvm.StructType.get_literal(
             [llvm.PointerType.get(), llvm.PointerType.get()]
         )
@@ -581,10 +583,10 @@ class JaxArrayValue(JaxArray):
 
         return cute.make_tensor(pointer, layout, loc=loc, ip=ip)
 
-    def __extract_mlir_values__(self):
+    def __extract_mlir_values__(self) -> list[ir.Value]:
         return [self.value]
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "JaxArrayValue":
         return JaxArrayValue(
             values[0],
             self.dtype,
@@ -604,17 +606,17 @@ class JaxTracedArray(JaxArray):
     Traced values are not real tensors or allocated on the device.
     """
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"JaxTracedArray<{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}:{self.divisibility}>"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self)
 
-    def __get_mlir_types__(self):
+    def __get_mlir_types__(self) -> list[ir.Type]:
         # Struct passed as opaque object.
         return [llvm.PointerType.get()]
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: ir.Value) -> JaxArrayValue:
         return JaxArrayValue(
             values,
             self.dtype,
@@ -627,7 +629,7 @@ class JaxTracedArray(JaxArray):
             self.divisibility,
         )
 
-    def __c_pointers__(self):
+    def __c_pointers__(self) -> list[int]:
         return [0]
 
 
@@ -637,28 +639,34 @@ class JaxArrayList:
     the jit boundary.
     """
 
-    def __init__(self, arrays: Sequence[JaxArray]):
+    def __init__(self, arrays: Sequence[JaxArray]) -> None:
         self.arrays = tuple(arrays)
 
-    def __getitem__(self, idx):
+    @overload
+    def __getitem__(self, idx: int) -> JaxArray: ...
+    @overload
+    def __getitem__(self, idx: slice) -> tuple[JaxArray, ...]: ...
+    def __getitem__(
+        self, idx: Union[int, slice]
+    ) -> Union[JaxArray, tuple[JaxArray, ...]]:
         return self.arrays[idx]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.arrays)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[JaxArray]:
         return iter(self.arrays)
 
-    def __c_pointers__(self):
-        return [x.__c_pointers__()[0] for x in self.arrays]
+    def __c_pointers__(self) -> list[int]:
+        return [x.__c_pointers__()[0] for x in self.arrays]  # type: ignore[attr-defined]
 
-    def __get_mlir_types__(self):
-        return [x.__get_mlir_types__()[0] for x in self.arrays]
+    def __get_mlir_types__(self) -> list[ir.Type]:
+        return [x.__get_mlir_types__()[0] for x in self.arrays]  # type: ignore[attr-defined]
 
-    def __extract_mlir_values__(self):
-        return [x.__extract_mlir_values__()[0] for x in self.arrays]
+    def __extract_mlir_values__(self) -> list[ir.Value]:
+        return [x.__extract_mlir_values__()[0] for x in self.arrays]  # type: ignore[attr-defined]
 
-    def __new_from_mlir_values__(self, values):
+    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "JaxArrayList":
         return JaxArrayList(
-            [x.__new_from_mlir_values__(v) for x, v in zip(self.arrays, values)]
+            [x.__new_from_mlir_values__(v) for x, v in zip(self.arrays, values)]  # type: ignore[attr-defined]
         )

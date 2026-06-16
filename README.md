@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.5.2
+# CUTLASS 4.6.0
 
-_CUTLASS 4.5.2 - May 2026_
+_CUTLASS 4.6.0 - June 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -37,86 +37,43 @@ We believe it will become an indispensable tool for students, researchers, and p
 engineers alike — flattening the learning curve of GPU programming, rapidly prototyping kernel
 designs, and bringing optimized solutions into production.
 
-CuTe DSL is currently in public beta and will graduate out of beta by end of summer 2025.
+CuTe DSL is currently in public beta and will graduate out of beta by end of summer 2026.
 
 To get started quickly - please refer :
   - [CUTLASS C++ Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html).
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html).
 
-# What's New in CUTLASS 4.5
+# What's New in CUTLASS 4.6
 
 ## CuTe DSL
 * New features
-  - New Block API `block_copy()` to simplify TMA and S2T copy. Users can ignore detail about multicast and 2CTA partition for TMA by `block_copy()` and need not to invoke `tma_partition()`. And users can remove bulk of S2T initialization to simplify S2T copy.
-  - MXF8F6F4 mixed precision support
-    - BlockScaled MMA now supports MXF8*MXF4 or MXF8*MXF6
-  - Block Scaled MMA for SM120 now works on Spark
-  - EFC broadcast semantics support
-    -  EFC epilogue functions can now broadcast and remap tensor modes via `C.remap_modes[:, 0, 1]` subscript syntax (where `:` marks a broadcast dimension and integers select source mode indices). Covers scalar broadcast, row/column broadcast, and arbitrary mode permutations (e.g. transpose). The PyTorch reference evaluator mirrors the same transformations.
-  - Initial linter support: Improved type hints on CuTe DSL APIs to support static type checkers like MyPy
-  - dataclasses.dataclass is now supported for JIT compilaton and cute.compile for both plain and tvm-ffi path
-  - cute.copy now supports user specified loop unrolling
-  - Python 3.14t is now supported with GIL enabled
+  - Supported AoT cross-compilation for aarch64?~@~Qlinux?~@~Qgnu
+  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
+  - Supported auto calculating per-kernel shared memory carveout preference, or use new laucnch option `preferred_smem_carveout` to set manually.
+  - Auto-deduced smem size for launching kernels
+    - Launch config `smem` now defaults to `None` for auto-calculating kernel shared memory usage, which is recommended unless manual control is required.
+    - Warnings will be raised when the manually set shared memory size is insufficient or exceeds the GPU maximum.
+    - The default shared memory usage calculation aligns with CUDA C++ static shared memory behavior, i.e. summing all allocations additively.
+    - An additional launch option `smem_merge_branch_allocs` is provided to merge shared memory allocations across mutually exclusive code branches, which is recommended for inlined mega-kernels to reduce total footprint.
 
 * Bug fixing and improvements
-  - Improved source code correlation for profiling/debugging
-  - Fixed an aarch64 segfault issue with tvm-ffi
-  - Re-organization for CuTe DSL examples/tutorials for better discoverability
-  - Fixed following issues:
-    https://github.com/NVIDIA/cutlass/issues/3219
-    https://github.com/NVIDIA/cutlass/issues/3218
-    https://github.com/NVIDIA/cutlass/issues/3212
-    https://github.com/NVIDIA/cutlass/issues/3210
-    https://github.com/NVIDIA/cutlass/issues/3208
-    https://github.com/NVIDIA/cutlass/issues/3201
-    https://github.com/NVIDIA/cutlass/issues/3227
-    https://github.com/NVIDIA/cutlass/issues/3240
-    https://github.com/NVIDIA/cutlass/issues/3241
-  - Fixed Jax int64 stride divisibility issue
-  - Fixed issues for SM120 blockscaled MMAs
-    - added missing MXFP8MMAOP and MXF8F6F4MMAOP for sm120.
-
-* More examples of authorizing peak-performance kernels
-  - MOE examles
-    - A new style of grouped-gemm that aligns to torch's grouped_mm and scaled_groued_mm interface.
-    - Expert-wise tensormap descriptor setup by a cheap helper kernel (~2us) to avoid long latency in tile switching, kernel structure is much more closer to a normal GEMM.
-    - Compared to torch_210_cu13, very few problem has worse perf in B200.
-        - mxfp8_2dx3d: avg 1.29 speedup;
-        - mxfp8_2dx2d: avg 1.41 speedup;
-            - nvfp4_2dx3d: avg 1.11 speedup;
-        - nvfp4_2dx2d: avg 1.12 speedup (worst case 0.98)
-        - bf16_2dx3d: avg 1.15 speedup (worst case 0.98)
-        - bf16_2dx2d: avg 1.17 speedup (worst case 0.96)
-        - Note: The perf is measured from torch profiler, this impl includes the helper kernel + main kernel, while torch's includes its setup kernel and cutlass_cpp main kernel.
-
-* API changes
-  - ab_dtype is deprecated in make_trivial_tiled_mma and make_blockscaled_trivial_tiled_mma from blackwell_helpers.py. Please specify a_dtype and b_dtype separately instead.
+  - Improvements on linter support with more type ignores cleaned up
+  - Improvements on tvm-ffi CUDA runtime error diagnostics
+  - Improvements on dataclass support for TVM-FFI
+  - Fixed a regression on compilation time
+  - Enhancement on compile time checks to reject mis-aligned smem operand for TMA
+  - Long-deprecated API clean-up, including:
+    - cute.core.ThrMma, please use cute.ThrMma instead
+    - cute.core.ThrCopy, please use cute.ThrCopy instead
+    - cute.make_fragment, please use cute.make_rmem_tensor instead
 
 ## CUTLASS C++
-* Add 2SM MMA instruction support to mixed TMA+CpAsync SM100 vanilla GEMM kernels.
-  - Mixed TMA+CpAsync can now accept static, but non trivial cluster shapes.
-  - Uses TMA multicast for A tile when using non-trivial cluster size along N mode.
-  - Uses an additional barrier (mma_trampoline_barrier) to track cp.async arrivals in both CTAs.
-  - Changes included in [example 92](https://github.com/NVIDIA/cutlass/tree/main/examples/92_blackwell_moe_gemm).
-* Add support for 128x32xK and 128x64xK tile sizes for SM120 blockscaled MMA collective builders, yielding up to 30% performance improvement on Blackwell SM121 related kernels.
-* Add static load to tensor memory support, included in [example 77](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
-* Use 64-bit adds for SM100 MMA descriptor offsets and reduce move instructions for improved code generation.
-* Add [example 95](https://github.com/NVIDIA/cutlass/tree/main/examples/95_blackwell_gemm_green_context) to support green context SM partition
-  - Enables launching GEMM on stream with partial SM allocation.
-* Add [Snake](https://github.com/NVIDIA/cutlass/blob/main/test/unit/epilogue/thread/activation.cu#L409) activation functor for EVT.
-* Fix SM100 F8F6F4 SS MMA (1SM and 2SM) traits to use typed op templates.
-* Add UE8M0 (uniform exponent distribution) initialization support in tensor fill utilities.
-* Add `cvt.rn.bf16x2.e4m3x2` conversion instruction support to `numeric_conversion.h`.
-* Update [example 93](https://github.com/NVIDIA/cutlass/tree/main/examples/93_blackwell_low_latency_gqa) with paged KV cache support for Blackwell low-latency GQA.
-* Fix some kernel issues:
-  - Fix l2_capacity=0 handling in Blackwell SM100/SM120 kernel templates
-  - Fix CUTLASS clang build issues
-  - Remove `PipelineStorage` shadowing in SM100 complex epilogue
-  - Fix build issue in SM90 epilogue fusion visitor TMA warpspecialized
-  - Fix missing convert fucntion in EVT for fp4 kernels
-* Fix some profiler issues:
-  - Add missing reference kernels for blockwise GEMM profiler.
-  - Avoid instantiate 2sm tma kernels where ctaN is none power of 64 when ctaN > 128 in profiler.
+* Add [example 113](https://github.com/NVIDIA/cutlass/tree/main/examples/113_hopper_gemm_activation_fusion) for Hopper GEMM with activation fusion.
+  - Supports standard and gated activations (e.g., SiLu) with fp8 and fp16 inputs.
+  - Covers both regular GEMM and grouped GEMM variants.
+* Improve SM90 grouped/ptr-array GEMM with EVT support.
+  - Adds the EVT (Epilogue Visitor Tree) plumbing required to do activation, bias, and auxiliary-tensor fusion inside SM90 grouped and ptr-array GEMM kernels.
+* Fix `DescriptorIterator::operator+` in `mma_traits_sm100.hpp` to use 32-bit arithmetic on CUDA toolkit version <= 13.3, preserving the high half of the smem descriptor.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

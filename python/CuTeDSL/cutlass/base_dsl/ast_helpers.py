@@ -28,8 +28,7 @@ import builtins
 
 from .utils.logger import log
 from .common import *
-
-from ._mlir_helpers.arith import ArithValue
+from .env_manager import get_str_env_var
 
 
 class Executor:
@@ -226,7 +225,7 @@ def loop_selector(
         vectorize,
         at_least_once,
     )
-    from .typing import Integer, Numeric
+    from .typing import Integer
 
     def _maybe_upcast(value: Any) -> Any:
         if isinstance(value, Integer):
@@ -640,8 +639,9 @@ def closure_check(
     closures: list[Any], _visited: set[tuple[str, int]] | None = None
 ) -> None:
     """
-    Check if the closures have any unsupported capture
+    Check if the closures have any unsupported capture.
     """
+
     if _visited is None:
         _visited = set()
 
@@ -772,3 +772,5 @@ def fstring_decompose(
                 f"Unsupported component type in f-string: {type(component)}",
             )
     return (format_string, *dynamic_args)
+
+

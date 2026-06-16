@@ -9,23 +9,47 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, Optional, Type, Union, overload
+from typing import Any, Callable, Optional, Type, Union, overload
+from typing_extensions import deprecated
 import inspect
 
 import cutlass.cute as cute
-from cutlass.cute.arch import get_dyn_smem, get_dyn_smem_size
 from cutlass.cute.tensor import _Tensor
 from cutlass.cutlass_dsl import (
     SMEM_CAPACITY_MAP,
     CuTeDSL,
     Boolean,
     Int8,
+    Int32,
     Numeric,
     NumericMeta,
     dsl_user_op,
 )
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import cute as _cute_ir
+
+
+def _extract_struct_fields(struct_type: cute.struct) -> list[tuple[str, int, int]]:
+    """Extract (name, size_bytes, offset) for each field in a cute.struct."""
+    from cutlass.cute.core import struct
+
+    fields = []
+    for name, member in struct_type._annotations.items():
+        offset = struct_type._offsets[name]
+        # Unwrap Align wrapper
+        if isinstance(member, struct._AlignMeta):
+            member = member.dtype
+        # Compute size based on type
+        if struct._is_scalar_type(member):
+            size = max(1, member.width // 8)
+        elif isinstance(member, struct._MemRangeMeta):
+            size = member.size_in_bytes
+        elif isinstance(member, struct):
+            size = member.__sizeof__()
+        else:
+            continue
+        fields.append((name, size, offset))
+    return fields
 
 
 class SmemAllocator:
@@ -35,7 +59,6 @@ class SmemAllocator:
     numeric types, arrays, and tensors with specified layouts and alignments.
 
     .. note::
-        - The base pointer is aligned to 1024 bytes upon initialization.
         - SmemAllocator will automatically calculate the usage upon kernel launch.
         - There is no need to explicitly specify shared memory size in kernel launch.
         - Currently only supports static layouts. Dynamic layouts are not supported.
@@ -101,20 +124,62 @@ class SmemAllocator:
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> None:
+    ):
         """Initialize a new SmemAllocator instance.
-
-        Creates a new shared memory allocator with a base pointer aligned to 1024 bytes.
-        Tracks the allocator instance for memory management.
 
         :param loc: Source location information for debugging, defaults to None
         :type loc: Optional[ir.Location]
         :param ip: Insertion point for MLIR operations, defaults to None
         :type ip: Optional[ir.InsertionPoint]
         """
-        self._base = get_dyn_smem(Int8, alignment=1024, loc=loc, ip=ip)
-        self._allocated_bytes = 0
-        CuTeDSL.track_smem_allocator(self, lambda cls: cls._allocated_bytes)  # type: ignore[attr-defined]
+        pass
+
+    @property
+    @deprecated(
+        "Internal var `_allocated_bytes` is deprecated, use public API `arch.dynamic_smem_size()` instead."
+    )
+    def _allocated_bytes(self) -> Int32:
+        return cute.arch.dynamic_smem_size()
+
+    @dsl_user_op
+    def _smem_alloca(
+        self,
+        layout: cute.Layout,
+        dtype: NumericMeta,
+        byte_alignment: int,
+        swizzle: Optional[cute.Swizzle] = None,
+        struct_fields: Optional[list[tuple[str, int, int]]] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> cute.Pointer:
+        """
+        Allocate shared memory using cute.memref.alloca with given layout, data type, and alignment.
+
+        Returns:
+            cute.Pointer: An iterator (pointer) to the allocated shared memory.
+        """
+        assert byte_alignment <= 1024, "max shared memory alignment limit to 1024 bytes"
+        assert cute.is_static(layout), "shared memory allocation must be static layout"
+        # allocate using cute.memref.alloca
+        swizzle = swizzle.type.attribute if swizzle is not None else None
+        mlir_type = Int8.mlir_type if dtype is Boolean else dtype.mlir_type
+        ptr_ty = _cute_ir.PtrType.get(
+            mlir_type, cute.AddressSpace.smem, byte_alignment, swizzle
+        )
+        res_ty = _cute_ir.MemRefType.get(ptr_ty, layout.type)
+        memref = _cute_ir.memref_alloca(res_ty, layout=None, loc=loc, ip=ip)
+        # Attach struct field metadata as MLIR attributes
+        if struct_fields:
+            from cutlass._mlir import ir as _ir
+
+            field_attrs = []
+            for name, size, offset in struct_fields:
+                field_attrs.append(_ir.StringAttr.get(f"{name}:{size}:{offset}"))
+            memref.value.owner.attributes["smem.struct_fields"] = _ir.ArrayAttr.get(
+                field_attrs
+            )
+        return _cute_ir.get_iter(memref.value, loc=loc, ip=ip)
 
     @overload
     def allocate(
@@ -137,7 +202,7 @@ class SmemAllocator:
     ) -> cute.Pointer: ...
 
     @overload
-    def allocate(
+    def allocate(  # type: ignore[overload-cannot-match]
         self,
         size_or_type: cute.struct,
         byte_alignment: int,
@@ -184,7 +249,16 @@ class SmemAllocator:
         elif isinstance(size_or_type, cute.struct):
             size_in_bytes = size_or_type.__sizeof__()
             alignment = max(byte_alignment, size_or_type.__alignof__())
-            base_ptr = self.allocate(size_in_bytes, alignment, loc=loc, ip=ip)
+            struct_fields = _extract_struct_fields(size_or_type)
+            layout = cute.make_layout(size_in_bytes)
+            base_ptr = self._smem_alloca(
+                layout,
+                Int8,
+                alignment,
+                struct_fields=struct_fields,
+                loc=loc,
+                ip=ip,
+            )
             return size_or_type(base_ptr)
         elif isinstance(
             size_or_type,
@@ -207,25 +281,8 @@ class SmemAllocator:
         if byte_alignment < 1:
             raise ValueError("`byte_alignment` must be at least 1")
 
-        self._base = self._base.align(byte_alignment)
-        ptr = self._base
-        self._base += size_in_bytes
-        if self._allocated_bytes % byte_alignment != 0:
-            self._allocated_bytes += (
-                byte_alignment - self._allocated_bytes % byte_alignment
-            )
-        self._allocated_bytes += size_in_bytes
-
-        # Check bounds against available dynamic shared memory
-        cute.testing.assert_(
-            self._allocated_bytes <= get_dyn_smem_size(loc=loc, ip=ip),
-            f"Allocation failed: shared memory allocation exceeds available memory set in kernel launch. "
-            f"Allocated bytes: {self._allocated_bytes} bytes. "
-            f"Please reduce the allocation or set a larger smem size in kernel launch.",
-            loc=loc,
-            ip=ip,
-        )
-        return ptr
+        layout = cute.make_layout(size_in_bytes)
+        return self._smem_alloca(layout, Int8, byte_alignment, loc=loc, ip=ip)
 
     @dsl_user_op
     def allocate_array(
@@ -320,7 +377,8 @@ class SmemAllocator:
         if isinstance(layout, int):
             layout = cute.make_layout(layout)
 
-        profile = layout(0, loc=loc, ip=ip)  # type: ignore[operator]
+        assert not isinstance(layout, int)
+        profile = layout(0, loc=loc, ip=ip)
         if isinstance(profile, tuple):
             raise TypeError(
                 "cannot allocate a shared memory tensor with a non-integer iterator"
@@ -355,3 +413,44 @@ SmemAllocator.__init__.__signature__ = inspect.Signature(  # type: ignore[attr-d
 )
 
 get_smem_capacity_in_bytes = SmemAllocator.capacity_in_bytes
+
+
+@dsl_user_op
+def get_kernel_smem_size(
+    kernel: Callable,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> int:
+    """Get the total static shared memory allocation in bytes for a kernel.
+
+    Uses ``cute.kernel_smem_size`` to query the total smem bytes that will be
+    allocated by a kernel.  The result is lowered to a compile-time constant by
+    ``InferKernelSmemUsagePass``.
+
+    Must be called from within a ``@cute.jit`` body after the kernel's
+    ``.launch()`` has been called, which triggers tracing and registers the
+    kernel's MLIR symbol.
+
+    :param kernel: A ``@cute.kernel``-decorated function.  The MLIR symbol is
+        retrieved automatically from state stored by the DSL after ``.launch()``.
+    :type kernel: Callable
+    :return: Total shared memory allocated by the kernel, in bytes.
+    :rtype: int (i64 MLIR value during tracing)
+    """
+    if not callable(kernel):
+        raise TypeError(
+            f"get_kernel_smem_size: expected a @cute.kernel-decorated function, "
+            f"got {type(kernel)}"
+        )
+
+    # The DSL stores the MLIR SymbolRefAttr on the underlying funcBody
+    # (accessible via __wrapped__) after each .launch() call.
+    func_body = getattr(kernel, "__wrapped__", kernel)
+    sym = getattr(func_body, "_dsl_kernel_sym", None)
+    if sym is None:
+        raise ValueError(
+            f"get_kernel_smem_size: kernel '{kernel.__name__}' has not been "
+            "traced yet — call .launch() before get_kernel_smem_size()."
+        )
+    return _cute_ir.kernel_smem_size(sym, loc=loc, ip=ip)

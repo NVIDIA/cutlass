@@ -67,7 +67,7 @@ def partition(
 
 @dsl_user_op
 def partition_and_copy(
-    tiled_copy: cute.core.ThrCopy,
+    tiled_copy: cute.ThrCopy,
     src: cute.Tensor,
     dst: cute.Tensor,
     *,
@@ -138,3 +138,20 @@ def partition_and_copy(
             loc=loc,
             ip=ip,
         )
+
+
+@dsl_user_op
+def predicated_tensor_origin(
+    tensor: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Tensor:
+    """
+    Marks `tensor` as the origin (root) for predication/TMA bounds.
+
+    This is a semantic marker that lets the compiler unambiguously choose which
+    `!cute.memref` shape is used as the `predBounds` origin when automatically
+    constructing predicate tensors for OOB masking.
+    """
+    return cutlass_lir.PredicatedTensorOriginOp(tensor.value, loc=loc, ip=ip).result

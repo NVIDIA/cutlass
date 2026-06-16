@@ -28,6 +28,7 @@ import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass.cute.nvgpu.tcgen05 import find_tmem_tensor_col_offset
 from cutlass.cute.arch import get_max_tmem_alloc_cols, get_min_tmem_alloc_cols
+from cutlass.cute.arch.constants import WARP_SIZE
 
 
 _TMEM_COL_MASK = 0x0000FFFF
@@ -285,7 +286,8 @@ class TmemAllocator:
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
         _is_allocator_warp = warp_idx == self._allocator_warp_id
         if _is_allocator_warp:
-            num_tmem_dealloc_threads = 32
+            # Tmem dealloc is executed by one warp
+            num_tmem_dealloc_threads = WARP_SIZE
             with cute.arch.elect_one(loc=loc, ip=ip):
                 cute.arch.mbarrier_init(
                     self._two_cta_tmem_dealloc_mbar_ptr,
@@ -309,7 +311,7 @@ class TmemAllocator:
         initialize_mbarrier: bool = True,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> None:
+    ):
         """
         Initialize a TmemAllocator instance for managing tensor memory on Blackwell GPUs.
 
