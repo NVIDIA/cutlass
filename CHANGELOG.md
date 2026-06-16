@@ -2,6 +2,11 @@
 
 # CUTLASS 4.x
 
+## [4.4.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.3) (2026-06-15)
+
+### CUTLASS C++
+* Make [version.h](https://github.com/NVIDIA/cutlass/blob/release/4.4/include/cutlass/version.h) NVRTC JIT compilation compatible.
+
 ## [4.4.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.2) (2026-03-13)
 
 ### CuTe DSL
