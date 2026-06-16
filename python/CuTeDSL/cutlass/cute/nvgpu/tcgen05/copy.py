@@ -786,7 +786,8 @@ class _S2TCopyBase(CopyOp):
 
     :param cta_group: Cooperative Thread Array (CTA) group configuration
     :type cta_group: CtaGroup
-    :raises OpError: If the current architecture is not SM100f family or if invalid parameters are provided
+    :raises OpError: If the current architecture is not SM100f or SM110f
+        family or if invalid parameters are provided
     """
 
     cta_group: CtaGroup
@@ -794,8 +795,11 @@ class _S2TCopyBase(CopyOp):
     def __post_init__(self) -> None:
         # Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch.is_family_of(Arch.sm_100f):
-            supported = Arch.filter(lambda a: a.is_family_of(Arch.sm_100f))
+        # S2T tcgen05 copy encodings are valid on both SM100 and Thor SM110.
+        if not (arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)):
+            supported = Arch.filter(
+                lambda a: a.is_family_of(Arch.sm_100f) or a.is_family_of(Arch.sm_110f)
+            )
             raise OpError(
                 self,
                 f"expects arch to be one of {supported}, but got {arch}",
