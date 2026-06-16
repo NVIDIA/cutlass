@@ -284,6 +284,11 @@ class BlackwellFusedMultiHeadAttentionForward:
         self.num_regs_other = 32
         self.buffer_align_bytes = 1024
         self.arch = BaseDSL._get_dsl().get_arch_enum()
+        # SM101 (e.g. Thor) shares the SM100 TMEM load path; other arches use LdRed.
+        self.uses_sm100_softmax_tmem_load = (
+            (self.arch >= Arch.sm_100 and self.arch <= Arch.sm_100f)
+            or (self.arch >= Arch.sm_101 and self.arch <= Arch.sm_101f)
+        )
 
         if self.arch >= Arch.sm_103:
             assert self.enable_ex2_emulation == False, (
@@ -2260,9 +2265,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         old_row_max = row_max
         skip_softmax = cutlass.Boolean(False)
         if whether_apply_mask:
-            if cutlass.const_expr(
-                self.arch >= Arch.sm_100 and self.arch <= Arch.sm_100f
-            ):
+            if cutlass.const_expr(self.uses_sm100_softmax_tmem_load):
                 cute.copy(tiled_tmem_load, tTMEM_LOADtS, tTMEM_LOADrS)
             else:
                 tTMEM_LOADrMax = cute.make_rmem_tensor(
@@ -2308,9 +2311,7 @@ class BlackwellFusedMultiHeadAttentionForward:
             inplace_producer.commit()
             inplace_producer.advance()
         else:
-            if cutlass.const_expr(
-                self.arch >= Arch.sm_100 and self.arch <= Arch.sm_100f
-            ):
+            if cutlass.const_expr(self.uses_sm100_softmax_tmem_load):
                 cute.copy(
                     tiled_tmem_load,
                     tTMEM_LOADtS[None, 0, None, None],
@@ -2731,7 +2732,7 @@ class BlackwellFusedMultiHeadAttentionForward:
         )
         tmem_p_offset = self.tmem_p0_offset if stage == 0 else self.tmem_p1_offset
         tStS_P = cute.make_tensor(tStS.iterator + tmem_p_offset, tStS_P_layout)
-        if cutlass.const_expr(self.arch >= Arch.sm_100 and self.arch <= Arch.sm_100f):
+        if cutlass.const_expr(self.uses_sm100_softmax_tmem_load):
             tmem_load_atom = cute.make_copy_atom(
                 tcgen05.copy.Ld32x32bOp(tcgen05.copy.Repetition(32)),
                 self.qk_acc_dtype,
