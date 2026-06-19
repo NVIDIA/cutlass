@@ -79,7 +79,10 @@ class _Pointer(Pointer):
         self._addr_space = mem_space
 
         if assumed_align is None:
-            self._assumed_align = dtype.width // 8
+            # Sub-byte dtypes (e.g. Float4E2M1FN, Int4) have width < 8, so
+            # ``width // 8`` is 0 and the alignment check below divides by zero.
+            # Floor at 1 byte, mirroring make_ptr in cute/core.py.
+            self._assumed_align = max(1, dtype.width // 8)
         else:
             self._assumed_align = assumed_align
 
