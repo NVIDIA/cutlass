@@ -40,7 +40,7 @@
 
 #define CUTLASS_MAJOR 4
 #define CUTLASS_MINOR 2
-#define CUTLASS_PATCH 2 
+#define CUTLASS_PATCH 2
 
 #ifdef CUTLASS_VERSIONS_GENERATED
 #include "cutlass/version_extended.h"
