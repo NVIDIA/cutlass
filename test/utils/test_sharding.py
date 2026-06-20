@@ -177,7 +177,7 @@ def pytest_configure(config):
         ("filter", lambda: True, lambda x: callable(x), None),
     )
     config.shard_mark_values = mark_values(
-        ("size", None, lambda x: type(x) is int and x > 0, None),
+        ("size", None, lambda x: isinstance(x, int) and x > 0),   #fix : added isinstance to add proper support.
     )
     config.invalid_case_mark_values = mark_values(
         ("checker", lambda: True, lambda x: callable(x), None),
