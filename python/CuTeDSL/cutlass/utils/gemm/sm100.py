@@ -7,7 +7,7 @@
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
-# is strictly prohibited
+# is strictly prohibited.
 
 from typing import Any, Optional, Tuple, Union
 import cutlass.cute as cute
