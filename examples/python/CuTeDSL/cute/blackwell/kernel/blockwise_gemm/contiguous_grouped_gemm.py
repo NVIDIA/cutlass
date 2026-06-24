@@ -1664,13 +1664,11 @@ class BlockwiseContiguousGroupedGemmKernel:
                         tTR_rSFA_subtile = tTR_rSFA[(None, None, None, subtile_idx)]
                         tTR_rSFB_subtile = tTR_rSFB[(None, None, None, subtile_idx)]
 
-                        acc_vec = tTR_rAcc.load()
-                        final_vec = tTR_rAcc_subtile.load()
-                        scale_a = tTR_rSFA_subtile.load()
-                        scale_b = tTR_rSFB_subtile.load()
-                        scale = scale_a * scale_b
-                        final_vec = acc_vec * scale + final_vec
-                        tTR_rAcc_subtile.store(final_vec.to(self.acc_dtype))
+                        scale = cute.make_rmem_tensor(tTR_rSFA_subtile.shape, self.acc_dtype)
+                        for fma_idx in cutlass.range_constexpr(cute.size(scale)):
+                            scale[fma_idx] = tTR_rSFA_subtile[fma_idx] * tTR_rSFB_subtile[fma_idx]
+                        for fma_idx in cutlass.range_constexpr(cute.size(tTR_rAcc_subtile)):
+                            tTR_rAcc_subtile[fma_idx] = tTR_rAcc[fma_idx] * scale[fma_idx] + tTR_rAcc_subtile[fma_idx]
 
                     #
                     # Async arrive accumulator buffer empty
@@ -3041,4 +3039,3 @@ if __name__ == "__main__":
         args.use_cold_l2,
         args.fixed_m,
     )
-    print("PASS")

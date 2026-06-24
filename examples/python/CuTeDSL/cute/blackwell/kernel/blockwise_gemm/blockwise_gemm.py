@@ -2706,18 +2706,6 @@ def run(
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
-    # try to check CUDA version to decide the opt level
-    try:
-        from cutlass import CUDA_VERSION
-
-        opt_level = (
-            3
-            if CUDA_VERSION.major < 13
-            or (CUDA_VERSION.major == 13 and CUDA_VERSION.minor < 1)
-            else 2
-        )
-    except ImportError:
-        opt_level = 3
     # Compile gemm kernel
     compiled_gemm = cute.compile(
         gemm,
@@ -2728,7 +2716,7 @@ def run(
         sfb_tensor,
         max_active_clusters,
         current_stream,
-        options=f"--opt-level {opt_level}",
+        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
     )
 
     # Execution
