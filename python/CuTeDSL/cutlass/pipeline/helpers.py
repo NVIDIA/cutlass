@@ -56,6 +56,15 @@ class CooperativeGroup:
     def __init__(
         self, agent: Agent, size: Union[int, Int32] = 1, alignment: Optional[int] = None
     ):
+        if alignment is not None:
+            warnings.warn(
+                "The 'alignment' parameter of CooperativeGroup's constructor is "
+                "deprecated and will be removed in a subsequent release, please "
+                "remove it from your code.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         if agent in [
             Agent.Thread,
             Agent.Warp,
