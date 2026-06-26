@@ -5744,10 +5744,10 @@ class struct:
             return f"{object.__repr__(self)} <{self.dtype}> <ptr = {self._ptr}>"
 
         def __get_mlir_types__(self) -> List[ir.Type]:
-            return [self.value.type]
+            return [self._ptr.value.type]
 
         def __extract_mlir_values__(self) -> List[ir.Value]:
-            return [self.value]
+            return [self._ptr.value]
 
         def __new_from_mlir_values__(self, values: List[ir.Value]) -> Pointer:  # type: ignore[override]
             ptr = _Pointer(
@@ -5768,7 +5768,7 @@ class struct:
                 else 0
             )
             return builtin.unrealized_conversion_cast(
-                [llvm_ptr_ty], [self.value], loc=loc, ip=ip
+                [llvm_ptr_ty], [self._ptr.value], loc=loc, ip=ip
             )
 
         @property
