@@ -49,6 +49,29 @@ from cutlass_cppgen.shape import GemmCoord
 from cutlass_cppgen.utils.datatypes import is_numpy_tensor
 
 
+_FLOAT_PATTERN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
+
+def _parse_profiler_float(result, metric_name):
+    match = re.search(
+        rf"{re.escape(metric_name)}:\s+(?P<value>{_FLOAT_PATTERN})", result
+    )
+    if match is None:
+        raise RuntimeError(
+            f"Could not parse profiler {metric_name.lower()} from output:\n{result}"
+        )
+    return float(match.group("value"))
+
+
+def _parse_profiler_int(result, metric_name):
+    match = re.search(rf"{re.escape(metric_name)}:\s+(?P<value>\d+)", result)
+    if match is None:
+        raise RuntimeError(
+            f"Could not parse profiler {metric_name.lower()} from output:\n{result}"
+        )
+    return int(match.group("value"))
+
+
 class GpuTimer:
     def __init__(self) -> None:
         self.events = [
@@ -133,41 +156,72 @@ class CUDAEventProfiler:
         problem_size = self.arguments.problem_size
 
         if "cutlass3x" in kernel_name:
-            # cutlass3x generator only have column-major output
             layout_name = self.operation.layout_name_3x()
             if layout_name[-1] == "t":
-                new_layout_name = "".join(["n" for l in layout_name if l == "t" or "t"])
+                # Some 3.x profiler manifests only include column-major output kernels.
+                new_layout_name = layout_name[:-1] + "n"
                 problem_size = GemmCoord(problem_size.n, problem_size.m, problem_size.k)
-                kernel_name = kernel_name.replace(layout_name, new_layout_name)
+                kernel_name = kernel_name.replace(
+                    f"_{layout_name}_", f"_{new_layout_name}_", 1
+                )
 
         batch_count = self.arguments.batch_count
 
-        cmd = f"{profiler_path} --kernels={kernel_name} --verification-providers={verification_providers} " \
-              f"--providers={provider} --m={problem_size.m()} --n={problem_size.n()} --k={problem_size.k()} " \
-              f"--batch_count={batch_count} --alpha={alpha} --beta={beta} "\
-              f"--warmup-iterations={self.warmup_iterations} --profiling-iterations={self.iterations}"
+        cmd = [
+            profiler_path,
+            f"--kernels={kernel_name}",
+            f"--verification-providers={verification_providers}",
+            f"--providers={provider}",
+            f"--m={problem_size.m}",
+            f"--n={problem_size.n}",
+            f"--k={problem_size.k}",
+            f"--batch_count={batch_count}",
+            f"--alpha={alpha}",
+            f"--beta={beta}",
+            f"--warmup-iterations={self.warmup_iterations}",
+            f"--profiling-iterations={self.iterations}",
+        ]
 
-        result = subprocess.getoutput(cmd)
+        try:
+            completed = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            output = "\n".join(part for part in (exc.stdout, exc.stderr) if part)
+            raise RuntimeError(
+                f"CUTLASS profiler failed with exit code {exc.returncode}:\n{output}"
+            ) from exc
 
-        m = re.search(r"Runtime:\s+(?P<runtime>\d+.\d+)", result)
-        runtime = float(m.group("runtime"))
+        result = "\n".join(
+            part for part in (completed.stdout, completed.stderr) if part
+        )
 
-        m = re.search(r"Bytes:\s+(?P<bytes>\d+)", result)
-        bytes = int(m.group("bytes"))
-
-        m = re.search(r"FLOPs:\s+(?P<flops>\d+)", result)
-        flops = int(m.group("flops"))
+        runtime = _parse_profiler_float(result, "Runtime")
+        bytes_ = _parse_profiler_int(result, "Bytes")
+        flops = _parse_profiler_int(result, "FLOPs")
 
         # check if the problem size matches
-        assert bytes == self.bytes(problem_size, batch_count, beta)
-        assert flops == self.flops(problem_size, batch_count, beta)
+        expected_bytes = self.bytes(problem_size, batch_count, beta)
+        if bytes_ != expected_bytes:
+            raise RuntimeError(
+                f"CUTLASS profiler reported {bytes_} bytes, expected {expected_bytes}."
+            )
+
+        expected_flops = self.flops(problem_size, batch_count, beta)
+        if flops != expected_flops:
+            raise RuntimeError(
+                f"CUTLASS profiler reported {flops} FLOPs, expected {expected_flops}."
+            )
 
         return runtime
 
     def bytes(self, problem_size, batch_count=1, beta=0.0):
-        m = problem_size.m()
-        n = problem_size.n()
-        k = problem_size.k()
+        m = problem_size.m
+        n = problem_size.n
+        k = problem_size.k
 
         bytes = (
             (DataTypeSize[self.operation.A.element] * m // 8) * k
@@ -183,9 +237,9 @@ class CUDAEventProfiler:
         return bytes
 
     def flops(self, problem_size, batch_count=1, beta=0.0):
-        m = problem_size.m()
-        n = problem_size.n()
-        k = problem_size.k()
+        m = problem_size.m
+        n = problem_size.n
+        k = problem_size.k
 
         flops_ = (m * n * k) * 2 * batch_count
 
@@ -193,4 +247,3 @@ class CUDAEventProfiler:
             flops_ += m * n * batch_count * 2
 
         return flops_
-
