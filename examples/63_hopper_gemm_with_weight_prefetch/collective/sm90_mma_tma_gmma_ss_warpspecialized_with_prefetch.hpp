@@ -156,10 +156,8 @@ struct CollectiveMma<
   static_assert(rank(SmemLayoutA{}) == 3 && size<2>(SmemLayoutA{}) == DispatchPolicy::Stages);
   static_assert(rank(SmemLayoutB{}) == 3 && size<2>(SmemLayoutB{}) == DispatchPolicy::Stages);
 
-  using PrefetchSmemLayoutA = decltype(make_layout(make_shape(
-    cute::Int<size<0>(SmemLayoutA{})>{},
-    cute::Int<size<1>(SmemLayoutA{})>{},
-    cute::Int<detail::PrefetchStagesActual>{})));
+  using PrefetchSmemLayoutA = decltype(make_layout(
+    replace<2>(shape(SmemLayoutA{}), Int<detail::PrefetchStagesActual>{})));
 
   static constexpr auto prefetch_smem_size = cute::cosize_v<PrefetchSmemLayoutA>;
 
