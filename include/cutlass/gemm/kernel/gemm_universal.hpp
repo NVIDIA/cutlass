@@ -55,6 +55,7 @@ struct IsCutlass3ArrayKernel<ProblemShape, cute::void_t<typename ProblemShape::U
 
 #include "cutlass/gemm/kernel/sm70_gemm.hpp"
 #include "cutlass/gemm/kernel/sm70_gemm_array.hpp"
+#include "cutlass/gemm/kernel/sm70_gemm_blockscaled_accum.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_tma.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_warpspecialized_pingpong.hpp"
