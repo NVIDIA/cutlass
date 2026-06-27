@@ -79,6 +79,7 @@ from .core import (
     select,
     slice_,
     crd2idx,
+    make_composed_layout,
     size,
     leading_dim,
     recast_ptr,
@@ -227,6 +228,31 @@ class _Tensor(Tensor):
             dtype=self.element_type,
         )
 
+    def _composed_slice(
+        self,
+        crd: Coord,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "Tensor":
+        composed = self.layout
+        inner = composed.inner
+        offset = composed.offset
+        outer = composed.outer
+
+        sliced_outer = slice_(outer, crd, loc=loc, ip=ip)
+
+        flat_coord = flatten_to_tuple(crd)
+        offset_coord = tuple(
+            Integer(0) if c is None else c for c in flat_coord
+        )
+        delta = crd2idx(offset_coord, outer, loc=loc, ip=ip)
+        new_offset = offset + delta
+
+        new_composed = make_composed_layout(inner, new_offset, sliced_outer, loc=loc, ip=ip)
+
+        return make_tensor(self.iterator, new_composed, loc=loc, ip=ip)
+
     @dsl_user_op
     def __getitem__(
         self,
@@ -299,6 +325,8 @@ class _Tensor(Tensor):
             val = tensor[0]  # Error: sub-byte scalar dereference not supported
         """
         if has_underscore(crd):
+            if isinstance(self.layout.type, _cute_ir.ComposedLayoutType):
+                return self._composed_slice(crd, loc=loc, ip=ip)
             return slice_(self, crd, loc=loc, ip=ip)
         elif isinstance(self.type, _cute_ir.CoordTensorType):
             res = _cute_ir.get_iter(
