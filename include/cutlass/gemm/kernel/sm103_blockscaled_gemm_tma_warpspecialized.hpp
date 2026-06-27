@@ -668,14 +668,14 @@ public:
     Tensor accumulators = cutlass::detail::make_sm100_accumulator<AccumulatorPipelineStageCount, IsOverlappingAccum>(
         tiled_mma, acc_shape, EpilogueTile{});
 
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
+
 #if 1
     pipeline_init_wait(cluster_size);
 
     if (is_participant.main_ab_load) {
       set_warpgroup_reg_dealloc();
-      // Ensure that the prefetched kernel does not touch
-      // unflushed global memory prior to this instruction
-      cutlass::arch::wait_on_dependent_grids();
 
       bool do_load_order_arrive = is_epi_load_needed;
       auto load_inputs = collective_mainloop.load_ab_init(
@@ -751,8 +751,6 @@ public:
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
         bool requires_clc_query = true;
-
-        cutlass::arch::wait_on_dependent_grids();
 
         do {
           if (requires_clc_query) {
@@ -957,9 +955,6 @@ public:
     }
     else if (not IsNoSmemEpilogue and is_participant.epi_load) {
       set_warpgroup_reg_dealloc();
-      // Ensure that the prefetched kernel does not touch
-      // unflushed global memory prior to this instruction
-      cutlass::arch::wait_on_dependent_grids();
 
       bool do_load_order_wait = true;
       bool do_tail_load = false;
