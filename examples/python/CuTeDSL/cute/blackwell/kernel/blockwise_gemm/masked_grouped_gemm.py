@@ -875,7 +875,6 @@ class BlockwiseMaskedGroupedGemmKernel:
             cute.slice_(self.cta_tile_shape_mnk, (0, None, None)),
             (None, None, None),
         )
-        k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
         #
         # Partition global tensor for TiledMMA_A/B/C
@@ -1081,6 +1080,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             is_valid_tile = cutlass.Boolean(1)
             is_valid_tile = tile_info[3] == 1
 
+            k_tile_cnt = cute.arch.make_warp_uniform(cute.size(gA_mkl, mode=[3]))
             while is_valid_tile:
                 mma_tile_coord_mnl = (
                     tile_info[0] // cute.size(tiled_mma.thr_id.shape),
@@ -1200,6 +1200,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             is_valid_tile = cutlass.Boolean(1)
             is_valid_tile = tile_info[3] == 1
 
+            k_tile_cnt = cute.arch.make_warp_uniform(cute.size(gA_mkl, mode=[3]))
             while is_valid_tile:
                 #
                 # Prepare the mask for scaleA/scaleB
@@ -1389,6 +1390,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             is_valid_tile = cutlass.Boolean(1)
             is_valid_tile = tile_info[3] == 1
 
+            k_tile_cnt = cute.arch.make_warp_uniform(cute.size(gA_mkl, mode=[3]))
             while is_valid_tile:
                 # Peek (try_wait) AB buffer full for k_tile = 0
                 ab_consumer_state.reset_count()
@@ -1579,6 +1581,7 @@ class BlockwiseMaskedGroupedGemmKernel:
             is_valid_tile = cutlass.Boolean(1)
             is_valid_tile = tile_info[3] == 1
 
+            k_tile_cnt = cute.arch.make_warp_uniform(cute.size(gA_mkl, mode=[3]))
             while is_valid_tile:
                 # initialize the final accumulator
                 tTR_rAcc_final.fill(0.0)
@@ -1666,13 +1669,11 @@ class BlockwiseMaskedGroupedGemmKernel:
                         tTR_rSFA_subtile = tTR_rSFA[(None, None, None, subtile_idx)]
                         tTR_rSFB_subtile = tTR_rSFB[(None, None, None, subtile_idx)]
 
-                        acc_vec = tTR_rAcc.load()
-                        final_vec = tTR_rAcc_subtile.load()
-                        scale_a = tTR_rSFA_subtile.load()
-                        scale_b = tTR_rSFB_subtile.load()
-                        scale = scale_a * scale_b
-                        final_vec = acc_vec * scale + final_vec
-                        tTR_rAcc_subtile.store(final_vec.to(self.acc_dtype))
+                        scale = cute.make_rmem_tensor(tTR_rSFA_subtile.shape, self.acc_dtype)
+                        for fma_idx in cutlass.range_constexpr(cute.size(scale)):
+                            scale[fma_idx] = tTR_rSFA_subtile[fma_idx] * tTR_rSFB_subtile[fma_idx]
+                        for fma_idx in cutlass.range_constexpr(cute.size(tTR_rAcc_subtile)):
+                            tTR_rAcc_subtile[fma_idx] = tTR_rAcc[fma_idx] * scale[fma_idx] + tTR_rAcc_subtile[fma_idx]
 
                     #
                     # Async arrive accumulator buffer empty
@@ -1828,6 +1829,7 @@ class BlockwiseMaskedGroupedGemmKernel:
 
             num_prev_subtiles = cutlass.Int32(0)
 
+            k_tile_cnt = cute.arch.make_warp_uniform(cute.size(gA_mkl, mode=[3]))
             while is_valid_tile:
                 mma_tile_coord_mnl = (
                     tile_info[0] // cute.size(tiled_mma.thr_id.shape),
