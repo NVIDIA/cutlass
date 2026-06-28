@@ -225,7 +225,7 @@ def mark_values(*args_list):
 
     return get_mark_values
 
-_SIGNATURE_CACHE = {}
+_SIGNATURE_CACHE = {}   #Cache signature to avoid re-inspecting same function.
 
 def params_in_context(func):
     if func not in _SIGNATURE_CACHE:
