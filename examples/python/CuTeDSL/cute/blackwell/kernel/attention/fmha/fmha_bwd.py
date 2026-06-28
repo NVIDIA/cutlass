@@ -3090,6 +3090,7 @@ def run(
         window_size_right if window_size_right is None else Int32(window_size_right),
         workspace,
         current_stream,
+        options=f"--opt-level=2" if cutlass.__version__[0:3] == "4.6" else "",
     )
     compilation_time = time.time() - start_time
     print(f"Compilation time: {compilation_time:.4f} seconds")
@@ -3628,3 +3629,4 @@ if __name__ == "__main__":
     )
 
     print("PASS")
+
