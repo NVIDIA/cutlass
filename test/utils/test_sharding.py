@@ -225,18 +225,20 @@ def mark_values(*args_list):
 
     return get_mark_values
 
+_SIGNATURE_CACHE = {}
 
 def params_in_context(func):
-    if defined_params := inspect.signature(func).parameters.keys():
+    if func not in _SIGNATURE_CACHE:
+        _SIGNATURE_CACHE[func] = list(inspect.signature(func).parameters.keys())
+    
+    defined_params = _SIGNATURE_CACHE[func]
 
+    if defined_params:
         def wrapper(full_params):
             return func(*[full_params[k] for k in defined_params])
-
     else:
-
         def wrapper(full_params):
-            context = func.__globals__.copy()
-            context.update(full_params)
+            context = ChainMap(full_params, func.__globals__)
             return eval(func.__code__, context)
 
     return wrapper
@@ -388,16 +390,15 @@ def pytest_collection_modifyitems(config, items):
             ratio, _ = get_closest_level_mark(item)
 
         # check if the test case is large
+        is_large_case = False
         if large_case := item.get_closest_marker("large_case"):
             checker, *_ = config.large_case_mark_values(large_case)
-            checker_ = params_in_context(checker)
-            if bool(checker_(params)) ^ bool(config.getoption("--only-large-case")):
-                item_groups[func_name]["excluded"].append(item)
-                continue
-        else:
-            if config.getoption("--only-large-case"):
-                item_groups[func_name]["excluded"].append(item)
-                continue
+            is_large_case = bool(params_in_context(checker)(params))
+
+        # fix : Apply the XOR logic once
+        if is_large_case ^ bool(config.getoption("--only-large-case")):
+            item_groups[func_name]["excluded"].append(item)
+            continue
 
         if ratio > 0:
             if ratio == 1.0:
