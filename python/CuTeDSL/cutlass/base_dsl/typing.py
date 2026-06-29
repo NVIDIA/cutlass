@@ -849,6 +849,27 @@ def _binary_op_type_promote(
         return a.to(b.dtype), b, b.dtype
 
 
+def _lowered_const_value(operand: "Numeric") -> Any:
+    """Return a compile-time numeric's value, adjusted for MLIR lowering.
+
+    ``IntegerAttr.get()`` takes a signed C ``int64_t``, so an unsigned integer
+    constant whose magnitude exceeds ``INT64_MAX`` must be lowered as its
+    two's-complement signed value (same bit pattern); otherwise the binding
+    raises ``TypeError: get(): incompatible function arguments``. Non-integer
+    and in-range values are returned unchanged. (#3312)
+    """
+    value = operand.value
+    if (
+        getattr(type(operand), "signed", None) is False
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and operand.dtype.width <= 64
+        and value >= (1 << 63)
+    ):
+        value -= 1 << operand.dtype.width
+    return value
+
+
 def _binary_op(
     op: Callable[..., Any],
     promote_operand: bool = True,
@@ -931,13 +952,13 @@ def _binary_op(
         if isinstance(lhs.value, ArithValue) and isinstance(lhs, Integer):
             lhs_val = lhs.value.with_signedness(lhs.signed)
         else:
-            lhs_val = lhs.value
+            lhs_val = _lowered_const_value(lhs)
 
         rhs_val: Union[bool, int, float, ir.Value, ArithValue]
         if isinstance(rhs.value, ArithValue) and isinstance(rhs, Integer):
             rhs_val = rhs.value.with_signedness(rhs.signed)
         else:
-            rhs_val = rhs.value
+            rhs_val = _lowered_const_value(rhs)
 
         if flip:
             lhs_val, rhs_val = rhs_val, lhs_val
@@ -1096,7 +1117,10 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         elif dtype is ir.Value:
             if isinstance(self.value, (int, float, bool)):
                 res = arith_helper.const(
-                    self.value, self.dtype.mlir_type, loc=loc, ip=ip
+                    _lowered_const_value(self),
+                    self.dtype.mlir_type,
+                    loc=loc,
+                    ip=ip,
                 )
             elif isinstance(self.value, ir.Value):
                 res = self.value
