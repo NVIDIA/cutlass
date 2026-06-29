@@ -41,6 +41,7 @@
 namespace cutlass {
 namespace profiler {
 
+//Helper function for the rollback.
 inline void throw_cuda_error(cudaError_t result, const char* msg) {
   throw std::runtime_error(std::string(msg) + ": " + cudaGetErrorString(result));
 }
