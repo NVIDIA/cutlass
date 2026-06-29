@@ -301,8 +301,6 @@ def sext_unpacked_i4_i8_intrinsic(
 
 # Expose supported architectures via the intrinsic symbol
 cvt_i8_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
-    *Arch.AmpereArchs(),
-    *Arch.AdaArchs(),
     *Arch.HopperArchs(),
     *Arch.BlackwellArchs(),
 )
