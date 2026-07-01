@@ -869,10 +869,7 @@ class Sm120GemmKernel:
                         tRS_sD[(None, None, None, epi_buffer)],
                     )
 
-                    cute.arch.fence_proxy(
-                        "async.shared",
-                        space="cta",
-                    )
+                    cute.arch.fence_view_async_shared()
                     # barrier for sync
                     self.epilog_sync_barrier.arrive_and_wait()
 
@@ -887,6 +884,10 @@ class Sm120GemmKernel:
                         )
                         tma_store_pipeline.producer_commit()
                         tma_store_pipeline.producer_acquire()
+
+                    # Do not let non-store warps reuse sC until warp 0 has
+                    # committed the TMA store and acquired the next store slot.
+                    self.epilog_sync_barrier.arrive_and_wait()
 
                 # Advance to the next work tile
                 tile_sched.advance_to_next_work()
