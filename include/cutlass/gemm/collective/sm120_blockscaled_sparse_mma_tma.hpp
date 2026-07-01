@@ -702,7 +702,7 @@ struct CollectiveMma<
     Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,L));                            // (n,k,l)
     Tensor mE_mkl = mainloop_params.tma_load_e.get_tma_tensor(mainloop_params.layout_e.shape());             // (m,k,l)
     Tensor mSFA_mkl = mainloop_params.tma_load_sfa.get_tma_tensor(shape(mainloop_params.layout_SFA));
-    auto mSFB_nkl = [=](){
+    auto mSFB_nkl = [&](){
       if constexpr (IsCtaN64) {
         Tensor mSFB_tmp = mainloop_params.tma_load_sfb.get_tma_tensor(shape(mainloop_params.layout_SFB));
         auto x = stride<0,1>(mSFB_tmp);
