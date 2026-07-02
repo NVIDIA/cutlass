@@ -59,18 +59,17 @@ CompileFlags:
     - --cuda-path=/usr/local/cuda
     - --cuda-gpu-arch=sm_90a
     - -I/usr/local/cuda/include
+    - -I/usr/local/cuda/include/cccl
     - "-xcuda"
     # report all errors
     - "-ferror-limit=0"
-    - --cuda-gpu-arch=sm_90a
     - --std=c++17
     - "-D__INTELLISENSE__"
     - "-D__CLANGD__"
+    - "-D__CUDACC_VER_MAJOR__=13"
+    - "-D__CUDACC_VER_MINOR__=0"
     - "-DCUDA_12_0_SM90_FEATURES_SUPPORTED"
     - "-DCUTLASS_ARCH_MMA_SM90_SUPPORTED=1"
-    - "-D_LIBCUDACXX_STD_VER=12"
-    - "-D__CUDACC_VER_MAJOR__=12"
-    - "-D__CUDACC_VER_MINOR__=3"
     - "-D__CUDA_ARCH__=900"
     - "-D__CUDA_ARCH_FEAT_SM90_ALL"
     - "-Wno-invalid-constexpr"
