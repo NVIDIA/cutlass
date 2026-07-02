@@ -93,6 +93,6 @@ def permute(x, indices: tuple):
 
 def reshape(x, new_shape: tuple):
     if is_numpy_tensor(x):
-        return np.reshape(x, newshape=new_shape)
+        return np.reshape(x, new_shape)
     elif is_torch_tensor(x):
         return x.view(new_shape)
