@@ -17,12 +17,15 @@ and executes it using MLIR's ExecutionEngine.
 
 from typing import Any
 import collections.abc
+import contextlib
+import importlib.util
 import os
 import re
 import sys
 import inspect
 import types
-from .common import DSLRuntimeError
+from .common import DSLBaseError, DSLUserCodeError
+from . import diagnostics as _diagnostics
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
 
@@ -37,58 +40,32 @@ from .._mlir import ir
 # =============================================================================
 
 
-class CompilationError(RuntimeError):
-    """Custom error class for compilation failures"""
-
-    # Add ANSI color codes
-    RED = "\033[91m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    GREEN = "\033[92m"
-    BOLD = "\033[1m"
-    RESET = "\033[0m"
+class CompilerDiagnosticError(DSLBaseError):
+    """Compilation failed with Python-rendered compiler diagnostics."""
 
     def __init__(
         self,
-        message: str,
-        nvvm_error: str | None = None,
-        ir_context: str | None = None,
-        arch: str | None = None,
+        formatted: str,
+        raw_error: str = "",
+        *,
+        backend: str = "",
+        nvvm_error: str = "",
+        ir_context: str = "",
+        arch: str = "",
     ) -> None:
+        self.formatted = formatted
+        self.raw_error = raw_error
+        self.backend = backend
         self.nvvm_error = nvvm_error
         self.ir_context = ir_context
         self.arch = arch
-        # Call parent with formatted error to avoid showing class name
-        super().__init__("")  # Empty string to avoid class name
+        super().__init__(formatted)
 
-        # Store formatted error for str() representation
-        self._formatted_error = self._format_error()
+    def _format_message(self) -> str:
+        return self.message
 
     def __str__(self) -> str:
-        """Override string representation to avoid showing class name"""
-        return self._formatted_error
-
-    def __repr__(self) -> str:
-        """Override repr representation to avoid showing class name"""
-        return self._formatted_error
-
-    def _format_error(self) -> str:
-        if not self.nvvm_error:
-            return str(self.args[0])
-
-        return f"""NVVM Compilation Error:
-----------------------
-
-{self.BLUE}⚙️  Current Settings:{self.RESET}
-{self.BOLD}- Target Architecture: {self.arch}{self.RESET}
-
-IR Context (truncated):
-{self.ir_context}
-
-{self.YELLOW}💡 Possible Solutions:{self.RESET}
-{self.GREEN}1. Check if CUDA_TOOLKIT_PATH is set correctly
-2. Verify target architecture ({self.arch}) is supported by your CUDA toolkit
-3. Make sure CUDA toolkit version matches the target architecture requirements{self.RESET}"""
+        return self.formatted
 
 
 class Compiler:
@@ -99,10 +76,11 @@ class Compiler:
         self.execution_engine = execution_engine
         self._post_compile_hook: collections.abc.Callable[[Any], None] | None = None
 
-    def _process_error(self, error_msg: str) -> tuple[str | None, str | None]:
+    def _process_error(self, error_msg: str) -> tuple[str | None, str | None, str]:
         """Process error message to extract NVVM error and IR context"""
         nvvm_error = None
         ir_msg = ""
+        location = _diagnostics.extract_compiler_location(error_msg)
 
         if "NVVM_ERROR" in error_msg:
             # Extract the specific NVVM error
@@ -128,35 +106,69 @@ class Compiler:
                 else:
                     ir_msg = ir_section
 
-        return nvvm_error, ir_msg
+        return nvvm_error, ir_msg, location
 
     def compile(
         self,
         module: ir.Module,
         pipeline: str,
         arch: str = "",
+        remark_filter: str = "",
+        warnings_filter: str = "",
+        remark_output: str = "",
+        collect_compiler_diagnostics: bool = False,
         enable_debug_info: bool = False,
         enable_verifier: bool = False,
     ) -> None:
         """Compiles the module by invoking the pipeline."""
+        diagnostic_session = _diagnostics.CompilerDiagnosticSession(
+            ir.Context.current,
+            remark_filter=remark_filter,
+            warnings_filter=warnings_filter,
+            remark_output=remark_output,
+            collect_diagnostics=collect_compiler_diagnostics,
+        )
         try:
             pm = self.passmanager.PassManager.parse(pipeline)
             pm.enable_verifier(enable_verifier)
 
-            pm.run(module.operation)
+            # Enable remark streaming if configured
+            diagnostic_session.enable()
+
+            with diagnostic_session.collecting():
+                pm.run(module.operation)
+            formatted = diagnostic_session.format_success()
+            if formatted:
+                print(formatted, file=sys.stderr)
         except Exception as e:
+            if diagnostic_session.collect_diagnostics:
+                formatted = diagnostic_session.format_failure(str(e))
+                if formatted:
+                    raise CompilerDiagnosticError(formatted, raw_error=str(e)) from e
             error_msg = str(e)
-            nvvm_error, ir_msg = self._process_error(error_msg)
+            nvvm_error, ir_msg, location = self._process_error(error_msg)
 
             if nvvm_error:
-                raise CompilationError(
-                    error_msg,
+                ir_context = ir_msg or ""
+                formatted = diagnostic_session.format_backend_failure(
+                    raw_error=error_msg,
                     nvvm_error=nvvm_error,
-                    ir_context=ir_msg,
+                    ir_context=ir_context,
+                    arch=arch,
+                    location=location,
+                )
+                raise CompilerDiagnosticError(
+                    formatted,
+                    raw_error=error_msg,
+                    backend="nvvm",
+                    nvvm_error=nvvm_error,
+                    ir_context=ir_context,
                     arch=arch,
                 ) from e
             raise e
         finally:
+            # Finalize remark output after passes complete
+            diagnostic_session.finalize()
             pass
 
         if self._post_compile_hook:
@@ -181,6 +193,10 @@ class Compiler:
         opt_level: int = 2,
         arch: str = "",
         enable_debug_info: bool = False,
+        remark_filter: str = "",
+        warnings_filter: str = "",
+        remark_output: str = "",
+        collect_compiler_diagnostics: bool = False,
         enable_verifier: bool = False,
     ) -> Any:
         """Compiles and jits the module."""
@@ -188,6 +204,10 @@ class Compiler:
             module,
             pipeline,
             arch,
+            remark_filter=remark_filter,
+            warnings_filter=warnings_filter,
+            remark_output=remark_output,
+            collect_compiler_diagnostics=collect_compiler_diagnostics,
             enable_debug_info=enable_debug_info,
             enable_verifier=enable_verifier,
         )
@@ -253,7 +273,7 @@ class BooleanCompileOption(CompileOption):
 
 class StringCompileOption(CompileOption):
     def serialize(self) -> str:
-        if self._value:
+        if self._value and self.__class__.option_name:
             self._value = self._value.strip("'")
             return f"{self.__class__.option_name}='{self._value}'"
         return ""
@@ -273,7 +293,7 @@ class BooleanBasedFileDumpOption(CompileOption):
         self._dump_path = path
 
     def serialize(self) -> str:
-        if self._value:
+        if self._value and self.__class__.option_name:
             assert self._dump_path, (
                 f"Dump path is not set for {self.__class__.__name__}"
             )
@@ -291,13 +311,12 @@ class OptLevel(CompileOption):
 
     def __init__(self, val: int) -> None:
         if val < 0 or val > 3:
-            raise DSLRuntimeError(f"Invalid OPT_LEVEL: {val}, valid range is [0, 3]")
+            raise DSLUserCodeError(
+                _diagnostics.DiagId.CONFIG_INVALID_OPT_LEVEL, val=val
+            )
         super().__init__(val)
 
 
-
-_NVVM_DIAG_SUB_ALIASES: dict[str, str] = {
-}
 
 _SR_DISABLE_PATTERNS: dict[str, str] = {
 }
@@ -315,6 +334,35 @@ class ExtraCompilerOpts(CompileOption):
 
     def serialize(self) -> str:
         return self._value
+
+
+def _ensure_ptxas_verbose(options: str) -> str:
+    import shlex
+
+    stripped = (options or "").strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "'\"":
+        stripped = stripped[1:-1]
+    try:
+        tokens = shlex.split(stripped) if stripped else []
+    except ValueError:
+        tokens = stripped.split()
+    if any(token in ("-v", "--verbose") for token in tokens):
+        return stripped
+    return f"{stripped} -v".strip()
+
+
+def _ensure_compiler_diagnostic_selector(options: str, selector: str) -> str:
+    match = re.search(r"(^|\s)diagnostic=([^\s]+)", options)
+    if not match:
+        return f"{options} diagnostic={selector}".strip()
+
+    selectors = {item for item in match.group(2).split(",") if item}
+    if selector in selectors:
+        return options
+
+    selectors.add(selector)
+    replacement = f"{match.group(1)}diagnostic={','.join(sorted(selectors))}"
+    return options[: match.start()] + replacement + options[match.end() :]
 
 
 class PtxasOptions(StringCompileOption):
@@ -354,6 +402,16 @@ class KeepPTX(BooleanBasedFileDumpOption):
         super().__init__(val)
         self.full_ptx_path: str = ""
 
+
+
+class KeepSASS(BooleanBasedFileDumpOption):
+    pass
+
+
+
+class NvdisasmOptions(StringCompileOption):
+    def __init__(self, val: str = "-g -c") -> None:
+        super().__init__(val)
 
 
 
@@ -520,7 +578,9 @@ class HostTarget(EmptyCompileOption):
         try:
             self._triple, self._cpu, self._features = _parse_host_target(val)
         except ValueError as exc:
-            raise DSLRuntimeError(str(exc)) from exc
+            raise DSLUserCodeError(
+                _diagnostics.DiagId.CONFIG_INVALID_HOST_TARGET, error=str(exc)
+            ) from exc
 
     @property
     def value(self) -> str:
@@ -547,6 +607,48 @@ class HostTarget(EmptyCompileOption):
         return self._features
 
 
+class RemarkFilter(EmptyCompileOption):
+    """Regex filter for remark categories e.g. 'Memory|Algorithm' or '.*' for all.
+    This option is not serialized into the pipeline string; it configures
+    the MLIR context remark engine directly."""
+
+    option_name = "remark-filter"
+
+    def __init__(self, val: str = "") -> None:
+        super().__init__(val)
+
+
+class WarningsFilter(EmptyCompileOption):
+    """Checker domains whose WARNINGS the DSL displays, e.g. 'nvvm' or 'nvvm,ptx'.
+
+    Set by the user-facing ``--warnings{<cat>}`` compile option. Errors are
+    always shown; warnings are shown only for domains listed here. Not
+    serialized into the pipeline string; consumed by the Python diagnostic
+    renderer to gate warning visibility."""
+
+    option_name = "warnings-filter"
+
+    def __init__(self, val: str = "") -> None:
+        super().__init__(val)
+
+
+class CollectCompilerDiagnostics(BooleanCompileOption):
+    option_name = "collect-compiler-diagnostics"
+
+    def serialize(self) -> str:
+        return ""
+
+
+class RemarkOutput(EmptyCompileOption):
+    """Output file path for YAML remark format.
+    This option is not serialized into the pipeline string; it configures
+    the MLIR context remark engine directly."""
+
+    option_name = "remark-output"
+
+    def __init__(self, val: str = "") -> None:
+        super().__init__(val)
+
 
 class CompileOptions:
     """
@@ -570,6 +672,8 @@ class CompileOptions:
             GenerateLineInfo: GenerateLineInfo(False),
             KeepCUBIN: KeepCUBIN(False),
             KeepPTX: KeepPTX(False),
+            KeepSASS: KeepSASS(False),
+            NvdisasmOptions: NvdisasmOptions(),
             GPUArch: GPUArch(""),
             FlattenLocsOutputJsonPath: FlattenLocsOutputJsonPath(""),
             LinkLibraries: LinkLibraries(""),
@@ -577,7 +681,13 @@ class CompileOptions:
             DeviceTarget: DeviceTarget(False),
             DumpDir: DumpDir(""),
             HostTarget: HostTarget(""),
+            # Remark options
+            RemarkFilter: RemarkFilter(""),
+            WarningsFilter: WarningsFilter(""),
+            RemarkOutput: RemarkOutput(""),
+            CollectCompilerDiagnostics: CollectCompilerDiagnostics(False),
         }
+        self._ptxas_diagnostics_enabled = False
 
         if options is not None:
             self._update(options)
@@ -585,7 +695,9 @@ class CompileOptions:
     def _update(self, options: "CompileOption | tuple[CompileOption, ...]") -> None:
         def _validate_and_update_option(option: CompileOption) -> None:
             if type(option) not in self.options:
-                raise DSLRuntimeError(f"Invalid compile option: {option}")
+                raise DSLUserCodeError(
+                    _diagnostics.DiagId.CONFIG_UNKNOWN_COMPILE_OPTION, option=option
+                )
             self.options[type(option)] = option
 
         if isinstance(options, tuple):
@@ -601,6 +713,13 @@ class CompileOptions:
         object's options accordingly.  Valid forms (comma- or space-separated,
         ``--`` prefix optional)::
 
+            # Errors are always shown and fail compilation -- no flag needed.
+            # --warnings / --remarks are opt-in and non-fatal; a {<cat>}
+            # selector shows only that category, bare shows all categories.
+            --warnings                       # show all warnings
+            --warnings{nvvm}                 # show only nvvm-category warnings
+            --remarks                        # show all remarks
+            --remarks{nvvm}                  # show only nvvm (sync) remarks
             --iket                           # enable IKET (In-Kernel Event Tracing) instrumentation
 
         :param opt_str: Compact option string to parse.
@@ -664,8 +783,32 @@ class CompileOptions:
                     f"or use the bare name to enable a boolean option"
                 )
 
-            if name == "nvvm-diag":
-                pass
+            if name in ("warnings", "remarks"):
+                if val_str is not None:
+                    raise ValueError(
+                        f"{name} expects selector braces, e.g. {name}{{nvvm}}"
+                    )
+                valid_selectors = {
+                    "nvvm",
+                }
+                selectors = (
+                    set(valid_selectors)
+                    if sub_str is None
+                    else {item.strip() for item in sub_str.split(",") if item.strip()}
+                )
+                unknown = selectors - valid_selectors
+                if unknown:
+                    valid_list = ", ".join(sorted(valid_selectors))
+                    unknown_list = ", ".join(sorted(unknown))
+                    raise ValueError(
+                        f"{name} supports selectors {{{valid_list}}}; "
+                        f"unknown selector(s): {unknown_list}"
+                    )
+                # --warnings{} / --remarks{} enable the C++ collection passes via
+                # the internal `diagnostic=` selector. Errors are always-on
+                # regardless; these flags only control which severity the DSL
+                # displays (warnings vs remarks).
+                raw_opts.append(f"diagnostic={','.join(sorted(selectors))}")
             elif name in _PERF_ENABLE_OPTIONS and sub_str is None:
                 # Emit the MLIR flag for this pass enable token directly.
                 raw_opts.append(f"{_PERF_ENABLE_OPTIONS[name]}=true")
@@ -688,8 +831,9 @@ class CompileOptions:
                         )
                     else:
                         if not val:
-                            raise DSLRuntimeError(
-                                f"Option '{key}' requires a value (e.g. {key}=<value>)"
+                            raise DSLUserCodeError(
+                                _diagnostics.DiagId.CONFIG_OPTION_REQUIRES_VALUE,
+                                key=key,
                             )
                         opt.value = val
                 else:
@@ -708,8 +852,12 @@ class CompileOptions:
             self.options[KeepPTX].value = True
         if envar.keep_cubin:
             self.options[KeepCUBIN].value = True
+        if envar.keep_sass:
+            self.options[KeepSASS].value = True
         if envar.compiler_opt:
             self._apply_opt_string(envar.compiler_opt)
+        if envar.debug and "diagnostic=" not in self.options[ExtraCompilerOpts].value:
+            self._apply_opt_string("warnings{nvvm}")
         if envar.enable_assertions:
             self.options[EnableAssertions].value = True
         if envar.lineinfo:
@@ -749,6 +897,31 @@ class CompileOptions:
                 dump_dir,
                 f"{function_name}.{arch}.cubin",
             )
+        keep_sass = self.options[KeepSASS]
+        assert isinstance(keep_sass, KeepSASS)
+        if keep_sass.value:
+            assert dump_dir is not None
+            keep_sass.dump_path = os.path.join(
+                dump_dir,
+                f"{function_name}.sass",
+            )
+            _need_cubin_on_disk = True
+            if _need_cubin_on_disk and not keep_cubin.value:
+                keep_cubin.value = True
+                keep_cubin.dump_path = os.path.join(dump_dir, f"{function_name}")
+                keep_cubin.full_cubin_path = os.path.join(
+                    dump_dir,
+                    f"{function_name}.{arch}.cubin",
+                )
+        if envar.remarks and not self.options[RemarkFilter].value:
+            self.options[RemarkFilter].value = envar.remarks
+        if envar.remarks and not self.options[RemarkOutput].value:
+            assert dump_dir is not None
+            self.options[RemarkOutput].value = os.path.join(
+                dump_dir,
+                f"{function_name}_remarks.yaml",
+            )
+
     @property
     def generate_line_info(self) -> bool:
         return self.options[GenerateLineInfo].value
@@ -792,15 +965,42 @@ class CompileOptions:
         return keep_cubin.full_cubin_path if keep_cubin.value else None
 
     @property
+    def dump_sass_path(self) -> str | None:
+        keep_sass = self.options[KeepSASS]
+        assert isinstance(keep_sass, KeepSASS)
+        return keep_sass.dump_path if keep_sass.value else None
+
+    @property
+    def remark_filter(self) -> str:
+        print_remark_all = ".*"
+        return self.options[RemarkFilter].value or print_remark_all
+
+    @property
+    def warnings_filter(self) -> str:
+        """Comma-separated checker domains whose warnings the DSL shows
+        (set by --warnings{<cat>}). Empty means no warnings are displayed."""
+        return self.options[WarningsFilter].value or ""
+
+    @property
+    def remark_output(self) -> str:
+        return self.options[RemarkOutput].value or ""
+
+    @property
+    def remarks_enabled(self) -> bool:
+        return self.remark_output != ""
+
+    @property
+    def collect_compiler_diagnostics(self) -> bool:
+        # Collection (and the nvvm checker) is enabled by --warnings{} /
+        # --remarks{}. When set, the checker runs and renders its diagnostics;
+        # errors among them are always fatal + shown (no separate error flag).
+        return bool(self.options[CollectCompilerDiagnostics].value)
+
+    @property
     def enable_tvm_ffi(self) -> bool:
         ret = self.options[EnableTVMFFI].value
-        if ret:
-            try:
-                import tvm_ffi
-            except ModuleNotFoundError:
-                raise DSLRuntimeError(
-                    "TVM FFI is not installed, please install it via `pip install apache-tvm-ffi`"
-                )
+        if ret and importlib.util.find_spec("tvm_ffi") is None:
+            raise DSLUserCodeError(_diagnostics.DiagId.CONFIG_MISSING_TVM_FFI)
         return ret
 
     def to_str(self) -> str:
@@ -808,6 +1008,7 @@ class CompileOptions:
         Generate a string representation of all compilation options
         which will be used in pipeline options.
         """
+        self._finalize_derived_options()
         flattend_options = ""
         for option in self.options.values():
             flattend_options += option.serialize() + " "
@@ -815,12 +1016,28 @@ class CompileOptions:
         log().info("`cute.compile` CompileOptions: options=" + flattend_options)
         return flattend_options
 
+    def _finalize_derived_options(self) -> None:
+        if not self._ptxas_diagnostics_enabled:
+            return
+        self.options[CollectCompilerDiagnostics].value = True
+        extra_options = self.options[ExtraCompilerOpts]
+        assert isinstance(extra_options, ExtraCompilerOpts)
+        extra_options.value = _ensure_compiler_diagnostic_selector(
+            extra_options.value, "ptx"
+        )
+        ptxas_options = self.options[PtxasOptions]
+        assert isinstance(ptxas_options, PtxasOptions)
+        ptxas_options.value = _ensure_ptxas_verbose(ptxas_options.value)
+
 
 def _extract_compact_options(
     options: str,
 ) -> "tuple[CompileOptions | None, str]":
     """Split *options* into compact tokens and legacy tokens.
 
+    Compact tokens such as ``diagnostic`` and ``iket`` are applied immediately
+    via ``CompileOptions._apply_opt_string``; the remaining legacy tokens are
+    returned as a plain string for argparse.
     Returns:
         (base_compile_options or None, remaining legacy options string).
         When the input is *pure* compact, the fully-configured CompileOptions
@@ -830,6 +1047,8 @@ def _extract_compact_options(
 
     _COMPACT_NAMES: frozenset[str] = frozenset(
         {
+            "warnings",
+            "remarks",
             "iket",
         }
         | set(_PERF_ENABLE_OPTIONS)
@@ -839,6 +1058,7 @@ def _extract_compact_options(
         bare = (
             (token[2:] if token.startswith("--") else token).split(",")[0].split("{")[0]
         )
+        bare = bare.split("=")[0]
         return bare in _COMPACT_NAMES
 
     stripped = options.strip() if options else ""
@@ -856,6 +1076,7 @@ def _extract_compact_options(
 
     _LEGACY_VALUE_KEYS: frozenset[str] = frozenset(
         {
+            "--nvdisasm-options",
             "--ptxas-options",
             "--link-libraries",
             "--gpu-arch",
@@ -888,7 +1109,7 @@ def _extract_compact_options(
 
     base = CompileOptions()
     base._apply_opt_string(compact_str)
-    return base, " ".join(legacy_tokens)
+    return base, " ".join(shlex.quote(token) for token in legacy_tokens)
 
 
 # This is a temp function to preserve backward compatibility.
@@ -911,6 +1132,8 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
             "generate_line_info": GenerateLineInfo,
             "keep_cubin": KeepCUBIN,
             "keep_ptx": KeepPTX,
+            "keep_sass": KeepSASS,
+            "nvdisasm_options": NvdisasmOptions,
             "gpu_arch": GPUArch,
             "enable_tvm_ffi": EnableTVMFFI,
             "dump_dir": DumpDir,
@@ -927,6 +1150,8 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
     parser.add_argument("--generate-line-info", action="store_true", default=False)
     parser.add_argument("--keep-cubin", action="store_true", default=False)
     parser.add_argument("--keep-ptx", action="store_true", default=False)
+    parser.add_argument("--keep-sass", action="store_true", default=False)
+    parser.add_argument("--nvdisasm-options", type=str, default="-g -c")
     parser.add_argument("--ptxas-options", type=str, default="")
     parser.add_argument("--gpu-arch", type=str, default="")
     parser.add_argument("--enable-tvm-ffi", action="store_true", default=False)
@@ -948,8 +1173,8 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
             compile_options.options[option_cls].value = value
     except SystemExit as e:
         # catch argparse error and raise as DSLRuntimeError
-        raise DSLRuntimeError(
-            f"Invalid compile options: '{options}'. Please check the option values and format."
+        raise DSLUserCodeError(
+            _diagnostics.DiagId.CONFIG_MALFORMED_COMPILE_OPTIONS, options=options
         ) from e
 
     return compile_options
@@ -984,6 +1209,10 @@ class CompileCallable:
     ``CUTE_DSL_COMPILER_OPT``. Keep this docstring focused on the compile
     contract; use ``write-kernel/references/compiler-options.md`` as the
     authoritative catalog of option tokens and examples.
+
+    ``cute.compile(..., trace_finalize_hooks=hook_or_hooks)`` temporarily
+    registers callbacks for that compile only. Hooks run after tracing and
+    before module hashing, and are removed even if compilation fails.
     """
 
     def __init__(self, options: Any = None) -> None:
@@ -1076,14 +1305,15 @@ class CompileCallable:
             decorated with ``@cute.jit``.
         """
         if func is None:
-            raise DSLRuntimeError("Function is not set or invalid.")
+            raise DSLUserCodeError(_diagnostics.DiagId.CALL_FUNCTION_NOT_PROVIDED)
 
         if not callable(func):
-            raise DSLRuntimeError("Object is not callable.")
+            raise DSLUserCodeError(_diagnostics.DiagId.CALL_NOT_CALLABLE)
 
         # Pop the migration-aid kwarg before it leaks into the executor
         # call: the rest of the pipeline does not know about it.
         is_experimental_requested = kwargs.pop("is_experimental", False)
+        finalize_hook = kwargs.pop("trace_finalize_hooks", None)
 
         kwargs["compile_only"] = True
         kwargs["no_cache"] = True
@@ -1105,10 +1335,7 @@ class CompileCallable:
             # Get the actual function from the class definition
             func = func.__call__.__func__
         else:
-            raise DSLRuntimeError(
-                "Invalid function type, only function, method and module are supported, but got",
-                func,
-            )
+            raise DSLUserCodeError(_diagnostics.DiagId.CALL_UNSUPPORTED_CALLABLE_TYPE)
 
         func_name_prefix = getattr(func, "_name_prefix", None)
         if func_name_prefix:
@@ -1123,9 +1350,7 @@ class CompileCallable:
         BaseDSL._lazy_initialize_dsl(func)
 
         if not hasattr(func, "_dsl_object"):
-            raise DSLRuntimeError(
-                f"Function {func} is not decorated with jit decorator."
-            )
+            raise DSLUserCodeError(_diagnostics.DiagId.CALL_MISSING_JIT_DECORATOR)
 
         # Validate the migration-aid ``is_experimental`` kwarg against
         # the routing already baked into the function by its jit/kernel
@@ -1140,14 +1365,7 @@ class CompileCallable:
         if is_experimental_requested and not getattr(
             func._dsl_object, "_is_experimental_dsl", False
         ):
-            raise DSLRuntimeError(
-                "cute.compile(is_experimental=True) was called on a function "
-                f"routed through {type(func._dsl_object).__name__}, which is "
-                "not an experimental DSL. Decorate the function with "
-                "@cute.jit(is_experimental=True) (and any nested @cute.kernel "
-                "with is_experimental=True) before compiling, or drop the "
-                "is_experimental flag from the cute.compile call."
-            )
+            raise DSLUserCodeError(_diagnostics.DiagId.CALL_EXPERIMENTAL_MISMATCH)
 
         # process compile options, extract the options and remove them from the kwargs
         options = kwargs.pop("options", None)
@@ -1160,17 +1378,23 @@ class CompileCallable:
             compile_options = self._compile_options
         func._dsl_object.compile_options = compile_options
 
-        # Preprocess the function if not already preprocessed
-        func._dsl_object._preprocess_and_replace_code(func)
+        if finalize_hook is None:
+            hook_context = contextlib.nullcontext()
+        else:
+            hook_context = func._dsl_object.trace_finalize_hooks(finalize_hook)
 
-        # Route based on DeviceTarget option: compiles as __device__ function.
-        if compile_options.options[DeviceTarget].value:
-            # Device functions are always relocatable objects.
-            compile_options.options[RDC].value = True
-            # Force artifact dumping so .o and .ptx are available after compilation.
-            compile_options.options[KeepPTX].value = True
-            compile_options.options[KeepCUBIN].value = True
-            return func._dsl_object._device_func(func, *args, **kwargs)
+        with hook_context:
+            # Preprocess the function if not already preprocessed
+            func._dsl_object._preprocess_and_replace_code(func)
 
-        # Default: host wrapper + kernel
-        return func._dsl_object._func(func, *args, **kwargs)
+            # Route based on DeviceTarget option: compiles as __device__ function.
+            if compile_options.options[DeviceTarget].value:
+                # Device functions are always relocatable objects.
+                compile_options.options[RDC].value = True
+                # Force artifact dumping so .o and .ptx are available after compilation.
+                compile_options.options[KeepPTX].value = True
+                compile_options.options[KeepCUBIN].value = True
+                return func._dsl_object._device_func(func, *args, **kwargs)
+
+            # Default: host wrapper + kernel
+            return func._dsl_object._func(func, *args, **kwargs)

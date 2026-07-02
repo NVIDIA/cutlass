@@ -17,6 +17,7 @@ CuTe DSL
   JIT Types <cute_dsl_general/types.rst>
   Integration with Frameworks <cute_dsl_general/framework_integration.rst>
   Debugging with the DSL <cute_dsl_general/debugging.rst>
+  IKET Profiling <cute_dsl_general/iket_profiling.rst>
   Autotuning with the DSL <cute_dsl_general/autotuning_gemm.rst>
   Educational Notebooks <cute_dsl_general/notebooks.rst>
   Deprecation Policy <deprecation.rst>

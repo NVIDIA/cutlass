@@ -15,6 +15,7 @@ from typing import Any
 from . import cuda as cuda_helpers
 from .tensor_descriptor import *
 from ..common import *
+from ..diagnostics import DiagId
 
 
 def allocate(tensor: TensorDescriptor, stream: Any = None) -> None:
@@ -22,11 +23,9 @@ def allocate(tensor: TensorDescriptor, stream: Any = None) -> None:
     Allocates GPU memory
     """
     if tensor._check_is_managed_by_framework():
-        raise DSLRuntimeError(
-            "GPU tensors are managed by the framework and cannot be modified."
-        )
+        raise DSLUserCodeError(DiagId.TENSOR_FRAMEWORK_MANAGED, action="allocated")
     if not tensor.device_pointer is None:
-        raise DSLRuntimeError("Tensor is already allocated on the device.")
+        raise DSLUserCodeError(DiagId.TENSOR_ALREADY_ALLOCATED)
 
     tensor.device_pointer = cuda_helpers.allocate(tensor.size_in_bytes, stream)
 
@@ -38,11 +37,9 @@ def deallocate(tensor: TensorDescriptor, stream: Any = None) -> None:
     Deallocates GPU memory
     """
     if tensor._check_is_managed_by_framework():
-        raise DSLRuntimeError(
-            "GPU tensors are managed by the framework and cannot be modified."
-        )
+        raise DSLUserCodeError(DiagId.TENSOR_FRAMEWORK_MANAGED, action="deallocated")
     if tensor.device_pointer is None:
-        raise DSLRuntimeError("Tensor is not allocated on the device.")
+        raise DSLUserCodeError(DiagId.TENSOR_NOT_ALLOCATED)
 
     log().info(
         "Deallocating done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer
@@ -78,11 +75,9 @@ def copy_from_gpu(
     """
     log().info("copyout tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
     if tensor._check_is_managed_by_framework():
-        raise DSLRuntimeError(
-            "GPU tensors are managed by the framework and cannot be modified."
-        )
+        raise DSLUserCodeError(DiagId.TENSOR_FRAMEWORK_MANAGED, action="copied")
     if tensor.device_pointer is None:
-        raise DSLRuntimeError("Tensor is not allocated on the device.")
+        raise DSLUserCodeError(DiagId.TENSOR_NOT_ALLOCATED)
 
     cuda_helpers.memcpy_d2h(
         tensor.data_ptr, tensor.device_pointer, tensor.size_in_bytes, stream
@@ -106,7 +101,7 @@ def to_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
         copy_to_gpu(new_tensor, stream=stream)
         return new_tensor
 
-    raise DSLRuntimeError("Unsupported type")
+    raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_TENSOR, func="to_gpu()")
 
 
 def from_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
@@ -123,4 +118,4 @@ def from_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
         copy_from_gpu(new_tensor, stream=stream)
         return new_tensor
 
-    raise DSLRuntimeError("Unsupported type")
+    raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_TENSOR, func="from_gpu()")

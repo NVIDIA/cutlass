@@ -9,7 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Callable, Optional, Tuple, Union
+from cutlass.address_space import AddressSpace
+from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
 
 import cutlass
 from cutlass import cute
@@ -21,6 +22,9 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from ... import cutlass_dsl as _dsl
 from ..arch.constants import THREADS_PER_WARPGROUP
 from .pipeline import TMAStorePipeline, TMAToUMMAPipeline
+
+if TYPE_CHECKING:
+    from cutlass.utils.layout import LayoutEnum
 
 
 def get_cta_v_map_ab(
@@ -270,13 +274,13 @@ def epilogue_tma_store(
     )
     rmem_acc_buffer = allocate(
         acc_dtype,
-        cute.AddressSpace.rmem,
+        AddressSpace.rmem,
         acc_d_rmem_layout,
         alignment=32,
     )
     rmem_d_buffer = allocate(
         d_dtype,
-        cute.AddressSpace.rmem,
+        AddressSpace.rmem,
         acc_d_rmem_layout,
         alignment=32,
     )
@@ -289,7 +293,7 @@ def epilogue_tma_store(
     )
     smem_d_buffer = allocate(
         d_dtype,
-        cute.AddressSpace.smem,
+        AddressSpace.smem,
         d_smem_layout_staged,
         alignment=1024,
     )

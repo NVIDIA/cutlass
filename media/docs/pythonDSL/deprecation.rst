@@ -50,6 +50,13 @@ Soft Deprecations
 * ``alignment`` argument in ``CooperativeGroup`` constructor
   → Scheduled for deprecation. It was unused; no replacement is suggested.
 
+* ``cute.AddressSpace``
+  → Supported today as a quiet compatibility alias. It is scheduled for
+  deprecation in a later release, where accesses will start emitting a
+  deprecation warning. Use ``cutlass.AddressSpace`` for new code. The
+  lowercase address-space members such as ``gmem``, ``smem``, ``rmem``,
+  ``tmem``, and ``dsmem`` keep the same spelling.
+
 Deprecated Features
 -------------------
 

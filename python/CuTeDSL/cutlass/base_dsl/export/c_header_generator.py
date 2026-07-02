@@ -28,7 +28,8 @@ from ..typing import (
     TFloat32,
 )
 from ..dsl import is_dynamic_expression
-from ..common import DSLRuntimeError
+from ..common import DSLRuntimeError, DSLUserCodeError
+from ..diagnostics import DiagId
 from ..jit_executor import ExecutionArgs
 from ..._mlir import ir
 
@@ -138,9 +139,7 @@ class CHeaderGenerator:
             return c.strip()
         if hasattr(ann, "_field_names"):
             return ann.__name__
-        raise DSLRuntimeError(
-            f"Unsupported type annotation for C header generation: {ann}"
-        )
+        raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_C_EXPORT, type_name=ann)
 
     @classmethod
     def generate_struct_typedef(cls, struct_cls: Any, device: bool = False) -> str:
@@ -273,9 +272,42 @@ class CHeaderGenerator:
         """
         if arg_type in self.numeric_to_c_type:
             return self.numeric_to_c_type[arg_type] + arg_name
-        raise DSLRuntimeError(
-            f"Unsupported argument type for c function argument generation: {arg_type}"
+        raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_C_ARG, arg_type=arg_type)
+
+    def _generate_tensor_element_typedef(
+        self,
+        symbol_prefix: str,
+        arg_name: str,
+        n_dyn_shape: int,
+        n_dyn_stride: int,
+        stride_type: str,
+        shape_type: str | None = None,
+    ) -> str:
+        """
+        Format a per-element tensor descriptor typedef (`{prefix}_Tensor_{name}_t`).
+        Reused by both scalar-Tensor and list/tuple-of-Tensor dispatch branches in
+        subclasses so the on-wire descriptor layout stays identical. When
+        ``shape_type`` is ``None`` it defaults to ``stride_type`` so callers that
+        only pass ``stride_type`` get a struct whose shape and stride fields share
+        the same dynamic-int width (matching the runtime memref descriptor built
+        by ``cute::abi::MemRef::build``).
+        """
+        shape_type = shape_type if shape_type is not None else stride_type
+        dyn_shape_decl = (
+            f"\n    {shape_type} dynamic_shapes[{n_dyn_shape}];"
+            if n_dyn_shape > 0
+            else ""
         )
+        dyn_stride_decl = (
+            f"\n    {stride_type} dynamic_strides[{n_dyn_stride}];"
+            if n_dyn_stride > 0
+            else ""
+        )
+        return f"""
+typedef struct {{
+    void *data;{dyn_shape_decl}{dyn_stride_decl}
+}} {symbol_prefix}_Tensor_{arg_name}_t;
+"""
 
     def _generate_check_cuda(self, dsl_name: str) -> str:
         check_cuda = (
@@ -385,8 +417,10 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
                 arguments.append("CUstream " + arg_name)
                 packed_args.append("&" + arg_name)
             else:
-                raise DSLRuntimeError(
-                    f"Unsupported argument for c function argument generation: {arg} with type {arg_type}"
+                raise DSLUserCodeError(
+                    DiagId.ARG_UNSUPPORTED_C_EXPORT,
+                    arg_name=arg_name,
+                    arg_type=arg_type,
                 )
 
         return arguments, packed_args, declarations

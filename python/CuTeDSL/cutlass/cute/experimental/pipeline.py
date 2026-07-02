@@ -132,7 +132,7 @@ class GenericPipelineBase:
         """Acquire a producer stage and return its stage token/index.
 
         When `token` is provided, reuse the preceding `producer_try_acquire()`
-        result and keep the internal state at the acquired stage so a following
+        result and keep the stored state at the acquired stage so a following
         `producer_commit_and_advance()` retires the same stage.
         """
         if token is None:
@@ -186,9 +186,9 @@ class GenericPipelineBase:
         return self
 
     def producer_commit_and_advance(self) -> "GenericPipelineBase":
-        """Combined producer commit + advance with automatic elect_one using internal state."""
+        """Combined producer commit + advance with automatic elect_one using stored state."""
         self.producer_commit()
-        # Update internal state in-place for better performance
+        # Update state in-place for better performance
         self.producer_state = pipeline_advance_iterator(
             self.raw_pipeline, self.producer_state
         )
@@ -200,7 +200,7 @@ class GenericPipelineBase:
         """Wait for a consumer stage and return its stage token/index.
 
         When `token` is provided, reuse the preceding `consumer_try_wait()`
-        result and keep the internal state at the consumed stage so a following
+        result and keep the stored state at the consumed stage so a following
         `consumer_release_and_advance()` retires the same stage.
         """
         if token is None:
@@ -230,9 +230,9 @@ class GenericPipelineBase:
         return self
 
     def consumer_release_and_advance(self) -> "GenericPipelineBase":
-        """Combined consumer release + advance with automatic elect_one using internal state."""
+        """Combined consumer release + advance with automatic elect_one using stored state."""
         self.consumer_release()
-        # Update internal state in-place for better performance
+        # Update state in-place for better performance
         self.consumer_state = pipeline_advance_iterator(
             self.raw_pipeline, self.consumer_state
         )
@@ -466,7 +466,7 @@ class TMAToUMMAPipeline(GenericPipelineBase):
         mma_operation_type: OperationTypeEnum,
         cluster_layout_vmnk: cute.Layout,
     ) -> "TMAToUMMAPipeline":
-        """Internal: compute TMA multicast masks from cluster layout."""
+        """Compute TMA multicast masks from cluster layout."""
         tma_mcast_proj_A = 2  # multicast across CTAs in same row
         tma_mcast_proj_B = 1  # multicast across CTAs in same column
 
@@ -1051,7 +1051,7 @@ class TMAStorePipeline:
         return tail_impl()
 
     def _barrier(self) -> None:
-        """Internal barrier synchronization."""
+        """Synchronize the pipeline barrier."""
         cute.arch.barrier(
             barrier_id=self.barrier_id,
             number_of_threads=self.arv_count,

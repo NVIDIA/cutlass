@@ -20,7 +20,53 @@ import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass.base_dsl.arch import Arch
 from cutlass.cute.arch.constants import WARP_SIZE
-from cutlass.cutlass_dsl import CuTeDSL, Boolean, Int32, if_generate, dsl_user_op
+from cutlass.cutlass_dsl import CuTeDSL, Boolean, Int32, Int64, if_generate, dsl_user_op
+from cutlass.utils import SmemAllocator, SmemPartition
+
+
+##############################################################################
+# Pipeline util
+##############################################################################
+
+
+@dsl_user_op
+def alloc_reserved_mbarrier(
+    num_stages: int,
+    *,
+    multiplier: int = 2,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Pointer:
+    """Allocate shared memory for pipeline mbarriers at reserved low address in smem.
+
+    Allocates `num_stages * multiplier` elements of `Int64` (8-byte aligned).
+    Reserved placement keeps this storage at the low address of the smem region
+    so it remains valid if shared memory is later resized , which can release
+    memory outside the reserved block. Pipeline classes (e.g. `PipelineAsync`,
+    `PipelineOrder`) use this when `barrier_storage=None` to create their
+    mbarrier storage.
+
+    :param num_stages: Number of pipeline stages (barrier slots needed per "side");
+        total elements allocated is `num_stages * multiplier`.
+    :type num_stages: int
+    :param multiplier: Number of barrier arrays to reserve space for; default 2
+        for pipelines that use separate full and empty barriers.
+    :type multiplier: int
+    :param loc: Optional source location for emitted IR.
+    :param ip: Optional insertion point for emitted IR.
+    :return: Pointer to the allocated shared memory, suitable for use as
+        `barrier_storage` in pipeline `create()` methods.
+    :rtype: cute.Pointer
+    """
+    barrier_storage = SmemAllocator().allocate_array(
+        Int64,
+        num_stages * multiplier,
+        byte_alignment=8,
+        partition=SmemPartition.RESERVED,
+        loc=loc,
+        ip=ip,
+    )
+    return barrier_storage
 
 
 ##############################################################################
@@ -54,8 +100,20 @@ class CooperativeGroup:
     """
 
     def __init__(
-        self, agent: Agent, size: Union[int, Int32] = 1, alignment: Optional[int] = None
+        self,
+        agent: Agent,
+        size: Union[int, Int32] = 1,
+        alignment: Optional[int] = None,
     ):
+        if alignment is not None:
+            warnings.warn(
+                "The 'alignment' parameter of CooperativeGroup's constructor is "
+                "deprecated and will be removed in a subsequent release, please "
+                "remove it from your code.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         if agent in [
             Agent.Thread,
             Agent.Warp,
@@ -458,10 +516,9 @@ class MbarrierArray(SyncObject):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Optional[tuple]:
+    ) -> None:
         """
         Wait on mbarrier.
-        uses mbarrier_wait and returns None.
 
         :param index: Index of the mbarrier in the array
         :param phase: Phase/parity to wait for (0 or 1)
@@ -470,7 +527,6 @@ class MbarrierArray(SyncObject):
             cute.arch.mbarrier_wait(
                 self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
             )
-            return None
 
     @dsl_user_op
     def arrive_and_wait(

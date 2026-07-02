@@ -10,13 +10,20 @@
 # is strictly prohibited.
 
 from collections.abc import Callable, Iterable, Iterator
-from typing import Any, NamedTuple, get_origin
+from typing import Any, NamedTuple, get_origin, get_type_hints
 
 import dataclasses
+import functools
 import itertools as it
 from types import SimpleNamespace
 
-from ..typing import as_numeric, Numeric, Constexpr, implements_dynamic_expression
+from ..typing import (
+    as_numeric,
+    Numeric,
+    Constexpr,
+    implements_dynamic_expression,
+    implements_jit_argument,
+)
 from ..._mlir_helpers.arith import ArithValue
 from ..common import DSLBaseError
 from ..._mlir import ir
@@ -165,15 +172,36 @@ def is_namedtuple_instance(x: Any) -> bool:
     )
 
 
-def is_constexpr_field(field: dataclasses.Field) -> bool:
+@functools.lru_cache(maxsize=None)
+def _resolved_type_hints(cls: type) -> dict:
+    """Resolve a dataclass's annotations, including PEP 563 string forms.
+
+    Cached per class -- ``get_type_hints`` walks the MRO and the defining
+    module's globals, too costly to repeat on every flatten / adapt call.
+    Returns ``{}`` if resolution fails (e.g. an unresolvable forward
+    reference), so callers fall back to the raw annotation.
     """
-    Check if a field is a constexpr field.
+    try:
+        return get_type_hints(cls)
+    except Exception:
+        return {}
+
+
+def is_constexpr_field(field: dataclasses.Field, owner: Any = None) -> bool:
+    """Check if a dataclass field is annotated ``Constexpr`` / ``Constexpr[T]``.
+
+    Under ``from __future__ import annotations`` (PEP 563) ``field.type`` is a
+    string (e.g. ``"Constexpr[int]"``); pass ``owner`` -- the dataclass type or
+    an instance of it -- so the annotation is resolved via ``get_type_hints``
+    before the check. Without ``owner`` only already-resolved annotations are
+    recognized (a stringized one is otherwise misread as non-constexpr, which
+    silently keeps a constexpr field as a runtime argument).
     """
-    if field.type is Constexpr:
-        return True
-    elif get_origin(field.type) is Constexpr:
-        return True
-    return False
+    annotation = field.type
+    if isinstance(annotation, str) and owner is not None:
+        cls = owner if isinstance(owner, type) else type(owner)
+        annotation = _resolved_type_hints(cls).get(field.name, annotation)
+    return annotation is Constexpr or get_origin(annotation) is Constexpr
 
 
 # =============================================================================
@@ -261,7 +289,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[str]]:
     members = []
     constexpr_fields = []
     for field in dataclasses.fields(x):
-        if is_constexpr_field(field):
+        if is_constexpr_field(field, x):
             constexpr_fields.append(field.name)
             fields.remove(field.name)
             v = getattr(x, field.name)
@@ -759,11 +787,49 @@ def _tree_flatten(
     elif isinstance(x, ArithValue):
         return [x], [ir.DictAttr.get({})], create_leaf_for_value(x, is_numeric=True)
 
+    elif (
+        implements_dynamic_expression(x)
+        and implements_jit_argument(x)
+        and x.__extract_mlir_values__() is None
+    ):
+        if return_ir_values:
+            raise DSLTreeFlattenError(
+                "Flatten Error: children is None",
+                get_fully_qualified_class_name(x),
+            )
+        return (
+            [x],
+            [ir.DictAttr.get({})],
+            create_leaf_for_value(
+                x,
+                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+                ir_type_str="unknown",
+            ),
+        )
+
     elif implements_dynamic_expression(x) and isinstance(x, ir.Value):
-        # Only for ir.Value subclasses (e.g. Pointer). Check before plain ir.Value
+        # Only for ir.Value subclasses. Check before plain ir.Value
         # so they are unflattened via __new_from_mlir_values__. Other dynamic
         # expressions (e.g. TmemAllocator with 2 values) use the registered/node path.
-        v = _flatten_mlir_values(x.__extract_mlir_values__())
+        extracted = x.__extract_mlir_values__()
+        if extracted is None:
+            if return_ir_values:
+                raise DSLTreeFlattenError(
+                    "Flatten Error: children is None",
+                    get_fully_qualified_class_name(x),
+                )
+            return (
+                [x],
+                [ir.DictAttr.get({})],
+                create_leaf_for_value(
+                    x,
+                    node_metadata=SimpleNamespace(
+                        is_dynamic_expression=1, original_obj=x
+                    ),
+                    ir_type_str="unknown",
+                ),
+            )
+        v = _flatten_mlir_values(extracted)
         a = (
             [ir.DictAttr.get({})]
             if not hasattr(x, "__extract_mlir_attributes__")

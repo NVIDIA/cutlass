@@ -10,13 +10,13 @@
 # is strictly prohibited.
 
 
+from cutlass.address_space import AddressSpace
 from dataclasses import is_dataclass, fields as dataclass_fields
 from cutlass.base_dsl.tvm_ffi_builder import spec
 from cutlass.base_dsl.jit_executor import ExecutionArgs
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.utils.tree_utils import is_constexpr_field
 from cutlass.cutlass_dsl import is_cute_algebra_type
-from cutlass._mlir.dialects import cute as _cute_ir
 from .runtime import _FakeStream
 from .typing import Tensor, Pointer, SymInt
 from .typing import (
@@ -42,6 +42,7 @@ from .typing import (
     Float8E4M3FN,
     Float8E8M0FNU,
     Float4E2M1FN,
+    Float4E2M1FNx2,
 )
 import cuda.bindings.driver as cuda
 
@@ -80,6 +81,9 @@ NumericToTVMFFIDtype = {
     Float4E2M1FN: "float4_e2m1fn",
     Float6E2M3FN: "float6_e2m3fn",
     Float6E3M2FN: "float6_e3m2fn",
+    # Packed FP4 maps to the tvm-ffi packed dtype (matches torch's
+    # ``float4_e2m1fn_x2``; tvm-ffi spells it without the underscore).
+    Float4E2M1FNx2: "float4_e2m1fnx2",
 }
 
 _UNSUPPORTED_TVM_FFI_NUMERIC_TYPES = set[Any]()
@@ -124,17 +128,17 @@ AcceptableNumericTypesForScalar = [
 
 
 def _get_llvm_address_space_from_memspace(
-    memspace: _cute_ir.AddressSpace,
+    memspace: AddressSpace,
 ) -> Optional[int]:
-    if memspace == _cute_ir.AddressSpace.gmem:
+    if memspace == AddressSpace.gmem:
         return 1
     return None
 
 
 def _is_gpu_memspace(
-    memspace: _cute_ir.AddressSpace,
+    memspace: AddressSpace,
 ) -> bool:
-    return memspace != _cute_ir.AddressSpace.generic
+    return memspace != AddressSpace.generic
 
 
 def _native_struct_type(value: Any) -> Optional[type]:
@@ -337,7 +341,7 @@ def _convert_single_arg(
         assert isinstance(arg_shape, tuple)
         assert isinstance(arg_stride, tuple)
         shapes: List[Any] = []
-        for i, dyn_mask in enumerate(arg.dynamic_shapes_mask):  # type: ignore[attr-defined]
+        for i, dyn_mask in enumerate(arg.dynamic_shapes_mask):
             if not dyn_mask:
                 shapes.append(arg_shape[i])
             elif isinstance(arg_shape[i], SymInt):
@@ -350,7 +354,7 @@ def _convert_single_arg(
                 )
         strides: List[Any] = []
 
-        for i, dyn_mask in enumerate(arg.dynamic_strides_mask):  # type: ignore[attr-defined]
+        for i, dyn_mask in enumerate(arg.dynamic_strides_mask):
             if not dyn_mask:
                 strides.append(arg_stride[i])
             elif isinstance(arg_stride[i], SymInt):
@@ -391,7 +395,7 @@ def _convert_single_arg(
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
                 shapes,
-                _numeric_to_tvm_ffi_dtype(arg.element_type),  # type: ignore[arg-type]
+                _numeric_to_tvm_ffi_dtype(arg.element_type),
                 strides=strides,
                 data_alignment=arg._assumed_align,  # type: ignore[attr-defined]
                 device_type=device_type,
@@ -563,9 +567,9 @@ def _tvm_ffi_args_spec_converter(
             wrapper_extra_exclude_arg_names.append(arg_name)
         # Covers both plain ``op: AddOp`` and ``op: AddOp | MulOp`` since we
         # check the runtime type when the annotation isn't itself a dataclass.
-        if (
-            isinstance(arg_type, type) and is_dataclass(arg_type)
-        ) or is_dataclass(type(arg)):
+        if (isinstance(arg_type, type) and is_dataclass(arg_type)) or is_dataclass(
+            type(arg)
+        ):
             map_dataclass_to_tuple.append(arg_name)
     kwargs_wrapper_spec = exec_args.get_kwargs_wrapper_spec(
         wrapper_extra_exclude_arg_names

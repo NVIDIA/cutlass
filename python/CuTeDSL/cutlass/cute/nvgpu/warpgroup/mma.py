@@ -214,7 +214,7 @@ class MmaOp(WarpGroupMmaOp):
 
     def __str__(self) -> str:
         return (
-            self.__class__.descriptive_name  # type: ignore
+            self.__class__.descriptive_name
             + f"\n  A data type           = {self.a_dtype}"
             + f"\n  B data type           = {self.b_dtype}"
             + f"\n  Accumulator data type = {self.acc_dtype}"

@@ -30,12 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief Tests for SM120 device-wide ptr-array grouped GEMM (non-blockscaled FP8).
-
-    Exercises CollectiveMma<MainloopSm120ArrayTmaWarpSpecialized, ...> and the
-    CollectiveBuilder specializations for KernelPtrArrayTmaWarpSpecializedPingpongSm120<N>
-    and KernelPtrArrayTmaWarpSpecializedCooperativeSm120<N> added for SM120 consumer
-    Blackwell (GB10 / DGX Spark, RTX 5090-class) grouped GEMM (MoE expert dispatch).
+    \brief Tests for SM120 device-wide ptr-array grouped GEMM.
 
     Layout constraint: only TN (RowMajor A, ColumnMajor B) is supported by the
     SM120 array TMA collective builder.

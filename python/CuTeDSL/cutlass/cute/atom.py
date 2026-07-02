@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from abc import ABC, ABCMeta, abstractmethod
-from typing import Type, Union, Optional, Any, overload, List, Tuple
+from typing import ClassVar, Type, Union, Optional, Any, overload, List, Tuple
 
 from .typing import (
     Shape,
@@ -66,6 +66,9 @@ class MmaOp(Op, metaclass=ABCMeta):
     """
     MMA Operation abstract base class.
     """
+
+    # Concrete MmaOp subclasses set this to a human-readable label used by __str__.
+    descriptive_name: ClassVar[str]
 
     @abstractmethod
     def _make_trait(
@@ -996,7 +999,7 @@ def make_copy_atom(
 
     :param op:                 The Copy Operation to construct an Atom for
     :type op:                  CopyOp
-    :param copy_internal_type: An internal data type used to construct the source/destination layouts in unit of tensor elements
+    :param copy_internal_type: Element type used to construct the source/destination layouts in units of tensor elements
     :type copy_internal_type:  Type[Numeric]
     :return:                   The Copy Atom
     :rtype:                    CopyAtom

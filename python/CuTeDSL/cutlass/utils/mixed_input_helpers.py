@@ -18,12 +18,19 @@ from typing import Any, Optional, Type, Union
 import cutlass
 import cutlass.cute as cute
 from cutlass._mlir import ir
+from cutlass._mlir.dialects import (
+    arith as mlir_arith,
+    llvm as mlir_llvm,
+    vector as mlir_vector,
+)
 from cutlass.cutlass_dsl import (
     Boolean,
     Numeric,
+    dsl_user_op,
     extract_mlir_values,
     new_from_mlir_values,
 )
+from cutlass.cute.typing import Int32 as _Int32, Int4 as _Int4, Int8 as _Int8
 from cutlass.utils.layout import LayoutEnum
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
@@ -309,6 +316,10 @@ def epilog_gmem_copy_and_partition(
         # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
         thr_copy_t2r = tiled_copy_t2r.get_slice(tidx)
         tTR_gC = thr_copy_t2r.partition_D(gC_epi_simt)
+        # Grouped kernels rebase this tensor by runtime group offsets after
+        # partitioning. Let the copy verifier/lowering choose the safe vector
+        # width at the final copy site, where the actual pointer alignment is
+        # known.
         simt_atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), c_dtype)
     return tma_atom_c, bSG_sC, bSG_gC, simt_atom, tTR_gC
 
@@ -1013,6 +1024,16 @@ def cvt_tensor_a(
     return rst
 
 
+def cvt_tensor_a_mxf8(src: cute.Tensor, dtype: type[cutlass.Numeric]) -> cute.TensorSSA:
+    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic`."""
+    rst = src.load()
+    return cute.TensorSSA.from_vector(
+        cute.arch.cvt_i4_mxf8_intrinsic(rst, cute.size(rst.shape), dtype),
+        shape=rst.shape,
+        dtype=dtype,
+    )
+
+
 def store_transformed_a(
     src_a: cute.Tensor, dst_a: cute.Tensor, copy_atom_a: Optional[cute.CopyAtom]
 ) -> None:
@@ -1023,3 +1044,141 @@ def store_transformed_a(
         cute.copy(copy_atom_a, src_a, dst_a)
     else:
         cute.autovec_copy(src_a, dst_a)
+
+
+# ---------------------------------------------------------------------------
+# Biased Int4 -> FP8 conversion (5 instructions per int32 vs ~13 for LUT)
+#
+# Encoding: biased_nibble = int4_nibble XOR 0b1000 = int4 + 8 (unsigned [0,15]).
+# FP8 E4M3FN bytes 0x00-0x0F are perfectly linear: FP8(v) = v * 2^-9.
+# So FP8_biased(int4) = (int4 + 8) * 2^-9 for all int4 in [-8, 7].
+#
+# The result is biased by 8/512 per element, requiring an epilog correction:
+#     result_true[m, n] = 512 * acc_biased[m, n]
+#                       - 8 * sum_blk scale_A[m, blk] * rowsum_B[blk, n]
+# ---------------------------------------------------------------------------
+
+
+@dsl_user_op
+def cvt_i4x8_to_mxf8x8_biased(
+    src_vec8: ir.Value,
+    *,
+    dst_type: ir.Type,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert 8 packed int4 values to 8 FP8 bytes via biased bitcast.
+
+    5 instructions per int32 -- uses explicit ``lop3.b32`` to fuse the
+    ``(src ^ mask_xor) & mask_and`` pattern into a single 3-input LOP3
+    (LUT 0x28). ptxas does not perform this fusion automatically.
+
+      1. lo     = lop3(src, 0x88888888, 0x0F0F0F0F, 0x28)  -- (src^0x88)&0x0F
+      2. hi_raw = src >> 4
+      3. hi     = lop3(hi_raw, 0x08080808, 0x0F0F0F0F, 0x28) -- (hi_raw^0x08)&0x0F
+      4. out0   = prmt(lo, hi, 0x5140)  -- FP8 bytes [n3, n2, n1, n0]
+      5. out1   = prmt(lo, hi, 0x7362)  -- FP8 bytes [n7, n6, n5, n4]
+
+    PTX LOP3 LUT bit position is ``(a<<2) | (b<<1) | c`` (a is MSB).
+    Truth table for ``F(a,b,c) = (a^b)&c``:  bits 3 and 5 set -> LUT = 0x28.
+    """
+    src_i32 = mlir_llvm.bitcast(_Int32.mlir_type, src_vec8, loc=loc, ip=ip)
+    four = mlir_arith.constant(_Int32.mlir_type, 4, loc=loc, ip=ip)
+
+    # lo = (src ^ 0x88) & 0x0F via fused LOP3.LUT.
+    lo = mlir_llvm.inline_asm(
+        _Int32.mlir_type,
+        [src_i32],
+        "lop3.b32 $0, $1, 0x88888888, 0x0F0F0F0F, 0x28;",
+        "=r,r",
+    )
+
+    # hi_raw = src >> 4 (unsigned).
+    hi_raw = mlir_arith.shrui(src_i32, four, loc=loc, ip=ip)
+
+    # hi = (hi_raw ^ 0x08) & 0x0F via the same 0x28 truth table.
+    # XOR mask is 0x08 (not 0x88) because after the right-shift only bit 3
+    # of each byte needs flipping -- the high nibbles of the original src
+    # land there post-shift.
+    hi = mlir_llvm.inline_asm(
+        _Int32.mlir_type,
+        [hi_raw],
+        "lop3.b32 $0, $1, 0x08080808, 0x0F0F0F0F, 0x28;",
+        "=r,r",
+    )
+
+    out0 = mlir_llvm.inline_asm(
+        _Int32.mlir_type,
+        [lo, hi],
+        "prmt.b32 $0, $1, $2, 0x5140;",
+        "=r,r,r",
+    )
+    out1 = mlir_llvm.inline_asm(
+        _Int32.mlir_type,
+        [lo, hi],
+        "prmt.b32 $0, $1, $2, 0x7362;",
+        "=r,r,r",
+    )
+
+    vec_i32x2_type = ir.VectorType.get([2], _Int32.mlir_type, loc=loc)
+    rst_i32x2 = mlir_vector.from_elements(vec_i32x2_type, [out0, out1], loc=loc, ip=ip)
+    vec_mxf8x8_type = ir.VectorType.get([8], dst_type, loc=loc)
+    return mlir_llvm.bitcast(vec_mxf8x8_type, rst_i32x2, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def cvt_i4_mxf8_biased_intrinsic(
+    vec_i4: ir.Value,
+    length: int,
+    dst_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Loop over 8-element int4 chunks and apply biased FP8 conversion to each."""
+    assert length % 8 == 0, f"Invalid {length=}"
+    src_pos = 0
+    orig_length = length
+    vec_i4x8_type = ir.VectorType.get([8], _Int4.mlir_type, loc=loc)
+    vec_dst_type_i8 = ir.VectorType.get([orig_length], _Int8.mlir_type, loc=loc)
+    zero_attr = ir.IntegerAttr.get(_Int8.mlir_type, 0)
+    vec_dst = mlir_arith.ConstantOp(
+        vec_dst_type_i8,
+        ir.DenseElementsAttr.get_splat(vec_dst_type_i8, zero_attr),
+        loc=loc,
+        ip=ip,
+    ).result
+
+    num_vec8 = orig_length // 8
+    for _ in range(num_vec8):
+        vec_i4x8 = mlir_vector.extract_strided_slice(
+            vec_i4x8_type, vec_i4, [src_pos], [8], [1], loc=loc, ip=ip
+        )
+        vec_mxf8x8 = cvt_i4x8_to_mxf8x8_biased(
+            vec_i4x8, dst_type=_Int8.mlir_type, loc=loc, ip=ip
+        )
+        vec_dst = mlir_vector.insert_strided_slice(
+            vec_mxf8x8, vec_dst, [src_pos], [1], loc=loc, ip=ip
+        )
+        src_pos += 8
+        length -= 8
+
+    return vec_dst
+
+
+def cvt_tensor_a_biased(
+    src: cute.Tensor, dtype: type[cutlass.Numeric]
+) -> cute.TensorSSA:
+    """Drop-in replacement for :func:`cvt_tensor_a` using the biased bitcast above.
+
+    Converts an int4 A-tile slice to FP8.  The accumulator the kernel collects
+    from ``cute.gemm(...)`` is biased; the epilog applies the correction
+        result_true = 512 * acc_biased - 8 * sum_blk scale_A[m, blk] * rowsum_B[blk, n]
+    """
+    rst = src.load()
+    rst = cute.TensorSSA.from_vector(
+        cvt_i4_mxf8_biased_intrinsic(rst, cute.size(rst.shape), dtype),
+        shape=rst.shape,
+        dtype=dtype,
+    )
+    return rst

@@ -3255,7 +3255,7 @@ class BlackwellFusedMultiHeadAttentionForward:
 
         if cutlass.const_expr(mLSE is not None):
             scaled_tmp = scale_softmax * tTMEM_LOAD_VECrS[1]
-            # Convert LSE from natural log to log2 space, consistent with flashinfer trtllm-gen backend
+            # Convert LSE from natural log to log2 space, consistent with flashinfer backend
             lse = (cute.math.log(row_sum, fastmath=True) + scaled_tmp) * Float32(
                 1.4426950408889634
             )
@@ -3968,7 +3968,7 @@ def run(
                 cur_p = torch.softmax(cur_s_with_sink, dim=1)[:, :cur_s_k, :, :]
             else:
                 if lse_calculation:
-                    # Use log2 space for LSE, consistent with flashinfer trtllm-gen backend
+                    # Use log2 space for LSE, consistent with flashinfer backend
                     cur_lse = (
                         torch.logsumexp(cur_s, dim=1) * 1.4426950408889634
                     )  # reduce over s_k

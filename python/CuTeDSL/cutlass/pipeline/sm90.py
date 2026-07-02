@@ -29,6 +29,7 @@ from cutlass.pipeline import (
     PipelineUserType,
     SyncObject,
     TmaStoreFence,
+    alloc_reserved_mbarrier,
     make_pipeline_state,
     agent_sync,
 )
@@ -193,6 +194,9 @@ class PipelineAsync:
         :return: A new ``PipelineAsync`` instance
         :rtype: PipelineAsync
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -394,6 +398,7 @@ class PipelineCpAsync(PipelineAsync):
 
     @staticmethod
     def create(  # type: ignore[override]
+        *,
         barrier_storage: cute.Pointer,
         num_stages: Int32,
         producer_group: CooperativeGroup,
@@ -420,6 +425,9 @@ class PipelineCpAsync(PipelineAsync):
         :return: A new ``PipelineCpAsync`` instance configured with the provided parameters
         :rtype: PipelineCpAsync
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         producer_type = PipelineOp.AsyncLoad
         consumer_type = PipelineOp.AsyncThread
 
@@ -571,6 +579,9 @@ class PipelineTmaAsync(PipelineAsync):
         :return: New ``PipelineTmaAsync`` instance
         :rtype: PipelineTmaAsync
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -852,14 +863,18 @@ class PipelineOrder:
 
     @staticmethod
     def create(
-        barrier_storage: cute.Pointer,
+        *,
         depth: int,
         length: int,
         group_id: int,
         producer_group: CooperativeGroup,
+        barrier_storage: Optional[cute.Pointer] = None,
         defer_sync: bool = False,
         name: str = "",
     ) -> "PipelineOrder":
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(depth * length)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"

@@ -18,6 +18,8 @@ from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import (
     Numeric,
     Float32,
+    Int32,
+    Int64,
     Boolean,
     extract_mlir_values,
     new_from_mlir_values,
@@ -29,6 +31,7 @@ from cutlass._mlir import ir
 from cutlass.cute.nvgpu.tcgen05 import find_tmem_tensor_col_offset
 from cutlass.cute.arch import get_max_tmem_alloc_cols, get_min_tmem_alloc_cols
 from cutlass.cute.arch.constants import WARP_SIZE
+from cutlass.utils import SmemAllocator, SmemPartition
 
 
 _TMEM_COL_MASK = 0x0000FFFF
@@ -300,13 +303,13 @@ class TmemAllocator:
     @dsl_user_op
     def __init__(
         self,
-        alloc_result_dst_smem_ptr: cute.Pointer,
+        alloc_result_dst_smem_ptr: Optional[cute.Pointer] = None,
+        *,
         barrier_for_retrieve: pipeline.NamedBarrier,
         allocator_warp_id: int = 0,
         is_two_cta: bool = False,
         num_allocated_columns: int = 0,
         two_cta_tmem_dealloc_mbar_ptr: Optional[cute.Pointer] = None,
-        *,
         arch: str = "sm_100",
         initialize_mbarrier: bool = True,
         loc: Optional[ir.Location] = None,
@@ -324,8 +327,12 @@ class TmemAllocator:
         If `is_two_cta` is set to True, this will initialize the mbarrier pointer required for tensor
         memory deallocation across two CTAs.
 
-        :param alloc_result_dst_smem_ptr: The shared memory pointer that holds the base address of allocated tensor memory.
-        :type alloc_result_dst_smem_ptr: cute.Pointer
+        Auto-allocated smem pointers: If `alloc_result_dst` and `two_cta_tmem_dealloc` ptrs are omitted,
+        the allocator creates them to low address of the smem region,
+        so they can be treated as reserved partition allocations and survive kernel smem resize if needed.
+
+        :param alloc_result_dst_smem_ptr: Shared memory pointer holding the base address of allocated tensor memory. If None, the allocator auto-allocates it in the reserved address.
+        :type alloc_result_dst_smem_ptr: Optional[cute.Pointer]
         :param barrier_for_retrieve: The named barrier for retrieving the tensor memory pointer.
         :type barrier_for_retrieve: pipeline.NamedBarrier
         :param allocator_warp_id: The warp ID of the allocator warp, defaults to 0.
@@ -334,8 +341,8 @@ class TmemAllocator:
         :type is_two_cta: bool, optional
         :param num_allocated_columns: The number of columns allocated in tensor memory, defaults to 0.
         :type num_allocated_columns: int, optional
-        :param two_cta_tmem_dealloc_mbar_ptr: The mbarrier pointer required for two-CTA tensor memory deallocation, optional.
-        :type two_cta_tmem_dealloc_mbar_ptr: cute.Pointer, optional
+        :param two_cta_tmem_dealloc_mbar_ptr: Mbarrier pointer for two-CTA tensor memory deallocation. If None and is_two_cta, the allocator auto-allocates it in the reserved address.
+        :type two_cta_tmem_dealloc_mbar_ptr: Optional[cute.Pointer]
         :param initialize_mbarrier: Whether to initialize the mbarrier for two cta, defaults to True.
         :type initialize_mbarrier: bool, optional
         :param loc: Optional codegen location for debugging and error reporting.
@@ -343,9 +350,35 @@ class TmemAllocator:
         :param ip: Optional insertion point for codegen.
         :type ip: Any, optional
 
-        :raises AssertionError: If two_cta_tmem_dealloc_mbar_ptr is None while is_two_cta is True.
+        :raises ValueError: If only provided one of required smem ptr in two cta.
         """
-        # TODO: automatically maintain a smem address
+        # automatically maintain smem ptr at reserved low address
+        smem = SmemAllocator()
+        if is_two_cta and (
+            (two_cta_tmem_dealloc_mbar_ptr is None)
+            != (alloc_result_dst_smem_ptr is None)
+        ):
+            # Partial control (one user, one auto) would leave lifecycle ambiguous
+            raise ValueError(
+                "Mixed smem ptr ownership is not allowed for two-CTA: "
+                "omit both (auto via TmemAllocator) or provide both (manual)."
+            )
+        if alloc_result_dst_smem_ptr is None:
+            alloc_result_dst_smem_ptr = smem.allocate(
+                Int32,
+                byte_alignment=8,
+                partition=SmemPartition.RESERVED,
+                loc=loc,
+                ip=ip,
+            )
+        if (two_cta_tmem_dealloc_mbar_ptr is None) and is_two_cta:
+            two_cta_tmem_dealloc_mbar_ptr = smem.allocate(
+                Int64,
+                byte_alignment=8,
+                partition=SmemPartition.RESERVED,
+                loc=loc,
+                ip=ip,
+            )
         self._alloc_result_dst_smem_ptr = alloc_result_dst_smem_ptr
         self._allocator_warp_id = allocator_warp_id
         self._is_two_cta = is_two_cta
@@ -379,15 +412,15 @@ class TmemAllocator:
             else None
         )
         return TmemAllocator(
-            new_alloc_result_dst_smem_ptr,
-            pipeline.NamedBarrier(
+            alloc_result_dst_smem_ptr=new_alloc_result_dst_smem_ptr,
+            barrier_for_retrieve=pipeline.NamedBarrier(
                 barrier_id=self._barrier_for_retrieve.barrier_id,
                 num_threads=self._barrier_for_retrieve.num_threads,
             ),
-            self._allocator_warp_id,
-            self._is_two_cta,
-            self._num_allocated_columns,
-            new_two_cta_tmem_dealloc_mbar_ptr,
+            allocator_warp_id=self._allocator_warp_id,
+            is_two_cta=self._is_two_cta,
+            num_allocated_columns=self._num_allocated_columns,
+            two_cta_tmem_dealloc_mbar_ptr=new_two_cta_tmem_dealloc_mbar_ptr,
             arch=self._arch,  # Preserve the architecture parameter
             initialize_mbarrier=False,
         )
