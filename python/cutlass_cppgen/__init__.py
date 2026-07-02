@@ -39,11 +39,11 @@ import cutlass_library
 def _cuda_install_path_from_nvcc() -> str:
     import subprocess
     # Attempt to detect CUDA_INSTALL_PATH based on location of NVCC
-    result = subprocess.run(['/usr/bin/which', 'nvcc'], capture_output=True)
+    result = subprocess.run(['/usr/bin/which', 'nvcc'], capture_output=True, text=True)
     if result.returncode != 0:
         raise Exception(f'Unable to find nvcc via `which` utility.')
 
-    cuda_install_path = result.stdout.decode('utf-8').split('/bin/nvcc')[0]
+    cuda_install_path = result.stdout.split('/bin/nvcc')[0]
     if not os.path.isdir(cuda_install_path):
         raise Exception(f'Environment variable "CUDA_INSTALL_PATH" is not defined, '
                         f'and default path of {cuda_install_path} does not exist.')
@@ -63,10 +63,10 @@ def nvcc_version():
         import subprocess
 
         # Attempt to get NVCC version
-        result = subprocess.run(['nvcc', '--version'], capture_output=True)
+        result = subprocess.run(['nvcc', '--version'], capture_output=True, text=True)
         if result.returncode != 0:
             raise Exception('Unable to run `nvcc --version')
-        _NVCC_VERSION = str(result.stdout).split(" release ")[-1].split(",")[0]
+        _NVCC_VERSION = result.stdout.split(" release ")[-1].split(",")[0]
     return _NVCC_VERSION
 
 _CUDA_INSTALL_PATH = None
