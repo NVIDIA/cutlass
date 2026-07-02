@@ -776,7 +776,7 @@ int main_single(int argc, char const **args) {
     return 0;
   }
 
-  if (props.major != 10) {
+  if (props.major != 10 && props.major != 11) {
     std::cerr
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
       << "(compute capability 100a)." << std::endl;
