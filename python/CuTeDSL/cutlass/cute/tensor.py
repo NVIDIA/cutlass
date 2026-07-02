@@ -31,7 +31,8 @@ from cutlass._mlir.dialects import vector, arith, llvm
 from cutlass._mlir.dialects.cute import (
     SparseElemType as _SparseElemType,
 )
-from cutlass._mlir_helpers.arith import Vector
+from cutlass._mlir_helpers.vector import Vector
+from cutlass.base_dsl.typing import Pointer as _BasePointer
 
 from .typing import (
     Numeric,
@@ -76,6 +77,7 @@ from .core import (
     flatten,
     has_underscore,
     make_layout,
+    make_ptr,
     select,
     slice_,
     crd2idx,
@@ -145,6 +147,8 @@ class _Tensor(Tensor):
         # Slice operation - get first column
         subtensor = tensor[None, 0]  # or subtensor = tensor[(None, 0)]
     """
+
+    _dtype: Union[Type[Numeric], Type[IntTuple], None]
 
     @dsl_user_op
     def __init__(
@@ -465,28 +469,39 @@ class _Tensor(Tensor):
         return self.layout.stride
 
     @property
-    def leading_dim(self) -> Union[int, Tuple[int], None]:
+    def leading_dim(self) -> Union[int, Tuple[int, ...], None]:
         """Get the leading dimension of this Tensor.
 
         :return: The index or indices of the first mode (from left to right) with stride 1
-        :rtype: Union[int, Tuple[int], None]
+        :rtype: Union[int, Tuple[int, ...], None]
         :returns:
             - int: Single leading dimension index if found
-            - Tuple[int]: Tuple of indices for nested leading dimensions
+            - Tuple[int, ...]: Tuple of indices for nested leading dimensions
             - None: If no leading dimension is found
 
         :postcondition: ``get(self.stride(), mode=self.leading_dim()) == 1 if self.leading_dim() != None else True``
         """
-        return leading_dim(self.shape, self.stride)  # type: ignore[return-value]
+        return leading_dim(self.shape, self.stride)
 
     @property
-    def dtype(self) -> Type[Numeric]:
-        return self._dtype  # type: ignore[return-value]
+    def dtype(self) -> Union[Type[Numeric], Type[IntTuple], None]:  # type: ignore[override]
+        return self._dtype
 
-    @property  # type: ignore[misc]
+    @property
     @lru_cache_ir()
-    def element_type(self) -> Union[Type[Numeric], Type[IntTuple]]:
-        return self._dtype  # type: ignore[return-value]
+    def element_type(self) -> Union[Type[Numeric], Type[IntTuple], None]:
+        return self._dtype
+
+    @element_type.setter
+    def element_type(
+        self, new_type: Union[Type[Numeric], Type[IntTuple], None]
+    ) -> None:
+        # Compile-time _Tensor's dtype is bound to the underlying MLIR ir.Value;
+        # mutating _dtype here would desync from self.value.type, and the
+        # @lru_cache_ir() on the getter would serve stale values.
+        raise NotImplementedError(
+            "Compile-time _Tensor does not support setting element_type"
+        )
 
     @property
     @lru_cache_ir()
@@ -797,6 +812,15 @@ def make_tensor(
     elif isinstance(iterator, Pointer):
         iterator = iterator.value
         res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
+    elif isinstance(iterator, _BasePointer):
+        iterator = make_ptr(
+            iterator.dtype,
+            iterator.to_llvm_ptr(loc=loc, ip=ip),
+            assumed_align=iterator.max_alignment,
+            loc=loc,
+            ip=ip,
+        ).value
+        res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
     elif isinstance(iterator, ir.Value) and isinstance(
         iterator.type,
         _cute_nvgpu_ir.SmemDescType,
@@ -994,7 +1018,7 @@ def make_rmem_tensor_like(
             compact_layout = make_layout(src.shape, loc=loc, ip=ip)
             src_layout = _cute_ir.make_layout_like(compact_layout, loc=loc, ip=ip)
         else:
-            res_dtype = dtype or src.element_type  # type: ignore[assignment]
+            res_dtype = dtype or src.element_type
             src_layout = src.layout
     elif isinstance(src, TensorSSA):
         res_dtype = dtype or src.element_type
@@ -1109,7 +1133,7 @@ def recast_tensor(
     if src.element_type is Boolean:
         src_width = 8
     else:
-        src_width = src.element_type.width  # type: ignore[union-attr]
+        src_width = src.element_type.width
 
     src_iter = recast_ptr(src.iterator, dtype=dtype, loc=loc, ip=ip)
     src_layout = recast_layout(dst_width, src_width, src.layout, loc=loc, ip=ip)

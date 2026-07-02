@@ -10,10 +10,22 @@
 # is strictly prohibited.
 
 
+from collections.abc import Iterable
 from functools import partial, reduce
 import inspect
 from inspect import isclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    cast,
+    overload,
+)
 
 from typing_extensions import deprecated
 
@@ -41,10 +53,11 @@ from cutlass.cutlass_dsl import (
     lru_cache_ir,
     not_,
 )
+from cutlass.base_dsl.typing import Int8 as _BaseInt8
+from cutlass.base_dsl.typing import Pointer as _BasePointer
 
 from .tuple import find_if, flatten_to_tuple, product_each, transform_leaf, unwrap, wrap
 from .typing import (
-    AddressSpace,
     Boolean,
     ComposedLayout,
     Coord,
@@ -66,9 +79,13 @@ from .typing import (
     Tiler,
     XTuple,
     _element_precision_width,
+    _as_address_space,
+    _to_mlir_address_space,
     is_int_tuple,
     is_integer,
+    AddressSpace,
 )
+
 
 __all__ = [
     # Classes
@@ -2061,7 +2078,7 @@ def printf(
 
     This function provides printf-style formatted printing capabilities. It can print values directly
     or format them using C-style format strings. The function supports printing various types including
-    layouts, numeric values, tensors, and other CuTe objects.
+    layouts, numeric values, tensors, pointers, and other CuTe objects.
 
     The function accepts either:
     1. A list of values to print directly
@@ -2112,38 +2129,47 @@ def printf(
         fmt = "{}" + ", {}" * (len(args) - 1) + end
 
     def process_arg(arg: Any) -> Any:
-        arg0 = arg.value if isinstance(arg, Numeric) else arg
+        if isinstance(arg, Numeric):
+            return arg.ir_value(loc=loc, ip=ip)
 
-        if isinstance(arg0, ir.Value):
-            return arg.ir_value(loc=loc, ip=ip) if isinstance(arg, Numeric) else arg0
-        elif isinstance(arg0, bool):
-            return const(arg0, Boolean)
-        elif isinstance(arg0, int):
-            return const(arg0, Int32)
-        elif isinstance(arg0, float):
-            return const(arg0, Float32)
-        elif has_underscore(arg0):
+        if isinstance(arg, _BasePointer):
+            ptr = make_ptr(
+                arg.dtype,
+                arg.to_llvm_ptr(loc=loc, ip=ip),
+                loc=loc,
+                ip=ip,
+            )
+            return ptr.value
+        elif isinstance(arg, ir.Value):
+            return arg
+        elif isinstance(arg, bool):
+            return const(arg, Boolean)
+        elif isinstance(arg, int):
+            return const(arg, Int32)
+        elif isinstance(arg, float):
+            return const(arg, Float32)
+        elif has_underscore(arg):
             # Assume it's a coordinate
-            return _pack_coord(arg0)  # type: ignore[arg-type]
-        elif has_scaled_basis(arg0):
+            return _pack_coord(arg)  # type: ignore[arg-type]
+        elif has_scaled_basis(arg):
             # Assume it's a stride
-            return _pack_stride(arg0)  # type: ignore[arg-type]
-        elif is_int_tuple(arg0):
-            return _pack_int_tuple(arg0)  # type: ignore[arg-type]
-        elif isinstance(arg0, tuple):
+            return _pack_stride(arg)  # type: ignore[arg-type]
+        elif is_int_tuple(arg):
+            return _pack_int_tuple(arg)  # type: ignore[arg-type]
+        elif isinstance(arg, tuple):
             # Assume it's a tile
-            return _pack_tile(arg0)
-        elif isinstance(arg0, _Tensor):
-            arg0._check_can_load_store()
-            if isinstance(arg0.layout, ComposedLayout) and isinstance(
-                arg0.layout.inner, Swizzle
+            return _pack_tile(arg)
+        elif isinstance(arg, _Tensor):
+            arg._check_can_load_store()
+            if isinstance(arg.layout, ComposedLayout) and isinstance(
+                arg.layout.inner, Swizzle
             ):
                 raise NotImplementedError(
                     "tensor with swizzled layout (PISL) is not supported in printf, please use swizzled pointer (PDSL) instead"
                 )
-            return arg0.value
-        elif isinstance(arg0, (_Pointer, _ComposedLayout)):
-            return arg0.value
+            return arg.value
+        elif isinstance(arg, (_Pointer, _ComposedLayout)):
+            return arg.value
         else:
             raise TypeError(f"unsupported argument type in printf, got {type(arg)}")
 
@@ -3567,7 +3593,7 @@ def round_up(a: IntTuple, b: IntTuple) -> IntTuple:
 
 @dsl_user_op
 def make_layout(
-    shape: Shape,
+    shape: Union[Shape, Iterable[Layout]],
     *,
     stride: Union[Stride, None] = None,
     loc: Optional[ir.Location] = None,
@@ -3578,9 +3604,14 @@ def make_layout(
     A Layout in CuTe represents the mapping between logical and physical coordinates of a tensor.
     This function creates a Layout object that defines how tensor elements are arranged in memory.
 
-    :param shape: Shape of the layout defining the size of each mode
-    :type shape: Shape
-    :param stride: Optional stride values for each mode, defaults to None
+    As an alternative to a shape, an iterable of :class:`Layout` objects may be
+    passed, in which case each layout becomes a separate mode of the result (the
+    ``stride`` argument is ignored). This mirrors CuTe's variadic
+    ``make_layout(layoutA, layoutB, ...)``.
+
+    :param shape: Shape of the layout defining the size of each mode, or an iterable of Layout objects to concatenate (each becomes a mode)
+    :type shape: Union[Shape, Iterable[Layout]]
+    :param stride: Optional stride values for each mode, defaults to None (ignored when shape is an iterable of layouts)
     :type stride: Union[Stride, None]
     :param loc: Source location information, defaults to None
     :type loc: Optional[Location]
@@ -3605,6 +3636,11 @@ def make_layout(
         # Create a layout with custom strides
         layout = make_layout((2,2,2), stride=(4,1,2))   # layout with strides (4,1,2)
 
+        # Concatenate layouts: each becomes a mode of the result
+        mode0 = make_layout(64, stride=1)
+        mode1 = make_layout(128, stride=64)
+        combined = make_layout([mode0, mode1])          # (64,128):(1,64)
+
     Note:
         - If stride is not provided, a default compact left-most stride is computed based on the shape
         - The resulting layout maps logical coordinates to physical memory locations
@@ -3617,11 +3653,31 @@ def make_layout(
         - Stride is keyword only argument to improve readability, e.g.
           * make_layout((3,4), (1,4)) can be confusing with make_layout(((3,4), (1,4)))
           * make_layout((3,4), stride=(1,4)) is more readable
+        - When passing an iterable of layouts, each layout becomes a separate mode
     """
+    # Concatenation form: an iterable of Layouts, each becoming a mode. Strings
+    # and bytes are iterable too, so exclude them; ints are not iterable and so
+    # fall through to the normal shape path unchanged.
+    if isinstance(shape, Iterable) and not isinstance(shape, (str, bytes)):
+        # tuples/lists are reusable; materialize only one-shot iterables (generators).
+        seq = shape if isinstance(shape, (list, tuple)) else list(shape)
+        if seq and all(isinstance(elem, Layout) for elem in seq):
+            # all() above guarantees every element is a Layout; mypy can't infer
+            # that from a runtime predicate, so narrow explicitly.
+            layouts = cast("List[Layout]", seq)
+            return make_layout(
+                tuple(layout.shape for layout in layouts),
+                stride=tuple(layout.stride for layout in layouts),
+                loc=loc,
+                ip=ip,
+            )
+        # Not layouts: keep the materialized form so generators still work below.
+        shape = cast("Shape", seq)
+
     if stride is not None and not is_congruent(shape, stride):
         raise ValueError("shape and stride must be congruent")
 
-    shape_val = _pack_shape(shape, loc=loc, ip=ip)
+    shape_val = _pack_shape(cast("Shape", shape), loc=loc, ip=ip)
     if stride is not None:
         stride_val = _pack_stride(stride, loc=loc, ip=ip)
         layout_ty = _cute_ir.LayoutType.get(shape_val.type, stride_val.type)
@@ -4316,7 +4372,9 @@ def recast_ptr(
 
     value_ty = cvt_ty or ptr.type.value_type
     swizzle_attr = swizzle_.type.attribute if swizzle_ is not None else None
-    res_ty = _cute_ir.PtrType.get(value_ty, ptr.memspace, ptr.alignment, swizzle_attr)
+    res_ty = _cute_ir.PtrType.get(
+        value_ty, _to_mlir_address_space(ptr.memspace), ptr.alignment, swizzle_attr
+    )
     return _cute_ir.recast_iter(res_ty, ptr.value, loc=loc, ip=ip)
 
 
@@ -4346,8 +4404,7 @@ def make_ptr(
 
     if mem_space is None:
         mem_space = AddressSpace.generic
-    if not isinstance(mem_space, AddressSpace):
-        raise TypeError(f"expects mem_space to be an AddressSpace, but got {mem_space}")
+    mem_space = _as_address_space(mem_space)
 
     # TMEM addresses are 32b wide
     is_tmem = mem_space == AddressSpace.tmem
@@ -4372,7 +4429,9 @@ def make_ptr(
     data_ty = cvt_type
     swizzle = swizzle_.type.attribute if swizzle_ is not None else None
 
-    ptr_ty = _cute_ir.PtrType.get(data_ty, mem_space, assumed_align, swizzle)
+    ptr_ty = _cute_ir.PtrType.get(
+        data_ty, _to_mlir_address_space(mem_space), assumed_align, swizzle
+    )
     ptr = _cute_ir.inttoptr(ptr_ty, aligned_intptr, loc=loc, ip=ip)
     ptr._dtype = dtype
     return ptr
@@ -5804,14 +5863,6 @@ class struct:
             :return: The MLIR value of the underlying pointer.
             :rtype: ir.Value
             """
-            import warnings
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("always")
-                warnings.warn(
-                    "Use explicit `struct.scalar.ptr` for pointer instead.",
-                    DeprecationWarning,
-                )
             return self._ptr.value
 
     # util func for base dsl scalar types

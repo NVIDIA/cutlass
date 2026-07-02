@@ -1,0 +1,175 @@
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nvidia-cutlass-operators"
+dynamic = ["version"]
+description = "High-level discover/compile/execute API for CUTLASS Python kernels."
+readme = "README.md"
+license = "BSD-3-Clause"
+authors = [{ name = "NVIDIA Corporation" }]
+requires-python = ">=3.10"
+keywords = ["cutlass", "cuda", "gpu", "gemm", "nvidia", "deep-learning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: GPU :: NVIDIA CUDA :: 13",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
+
+dependencies = [
+    "nvidia-cutlass-dsl >= 4.6",
+    "apache-tvm-ffi >= 0.1.11",  # Required for best performance. To opt-out: uninstall, set CUTLASS_OPERATORS_USE_TVM_FFI=0, or set cutlass.operators.config.GlobalOptions().use_tvm_ffi=False
+    "networkx >= 3.0.0", # Required by dag-ir.py
+]
+
+[project.urls]
+Homepage      = "https://github.com/NVIDIA/cutlass"
+Repository    = "https://github.com/NVIDIA/cutlass"
+Documentation = "https://docs.nvidia.com/cutlass/latest/"
+Issues        = "https://github.com/NVIDIA/cutlass/issues"
+
+[project.optional-dependencies]
+torch = [
+    "torch",
+    "torch-c-dlpack-ext",
+]
+jax = [
+    # jax[cuda13] first appears in jax>=0.7.0, which dropped Python 3.10
+    # (min is 3.11). So 3.10 gets the CUDA 12 wheels, 3.11+ gets CUDA 13.
+    "jax[cuda12]; python_version < '3.11'",
+    "jax[cuda13]; python_version >= '3.11'",
+]
+test = [
+    "jupyter",
+    "nbconvert",
+    "nbformat",
+    "pytest",
+    "nvidia-cutlass-operators[torch]",
+    "nvidia-cutlass-operators[jax]",
+]
+dev = [
+    "nvidia-cutlass-operators[test]",
+    "ruff",
+    "darker[ruff] == 3.0.0",
+]
+
+# Discover the `cutlass` namespace package and all `cutlass.*` subpackages.
+# The wrapper directory `cutlass/` has no `__init__.py` (implicit PEP 420
+# namespace package), so `namespaces = true` is required for setuptools to
+# pick up `cutlass.operators`.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cutlass", "cutlass.*"]
+namespaces = true
+
+[tool.setuptools.dynamic]
+version = {attr = "cutlass.operators.__version__"}
+
+[tool.pytest.ini_options]
+pythonpath = ["test", "."]
+
+[tool.ruff]
+target-version = "py310"
+src = ["cutlass/operators"]
+line-length = 88
+
+# Exclude fusion/ from all ruff checks
+extend-exclude = [
+    "**/cutlass/operators/fusion",
+    "**/cutlass/operators/providers/cutedsl/evt",
+    "**/cutlass/operators/providers/cutedsl/*/implementations",
+]
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "C4",     # flake8-comprehensions
+    "PTH",    # flake8-use-pathlib
+    "FA",     # flake8-future-annotations
+    "PERF",   # perflint - performance anti-patterns
+    "FURB",   # refurb - modern Python idioms
+    "PIE",    # flake8-pie - misc improvements
+    "TCH",    # flake8-type-checking
+    "PLE",    # pylint errors
+    "RSE",    # flake8-raise
+    "D",      # pydocstyle
+]
+ignore = [
+    "SIM103", # nedless-bool                            - can be noisy
+    "B905",   # zip(strict=)                            - too strict
+    "E501",   # line too long                           - delegated to `ruff format`
+    # --- Docstring rules intentionally relaxed (mirrors the PyTorch setup) ---
+    "D100",   # Missing docstring in public module      - too noisy at module level
+    "D104",   # Missing docstring in public package     - __init__.py is mostly re-exports
+    "D105",   # Missing docstring in magic method       - __repr__ etc. are usually self-evident
+    "D107",   # Missing docstring in __init__           - we document at the class level
+    "D203",   # 1 blank line required before class      - conflicts with D211 (ruff "incompatible-default")
+    "D213",   # Multi-line summary on second line       - conflicts with D212 (ruff "incompatible-default")
+]
+
+[tool.ruff.lint.flake8-type-checking]
+# Subclasses of these base classes evaluate their field annotations at
+# runtime via `typing.get_type_hints()` (see
+# `cutlass.operators.arguments.base._convert_to_internal_types`). Imports
+# that are syntactically only used in annotations on those subclasses are
+# therefore *not* safe to move under `if TYPE_CHECKING:` — disable TC001/TC002
+# for them so we don't trip the lint while keeping the runtime contract.
+runtime-evaluated-base-classes = [
+    "cutlass.operators.arguments.base.RuntimeArguments",
+    "cutlass.operators.arguments.base.Operand",
+]
+
+# Functions decorated with `@cute.jit` or `@cute.kernel` have their signature
+# resolved at runtime
+# Imports used only in annotations of such functions are therefore *not* safe to move under
+# `if TYPE_CHECKING:`, even though ruff would otherwise suggest it.
+runtime-evaluated-decorators = [
+    "cutlass.cute.jit",
+    "cutlass.cute.kernel",
+]
+
+[tool.ruff.lint.isort]
+section-order = ["future", "standard-library", "third-party", "cutlass", "first-party", "local-folder"]
+# `cutlass.operators` is our own code, but the top-level `cutlass` package is
+# owned by `nvidia-cutlass-dsl`. We classify the operators API as first-party
+# so that `import cutlass.operators as ops` and `from cutlass.operators...`
+# imports group together and after the DSL imports.
+known-first-party = ["cutlass.operators"]
+known-local-folder = ["test_utils"]
+
+[tool.ruff.lint.isort.sections]
+cutlass = ["cutlass"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py"         = ["D"]           # D: package init docstrings not required
+"**/test/**"          = ["C408", "D"]   # C408: dict(...) kwargs are allowed; D: tests don't need docstrings
+"**/examples/**"      = ["D"]           # D: example notebooks/scripts are tutorial prose, not API surface
+"**/cutlass/operators/providers/cutedsl/**"  = ["D"]  # D: discovered via `get_operators(...)`, not public API
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 120

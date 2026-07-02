@@ -27,6 +27,7 @@ from ...typing import (
     Float16,
     BFloat16,
     Float32,
+    TFloat32,
     Numeric,
     Pointer,
 )
@@ -159,6 +160,70 @@ class MmaF16BF16Op(WarpMmaOp):
 
 
 class MmaF16BF16Trait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class MmaTF32Op(WarpMmaOp):
+    """TF32 warp-level MMA operation.
+
+    This wraps ``mma.sync.aligned.m16n8k{K}.row.col.f32.tf32.tf32.f32``.
+    Operands are TF32 and accumulation is F32.
+    """
+
+    shape_mnk: Shape
+
+    def __post_init__(self) -> None:
+        if self.shape_mnk not in [(16, 8, 4), (16, 8, 8)]:
+            raise OpError(
+                self,
+                "expects the 'shape_mnk' Op parameter to be one of (16,8,4) or (16,8,8)",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaTF32Trait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM80Type.get(
+            shape_mnk.type.attribute,
+            TFloat32.mlir_type,
+            TFloat32.mlir_type,
+            Float32.mlir_type,
+        )
+        return MmaTF32Trait(make_atom(ty, loc=loc, ip=ip))
+
+    def __str__(self) -> str:
+        return (
+            "warp-level TF32 MMA Operation"
+            + "\n  A/B data type         = TFloat32"
+            + "\n  Accumulator data type = Float32"
+            + f"\n  Instruction shape MNK = {self.shape_mnk}"
+        )
+
+    def _verify_fragment_A(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
+        return True
+
+    def _verify_fragment_B(
+        self,
+        input: Tensor,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
+        return True
+
+
+class MmaTF32Trait(Trait):
     pass
 
 

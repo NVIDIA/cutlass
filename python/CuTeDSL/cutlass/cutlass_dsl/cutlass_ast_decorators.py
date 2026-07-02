@@ -16,7 +16,12 @@ from cutlass._mlir import ir
 from cutlass._mlir.dialects import scf
 from collections.abc import Sequence
 
-from ..base_dsl.common import DSLRuntimeError, DSLNotImplemented
+from ..base_dsl.common import (
+    DSLRuntimeError,
+    DSLUserCodeError,
+    DSLNotImplemented,
+)
+from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.dsl import is_dynamic_expression
 from .._mlir_helpers.arith import ArithValue
 from ..base_dsl.ast_helpers import *  # noqa: F401,F403
@@ -166,14 +171,12 @@ class ScfGenerator:
                 new_type_name = new_type.__name__
 
         if type_mismatch:
-            raise DSLRuntimeError(
-                f"`{arg_name}` is {old_type_name} prior to this `{op_type_name}`, "
-                f"and update to {new_type_name} inside of this `{op_type_name}` is not supported.",
-                suggestion=(
-                    f"Please avoid changing type inside a dynamic `{op_type_name}`, "
-                    f"or change to compile-time control flow by marking this `{op_type_name}` with "
-                    f"`{'range_constexpr' if op_type_name == 'for' else 'const_expr'}`."
-                ),
+            raise DSLUserCodeError(
+                DiagId.TYPE_UNSTABLE_JOIN,
+                var=arg_name,
+                old_type=old_type_name,
+                new_type=new_type_name,
+                op_type=op_type_name,
             )
 
     def scf_execute_dynamic(
@@ -245,13 +248,10 @@ class ScfGenerator:
                             )
                         )
 
-                        raise DSLRuntimeError(
-                            f"`{filterd_arg_names[mismatch]}` is structured different after this `{op_type_name}`.",
-                            suggestion=(
-                                f"Please avoid changing type structure inside a dynamic `{op_type_name}`, "
-                                f"or change to compile-time control flow by marking this `{op_type_name}` with "
-                                f"`{'range_constexpr' if op_type_name == 'for' else 'const_expr'}`."
-                            ),
+                        raise DSLUserCodeError(
+                            DiagId.CONTAINER_STRUCTURE_CHANGED,
+                            var=filterd_arg_names[mismatch],
+                            op_type=op_type_name,
                         )
 
                     scf.YieldOp(region_values)
@@ -273,10 +273,11 @@ class ScfGenerator:
 
 
 def _attr_const_check(attr: object, expected_type: type, attr_name: str) -> None:
-    # Use strict type equality to prevent `bool` being accepted where `int` is required.
-    if is_dynamic_expression(attr) or type(attr) is not expected_type:
-        raise DSLRuntimeError(
-            f"loop attribute `{attr_name}` must be a Python value of type `{expected_type.__name__}`, got `{type(attr).__name__}`."
+    raw = attr
+    if is_dynamic_expression(attr) or type(raw) is not expected_type:
+        raise DSLUserCodeError(
+            DiagId.PHASE_ASSIGN_PYTHON_TO_TRACKED,
+            attr_name=attr_name,
         )
 
 
@@ -314,8 +315,10 @@ def _loop_execute_range_dynamic(
         step_n = as_numeric(step)
         for name, n in (("start", start_n), ("stop", stop_n), ("step", step_n)):
             if not n.dtype.is_integer:
-                raise DSLRuntimeError(
-                    f"dynamic loop `{name}` must be an integer type, got {n.dtype}"
+                raise DSLUserCodeError(
+                    DiagId.ARG_WRONG_TYPE,
+                    name=name,
+                    dtype=n.dtype,
                 )
         # Promote to a common integer type using pairwise type promotion
         _, _, tmp_dtype = _binary_op_type_promote(start_n, stop_n)
@@ -344,8 +347,9 @@ def _loop_execute_range_dynamic(
                     ir.IntegerType.get_signless(32), prefetch_stages
                 )
             else:
-                raise DSLRuntimeError(
-                    f"loop attribute `prefetch_stages` must be non-negative, got `{prefetch_stages}`."
+                raise DSLUserCodeError(
+                    DiagId.CONFIG_INVALID_VALUE,
+                    value=prefetch_stages,
                 )
         log().debug("prefetch_stages attribute: %s", prefetch_stages_attr)
 
@@ -355,8 +359,9 @@ def _loop_execute_range_dynamic(
 
             arch = cutlass_dsl.CuTeDSL._get_dsl().get_arch_enum()
             if arch < Arch.sm_100:
-                raise DSLRuntimeError(
-                    f"vectorize is supported for sm_100 and above, got {arch}."
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_ARCH,
+                    arch=arch,
                 )
             _attr_const_check(vectorize, bool, "vectorize")
             vectorize_attr = ir.BoolAttr.get(True)
@@ -743,8 +748,8 @@ def _ifexp_execute_dynamic(
         assert isinstance(then_tree, PyTreeDef)
         assert isinstance(else_tree, PyTreeDef)
         if check_tree_equal(then_tree, else_tree) != -1:
-            raise DSLRuntimeError(
-                "Then and else blocks of ifexp return different types"
+            raise DSLUserCodeError(
+                DiagId.TYPE_CONDITIONAL_BRANCH_MISMATCH,
             )
 
         # Collect result types for the SCF IfOp

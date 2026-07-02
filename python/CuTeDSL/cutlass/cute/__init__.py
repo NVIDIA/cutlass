@@ -12,8 +12,14 @@
 from collections.abc import Callable
 from typing import Any
 
-# Use the auto-generated enum AddressSpace
-from cutlass._mlir.dialects.cute import AddressSpace, CacheEvictionPriority
+# Keep AddressSpace aligned with the public cutlass namespace.
+from cutlass.address_space import AddressSpace as _AddressSpace
+from cutlass._mlir.dialects.cute_nvgpu import CacheEvictionPriority
+
+# Keep ``cute.AddressSpace`` as a quiet compatibility alias. Documentation marks
+# this spelling as scheduled for deprecation; runtime warnings will be enabled in
+# a later release.
+AddressSpace = _AddressSpace
 
 # Explicitly import types that might be directly used by other modules.
 # This is a fix for using Sphinx to generate documentation
@@ -212,7 +218,7 @@ from . import experimental
 # Export all math ops without "math."
 from .math import *
 
-# Used as internal symbol
+# Package-private symbol used by exported aliases below.
 from .. import cutlass_dsl as _dsl
 
 from .ffi import ffi, extern, BitCode, ConstValue, mangle
@@ -230,6 +236,8 @@ EnableAssertions = _dsl.EnableAssertions
 GenerateLineInfo = _dsl.GenerateLineInfo
 KeepCUBIN = _dsl.KeepCUBIN
 KeepPTX = _dsl.KeepPTX
+KeepSASS = _dsl.KeepSASS
+NvdisasmOptions = _dsl.NvdisasmOptions
 GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
@@ -242,6 +250,9 @@ make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 from . import _tvm_ffi_args_spec_converter
 
 _tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
+_tvm_ffi_args_spec_converter.attach_args_spec_converter(
+    _dsl.CuteExperimentalDSL._get_dsl()
+)
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
@@ -251,6 +262,7 @@ __all__ = [
     "CacheEvictionPriority",
     "Tensor",
     "Layout",
+    "Numeric",
     "ComposedLayout",
     "Swizzle",
     "E",

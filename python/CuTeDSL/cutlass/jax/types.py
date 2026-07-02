@@ -20,8 +20,8 @@ import cutlass
 import cutlass.cute as cute
 from cutlass.cute.core import IntValue
 from cutlass.cute.runtime import from_dlpack as _from_dlpack
-from cutlass.cute import AddressSpace
 from cutlass._mlir import ir
+from cutlass.address_space import AddressSpace
 from cutlass._mlir.dialects import llvm, arith
 
 JAX_DTYPE_TO_CUTLASS_DTYPE = {
@@ -52,6 +52,10 @@ CUTLASS_DTYPE_TO_JAX_DTYPE = {
 
 DEFAULT_CUTLASS_DEVICE_MEMSPACE = AddressSpace.gmem
 DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT = 256
+
+
+def _llvm_pointer_type(address_space: AddressSpace = AddressSpace.generic) -> ir.Type:
+    return llvm.PointerType.get(int(address_space))
 
 
 @jax.tree_util.register_dataclass
@@ -512,7 +516,7 @@ class JaxArrayValue(JaxArray):
     ) -> tuple[ir.Value, ...]:
         i64 = ir.IntegerType.get_signless(64)
         shape_array = llvm.extractvalue(
-            llvm.PointerType.get(),
+            _llvm_pointer_type(),
             ffi_buffer,
             [1],
             loc=loc,
@@ -522,7 +526,7 @@ class JaxArrayValue(JaxArray):
         shape_i64 = []
         for i in range(len(self.shape)):
             r = llvm.getelementptr(
-                llvm.PointerType.get(),
+                _llvm_pointer_type(),
                 shape_array,
                 [],
                 no_wrap_flags=0,
@@ -542,16 +546,20 @@ class JaxArrayValue(JaxArray):
         loc: ir.Location | None = None,
         ip: ir.InsertionPoint | None = None,
     ) -> ir.Value:
-        raw_ptr = llvm.extractvalue(
-            llvm.PointerType.get(),
+        data_ptr = llvm.extractvalue(
+            _llvm_pointer_type(),
             ffi_buffer,
             [0],
             loc=loc,
             ip=ip,
         )
+        if self.mem_space != AddressSpace.generic:
+            data_ptr = llvm.addrspacecast(
+                _llvm_pointer_type(self.mem_space), data_ptr, loc=loc, ip=ip
+            )
         return cute.make_ptr(
             self.dtype,
-            raw_ptr,
+            data_ptr,
             self.mem_space,
             assumed_align=self.assumed_align,
             loc=loc,
@@ -562,7 +570,7 @@ class JaxArrayValue(JaxArray):
         self, *, loc: ir.Location | None = None, ip: ir.InsertionPoint | None = None
     ) -> ir.Value:
         ffi_buffer_type = llvm.StructType.get_literal(
-            [llvm.PointerType.get(), llvm.PointerType.get()]
+            [_llvm_pointer_type(), _llvm_pointer_type()]
         )
 
         ffi_buffer = llvm.load(ffi_buffer_type, self.value, loc=loc, ip=ip)
@@ -614,7 +622,7 @@ class JaxTracedArray(JaxArray):
 
     def __get_mlir_types__(self) -> list[ir.Type]:
         # Struct passed as opaque object.
-        return [llvm.PointerType.get()]
+        return [_llvm_pointer_type()]
 
     def __new_from_mlir_values__(self, values: ir.Value) -> JaxArrayValue:
         return JaxArrayValue(

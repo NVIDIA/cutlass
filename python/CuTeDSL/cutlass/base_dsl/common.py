@@ -10,13 +10,21 @@
 # is strictly prohibited.
 
 import inspect
+import contextlib
+import contextvars
 import os
 import subprocess
 import sys
 import types
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Generator, Optional, Union
 from functools import total_ordering
 from dataclasses import dataclass
+
+from .diagnostics import (
+    Colors,
+    find_user_source_location as _find_user_source_location,
+    render_user_diagnostic as _render_user_diagnostic,
+)
 
 """
 This module provides a Exception classes DSL class for any Dialect.
@@ -26,17 +34,36 @@ This module provides a Exception classes DSL class for any Dialect.
 # Store the original exception hook
 _original_excepthook = sys.excepthook
 
-# Store registered environment manager (set by DSL singleton)
-_registered_env_manager = None
+_active_env_manager: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "active_env_manager", default=None
+)
 
 
-def register_env_manager(env_manager: Any) -> None:
-    """Register an EnvironmentVarManager instance for use by exception handling.
+def get_current_env_manager() -> Any:
+    """Return the env manager for the active DSL context, if any.
 
-    Called by DSL singleton when it initializes.
+    Some shared runtime helpers do not have direct access to a ``BaseDSL``
+    instance. Use the active context so those helpers observe the DSL that is
+    currently preprocessing/tracing.
     """
-    global _registered_env_manager
-    _registered_env_manager = env_manager
+    return _active_env_manager.get()
+
+
+@contextlib.contextmanager
+def active_env_manager(env_manager: Any) -> Generator[None, None, None]:
+    """Temporarily make ``env_manager`` the current DSL env manager."""
+    token = _active_env_manager.set(env_manager)
+    try:
+        yield
+    except Exception as e:
+        try:
+            if not hasattr(e, "_dsl_env_manager"):
+                setattr(e, "_dsl_env_manager", env_manager)
+        except (AttributeError, TypeError):
+            pass
+        raise
+    finally:
+        _active_env_manager.reset(token)
 
 
 
@@ -52,14 +79,19 @@ def _dsl_excepthook(
     """
     # Check if show_stacktrace is enabled via registered env manager
     show_stacktrace = False
-    if _registered_env_manager is not None:
-        show_stacktrace = getattr(_registered_env_manager, "show_stacktrace", False)
+    env_manager = getattr(exc_value, "_dsl_env_manager", None)
+    if env_manager is None:
+        env_manager = get_current_env_manager()
+    if env_manager is not None:
+        show_stacktrace = getattr(env_manager, "show_stacktrace", False)
 
     # Check if it's a DSL operation error (by name to avoid circular import issues)
     if exc_type.__name__ in (
         "DSLOperationError",
         "DSLOperationBuildError",
         "DSLUserCodeError",
+        "CompilerDiagnosticError",
+        "DSLRuntimeError",
     ):
         if show_stacktrace:
             # Show full traceback in verbose mode
@@ -75,18 +107,6 @@ def _dsl_excepthook(
 
 # Install the custom exception hook
 sys.excepthook = _dsl_excepthook
-
-
-# Add color codes at the top of the file after imports
-class Colors:
-    """ANSI color codes for error messages"""
-
-    RED = "\033[91m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    GREEN = "\033[92m"
-    BOLD = "\033[1m"
-    RESET = "\033[0m"
 
 
 # =============================================================================
@@ -130,49 +150,22 @@ class DSLBaseError(Exception):
             return f"Caused exception: {self.cause}"
         return ""
 
+    # Subclasses may set this to True to render the "compiler bug, please
+    # report" envelope instead of the "here is your mistake" block.  See
+    # ``_render_user_diagnostic``.
+    _is_internal: bool = False
+
     def _format_message(self) -> str:
+        """Format via the single shared user-diagnostic renderer.
+
+        Every DSL error renders through ``_render_user_diagnostic`` so the
+        output looks identical no matter which layer (AST pre-processing,
+        tracing, or runtime) raised it -- there is exactly one rendering
+        mechanism to change.  Subclasses with genuinely different needs (e.g.
+        ``DSLOperationBuildError``, which walks an exception chain) may still
+        override this, but the default and recommended path is the shared one.
         """
-        Formats the complete error message with available metadata.
-        Override this in subclasses if you want to change formatting logic.
-        """
-        parts = [f"{self.__class__.__name__}: {self.message}"]
-
-        if self.error_code is not None:
-            parts.append(f"{Colors.BOLD}Error Code:{Colors.RESET} {self.error_code}\n")
-
-        if self.line is not None:
-            parts.append(f"  Line: {self.line}")
-
-        if self.filename is not None:
-            parts.append(f"  File: {self.filename}")
-
-        if self.snippet:
-            # Optionally truncate long snippets for readability
-            parts.append(f"  Snippet: \n {self.snippet}")
-
-        cause = self._generate_cause()
-        if cause:
-            parts.append(cause)
-
-        if self.context:
-            if isinstance(self.context, dict):
-                parts.append(f"{Colors.BLUE}🔍 Additional Context:{Colors.RESET}\n")
-                for key, value in self.context.items():
-                    parts.append(f"    {key}: {value}")
-            else:
-                parts.append(
-                    f"{Colors.BLUE}🔍 Additional Context:{Colors.RESET} {self.context}"
-                )
-
-        if self.suggestion:
-            parts.append(f"{Colors.GREEN}💡 Suggestions:{Colors.RESET}")
-            if isinstance(self.suggestion, (list, tuple)):
-                for suggestion in self.suggestion:
-                    parts.append(f" {Colors.GREEN}{suggestion}{Colors.RESET}")
-            else:
-                parts.append(f" {self.suggestion}")
-
-        return "\n".join(parts)
+        return _render_user_diagnostic(self)
 
 
 class DSLSubprocessCallError(DSLBaseError):
@@ -196,13 +189,29 @@ class DSLSubprocessCallError(DSLBaseError):
 
 
 class DSLRuntimeError(DSLBaseError):
-    """
-    Raised when an error occurs during JIT-time code generation in the DSL.
+    """An internal / compiler error -- NOT the author's fault.
+
+    Rendered as the "compiler bug, please report" envelope (see
+    ``_render_user_diagnostic``): a ``DSLRuntimeError`` means the DSL hit a
+    "should never happen" / failed-to-build-IR / wrapped-backend situation that
+    the kernel author cannot fix.  For mistakes in the author's kernel raise
+    ``DSLUserCodeError`` with a ``DiagId`` instead, so the author gets a
+    "here is your mistake + how to fix it" message.
     """
 
-    # Inherits all logic from DSLBaseError; override methods if you need
-    # specialized behavior or formatting for runtime errors.
-    pass
+    _is_internal = True
+
+
+_ARCH_RELATED_CUDA_ERRORS = frozenset(
+    {
+        "CUDA_ERROR_INVALID_SOURCE",
+        "CUDA_ERROR_NO_BINARY_FOR_GPU",
+        "CUDA_ERROR_INVALID_PTX",
+        "CUDA_ERROR_UNSUPPORTED_PTX_VERSION",
+        "CUDA_ERROR_NO_DEVICE",
+        "CUDA_ERROR_INVALID_DEVICE",
+    }
+)
 
 
 def _get_friendly_cuda_error_message(
@@ -222,8 +231,9 @@ def _get_friendly_cuda_error_message(
     ):
         error_name = error_name[2:-1]
 
-    # Add target architecture info
-    target_arch = os.getenv("CUTE_DSL_ARCH", "unknown")
+    env_manager = get_current_env_manager()
+    target_arch = env_manager.arch if env_manager is not None else "unknown"
+    arch_is_relevant = error_name in _ARCH_RELATED_CUDA_ERRORS
 
     additional_info = {
         "CUDA_ERROR_INVALID_SOURCE": (
@@ -248,6 +258,10 @@ def _get_friendly_cuda_error_message(
             f"{Colors.RED}⚠️ Invalid parameter passed to CUDA operation.{Colors.RESET}\n\n"
             f"{Colors.YELLOW}This is likely a bug - please report it with:{Colors.RESET}"
         ),
+        "CUDA_ERROR_ILLEGAL_INSTRUCTION": (
+            f"{Colors.RED}❌ A running kernel executed an illegal instruction.{Colors.RESET}\n\n"
+            f"{Colors.YELLOW}This is a fault inside the kernel, not an architecture mismatch.{Colors.RESET}\n\n"
+        ),
         "CUDA_ERROR_INVALID_CLUSTER_SIZE": (
             f"{Colors.RED}❌ Invalid cluster size.{Colors.RESET}\n\n"
         ),
@@ -265,6 +279,11 @@ def _get_friendly_cuda_error_message(
         ),
         "CUDA_ERROR_NO_BINARY_FOR_GPU": (
             "Set env CUTE_DSL_ARCH to match your GPU architecture",
+        ),
+        "CUDA_ERROR_ILLEGAL_INSTRUCTION": (
+            "1. Inspect the kernel for an in-device fault (out-of-bounds access, "
+            "failed device-side assert, or an unsupported instruction at the launch config)",
+            "2. Re-run under compute-sanitizer to localize the faulting instruction",
         ),
         "CUDA_ERROR_OUT_OF_MEMORY": (
             "1. Reduce batch size",
@@ -301,9 +320,8 @@ def _get_friendly_cuda_error_message(
     debug_info = f"\n- {Colors.BOLD}Error name: {error_name}\n"
     debug_info += f"- Error code: {error_code}\n"
     debug_info += f"- CUDA_TOOLKIT_PATH: {os.getenv('CUDA_TOOLKIT_PATH', 'not set')}\n"
-    debug_info += (
-        f"- Target SM ARCH: {os.getenv('CUTE_DSL_ARCH', 'not set')}{Colors.RESET}\n"
-    )
+    arch_source = "from env manager" if env_manager is not None else "unspecified"
+    debug_info += f"- Target SM ARCH: {target_arch} ({arch_source}){Colors.RESET}\n"
 
     try:
         # Get GPU information using CUDA Python API
@@ -311,10 +329,21 @@ def _get_friendly_cuda_error_message(
         gpu_info = get_device_info()
         debug_info += gpu_info.pretty_str()
 
-        if target_arch and gpu_info.compatible_archs:
+        incompatible = bool(
+            target_arch
+            and gpu_info.compatible_archs
+            and target_arch not in gpu_info.compatible_archs
+        )
+
+        if (
+            (arch_is_relevant or incompatible)
+            and target_arch
+            and target_arch != "unknown"
+            and gpu_info.compatible_archs
+        ):
             debug_info += f"\n{Colors.BOLD}Compatibility Check:{Colors.RESET}\n"
 
-            if target_arch not in gpu_info.compatible_archs:
+            if incompatible:
                 debug_info += (
                     f"{Colors.RED}❌ Error: Target SM ARCH {target_arch} is not compatible\n"
                     f"💡 Please use one of SM ARCHs: "
@@ -337,17 +366,6 @@ def _get_friendly_cuda_error_message(
     return message, debug_info, error_suggestions.get(error_name, "")
 
 
-def _get_cuda_error_name_from_code(error_code: int) -> Union[str, bytes]:
-    try:
-        # Avoid circular dependency.
-        from .runtime import cuda as cuda_helpers
-
-        cu_result = cuda_helpers.cuda.CUresult(error_code)
-        return cuda_helpers._cudaGetErrorEnum(cu_result)
-    except (ValueError, AttributeError):
-        return f"<unknown CUDA error code {error_code}>"
-
-
 class DSLCudaRuntimeError(DSLBaseError):
     """
     Raised when an error occurs during CUDA runtime code generation in the DSL.
@@ -367,25 +385,70 @@ class DSLCudaRuntimeError(DSLBaseError):
         )
 
 
-def create_cuda_runtime_error(
-    error_code: int, cause: BaseException | None = None
-) -> DSLCudaRuntimeError:
-    """Create a DSLCudaRuntimeError from a raw CUDA integer error code."""
-    error = DSLCudaRuntimeError(error_code, _get_cuda_error_name_from_code(error_code))
-    if cause is not None:
-        error.__cause__ = cause
-        error.__suppress_context__ = True
-    return error
+class DSLWarning(UserWarning):
+    """A non-fatal author-facing warning, rendered like a ``DSLUserCodeError``.
 
+    The author's code is not wrong, only at risk (e.g. an implicit promotion
+    that can silently bite later), so this renders the shared diagnostic block
+    with a yellow ``[Warning]`` header instead of ``[Error]``.  It subclasses
+    ``UserWarning`` so it flows through the standard ``warnings`` module
+    (filterable, deduplicated); prefer raising it via
+    ``diagnostics.report_warning(WarnId.X, ...)``.
 
-class DSLAstPreprocessorError(DSLBaseError):
+    The first positional argument is normally a :class:`WarnId` (the warnings
+    catalog -- separate from the :class:`DiagId` error catalog); a free-form
+    string is also accepted.
     """
-    Raised when an error occurs during AST preprocessing or visiting in the DSL.
-    """
 
-    # Same approach: You could override _format_message if you want
-    # to emphasize AST node details or anything specific to preprocessing.
-    pass
+    _severity = "warning"
+    _is_internal = False
+    error_code = None
+
+    def __init__(
+        self,
+        warn_or_message: Any,
+        filename: Optional[str] = None,
+        lineno: Optional[int] = None,
+        snippet: Optional[str] = None,
+        suggestion: Optional[Union[str, list]] = None,
+        context: Optional[Union[Dict[str, Any], str]] = None,
+        cause: Optional[BaseException] = None,
+        **fields: Any,
+    ) -> None:
+        from .diagnostics import WarnId  # lazy: avoid an import cycle
+
+        self.warn_id: Optional["WarnId"] = None
+        self.code: Optional[str] = None
+        if isinstance(warn_or_message, WarnId):
+            self.warn_id = warn_or_message
+            self.code = warn_or_message.code
+            message, catalog_fixes = warn_or_message.fill(**fields)
+            if suggestion is None:
+                suggestion = list(catalog_fixes)
+        else:
+            if fields:
+                raise TypeError(
+                    "DSLWarning received template fields "
+                    f"{sorted(fields)} but the first argument is a plain "
+                    "string, not a WarnId."
+                )
+            message = warn_or_message
+
+        self.col: Optional[int] = None
+        self.end_col: Optional[int] = None
+        if filename is None and lineno is None:
+            filename, lineno, self.col, self.end_col = _find_user_source_location()
+        self.message = message
+        self.filename = filename
+        self.line = lineno
+        self.suggestion = suggestion
+        self.context = context
+        self.cause = cause
+        self.snippet = snippet
+        super().__init__(_render_user_diagnostic(self))
+
+    def _generate_cause(self) -> str:
+        return f"Caused exception: {self.cause}" if self.cause else ""
 
 
 class DSLNotImplemented(DSLBaseError):
@@ -453,13 +516,27 @@ def translate_mlir_nanobind_error(exc: BaseException) -> str:
 
 
 class DSLUserCodeError(DSLBaseError):
-    """Raised when an error is detected in user DSL code.
+    """Raised when an error is detected in the author's kernel code.
 
-    Covers mutation violations, scope errors, type mismatches, and similar
-    user-facing diagnostics.  Takes explicit ``filename`` and ``lineno`` --
-    no ``inspect.stack()`` magic inside the class.
+    Covers mutation/phase violations, scope errors, type mismatches,
+    unsupported constructs, configuration mistakes, and similar author-facing
+    diagnostics.  ``filename``/``lineno`` may be passed explicitly; when they
+    are not, the nearest author frame on the call stack is used so the error
+    still points at the user's code (see ``_find_user_source_location``).
 
-    Usage::
+    The first positional argument is normally a :class:`DiagId` from the error
+    catalog; the catalog message and fixes are filled from the keyword
+    ``**fields`` and the stable code is appended automatically::
+
+        raise DSLUserCodeError(
+            DiagId.TYPE_UNSTABLE_JOIN,
+            filename="/path/to/user.py",
+            lineno=42,
+            var="accum", old_type="Int32", new_type="Float32",
+        )
+
+    A free-form string message is still accepted for one-off diagnostics that
+    do not yet have a catalog entry::
 
         raise DSLUserCodeError(
             "Scope Error: variable `a` escapes its scope",
@@ -471,17 +548,40 @@ class DSLUserCodeError(DSLBaseError):
 
     def __init__(
         self,
-        message: str,
+        diag_or_message: Any,
         filename: Optional[str] = None,
         lineno: Optional[int] = None,
         col_offset: Optional[int] = None,
+        end_col_offset: Optional[int] = None,
         cause: Optional[BaseException] = None,
         suggestion: Optional[Union[str, list]] = None,
         context: Optional[Union[Dict[str, Any], str]] = None,
+        snippet: Optional[str] = None,
+        **fields: Any,
     ) -> None:
-        snippet = None
-        if filename and lineno:
-            snippet = self._read_source_snippet(filename, lineno, col_offset)
+        from .diagnostics import DiagId  # lazy: avoid an import cycle
+
+        self.diag_id: Optional["DiagId"] = None
+        self.code: Optional[str] = None
+        if isinstance(diag_or_message, DiagId):
+            self.diag_id = diag_or_message
+            self.code = diag_or_message.code
+            message, catalog_fixes = diag_or_message.fill(**fields)
+            if suggestion is None:
+                suggestion = list(catalog_fixes)
+        else:
+            if fields:
+                raise TypeError(
+                    "DSLUserCodeError received template fields "
+                    f"{sorted(fields)} but the first argument is a plain "
+                    "string, not a DiagId."
+                )
+            message = diag_or_message
+
+        self.col = col_offset
+        self.end_col = end_col_offset
+        if filename is None and lineno is None:
+            filename, lineno, self.col, self.end_col = _find_user_source_location()
 
         super().__init__(
             message,
@@ -492,68 +592,6 @@ class DSLUserCodeError(DSLBaseError):
             suggestion=suggestion,
             context=context,
         )
-
-    @staticmethod
-    def _read_source_snippet(
-        filename: str,
-        lineno: int,
-        col_offset: Optional[int] = None,
-    ) -> Optional[str]:
-        """Read a single source line and format it as a snippet."""
-        try:
-            import linecache
-
-            code_line = linecache.getline(filename, lineno).rstrip()
-            if not code_line:
-                return None
-            snippet = f"   {lineno:4d} | {code_line}"
-            if col_offset is not None:
-                snippet += f"\n        | {' ' * col_offset}^"
-            return snippet
-        except Exception:  # noqa: BLE001 — best-effort snippet
-            return None
-
-    def _format_message(self) -> str:
-        """Format a rich error message with code snippet and suggestions."""
-        parts = []
-
-        parts.append(
-            f"\n{Colors.RED}{Colors.BOLD}[Error] {self.message}{Colors.RESET}\n"
-        )
-
-        if self.snippet and self.filename:
-            loc = f"{self.filename}:{self.line}" if self.line else self.filename
-            parts.append(f"{Colors.BLUE}Code:{Colors.RESET}")
-            parts.append(f"--> {Colors.BLUE}{loc}{Colors.RESET}")
-            parts.append(self.snippet)
-            parts.append("")
-
-        if self.cause:
-            parts.append(f"{Colors.BLUE}Cause:{Colors.RESET} {self.cause}")
-            parts.append("")
-
-        if self.context:
-            if isinstance(self.context, dict):
-                parts.append(f"{Colors.BLUE}Additional Context:{Colors.RESET}")
-                for key, value in self.context.items():
-                    parts.append(f"    {key}: {value}")
-            else:
-                parts.append(
-                    f"{Colors.BLUE}Additional Context:{Colors.RESET} {self.context}"
-                )
-            parts.append("")
-
-        if self.suggestion:
-            parts.append(f"{Colors.GREEN}Suggestion:{Colors.RESET}")
-            if isinstance(self.suggestion, (list, tuple)):
-                for s in self.suggestion:
-                    parts.append(f"  {Colors.GREEN}{s}{Colors.RESET}")
-            else:
-                parts.append(f"  {self.suggestion}")
-            parts.append("")
-
-        parts.append("=" * 100)
-        return "\n".join(parts)
 
 
 class DSLOperationBuildError(DSLBaseError):
@@ -745,8 +783,12 @@ def _coerce_to_cuda_version(
         return value
     if isinstance(value, str):
         return DSLCudaVersion(value)
-    raise DSLRuntimeError(
-        f"{param_name} must be a DSLCudaVersion or str, got {type(value).__name__}"
+    from .diagnostics import DiagId  # lazy: avoid an import cycle
+
+    raise DSLUserCodeError(
+        DiagId.CONFIG_VERSION_TYPE,
+        param_name=param_name,
+        got_type=type(value).__name__,
     )
 
 
@@ -797,6 +839,7 @@ def target_version(
     """
     # Avoid circular dependency
     from .version_info import CUDA_VERSION
+    from .diagnostics import DiagId
 
     # Coerce all version parameters to DSLCudaVersion at the start
     exact_v = _coerce_to_cuda_version(exact_version, "exact_version")
@@ -807,18 +850,14 @@ def target_version(
     is_range_check = min_v is not None or max_v is not None
     is_exact_version_check = exact_v is not None
     if is_range_check and is_exact_version_check:
-        raise DSLRuntimeError(
-            "Cannot use exact_version and [min_version, max_version] check at the same time"
-        )
+        raise DSLUserCodeError(DiagId.CONFIG_VERSION_CONFLICT)
 
     if is_range_check:
         if min_v is None and max_v is None:
-            raise DSLRuntimeError(
-                "min_version and max_version cannot be None at the same time"
-            )
+            raise DSLUserCodeError(DiagId.CONFIG_VERSION_MISSING)
         if min_v is not None and max_v is not None:
             if min_v > max_v:
-                raise DSLRuntimeError("min_version must be less than max_version")
+                raise DSLUserCodeError(DiagId.CONFIG_VERSION_RANGE_INVALID)
 
         result = True
         if min_v is not None:
@@ -829,6 +868,4 @@ def target_version(
     elif is_exact_version_check:
         return CUDA_VERSION == exact_v
     else:
-        raise DSLRuntimeError(
-            "either exact_version, min_version, or max_version must be provided"
-        )
+        raise DSLUserCodeError(DiagId.CONFIG_VERSION_REQUIRED)

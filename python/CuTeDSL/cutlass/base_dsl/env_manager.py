@@ -28,7 +28,8 @@ from pathlib import Path
 from functools import lru_cache
 
 from ..base_dsl.runtime.cuda import get_compute_capability_major_minor
-from .common import DSLRuntimeError
+from .common import DSLUserCodeError
+from .diagnostics import DiagId
 from .utils.logger import log
 from .cache_helpers import get_default_file_dump_root
 
@@ -339,6 +340,79 @@ def _find_cuda_home() -> str | None:
     return cuda_home
 
 
+
+@lru_cache(maxsize=1)
+def _find_nvdisasm_binary() -> str:
+    """Return absolute path to the bundled nvdisasm binary."""
+    from importlib import metadata
+
+    try:
+        dist = metadata.distribution("nvidia-cuda-nvdisasm")
+    except metadata.PackageNotFoundError:
+        dist = None
+    if dist is not None and dist.files is not None:
+        for entry in dist.files:
+            if entry.name == "nvdisasm":
+                binpath = Path(str(dist.locate_file(entry)))
+                if binpath.is_file():
+                    return str(binpath)
+    raise DSLUserCodeError(
+        "nvdisasm binary not found inside the nvidia-cuda-nvdisasm wheel.",
+        suggestion="\n".join(
+            [
+                "nvidia-cuda-nvdisasm is a runtime dependency of nvidia-cutlass-dsl",
+                "and should have been installed automatically. Try:",
+                "  • pip install --force-reinstall nvidia-cuda-nvdisasm",
+            ]
+        ),
+    )
+
+
+def _check_nvdisasm_available(
+    prefix: str,
+    keep_sass: bool,
+) -> None:
+    """Check that nvdisasm is available when SASS output is requested."""
+    try:
+        _find_nvdisasm_binary()
+        return
+    except DSLUserCodeError:
+        pass
+    enabled_vars = []
+    if keep_sass:
+        enabled_vars.append(f"{prefix}_KEEP_SASS")
+    vars_str = " and ".join(enabled_vars)
+    raise DSLUserCodeError(DiagId.CONFIG_MISSING_NVDISASM, vars=vars_str)
+
+
+def dump_sass(
+    cubin_path: str,
+    sass_path: str | None,
+    flags: str,
+) -> None:
+    """Disassemble a CUBIN file into SASS.
+
+    If sass_path is None, the SASS is written to stderr.
+    Otherwise it is written to the given file path.
+    """
+    import shlex
+    import subprocess
+
+    if not cubin_path or not os.path.exists(cubin_path):
+        raise DSLUserCodeError(
+            f"Cannot dump SASS: CUBIN file does not exist at {cubin_path!r}."
+        )
+
+    nvdisasm = _find_nvdisasm_binary()
+    tokens = [nvdisasm, *shlex.split(flags), cubin_path]
+
+    if sass_path:
+        with open(sass_path, "w") as sass_file:
+            subprocess.run(tokens, stdout=sass_file, check=True)
+    else:
+        subprocess.run(tokens, stdout=sys.stderr, check=True)
+
+
 def get_prefix_dsl_libs(prefix: str) -> str | None:
     """
     Returns get_str_env_var('{prefix}_LIBS') if set.
@@ -442,13 +516,22 @@ class EnvironmentVarManager(LogEnvironmentManager):
           ir-debug     — Raw IR before any passes
           ptx          — PTX assembly
           cubin        — CUBIN binary
+          sass         — SASS disassembly
           all          — all of the above
         Example: CUTE_DSL_KEEP=ir,ptx
     # Deprecated — use [DSL_NAME]_KEEP instead:
     - [DSL_NAME]_KEEP_IR: (deprecated) use KEEP=ir-debug
     - [DSL_NAME]_KEEP_PTX: (deprecated) use KEEP=ptx
     - [DSL_NAME]_KEEP_CUBIN: (deprecated) use KEEP=cubin
+    - [DSL_NAME]_KEEP_SASS: (deprecated) use KEEP=sass
     Other options:
+    - [DSL_NAME]_DEBUG: Master debug switch for DSL developers (default: False).
+      When True, raises the default of LINEINFO, SHOW_STACKTRACE (and disables
+      FILTER_STACKTRACE) and ENABLE_OPTIMIZATION_WARNINGS;
+      attributes MLIR ops to the closest (library) frame; and runs full
+      per-launch argument validation. These defaults remain independently
+      overridable by their own env vars. Trace-time MLIR op verification
+      (CUTE_DSL_VERIFY_TRACE) is always enabled while debug mode is on.
     - [DSL_NAME]_SHOW_STACKTRACE: Show full stack traces on failure (default: False)
     - [DSL_NAME]_LINEINFO: Compile with `--lineinfo` enabling developer tools such as the profiler and debugger (default: False)
     - [DSL_NAME]_LOG_LEVEL: Logging level to set, for LOG_TO_CONSOLE or LOG_TO_FILE (default: 1).
@@ -465,9 +548,16 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_ENABLE_TVM_FFI: Enable TVM-FFI or not (default: False)
     - [DSL_NAME]_LOC_TRACEBACKS: Maximum depth of location tracebacks (default: 0)
     - [DSL_NAME]_COMPILER_OPT: Compact compiler option string (default: "").
-      Controls compiler passes and diagnostic checks. Forms accepted:
+      Errors always show and fail compilation (no flag needed); warnings and
+      remarks are opt-in and non-fatal. A {<cat>} selector shows only that
+      category; bare shows all categories. Forms accepted:
+        warnings                    — show all warnings
+        warnings{nvvm}              — show only nvvm-category warnings
+        remarks                     — show all remarks
+        remarks{nvvm}               — show only nvvm (sync) remarks
         iket                        — enable IKET (In-Kernel Event Tracing) instrumentation
       Examples:
+        CUTE_DSL_COMPILER_OPT="warnings{nvvm}"
         CUTE_DSL_COMPILER_OPT="iket"
       The same option strings are accepted by cute.compile(..., options=...).
 
@@ -476,14 +566,25 @@ class EnvironmentVarManager(LogEnvironmentManager):
     def __init__(self, prefix: str = "DSL") -> None:
         super().__init__(prefix)
 
+        # Master debug switch for DSL developers. When True, it raises the
+        # default of a curated set of diagnostic/correctness settings below
+        # (lineinfo, stacktrace, optimization warnings, IR verification).
+        # Each of those settings remains independently overridable by its own
+        # env var, so debugging mode only changes their defaults.
+        self.debug = get_bool_env_var(f"{prefix}_DEBUG", False)
+
         # Printing options
         self.print_after_preprocessor = get_bool_env_var(
             f"{prefix}_PRINT_AFTER_PREPROCESSOR", False
         )
         self.print_ir = get_bool_env_var(f"{prefix}_PRINT_IR", False)
-        self.filter_stacktrace = get_bool_env_var(f"{prefix}_FILTER_STACKTRACE", True)
-        self.show_stacktrace = get_bool_env_var(f"{prefix}_SHOW_STACKTRACE", False)
-        self.lineinfo = get_bool_env_var(f"{prefix}_LINEINFO", False)
+        # SHOW_STACKTRACE (and DEBUG) show the full, unfiltered traceback, so
+        # internal-frame filtering is disabled by default in either mode.
+        self.show_stacktrace = get_bool_env_var(f"{prefix}_SHOW_STACKTRACE", self.debug)
+        self.filter_stacktrace = get_bool_env_var(
+            f"{prefix}_FILTER_STACKTRACE", not (self.debug or self.show_stacktrace)
+        )
+        self.lineinfo = get_bool_env_var(f"{prefix}_LINEINFO", self.debug)
         self.no_cache = get_bool_env_var(f"{prefix}_NO_CACHE", False)
         self.jit_cache_max_elems = get_int_or_none_env_var(
             f"{prefix}_JIT_CACHE_MAX_ELEMS", None
@@ -529,6 +630,13 @@ class EnvironmentVarManager(LogEnvironmentManager):
             )
             _keep_tokens.add("cubin")
 
+        if get_bool_env_var(f"{prefix}_KEEP_SASS", False):
+            warnings.warn(
+                f"{prefix}_KEEP_SASS is deprecated; use {prefix}_KEEP=sass instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            _keep_tokens.add("sass")
         self.keep_tokens: frozenset[str] = frozenset(_keep_tokens)
 
         # Derived boolean attributes — used by compiler.py and dsl.py.
@@ -538,6 +646,15 @@ class EnvironmentVarManager(LogEnvironmentManager):
         self.keep_ir: bool = "ir-debug" in self.keep_tokens
         self.keep_ptx: bool = "ptx" in self.keep_tokens
         self.keep_cubin: bool = "cubin" in self.keep_tokens
+        self.keep_sass: bool = "sass" in self.keep_tokens
+        check_sass = self.keep_sass
+        if check_sass:
+            _check_nvdisasm_available(
+                prefix,
+                self.keep_sass,
+            )
+        self.remarks = get_str_env_var(f"{prefix}_REMARKS", "")
+
         # Other options
         self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
         self.arch = get_str_env_var(f"{prefix}_ARCH", detect_gpu_arch(prefix))
@@ -546,7 +663,7 @@ class EnvironmentVarManager(LogEnvironmentManager):
         )
         self.warnings_ignore = get_bool_env_var(f"{prefix}_WARNINGS_IGNORE", False)
         self.enable_optimization_warnings = get_bool_env_var(
-            f"{prefix}_ENABLE_OPTIMIZATION_WARNINGS", False
+            f"{prefix}_ENABLE_OPTIMIZATION_WARNINGS", self.debug
         )
         self.disable_file_caching = get_bool_env_var(
             f"{prefix}_DISABLE_FILE_CACHING", False

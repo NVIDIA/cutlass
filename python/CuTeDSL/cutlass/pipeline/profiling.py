@@ -55,7 +55,7 @@ def dump_profiling_metadata(dump_dir: str, extra: Optional[dict] = None) -> None
 
     :param dump_dir: Output directory.
     :type dump_dir: str
-    :param extra: Additional fields to merge.
+    :param extra: Additional fields to merge (e.g., TS schedule).
     :type extra: dict, optional
     :raises RuntimeError: If the output file cannot be written.
     """

@@ -60,6 +60,56 @@ def _cudaGetErrorEnum(error: Any) -> Any:
         raise DSLRuntimeError("Unknown error type: {}".format(error))
 
 
+def get_cuda_error_name_from_code(
+    error_code: int,
+    cuda_error_type: type[
+        cuda.CUresult | cudart.cudaError_t | nvrtc.nvrtcResult
+    ] = cuda.CUresult,
+) -> Union[str, bytes]:
+    """
+    Return the CUDA error name for a raw integer error code.
+    :param error_code: The raw integer CUDA error code.
+    :type error_code: int
+    :param cuda_error_type: The CUDA enum class used to decode the error code.
+    :type cuda_error_type: type(cuda.CUresult or cudart.cudaError_t or nvrtc.nvrtcResult)
+    :return: The decoded CUDA error name, or a string describing an unknown code.
+    :rtype: str or bytes
+    """
+    try:
+        cu_err = cuda_error_type(error_code)
+        return _cudaGetErrorEnum(cu_err)
+    except (ValueError, AttributeError):
+        return f"<unknown CUDA error code {error_code}>"
+
+
+def create_cuda_runtime_error(
+    error_code: int,
+    cuda_error_type: type[
+        cuda.CUresult | cudart.cudaError_t | nvrtc.nvrtcResult
+    ] = cuda.CUresult,
+    cause: BaseException | None = None,
+) -> DSLCudaRuntimeError:
+    """
+    Create a DSLCudaRuntimeError from a raw CUDA integer error code.
+    :param error_code: The raw integer CUDA error code.
+    :type error_code: int
+    :param cuda_error_type: The CUDA enum class used to decode the error code.
+    :type cuda_error_type: type(cuda.CUresult or cudart.cudaError_t or nvrtc.nvrtcResult)
+    :param cause: The original exception that caused this runtime error.
+    :type cause: BaseException or None
+    :return: The DSL CUDA runtime error.
+    :rtype: DSLCudaRuntimeError
+    """
+    error = DSLCudaRuntimeError(
+        error_code,
+        get_cuda_error_name_from_code(error_code, cuda_error_type),
+    )
+    if cause is not None:
+        error.__cause__ = cause
+        error.__suppress_context__ = True
+    return error
+
+
 def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
     """
     Get GPU architecture information and compatibility details.
@@ -82,17 +132,15 @@ def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
         (8, 7): ("Ampere", "sm_87", ["sm_87", "sm_86", "sm_80"]),  # A10, A40
         (9, 0): ("Hopper", "sm_90a", ["sm_90a"]),  # H100
         (10, 0): ("Blackwell", "sm_100a", ["sm_100a"]),  # B200
+        (10, 1): ("Thor", "sm_101a", ["sm_101a"]),  # Thor (pre 13.0)
         (10, 3): ("Blackwell", "sm_103a", ["sm_103a"]),
+        (11, 0): ("Thor", "sm_110a", ["sm_110a"]),  # Thor (post 13.0)
         (12, 0): (
             "Blackwell",
             "sm_120a",
             ["sm_120a"],
         ),  # RTX PRO 6000 / RTX 50 Series
-        (12, 1): (
-            "Blackwell",
-            "sm_121a",
-            ["sm_121a"],
-        ),  # DGX Spark
+        (12, 1): ("Blackwell", "sm_121a", ["sm_121a"]),  # DGX Spark
     }
     return gpu_arch_map.get(
         (major, minor), ("Unknown", f"sm_{major}{minor}", [f"sm_{major}{minor}"])
@@ -566,7 +614,7 @@ def load_library_data(cubin_data: bytes | int) -> Any:
     # Load module data
     if isinstance(cubin_data, bytes):
         cubin_data = np.char.array(cubin_data).ctypes.data
-    _log().info(f"cuLibraryLoadData {cubin_data}")
+    _log().info(f"cuLibraryLoadData {cubin_data!r}")
 
     library = checkCudaErrors(
         cuda.cuLibraryLoadData(cubin_data, None, None, 0, None, None, 0)
@@ -843,6 +891,7 @@ def default_stream() -> Any:
     :rtype: cuda.CUstream
     """
     return cuda.CUstream(0)
+
 
 
 @lru_cache(maxsize=1)

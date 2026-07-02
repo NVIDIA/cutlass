@@ -515,14 +515,13 @@ issues with shape-1 dimension handling.
 
     # from cutlass.cute.runtime import make_ptr
     a_ptr = make_ptr(
-        cutlass.Float16, a.data_ptr(), cute.AddressSpace.gmem, assumed_align=32
+        cutlass.Float16, a.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=32
     )
     b_ptr = make_ptr(
-        cutlass.Float16, b.data_ptr(), cute.AddressSpace.gmem, assumed_align=32
+        cutlass.Float16, b.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=32
     )
     c_ptr = make_ptr(
-        cutlass.Float16, c.data_ptr(), cute.AddressSpace.gmem, assumed_align=32
+        cutlass.Float16, c.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=32
     )
     tensor_op_gemm_wrapper(a_ptr, b_ptr, c_ptr, m, n, k, l)
-
 

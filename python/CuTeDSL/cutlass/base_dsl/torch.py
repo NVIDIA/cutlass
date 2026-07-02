@@ -24,6 +24,7 @@ from .typing import (
     Float8E5M2,
     Float8E8M0FNU,
     Float4E2M1FN,
+    Float4E2M1FNx2,
 )
 
 
@@ -41,6 +42,7 @@ def dtype(ty: Type[Numeric]) -> "torch.dtype":
         Float8E4M3FN: torch.float8_e4m3fn,
         Float8E4M3B11FNUZ: torch.float8_e4m3fnuz,
         Float4E2M1FN: torch.float4_e2m1fn_x2,
+        Float4E2M1FNx2: torch.float4_e2m1fn_x2,
     }
 
     # float8_e8m0fnu is introduced in latest version of torch

@@ -9,7 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Type, Optional
+from cutlass.address_space import AddressSpace
+from typing import Type, Optional, Union
 from cutlass._mlir.dialects import cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
 from cutlass.cutlass_dsl import dsl_user_op
@@ -111,8 +112,8 @@ def _emit_tma_load(
 @dsl_user_op
 def allocate(
     type: Type[cute.Numeric],
-    address_space: cute.AddressSpace,
-    layout: cute.Layout | cute.ComposedLayout,
+    address_space: AddressSpace,
+    layout: Union[cute.Layout, cute.ComposedLayout],
     alignment: cute.Int32,
     is2cta: bool = False,
     loc: Optional[ir.Location] = None,
@@ -188,7 +189,7 @@ def tma_load(
     Required for multicast loads and for selecting SM100_TMA_LOAD_2SM.
     vmnk_layout: layout describing the cluster configuration. Required when tma_operation_type is multicast.
     multicast_mode (optional): multicast projection mode. Required when tma_operation_type is multicast.
-    internal_type (optional): selects the TMA transfer's internal element encoding used by hardware.
+    internal_type (optional): selects the TMA transfer element-format override.
     Does not change src/dst memref types. For structured sparsity, use base storage types:
     Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
     """
@@ -274,7 +275,7 @@ def tma_store(
     """
     Copies a tensor from a Buffer to a tensor pointed to by a !cute.memref.
 
-    internal_type (optional): selects the TMA transfer's internal element encoding used by hardware.
+    internal_type (optional): selects the TMA transfer element-format override.
     Does not change src/dst memref types. For structured sparsity, use base storage types:
     Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
     """
@@ -320,13 +321,12 @@ def tma_reduce_store(
         kinds: ADD / MIN / MAX / INC / DEC / AND / OR / XOR.
     :param cta_v_map: optional CTA-v map layout. If omitted, the layout is
         inferred from the destination GMEM memref.
-    :param internal_type: optional override for the TMA transfer's internal
-        element encoding; see :func:`tma_store` for semantics.
+    :param internal_type: optional override for the TMA transfer element
+        format; see :func:`tma_store` for semantics.
     """
     if not isinstance(kind, cute.ReductionKind):
         raise TypeError(
-            f"tma_reduce_store: unsupported kind {kind!r}; "
-            f"expected cute.ReductionKind"
+            f"tma_reduce_store: unsupported kind {kind!r}; expected cute.ReductionKind"
         )
     kwargs = {
         "kind": ir.Attribute.parse(f"#cute_nvgpu.tma_reduce_kind<{kind.name}>"),

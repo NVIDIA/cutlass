@@ -20,6 +20,7 @@ from cutlass.cutlass_dsl import (
     Uint8,
     Int8,
     Int32,
+    Boolean,
     Float8E4M3FN,
     Float8E5M2,
     Float6E3M2FN,
@@ -940,6 +941,9 @@ def make_smem_layout_epi(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
 
+    if epi_dtype is Boolean:
+        epi_dtype = Int8
+
     epilog_shape = cute.product_each(
         cute.shape(epi_tile, loc=loc, ip=ip), loc=loc, ip=ip
     )
@@ -1835,7 +1839,11 @@ def compute_epilogue_tile_size(
     else:
         (warp_m, warp_n) = (2, 2) if (cta_tile_m == 64 and use_2cta) else (4, 1)
     disable_source = elem_width_c is None
-    max_bits = elem_width_d if disable_source else max(elem_width_c, elem_width_d)  # type: ignore[type-var]
+    if disable_source:
+        max_bits = elem_width_d
+    else:
+        assert elem_width_c is not None
+        max_bits = max(elem_width_c, elem_width_d)
 
     # -- Step 2: tile_m ---------------------------------------------------
     # 32 datapaths per subpartition (hardware constant); cap so each warp

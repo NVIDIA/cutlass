@@ -20,6 +20,7 @@ from .helpers import (
     TmaStoreFence,
     PipelineUserType,
     PipelineState,
+    alloc_reserved_mbarrier,
     make_pipeline_state,
     pipeline_init_arrive,
     pipeline_init_wait,

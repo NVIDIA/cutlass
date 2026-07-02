@@ -10,19 +10,44 @@
 # is strictly prohibited.
 
 from .._mlir._mlir_libs._cutlass_ir import (
+    # Artifact and compiler surfaces.
     ArtifactType,
     CompilationArtifact,
-    ParamKind,
-    ParamInfo,
-    FunctionInfo,
     PreCompiledMlirArtifact,
     CompiledMlirArtifact,
     LlvmIrArtifact,
     ObjectArtifact,
-    ExecutableFunction,
-    Executor,
     Compiler,
     CuteCompiler,
-    serialize_compilation_artifact,
+    Executor,
+    ExecutableFunction,
+    # Metadata enums.
+    Abi,
+    DTypeCode,
+    BindingTypeId,
+    AddressSpace,
+    # Metadata value types.
+    FunctionMetadata,
+    Binding,
+    DType,
+    DimSymbol,
+    SymbolId,
+    Dim,
+    Var,
+    Const,
+    Shape,
+    Tensor,
+    Stream,
+    EnvStream,
+    Pointer,
+    Unit,
+    Tuple,
+    # Bound list classes returned by .shape / .strides / .params / .functions.
+    DimList,
+    DimSymbolList,
+    BindingList,
+    FunctionMetadataList,
+    # Serialization helpers.
     deserialize_compilation_artifact,
+    serialize_compilation_artifact,
 )

@@ -207,7 +207,7 @@ class DefaultDataclassAdapter:
         self._arg = arg
         for f in fields(arg):  # type: ignore[arg-type]
             arg_field = getattr(arg, f.name)
-            if not is_constexpr_field(f):
+            if not is_constexpr_field(f, arg):
                 if isinstance(f.type, NumericMeta) and not isinstance(
                     arg_field, f.type
                 ):
@@ -241,7 +241,7 @@ class DefaultDataclassAdapter:
         kwargs = {}
         idx = 0
         for f in fields(self._arg):  # type: ignore[arg-type]
-            if is_constexpr_field(f):
+            if is_constexpr_field(f, self._arg):
                 kwargs[f.name] = getattr(self._arg, f.name)
             else:
                 kwargs[f.name] = new_from_mlir_values(

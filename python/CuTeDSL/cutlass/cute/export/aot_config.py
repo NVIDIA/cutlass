@@ -96,7 +96,7 @@ def get_libdir(target: str = "") -> str:
         library subtree exists, so callers (and the CLI) surface a non-zero
         exit instead of silently returning ``""``.
     """
-    from ..runtime import find_runtime_libraries
+    from cutlass.runtime import find_runtime_libraries
 
     libs = find_runtime_libraries(enable_tvm_ffi=False)
     default_dir = str(Path(libs[0]).parent) if libs else ""
@@ -121,7 +121,7 @@ def get_libs(enable_tvm_ffi: bool = False, target: str = "") -> str:
     :return: Space-separated -l flags (e.g., "-lcuda_dialect_runtime -ltvm_ffi")
     :rtype: str
     """
-    from ..runtime import find_runtime_libraries
+    from cutlass.runtime import find_runtime_libraries
 
     libs = find_runtime_libraries(enable_tvm_ffi=enable_tvm_ffi)
     # Convert full paths to -l flags
@@ -144,7 +144,7 @@ def get_lib_paths(enable_tvm_ffi: bool = False) -> list[str]:
     :return: List of full library paths
     :rtype: list[str]
     """
-    from ..runtime import find_runtime_libraries
+    from cutlass.runtime import find_runtime_libraries
 
     return find_runtime_libraries(enable_tvm_ffi=enable_tvm_ffi)
 

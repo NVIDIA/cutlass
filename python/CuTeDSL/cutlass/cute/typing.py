@@ -55,6 +55,7 @@ from cutlass.base_dsl.typing import (
     Float4E2M1FN,
     Float6E2M3FN,
     Float6E3M2FN,
+    Float4E2M1FNx2,
     as_numeric,
 )
 
@@ -62,7 +63,8 @@ _element_precision_width = _base_typing._element_precision_width
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
-from cutlass._mlir.dialects.cute import AddressSpace, ConstrainedIntType
+from cutlass._mlir.dialects.cute import ConstrainedIntType
+from cutlass.address_space import AddressSpace
 
 if TYPE_CHECKING:
     from cutlass.cute.core import ScaledBasis, Swizzle
@@ -72,6 +74,24 @@ else:
 
 
 Int = Union[int, Integer]
+
+
+def _as_address_space(memspace: AddressSpace | int) -> AddressSpace:
+    if isinstance(memspace, AddressSpace):
+        return memspace
+    if isinstance(memspace, bool):
+        raise TypeError("expects mem_space to be an AddressSpace, not bool")
+    value = getattr(memspace, "value", memspace)
+    try:
+        return AddressSpace(int(value))
+    except (TypeError, ValueError):
+        raise TypeError(
+            f"expects mem_space to be an AddressSpace, but got {memspace}"
+        ) from None
+
+
+def _to_mlir_address_space(memspace: AddressSpace | int) -> _cute_ir.AddressSpace:
+    return _cute_ir.AddressSpace(int(_as_address_space(memspace)))
 
 
 class SymInt:
@@ -240,6 +260,33 @@ class SymInt:
 
     def __rmul__(self, other: "int | SymInt") -> "SymInt":
         return self.__mul__(other)
+
+    def __floordiv__(self, other: "int | SymInt") -> "SymInt":
+        """SymInt // int | SymInt: floor-divide a symbolic integer.
+
+        The result is always a fresh ``SymInt`` (the quotient is symbolic
+        since ``self`` is).  Its divisibility is only as strong as can be
+        *proven* from the divisibility contract:
+
+        * ``self // k`` (``k`` an ``int``): if ``self``'s divisibility is a
+          multiple of ``k`` the division is exact on the contract, so the
+          quotient is a multiple of ``divisibility // k``.  Otherwise nothing
+          is provable and the result advertises ``divisibility=1``.
+        * ``self // other`` (``other`` a ``SymInt``): ``other``'s runtime
+          value is only known to be *some* multiple of its divisibility, so
+          the quotient's alignment is not provable — ``divisibility=1``.
+        """
+        if isinstance(other, int):
+            if other == 0:
+                raise ZeroDivisionError("integer division or modulo by zero")
+            result_width = self._width
+            if self._divisibility % other == 0:
+                return SymInt(result_width, divisibility=self._divisibility // other)
+            return SymInt(result_width, divisibility=1)
+        elif isinstance(other, SymInt):
+            return SymInt(width=max(self._width, other._width), divisibility=1)
+        else:
+            return NotImplemented
 
     def __c_pointers__(self) -> List[int | None]:
         return [ctypes.c_void_p(0).value]
@@ -489,7 +536,7 @@ XTuple = Union[Any, Tuple["XTuple", ...]]
 
 class Pointer(ABC):
     """
-    Abstract base class for CuTe jit function and runtime _Pointer
+    Abstract base class for CuTe jit function and runtime _Pointer.
     """
 
     value: ir.Value
@@ -509,7 +556,7 @@ class Pointer(ABC):
         ...
 
     @property
-    def memspace(self) -> AddressSpace:
+    def memspace(self) -> AddressSpace:  # type: ignore[empty-body]
         """The memory address space of this pointer. Implemented by subclasses."""
         ...
 
@@ -541,6 +588,14 @@ class Pointer(ABC):
     ) -> ir.Value:
         """Get the LLVM pointer representation (loc/ip propagated). Implemented by subclasses."""
         raise NotImplementedError
+
+    def ir_value(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.Value:
+        return self.to_llvm_ptr(loc=loc, ip=ip)
 
     def toint(
         self,
@@ -629,7 +684,7 @@ class TypedTensor:
         self._dtype = dtype
         self._shape = shape
         self._stride = stride
-        self._memspace = memspace
+        self._memspace = _as_address_space(memspace)
         self._assumed_align = assumed_align
         if assumed_align is None:
             # use the bytes width of the element dtype. The alignment is at least one byte align.
@@ -638,6 +693,12 @@ class TypedTensor:
     @property
     def element_type(self) -> Type[Numeric]:
         return self._dtype
+
+    @element_type.setter
+    def element_type(self, new_type: Type[Numeric]) -> None:
+        # TypedTensor is a compile-time type descriptor that's intentionally
+        # read-only.
+        raise NotImplementedError
 
     @property
     def shape(self) -> Shape:
@@ -671,7 +732,9 @@ class TypedTensor:
 
         # Boolean types are stored as i8 in memory
         elem_type = T.i8() if self._dtype.width == 1 else self._dtype.mlir_type
-        ptr_ty = _cute_ir.PtrType.get(elem_type, self._memspace, self._assumed_align)
+        ptr_ty = _cute_ir.PtrType.get(
+            elem_type, _to_mlir_address_space(self._memspace), self._assumed_align
+        )
 
         return _cute_ir.MemRefType.get(ptr_ty, layout_ty)
 
@@ -764,14 +827,15 @@ class Tensor(ABC):
 
     @property
     @abstractmethod
-    def element_type(self) -> Union[Type[Numeric], Type[IntTuple]]: ...
+    def element_type(self) -> Type[Numeric]: ...
 
     @element_type.setter
-    def element_type(self, new_type: Union[Type[Numeric], Type[IntTuple]]) -> None:
+    def element_type(self, new_type: Type[Numeric]) -> None:
         """Implemented by subclasses."""
         raise NotImplementedError
 
     @property
+    @abstractmethod
     def dtype(self) -> Type[Numeric]:
         """The element data type. Implemented by subclasses."""
         raise NotImplementedError
@@ -812,6 +876,16 @@ class Tensor(ABC):
     @property
     @abstractmethod
     def stride(self) -> Stride: ...
+
+    @property
+    def dynamic_shapes_mask(self) -> Tuple[int, ...]:
+        """Implemented by subclasses."""
+        raise NotImplementedError
+
+    @property
+    def dynamic_strides_mask(self) -> Tuple[int, ...]:
+        """Implemented by subclasses."""
+        raise NotImplementedError
 
     def load(
         self,
@@ -922,6 +996,7 @@ __all__ = [
     "Float4E2M1FN",
     "Float6E2M3FN",
     "Float6E3M2FN",
+    "Float4E2M1FNx2",
     "IntTuple",
     "ScaledBasis",
     "Coord",

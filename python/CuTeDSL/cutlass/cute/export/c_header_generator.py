@@ -169,26 +169,59 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
                 arguments.append(f"void *{arg_name}")
                 packed_args.append("&" + arg_name)
             elif isinstance(arg, Tensor):
-                dynamic_shapes = (
-                    f"\n    int32_t dynamic_shapes[{sum(arg.dynamic_shapes_mask)}];"  # type: ignore[attr-defined]
-                    if sum(arg.dynamic_shapes_mask) > 0  # type: ignore[attr-defined]
-                    else ""
-                )
                 stride_type = "int32_t" if arg._use_32bit_stride else "int64_t"  # type: ignore[attr-defined]
-                dynamic_strides = (
-                    f"\n    {stride_type} dynamic_strides[{sum(arg.dynamic_strides_mask)}];"  # type: ignore[attr-defined]
-                    if sum(arg.dynamic_strides_mask) > 0  # type: ignore[attr-defined]
-                    else ""
-                )
                 declarations.append(
-                    f"""
-typedef struct {{
-    void *data;{dynamic_shapes}{dynamic_strides}
-}} {symbol_prefix}_Tensor_{arg_name}_t;
-"""
+                    self._generate_tensor_element_typedef(
+                        symbol_prefix,
+                        arg_name,
+                        sum(arg.dynamic_shapes_mask),
+                        sum(arg.dynamic_strides_mask),
+                        stride_type,
+                        shape_type="int32_t",
+                    )
                 )
                 arguments.append(f"{symbol_prefix}_Tensor_{arg_name}_t *{arg_name}")
                 packed_args.append(arg_name)
+            elif (
+                isinstance(arg, (list, tuple))
+                and len(arg) > 0
+                and all(isinstance(e, Tensor) for e in arg)
+            ):
+                first = arg[0]
+                for e in arg[1:]:
+                    if (
+                        e.dynamic_shapes_mask != first.dynamic_shapes_mask
+                        or e.dynamic_strides_mask != first.dynamic_strides_mask
+                        or e._use_32bit_stride != first._use_32bit_stride  # type: ignore[attr-defined]
+                    ):
+                        raise DSLRuntimeError(
+                            f"Inconsistent tensor descriptors in list/tuple argument {arg_name}: "
+                            f"every element must share the same dynamic_shapes_mask, "
+                            f"dynamic_strides_mask, and _use_32bit_stride"
+                        )
+                stride_type = "int32_t" if first._use_32bit_stride else "int64_t"  # type: ignore[attr-defined]
+                declarations.append(
+                    self._generate_tensor_element_typedef(
+                        symbol_prefix,
+                        arg_name,
+                        sum(first.dynamic_shapes_mask),
+                        sum(first.dynamic_strides_mask),
+                        stride_type,
+                        shape_type="int32_t",
+                    )
+                )
+                n = len(arg)
+                declarations.append(
+                    f"""
+typedef struct {{
+    {symbol_prefix}_Tensor_{arg_name}_t elements[{n}];
+    int32_t count;
+}} {symbol_prefix}_TensorList_{arg_name}_t;
+"""
+                )
+                arguments.append(f"{symbol_prefix}_TensorList_{arg_name}_t *{arg_name}")
+                for i in range(n):
+                    packed_args.append(f"&{arg_name}->elements[{i}]")
             # Generate basic numeric types
             elif isinstance(arg_type, NumericMeta):
                 arguments.append(self._generate_numeric_argument(arg_name, arg_type))  # type: ignore[arg-type]

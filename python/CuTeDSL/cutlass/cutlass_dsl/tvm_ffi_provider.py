@@ -27,8 +27,10 @@ from cutlass.base_dsl.jit_executor import JitExecutor
 from cutlass.base_dsl.common import (
     DSLRuntimeError,
     DSLCudaRuntimeError,
-    _get_cuda_error_name_from_code,
+    DSLUserCodeError,
 )
+from cutlass.base_dsl.diagnostics import DiagId
+from cutlass.base_dsl.runtime import cuda as cuda_helpers
 import tvm_ffi
 
 
@@ -41,7 +43,12 @@ class CUDADialectError(DSLCudaRuntimeError):
     def __init__(self, message: str) -> None:
         self.raw_tvm_ffi_message = message
         error_code = CUDADialectError._parse_cuda_dialect_error_code(message)
-        super().__init__(error_code, _get_cuda_error_name_from_code(error_code))
+        super().__init__(
+            error_code,
+            cuda_helpers.get_cuda_error_name_from_code(
+                error_code, cuda_helpers.cudart.cudaError_t
+            ),
+        )
 
     def _format_message(self) -> str:
         message = super()._format_message()
@@ -508,6 +515,8 @@ def _get_format_from_object_file_path(object_file_path: str) -> str:
 class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     """Base class for TVM FFI compiled function."""
 
+    engine: Any
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
@@ -539,11 +548,7 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
         """
         if self.host_target.value:
-            raise DSLRuntimeError(
-                "Host cross-compile via TVM-FFI is not supported. "
-                "Drop --enable-tvm-ffi to use the plain AOT export path "
-                "with --host-target."
-            )
+            raise DSLUserCodeError(DiagId.CONFIG_INCOMPATIBLE_FLAGS)
         assert function_name is not None
         internal_symbol_prefix = "__cute_internal_" + function_name
         mod = self.ir_module
@@ -611,6 +616,18 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
             # move the handle from the tvm_ffi.Function to the current instance
             self.__move_handle_from__(tvm_ffi_function)
 
+    def __call__(self, *args: Any) -> Any:
+        if self.__chandle__() == 0:
+            raise DSLRuntimeError(
+                "TVM FFI function is not initialized."
+                " Was this function compiled for a different architecture?"
+            )
+        if self.execution_args.has_pointer_address_arg_specs:
+            args, _ = self.execution_args.convert_python_pointer_args_for_tvm_ffi(
+                args, {}
+            )
+        return tvm_ffi.Function.__call__(self, *args)
+
 
 class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
     """TVM FFI Function with kwargs wrapper support"""
@@ -659,6 +676,11 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
             raise DSLRuntimeError(
                 "TVM FFI function is not initialized."
                 " Was this function compiled for a different architecture?"
+            )
+
+        if self.execution_args.has_pointer_address_arg_specs:
+            args, kwargs = self.execution_args.convert_python_pointer_args_for_tvm_ffi(
+                args, kwargs
             )
         return self._kwargs_wrapper(*args, **kwargs)
 

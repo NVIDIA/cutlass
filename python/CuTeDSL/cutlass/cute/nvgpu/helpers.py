@@ -106,8 +106,8 @@ def make_tiled_tma_atom_A(
     :type tiled_mma:           atom.TiledMma
     :param cluster_shape_vmnk: The Cluster-level shape in VMNK dimensions
     :type cluster_shape_vmnk:  Shape
-    :param internal_type:      An optional parameter for the internal data type to when element
-                               type does not match the copy type
+    :param internal_type:      Optional element-format override used when the
+                               tensor element type does not match the copy type
     :type internal_type:       Type[Numeric]
     :return:                   A TmaInfo containing the Copy Atom, TMA tensor, and SMEM layout
     :rtype:                    TmaInfo
@@ -254,8 +254,8 @@ def make_tiled_tma_atom_B(
     :type tiled_mma:           core.TiledMma
     :param cluster_shape_vmnk: The Cluster-level shape in VMNK dimensions
     :type cluster_shape_vmnk:  Shape
-    :param internal_type:      An optional parameter for the internal data type to when element
-                               type does not match the copy type
+    :param internal_type:      Optional element-format override used when the
+                               tensor element type does not match the copy type
     :type internal_type:       Type[Numeric]
     :return:                   A TmaInfo containing the Copy Atom, TMA tensor, and SMEM layout
     :rtype:                    TmaInfo
@@ -416,8 +416,8 @@ def make_im2col_tma_atom_A(
     :type dilation_dhw:        Tuple[int, int, int]
     :param cluster_shape_vmnk: The Cluster-level shape in VMNK dimensions
     :type cluster_shape_vmnk:  Shape
-    :param internal_type:      An optional parameter for the internal data type to when element
-                               type does not match the copy type
+    :param internal_type:      Optional element-format override used when the
+                               tensor element type does not match the copy type
     :type internal_type:       Type[Numeric]
     :return:                   A TmaInfo containing the Copy Atom, TMA tensor, and SMEM layout
     :rtype:                    TmaInfo

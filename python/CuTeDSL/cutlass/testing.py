@@ -237,7 +237,11 @@ def _does_kernel_use_stream(
 ) -> bool:
     """
     This function checks if the kernel uses the provided non-default stream.
-    It does this by capturing the stream and then checking if any kernels were launched.
+    It does this by capturing the stream and then checking whether any work was
+    recorded on it. A kernel that launches on a different stream records no nodes;
+    on more recent drivers such a foreign-stream launch additionally fails
+    fast during capture. Both outcomes are reported as "does not use the stream"
+    (return False) rather than propagated, so callers can raise a clear error.
 
     Note: the function accepts positional/keyword arguments for the kernel in non-unpacked form
     (as tuple/dict, respectively) to avoid name clashes with function's own arguments (e.g. stream).
@@ -263,24 +267,27 @@ def _does_kernel_use_stream(
     )
     _cuda_success(err, "Error on stream capture")
 
+    launch_error = None
     try:
         kernel(*args, **kwargs)
-    except Exception:
-        # Always end the capture even on failure to avoid zombie capture state
-        # that would poison all subsequent graph capture operations in the process.
-        try:
-            cuda_runtime.cudaStreamEndCapture(stream)
-        except Exception:
-            pass
-        raise
+    except Exception as exc:
+        launch_error = exc
 
     err, graph = cuda_runtime.cudaStreamEndCapture(stream)
-    _cuda_success(err, "Error on stream capture")
+    if err != cuda_runtime.cudaError_t.cudaSuccess:
+        if launch_error is not None:
+            raise launch_error
+        _cuda_success(err, "Error on stream capture")
 
-    # Get number of nodes in warmup graph to check it matches what is expected
     err, _, num_nodes = cuda_runtime.cudaGraphGetNodes(graph)
     _cuda_success(err, "Error on querying graph")
-    return num_nodes > 0
+
+    if num_nodes > 0:
+        if launch_error is not None:
+            raise launch_error
+        return True
+
+    return False
 
 
 def benchmark(
@@ -391,6 +398,17 @@ def benchmark(
                 "workspace_generator and/or kernel_arguments should use JitArguments type"
             )
 
+    if (
+        not use_cuda_graphs
+        and int(stream) != int(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
+        and not _does_kernel_use_stream(
+            callable, stream, workspaces[0].args, workspaces[0].kwargs
+        )
+    ):
+        raise ValueError(
+            "CUDA stream passed to benchmark does not match the stream the kernel was launched in"
+        )
+
     # use memset to flush L2 cache after workspace h2d copies
     if workspace_count > 1:
         from cutlass.utils import HardwareInfo
@@ -467,15 +485,6 @@ def benchmark(
         if not hasattr(kernel_launcher, "__call__"):
             raise TypeError(
                 f"kernel_launcher must be callable, got {type(kernel_launcher).__name__}"
-            )
-
-        if int(stream) != int(
-            cuda_driver.CUstream_flags.CU_STREAM_DEFAULT
-        ) and not _does_kernel_use_stream(
-            callable, stream, workspaces[0].args, workspaces[0].kwargs
-        ):
-            raise ValueError(
-                "CUDA stream passed to benchmark does not match the stream the kernel was launched in"
             )
 
         err = cuda_driver.cuEventRecord(start_event, stream)

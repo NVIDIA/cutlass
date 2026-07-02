@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional, cast
 
@@ -19,6 +20,7 @@ import cutlass.cute as cute
 from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cute.core import is_static
 from cutlass.cutlass_dsl import BaseDSL, Boolean, Int32, if_generate, dsl_user_op
+
 from cutlass.pipeline import (
     Agent,
     CooperativeGroup,
@@ -29,6 +31,7 @@ from cutlass.pipeline import (
     TmaStoreFence,
     PipelineState,
     PipelineAsync,
+    alloc_reserved_mbarrier,
     agent_sync,
 )
 from cutlass.pipeline.helpers import _get_thread_arrive_count
@@ -213,6 +216,9 @@ class PipelineTmaUmma(PipelineAsync):
         :return: A new PipelineTmaUmma instance configured with the provided parameters
         :rtype: PipelineTmaUmma
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -489,6 +495,9 @@ class PipelineAsyncUmma(PipelineAsync):
         :return: A new PipelineAsyncUmma instance configured with the provided parameters
         :rtype: PipelineAsyncUmma
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -659,6 +668,9 @@ class PipelineUmmaAsync(PipelineAsync):
         :return: New instance of ``PipelineUmmaAsync``
         :rtype: PipelineUmmaAsync
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -775,7 +787,7 @@ class PipelineUmmaAsync(PipelineAsync):
         if is_leader_cta:
             # Assume state contains that next useful buffer
             # So we only need to advance to num_stages - 1 times to last used buffer
-            for i in cutlass.range_constexpr(self.num_stages - 1):  # type: ignore[func-returns-value]
+            for i in cutlass.range_constexpr(self.num_stages - 1):
                 state.advance(loc=loc, ip=ip)
             self.producer_acquire(state, loc=loc, ip=ip)
 
@@ -849,6 +861,9 @@ class PipelineClcFetchAsync(PipelineAsync):
         :param consumer_mask: Mask for signaling arrives for the consumer agent, defaults to ``None``
         :type consumer_mask: Int32, optional
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -1027,6 +1042,7 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         tidx: Optional[Int32] = None,
         enable_multicast_signaling: bool = False,
         defer_sync: bool = False,
+        force_deprecated_per_lane_signaling: Optional[bool] = None,
         name: str = "",
     ) -> "PipelineTmaMultiConsumersAsync":
         """
@@ -1051,7 +1067,12 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         :type tidx: Int32 | None
         :param enable_multicast_signaling: See docstring in PipelineTmaAsync.create() for details
         :type enable_multicast_signaling: bool, optional
+        :param force_deprecated_per_lane_signaling: **Deprecated.** Set ``False`` if your arrive count is a multiple of ``WARP_SIZE`` and you do not want the legacy fallback. Leave unset otherwise.
+        :type force_deprecated_per_lane_signaling: bool | None
         """
+        # Create barrier storage at reserved low address of smem
+        if barrier_storage is None:
+            barrier_storage = alloc_reserved_mbarrier(num_stages)
         if not isinstance(barrier_storage, cute.Pointer):
             raise TypeError(
                 f"Expected barrier_storage to be a cute.Pointer, but got {type(barrier_storage)}"
@@ -1071,6 +1092,11 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         if consumer_group_umma.agent != consumer_group_async.agent:
             raise ValueError(
                 "UMMA and AsyncThread consumer groups must be the same agent"
+            )
+
+        if enable_multicast_signaling and force_deprecated_per_lane_signaling:
+            raise ValueError(
+                "enable_multicast_signaling unsupported with force_deprecated_per_lane_signaling"
             )
 
         if enable_multicast_signaling:
@@ -1119,6 +1145,47 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
             thread_consumer_group_umma = consumer_group_umma
             thread_consumer_group_async = consumer_group_async
 
+        def _looks_legacy(cg: CooperativeGroup) -> bool:
+            return (
+                cg.agent is Agent.Thread
+                and cg.size >= WARP_SIZE
+                and cg.size % WARP_SIZE == 0
+            )
+
+        if force_deprecated_per_lane_signaling is None:
+            force_deprecated_per_lane_signaling = not enable_multicast_signaling and (
+                _looks_legacy(thread_consumer_group_umma)
+                or _looks_legacy(thread_consumer_group_async)
+            )
+            if force_deprecated_per_lane_signaling:
+                warnings.warn(
+                    "PipelineTmaMultiConsumersAsync now expects only one lane "
+                    "per warp to arrive on the empty barrier, but consumer_group "
+                    "arrive count is a multiple of WARP_SIZE - this suggests you are expecting the"
+                    "legacy behavior where every lane arrives. Falling back to "
+                    "the legacy path. Divide the arrive count by WARP_SIZE to "
+                    "migrate, or pass force_deprecated_per_lane_signaling=False to opt out of "
+                    "this auto-detection.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+        elif force_deprecated_per_lane_signaling:
+            warnings.warn(
+                "force_deprecated_per_lane_signaling=True is deprecated.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if force_deprecated_per_lane_signaling:
+            cluster_size = (
+                cute.size(cta_layout_vmnk) if cta_layout_vmnk is not None else 1
+            )
+            if cluster_size > 1:
+                raise ValueError(
+                    "force_deprecated_per_lane_signaling does not support multicast "
+                    "(cluster_size > 1)."
+                )
+
         consumer_group = CooperativeGroup(
             thread_consumer_group_umma.agent,
             thread_consumer_group_umma.size + thread_consumer_group_async.size,
@@ -1153,14 +1220,18 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         )
 
         # Compute AsyncThread consumer signaling (dst_rank + is_signaling_thread)
-        if tidx is None:
-            tidx, _, _ = cute.arch.thread_idx()
-        (
-            dst_rank_async,
-            is_signaling_thread,
-        ) = PipelineTmaMultiConsumersAsync._init_empty_barrier_arrive_signal_2sm(
-            cta_layout_vmnk, tidx, mcast_mode_mn
-        )
+        if force_deprecated_per_lane_signaling:
+            dst_rank_async = None
+            is_signaling_thread = Boolean(True)
+        else:
+            if tidx is None:
+                tidx, _, _ = cute.arch.thread_idx()
+            (
+                dst_rank_async,
+                is_signaling_thread,
+            ) = PipelineTmaMultiConsumersAsync._init_empty_barrier_arrive_signal_2sm(
+                cta_layout_vmnk, tidx, mcast_mode_mn
+            )
 
         if cute.size(cta_layout_vmnk) == 1:
             # No mcast mask if not using clusters
@@ -1300,10 +1371,11 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         """Consumer waits for full barrier to be signaled."""
-        _wait_fn = self.sync_object_full.wait
         if_generate(
             try_wait_token is None or try_wait_token == 0,
-            lambda: _wait_fn(state.index, state.phase, loc=loc, ip=ip),
+            lambda: self.sync_object_full.wait(
+                state.index, state.phase, loc=loc, ip=ip
+            ),
             loc=loc,
             ip=ip,
         )
@@ -1317,8 +1389,7 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Boolean:
         """Non-blocking check if data is ready."""
-        _try_wait_fn = self.sync_object_full.try_wait  # type: ignore[attr-defined]
-        return _try_wait_fn(state.index, state.phase, loc=loc, ip=ip)
+        return self.sync_object_full.try_wait(state.index, state.phase, loc=loc, ip=ip)  # type: ignore[attr-defined]
 
     @dsl_user_op
     def consumer_release(
@@ -1334,8 +1405,13 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
                 state.index, self.consumer_mask, self.cta_group, loc=loc, ip=ip
             )
         elif op_type == PipelineOp.AsyncThread:
-            self.sync_object_empty_async.arrive(
-                state.index, self.consumer_mask, loc=loc, ip=ip
+            if_generate(
+                self.is_signaling_thread,
+                lambda: self.sync_object_empty_async.arrive(
+                    state.index, self.consumer_dst_rank_async, loc=loc, ip=ip
+                ),
+                loc=loc,
+                ip=ip,
             )
         else:
             raise ValueError(f"Invalid PipelineOp specified. op_type:{op_type}")
