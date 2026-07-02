@@ -636,8 +636,8 @@ struct NumericConverter<cutlass::tfloat32_t, float, FloatRoundStyle::round_to_ne
 
     unsigned storage = reinterpret_cast<unsigned const &>(s);
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
-    asm volatile("cvt.rn.tf32.f32 %0, %1;" : "=r"(storage) : "r"(storage));
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+    asm volatile("cvt.rna.tf32.f32 %0, %1;" : "=r"(storage) : "r"(storage));
 #else
     if ((storage & 0x7f800000) != 0x7f800000) {
 
