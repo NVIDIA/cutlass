@@ -49,6 +49,7 @@ from copy import deepcopy
 from itertools import chain
 
 from .common import *
+from .diagnostics import DiagId
 from .utils.logger import log
 
 
@@ -761,10 +762,29 @@ class DSLPreprocessor(ast.NodeTransformer):
         try:
             file_name = inspect.getsourcefile(function_pointer) or "<unknown>"
             lines, start_line = inspect.getsourcelines(function_pointer)
-            dedented_source = textwrap.dedent("".join(lines))
+            raw_source = "".join(lines)
+            dedented_source = textwrap.dedent(raw_source)
             tree = ast.parse(dedented_source, filename=file_name)
             # Bump the line numbers so they match the real source file
             ast.increment_lineno(tree, start_line - 1)
+            # ``textwrap.dedent`` stripped a constant leading-whitespace prefix,
+            # so ast column offsets are relative to the dedented source.  Shift
+            # them back to the original file's columns so diagnostics underline
+            # the right place.  The stripped width is identical on every non-blank
+            # line; derive it from the first line that still has content.
+            _col_shift = 0
+            for _raw, _ded in zip(raw_source.split("\n"), dedented_source.split("\n")):
+                if _ded.strip():
+                    _col_shift = (len(_raw) - len(_raw.lstrip())) - (
+                        len(_ded) - len(_ded.lstrip())
+                    )
+                    break
+            if _col_shift:
+                for _node in ast.walk(tree):
+                    if getattr(_node, "col_offset", None) is not None:
+                        _node.col_offset += _col_shift  # type: ignore[attr-defined]
+                    if getattr(_node, "end_col_offset", None) is not None:
+                        _node.end_col_offset += _col_shift  # type: ignore[attr-defined]
         except Exception:
             # Under REPL mode, there is no way to get source of a function object, error out
             raise DSLRuntimeError(
@@ -921,21 +941,20 @@ class DSLPreprocessor(ast.NodeTransformer):
         checker.generic_visit(tree)
         if not checker.has_early_exit:
             return
-        raise DSLAstPreprocessorError(
-            message=f"Early exit ({checker.early_exit_type}) is not allowed in `{self.session_data.function_name}`"
-            + (
-                f" in `{self.session_data.class_name}`"
-                if self.session_data.class_name
-                else ""
-            ),
+        where = f"`{self.session_data.function_name}`" + (
+            f" in `{self.session_data.class_name}`"
+            if self.session_data.class_name
+            else ""
+        )
+        offender = checker.early_exit_node or tree
+        raise DSLUserCodeError(
+            DiagId.UNSUP_EARLY_EXIT,
             filename=self.session_data.file_name,
-            snippet=ast.unparse(tree),
-            suggestion=(
-                "If predicates are constant expression, write like "
-                "`if const_expr(...)` or `for ... in range_constexpr(...)`. "
-                "In that case, early exit will be executed by Python "
-                "interpreter, so it's supported."
-            ),
+            lineno=getattr(offender, "lineno", None),
+            col_offset=getattr(offender, "col_offset", None),
+            end_col_offset=getattr(offender, "end_col_offset", None),
+            kind=checker.early_exit_type,
+            where=where,
         )
 
     def is_node_constexpr(self, node: ast.If | ast.While) -> bool:
@@ -1132,9 +1151,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         elif len(args) == 3:
             return self.visit(args[0]), self.visit(args[1]), self.visit(args[2]), True
         else:
-            raise DSLAstPreprocessorError(
-                "Unsupported number of arguments in range",
+            raise DSLUserCodeError(
+                DiagId.UNSUP_RANGE_ARGS,
                 filename=self.session_data.file_name,
+                lineno=getattr(iter_node, "lineno", None),
+                col_offset=getattr(iter_node, "col_offset", None),
+                end_col_offset=getattr(iter_node, "end_col_offset", None),
             )
 
     def extract_unroll_args(self, iter_node: ast.Call) -> tuple[ast.expr, ast.expr]:
@@ -1198,6 +1220,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Create the loop body
         transformed_body: list[ast.stmt] = []
+        body_prep_stmts = self._prepare_loop_body_vars(node, write_args)
         with Region(self.session_data, new_value=transformed_body):
             for stmt in node.body:
                 transformed_stmt = self.visit(
@@ -1207,6 +1230,9 @@ class DSLPreprocessor(ast.NodeTransformer):
                     transformed_body.extend(transformed_stmt)
                 else:
                     transformed_body.append(transformed_stmt)
+
+        if body_prep_stmts:
+            transformed_body[:0] = body_prep_stmts
 
         # Handle the return for a single iterated argument correctly
         if len(write_args) == 0:
@@ -1312,8 +1338,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             )
             self.session_data.import_top_module = True
         else:
-            # BoolOp should be either And or Or
-            raise DSLAstPreprocessorError(
+            # BoolOp should be either And or Or -- reaching here is a compiler
+            # bug (the AST grammar only produces And/Or), not an author mistake.
+            raise DSLRuntimeError(
                 f"Unsupported boolean operation: {node.op}",
                 filename=self.session_data.file_name,
                 snippet=ast.unparse(node),
@@ -1668,10 +1695,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Check for early exit and raise exception
         self.check_early_exit(node, "for")
         if node.orelse:
-            raise DSLAstPreprocessorError(
-                "dynamic for loop with else is not supported",
+            raise DSLUserCodeError(
+                DiagId.UNSUP_LOOP_ELSE,
                 filename=self.session_data.file_name,
-                snippet=ast.unparse(node),
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+                end_col_offset=getattr(node.iter, "end_col_offset", None),
             )
 
         # Get loop target variable name
@@ -1860,10 +1889,10 @@ class DSLPreprocessor(ast.NodeTransformer):
             elif isinstance(component, ast.FormattedValue):
                 elements.append(self.processFormattedValue(component))
             else:
-                raise DSLAstPreprocessorError(
-                    f"Unsupported component type in f-string: {type(component)}",
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_FSTRING,
                     filename=self.session_data.file_name,
-                    snippet=ast.unparse(component),
+                    lineno=getattr(component, "lineno", None),
                 )
         call = ast.Call(
             func=_create_module_attribute(
@@ -2045,7 +2074,13 @@ class DSLPreprocessor(ast.NodeTransformer):
                 node,
             )
         elif node.id == "_" and isLoad:
-            raise DSLAstPreprocessorError("Read '_' is not allowed")
+            raise DSLUserCodeError(
+                DiagId.UNSUP_READ_UNDERSCORE,
+                filename=self.session_data.file_name,
+                lineno=getattr(node, "lineno", None),
+                col_offset=getattr(node, "col_offset", None),
+                end_col_offset=getattr(node, "end_col_offset", None),
+            )
         else:
             self.generic_visit(node)
         return node
@@ -2127,9 +2162,10 @@ class DSLPreprocessor(ast.NodeTransformer):
             and dsl_decorator_index < len(decorator_list) - 1
         ):
             decorator = ast.unparse(decorator_list[dsl_decorator_index])
-            raise DSLAstPreprocessorError(
-                f"`{decorator}` decorator must be the inner most decorator",
-                suggestion=f"Please move the `{decorator}` decorator to the inner most position",
+            raise DSLUserCodeError(
+                DiagId.UNSUP_DECORATOR_ORDER,
+                filename=self.session_data.file_name,
+                decorator=decorator,
             )
 
         return dsl_decorator_index is not None
@@ -2158,9 +2194,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         return new_decorator_list
 
     def visit_Global(self, node: ast.Global) -> None:
-        raise DSLAstPreprocessorError(
-            "`global` is not supported in DSL",
-            suggestion="Please explicitly pass in global variables as arguments",
+        raise DSLUserCodeError(
+            DiagId.UNSUP_GLOBAL,
+            filename=self.session_data.file_name,
+            lineno=getattr(node, "lineno", None),
+            col_offset=getattr(node, "col_offset", None),
+            end_col_offset=getattr(node, "end_col_offset", None),
         )
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> ast.Nonlocal:
@@ -2169,12 +2208,14 @@ class DSLPreprocessor(ast.NodeTransformer):
         intersect = nonlocal_names.intersections(active_symbols)
         for name in node.names:
             if name not in intersect:
-                raise DSLRuntimeError(
-                    (
-                        f"`{ast.unparse(node)}` is referring to `{name}` which is not tracked by current JIT context, "
-                        "this is not supported in DSL"
-                    ),
-                    suggestion="Please explicitly pass in nonlocal variables as arguments",
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_NONLOCAL,
+                    filename=self.session_data.file_name,
+                    lineno=getattr(node, "lineno", None),
+                    col_offset=getattr(node, "col_offset", None),
+                    end_col_offset=getattr(node, "end_col_offset", None),
+                    stmt=ast.unparse(node),
+                    name=name,
                 )
         self.generic_visit(node)
         return node
@@ -2230,6 +2271,17 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Constexpr doesn't get preprocessed
         if self.is_node_constexpr(node):
             return self._handle_constexpr_while(node)
+
+        # A staged ``while ... else:`` cannot capture its else-clause (parity with
+        # the staged ``for ... else`` rejection below).
+        if node.orelse:
+            raise DSLUserCodeError(
+                DiagId.UNSUP_LOOP_ELSE,
+                filename=self.session_data.file_name,
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+                end_col_offset=getattr(node.test, "end_col_offset", None),
+            )
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
         active_callables = self.session_data.scope_manager.get_active_callables()
@@ -2814,6 +2866,15 @@ class DSLPreprocessor(ast.NodeTransformer):
         """
         return []  # No preparation needed in base class
 
+    def _prepare_loop_body_vars(
+        self,
+        node: "ast.For | ast.While",
+        write_args: list[str],
+    ) -> list[ast.stmt]:
+        """Prepend statements at the top of a for/while body.
+        """
+        return []
+
     def create_while_function(
         self,
         func_name: str,
@@ -2921,6 +2982,8 @@ class DSLPreprocessor(ast.NodeTransformer):
             test_expr,
         )
 
+        body_prep_stmts = self._prepare_loop_body_vars(node, write_args)
+
         # Section: while_after_block FunctionDef, which contains loop body
         while_after_stmts: list[ast.stmt] = []
         with Region(self.session_data, new_value=while_after_stmts):
@@ -2932,6 +2995,10 @@ class DSLPreprocessor(ast.NodeTransformer):
                     while_after_stmts.extend(transformed_stmt)
                 else:
                     while_after_stmts.append(transformed_stmt)
+
+        if body_prep_stmts:
+            while_after_stmts[:0] = body_prep_stmts
+
         while_after_stmts.append(ast.Return(value=yield_args_ast_name_list))
 
         while_after_block = ast.copy_location(

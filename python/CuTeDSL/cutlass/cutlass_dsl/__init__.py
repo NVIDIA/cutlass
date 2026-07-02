@@ -51,6 +51,8 @@ from ..base_dsl.compiler import (
     GenerateLineInfo,
     KeepCUBIN,
     KeepPTX,
+    KeepSASS,
+    NvdisasmOptions,
     GPUArch,
     LinkLibraries,
     EnableTVMFFI,

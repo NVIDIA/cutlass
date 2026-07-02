@@ -67,6 +67,19 @@ _F8F6F4_TYPES = [
 ####################################################################################################
 
 
+def _tcgen05_arch_suggestion(arch: Arch, warp_op_hint: str) -> str:
+    """tcgen05 (TMEM / UMMA / tcgen05.alloc) is datacenter-Blackwell-only hardware;
+    consumer Blackwell (sm_120 / sm_121) lacks it, so redirect those users to the
+    warp-level mma.sync equivalents instead of the generic CUTE_DSL_ARCH hint."""
+    if arch.is_family_of(Arch.sm_120f) or arch.is_family_of(Arch.sm_121f):
+        return (
+            f"tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consumer "
+            f"Blackwell (sm_120 / sm_121) use the warp-level {warp_op_hint}; see the "
+            f"blackwell_geforce dense_gemm / blockscaled_gemm examples."
+        )
+    return "Ensure env CUTE_DSL_ARCH matches your GPU architecture"
+
+
 class Tcgen05MmaOp(atom.MmaOp):
     """
     Base class for all tcgen05 MMA operations.
@@ -295,7 +308,7 @@ class MmaOp(Tcgen05MmaOp):
             raise OpError(
                 self,
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+                suggestion=_tcgen05_arch_suggestion(arch, "cute.nvgpu.warp.MmaF16BF16Op"),
             )
         # Verify that the user provided enum values
         if not isinstance(self.cta_group, CtaGroup):
@@ -380,7 +393,7 @@ class MmaOp(Tcgen05MmaOp):
 
     def __str__(self) -> str:
         return (
-            self.__class__.descriptive_name  # type: ignore
+            self.__class__.descriptive_name
             + f"\n  A data type           = {self.a_dtype}"
             + f"\n  B data type           = {self.b_dtype}"
             + f"\n  Accumulator data type = {self.acc_dtype}"
@@ -514,6 +527,7 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
 
     admissible_archs = [
         Arch.sm_100a,
+        Arch.sm_100f,
         Arch.sm_103a,
         Arch.sm_110a,
     ]
@@ -525,7 +539,9 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
             raise OpError(
                 self,
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+                suggestion=_tcgen05_arch_suggestion(
+                    arch, "cute.nvgpu.warp.MmaMXF4Op / MmaMXF4NVF4Op / MmaMXF8Op"
+                ),
             )
         # Verify that the user provided enum values
         if not isinstance(self.cta_group, CtaGroup):
@@ -594,7 +610,7 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
 
     def __str__(self) -> str:
         return (
-            self.__class__.descriptive_name  # type: ignore
+            self.__class__.descriptive_name
             + f"\n  A data type               = {self.a_dtype}"
             + f"\n  B data type               = {self.b_dtype}"
             + f"\n  Accumulator data type     = {self.acc_dtype}"
@@ -1575,10 +1591,10 @@ class MmaMXF8Op(BlockScaledMmaOp):
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                 ],
                 loc=loc,
@@ -1725,10 +1741,10 @@ class MmaMXF8F6F4Op(BlockScaledMmaOp):
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                 ],
                 loc=loc,
@@ -1858,10 +1874,10 @@ class MmaMXF4Op(BlockScaledMmaOp):
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                 ],
                 loc=loc,
@@ -1998,10 +2014,10 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                 ],
                 loc=loc,
@@ -2133,10 +2149,10 @@ class SM103MmaMXF4Op(BlockScaledMmaOp):
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                 ],
                 loc=loc,
@@ -2271,10 +2287,10 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     Boolean(False).ir_value(loc=loc, ip=ip),
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                     core.make_ptr(
-                        self.sf_dtype, 0, _cute_ir.AddressSpace.tmem, loc=loc, ip=ip
+                        self.sf_dtype, 0, AddressSpace.tmem, loc=loc, ip=ip
                     ).value,
                 ],
                 loc=loc,

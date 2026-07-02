@@ -23,6 +23,64 @@ CuTe DSL provides Python code to PTX/SASS correlation to enable the profiling/de
 You can enable that globally via the environment variable CUTE_DSL_LINEINFO=1. Alternative, you can use compilation options to enable that per kernel. Please refer to :doc:`./dsl_jit_compilation_options` for more details.
 
 
+Debug Mode
+----------
+
+To turn on a broad set of debugging aids at once, set the ``CUTE_DSL_DEBUG``
+environment variable. It is a convenience switch for diagnosing problems and for
+reporting issues to the CUTLASS team:
+
+.. code:: bash
+
+    # Enable debug mode (default: False)
+    export CUTE_DSL_DEBUG=1
+
+When debug mode is enabled, CuTe DSL raises the defaults of several individual
+debugging settings so you get more diagnostics from a single switch:
+
+- Line info is generated for Python-to-PTX/SASS correlation (same effect as
+  ``CUTE_DSL_LINEINFO=1``).
+- Full, unfiltered Python stack traces are shown on failure (internal DSL
+  frames are no longer hidden).
+- Optimization warnings that are normally suppressed are surfaced.
+- Trace-time operation verification runs as operations are built, so malformed
+  operations are reported earlier instead of late in compilation.
+- Full per-launch argument validation is performed, so a mismatched or
+  unsupported argument is reported with a clear error instead of failing later
+  inside the compiled kernel.
+
+Each of these behaviors is also controlled by its own environment variable, so
+debug mode only changes their *defaults*, and setting a variable explicitly
+takes precedence -- except trace-time operation verification, which stays on
+while debug mode is enabled. For example, to enable debug mode but keep line
+info off:
+
+.. code:: bash
+
+    export CUTE_DSL_DEBUG=1
+    export CUTE_DSL_LINEINFO=0
+
+.. note::
+
+    Debug mode adds extra checks and diagnostics that increase compile time and
+    may affect the generated code (for example, by embedding line info). Enable
+    it while debugging, not for production runs.
+
+.. note::
+
+    The settings debug mode raises -- line info in particular -- change the
+    emitted IR/PTX, and every one of these settings is folded into the JIT
+    kernel cache key. A kernel compiled with debug mode on is therefore cached
+    separately from the same kernel compiled with it off: toggling
+    ``CUTE_DSL_DEBUG`` forces a recompile instead of reusing a cached kernel,
+    and the kernel you inspect or profile under debug mode is not identical to
+    the one produced for a normal (debug-off) run. Validate performance and
+    generated-code conclusions with debug mode disabled. Because these settings
+    are part of the cache key, a debug-built kernel is never silently reused for
+    a production run. See :doc:`JIT caching <./dsl_jit_caching>` for how the
+    cache key is formed.
+
+
 DSL Debugging
 -------------
 
@@ -88,6 +146,9 @@ Use ``CUTE_DSL_KEEP`` with a comma-separated list of artifact tokens:
 
     # Save CUBIN binary to a .cubin file
     export CUTE_DSL_KEEP=cubin
+
+    # Save SASS disassembly to a file (requires nvdisasm in PATH)
+    export CUTE_DSL_KEEP=sass
 
     # Save LLVM IR to a file
     export CUTE_DSL_KEEP=llvm

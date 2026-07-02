@@ -13,7 +13,7 @@
 
 This script sets up the editable install environment:
 1. Sets CUTE_DSL_LIBS environment variable
-2. Installs the custom editable finder for cutlass._mlir and DSL modules
+2. Installs the custom editable finder for cutlass._mlir and legacy DSL modules
 
 The .pth file calls setup() with paths configured during installation.
 """

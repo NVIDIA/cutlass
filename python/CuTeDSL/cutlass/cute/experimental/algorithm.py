@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from cutlass.address_space import AddressSpace
 from typing import Optional
 
 from cutlass import cute
@@ -80,14 +81,14 @@ def partition_and_copy(
     src_partitioned = src
     dst_partitioned = dst
     tid_x = tiled_copy.thr_idx
-    if src.memspace != cute.AddressSpace.rmem:
+    if src.memspace != AddressSpace.rmem:
         src_partitioned = partition(
             src,
             tid_x,
             layout_tv=tiled_copy.layout_src_tv_tiled,
             tiler=cute.core._pack_tile(tiled_copy.tiler_mn),
         )
-    if dst.memspace != cute.AddressSpace.rmem:
+    if dst.memspace != AddressSpace.rmem:
         dst_partitioned = partition(
             dst,
             tid_x,
@@ -115,16 +116,13 @@ def partition_and_copy(
         src.memspace,
         dst.memspace,
     ) in [
-        (cute.AddressSpace.rmem, cute.AddressSpace.smem),
-        (cute.AddressSpace.smem, cute.AddressSpace.rmem),
-        (cute.AddressSpace.rmem, cute.AddressSpace.gmem),
-        (cute.AddressSpace.gmem, cute.AddressSpace.rmem),
+        (AddressSpace.rmem, AddressSpace.smem),
+        (AddressSpace.smem, AddressSpace.rmem),
+        (AddressSpace.rmem, AddressSpace.gmem),
+        (AddressSpace.gmem, AddressSpace.rmem),
     ]:
         simt_auto_vec_copy(src_partitioned, dst_partitioned, loc=loc, ip=ip)
-    elif (
-        src.memspace == cute.AddressSpace.gmem
-        and dst.memspace == cute.AddressSpace.smem
-    ):
+    elif src.memspace == AddressSpace.gmem and dst.memspace == AddressSpace.smem:
         simt_auto_vec_copy(
             src_partitioned, dst_partitioned, async_op=True, loc=loc, ip=ip
         )

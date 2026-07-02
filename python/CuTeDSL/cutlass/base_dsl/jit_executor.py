@@ -10,7 +10,27 @@
 # is strictly prohibited.
 
 """
-This module provides jit executor related classes
+This module provides jit executor related classes.
+
+Pointer-address runtime arguments are opt-in. A compile-time example such as
+``nullptr(dtype, space)`` marks the corresponding runtime argument as a
+pointer slot, and
+``ExecutionArgs.record_pointer_arg_specs_from_compile_args`` records that
+metadata in ``_pointer_address_arg_specs``. Runtime calls may then pass an
+integer address, ``ctypes.c_void_p``, a ctypes pointer object, or
+``nullptr(...)`` for a null address. Native JIT execution packs raw
+addresses into stable ``ctypes.c_void_p`` storage via ``_RuntimePointerArg``;
+``nullptr(...)`` already provides that storage itself and is retained as a
+keepalive when used as a temporary runtime argument. TVM FFI receives raw
+integer addresses instead.
+
+Plain integers are treated as pointer addresses only when the function
+annotation is pointer-shaped. This avoids silently repacking ordinary scalar
+integer parameters. Nested list/tuple compile-time arguments preserve the
+sequence shape; mismatched runtime sequence lengths are left unchanged.
+Arguments beyond the filtered runtime signature do not have annotation
+metadata, so plain integer tail arguments stay scalar. Explicit ctypes pointer
+tail arguments are still packed as pointer slots.
 """
 
 import abc
@@ -18,7 +38,7 @@ import array
 import ctypes
 import inspect
 import io
-from typing import Any, NamedTuple, TYPE_CHECKING, ClassVar
+from typing import Any, NamedTuple, TYPE_CHECKING, ClassVar, cast, get_args, get_origin
 from collections.abc import Callable, Sequence
 import weakref
 import threading
@@ -35,9 +55,10 @@ from .._mlir.dialects import llvm
 from . import typing as t
 from .common import (
     DSLRuntimeError,
+    DSLUserCodeError,
     DSLCudaRuntimeError,
-    create_cuda_runtime_error,
 )
+from .diagnostics import DiagId
 from .runtime import cuda as cuda_helpers
 from .runtime.jit_arg_adapters import JitArgAdapterRegistry, is_arg_annotation_constexpr
 from .typing import get_c_pointers
@@ -176,16 +197,295 @@ class KwargsWrapperSpec(NamedTuple):
     kwonly_defaults: dict[str, Any]
 
 
-class ExecutionArgs:
-    """Helper that wraps the function signature spec to filter execution and compile time arguments."""
+def _validate_pointer_address(address: int) -> None:
+    if address < 0:
+        raise DSLUserCodeError(
+            DiagId.ARG_POINTER_NEGATIVE,
+            address=address,
+        )
 
-    def __init__(self, signature: inspect.Signature, function_name: str) -> None:
+
+class _RuntimePointerArg:
+    """JIT argument wrapper for a raw pointer address supplied from Python."""
+
+    def __init__(self, address: int) -> None:
+        _validate_pointer_address(address)
+        self._desc = ctypes.c_void_p(address)
+        self._c_pointers_cache = [ctypes.addressof(self._desc)]
+
+    def __c_pointers__(self) -> list[int]:
+        return self._c_pointers_cache
+
+
+PointerAddressArgSpec = bool | list[object] | tuple[object, ...] | None
+
+
+def _is_ctypes_pointer(arg: object) -> bool:
+    return isinstance(arg, (ctypes.c_void_p, ctypes._Pointer))
+
+
+def _is_pointer_annotation(annotation: object) -> bool:
+    if annotation is None:
+        return False
+
+    if type(annotation).__name__ == "TypedPointer":
+        return True
+
+    if any(_is_pointer_annotation(arg) for arg in get_args(annotation)):
+        return True
+
+    return getattr(annotation, "__name__", None) == "Pointer" and getattr(
+        annotation, "__module__", ""
+    ).endswith(
+        (
+            "cutlass.base_dsl.typing",
+            "cutlass.cute.typing",
+            "cutlass.cute.core",
+        )
+    )
+
+
+def _sequence_element_annotations(
+    annotation: object, length: int, *, is_tuple: bool
+) -> list[object]:
+    args = get_args(annotation)
+    if not args:
+        return [None] * length
+
+    origin = get_origin(annotation)
+    if origin is tuple:
+        if not is_tuple:
+            return [None] * length
+        if len(args) == 2 and args[1] is Ellipsis:
+            return [args[0]] * length
+        if len(args) == length:
+            return list(args)
+        return [None] * length
+
+    if origin in (list, Sequence):
+        return [args[0]] * length
+
+    return [None] * length
+
+
+def _python_pointer_address(arg: object) -> int | None:
+    if isinstance(arg, bool):
+        return None
+    if getattr(arg, "_python_pointer_address_arg", False) is True:
+        return 0
+    if isinstance(arg, int):
+        return arg
+    if isinstance(arg, ctypes.c_void_p):
+        return 0 if arg.value is None else int(arg.value)
+    if isinstance(arg, ctypes._Pointer):
+        value = ctypes.cast(arg, ctypes.c_void_p).value
+        return 0 if value is None else int(value)
+    return None
+
+
+def _pointer_address_spec_from_compile_arg(
+    arg: object, annotation: object = None
+) -> PointerAddressArgSpec:
+    if getattr(arg, "_python_pointer_address_arg", False) is True:
+        return True
+
+    if isinstance(arg, (list, tuple)):
+        child_annotations = _sequence_element_annotations(
+            annotation, len(arg), is_tuple=isinstance(arg, tuple)
+        )
+        child_specs = [
+            _pointer_address_spec_from_compile_arg(x, child_annotations[index])
+            for index, x in enumerate(arg)
+        ]
+        if any(spec is not None for spec in child_specs):
+            return cast(
+                PointerAddressArgSpec,
+                tuple(child_specs) if isinstance(arg, tuple) else child_specs,
+            )
+
+    address = _python_pointer_address(arg)
+    if address is not None:
+        if _is_ctypes_pointer(arg) or _is_pointer_annotation(annotation):
+            return True
+        return None
+
+    return None
+
+
+def _convert_python_pointer_arg(
+    arg: object, spec: PointerAddressArgSpec, *, for_tvm_ffi: bool = False
+) -> tuple[object, bool]:
+    if spec is None:
+        return arg, False
+
+    if spec is True:
+        if (
+            not for_tvm_ffi
+            and getattr(arg, "_python_pointer_address_arg", False) is True
+        ):
+            return arg, True
+        address = _python_pointer_address(arg)
+        if address is None:
+            return arg, False
+        _validate_pointer_address(address)
+        if for_tvm_ffi:
+            return address, True
+        return _RuntimePointerArg(address), True
+
+    if isinstance(spec, (list, tuple)) and isinstance(arg, (list, tuple)):
+        if len(arg) != len(spec):
+            return arg, False
+        changed = False
+        converted = []
+        for item, item_spec in zip(arg, spec):
+            converted_item, item_changed = _convert_python_pointer_arg(
+                item, cast(PointerAddressArgSpec, item_spec), for_tvm_ffi=for_tvm_ffi
+            )
+            converted.append(converted_item)
+            changed = changed or item_changed
+        if not changed:
+            return arg, False
+        return tuple(converted) if isinstance(arg, tuple) else converted, True
+
+    return arg, False
+
+
+class ExecutionArgs:
+    """Runtime argument binder for compiled JIT functions.
+
+    Besides normal signature rectification and scalar casting, this class owns
+    the pointer-address conversion contract.
+    ``record_pointer_arg_specs_from_compile_args`` derives a lightweight spec
+    tree from compile-time arguments, and
+    ``generate_execution_args`` / ``convert_python_pointer_args_for_tvm_ffi`` use
+    that spec to decide where Python pointer-like values may replace runtime
+    pointer objects. Extra tail arguments are outside the signature and have no
+    ``name_to_index`` entry or compile-example spec; only explicit ctypes
+    pointer objects are repacked there.
+    """
+
+    def __init__(
+        self,
+        signature: inspect.Signature,
+        function_name: str,
+        full_arg_check: bool = False,
+    ) -> None:
         self.function_name = function_name
         self.signature = self.filter_runtime_signature(signature)
         self.original_signature = signature
         self._missing = object()
         self._meta = self._build_meta()
+        self._pointer_address_arg_specs: list[PointerAddressArgSpec] = [
+            None
+        ] * self._meta.arg_count
+        self._has_pointer_address_arg_specs = False
+        # When True (set when debugging mode is ON), generate_execution_args
+        # runs thorough per-argument validation that is otherwise skipped to
+        # keep the launch path fast.
+        self._full_arg_check = full_arg_check
         self._tls = threading.local()
+
+    @property
+    def has_pointer_address_arg_specs(self) -> bool:
+        """Whether this compiled signature has pointer-address conversion slots."""
+        return self._has_pointer_address_arg_specs
+
+    def record_pointer_arg_specs_from_compile_args(
+        self, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> None:
+        """Record pointer conversion metadata from compile-time arguments.
+
+        The resulting ``_pointer_address_arg_specs`` list is indexed like the
+        filtered runtime signature. Each leaf is ``True`` for an argument slot
+        that may accept a raw pointer address, ``None`` for ordinary arguments,
+        or a nested list/tuple spec for sequence arguments.
+
+        ``_pointer_address_spec_from_compile_arg`` marks explicit pointer
+        arguments such as ``nullptr(...)`` and ctypes pointer objects. Plain
+        ``int`` compile-time arguments are marked only when the corresponding
+        annotation is pointer-shaped; this keeps scalar integer parameters from
+        being packed as pointer slots. For mixed tuple annotations, element
+        annotations are matched positionally. For generic sequence annotations
+        such as
+        ``list[cutlass.Pointer]`` or ``Sequence[cutlass.Pointer]``, the inner annotation
+        is applied to each element.
+
+        ``args``/``kwargs`` are first rectified through the function signature
+        unless they already exactly match the positional runtime shape. That
+        path may raise the usual argument-binding ``DSLRuntimeError`` cases:
+        missing, unexpected, or duplicate arguments.
+        """
+        if not args and not kwargs:
+            return
+
+        if not kwargs and len(args) == self._meta.arg_count:
+            input_args: Sequence[Any] = args
+        else:
+            input_args = self.get_rectified_args(args, kwargs)
+
+        self._pointer_address_arg_specs = [
+            _pointer_address_spec_from_compile_arg(
+                arg, self._meta.annotated_types[index]
+            )
+            for index, arg in enumerate(input_args)
+        ]
+        self._has_pointer_address_arg_specs = any(
+            spec is not None for spec in self._pointer_address_arg_specs
+        )
+
+    def convert_python_pointer_args_for_tvm_ffi(
+        self, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
+        """Convert pointer-like Python arguments for TVM FFI calls.
+
+        TVM FFI expects pointer values as integer addresses rather than native
+        JIT pointer-slot storage. This method walks positional arguments and
+        keyword arguments using ``_pointer_address_arg_specs`` and
+        ``_convert_python_pointer_arg``. ``name_to_index`` maps keyword names
+        back to the signature slot whose compile-time spec controls conversion.
+
+        Returns the original ``args`` and ``kwargs`` objects when nothing
+        changed. If any conversion happens, returns a new positional tuple and,
+        only when needed, a copied kwargs dict. Sequence shapes are preserved
+        only when runtime list/tuple lengths match the compile-time arguments;
+        a mismatched or unsupported value is left unchanged. Negative pointer
+        addresses raise ``DSLRuntimeError``.
+        """
+        if not self._has_pointer_address_arg_specs:
+            return args, kwargs
+
+        converted_args = list(args)
+        changed = False
+        positional_count = min(len(converted_args), self._meta.arg_count)
+        for index in range(positional_count):
+            converted, did_convert = _convert_python_pointer_arg(
+                converted_args[index],
+                self._pointer_address_arg_specs[index],
+                for_tvm_ffi=True,
+            )
+            if did_convert:
+                converted_args[index] = converted
+                changed = True
+
+        converted_kwargs = kwargs
+        for name, value in kwargs.items():
+            kw_index = self._meta.name_to_index.get(name)
+            if kw_index is None or kw_index >= len(self._pointer_address_arg_specs):
+                continue
+            converted, did_convert = _convert_python_pointer_arg(
+                value,
+                self._pointer_address_arg_specs[kw_index],
+                for_tvm_ffi=True,
+            )
+            if did_convert:
+                if converted_kwargs is kwargs:
+                    converted_kwargs = dict(kwargs)
+                converted_kwargs[name] = converted
+                changed = True
+
+        if not changed:
+            return args, kwargs
+        return tuple(converted_args), converted_kwargs
 
     def _build_meta(self) -> ArgMeta:
         """
@@ -243,16 +543,10 @@ class ExecutionArgs:
         """
         pos_count = len(self._meta.pos_names)
         if len(args) > pos_count:
-            raise DSLRuntimeError(
-                "input args/kwargs length does not match runtime function signature!",
-                context={
-                    "input args length": len(args),
-                    "input kwargs length": len(kwargs),
-                    "function signature args length": len(self._meta.pos_names),
-                    "function signature kwonlyargs length": len(
-                        self._meta.kwonly_names
-                    ),
-                },
+            raise DSLUserCodeError(
+                DiagId.CALL_TOO_MANY_ARGS,
+                expected=len(self._meta.pos_names),
+                provided=len(args),
             )
 
         # Start with every slot marked missing, we overwrite as values/defaults bind
@@ -278,14 +572,14 @@ class ExecutionArgs:
         for name, value in kwargs.items():
             idx = self._meta.name_to_index.get(name)  # type: ignore[assignment]
             if idx is None:
-                raise DSLRuntimeError(
-                    "unexpected keyword argument",
-                    context={"argument_name": name},
+                raise DSLUserCodeError(
+                    DiagId.CALL_UNEXPECTED_KWARG,
+                    argument_name=name,
                 )
             if idx < pos_len:
-                raise DSLRuntimeError(
-                    "multiple values for argument",
-                    context={"argument_name": name},
+                raise DSLUserCodeError(
+                    DiagId.CALL_DUPLICATE_ARGUMENT,
+                    argument_name=name,
                 )
             rectified[idx] = value
 
@@ -295,15 +589,9 @@ class ExecutionArgs:
                 for i, name in enumerate(self._meta.all_names)
                 if rectified[i] is self._missing
             ]
-            raise DSLRuntimeError(
-                "input args/kwargs length does not match runtime function signature!",
-                context={
-                    "missing": missing_args,
-                    "function signature args length": len(self._meta.pos_names),
-                    "function signature kwonlyargs length": len(
-                        self._meta.kwonly_names
-                    ),
-                },
+            raise DSLUserCodeError(
+                DiagId.CALL_MISSING_ARGS,
+                missing=missing_args,
             )
 
         return rectified
@@ -334,7 +622,18 @@ class ExecutionArgs:
         else:
             input_args = self.get_rectified_args(args, kwargs)
 
+        if self._full_arg_check:
+            self._validate_args_full(input_args)
+
         for index, arg in enumerate(input_args):
+            pointer_arg, is_pointer_address = _convert_python_pointer_arg(
+                arg, self._pointer_address_arg_specs[index]
+            )
+            if is_pointer_address:
+                adapted_args.append(pointer_arg)
+                exe_arg_chunks[index] = get_c_pointers(pointer_arg)
+                continue
+
             cptr_method = getattr(arg, "__c_pointers__", None)
             if cptr_method is not None:
                 exe_arg_chunks[index] = cptr_method()
@@ -366,9 +665,91 @@ class ExecutionArgs:
             if cptr_method is not None:
                 exe_args.extend(cptr_method())
             else:
-                exe_args.append(arg)
+                address = (
+                    _python_pointer_address(arg) if _is_ctypes_pointer(arg) else None
+                )
+                if address is None:
+                    exe_args.append(arg)
+                else:
+                    pointer_arg = _RuntimePointerArg(address)
+                    adapted_args.append(pointer_arg)
+                    exe_args.extend(pointer_arg.__c_pointers__())
 
         return exe_args, adapted_args
+
+    def _arg_marshals_to_pointers(self, arg: Any, spec: PointerAddressArgSpec) -> bool:
+        """Whether ``arg`` will contribute at least one C pointer at launch.
+
+        Mirrors the marshalling decisions in ``generate_execution_args``:
+        pointer-address slots, ``__c_pointers__`` providers, registered JIT
+        argument adapters, and (recursively) sequences. An argument that
+        matches none of these is silently dropped by ``get_c_pointers`` (it
+        returns ``[]``), so the kernel would receive the wrong arguments.
+        """
+        # Pointer-address slot: converted to a _RuntimePointerArg when the value
+        # carries a pointer address (raw int / ctypes pointer / nullptr marker,
+        # which _python_pointer_address already reports). When it does not,
+        # generate_execution_args falls through to the branches below, so we do
+        # too rather than rejecting a value that still marshals.
+        if spec is True and _python_pointer_address(arg) is not None:
+            return True
+        if hasattr(arg, "__c_pointers__"):
+            return True
+        try:
+            if JitArgAdapterRegistry.get_registered_adapter(arg) is not None:
+                return True
+        except Exception:
+            # Classification is best-effort; if adapter lookup itself trips,
+            # defer to the normal launch path rather than raising here.
+            return True
+        if isinstance(arg, (list, tuple)):
+            if isinstance(spec, (list, tuple)) and len(spec) == len(arg):
+                return all(
+                    self._arg_marshals_to_pointers(
+                        item, cast(PointerAddressArgSpec, item_spec)
+                    )
+                    for item, item_spec in zip(arg, spec)
+                )
+            return all(self._arg_marshals_to_pointers(item, None) for item in arg)
+        return False
+
+    def _validate_args_full(self, input_args: Sequence[Any]) -> None:
+        """Thorough per-argument validation, run when debugging mode is ON.
+
+        The normal launch path skips these checks to minimize overhead and
+        trusts the caller to pass well-formed arguments. When debugging mode is
+        ON we instead validate each argument against the recorded specs and
+        raise a precise error rather than silently mis-marshalling (an argument
+        that yields zero C pointers) or crashing inside the C call.
+
+        Note: mismatched runtime sequence lengths are intentionally tolerated
+        (see the module docstring) and are not flagged here.
+        """
+        meta = self._meta
+        for index, arg in enumerate(input_args):
+            name = meta.all_names[index] if index < len(meta.all_names) else f"#{index}"
+            spec = self._pointer_address_arg_specs[index]
+
+            # Numeric scalars must be number-like so the later t.cast succeeds;
+            # only reject clearly non-numeric values to avoid false positives on
+            # the DSL's own numeric wrapper types.
+            if meta.numeric_flags[index]:
+                if arg is None or isinstance(arg, (str, bytes, list, tuple, dict, set)):
+                    raise DSLUserCodeError(
+                        DiagId.ARG_NOT_NUMERIC,
+                        arg_name=name,
+                        arg_type=type(arg).__name__,
+                        context={"position": index},
+                    )
+                continue
+
+            if not self._arg_marshals_to_pointers(arg, spec):
+                raise DSLUserCodeError(
+                    DiagId.ARG_NOT_MARSHALABLE,
+                    arg_name=name,
+                    arg_type=type(arg).__name__,
+                    context={"position": index},
+                )
 
     def get_kwargs_wrapper_spec(
         self, exclude_arg_names: Sequence[str] = ()
@@ -462,14 +843,10 @@ class ExecutionArgs:
         )
 
         if len(runtime_args) != pos_count or len(runtime_kwargs) != kw_count:
-            raise DSLRuntimeError(
-                "input args/kwargs length does not match runtime function signature!",
-                context={
-                    "input args length": len(runtime_args),
-                    "input kwargs length": len(runtime_kwargs),
-                    "function signature args length": pos_count,
-                    "function signature kwonlyargs length": kw_count,
-                },
+            raise DSLUserCodeError(
+                DiagId.CALL_SIGNATURE_MISMATCH,
+                provided=len(runtime_args),
+                provided_kw=len(runtime_kwargs),
             )
 
         return runtime_args + tuple(runtime_kwargs.values())
@@ -697,7 +1074,7 @@ class JitExecutor:
             error_code = self.cuda_result.value  # type: ignore[union-attr]
             if error_code == 0:
                 return error_code
-            raise create_cuda_runtime_error(error_code)
+            raise cuda_helpers.create_cuda_runtime_error(error_code)
         except DSLCudaRuntimeError as e:
             raise e
         except Exception as e:
@@ -716,6 +1093,7 @@ class JitFunctionArtifacts:
 
     PTX: str | None
     CUBIN: str | bytes | None
+    SASS: str | None
     MLIR: str | None
     # Device compilation artifacts (set when DeviceTarget is enabled)
     device_header: str | None = None
@@ -733,7 +1111,13 @@ class JitFunctionArtifacts:
                 with open(self.CUBIN, "rb") as f:
                     self.CUBIN = f.read()
             except (IOError, OSError) as e:
-                raise DSLRuntimeError(f"Failed to read CUBIN file '{self.CUBIN}': {e}")  # type: ignore[str-bytes-safe]
+                raise DSLRuntimeError(f"Failed to read CUBIN file {self.CUBIN!r}: {e}")
+        if self.SASS is not None and os.path.exists(self.SASS):
+            try:
+                with open(self.SASS, "r") as f:
+                    self.SASS = f.read()
+            except (IOError, OSError) as e:
+                raise DSLRuntimeError(f"Failed to read SASS file '{self.SASS}': {e}")
         if self.MLIR is not None and os.path.exists(self.MLIR):
             try:
                 with open(self.MLIR, "r") as f:
@@ -801,7 +1185,19 @@ class JitCompiledFunction:
         self.function_name = function_name
         self.kernel_info = kernel_info if kernel_info is not None else dict[str, Any]()
         if signature is not None:
-            self.execution_args = ExecutionArgs(signature, self.function_name)
+            # Enable thorough per-launch argument validation when debugging mode
+            # is ON. Read it from the DSL's env manager so the launch path reads
+            # a single stored boolean instead of the env on every call; when
+            # export_provider is unset, validation stays off.
+            full_arg_check = False
+            if self.export_provider is not None:
+                full_arg_check = self.export_provider.dsl._get_dsl().envar.debug
+            self.execution_args = ExecutionArgs(
+                signature, self.function_name, full_arg_check=full_arg_check
+            )
+            self.execution_args.record_pointer_arg_specs_from_compile_args(
+                tuple(dynamic_args or ()), dynamic_kwargs or {}
+            )
         self.jit_time_profiling = jit_time_profiling
 
         assert (
@@ -843,6 +1239,11 @@ class JitCompiledFunction:
     def __cubin__(self) -> str | bytes | None:
         """Returns the CUBIN data of the JIT-compiled function."""
         return self.artifacts.CUBIN if self.artifacts is not None else None
+
+    @property
+    def __sass__(self) -> str | None:
+        """Returns the SASS code of the JIT-compiled function."""
+        return self.artifacts.SASS if self.artifacts is not None else None
 
     @property
     def __mlir__(self) -> str | None:

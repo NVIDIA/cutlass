@@ -73,8 +73,7 @@ sm120_rr_smem_copy_selector_A() {
 template <
   class ElementA,
   class ElementB,
-  bool UseF8f6f4,
-  int TileShapeN = 32
+  bool UseF8f6f4
 >
 CUTLASS_HOST_DEVICE constexpr
 auto
@@ -84,38 +83,14 @@ sm120_rr_smem_copy_selector_B() {
       return SM100_SU6_DU8x16_x4_LDSM_N{};
     }
     else if constexpr (sizeof_bits_v<ElementB> == 4) {
-      if constexpr (TileShapeN < 16) {
-        return SM100_SU4_DU8x16_x1_LDSM_N{};
-      }
-      else if constexpr (TileShapeN < 32) {
-        return SM100_SU4_DU8x16_x2_LDSM_N{};
-      }
-      else {
-        return SM100_SU4_DU8x16_x4_LDSM_N{};
-      }
-    }
-    else {
-      if constexpr (TileShapeN < 16) {
-        return SM75_U32x1_LDSM_N{};
-      }
-      else if constexpr (TileShapeN < 32) {
-        return SM75_U32x2_LDSM_N{};
-      }
-      else {
-        return SM75_U32x4_LDSM_N{};
-      }
-    }
-  }
-  else {
-    if constexpr (TileShapeN < 16) {
-      return SM75_U32x1_LDSM_N{};
-    }
-    else if constexpr (TileShapeN < 32) {
-      return SM75_U32x2_LDSM_N{};
+      return SM100_SU4_DU8x16_x4_LDSM_N{};
     }
     else {
       return SM75_U32x4_LDSM_N{};
     }
+  } 
+  else {
+    return SM75_U32x4_LDSM_N{};
   }
 }
 
@@ -165,24 +140,22 @@ sm120_rr_smem_selector_sparse() {
   }
 }
 
-template <int SFVectorSize, int TileShapeN = 32>
+template <int SFVectorSize>
 CUTLASS_HOST_DEVICE constexpr
 auto
 sm120_tile_n_permute_selector() {
-  static_assert(SFVectorSize == 16 || SFVectorSize == 32,
-    "Unsupported SFVectorSize for SM120 collective builder.");
-  if constexpr (TileShapeN >= 32) {
+  // VS = 16
+  if constexpr (SFVectorSize == 16) {
+    // Permute in the N mode to allow a warp to own all the elements needed for SF reduction
     return cute::Layout<cute::Shape<_8,_2,_2>, cute::Stride<_1, _16,_8>>{};
   }
-  else if constexpr (TileShapeN == 16) {
-    return cute::Layout<cute::Shape<_8,_2>, cute::Stride<_1,_8>>{};
-  }
-  else if constexpr (TileShapeN == 8) {
-    return cute::Layout<cute::Shape<_8>, cute::Stride<_1>>{};
+  // VS = 32
+  else if constexpr (SFVectorSize == 32) {
+    return cute::Layout<cute::Shape<_8,_2,_2>, cute::Stride<_1, _16,_8>>{};
   }
   else {
-    static_assert(cutlass::detail::dependent_false<cute::C<TileShapeN>>,
-      "TileShape_N must be at least 8 for SM120 blockscaled.");
+    static_assert(cutlass::detail::dependent_false<cute::C<SFVectorSize>>,
+      "Unsupported SFVectorSize for SM120 collective builder.");
   }
 }
 

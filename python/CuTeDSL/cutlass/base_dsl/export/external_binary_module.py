@@ -17,7 +17,8 @@ from collections.abc import Callable
 from inspect import Signature, Parameter
 from typing import Any, cast
 
-from ..common import DSLRuntimeError
+from ..common import DSLRuntimeError, DSLUserCodeError
+from ..diagnostics import DiagId
 from ...base_dsl.dsl import BaseDSL
 from ...base_dsl.typing import Int32, Int64, Float32, Float64
 from .export import SignatureProcessor, decode_metadata_from_execution_engine
@@ -27,7 +28,7 @@ def _get_ctypes_return_type(signature: Signature) -> Any:
     """Get the ctypes return type from the signature."""
     return_type = signature.return_annotation
     if return_type is Parameter.empty:
-        raise DSLRuntimeError("Return type is not specified for AOT compiled function.")
+        raise DSLUserCodeError(DiagId.AOT_MISSING_RETURN_TYPE)
     type_to_ctype = {
         Int32: ctypes.c_int32,
         Int64: ctypes.c_int64,
@@ -38,7 +39,9 @@ def _get_ctypes_return_type(signature: Signature) -> Any:
 
     ctype = type_to_ctype.get(return_type)
     if ctype is None:
-        raise DSLRuntimeError(f"Unsupported return type for AOT loading: {return_type}")
+        raise DSLUserCodeError(
+            DiagId.AOT_UNSUPPORTED_RETURN_TYPE, return_type=return_type
+        )
 
     return ctype
 

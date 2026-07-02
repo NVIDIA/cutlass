@@ -24,10 +24,12 @@ import os
 import io
 import sys
 import errno
+import tempfile
 import re
 import inspect
 import argparse
 import hashlib
+from contextvars import ContextVar
 from contextlib import contextmanager
 from functools import lru_cache, wraps
 from collections import namedtuple, OrderedDict
@@ -42,7 +44,7 @@ from typing import (
     get_origin,
     get_args,
 )
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from types import SimpleNamespace, UnionType
 
 if TYPE_CHECKING:
@@ -52,10 +54,10 @@ import warnings
 import threading
 
 from . import typing as t
-from .env_manager import EnvironmentVarManager, is_cutlass_family_dsl_prefix
-from .compiler import CompileOptions, LinkLibraries
+from .env_manager import EnvironmentVarManager, dump_sass, is_cutlass_family_dsl_prefix
+from .compiler import CompileOptions, CompilerDiagnosticError, LinkLibraries
 from .ast_helpers import DSLOptimizationWarning
-from .common import register_env_manager
+from .common import DSLRuntimeError, active_env_manager
 
 # =============================================================================
 # Local module imports
@@ -75,6 +77,7 @@ from .runtime.jit_arg_adapters import (
 
 from .ast_preprocessor import DSLPreprocessor
 from .common import *
+from .diagnostics import DiagId
 from .typing import (
     Constexpr,
     get_c_pointers,
@@ -83,7 +86,12 @@ from .typing import (
     implements_dynamic_expression,
     implements_jit_argument,
 )
-from .._mlir_helpers.op import _set_enable_frame_filtering
+from .._mlir_helpers.op import (
+    _set_enable_frame_filtering,
+    _set_include_lib_frame,
+    get_verify_trace,
+    set_verify_trace,
+)
 
 # =============================================================================
 # MLIR modules
@@ -171,10 +179,8 @@ def extract_mlir_values(obj: object, *, structured: bool = False) -> Any:
             for k, v in obj.__dict__.items():
                 res.extend(extract_mlir_values(v))
         elif isinstance(obj, set):
-            raise DSLRuntimeError(
-                "Sets are not supported in extract_mlir_values to ensure order preservation",
-                context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
-                suggestion="Consider using a list or tuple instead",
+            raise DSLUserCodeError(
+                DiagId.ARG_UNORDERED_CONTAINER,
             )
         elif isinstance(obj, ir.Value):
             res = [obj]
@@ -453,11 +459,7 @@ def extract_mlir_attributes(obj: object) -> list[Any]:
             # - exact-type primitives (int/float/bool/str); use `type(v) in (...)`
             #   so that subclass instances carrying their own DSL hooks (e.g.
             #   `numpy.float64`) still get recursed into
-            if (
-                v is None
-                or isinstance(v, type)
-                or type(v) in (int, float, bool, str)
-            ):
+            if v is None or isinstance(v, type) or type(v) in (int, float, bool, str):
                 continue
             ftype = f.type
             origin = get_origin(ftype) if not isinstance(ftype, str) else None
@@ -466,10 +468,8 @@ def extract_mlir_attributes(obj: object) -> list[Any]:
             res.extend(extract_mlir_attributes(v))
     # Can't call is_dynamic_expression as _is_dynamic_expression depends on extract_mlir_values
     elif isinstance(obj, set):
-        raise DSLRuntimeError(
-            "Sets are not supported in extract_mlir_values to ensure order preservation",
-            context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
-            suggestion="Consider using a list or tuple instead",
+        raise DSLUserCodeError(
+            DiagId.ARG_UNORDERED_CONTAINER,
         )
     elif isinstance(obj, ir.Value):
         res = [ir.DictAttr.get({})]
@@ -550,10 +550,8 @@ def new_from_mlir_values(obj: Any, values: Any, *, structured: bool = False) -> 
                 values = values[n_items:]
             return ns
         elif isinstance(obj, set):
-            raise DSLRuntimeError(
-                "Sets are not supported in new_from_mlir_values to ensure order preservation",
-                context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
-                suggestion="Consider using a list or tuple instead",
+            raise DSLUserCodeError(
+                DiagId.ARG_UNORDERED_CONTAINER,
             )
         elif is_dynamic_expression(obj):
             if len(values) == 0:
@@ -592,6 +590,8 @@ class DSLSingletonMeta(type):
 
     _instances: ClassVar[dict] = {}
     _lock: ClassVar[threading.Lock] = threading.Lock()
+    _optimization_warnings_enabled: ClassVar[bool] = False
+    _stacktrace_filter_disabled: ClassVar[bool] = False
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
         with cls._lock:
@@ -688,7 +688,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.num_kernels: int = 0
         # Read environment variables
         self.envar: EnvironmentVarManager = self._env_class(self.name)
-        register_env_manager(self.envar)
         self.enable_preprocessor: bool = preprocess
         # This cache uses hash of original ir and env as key, allows dump/load to/from file. Enabled by default
         self.jit_cache: JitCacheDict = JitCacheDict(
@@ -699,8 +698,21 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.device_jit_decorator_name: str = f"@{BaseDSL.kernel.__name__}"
 
         # set warning
-        if not self.envar.enable_optimization_warnings:
-            # By default, optimization warnings are disabled
+        #
+        # Multiple DSL singletons may be initialized with different env var
+        # prefixes.  The optimization-warning filter is global, so a later
+        # DSL instance must not blindly add an "ignore" filter when an
+        # earlier instance already opted *in* via its own env var (e.g.
+        # CUTE_DSL_ENABLE_OPTIMIZATION_WARNINGS=1).
+        if self.envar.enable_optimization_warnings:
+            if not DSLSingletonMeta._optimization_warnings_enabled:
+                DSLSingletonMeta._optimization_warnings_enabled = True
+                warnings.filters = [
+                    f
+                    for f in warnings.filters
+                    if not (f[0] == "ignore" and f[2] is DSLOptimizationWarning)
+                ]
+        elif not DSLSingletonMeta._optimization_warnings_enabled:
             warnings.filterwarnings("ignore", category=DSLOptimizationWarning)
         if self.envar.warnings_as_errors:
             warnings.filterwarnings("error")
@@ -715,6 +727,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.launch_inner_count: int = 0
         # initialize default compile options
         self.compile_options: CompileOptions = CompileOptions()
+        # Synchronous callbacks run after tracing and before module hashing.
+        # Signature: hook(owner, module, function_name). Hooks may mutate the
+        # finalized ir.Module; hook exceptions are wrapped by the caller.
+        self._trace_finalize_hooks: list[Callable[[Any, ir.Module, str], None]] = []
+        self._scoped_trace_finalize_hooks: ContextVar[
+            tuple[Callable[[Any, ir.Module, str], None], ...]
+        ] = ContextVar(f"{self.name}_trace_finalize_hooks", default=())
 
         if preprocess:
             preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
@@ -730,7 +749,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             self.cache_misses: int = 0
 
         # Hook excepthook
-        if self.envar.filter_stacktrace:
+        #
+        # Guard: if a prior DSL instance explicitly disabled filtering
+        # (e.g. CUTE_DSL_FILTER_STACKTRACE=0), do not let a later
+        # instance with a different prefix re-enable it.
+        if not self.envar.filter_stacktrace:
+            DSLSingletonMeta._stacktrace_filter_disabled = True
+        if (
+            self.envar.filter_stacktrace
+            and not DSLSingletonMeta._stacktrace_filter_disabled
+        ):
             origin_excepthook = sys.excepthook
             module_dir = walk_to_top_module(os.path.dirname(os.path.abspath(__file__)))
 
@@ -838,14 +866,15 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 BaseDSL._preprocess_and_replace_code(func)
 
                 custom_name = getattr(jit_wrapper, "_name_prefix", None)
-                if custom_name:
-                    return getattr(func._dsl_object, executor_name)(
-                        func, *args, **kwargs, _name_prefix=custom_name
-                    )
-                else:
-                    return getattr(func._dsl_object, executor_name)(
-                        func, *args, **kwargs
-                    )
+                with active_env_manager(func._dsl_object.envar):
+                    if custom_name:
+                        return getattr(func._dsl_object, executor_name)(
+                            func, *args, **kwargs, _name_prefix=custom_name
+                        )
+                    else:
+                        return getattr(func._dsl_object, executor_name)(
+                            func, *args, **kwargs
+                        )
 
             def set_name_prefix(name: str) -> None:
                 jit_wrapper._name_prefix = name  # type: ignore[attr-defined]
@@ -909,23 +938,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if pipeline != None:
             return pipeline
         return None
-
-    @staticmethod
-    def log_additions(
-        func_type: Any, operands: Any = None, types: Any = None, arg_attrs: Any = None
-    ) -> None:
-        if operands is not None and operands != []:
-            log().debug(
-                f"Added {func_type} operands: [%s]", ", ".join(map(str, operands))
-            )
-        if types is not None:
-            log().debug(
-                f"Added {func_type} arg_types: [%s]", ", ".join(map(str, types))
-            )
-        if arg_attrs is not None:
-            log().debug(
-                f"Added {func_type} arg_attrs: [%s]", ", ".join(map(str, arg_attrs))
-            )
 
     def mangle_name(
         self, function_name: str, args: tuple[Any, ...], sig: inspect.Signature
@@ -1041,7 +1053,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             else:
                 ir_arg = ir_arg[0]
 
-            self.log_additions(ir_arg)
             return ir_arg, iv_block_args
 
         fop_args = list(fop.regions[0].blocks[0].arguments)
@@ -1196,12 +1207,33 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
             annotation_markers = []
             for sub_ty in candidate_sub_types:
+                # Annotated[T, marker] at the top — bare annotated argument.
                 ty, *markers = (
                     get_args(sub_ty) if get_origin(sub_ty) is Annotated else (sub_ty,)
                 )
                 if markers and isinstance(ty, type) and isinstance(arg, ty):
                     annotation_markers = markers
                     break
+
+                # List[Annotated[T, marker]] / Tuple[Annotated[T, marker], ...]:
+                # peel one container layer so per-element markers (e.g.
+                # cuda.grid_constant) survive list/tuple args.
+                container_origin = get_origin(sub_ty)
+                if (
+                    container_origin in (list, tuple)
+                    and isinstance(arg, (list, tuple))
+                    and arg
+                ):
+                    container_args = get_args(sub_ty)
+                    if container_args and get_origin(container_args[0]) is Annotated:
+                        inner_ty, *inner_markers = get_args(container_args[0])
+                        if (
+                            inner_markers
+                            and isinstance(inner_ty, type)
+                            and all(isinstance(e, inner_ty) for e in arg)
+                        ):
+                            annotation_markers = inner_markers
+                            break
 
             log().debug("Processing [%d] Argument [%s : %s]", i, arg_name, spec_ty)
 
@@ -1249,25 +1281,48 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     jit_arg_attr.extend(extract_mlir_attributes(arg))
 
                 if not jit_arg_type or not jit_exec_arg:
-                    # when it is compile only, we don't have to prepare the executable arguments.
-                    if (is_host and (compile_only or implements_jit_argument(arg))) or (
-                        not is_host and implements_dynamic_expression(arg)
+                    # Compile-only placeholders can provide MLIR signature types
+                    # without runtime execution arguments, e.g. FakeTensor.
+                    is_compile_only_type_placeholder = (
+                        is_host and compile_only and jit_arg_type and not jit_exec_arg
+                    )
+                    if (
+                        is_compile_only_type_placeholder
+                        or (is_host and implements_jit_argument(arg))
+                        or (not is_host and implements_dynamic_expression(arg))
                     ):
                         pass
                     else:
-                        raise DSLRuntimeError(
-                            f"failed to generate argument #{i + 1} ({arg_name}) for JIT function '{function_name}'.",
-                            context={
-                                f"Argument {arg_name}": "The DSL attempted to convert it into Dynamic Expression (aka MLIR values) but failed.",
-                                "Call-site argument value": arg,
-                                "Call-site argument type": type(arg),
-                            },
-                            suggestion=f"Consider annotating the argument with `{arg_name} : Constexpr` "
-                            "if it's a value known at compile-time. "
-                            f"Otherwise, implement the {'`JitArgument`' if is_host else '`DynamicExpression`'} "
-                            f"protocol or register a custom JIT argument adapter for type `{type(arg)}` to "
-                            "enable dynamic value conversion at runtime.",
-                        )
+                        if (
+                            is_host
+                            and compile_only
+                            and not implements_jit_argument(arg)
+                            and not is_argument_constexpr(
+                                arg, spec_ty, arg_name, i, func
+                            )
+                        ):
+                            warning_msg, warning_suggestions = (
+                                DiagId.ARG_UNSUPPORTED_TYPE.fill(
+                                    num=i + 1,
+                                    arg_name=arg_name,
+                                    arg_type=type(arg),
+                                    phase_label="JitArgument",
+                                    function_name=function_name,
+                                )
+                            )
+                            warning_msg = " ".join((warning_msg, *warning_suggestions))
+                            warnings.warn(warning_msg, UserWarning, stacklevel=3)
+                        else:
+                            raise DSLUserCodeError(
+                                DiagId.ARG_UNSUPPORTED_TYPE,
+                                num=i + 1,
+                                arg_name=arg_name,
+                                arg_type=type(arg),
+                                phase_label=(
+                                    "JitArgument" if is_host else "DynamicExpression"
+                                ),
+                                function_name=function_name,
+                            )
 
             if jit_arg_type is not None:
                 assert jit_exec_arg is not None and jit_arg_attr is not None
@@ -1313,9 +1368,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             compile_only=compile_only,
         )
 
-        log().debug("Execution Arguments: %s", ", ".join(map(str, exe_args)))
-        log().debug("Types: %s", ", ".join(map(str, types)))
-
         assert (
             compile_only or self.envar.enable_tvm_ffi or len(exe_args) == len(types)
         ), "expects the same number of arguments and function parameters"
@@ -1351,13 +1403,18 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 dim = [dim]
 
             if len(dim) > 3:
-                raise DSLRuntimeError(
-                    f"Expected {name} dimension to be less than or equal to 3, but got {len(dim)}"
+                raise DSLUserCodeError(
+                    DiagId.LAUNCH_INVALID_GRID,
+                    name=name,
+                    count=len(dim),
                 )
             for idx, e in enumerate(dim):
                 if not isinstance(e, (Integer, int)):
-                    raise DSLRuntimeError(
-                        f"Expected integer for {name} dimension at index {idx}, but got {type(e)}"
+                    raise DSLUserCodeError(
+                        DiagId.LAUNCH_INVALID_DIMENSION,
+                        name=name,
+                        idx=idx,
+                        arg_type=type(e),
                     )
 
             # Pad with 1s to 3-dim vector for grid or block dimensions
@@ -1371,13 +1428,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             if self.cluster is None:
                 self.cluster = [None, None, None]
             elif len(self.cluster) != 3:
-                raise DSLRuntimeError("Expect 3d cluster!")
+                raise DSLUserCodeError(DiagId.LAUNCH_INVALID_CLUSTER)
 
             self.has_fallback_cluster = self.fallback_cluster is not None
             if self.fallback_cluster is None:
                 self.fallback_cluster = [None, None, None]
             elif len(self.fallback_cluster) != 3:
-                raise DSLRuntimeError("Expect 3d fallback_cluster!")
+                raise DSLUserCodeError(DiagId.LAUNCH_INVALID_FALLBACK)
 
         def has_max_number_threads(self) -> bool:
             """Check if max_number_threads is given by user"""
@@ -1400,9 +1457,24 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         args, _ = parser.parse_known_args()
         ctx = ir.Context.current
+        compiler_opt = os.environ.get("CUTE_DSL_COMPILER_OPT", "")
+        if args.diagnostic is None and (
+            self.compile_options.collect_compiler_diagnostics
+            or "diagnostic" in compiler_opt
+        ):
+            return
 
         def callback(d: Any) -> None:
-            print(f"  [{self.name} Diagnostic] : {d.message}")
+            if self.compile_options.collect_compiler_diagnostics:
+                return
+            try:
+                message = d.message
+            except BaseException:
+                try:
+                    message = str(d)
+                except BaseException:
+                    return
+            print(f"  [{self.name} Diagnostic] : {message}")
 
         ctx.attach_diagnostic_handler(callback)
 
@@ -1483,6 +1555,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     pipeline,
                     shared_libs=shared_libs,
                     arch=self.envar.arch,
+                    remark_filter=self.compile_options.remark_filter,
+                    warnings_filter=self.compile_options.warnings_filter,
+                    remark_output=self.compile_options.remark_output,
+                    collect_compiler_diagnostics=(
+                        self.compile_options.collect_compiler_diagnostics
+                    ),
                     enable_debug_info=enable_debug_info,
                 )
 
@@ -1495,12 +1573,26 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             print(redirect_stdout.getvalue(), file=sys.stdout, end="")
             print(redirect_stderr.getvalue(), file=sys.stderr, end="")
 
+            sass_path = self.compile_options.dump_sass_path
+            if sass_path:
+                self._dump_sass_artifact(sass_path)
+
             return kernel
 
+        except CompilerDiagnosticError:
+            raise
         except Exception as e:
             raise DSLRuntimeError("🧊🧊🧊 ICE 🧊🧊🧊", cause=e)
         finally:
             pass
+
+    def _dump_sass_artifact(self, sass_path: str) -> None:
+        cubin_path = self.compile_options.full_cubin_path
+        assert cubin_path is not None
+        from .compiler import NvdisasmOptions
+
+        flags = self.compile_options.options[NvdisasmOptions].value
+        dump_sass(cubin_path, sass_path, flags)
 
     def preprocess_pipeline(self, pipeline: str, arch: str) -> str:
         options = {
@@ -1578,6 +1670,94 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             "Function=[%s] Computed module_hash=[%s]", function_name, module_hash
         )
         return module_hash
+
+    def register_trace_finalize_hook(
+        self, hook: Callable[[Any, ir.Module, str], None]
+    ) -> None:
+        """Register a callback run after tracing and before hashing the module.
+
+        The hook is called synchronously as ``hook(owner, module,
+        function_name)``, where ``owner`` is this DSL instance, ``module`` is
+        the finalized ``ir.Module``, and ``function_name`` identifies the trace.
+        Hooks may inspect or annotate the module before its cache key is
+        computed. Passing ``None`` raises ``DSLRuntimeError``; registering the
+        same hook object more than once is ignored.
+        """
+        if hook is None:
+            raise DSLRuntimeError("Trace finalize hook must not be None.")
+        if not callable(hook):
+            raise DSLRuntimeError("Trace finalize hook must be callable.")
+        if hook not in self._trace_finalize_hooks:
+            self._trace_finalize_hooks.append(hook)
+
+    @contextmanager
+    def trace_finalize_hooks(
+        self,
+        hooks: Callable[[Any, ir.Module, str], None]
+        | Iterable[Callable[[Any, ir.Module, str], None]],
+    ) -> Generator[None, Any, None]:
+        """Temporarily register trace-finalize hooks in the current context.
+
+        Args:
+            hooks: A single hook or iterable of hooks. Each hook is called as
+                ``hook(owner, module, function_name)``, where ``owner`` is this
+                DSL instance, ``module`` is the finalized ``ir.Module``, and
+                ``function_name`` identifies the trace.
+
+        Scoped hooks are stored in ``_scoped_trace_finalize_hooks`` for the
+        duration of the context, preserving order and ignoring duplicates. The
+        context manager restores the previous hook state when the ``with`` block
+        exits.
+
+        Raises:
+            DSLRuntimeError: If ``hooks`` is neither callable nor iterable, or
+                if any hook entry is ``None`` or not callable.
+        """
+        scoped_hooks: tuple[Callable[[Any, ir.Module, str], None], ...]
+        if callable(hooks):
+            scoped_hooks = (hooks,)
+        else:
+            try:
+                scoped_hooks = tuple(hooks)
+            except TypeError as e:
+                raise DSLRuntimeError(
+                    "Trace finalize hooks must be callable or iterable."
+                ) from e
+
+        for hook in scoped_hooks:
+            if hook is None:
+                raise DSLRuntimeError("Trace finalize hook must not be None.")
+            if not callable(hook):
+                raise DSLRuntimeError("Trace finalize hook must be callable.")
+
+        current_hooks = self._scoped_trace_finalize_hooks.get()
+        combined_hooks = list(current_hooks)
+        for hook in scoped_hooks:
+            if hook not in combined_hooks:
+                combined_hooks.append(hook)
+        token = self._scoped_trace_finalize_hooks.set(tuple(combined_hooks))
+        try:
+            yield
+        finally:
+            self._scoped_trace_finalize_hooks.reset(token)
+
+    def _run_trace_finalize_hooks(self, module: ir.Module, function_name: str) -> None:
+        hooks = list(self._trace_finalize_hooks)
+        for hook in self._scoped_trace_finalize_hooks.get():
+            if hook not in hooks:
+                hooks.append(hook)
+
+        for hook in hooks:
+            try:
+                hook(self, module, function_name)
+            except Exception as e:
+                hook_name = getattr(
+                    hook, "__qualname__", getattr(hook, "__name__", repr(hook))
+                )
+                # DSLRuntimeError inherits DSLBaseError, which formats ``cause``.
+                raise DSLRuntimeError(
+                    f"Trace finalize hook failed: {hook_name}", cause=e
+                ) from e
 
     def build_module(self, module: ir.Module, function_name: str) -> ir.Module:
         """
@@ -1712,11 +1892,74 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             module, result = self.profiler(build_ir_module)()
         else:
             module, result = build_ir_module()
+        self._run_trace_finalize_hooks(module, function_name)
         module_hash = self.get_module_hash(module, function_name)
 
         module = self.build_module(module, function_name)
 
         return module, module_hash, result
+
+    def _runtime_can_run_compiled(
+        self, runtime_arch: str | None, compiled_arch: str | None
+    ) -> bool:
+        """Whether the runtime arch can execute a binary built for ``compiled_arch``.
+
+        Base behavior requires an exact arch match. DSLs with a richer arch model
+        (e.g. CuTe DSL) override this to allow family-portable targets.
+        """
+        return runtime_arch == compiled_arch
+
+    def _lookup_jit_entry(self, engine: Any, function_name: str) -> Any:
+        """Resolve the JIT'd entry symbol, turning a failed lookup into a clear error.
+
+        On the MLIR ExecutionEngine path, looking up the entry symbol lazily
+        materializes it. If the runtime library is resolvable as a file but does
+        not export the symbols the module needs (e.g. an incompatible
+        ``{name}_LIBS`` ``.so``), ORC reports ``Symbols not found: [...]`` on the
+        process stderr and the lookup returns null, which the upstream wrapper
+        surfaces as an opaque ``RuntimeError: Unknown function <mangled>``. The
+        real diagnostic is captured from the duplicated stderr fd here and
+        re-raised with a hint pointing at the runtime-library environment
+        variable.
+        """
+        lookup = (
+            self.profiler(engine.lookup)
+            if self.envar.jit_time_profiling
+            else engine.lookup
+        )
+
+        sys.stderr.flush()
+        saved_stderr_fd = os.dup(2)
+        with tempfile.TemporaryFile() as capture:
+            os.dup2(capture.fileno(), 2)
+            try:
+                try:
+                    capi_func = lookup(function_name)
+                finally:
+                    sys.stderr.flush()
+                    os.dup2(saved_stderr_fd, 2)
+                    os.close(saved_stderr_fd)
+                    capture.seek(0)
+                    captured = capture.read().decode("utf-8", "replace")
+            except RuntimeError as e:
+                raise self._jit_lookup_error(captured) from e
+        if captured:
+            sys.stderr.write(captured)
+            sys.stderr.flush()
+        return capi_func
+
+    def _jit_lookup_error(self, captured_stderr: str) -> DSLUserCodeError:
+        libs_env = f"{self.name}_LIBS"
+        diagnostic = captured_stderr.strip()
+        return DSLUserCodeError(
+            f"The {self.name} runtime library could not be resolved or is "
+            "incompatible.",
+            suggestion=(
+                f"Check that {libs_env} points to a runtime library that "
+                "exports the symbols this module needs."
+            ),
+            context=diagnostic or None,
+        )
 
     def compile_and_cache(
         self,
@@ -1742,8 +1985,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             if not self.compile_options.gpu_arch
             else self.compile_options.gpu_arch
         )
-        # If no gpu kernels or compile_gpu_arch is same as the arch from the environment variable, generate a JIT engine. Otherwise, only do the compilation.
-        gen_jit_engine = self.num_kernels == 0 or compile_gpu_arch == self.envar.arch
+        # Build a JIT engine when the runtime arch can execute a binary built for compile_gpu_arch;
+        # a genuine cross-compile gets no engine and must be exported. _runtime_can_run_compiled is
+        # overridden per DSL: the base requires an exact arch match, CuTe DSL adds family-portability.
+        gen_jit_engine = self.num_kernels == 0 or self._runtime_can_run_compiled(
+            self.envar.arch, compile_gpu_arch
+        )
         if no_jit_engine:
             gen_jit_engine = False
         # Preprocess the pipeline.
@@ -1791,11 +2038,23 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     self.profiler(self.compiler_provider.compile)(
                         module,
                         pipeline,
+                        remark_filter=self.compile_options.remark_filter,
+                        warnings_filter=self.compile_options.warnings_filter,
+                        remark_output=self.compile_options.remark_output,
+                        collect_compiler_diagnostics=(
+                            self.compile_options.collect_compiler_diagnostics
+                        ),
                     )
                 else:
                     self.compiler_provider.compile(
                         module,
                         pipeline,
+                        remark_filter=self.compile_options.remark_filter,
+                        warnings_filter=self.compile_options.warnings_filter,
+                        remark_output=self.compile_options.remark_output,
+                        collect_compiler_diagnostics=(
+                            self.compile_options.collect_compiler_diagnostics
+                        ),
                     )
                 engine = None
         else:
@@ -1816,10 +2075,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 if gen_jit_engine
                 else None
             )
-        if self.envar.jit_time_profiling:
-            capi_func = self.profiler(engine.lookup)(function_name) if engine else None
-        else:
-            capi_func = engine.lookup(function_name) if engine else None
+        capi_func = self._lookup_jit_entry(engine, function_name) if engine else None
 
         fn = func_type(
             module,
@@ -1833,6 +2089,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             jit_function_artifacts=JitFunctionArtifacts(
                 PTX=self.compile_options.full_ptx_path,
                 CUBIN=self.compile_options.full_cubin_path,
+                SASS=self.compile_options.dump_sass_path,
                 MLIR=(
                     str(self.dump_mlir_path)
                     if (self.envar.keep_ir or self.envar.keep_ir_clean)
@@ -1935,10 +2192,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             _loc_tb_ctx = None
             if _loc_tb_depth > 0:
                 try:
-                    _loc_tb_ctx = ir.loc_tracebacks(max_depth=_loc_tb_depth)
+                    # New LLVM (>= upstream PR #192310 cherry-pick): NAMELOC_WRAP
+                    # preserves Scope/WarpScope NameLocs around the generated
+                    # traceback chain so profiling annotations survive to PTX/SASS.
+                    _loc_tb_ctx = ir.loc_tracebacks(
+                        max_depth=_loc_tb_depth,
+                        current_loc_actn=ir.CurrentLocAction.NAMELOC_WRAP,
+                    )
+                except (TypeError, AttributeError):
+                    # Older LLVM without the composition kwargs / enums:
+                    # still give the user basic tracebacks.
+                    try:
+                        _loc_tb_ctx = ir.loc_tracebacks(max_depth=_loc_tb_depth)
+                    except (ValueError, TypeError, AttributeError):
+                        _loc_tb_ctx = None
+                if _loc_tb_ctx is not None:
                     _loc_tb_ctx.__enter__()
-                except (ValueError, TypeError, AttributeError):
-                    pass
 
             try:
                 # Convert input arguments to MLIR arguments
@@ -1992,9 +2261,29 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
                     buf = io.BytesIO()
                     module.operation.write_bytecode(buf)
-                    return _cutlass_ir.PreCompiledMlirArtifact.from_bitcode(
+                    artifact = _cutlass_ir.PreCompiledMlirArtifact.from_bitcode(
                         buf.getvalue()
                     )
+
+                    # Metadata is the whole point of the precompiled-MLIR
+                    # artifact (it is the calling-convention contract the
+                    # cutlass_compiler ABI wrappers are generated from). Let any
+                    # failure from build_function_metadata propagate with its
+                    # real cause and traceback rather than wrapping it -- the
+                    # raised error already identifies the offending parameter,
+                    # and swallowing/re-wrapping only obscures it.
+                    from cutlass.cute.metadata import build_function_metadata
+
+                    artifact.metadata.append(
+                        build_function_metadata(
+                            function_name=function_name,
+                            signature=sig,
+                            args=args,
+                            kwonlyargs=kwonlyargs,
+                            display_name=funcBody.__name__,
+                        )
+                    )
+                    return artifact
 
                 # dryrun is used to only generate IR
                 if self.envar.dryrun:
@@ -2078,6 +2367,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self,
         original_function: Any,
     ) -> Any:
+        # Preprocessing runs before jit_wrapper enters its call-time context.
+        with active_env_manager(self.envar):
+            return self._run_preprocessor_impl(
+                original_function,
+            )
+
+    def _run_preprocessor_impl(
+        self,
+        original_function: Any,
+    ) -> Any:
         function_name = original_function.__name__
         self.funcBody = original_function
         log().info("Started preprocessing [%s]", function_name)
@@ -2103,7 +2402,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
 
             original_function._preprocessed = True
-
             return preprocessor_session.exec(
                 original_function.__name__,
                 original_function,
@@ -2163,8 +2461,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 param.default is inspect.Parameter.empty
                 and param.name not in bound_args.arguments
             ):
-                raise DSLRuntimeError(
-                    f"Missing required argument in `{function_name}`: '{param.name}'"
+                raise DSLUserCodeError(
+                    DiagId.CALL_MISSING_ARG,
+                    name=param.name,
+                    function_name=function_name,
                 )
         return has_varargs
 
@@ -2303,6 +2603,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if not no_cache and (
             self.envar.keep_ptx
             or self.envar.keep_cubin
+            or self.envar.keep_sass
         ):
             no_cache = True
             self.print_warning("Cache is disabled as user wants to generate PTX/ASM.")
@@ -2336,10 +2637,18 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 function_name = f"{func_name_prefix}_{function_name}"
 
         self.compile_options.apply_envar_settings(self.envar, function_name)
-        if not self.compile_options.generate_line_info:
+        track_source_locations = (
+            self.compile_options.generate_line_info
+        )
+        if not track_source_locations:
             self.decorator_location = None
-        # Enable frame filtering if line info is enabled
-        _set_enable_frame_filtering(self.compile_options.generate_line_info)
+        # Enable frame filtering when diagnostics or line info need user frames.
+        _set_enable_frame_filtering(track_source_locations)
+        # Debug mode: attribute ops to the closest (library) frame and turn on
+        # trace-time MLIR op verification so malformed ops fail at the call
+        # site. An explicit CUTE_DSL_VERIFY_TRACE=1 is preserved.
+        _set_include_lib_frame(self.envar.debug)
+        set_verify_trace(get_verify_trace() or self.envar.debug)
 
         return self._CompilationSetup(
             function_name=function_name,
@@ -2365,6 +2674,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             5. Operator overloading (a + b --> arith.addi a, b)
             6. Generates GPU kernel function with GPU module and kernel attributes baked
         """
+        # Keep this guard even though jit_wrapper also enters the env context:
+        # compile/device paths may call _func directly.
+        with active_env_manager(self.envar):
+            return self._func_impl(funcBody, *args, **kwargs)
+
+    def _func_impl(
+        self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
         if ir.Context.current is None:
             pass
         elif ir.InsertionPoint.current is not None:
@@ -2506,6 +2823,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         :return: A named tuple containing the launch function and function return, the kernel name and the MLIR module.
         """
+        # Kernel generation may be reached from driver/device-only paths.
+        with active_env_manager(self.envar):
+            return self._generate_kernel_module_impl(kernel_generator)
+
+    def _generate_kernel_module_impl(
+        self, kernel_generator: Callable[..., Any]
+    ) -> tuple[Any, str, ir.Module]:
         ret = None
 
         with ir.Context(), self.get_ir_location() as loc:
@@ -2554,10 +2878,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 kernel_func, kernel_name, args, kwargs, signature, is_host=False
             )
         )
-
-        log().debug("Final kernel_operands: %s", ", ".join(map(str, kernel_operands)))
-        log().debug("Final kernel_arg_types: %s", ", ".join(map(str, kernel_arg_types)))
-        log().debug("Final kernel_arg_attrs: %s", ", ".join(map(str, kernel_arg_attrs)))
 
         assert len(kernel_operands) == len(kernel_arg_types) == len(kernel_arg_attrs), (
             "Size of kernel_operands, kernel_arg_types and kernel_arg_attrs must be equal"
@@ -2617,8 +2937,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     for name in argNames:
                         value = kwargs.pop(name, None)
                         if assertIfNone and value is None:
-                            raise DSLRuntimeError(
-                                f"{name} is required for {kernel_name}"
+                            raise DSLUserCodeError(
+                                DiagId.LAUNCH_MISSING_ARG,
+                                name=name,
+                                kernel_name=kernel_name,
                             )
                         extracted.append(value)
 
@@ -2749,7 +3071,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         arch = self.get_arch_enum()
         if not criterion(arch):
-            raise DSLRuntimeError(
-                f"invalid arch, expected one of {Arch.filter(criterion)}, but got {arch}.",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            raise DSLUserCodeError(
+                DiagId.CONFIG_UNSUPPORTED_ARCH,
+                arch=arch,
+                expected_archs=Arch.filter(criterion),
             )
