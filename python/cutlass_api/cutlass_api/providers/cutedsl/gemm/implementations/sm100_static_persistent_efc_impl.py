@@ -961,10 +961,7 @@ class PersistentDenseGemmEFCKernelImpl:
                         c_pipeline_consumer_state.index
                     )
 
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     c_pipeline.consumer_release(c_pipeline_consumer_state)
 
                     # Advance pipeline states
@@ -995,10 +992,7 @@ class PersistentDenseGemmEFCKernelImpl:
                     self.efc.kernel.store_written_tensors_to_smem(d_buffer)
 
                     # Fence and barrier to make sure shared memory store is visible to TMA store
-                    cute.arch.fence_proxy(
-                        cute.arch.ProxyKind.async_shared,
-                        space=cute.arch.SharedSpace.shared_cta,
-                    )
+                    cute.arch.fence_proxy("async.shared", space="cta")
                     epilog_sync_barrier.arrive_and_wait()
 
                     #
