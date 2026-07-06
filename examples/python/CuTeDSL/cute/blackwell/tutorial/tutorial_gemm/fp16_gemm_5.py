@@ -1,12 +1,30 @@
-# SPDX-FileCopyrightText: Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
-#
-# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
-# property and proprietary rights in and to this material, related
-# documentation and any modifications thereto. Any use, reproduction,
-# disclosure or distribution of this material and related documentation
-# without an express license agreement from NVIDIA CORPORATION or
-# its affiliates is strictly prohibited.
+# Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # This is the fifth tutorial GEMM (5). It extends fp16_gemm_3_1.py by adding TMA prefetch.
 # TMA prefetch uses cute.prefetch() to bring data into L2 cache before TMA copy needs it,
@@ -44,7 +62,7 @@ Key differences from fp16_gemm_3_1.py:
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_5.py  \
+    python examples/cute/blackwell/tutorial/tutorial_gemm/fp16_gemm_5.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:
@@ -84,22 +102,20 @@ class SharedStorage:
     tmem_holding_buffer: cutlass.Int32
     # Only for CLC Dynamic Scheduler
     clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
-    clc_response: cute.struct.MemRange[cutlass.Int32, 4]
+    clc_response_align_bytes = num_clc_response_bytes
+    clc_response: cute.struct.Align[
+        cute.struct.MemRange[cutlass.Int32, 4],
+        clc_response_align_bytes,
+    ]
 
 
 @cute.kernel()
 def kernel(
     tiled_mma: cute.TiledMma,
-    tma_atom_a: cute.CopyAtom,
-    mA_mkl: cute.Tensor,
-    tma_atom_b: cute.CopyAtom,
-    mB_nkl: cute.Tensor,
-    tma_atom_c: cute.CopyAtom,
-    mC_mnl: cute.Tensor,
-    a_smem_layout: cute.ComposedLayout,
-    b_smem_layout: cute.ComposedLayout,
+    tma_a: cpasync.TmaInfo,
+    tma_b: cpasync.TmaInfo,
+    tma_c: cpasync.TmaInfo,
     c_smem_layout_kind: cutlass.Constexpr,
-    epi_smem_layout_staged: cute.ComposedLayout,
     epi_tile: cute.Tile,
     cta_layout_vmnk: cute.Layout,
     tile_sched_params: Union[
@@ -107,6 +123,11 @@ def kernel(
         utils.PersistentTileSchedulerParams,
     ],
 ):
+    # Extract tma_tensor from TmaInfo
+    mA_mkl = tma_a.tma_tensor
+    mB_nkl = tma_b.tma_tensor
+    mC_mnl = tma_c.tma_tensor
+
     warp_idx = cute.arch.warp_idx()
     warp_idx = cute.arch.make_warp_uniform(warp_idx)
 
@@ -135,9 +156,9 @@ def kernel(
 
     # Prefetch tma descriptor
     if warp_idx == tma_warp_id:
-        cpasync.prefetch_descriptor(tma_atom_a)
-        cpasync.prefetch_descriptor(tma_atom_b)
-        cpasync.prefetch_descriptor(tma_atom_c)
+        cpasync.prefetch_descriptor(tma_a.atom)
+        cpasync.prefetch_descriptor(tma_b.atom)
+        cpasync.prefetch_descriptor(tma_c.atom)
 
     # As many participants as the number of threads issuing the MMA in the same row and column
     # Substract one to not count twice the same thread
@@ -179,8 +200,8 @@ def kernel(
     )
 
     num_tma_copy_bytes = (
-        cute.size_in_bytes(io_dtype, cute.select(a_smem_layout, mode=[0, 1, 2]))
-        + cute.size_in_bytes(io_dtype, cute.select(b_smem_layout, mode=[0, 1, 2]))
+        cute.size_in_bytes(io_dtype, cute.select(tma_a.smem_layout, mode=[0, 1, 2]))
+        + cute.size_in_bytes(io_dtype, cute.select(tma_b.smem_layout, mode=[0, 1, 2]))
     ) * cute.size(cta_layout_vmnk, mode=[0])
 
     # Threads/warps participating in the mainloop pipeline
@@ -260,21 +281,21 @@ def kernel(
     # Allocate SMEM
     sA = smem.allocate_tensor(
         element_type=io_dtype,
-        layout=a_smem_layout.outer,
+        layout=tma_a.smem_layout.outer,
         byte_alignment=128,
-        swizzle=a_smem_layout.inner,
+        swizzle=tma_a.smem_layout.inner,
     )
     sB = smem.allocate_tensor(
         element_type=io_dtype,
-        layout=b_smem_layout.outer,
+        layout=tma_b.smem_layout.outer,
         byte_alignment=128,
-        swizzle=b_smem_layout.inner,
+        swizzle=tma_b.smem_layout.inner,
     )
     sC = smem.allocate_tensor(
         element_type=io_dtype,
-        layout=epi_smem_layout_staged.outer,
+        layout=tma_c.smem_layout.outer,
         byte_alignment=128,
-        swizzle=epi_smem_layout_staged.inner,
+        swizzle=tma_c.smem_layout.inner,
     )
 
     # Partition tensors for MMA and make fragments
@@ -313,7 +334,7 @@ def kernel(
     # ((atom_v, rest_v), STAGE)
     # ((atom_v, rest_v), RestM, RestK)
     tAsA, tAgA = cute.nvgpu.cpasync.tma_partition(
-        tma_atom_a,
+        tma_a.atom,
         cta_in_cluster_coord_vmnk[2],
         cute.make_layout(cute.size(cta_layout_vmnk, mode=[2])),
         cute.group_modes(sA, 0, 3),
@@ -323,7 +344,7 @@ def kernel(
     # ((atom_v, rest_v), STAGE)
     # ((atom_v, rest_v), RestN, RestK)
     tBsB, tBgB = cute.nvgpu.cpasync.tma_partition(
-        tma_atom_b,
+        tma_b.atom,
         cta_in_cluster_coord_vmnk[1],
         cute.make_layout(cute.size(cta_layout_vmnk, mode=[1])),
         cute.group_modes(sB, 0, 3),
@@ -333,7 +354,7 @@ def kernel(
     gC_epi = cute.flat_divide(tCgC[((None, None), 0, 0, None, None)], epi_tile)
 
     tCsC, tCgC_tma = cute.nvgpu.cpasync.tma_partition(
-        tma_atom_c,
+        tma_c.atom,
         0,
         cute.make_layout(1),
         cute.group_modes(sC, 0, 2),
@@ -396,8 +417,8 @@ def kernel(
             for pf_k_tile in cutlass.range(
                 cutlass.min(prefetch_dist, num_k_tiles), unroll=1
             ):
-                cute.prefetch(tma_atom_a, tAgA_slice[(None, pf_k_tile)])
-                cute.prefetch(tma_atom_b, tBgB_slice[(None, pf_k_tile)])
+                cute.prefetch(tma_a.atom, tAgA_slice[(None, pf_k_tile)])
+                cute.prefetch(tma_b.atom, tBgB_slice[(None, pf_k_tile)])
 
             # =========================================================
             # TMA Load Loop with Rolling Prefetch
@@ -408,14 +429,14 @@ def kernel(
 
                 # Issue TMA loads (use k_tile_idx like fp16_gemm_3_1.py)
                 cute.copy(
-                    tma_atom_a,
+                    tma_a.atom,
                     tAgA_slice[(None, k_tile_idx)],
                     tAsA[(None, handle.index)],
                     tma_bar_ptr=handle.barrier,
                     mcast_mask=tma_mcast_mask_a,
                 )
                 cute.copy(
-                    tma_atom_b,
+                    tma_b.atom,
                     tBgB_slice[(None, k_tile_idx)],
                     tBsB[(None, handle.index)],
                     tma_bar_ptr=handle.barrier,
@@ -426,8 +447,8 @@ def kernel(
                 # This keeps the L2 primed as we progress through the K dimension
                 if k_tile_idx + prefetch_dist < num_k_tiles:
                     future_k_tile = k_tile_idx + prefetch_dist
-                    cute.prefetch(tma_atom_a, tAgA_slice[(None, future_k_tile)])
-                    cute.prefetch(tma_atom_b, tBgB_slice[(None, future_k_tile)])
+                    cute.prefetch(tma_a.atom, tAgA_slice[(None, future_k_tile)])
+                    cute.prefetch(tma_b.atom, tBgB_slice[(None, future_k_tile)])
 
             # Advance to next tile
             if cutlass.const_expr(use_clc_dynamic_scheduler):
@@ -483,24 +504,14 @@ def kernel(
                 # (MMA, MMA_M, MMA_N)
                 tCtAcc = tCtAcc_base[(None, None, None, acc_empty.index)]
 
-                tiled_mma.set(tcgen05.Field.ACCUMULATE, False)
-
                 for k_tile_idx in range(num_k_tiles):
                     # Wait for TMA copies to complete
                     handle = ab_consumer.wait_and_advance()
 
                     # Execute one K-block worth of MMA instructions
-                    num_k_blocks = cute.size(tCrA, mode=[2])
-                    for k_block_idx in cutlass.range_constexpr(num_k_blocks):
-                        k_block_coord = (None, None, k_block_idx, handle.index)
-                        cute.gemm(
-                            tiled_mma,
-                            tCtAcc,
-                            tCrA[k_block_coord],
-                            tCrB[k_block_coord],
-                            tCtAcc,
-                        )
-                        tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
+                    tiled_mma.set(tcgen05.Field.ACCUMULATE, k_tile_idx != 0)
+                    tile_crd = (None, None, None, handle.index)
+                    cute.gemm(tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc)
 
                     # Signal that the A/B buffers have been consumed and are ready for the next load
                     handle.release()
@@ -533,10 +544,10 @@ def kernel(
         # (MMA, MMA_M, MMA_N, STAGE)
         tCtAcc_base = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
 
-        # Initialize TMA store pipeline for epilogue
+        # Initialize TMA store pipeline for epilogue with 4 warps
         epilogue_pipeline_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            size=128,
+            pipeline.Agent.Warp,
+            size=4,
         )
         epilogue_pipeline = pipeline.PipelineTmaStore.create(
             num_stages=epi_stages,
@@ -631,7 +642,7 @@ def kernel(
                 # SMEM -> GMEM
                 if warp_idx == epilogue_warp_ids[0]:
                     cute.copy(
-                        tma_atom_c,
+                        tma_c.atom,
                         tCsC[(None, c_buffer)],
                         tCgC_grouped[(None, subtile_idx)],
                     )
@@ -715,8 +726,8 @@ def host_function(
         mma_inst_shape_mnk,
         tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE,
         tcgen05.OperandSource.SMEM,
-        tcgen05.OperandMajorMode.K,
-        tcgen05.OperandMajorMode.K,
+        cute.nvgpu.OperandMajorMode.K,
+        cute.nvgpu.OperandMajorMode.K,
     )
     tiled_mma = cute.make_tiled_mma(op)
 
@@ -754,20 +765,18 @@ def host_function(
     op = cute.nvgpu.cpasync.CopyBulkTensorTileG2SMulticastOp(
         tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
     )
-    a_smem_layout_slice = cute.slice_(a_smem_layout, (None, None, None, 0))
-    tma_atom_a, a_tma_tensor = cute.nvgpu.make_tiled_tma_atom_A(
+    tma_a = cute.nvgpu.make_tiled_tma_atom_A(
         op,
         a,
-        a_smem_layout_slice,
+        a_smem_layout,
         mma_tiler_mnk,
         tiled_mma,
         cta_layout_vmnk.shape,
     )
-    b_smem_layout_slice = cute.slice_(b_smem_layout, (None, None, None, 0))
-    tma_atom_b, b_tma_tensor = cute.nvgpu.make_tiled_tma_atom_B(
+    tma_b = cute.nvgpu.make_tiled_tma_atom_B(
         op,
         b,
-        b_smem_layout_slice,
+        b_smem_layout,
         mma_tiler_mnk,
         tiled_mma,
         cta_layout_vmnk.shape,
@@ -793,11 +802,10 @@ def host_function(
         epi_stages,
     )
 
-    epi_smem_layout = cute.slice_(epi_smem_layout_staged, (None, None, 0))
-    tma_atom_c, c_tma_tensor = cute.nvgpu.cpasync.make_tiled_tma_atom(
+    tma_c = cute.nvgpu.cpasync.make_tiled_tma_atom(
         cute.nvgpu.cpasync.CopyBulkTensorTileS2GOp(),
         c,
-        epi_smem_layout,
+        epi_smem_layout_staged,
         epi_tile,
     )
 
@@ -815,16 +823,10 @@ def host_function(
 
     kernel(
         tiled_mma,
-        tma_atom_a,
-        a_tma_tensor,
-        tma_atom_b,
-        b_tma_tensor,
-        tma_atom_c,
-        c_tma_tensor,
-        a_smem_layout,
-        b_smem_layout,
+        tma_a,
+        tma_b,
+        tma_c,
         c_smem_layout_kind,
-        epi_smem_layout_staged,
         epi_tile,
         cta_layout_vmnk,
         tile_sched_params,

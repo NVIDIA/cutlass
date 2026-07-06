@@ -290,12 +290,18 @@ ss_smem_selector()
     else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW32_Atom<ElementType>{}) == 0) {
       return GMMA::Layout_MN_SW32_Atom<ElementType>{};
     }
-    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0) {
+    // INTER fallback uses size(BLK_MN{}) instead of BLK_MN0 so that hierarchical
+    // shapes like ((_8,_2,M/16),) produced by the gated activation builder can
+    // still pick INTER when their flattened mode-0 (size<0> = 8) is too small
+    // for any SW atom but the product (_8*_2*M/16 = M) divides the INTER atom
+    // width. For flat (rank-1) BLK_MN shapes, size(BLK_MN{}) == BLK_MN0, so
+    // this is a no-op for every non-gated kernel today.
+    else if constexpr (size(BLK_MN{}) % size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0) {
       return GMMA::Layout_MN_INTER_Atom<ElementType>{};
     }
     else {
-      static_assert(BLK_MN0 % size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0,
-                    "BLK_MN0 must be a multiple of size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{})");
+      static_assert(size(BLK_MN{}) % size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0,
+                    "BLK_MN must be a multiple of size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{})");
     }
   }
   else if constexpr (major == GMMA::Major::K) {

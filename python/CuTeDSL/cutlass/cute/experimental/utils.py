@@ -14,8 +14,12 @@ from typing import Callable, Optional, Tuple, Union
 import cutlass
 from cutlass import cute
 from cutlass._mlir import ir
+from cutlass._mlir.dialects import cute as _cute_ir
+from cutlass._mlir.dialects import math as math_ir
+import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from ... import cutlass_dsl as _dsl
+from ..arch.constants import THREADS_PER_WARPGROUP
 from .pipeline import TMAStorePipeline, TMAToUMMAPipeline
 
 
@@ -28,17 +32,38 @@ def get_cta_v_map_ab(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[cute.Layout, cute.ComposedLayout]:
+    if input_operand not in ("A", "B", "SFA", "SFB"):
+        raise ValueError(
+            f"input_operand must be one of 'A', 'B', 'SFA', or 'SFB', "
+            f"but got {input_operand!r}"
+        )
+    _MMA_OPERAND_BY_NAME = {
+        "A": _cute_ir.MmaOperand.A,
+        "B": _cute_ir.MmaOperand.B,
+        "SFA": _cute_ir.MmaOperand.SFA,
+        "SFB": _cute_ir.MmaOperand.SFB,
+    }
+
     ident = cute.core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
     mode = 0 if (input_operand in ("A", "SFA")) else 1
-    mma_tiler_mk = (mma_tiler_mnk[mode], *mma_tiler_mnk[2:])  # type: ignore[index]
+    assert isinstance(mma_tiler_mnk, tuple)
+    mma_tiler_mk = (mma_tiler_mnk[mode], *mma_tiler_mnk[2:])
     g_tile = cute.core.composition(ident, mma_tiler_mk, loc=loc, ip=ip)
-    if input_operand in ("A", "SFA"):
-        cta_v_map = tiled_mma._thrfrg_A(g_tile)
-    if input_operand in ("B", "SFB"):
-        cta_v_map = tiled_mma._thrfrg_B(g_tile)
-    cta_v_map = cute.core.get(cta_v_map, mode=[1])  # type: ignore[assignment]
-    cta_v_map = cute.core.dice(cta_v_map, (1, (1,) * cute.core.rank(g_tile)))  # type: ignore[assignment]
-    return cta_v_map  # type: ignore[return-value]
+
+    # SM120 warp-level MMA: cta_v_map is the CTA-tiled identity (matches DSL's
+    # cpasync.make_tiled_tma_atom at helpers.py:455-460). ldmatrix handles the
+    # SMEM->register reshuffling separately.
+    if isinstance(
+        tiled_mma._trait.value.type, _cute_nvgpu_ir.MmaAtomSM120BlockScaledType
+    ):
+        return g_tile
+
+    cta_v_map = tiled_mma._thrfrg(
+        _MMA_OPERAND_BY_NAME[input_operand], g_tile, loc=loc, ip=ip
+    )
+    cta_v_map = cute.core.get(cta_v_map, mode=[1])
+    cta_v_map = cute.core.dice(cta_v_map, (1, (1,) * cute.core.rank(g_tile)))
+    return cta_v_map
 
 
 
@@ -72,7 +97,8 @@ def make_tmem_layout_acc(
     Returns:
         ``cute.Layout`` for the accumulator TMEM buffer.
     """
-    acc_shape = tiled_mma.partition_shape_C(mnk_tiler[:2], loc=loc, ip=ip)  # type: ignore[index]
+    assert isinstance(mnk_tiler, tuple)
+    acc_shape = tiled_mma.partition_shape_C(mnk_tiler[:2], loc=loc, ip=ip)
     acc_shape_staged = cute.append(acc_shape, acc_stage, loc=loc, ip=ip)
     return tiled_mma.make_fragment_C(acc_shape_staged, loc=loc, ip=ip).layout
 
@@ -144,6 +170,7 @@ def epilogue_tma_store(
     epilogue_op: Callable[[cute.Tensor], cute.Tensor],
     d_major_mode: Optional["LayoutEnum"] = None,  # type: ignore[name-defined]
     tid_x_in_group: Optional[int] = None,
+    amax_out: Optional[cute.Tensor] = None,
 ) -> TMAStorePipeline:
     """
     Epilogue phase: copy accumulator from TMEM to GMEM via RMEM and TMA store.
@@ -176,6 +203,13 @@ def epilogue_tma_store(
             example, if warps 4-7 are in the same group and calling this function,
             tid_x_in_group should be 0-127 instead of 128-255. If not provided, the
             function will use cute.arch.thread_idx().
+        amax_out: Optional single FP32 output GMEM tensor. When provided, we compute
+            amax_out=max(|Acc|) via:
+            - per thread, per subtile, 32-register reduction -> scalar
+            - per thread, across subtile, running scalar max
+            - per warp, intra-warp reduction
+            - per warp, lane 0 does atomic_max into GMEM
+            ``None`` (default) disables the AMax codepath at JIT-time.
 
     Returns:
         tma_store_pipeline: The updated TMAStorePipeline instance
@@ -187,7 +221,7 @@ def epilogue_tma_store(
 
     if cutlass.const_expr(tid_x_in_group is None):
         tid_x_in_group, _, _ = cute.arch.thread_idx()
-        tid_x_in_group = tid_x_in_group % 128
+        tid_x_in_group = tid_x_in_group % THREADS_PER_WARPGROUP
     warp_idx = cute.arch.warp_idx()
     warp_idx = cute.arch.make_warp_uniform(warp_idx)
 
@@ -220,11 +254,14 @@ def epilogue_tma_store(
         tiled_copy_t2r,
     )
 
-    tiler_mn = (cta_tile_shape_mnk[0], cta_tile_shape_mnk[1])  # type: ignore[index]
+    assert isinstance(cta_tile_shape_mnk, tuple)
+    tiler_mn = (cta_tile_shape_mnk[0], cta_tile_shape_mnk[1])
     gmem_d_mn_tiled = cute.zipped_divide(gmem_d, tiler_mn)
     gmem_d_tile = gmem_d_mn_tiled[(None, None), cta_d_tile_coord]
     gmem_d_epi_tma = cute.flat_divide(gmem_d_tile, epi_tile_shape)  # type: ignore[arg-type]
-    epi_subtile_cnt = gmem_d_epi_tma.shape[3]  # type: ignore[index]
+    gmem_d_epi_tma_shape = gmem_d_epi_tma.shape
+    assert isinstance(gmem_d_epi_tma_shape, tuple)
+    epi_subtile_cnt = gmem_d_epi_tma_shape[3]
 
     acc_d_rmem_layout = make_t2r_rmem_layout(
         tiled_copy_t2r,
@@ -257,6 +294,9 @@ def epilogue_tma_store(
         alignment=1024,
     )
 
+    if cutlass.const_expr(amax_out is not None):
+        thread_amax = cutlass.Float32(0.0)
+
     for epi_subtile_idx in range(epi_subtile_cnt):  # type: ignore[arg-type]
         # TMEM -> RMEM
         partition_and_copy(
@@ -267,6 +307,15 @@ def epilogue_tma_store(
 
         # RMEM -> RMEM and epilogue Op
         acc_vec = rmem_acc_buffer.load()
+
+        if cutlass.const_expr(amax_out is not None):
+            abs_acc_vec_ir = math_ir.absf(acc_vec.ir_value())
+            abs_acc_vec = type(acc_vec)(abs_acc_vec_ir, acc_vec.shape, acc_vec.dtype)
+            subtile_amax = abs_acc_vec.reduce(
+                cute.ReductionOp.MAX, cutlass.Float32(0.0), 0
+            )
+            thread_amax = cute.arch.fmax(thread_amax, subtile_amax)
+
         epilogue_out = epilogue_op(acc_vec.to(d_dtype))
         rmem_d_buffer.store(epilogue_out)
 
@@ -302,6 +351,17 @@ def epilogue_tma_store(
         # - All warps advance to the next pipeline stage
         tma_store_pipeline.release_advance()
 
+    if cutlass.const_expr(amax_out is not None):
+        # Silence mypy
+        assert amax_out is not None
+        warp_amax = cute.arch.warp_redux_sync(
+            value=thread_amax,
+            kind="fmax",
+            nan=True,
+        )
+        if cute.arch.lane_idx() == 0:
+            cute.arch.atomic_fmax(amax_out.iterator, warp_amax, sign_bit=False)
+
     tma_store_pipeline.tail()
     return tma_store_pipeline
 
@@ -321,34 +381,37 @@ def mainloop_mma(
     accumulate_to_acc: bool = False,
 ) -> Tuple[TMAToUMMAPipeline, TMAToUMMAPipeline]:
     """
-    Mainloop MMA phase: consume A/B tiles from the pipeline and compute into TMEM accumulator.
+    Mainloop MMA phase: consume A/B tiles from the pipeline and compute into accumulator.
 
     This function is the consumer side of the TMA load -> MMA pipeline. It waits
     for the TMA load warp to fill a pipeline stage, then runs multiple MMA
     instructions over the K-tile (inner loop over mma_inst_tile_k), and releases the stage.
 
     Args:
-        tiled_mma: Tiled MMA descriptor (e.g. from blackwell_helpers.make_trivial_tiled_mma)
-        a_buffer: A operand buffer, shape (..., mma_inst_tile_k, num_a_buffer_stages)
-        b_buffer: B operand buffer, shape (..., mma_inst_tile_k, num_b_buffer_stages)
+        tiled_mma: Tiled MMA descriptor
+        a_buffer: A operand buffer for this CTA's tile, should have shape
+            (..., mma_inst_tile_k, num_a_buffer_stages)
+        b_buffer: B operand buffer for this CTA's tile, should have shape
+            (..., mma_inst_tile_k, num_b_buffer_stages)
         acc_buffer: Accumulator buffer for this CTA's tile
         k_tile_start: Start index of the K-tile to iterate over (outer loop)
         k_tile_end: End index of the K-tile to iterate over (outer loop)
         mma_inst_tile_k: Number of MMA instructions per K-tile (inner loop)
-        a_buffer_pipeline: TMAToUMMAPipeline to sync with TMA load producer for A buffer
-        b_buffer_pipeline: TMAToUMMAPipeline to sync with TMA load producer for B buffer
+        a_buffer_pipeline: Pipeline to sync with TMA load producer for A buffer
+        b_buffer_pipeline: Pipeline to sync with TMA load producer for B buffer
         ab_buffer_same_pipeline: If the TMA load producers for A and B are the same pipeline
         accumulate_to_acc: If the first K-tile should accumulate to the accumulator,
             otherwise the result will be overwritten.
 
     Returns:
-        a_buffer_pipeline: The updated TMAToUMMAPipeline for A buffer
-        b_buffer_pipeline: The updated TMAToUMMAPipeline for B buffer
+        a_buffer_pipeline: The updated pipeline for A buffer
+        b_buffer_pipeline: The updated pipeline for B buffer
     """
     from .math import dot
 
     mma_atom = cute.make_mma_atom(tiled_mma.op)
     mma_atom.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, accumulate_to_acc)
+
     for _k_tile in cutlass.range(k_tile_start, k_tile_end, 1, unroll=1):
         _, a_buffer_stage_idx = a_buffer_pipeline.consumer_wait_and_get_stage()
         if cutlass.const_expr(ab_buffer_same_pipeline):
@@ -360,8 +423,8 @@ def mainloop_mma(
             b_buffer_sliced = b_buffer[None, None, k_instr_tile, b_buffer_stage_idx]
             dot(
                 mma_atom,
-                cute.append_ones(a_buffer_sliced, up_to_rank=3),  # type: ignore[arg-type]
-                cute.append_ones(b_buffer_sliced, up_to_rank=3),  # type: ignore[arg-type]
+                a_buffer_sliced,
+                b_buffer_sliced,
                 acc_buffer,
             )
             mma_atom.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, True)
@@ -370,3 +433,49 @@ def mainloop_mma(
             b_buffer_pipeline.consumer_release_and_advance()
 
     return a_buffer_pipeline, b_buffer_pipeline
+
+
+@_dsl.CuteExperimentalDSL.jit
+def mainloop_mma_sm120(
+    tiled_mma: cute.TiledMma,
+    tCrA: cute.Tensor,
+    tCrSFA: cute.Tensor,
+    tCrB: cute.Tensor,
+    tCrSFB: cute.Tensor,
+    acc_buffer: cute.Tensor,
+    mma_inst_tile_k: cute.Int32,
+    accumulate_to_acc: bool = True,
+) -> None:
+    """Inner K-instruction MMA loop for SM120 block-scaled GEMM.
+
+    The caller is responsible for:
+    - pipeline synchronization (consumer_wait/release),
+    - SMEM->RMEM ldmatrix copies into tCrA/tCrB/tCrSFA/tCrSFB,
+    - any per-architecture register-layout fixups; see
+      ``cutlass.utils.blackwell_helpers``.
+
+    Args:
+        tiled_mma: SM120 block-scaled tiled MMA descriptor.
+        tCrA, tCrB: RMEM A/B fragments, with shape (..., mma_inst_tile_k).
+        tCrSFA, tCrSFB: RMEM scale-factor fragments, with shape
+            (..., mma_inst_tile_k).
+        acc_buffer: RMEM accumulator buffer.
+        mma_inst_tile_k: number of MMA instructions per K-tile.
+        accumulate_to_acc: if False, zero acc_buffer before the loop.
+    """
+    from .math import dot_block_scaled
+
+    mma_atom = cute.make_mma_atom(tiled_mma.op)
+
+    if not cutlass.const_expr(accumulate_to_acc):
+        acc_buffer.fill(cutlass.Float32(0.0))
+
+    for k_instr_tile in cutlass.range(mma_inst_tile_k, unroll_full=True):
+        dot_block_scaled(
+            mma_atom,
+            tCrA[None, None, k_instr_tile],
+            tCrSFA[None, None, k_instr_tile],
+            tCrB[None, None, k_instr_tile],
+            tCrSFB[None, None, k_instr_tile],
+            acc_buffer,
+        )

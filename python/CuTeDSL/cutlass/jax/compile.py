@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 import gc
-from typing import Any
+from typing import Any, Callable
 from dataclasses import dataclass
 from functools import partial
 
@@ -38,7 +38,6 @@ from cutlass.cutlass_dsl.cutlass import CuTeDSL
 
 logger = logging.getLogger(__name__)
 
-_CUTLASS_COMPILE_CACHE = {}
 _EXPORT_PREFIX = "cutlass_call"
 
 
@@ -49,7 +48,7 @@ class Arg:
     dtype: jnp.dtype
     spec: TensorSpec
 
-    def get_static_flag(self, use_static_tensors: bool):
+    def get_static_flag(self, use_static_tensors: bool) -> bool:
         if self.spec.static is None:
             return use_static_tensors
         else:
@@ -67,11 +66,11 @@ class FunctionSpec:
     input_output_aliases: tuple[tuple[int, int], ...]
     input_spec: tuple[TensorSpec, ...]
     output_spec: tuple[TensorSpec, ...]
-    compile_options: str
+    compile_options: str | None
     use_static_tensors: bool
-    kwargs: tuple[tuple[str, Any]]
+    kwargs: tuple[tuple[str, Any], ...]
 
-    def get_compile_args(self):
+    def get_compile_args(self) -> JaxArrayList:
         """Returns the arguments to provide to cute.compile."""
         compiler_ins = [
             JaxTracedArray(
@@ -109,7 +108,7 @@ def jit_wrapper(
     *,
     wrapped_fn: cutlass.Constexpr,
     spec: cutlass.Constexpr,
-):
+) -> None:
     # split buffer argument into inputs and outputs and return to tree
     ins, outs = args[: len(spec.in_args)], args[(len(spec.in_args)) :]  # type: ignore[attr-defined]
     ins = [x.get_tensor() for x in ins]  # type: ignore[assignment, attr-defined]
@@ -128,7 +127,12 @@ class CompileResult:
     spec: FunctionSpec
 
 
-def _check_is_valid_type(x, is_input):
+_CUTLASS_COMPILE_CACHE: dict[
+    tuple[Callable[..., None], FunctionSpec], CompileResult
+] = {}
+
+
+def _check_is_valid_type(x: Any, is_input: bool) -> None:
     if not is_input:
         if not isinstance(x, jax.ShapeDtypeStruct):
             raise TypeError("Invalid output value passed.", x)
@@ -138,26 +142,26 @@ def _check_is_valid_type(x, is_input):
 
 
 def build_function_spec(
-    ins,
-    in_tree,
-    outs,
-    out_tree,
-    input_spec,
-    output_spec,
-    input_output_aliases,
-    compile_options,
-    use_static_tensors,
-    kwargs,
-):
+    ins: Any,
+    in_tree: Any,
+    outs: Any,
+    out_tree: Any,
+    input_spec: tuple[TensorSpec, ...],
+    output_spec: tuple[TensorSpec, ...],
+    input_output_aliases: dict[int, int],
+    compile_options: str | None,
+    use_static_tensors: bool,
+    kwargs: dict[str, Any],
+) -> FunctionSpec:
     in_args = []
-    for idx, (arg, spec) in enumerate(zip(ins, input_spec)):
+    for idx, (arg, tensor_spec) in enumerate(zip(ins, input_spec)):
         _check_is_valid_type(arg, is_input=True)
-        in_args.append(Arg(idx, arg.shape, arg.dtype, spec))
+        in_args.append(Arg(idx, arg.shape, arg.dtype, tensor_spec))
 
     out_args = []
-    for idx, (arg, spec) in enumerate(zip(outs, output_spec)):
+    for idx, (arg, tensor_spec) in enumerate(zip(outs, output_spec)):
         _check_is_valid_type(arg, is_input=False)
-        out_args.append(Arg(idx, arg.shape, arg.dtype, spec))
+        out_args.append(Arg(idx, arg.shape, arg.dtype, tensor_spec))
 
     # Return the argument specs to the original pytree structure
     # We need this structure to sanely match index positions of the
@@ -209,7 +213,7 @@ def build_function_spec(
 _compile_lock = threading.Lock()
 
 
-def get_or_compile_kernel(fn, spec):
+def get_or_compile_kernel(fn: Callable[..., None], spec: FunctionSpec) -> CompileResult:
     """Gets or compiles fn and returns a CutlassCompileResult.
 
     The function and its specification is used as a key to determine if a new
@@ -253,7 +257,7 @@ def get_or_compile_kernel(fn, spec):
     return result
 
 
-def release_compile_cache():
+def release_compile_cache() -> None:
     """Releases entries from the compile cache.
 
     Note that is may prevent cute dsl from saving its persistent compilation cache entries.

@@ -314,7 +314,6 @@ class SessionData:
     region_stack: list[Region] = field(default_factory=list)
     generator_targets: list[str] = field(default_factory=list)
     lambda_args: list[str] = field(default_factory=list)
-
     @contextlib.contextmanager
     def set_current_class_name(self, class_name: str) -> Generator[None, None, None]:
         old_class_name = self.class_name
@@ -451,13 +450,28 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.module_cache: dict[ModuleType, list[ImportInfo | TryImportInfo]] = {}
         self._session_data: SessionData | None = None
 
+    def _create_session_data(self) -> SessionData:
+        return SessionData()
+
+    def _start_session(self) -> None:
+        """Start a new preprocessing session by initializing session data."""
+        self._session_data = self._create_session_data()
+        # Track processed functions per preprocessing run, not for the entire
+        # lifetime of this preprocessor instance. Mode switches can restore a
+        # previously used preprocessor object, and stale entries here would make
+        # later sessions skip transforming a function entirely.
+        self.processed_functions = set()
+    def _end_session(self) -> None:
+        """End the current preprocessing session and clear session data."""
+        self._session_data = None
+
     @contextlib.contextmanager
     def get_session(self) -> Generator["DSLPreprocessor", None, None]:
         try:
-            self._session_data = SessionData()
+            self._start_session()
             yield self
         finally:
-            self._session_data = None
+            self._end_session()
 
     @property
     def session_data(self) -> SessionData:
@@ -879,7 +893,6 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.early_exit_type = "raise"
 
             def visit_Break(self, node: ast.Break) -> None:
-                # For break/continue in inner loops, we don't consider it as early exit
                 if self.loop_nest_level == 0 and self.kind != "if":
                     self.has_early_exit = True
                     self.early_exit_node = node
@@ -902,7 +915,6 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.loop_nest_level -= 1
 
             def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-                # Stop at nested function def
                 return
 
         checker = EarlyExitChecker(kind)
@@ -969,11 +981,14 @@ class DSLPreprocessor(ast.NodeTransformer):
         self,
         original_function: Callable[..., Any],
         exec_globals: dict[str, Any],
-        callee_rewrite: bool = False,
     ) -> ast.Module:
         """
         Transforms the provided function using the preprocessor.
         Requires an active DSL preprocessor session.
+
+        Args:
+            original_function: The function to transform.
+            exec_globals: The globals dict for the function's module.
         """
         self.session_data.file_name = (
             inspect.getsourcefile(original_function) or "<unknown>"
@@ -1015,8 +1030,6 @@ class DSLPreprocessor(ast.NodeTransformer):
                     write_args.add(node.id)
 
             def visit_Subscript(self, node: ast.Subscript) -> None:
-                # When subscript occurs on the lhs of an assignment, the `Name` is still a load, but `Subscript` is marked as `Store`.
-                # We need to force the store for the `Name` to be marked as write.
                 if isinstance(node.ctx, ast.Store):
                     self.force_store = True
                     self.visit(node.value)
@@ -1039,15 +1052,12 @@ class DSLPreprocessor(ast.NodeTransformer):
 
             @staticmethod
             def get_call_base(func_node: ast.expr) -> str | None:
-                # If the .value is another Attribute, keep digging
                 if isinstance(func_node, ast.Attribute):
                     if isinstance(func_node.value, ast.Attribute):
                         return RegionAnalyzer.get_call_base(func_node.value)
-                    # If the .value is a Name, that's our base
                     elif isinstance(func_node.value, ast.Name):
                         return func_node.value.id
                     else:
-                        # Could be something else (lambda, call, etc.)
                         return None
                 elif isinstance(func_node, ast.Name):
                     return None
@@ -1057,7 +1067,6 @@ class DSLPreprocessor(ast.NodeTransformer):
             def get_function_name(func_node: ast.Call) -> str | None:
                 if isinstance(func_node.func, ast.Name):
                     function_name = func_node.func.id
-                # Check if it's a method or attribute call
                 elif isinstance(func_node.func, ast.Attribute):
                     function_name = func_node.func.attr
                 else:
@@ -1073,7 +1082,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
                 # Classes are mutable by default. Mark them as write. If they are
                 # dataclass(frozen=True), treat them as read in runtime.
-                if base_name is not None and base_name not in ("self"):
+                if base_name is not None and base_name not in ("self",):
                     invoked_args.add(base_name)
 
                 self.generic_visit(node)
@@ -1416,19 +1425,28 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
         return ast.Expr(check_call)
 
+    def _handle_constexpr_for(self, node: ast.For) -> ast.For | list[ast.stmt]:
+        """Handle const_expr/static for loops. Override for custom behavior."""
+        self.generic_visit(node)
+        return node
+
     def visit_For(self, node: ast.For) -> ast.For | list[ast.stmt]:
         # For static for loop (for with range_constexpr or not range based for), preprocessor keeps the loop.
         range_kind, is_builtin_range, has_keyword = self._get_range_kind(node.iter)
-        if range_kind == "range_constexpr" or range_kind == None:
-            self.generic_visit(node)
+        if range_kind == "range_constexpr" or range_kind is None:
+            # Delegate to template method for extensibility
+            result = self._handle_constexpr_for(node)
             if range_kind == "range_constexpr":
+                # Add check and transform to builtin range
                 assert isinstance(node.iter, ast.Call)
                 check_call = self._insert_cf_symbol_check(node.iter.func)
-                # Rewrite range_constexpr to range
                 node.iter.func = ast.Name(id="range", ctx=ast.Load())
                 self._insert_range_value_check(node)
-                return [check_call, node]
-            return node
+                return [
+                    check_call,
+                    result if isinstance(result, ast.For) else result[0],
+                ]
+            return result
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
         active_callables = self.session_data.scope_manager.get_active_callables()
@@ -1577,7 +1595,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             extra_exprs.append(self.generic_visit(step))  # type: ignore[arg-type]
             extra_exprs.append(self.generic_visit(offset))  # type: ignore[arg-type]
 
-        # Add this to begining of loop body
+        # Add this to beginning of loop body
         # for i in range(start, stop, step):
         #     i = offset - i if isNegative else i
         assert isinstance(node.target, ast.Name)
@@ -1609,7 +1627,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
     def _create_closure_check_call(
         self, called_closures: list[str], node: ast.stmt
-    ) -> ast.Expr:
+    ) -> ast.Expr | None:
         return ast.Expr(
             ast.Call(
                 func=_create_module_attribute(
@@ -1626,6 +1644,20 @@ class DSLPreprocessor(ast.NodeTransformer):
                 keywords=[],
             )
         )
+
+    def _prepare_loop_induction_var(self, node: ast.For) -> None:
+        """Prepare loop induction variable before function creation.
+
+        Override for custom behavior (e.g., mark variable for special handling).
+        """
+        pass  # No preparation needed in base class
+
+    def _cleanup_loop_induction_var(self, node: ast.For) -> None:
+        """Cleanup loop induction variable after function creation.
+
+        Override for custom behavior (e.g., restore normal handling).
+        """
+        pass  # No cleanup needed in base class
 
     def transform_for_loop(
         self,
@@ -1711,10 +1743,15 @@ class DSLPreprocessor(ast.NodeTransformer):
             exprs.append(pre_loop_expr)
 
         if called_closures:
-            exprs.append(self._create_closure_check_call(called_closures, node))
+            cc = self._create_closure_check_call(called_closures, node)
+            if cc is not None:
+                exprs.append(cc)
 
         func_name = f"loop_body_{self.session_data.counter}"
         self.session_data.counter += 1
+
+        # Template method: prepare induction variable (e.g., mark for special handling)
+        self._prepare_loop_induction_var(node)
 
         func_def = self.create_loop_function(
             func_name,
@@ -1730,6 +1767,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             write_args,
             full_write_args_count,
         )
+
+        # Template method: cleanup induction variable handling
+        self._cleanup_loop_induction_var(node)
 
         assign = self.create_cf_call(func_name, write_args, node)
 
@@ -1842,6 +1882,9 @@ class DSLPreprocessor(ast.NodeTransformer):
         node.args = [self.visit(arg) for arg in node.args]
         node.keywords = [self.visit(kwarg) for kwarg in node.keywords]
 
+        # Track whether a special-case rewrite already handled this call
+        already_rewritten = False
+
         # Rewrite call to some built-in functions
         if isinstance(func, ast.Name):
             # AST rewrite only redirect call to bool to bool_cast
@@ -1890,6 +1933,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                 node.args = [
                     ast.Starred(value=self.processFString(node), ctx=ast.Load())
                 ]
+                already_rewritten = True
         elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
             if (
                 func.attr in ("printf", "print_runtime")
@@ -1899,6 +1943,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                 node.args = [
                     ast.Starred(value=self.processFString(node), ctx=ast.Load())
                 ]
+                already_rewritten = True
             else:
 
                 def create_downcast_call(arg: ast.expr) -> ast.Call:
@@ -1975,6 +2020,10 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
+    def visit_Subscript(self, node: ast.Subscript) -> ast.expr:
+        self.generic_visit(node)
+        return node
+
     def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AnnAssign:
         self._visit_target(node.target)
         self.generic_visit(node)
@@ -2002,6 +2051,21 @@ class DSLPreprocessor(ast.NodeTransformer):
         return node
 
     def get_dsl_decorator_index(self, decorator_list: list[ast.expr]) -> Any:
+        # Known decorator kwargs that should not prevent decorator recognition.
+        # "preprocess" controls whether AST preprocessing is enabled.
+        # "callee_rewrite" enables runtime callee wrapping via _dsl_callee_.
+        # "attributes" passes kernel function attributes (e.g. launch bounds)
+        # to the compiler — its presence shouldn't prevent the preprocessor
+        # from recognizing @cute.kernel(attributes=...) as a DSL decorator.
+        # "is_experimental" routes the function through the experimental
+        # CuTe DSL (see ``CuTeDSL.jit`` / ``CuTeDSL.kernel``).
+        _known_dsl_kwargs = {
+            "preprocess",
+            "callee_rewrite",
+            "attributes",
+            "is_experimental",
+        }
+
         for i, d in enumerate(decorator_list):
             if isinstance(d, ast.Call):
                 if isinstance(d.func, ast.Attribute):
@@ -2009,16 +2073,25 @@ class DSLPreprocessor(ast.NodeTransformer):
                         if d.keywords == []:
                             return i
 
-                        # Keep existing preprocess behavior unchanged.
-                        for keyword in d.keywords:
-                            if keyword.arg == "preprocess":
-                                try:
-                                    if isinstance(keyword.value, ast.Constant):
-                                        return keyword.value.value
-                                    else:
-                                        return ast.literal_eval(keyword.value)
-                                except:
-                                    pass
+                        # Check if all keywords are known DSL kwargs
+                        all_known = all(
+                            keyword.arg in _known_dsl_kwargs for keyword in d.keywords
+                        )
+                        if all_known:
+                            # Check if 'preprocess' is explicitly set
+                            for keyword in d.keywords:
+                                if keyword.arg == "preprocess":
+                                    try:
+                                        if isinstance(keyword.value, ast.Constant):
+                                            return keyword.value.value
+                                        else:
+                                            return ast.literal_eval(keyword.value)
+                                    except (ValueError, TypeError, SyntaxError):
+                                        # ast.literal_eval fails for non-literal
+                                        # expressions — treat as unknown.
+                                        pass
+                            # No 'preprocess' kwarg, but all kwargs are known — accept
+                            return i
 
                         keyword_names = {
                             keyword.arg
@@ -2130,13 +2203,14 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.session_data.scope_manager.add_to_scope(arg.arg)
                 arg.annotation = None
 
+            # Strip return annotation
+            node.returns = None
+
             self.generic_visit(node)
 
         # Remove .jit and .kernel decorators
         node.decorator_list = self.remove_dsl_decorator(node.decorator_list)
 
-        # Remove return annotation from processed AST to avoid symbol requirement
-        node.returns = None
         return node
 
     def visit_With(self, node: ast.With) -> ast.AST:
@@ -2145,13 +2219,17 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.session_data.scope_manager.add_to_scope(item.optional_vars.id)
         return self.generic_visit(node)
 
+    def _handle_constexpr_while(self, node: ast.While) -> list[ast.stmt]:
+        """Handle const_expr while statements. Override for custom behavior."""
+        self.generic_visit(node)
+        assert isinstance(node.test, ast.Call)
+        check = self._insert_cf_symbol_check(node.test.func)
+        return [check, node]
+
     def visit_While(self, node: ast.While) -> ast.While | list[ast.stmt]:
         # Constexpr doesn't get preprocessed
         if self.is_node_constexpr(node):
-            self.generic_visit(node)
-            assert isinstance(node.test, ast.Call)
-            check = self._insert_cf_symbol_check(node.test.func)
-            return [check, node]
+            return self._handle_constexpr_while(node)
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
         active_callables = self.session_data.scope_manager.get_active_callables()
@@ -2164,7 +2242,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             )
             exprs = []
             if called_closures:
-                exprs.append(self._create_closure_check_call(called_closures, node))
+                cc = self._create_closure_check_call(called_closures, node)
+                if cc is not None:
+                    exprs.append(cc)
 
             func_name = f"while_region_{self.session_data.counter}"
             self.session_data.counter += 1
@@ -2429,13 +2509,17 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         return call
 
+    def _handle_constexpr_if(self, node: ast.If) -> list[ast.stmt]:
+        """Handle const_expr if statements. Override for custom behavior."""
+        self.generic_visit(node)
+        assert isinstance(node.test, ast.Call)
+        check = self._insert_cf_symbol_check(node.test.func)
+        return [check, node]
+
     def visit_If(self, node: ast.If) -> ast.If | list[ast.stmt]:
         # const_expr doesn't get preprocessed
         if self.is_node_constexpr(node):
-            self.generic_visit(node)
-            assert isinstance(node.test, ast.Call)
-            check = self._insert_cf_symbol_check(node.test.func)
-            return [check, node]
+            return self._handle_constexpr_if(node)
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
         active_callables = self.session_data.scope_manager.get_active_callables()
@@ -2448,7 +2532,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             )
             exprs = []
             if called_closures:
-                exprs.append(self._create_closure_check_call(called_closures, node))
+                cc = self._create_closure_check_call(called_closures, node)
+                if cc is not None:
+                    exprs.append(cc)
 
             func_name = f"if_region_{self.session_data.counter}"
             self.session_data.counter += 1
@@ -2474,6 +2560,15 @@ class DSLPreprocessor(ast.NodeTransformer):
             ],
             keywords=[],
         )
+
+    def _handle_constexpr_elif(self, elif_node: ast.If) -> ast.stmt:
+        """Handle const_expr elif nodes. Override for custom behavior.
+
+        Returns the check statement for the const_expr call.
+        """
+        self.generic_visit(elif_node)
+        assert isinstance(elif_node.test, ast.Call)
+        return self._insert_cf_symbol_check(elif_node.test.func)
 
     def create_if_function(
         self,
@@ -2615,9 +2710,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     #         if pred:
                     # And under both cases, the `pred` can be a const_expr, so we need to handle it here.
                     if self.is_node_constexpr(elif_node):
-                        self.generic_visit(elif_node)
-                        assert isinstance(elif_node.test, ast.Call)
-                        check = self._insert_cf_symbol_check(elif_node.test.func)
+                        check = self._handle_constexpr_elif(elif_node)
                         else_block = ast.FunctionDef(
                             name=else_block_name,
                             args=func_then_else_arguments,
@@ -2708,6 +2801,19 @@ class DSLPreprocessor(ast.NodeTransformer):
             node,
         )
 
+    def _prepare_while_condition_vars(
+        self,
+        node: ast.While,
+        write_args: list[str],
+        while_before_stmts: list[ast.stmt],
+    ) -> list[ast.stmt]:
+        """Prepare write_args before while condition evaluation.
+
+        Override for custom behavior (e.g., derived classes may insert instrumentation).
+        Returns statements to insert at the beginning of while_before_block.
+        """
+        return []  # No preparation needed in base class
+
     def create_while_function(
         self,
         func_name: str,
@@ -2791,6 +2897,14 @@ class DSLPreprocessor(ast.NodeTransformer):
         while_before_stmts: list[ast.stmt] = []
         with Region(self.session_data, new_value=while_before_stmts):
             test_expr = ast.copy_location(self.visit(node.test), node.test)
+
+        # Template method: prepare write_args before condition evaluation
+        # Derived classes may insert instrumentation here
+        condition_prep_stmts = self._prepare_while_condition_vars(
+            node, write_args, while_before_stmts
+        )
+        if condition_prep_stmts:
+            while_before_stmts[:0] = condition_prep_stmts
 
         while_before_return_list = ast.List(
             elts=[test_expr, yield_args_ast_name_list],

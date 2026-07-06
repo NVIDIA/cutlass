@@ -37,20 +37,23 @@ def issue_clc_query(
     :type mbar_ptr:  Pointer
     :param clc_response_ptr: A pointer to the cluster launch control response address in SMEM
     :type clc_response_ptr:  Pointer
+    :param multicast: Whether to use multicast variant (default: True)
+    :type multicast:  bool
     """
     mbar_llvm_ptr = mbar_ptr.llvm_ptr
     clc_response_llvm_ptr = clc_response_ptr.llvm_ptr
     if multicast:
-        _nvvm.clusterlaunchcontrol_try_cancel_multicast(
-            clc_response_llvm_ptr,
-            mbar_llvm_ptr,
+        _nvvm.clusterlaunchcontrol_try_cancel(
+            smem_address=clc_response_llvm_ptr,
+            mbarrier=mbar_llvm_ptr,
+            multicast="multicast",
             loc=loc,
             ip=ip,
         )
     else:
         _nvvm.clusterlaunchcontrol_try_cancel(
-            clc_response_llvm_ptr,
-            mbar_llvm_ptr,
+            smem_address=clc_response_llvm_ptr,
+            mbarrier=mbar_llvm_ptr,
             loc=loc,
             ip=ip,
         )
@@ -92,30 +95,38 @@ def clc_response(
     )
     # Query if the cluster was canceled
     # res parameter expects an MLIR Type, and returns the actual OpResult value
-    pred = _nvvm.clusterlaunchcontrol_query_cancel_is_canceled(
-        clc_result_i128,
+    pred = _nvvm.clusterlaunchcontrol_query_cancel(
+        res=ir.IntegerType.get_signless(1),
+        query_type="is_canceled",
+        try_cancel_response=clc_result_i128,
         loc=loc,
         ip=ip,
     )
     is_valid = Int32(pred)
 
     # Get first CTA ID x component
-    m_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_x(
-        clc_result_i128,
+    m_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
+        res=ir.IntegerType.get_signless(32),
+        query_type="get_first_cta_id_x",
+        try_cancel_response=clc_result_i128,
         loc=loc,
         ip=ip,
     )
 
     # Get first CTA ID y component
-    n_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_y(
-        clc_result_i128,
+    n_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
+        res=ir.IntegerType.get_signless(32),
+        query_type="get_first_cta_id_y",
+        try_cancel_response=clc_result_i128,
         loc=loc,
         ip=ip,
     )
 
     # Get first CTA ID z component
-    l_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel_get_first_ctaid_z(
-        clc_result_i128,
+    l_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
+        res=ir.IntegerType.get_signless(32),
+        query_type="get_first_cta_id_z",
+        try_cancel_response=clc_result_i128,
         loc=loc,
         ip=ip,
     )

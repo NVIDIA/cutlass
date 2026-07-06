@@ -7,7 +7,7 @@
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
-# is strictly prohibited
+# is strictly prohibited.
 
 """
 GEMM Tensor Utilities for CuTe DSL
@@ -139,6 +139,7 @@ def get_gemm_tensor(
     :rtype: cutlass.cute.Tensor
     """
 
+    # Use uint8 view for conversion, then restore element_type after from_dlpack().
     _TYPES_NOT_SUPPORTED_BY_DLPACK = {
         torch.float8_e4m3fn: cute.Float8E4M3FN,
         torch.float8_e5m2: cute.Float8E5M2,
@@ -214,7 +215,7 @@ def get_gemm_tensors(
 
 def create_scale_factor_tensor(
     MN: int, K: int, L: int, sf_vec_size: int, sf_dtype: Type[Numeric]
-) -> Tuple[torch.Tensor, cute.Tensor]:
+) -> Tuple[torch.Tensor, cute.Tensor, torch.Tensor]:
     """
     Create a random scale-factor tensor in BlockScaledBasicChunk layout.
 
@@ -224,9 +225,10 @@ def create_scale_factor_tensor(
 
     Scale factor values are drawn uniformly from ``{1.0, 2.0, 4.0}``.
 
-    Two tensors are returned: a logical FP32 tensor for host-side reference
-    computation, and a CuTe tensor in the on-device packed layout for passing
-    to the GPU kernel.
+    Three tensors are returned: a logical FP32 tensor for host-side reference
+    computation, a CuTe tensor in the on-device packed layout for passing
+    to the GPU kernel, and the backing PyTorch CUDA tensor whose
+    ``data_ptr()`` can be used for pointer-array construction.
 
     :param MN: Size of the MN dimension of the operand to be scaled.
     :type MN: int
@@ -239,12 +241,13 @@ def create_scale_factor_tensor(
     :type sf_vec_size: int
     :param sf_dtype: CuTe element type for the on-device scale factors
         (e.g. ``cute.Float8E4M3FN``, ``cute.Float8E8M0FNU``).
-    :return: ``(sf_torch, sf_cute)`` where ``sf_torch`` is an FP32 CPU tensor
-        of shape ``(MN, K, L)`` with scale factors unpacked into a dense
-        layout suitable for element-wise multiplication with A or B, and
+    :return: ``(sf_ref, sf_cute, sf_gpu)`` where ``sf_ref`` is an FP32 CPU
+        tensor of shape ``(MN, K, L)`` with scale factors unpacked into a
+        dense layout suitable for element-wise multiplication with A or B,
         ``sf_cute`` is a CuTe CUDA tensor in BlockScaledBasicChunk layout
-        with ``element_type`` set to ``sf_dtype``.
-    :rtype: tuple[torch.Tensor, cutlass.cute.Tensor]
+        with ``element_type`` set to ``sf_dtype``, and ``sf_gpu`` is the
+        backing PyTorch CUDA tensor for pointer-array construction.
+    :rtype: tuple[torch.Tensor, cutlass.cute.Tensor, torch.Tensor]
     """
 
     def unpack_scale_factors(
@@ -319,11 +322,12 @@ def create_scale_factor_tensor(
         cutlass_torch.dtype(sf_dtype)
     )
 
-    sf_cute = from_dlpack(sf_torch.cuda().view(dtype=torch.uint8), assumed_align=16)
+    sf_gpu = sf_torch.cuda()
+    sf_cute = from_dlpack(sf_gpu.view(dtype=torch.uint8), assumed_align=16)
     sf_cute.element_type = sf_dtype
     sf_torch = unpack_scale_factors(sf_torch.to(torch.float32), sf_vec_size, MN, K, L)
 
-    return sf_torch, sf_cute
+    return sf_torch, sf_cute, sf_gpu
 
 
 def decode_float4e2m1fn(u8: torch.Tensor) -> torch.Tensor:

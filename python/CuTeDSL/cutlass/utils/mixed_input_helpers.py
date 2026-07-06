@@ -13,13 +13,14 @@ from __future__ import annotations
 
 from enum import Enum, auto
 from math import log2
-from typing import Optional, Union
+from typing import Any, Optional, Type, Union
 
 import cutlass
 import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass.cutlass_dsl import (
     Boolean,
+    Numeric,
     extract_mlir_values,
     new_from_mlir_values,
 )
@@ -68,9 +69,10 @@ def scale_tma_partition(
 
     :rtype: tuple[cute.Tensor, cute.Tensor]
     """
+    assert isinstance(block_in_cluster_coord_vmnk, tuple)
     tSsS, tSgS = cpasync.tma_partition(
         tma_atom_s,
-        block_in_cluster_coord_vmnk[2],  # type: ignore[index]
+        block_in_cluster_coord_vmnk[2],
         scale_cta_layout,
         cute.group_modes(tCsS, 0, 3),
         cute.group_modes(tCgS, 0, 3),
@@ -629,14 +631,18 @@ def get_copy_atom_a_transform(
     Determine the copy atom for transformed A tensor based on the operand source and tile size.
     """
     if cutlass.const_expr(transform_a_source == tcgen05.OperandSource.TMEM):
+        copy_op_r2t: Any
+        assert isinstance(a_smem_shape, tuple)
+        a_smem_shape_0 = a_smem_shape[0]
+        assert isinstance(a_smem_shape_0, tuple)
         if cutlass.const_expr(
-            cute.size(a_smem_shape[0][0]) == 64 and (not use_2cta_instrs)  # type: ignore[index]
+            cute.size(a_smem_shape_0[0]) == 64 and (not use_2cta_instrs)
         ):
             copy_op_r2t = tcgen05.St16x256bOp(
                 tcgen05.Repetition(1), tcgen05.Unpack.NONE
             )
         else:
-            copy_op_r2t = tcgen05.St32x32bOp(tcgen05.Repetition(8), tcgen05.Unpack.NONE)  # type: ignore[assignment]
+            copy_op_r2t = tcgen05.St32x32bOp(tcgen05.Repetition(8), tcgen05.Unpack.NONE)
         return cute.make_copy_atom(copy_op_r2t, mma_dtype)
     else:
         return cute.make_copy_atom(
@@ -687,7 +693,9 @@ def is_shuffle_a(
         and mma_dtype == cutlass.BFloat16
         and scale_granularity_k >= 8
     )
-    return shuffle_a
+    # shuffle is supported since CTK 13.1
+    shuffle_supported = cutlass.target_version(min_version="13.1")
+    return shuffle_a and shuffle_supported
 
 
 def is_valid_tensor_alignment(
@@ -712,9 +720,7 @@ def is_valid_tensor_alignment(
     """
 
     def check_contiguous_16B_alignment(
-        dtype: type[cutlass.Numeric],
-        is_mode0_major: bool,
-        tensor_shape: tuple[int, int],
+        dtype: Type[Numeric], is_mode0_major: bool, tensor_shape: tuple[int, int]
     ) -> bool:
         major_mode_idx = 0 if is_mode0_major else 1
         num_major_elements = tensor_shape[major_mode_idx]
@@ -806,7 +812,7 @@ class ContiguousGGSearchState:
         cur_group_idx: cutlass.Int32,
         cur_offset: cutlass.Int32,
         cur_start: cutlass.Int32,
-    ) -> None:
+    ):
         self.last_tile_count = last_tile_count
         self.cur_boundary = cur_boundary
         self.cur_tile_count = cur_tile_count
@@ -880,7 +886,7 @@ class ContiguousGroupWorkTileInfo:
         coord_n: cutlass.Int32,
         group_idx: cutlass.Int32,
         distance_to_boundary: cutlass.Int32,
-    ) -> None:
+    ):
         self.cta_coord_m = cta_coord_m
         self.coord_n = coord_n
         self.group_idx = group_idx
@@ -987,7 +993,7 @@ def cvt_tensor_a(
     for int4-to-bf16 conversion.
     """
 
-    # shuffle is supported since CUDA 13.1
+    # shuffle is supported since CTK 13.1
     shuffle_supported = cutlass.target_version(min_version="13.1")
     shuffle = shuffle and shuffle_supported
     rst = src.load()

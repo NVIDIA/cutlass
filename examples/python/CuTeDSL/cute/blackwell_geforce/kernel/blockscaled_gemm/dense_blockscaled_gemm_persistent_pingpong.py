@@ -34,7 +34,7 @@ import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.nvgpu import cpasync
-import cutlass.cute.testing as testing
+from cutlass import testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.cute.runtime import from_dlpack
@@ -42,6 +42,11 @@ import cutlass.utils.hopper_helpers as sm90_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
 import cutlass.utils.blackwell_helpers as sm120_utils
 
+# SM120 block-scaled GEMM dispatch helpers (sibling utility module). Try the
+# namespace-package import path first (used under pytest, where
+# `python/examples/CuTeDSL/cute` is on sys.path); fall back to the bare local
+# import for standalone-script invocation, where Python places only the
+# script's own directory on sys.path[0].
 try:
     from blackwell_geforce.kernel.blockscaled_gemm.blockscaled_gemm_dispatch import (
         FP4_SHIFT_BITS,
@@ -49,8 +54,8 @@ try:
         make_sm120_blockscaled_mma_op,
         validate_blockscaled_args,
     )
-except ImportError:
-    from blockscaled_gemm_dispatch import (
+except ImportError:  # pragma: no cover - exercised only via standalone-script invocation
+    from blockscaled_gemm_dispatch import (  # noqa: E402
         FP4_SHIFT_BITS,
         make_ldmatrix_atom,
         make_sm120_blockscaled_mma_op,
@@ -705,9 +710,6 @@ class Sm120BlockScaledGemmKernel:
         tCrB = tiled_mma.make_fragment_B(tCsB[None, None, None, 0])
         tCrSFA = sm120_utils.partition_fragment_SFA(sSFA[None, None, 0], thr_mma, tidx)
         tCrSFB = sm120_utils.partition_fragment_SFB(sSFB[None, None, 0], thr_mma, tidx)
-        # Keep residual K modes nested to match the C++ SM120 block-scaled mainloop.
-        tCrSFA = cute.group_modes(tCrSFA, 2, cute.rank(tCrSFA))
-        tCrSFB = cute.group_modes(tCrSFB, 2, cute.rank(tCrSFB))
 
         tCgC = thr_mma.partition_C(gC_mnl)
         acc_shape = tCgC.shape[:3]
@@ -879,8 +881,6 @@ class Sm120BlockScaledGemmKernel:
             tCsSFB_copy_view = thr_copy_ldmatrix_SFB.partition_S(sSFB)
             tCrSFB_copy_view = thr_copy_ldmatrix_SFB.retile(tCrSFB)
 
-            epi_buffer = cutlass.Int32(0)
-
             if warp_group_idx == 1:
                 tile_sched.advance_to_next_work()
                 mainloop_consumer_state = self.advance(
@@ -1051,7 +1051,6 @@ class Sm120BlockScaledGemmKernel:
                     )
 
                     if k_block_idx == num_k_blocks - 1:
-                        cute.arch.fence_proxy("async.shared", space="cta")
                         mainloop_pipeline.consumer_release(mainloop_consumer_state)
                         mainloop_consumer_state.advance()
 
@@ -1210,8 +1209,7 @@ class Sm120BlockScaledGemmKernel:
                         tRS_rD_out.store(acc_vec.to(self.c_dtype))
 
                         # Register to shared memory
-                        epi_buffer = epi_buffer + 1
-                        epi_buffer = epi_buffer % cute.size(
+                        epi_buffer = (epi_m * epi_rest_n + epi_n) % cute.size(
                             tRS_sD, mode=[3]
                         )
                         self.epilog_sync_barrier.arrive_and_wait()
@@ -1242,6 +1240,7 @@ class Sm120BlockScaledGemmKernel:
                 tile_sched.advance_to_next_work()
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
+                tma_store_pipeline.producer_tail()
                 math_wg_order_state = math_wg_order_barrier.arrive(math_wg_order_state)
                 # End of for k_tile loop
             # End of while loop
@@ -1886,24 +1885,6 @@ def run_bs(
             cute.testing.convert(ref_f8, ref_tensor)
             ref = ref_device.cpu()
             torch.testing.assert_close(c_ref, ref, atol=tolerance, rtol=1e-02)
-        elif c_dtype is cutlass.Float4E2M1FN:
-            # Convert ref : f32 -> f4 -> f32
-            ref_f4_ = torch.empty(*(l, m, n), dtype=torch.uint8, device="cuda").permute(
-                1, 2, 0
-            )
-            ref_f4 = from_dlpack(ref_f4_, assumed_align=16).mark_layout_dynamic(
-                leading_dim=1
-            )
-            ref_f4.element_type = c_dtype
-            ref_device = ref.permute(2, 0, 1).contiguous().permute(1, 2, 0).cuda()
-            ref_tensor = from_dlpack(ref_device, assumed_align=16).mark_layout_dynamic(
-                leading_dim=1
-            )
-            cute.testing.convert(ref_tensor, ref_f4)
-            cute.testing.convert(ref_f4, ref_tensor)
-            ref = ref_device.cpu()
-            torch.testing.assert_close(c_ref, ref, atol=tolerance, rtol=1e-02)
-
     def generate_tensors():
         a_tensor, _ = cutlass_torch.cute_tensor_like(
             a_ref, a_dtype, is_dynamic_layout=True, assumed_align=16
@@ -1933,7 +1914,7 @@ def run_bs(
 
         _, sfa_tensor, _ = create_scale_factor_tensor(l, m, k, sf_vec_size, sf_dtype)
         _, sfb_tensor, _ = create_scale_factor_tensor(l, n, k, sf_vec_size, sf_dtype)
-        return cute.testing.JitArguments(
+        return cutlass.testing.JitArguments(
             a_tensor, b_tensor, sfa_tensor, sfb_tensor, c_tensor, stream
         )
 

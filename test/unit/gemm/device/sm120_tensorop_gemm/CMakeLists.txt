@@ -33,6 +33,7 @@ add_custom_target(
   DEPENDS
   cutlass_test_unit_gemm_device_tensorop_f32_sm120
   cutlass_test_unit_gemm_device_tensorop_f16_sm120
+  cutlass_test_unit_sm120_grouped_gemm_device_tensorop
 )
 
 cutlass_test_unit_gemm_device_add_executable(
@@ -57,6 +58,12 @@ cutlass_test_unit_gemm_device_add_executable(
   sm120_gemm_f4_f4_f16_tensor_op.cu
   sm120_gemm_f6_f6_f16_tensor_op.cu
   sm120_gemm_f8_f8_f16_tensor_op.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_sm120_grouped_gemm_device_tensorop
+
+  sm120_gemm_f8_f8_f32_tensor_op_group_gemm.cu
 )
 
 endif()

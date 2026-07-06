@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
-# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
-# property and proprietary rights in and to this material, related
-# documentation and any modifications thereto. Any use, reproduction,
-# disclosure or distribution of this material and related documentation
-# without an express license agreement from NVIDIA CORPORATION or
-# its affiliates is strictly prohibited.
+# Use of this software is governed by the terms and conditions of the
+# NVIDIA End User License Agreement (EULA), available at:
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
+#
+# Any use, reproduction, disclosure, or distribution of this software
+# and related documentation outside the scope permitted by the EULA
+# is strictly prohibited.
 
 """
 CuTeDSL Development Package Setup
@@ -23,7 +24,7 @@ import tempfile
 import zipfile
 import re
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Tuple
 import logging
 
 # Configure logging
@@ -40,27 +41,6 @@ class CutlassDSLSetupError(Exception):
     pass
 
 
-def get_package_spec(requirements_path: Optional[Path] = None) -> str:
-    """
-    Return the pip requirement spec for nvidia-cutlass-dsl from requirements.txt.
-
-    If anything goes wrong (file not found, parse failure, line missing),
-    return PACKAGE_NAME as a safe default.
-    """
-    try:
-        req_path = requirements_path or Path(__file__).with_name("requirements.txt")
-        with open(req_path, "r", encoding="utf-8") as f:
-            for raw_line in f:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.lower().startswith(PACKAGE_NAME):
-                    return line.split("#", 1)[0].strip()
-    except Exception:
-        pass
-    return PACKAGE_NAME
-
-
 def download_wheel(temp_dir: Path) -> Path:
     """
     Download the nvidia-cutlass-dsl wheel to a temporary directory.
@@ -74,10 +54,7 @@ def download_wheel(temp_dir: Path) -> Path:
     Raises:
         CutlassDSLSetupError: If download fails or wheel not found
     """
-    # Resolve package spec from requirements, or fall back to PACKAGE_NAME
-    package_spec = get_package_spec()
-
-    logger.info(f"Downloading {package_spec} wheel to {temp_dir}")
+    logger.info(f"Downloading {PACKAGE_NAME} wheel to {temp_dir}")
 
     try:
         subprocess.check_call(
@@ -87,7 +64,7 @@ def download_wheel(temp_dir: Path) -> Path:
                 "pip",
                 "download",
                 "--no-deps",
-                package_spec,
+                PACKAGE_NAME,
                 "--dest",
                 str(temp_dir),
             ],
@@ -103,7 +80,7 @@ def download_wheel(temp_dir: Path) -> Path:
         raise CutlassDSLSetupError(error_msg)
 
     # Find the downloaded wheel file
-    wheel_pattern = f"*.whl"
+    wheel_pattern = f"{PACKAGE_NAME.replace('-', '_')}-*.whl"
     wheel_files = list(temp_dir.glob(wheel_pattern))
     if not wheel_files:
         raise CutlassDSLSetupError(
@@ -132,7 +109,7 @@ def extract_version_from_wheel(wheel_path: Path) -> str:
     # Construct version regex from package name
     # Wheel filename format: {package_name_with_underscores}-{version}-{python}-{abi}-{platform}.whl
     package_pattern = PACKAGE_NAME.replace("-", "_")
-    version_regex = rf"{re.escape(package_pattern)}-([^-]+)"
+    version_regex = rf"{re.escape(package_pattern)}-([^-]+)-"
     version_match = re.match(version_regex, wheel_filename)
 
     if version_match:
@@ -156,7 +133,9 @@ def extract_version_from_wheel(wheel_path: Path) -> str:
 
         return dev_version
     else:
-        return "9.9.9.dev0"
+        raise CutlassDSLSetupError(
+            f"Could not parse version from wheel filename: {wheel_filename}"
+        )
 
 
 def extract_wheel_contents(wheel_path: Path, extract_dir: Path) -> None:
@@ -193,7 +172,7 @@ def copy_library_files(extract_dir: Path, package_root: Path) -> int:
     Returns:
         Number of files copied
     """
-    lib_pattern = extract_dir / "**" / "lib" / "*.so"
+    extract_dir / "**" / "lib" / "*.so"
     so_files = [f for f in extract_dir.rglob("lib/*.so")]
 
     if not so_files:
@@ -240,7 +219,7 @@ def copy_python_packages(extract_dir: Path, package_root: Path) -> Tuple[int, in
     cutlass_source_dir = cutlass_source_dirs[0]
     cutlass_dest_dir = package_root / "cutlass"
 
-    logger.info(f"Found python_packages/cutlass/ directory")
+    logger.info("Found python_packages/cutlass/ directory")
     logger.info(f"Copying from {cutlass_source_dir} to {cutlass_dest_dir}")
 
     copied_count = 0

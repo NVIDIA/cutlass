@@ -31,12 +31,16 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include CUDA_STD_HEADER(cstdint)
+#else
 #include <cstdint>
 #include <string>
+#endif
 
 #define CUTLASS_MAJOR 4
-#define CUTLASS_MINOR 5
-#define CUTLASS_PATCH 2
+#define CUTLASS_MINOR 6
+#define CUTLASS_PATCH 0
 
 #ifdef CUTLASS_VERSIONS_GENERATED
 #include "cutlass/version_extended.h"
@@ -65,6 +69,7 @@ namespace cutlass {
     return CUTLASS_BUILD + 0;
   }
 
+#if !defined(__CUDACC_RTC__)
   inline std::string getVersionString() {
     std::string version = "@CUTLASS_VERSION@";
     if (getVersionBuild()) {
@@ -72,9 +77,10 @@ namespace cutlass {
     }
     return version;
   }
-  
+
   inline std::string getGitRevision() {
     return "@CUTLASS_REVISION@";
   }
+#endif // !defined(__CUDACC_RTC__)
 
 } // namespace cutlass

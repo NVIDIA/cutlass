@@ -21,6 +21,7 @@ from ..typing import (
     Uint32,
     Uint64,
     Boolean,
+    BFloat16,
     Float16,
     Float32,
     Float64,
@@ -92,6 +93,12 @@ class CHeaderGenerator:
 }
 """
 
+    # AOT cross-compile invariant: every C type emitted into the generated
+    # .h must be either fixed-width (intN_t / uintN_t / float / double) or an
+    # opaque target-defined typedef (e.g. cudaLibrary_t). Never use bare
+    # `long`, `int`, `size_t`, or pointer-arithmetic literals — those bind
+    # the struct ABI to the *build* machine, which silently miscompiles when
+    # the host cross-target has a different word size.
     numeric_to_c_type = {
         Int8: "int8_t ",
         Int16: "int16_t ",
@@ -106,7 +113,149 @@ class CHeaderGenerator:
         TFloat32: "float ",
         Float64: "double ",
         Float16: "__half_raw ",
+        BFloat16: "__nv_bfloat16 ",
     }
+
+    # Device functions use __half (not __half_raw used by host export headers).
+    device_type_overrides = {
+        Float16: "__half ",
+    }
+
+    @classmethod
+    def get_c_type(cls, ann: Any, device: bool = False) -> str:
+        """Map a DSL type annotation to its C type string (without trailing space).
+
+        Args:
+            ann: DSL type annotation (e.g., Float32, Int64, or a @native_struct class).
+            device: If True, use device-specific mappings (e.g., __half vs __half_raw).
+        """
+        if device:
+            c = cls.device_type_overrides.get(ann)
+            if c is not None:
+                return c.strip()
+        c = cls.numeric_to_c_type.get(ann)
+        if c is not None:
+            return c.strip()
+        if hasattr(ann, "_field_names"):
+            return ann.__name__
+        raise DSLRuntimeError(
+            f"Unsupported type annotation for C header generation: {ann}"
+        )
+
+    @classmethod
+    def generate_struct_typedef(cls, struct_cls: Any, device: bool = False) -> str:
+        """Generate a C struct typedef from a @native_struct class.
+
+        Nested struct fields are referenced by their typedef name (not
+        inlined as anonymous structs), so all transitive struct dependencies
+        must be emitted before this typedef.  Use
+        :meth:`_collect_struct_typedefs` to gather them in dependency order.
+        """
+        fields = []
+        for fname in struct_cls._field_names:
+            ann = struct_cls._field_annotations[fname]
+            fields.append(f"    {cls.get_c_type(ann, device=device)} {fname};")
+        packed = getattr(struct_cls, "_struct_packed", False)
+        attr = " __attribute__((packed))" if packed else ""
+        name = struct_cls.__name__
+        return f"typedef struct{attr} {{\n" + "\n".join(fields) + f"\n}} {name};"
+
+    @classmethod
+    def _collect_struct_typedefs(
+        cls, struct_cls: Any, *, device: bool = False, seen: set | None = None
+    ) -> list[str]:
+        """Recursively collect C struct typedefs in dependency order.
+
+        Walks the struct's field annotations; any field that is itself a
+        @native_struct is visited first so its typedef appears before the
+        struct that references it.  Deduplicates by class name.
+        """
+        if seen is None:
+            seen = set()
+        name = struct_cls.__name__
+        if name in seen:
+            return []
+        seen.add(name)
+
+        result: list[str] = []
+        for fname in struct_cls._field_names:
+            ann = struct_cls._field_annotations[fname]
+            if hasattr(ann, "_field_names"):
+                result.extend(
+                    cls._collect_struct_typedefs(ann, device=device, seen=seen)
+                )
+        result.append(cls.generate_struct_typedef(struct_cls, device=device))
+        return result
+
+    @classmethod
+    def generate_device_header(
+        cls,
+        function_name: str,
+        signature: inspect.Signature,
+        ret_annotation: Any = None,
+        pointer_types: tuple[type, ...] = (),
+    ) -> str:
+        """Generate a .cuh header declaring a __device__ function.
+
+        Works entirely from DSL type annotations — no MLIR types needed.
+        Handles scalar types, @native_struct types (including nested structs),
+        and opaque pointer annotations.
+
+        Args:
+            pointer_types: Annotation types that should be rendered as
+                ``void*`` in the generated header (e.g. upstream pointer
+                wrappers).
+        """
+        seen_structs: set[str] = set()
+        typedefs: list[str] = []
+
+        def _add_struct(struct_cls: Any) -> None:
+            """Collect typedefs for *struct_cls* (and its transitive deps)."""
+            if struct_cls.__name__ not in seen_structs:
+                for td in cls._collect_struct_typedefs(
+                    struct_cls, device=True, seen=seen_structs
+                ):
+                    typedefs.append(td)
+
+        # Return type
+        if ret_annotation is None:
+            ret_c = "void"
+        elif hasattr(ret_annotation, "_field_names"):
+            _add_struct(ret_annotation)
+            ret_c = ret_annotation.__name__
+        else:
+            ret_c = cls.get_c_type(ret_annotation, device=True)
+
+        # Parameters
+        params = []
+        for name, param in signature.parameters.items():
+            ann = param.annotation
+            if ann is inspect.Parameter.empty:
+                ann = None
+            if pointer_types and ann in pointer_types:
+                params.append(f"void* {name}")
+            elif ann is not None and hasattr(ann, "_field_names"):
+                _add_struct(ann)
+                params.append(f"{ann.__name__} {name}")
+            elif ann is not None:
+                params.append(f"{cls.get_c_type(ann, device=True)} {name}")
+            else:
+                params.append(f"void* {name}")
+        param_str = ", ".join(params) if params else "void"
+
+        typedef_block = "\n\n".join(typedefs)
+        if typedef_block:
+            typedef_block += "\n\n"
+
+        return f"""\
+#pragma once
+
+#include <cuda_fp16.h>
+#include <cuda_bf16.h>
+#include <stdint.h>
+
+{typedef_block}extern "C" __device__ {ret_c} {function_name}({param_str});
+"""
 
     def _count_dynamic_expression(self, arg: Any) -> int:
         """
@@ -135,7 +284,7 @@ class CHeaderGenerator:
 #ifndef {dsl_name}_CUDA_ERROR_CHECK
 #define {dsl_name}"""
             + self.cuda_error_check
-            + f"""
+            + """
 #endif
 """
         )

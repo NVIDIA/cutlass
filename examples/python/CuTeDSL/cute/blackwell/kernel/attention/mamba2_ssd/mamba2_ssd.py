@@ -142,10 +142,10 @@ class SSDKernel:
         )
 
         # Number of registers used by each warp
-        self.num_regs_uniform_warps = 24
+        self.num_regs_uniform_warps = 32
         self.num_regs_pre_inter_warps = 168
         self.num_regs_pre_intra_warps = 208
-        self.num_regs_epilogue_warps = 112
+        self.num_regs_epilogue_warps = 104
 
         # Shared storage
         self.shared_storage = None

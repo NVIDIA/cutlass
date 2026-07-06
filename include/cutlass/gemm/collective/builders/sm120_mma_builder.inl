@@ -68,12 +68,10 @@ struct CollectiveBuilder<
     cute::enable_if_t<
       not cute::is_tuple_v<ElementA> && not cute::is_tuple_v<ElementB> &&
       not cute::is_tuple_v<GmemLayoutATag> && not cute::is_tuple_v<GmemLayoutBTag> &&
-      // Dense Gemm
+      // Dense Gemm (non-array; ptr-array schedules handled by sm120_array_mma_builder.inl)
       (cute::is_base_of_v<KernelScheduleSm120DenseGemm, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
-       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
-       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>) &&
       // Alignment check
       detail::sm1xx_gemm_is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, BuilderScheduleTag>()>>
@@ -135,10 +133,6 @@ struct CollectiveBuilder<
   static constexpr uint32_t SchedulerPipelineStageCount = 2;
 
 
-  static constexpr bool IsPtrArrayKernel = cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
-                                           cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>;
-  static_assert(!IsPtrArrayKernel, "PtrArray kernel is not supported for this collective builder.");
-  
   using KernelSchedule = cute::conditional_t<IsCooperative, 
                                               KernelTmaWarpSpecializedCooperativeSm120<SchedulerPipelineStageCount>, 
                                               KernelTmaWarpSpecializedPingpongSm120<SchedulerPipelineStageCount>>;

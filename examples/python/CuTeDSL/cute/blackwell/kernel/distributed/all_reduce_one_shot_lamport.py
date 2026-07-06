@@ -27,53 +27,20 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import os
-import torch
 import argparse
-
-import numpy as np
-import torch.distributed as dist
-import torch.distributed._symmetric_memory as symm_mem
 import cuda.bindings.driver as cuda
-try:
-    from cuda.core import Device
-except ImportError:
-    from cuda.core.experimental import Device
-from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.cute.testing as testing
+from cutlass import testing
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cutlass_dsl import T
 from cutlass._mlir.dialects import vector
-
-try:
-    import nvshmem.core
-except ImportError as exc:
-    raise ImportError(
-        "nvshmem4py is required but not installed. Please install it using:\n"
-        "  For CUDA 12: pip install nvshmem4py-cu12\n"
-        "  For CUDA 13: pip install nvshmem4py-cu13\n"
-        "Note: nvshmem4py version >= 0.1.3 is recommended."
-    ) from None
-
-try:
-    load_nvidia_dynamic_lib("nvshmem_host")
-except RuntimeError as exc:
-    raise ImportError(
-        "nvshmem lib is required but not installed. Please install it using:\n"
-        "  For CUDA 12: pip install nvidia-nvshmem-cu12\n"
-        "  For CUDA 13: pip install nvidia-nvshmem-cu13\n"
-    ) from None
 
 """
 A Distributed One-Shot All-Reduce Example using CuTe DSL and fine-grained memory control. This is a mirrored version of the 
 existing tensorrt_llm kernel:
 https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/communicationKernels/allReduceFusionKernels.cu
-
-In Lamport terminology this is a classic flag-based busy-wait: every participant keeps polling the shared slot until the
-flag changes from the sentinel (negative zero) to real data, which indicates that the Lamport-style logical ordering has
-advanced and the payload is safe to consume.
 
 This example kernel demonstrates a one-shot all-reduce operation using the CuTe DSL with fine-grained memory control.
 It uses dedicated communication buffers for data exchange, and these buffers act as ping-pong buffers. During the 
@@ -90,8 +57,8 @@ The .SYS memory scope and .VOLATILE memory order are used to ensure that the dat
 
 .. code-block:: bash
 
-    torchrun --nproc-per-node 8  examples/distributed/all_reduce_one_shot_lamport.py --M 8192 --N 8192
-    torchrun --nproc-per-node 8  examples/distributed/all_reduce_one_shot_lamport.py \
+    torchrun --nproc-per-node 8  examples/cute/blackwell/distributed/all_reduce_one_shot_lamport.py --M 8192 --N 8192
+    torchrun --nproc-per-node 8  examples/cute/blackwell/distributed/all_reduce_one_shot_lamport.py \
         --M 8192 --N 8192 --benchmark --warmup_iterations 2 --iterations 10
 """
 
@@ -174,14 +141,14 @@ class AllReduceOneShotLamportKernel:
 
         # assume all buffers have the same element type with input
         copy_atom_load = cute.make_copy_atom(
-            cute.nvgpu.CopyUniversalOp(),
+            cute.nvgpu.CopyG2ROp(),
             buffers[0].element_type,
             num_bits_per_copy=128,
             memory_scope=cute.nvgpu.common.MemoryScope.SYS,
             memory_order=cute.nvgpu.common.MemoryOrder.VOLATILE,
         )
         copy_atom_store = cute.make_copy_atom(
-            cute.nvgpu.CopyUniversalOp(),
+            cute.nvgpu.CopyR2GOp(),
             buffers[0].element_type,
             num_bits_per_copy=128,
             memory_scope=cute.nvgpu.common.MemoryScope.SYS,
@@ -276,6 +243,10 @@ def run_all_reduce_one_shot(
     skip_ref_check=False,
     benchmark=True,
 ):
+    import torch
+    import torch.distributed as dist
+    import torch.distributed._symmetric_memory as symm_mem
+
     rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     if rank == 0:
@@ -284,8 +255,20 @@ def run_all_reduce_one_shot(
         print(f"GPU count: {world_size}")
 
     # init buffer tensors to be neg 0
-    local_buffer_tensor = nvshmem.core.tensor([PING_PONG_SIZE, world_size, M, N,], dtype=torch.float32).neg_()
-    buffer_tensor_list = [nvshmem.core.get_peer_tensor(local_buffer_tensor, rank).permute(2, 3, 1, 0) for rank in range(world_size)]
+    t = symm_mem.empty(
+        [
+            PING_PONG_SIZE,
+            world_size,
+            M,
+            N,
+        ],
+        device="cuda",
+    ).neg_()
+    hdl = symm_mem.rendezvous(t, dist.group.WORLD)
+    buffer_tensor_list = [
+        hdl.get_buffer(rank, t.shape, t.dtype).permute(2, 3, 1, 0)
+        for rank in range(world_size)
+    ]
     signal = cutlass.Int32(0)
     input_tensor = torch.randn([M, N], device=f"cuda:{rank}")
     output_tensor = torch.zeros([M, N], device=f"cuda:{rank}")
@@ -319,33 +302,40 @@ def run_all_reduce_one_shot(
         if rank == 0:
             print("Results verified successfully!")
 
-    for t in buffer_tensor_list:
-        nvshmem.core.free_tensor(t)
-
     if not benchmark:
         return
 
-    free_func_and_tensor_pairs = []
-    def add_free_func_and_tensor(free_func, tensor):
-        free_func_and_tensor_pairs.append((free_func, tensor))
-
     def generate_tensors():
-        local_buffer = nvshmem.core.tensor([PING_PONG_SIZE, world_size, M, N,], dtype=torch.float32).neg_()
-        buffer_tensor_list = [nvshmem.core.get_peer_tensor(local_buffer, rank).permute(2, 3, 1, 0) for rank in range(world_size)]
-        input_tensor = torch.randn([M, N], device=f"cuda:{rank}")
-        output_tensor = torch.zeros([M, N], device=f"cuda:{rank}")
+        t = symm_mem.empty(
+            [
+                PING_PONG_SIZE,
+                world_size,
+                M * N,
+            ],
+            device="cuda",
+        ).neg_()
+        hdl = symm_mem.rendezvous(t, group=dist.group.WORLD.group_name)
+        # get tensors from other devices from the symmetric memory
+        buffers = [
+            hdl.get_buffer(rank, t.shape, t.dtype).permute(2, 1, 0)
+            for rank in range(world_size)
+        ]
+        input_tensor = torch.randn(M * N, device=f"cuda:{rank}")
+        output_tensor = torch.zeros(M * N, device=f"cuda:{rank}")
 
         ja = testing.JitArguments(
             cutlass.Int32(0),
             from_dlpack(input_tensor, assumed_align=32),
             from_dlpack(output_tensor, assumed_align=32),
-            [from_dlpack(t, assumed_align=32) for t in buffer_tensor_list],
-            stream=stream
+            [from_dlpack(t, assumed_align=32) for t in buffers],
+            stream=stream,
         )
-        for tensor in buffer_tensor_list:
-            add_free_func_and_tensor(nvshmem.core.free_tensor, tensor)
-        
+        ja._hdl = (
+            hdl  # in order to extend the life cycle of hdl for the kernel execution
+        )
+        ja._t = t  # same reason
         return ja
+
     avg_time_us = testing.benchmark(
         compiled_func,
         workspace_generator=generate_tensors,
@@ -361,47 +351,39 @@ def run_all_reduce_one_shot(
             f"Achieved memory throughput: {((world_size + 1) * output_tensor.numel() * 32 // 8) / (avg_time_us / 1e6) / 1e9:.2f} GB/s"
         )
 
-    for free_func, tensor in free_func_and_tensor_pairs:
-        free_func(tensor)
 
-def torchrun_uid_init_bcast():
-    """
-    Initialize NVSHMEM using UniqueID with `torchrun` as the launcher
+def run(
+    M,
+    N,
+    warmup_iterations=2,
+    iterations=10,
+    skip_ref_check=False,
+    benchmark=True,
+):
+    import torch
+    import torch.distributed as dist
+    import torch.distributed._symmetric_memory as symm_mem
 
-    It uses torch.distributed.broadcast on a NumPy array to handle the broadcasting
-    """
-    # Set Torch device
-    local_rank = int(os.environ['LOCAL_RANK'])
+    globals()["torch"] = torch
+    globals()["dist"] = dist
+    globals()["symm_mem"] = symm_mem
+
+    local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
-
-    # nvshmem4py requires a cuda.core Device at init time
-    dev = Device(local_rank)
-    dev.set_current()
-    global stream
-    stream = dev.create_stream()
-
-    # Initialize torch.distributed process group
-    dist.init_process_group(
-        backend="cpu:gloo,cuda:nccl",
-    )
-
-    # Extract rank, nranks from process group
-    num_ranks = dist.get_world_size()
-
-    # Create an empty uniqueid for all ranks
-    uid = nvshmem.core.get_unique_id(empty=(local_rank != 0))
-    uid_bytes = uid._data.view(np.uint8).copy()
-    uid_tensor = torch.from_numpy(uid_bytes).cuda()
-    dist.broadcast(uid_tensor, src=0)
-    dist.barrier()
-    uid._data[:] = uid_tensor.cpu().numpy().view(uid._data.dtype)
-
-    nvshmem.core.init(device=dev, uid=uid, rank=local_rank, nranks=num_ranks, initializer_method="uid")
-
-
-def torchrun_finalize():
-    nvshmem.core.finalize()
-    dist.destroy_process_group()
+    if not dist.is_initialized():
+        dist.init_process_group(backend="nccl")
+    try:
+        run_all_reduce_one_shot(
+            M,
+            N,
+            warmup_iterations,
+            iterations,
+            skip_ref_check,
+            benchmark,
+        )
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
 
 def main():
@@ -414,13 +396,17 @@ def main():
     parser.add_argument("--iterations", default=10, type=int)
     parser.add_argument("--skip_ref_check", action="store_true")
     parser.add_argument("--benchmark", action="store_true")
+
     args = parser.parse_args()
 
-    torchrun_uid_init_bcast()
-
-    run_all_reduce_one_shot(args.M, args.N, args.warmup_iterations, args.iterations, args.skip_ref_check, args.benchmark)
-
-    torchrun_finalize()
+    run(
+        args.M,
+        args.N,
+        args.warmup_iterations,
+        args.iterations,
+        args.skip_ref_check,
+        args.benchmark,
+    )
 
     return
 

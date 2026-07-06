@@ -9,7 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import Any, Optional
 
+from cutlass._mlir import ir
 from cutlass.cutlass_dsl import dsl_user_op, CuTeDSL
 
 from cutlass.cute.typing import Tensor
@@ -21,11 +23,11 @@ from cutlass.cute.nvgpu.cpasync.copy import (
     TmaCopyOp,
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorTileG2SMulticastOp,
+    CopyBulkTensorIm2ColG2SOp,
+    CopyBulkTensorIm2ColG2SMulticastOp,
 )
 from cutlass.cute.nvgpu.cpasync.helpers import tma_partition
 from cutlass.cute.nvgpu.tcgen05.copy import _S2TCopyBase
-from typing import Any, Optional
-from cutlass._mlir import ir
 
 
 def _check_required_args(
@@ -53,14 +55,11 @@ def _tma_copy_impl(
     #
     if "tma_multicast" in kwargs:
         if not isinstance(
-            tiled_copy.op,
-            (
-                CopyBulkTensorTileG2SOp,
-            ),
+            tiled_copy.op, (CopyBulkTensorTileG2SOp, CopyBulkTensorIm2ColG2SOp)
         ):
             raise ValueError(
                 "block_copy with tma_multicast expects a non-multicast G2S TMA copy atom "
-                "(CopyBulkTensorTileG2SOp) for compiler-driven multicast"
+                "(CopyBulkTensorTileG2SOp or CopyBulkTensorIm2ColG2SOp) for compiler-driven multicast"
             )
         # Mark as coming from block API
         kwargs["tma_multicast"]["from_block_api"] = True
@@ -73,6 +72,8 @@ def _tma_copy_impl(
         (
             CopyBulkTensorTileG2SOp,
             CopyBulkTensorTileG2SMulticastOp,
+            CopyBulkTensorIm2ColG2SOp,
+            CopyBulkTensorIm2ColG2SMulticastOp,
         ),
     )
     _check_required_args(["tma_bar_ptr"], kwargs, is_bar_ptr_required)
@@ -81,10 +82,7 @@ def _tma_copy_impl(
     # TMA bulk tensor copies: partition via tma_partition
     #
     is_g2s = isinstance(
-        tiled_copy.op,
-        (
-            CopyBulkTensorTileG2SOp,
-        ),
+        tiled_copy.op, (CopyBulkTensorTileG2SOp, CopyBulkTensorIm2ColG2SOp)
     )
     stensor = dst if is_g2s else src
     gtensor = src if is_g2s else dst

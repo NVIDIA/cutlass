@@ -22,6 +22,7 @@ import cutlass.cute as cute
 from cutlass.base_dsl.typing import Int32
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir_ir
+from cutlass.cutlass_dsl import extract_mlir_values
 from cutlass._mlir.dialects.core import OperationTypeEnum
 from cutlass.cute.typing import Boolean
 from cutlass.cute.experimental.core import (
@@ -29,26 +30,26 @@ from cutlass.cute.experimental.core import (
     producer_acquire,
     get_pipeline_produce_stage,
     get_pipeline_consume_stage,
+    get_mbarrier,
     producer_commit,
     consumer_release,
     pipeline_advance_iterator,
     PipelineState,
     consumer_wait,
-    consumer_tail,
+    create_pipeline_state_at,
+    pipeline_tail,
     create_circular_buffer_pipeline,
     circular_buffer_pipeline_consume,
     circular_buffer_pipeline_consumer_release,
     circular_buffer_pipeline_advance_iterator,
-    mbarrier_expect_tx,
     normalize_skip_wait_token,
     producer_try_acquire,
     consumer_try_wait,
+    OperationTypeSpec,
     SkipWaitToken,
 )
 
 from cutlass.cutlass_dsl import CuteExperimentalDSL
-
-from ..typing import Pointer
 
 
 class GenericPipelineBase:
@@ -150,18 +151,38 @@ class GenericPipelineBase:
         )
         return stage_token, stage_idx
 
-    def producer_commit(self) -> "GenericPipelineBase":
+    def producer_commit(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "GenericPipelineBase":
         """Commit producer state."""
-        producer_commit(self.raw_pipeline, self.producer_state)
+        producer_commit(
+            self.raw_pipeline,
+            self.producer_state,
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         return self
 
     def consumer_try_wait(self, *, token: Optional[SkipWaitToken] = None) -> Boolean:
         """Try to wait for the next consumer stage without blocking."""
         return consumer_try_wait(self.raw_pipeline, self.consumer_state, token=token)
 
-    def consumer_release(self) -> "GenericPipelineBase":
+    def consumer_release(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "GenericPipelineBase":
         """Release consumer state."""
-        consumer_release(self.raw_pipeline, self.consumer_state)
+        consumer_release(
+            self.raw_pipeline,
+            self.consumer_state,
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         return self
 
     def producer_commit_and_advance(self) -> "GenericPipelineBase":
@@ -217,14 +238,27 @@ class GenericPipelineBase:
         )
         return self
 
+    def producer_tail(self) -> "GenericPipelineBase":
+        """Drain outstanding pipeline work visible to the producer state."""
+        self.producer_state = pipeline_tail(self.raw_pipeline, self.producer_state)
+        return self
+
     def consumer_tail(self) -> "GenericPipelineBase":
-        """Combined consumer tail with automatic elect_one using internal state."""
-        consumer_tail(self.raw_pipeline, self.consumer_state)
+        """Drain outstanding pipeline work visible to the consumer state."""
+        self.consumer_state = pipeline_tail(self.raw_pipeline, self.consumer_state)
         return self
 
     def increment_state(self, state: PipelineState) -> ir.Value:
         """Advance the input state w/o modifying current pipeline"""
         return pipeline_advance_iterator(self.raw_pipeline, state)
+
+    def create_state_at(
+        self, stage_index: cute.Int32, phase: cute.Int32
+    ) -> PipelineState:
+        """Create a pipeline state for an explicit stage and phase."""
+        return create_pipeline_state_at(
+            self.raw_pipeline, self.num_stages, stage_index, phase
+        )
 
 
 class GenericPipeline(GenericPipelineBase):
@@ -299,10 +333,31 @@ def _is_multicast_tma_operation_type(operation_type: OperationTypeEnum) -> bool:
     ]
 
 
+def _is_2sm_tma_operation_type(operation_type: OperationTypeEnum) -> bool:
+    """Check if the operation type is a 2SM TMA load."""
+    return operation_type in [
+        OperationTypeEnum.SM100_TMA_LOAD_2SM,
+        OperationTypeEnum.SM100_TMA_LOAD_2SM_MULTICAST,
+        OperationTypeEnum.SM100_TMA_LOAD_2SM_IM2COL,
+        OperationTypeEnum.SM100_TMA_LOAD_2SM_IM2COL_MULTICAST,
+    ]
+
+
 class TMAToUMMAPipeline(GenericPipelineBase):
     """
     Pipeline for TMA to UMMA.
     """
+
+    def __init__(
+        self,
+        raw_pipeline: ir.Value,
+        num_stages: cute.Int32,
+        producer_state: ir.Value,
+        consumer_state: ir.Value,
+        is_2sm: bool = False,
+    ) -> None:
+        super().__init__(raw_pipeline, num_stages, producer_state, consumer_state)
+        self.is_2sm = is_2sm
 
     @staticmethod
     def create(
@@ -378,11 +433,13 @@ class TMAToUMMAPipeline(GenericPipelineBase):
             )
         else:
             raise ValueError(f"Invalid tma_operation_type: {tma_operation_type}")
+        is_2sm = _is_2sm_tma_operation_type(tma_operation_type)
         return TMAToUMMAPipeline(
             raw_pipeline,
             num_stages,
             producer_state,
             consumer_state,
+            is_2sm=is_2sm,
         )
 
     @staticmethod
@@ -422,7 +479,9 @@ class TMAToUMMAPipeline(GenericPipelineBase):
 
         # For 2CTA MMA (v-size==2), the peer CTA is the other v-slice (xor 1).
         # For 1CTA MMA (v-size==1), the peer is the local CTA (no flip).
-        v_size = cute.size(cluster_layout_vmnk.shape[0])  # type: ignore[index]
+        cluster_shape_vmnk = cluster_layout_vmnk.shape
+        assert isinstance(cluster_shape_vmnk, tuple)
+        v_size = cute.size(cluster_shape_vmnk[0])
         peer_v = (
             (cta_in_cluster_coord_vmnk[0] ^ 1)
             if cutlass.const_expr(v_size > 1)
@@ -456,8 +515,8 @@ class TMAToUMMAPipeline(GenericPipelineBase):
             arrival_mask_a | arrival_mask_a_peer | arrival_mask_b | arrival_mask_b_peer
         )
 
-        num_mcast_ctas_a = cute.size(cluster_layout_vmnk.shape[2])  # type: ignore[index]
-        num_mcast_ctas_b = cute.size(cluster_layout_vmnk.shape[1])  # type: ignore[index]
+        num_mcast_ctas_a = cute.size(cluster_shape_vmnk[2])
+        num_mcast_ctas_b = cute.size(cluster_shape_vmnk[1])
         num_mcast_participants = num_mcast_ctas_a + num_mcast_ctas_b - 1
 
         raw_pipeline, producer_state, consumer_state = create_pipeline(
@@ -468,26 +527,41 @@ class TMAToUMMAPipeline(GenericPipelineBase):
             consumer_arv_count=num_mcast_participants,
             arrival_mask=arrival_mask_c,
         )
+        is_2sm = _is_2sm_tma_operation_type(tma_operation_type)
         return TMAToUMMAPipeline(
-            raw_pipeline, num_stages, producer_state, consumer_state
+            raw_pipeline,
+            num_stages,
+            producer_state,
+            consumer_state,
+            is_2sm=is_2sm,
         )
 
-    def producer_commit(self) -> "TMAToUMMAPipeline":
+    def producer_commit(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "TMAToUMMAPipeline":
         """
         Commit producer state.
 
         For 2SM MMA, only leader CTA commits during production as MMA
-        is issued by leader. Compiler generates the if-leader-cta-branch
-        internally to preserve a symmetric acquire-commit pattern.
+        is issued by leader.
         """
-        with cute.arch.elect_one():
-            super().producer_commit()
+        super().producer_commit(
+            elect_one_sync=True,
+            elect_leader_cta=True if self.is_2sm else None,
+        )
         return self
 
-    def consumer_release(self) -> "TMAToUMMAPipeline":
+    def consumer_release(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "TMAToUMMAPipeline":
         """Release consumer state."""
-        with cute.arch.elect_one():
-            super().consumer_release()
+        super().consumer_release(elect_one_sync=True)
         return self
 
 
@@ -617,12 +691,18 @@ class TMAToUMMACircularPipeline(TMAToUMMAPipeline):
         circular_buffer_pipeline_consume(self.raw_pipeline, self.circular_buffer_state)
         return self
 
-    def consumer_release(self) -> "TMAToUMMACircularPipeline":
+    def consumer_release(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "TMAToUMMACircularPipeline":
         """Release consumer state (uses circular buffer consumer release)."""
-        with cute.arch.elect_one():
-            circular_buffer_pipeline_consumer_release(
-                self.raw_pipeline, self.circular_buffer_state
-            )
+        circular_buffer_pipeline_consumer_release(
+            self.raw_pipeline,
+            self.circular_buffer_state,
+            elect_one_sync=True,
+        )
         return self
 
     def consumer_release_and_advance(self) -> "TMAToUMMACircularPipeline":
@@ -685,10 +765,14 @@ class TMAToAsyncPipeline(GenericPipelineBase):
             consumer_state,
         )
 
-    def producer_commit(self) -> "TMAToAsyncPipeline":
+    def producer_commit(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "TMAToAsyncPipeline":
         """Commit producer state."""
-        with cute.arch.elect_one():
-            super().producer_commit()
+        super().producer_commit(elect_one_sync=True)
         return self
 
 
@@ -701,12 +785,24 @@ class AsyncToUMMAPipeline(GenericPipelineBase):
     def create(
         *,
         num_stages: cute.Int32,
-        producer: OperationTypeEnum,
+        producer: OperationTypeSpec,
         producer_arv_count: cute.Int32,
         mma_operation_type: OperationTypeEnum,
     ) -> "AsyncToUMMAPipeline":
         """
         Create a * (except TMA) to UMMA pipeline.
+
+        Args:
+            num_stages: Number of pipeline stages.
+            producer: Producer operation type, or a non-empty sequence of
+                them when a single pipeline stage is written by multiple
+                producer kinds (e.g. ``[store to smem, SM100_COPY_R2T]`` when
+                transform warps stage one operand into TMEM and another
+                into SMEM under a single producer-commit). Each producer
+                kind contributes its own commit-side fence at lowering
+                time.
+            producer_arv_count: Number of producer arrivals.
+            mma_operation_type: UMMA operation type.
         """
         _validate_umma_operation_type(
             mma_operation_type,
@@ -729,10 +825,14 @@ class AsyncToUMMAPipeline(GenericPipelineBase):
             consumer_state,
         )
 
-    def consumer_release(self) -> "AsyncToUMMAPipeline":
+    def consumer_release(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "AsyncToUMMAPipeline":
         """Release consumer state."""
-        with cute.arch.elect_one():
-            super().consumer_release()
+        super().consumer_release(elect_one_sync=True)
         return self
 
 
@@ -817,17 +917,21 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
             consumer_state,
         )
 
-    def producer_commit(self) -> "UMMAtoAsyncPipeline":
+    def producer_commit(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "UMMAtoAsyncPipeline":
         """Commit producer state."""
-        with cute.arch.elect_one():
-            super().producer_commit()
+        super().producer_commit(elect_one_sync=True)
         return self
 
 
 @dataclass
 class TMAStorePipeline:
     """
-    TMA Store Pipeline modeling SMEM producer (store to smem operations) to TMA consumer (TMA store to global) pipeline.
+    TMA Store Pipeline modeling SMEM producer to TMA consumer pipeline.
     A number of epilogue warps participate in the pipeline as producers, and one of them is designated as the consumer to perform TMA store.
     Named barrier is used to synchronize all warps so that producers write SMEM after the pipeline stage is available, and the consumer waits for all producers before issuing TMA store.
     The canonical pipeline flow is:
@@ -852,7 +956,7 @@ class TMAStorePipeline:
     index: int = 0
 
     def get_num_stages(self) -> int:
-        return self.stages  # type: ignore[return-value]
+        return self.stages
 
     def acquire_sync(self) -> "TMAStorePipeline":
         """
@@ -973,7 +1077,7 @@ class GroupedGemmSchedulerPipeline(GenericPipelineBase):
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
             OperationTypeEnum.SW_STATIC_PERSISTENT_TILE_SCHEDULER,
-            OperationTypeEnum.LDS,
+            OperationTypeEnum.LD_SHARED,
             producer_arv_count=producer_arv_count,
             consumer_arv_count=consumer_arv_count,
         )
@@ -989,7 +1093,12 @@ class GroupedGemmSchedulerPipeline(GenericPipelineBase):
         consumer_wait(self.raw_pipeline, self.consumer_state)
         return self
 
-    def consumer_release(self) -> "GroupedGemmSchedulerPipeline":
+    def consumer_release(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "GroupedGemmSchedulerPipeline":
         """Release consumer state."""
         consumer_release(self.raw_pipeline, self.consumer_state)
         return self
@@ -1005,22 +1114,52 @@ class CLCPipeline(GenericPipelineBase):
     Pipeline for tile scheduling (using CLC) to all warps.
     """
 
+    def __init__(
+        self,
+        raw_pipeline: ir.Value,
+        num_stages: cute.Int32,
+        producer_state: ir.Value,
+        consumer_state: ir.Value,
+        response_buffer: "cute.Tensor",
+    ) -> None:
+        super().__init__(raw_pipeline, num_stages, producer_state, consumer_state)
+        self.response_buffer = response_buffer
+
+    def __extract_mlir_values__(self) -> list:
+        base_values = super().__extract_mlir_values__()
+        return base_values + extract_mlir_values(self.response_buffer)
+
+    @classmethod
+    def __new_from_mlir_values__(cls, values: list) -> "CLCPipeline":
+        num_stages_dsl = Int32(0).__new_from_mlir_values__([values[1]])  # type: ignore[attr-defined]
+        return cls(
+            values[0],  # raw_pipeline
+            num_stages_dsl,
+            values[2],  # producer_state
+            values[3],  # consumer_state
+            values[4],  # response_buffer
+        )
+
     @staticmethod
     def create(
         *,
         num_stages: cute.Int32,
         consumer_arv_count: cute.Int32,
+        response_buffer: "cute.Tensor",
     ) -> "CLCPipeline":
         """
         Create a CLC to consumer pipeline.
 
         The consumer includes mma, tma, epilogue, and scheduler.
+
+        :param response_buffer: Multi-stage shared-memory buffer for CLC responses.
+            Each stage gets its own slot, indexed by stage index.
         """
 
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
             OperationTypeEnum.SM100_LAUNCH_CONTROL,
-            OperationTypeEnum.LDS,
+            OperationTypeEnum.LD_SHARED,
             producer_arv_count=1,
             consumer_arv_count=consumer_arv_count,
         )
@@ -1029,22 +1168,36 @@ class CLCPipeline(GenericPipelineBase):
             num_stages,
             producer_state,
             consumer_state,
+            response_buffer,
         )
 
-    def producer_commit(self) -> "CLCPipeline":
+    def producer_commit(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "CLCPipeline":
         """Commit producer state."""
         producer_commit(self.raw_pipeline, self.producer_state)
         return self
 
-    @staticmethod
-    def get_response_size() -> int:
-        """
-        Returns the size in bytes of a CLC response.
-        """
-        return 16
+    def get_response_ptr(self, stage_idx: ir.Value) -> ir.Value:
+        """Returns the response pointer for the given stage index."""
+        response = cute.slice_(self.response_buffer, stage_idx)
+        return response.iterator
 
-    def expect_response(self, mbar_ptr: Pointer) -> None:
+    def issue_next(self) -> None:
         """
-        Increments the expected transaction count of a CLC response.
+        Issues a CLC request for the next work tile.
+
+        Emits lir.work_item.issue_next which performs mbarrier.expect_tx
+        (fan-out across cluster CTAs) and clusterlaunchcontrol.try.cancel
+        in a single elected thread.
+        Must be called between producer_acquire and producer_commit.
         """
-        mbarrier_expect_tx(mbar_ptr, self.get_response_size(), cute.arch.lane_idx())
+        token, idx = get_pipeline_produce_stage(self.raw_pipeline, self.producer_state)
+        mbar_ptr = get_mbarrier(token).result
+        response_ptr = self.get_response_ptr(idx)
+        cutlass_lir_ir.WorkItemIssueNextOp(
+            mbar_ptr.value, response_ptr.value, elect_one_sync=True
+        )
