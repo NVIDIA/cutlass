@@ -477,6 +477,28 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
     d_type = data_types["d_type"]
     is_void_c = c_type == DataType.void
 
+    # Early pruning: accumulator register-file budget (level 0 only)
+    #
+    # Each math warpgroup keeps its 4-byte accumulator fragment in the register
+    # file:
+    #   - TmaWarpSpecialized and *Pingpong schedules compute one full CTA tile
+    #     per math warpgroup -> cta_m * cta_n / 128 registers per thread
+    #   - *Cooperative schedules split the CTA tile across two math warpgroups
+    #     along M -> cta_m * cta_n / 256 registers per thread
+    # Beyond 128 accumulator registers per thread (per-warpgroup M x N larger
+    # than 64 x 256) the accumulator no longer fits in the 255-register budget
+    # alongside mainloop state, so ptxas spills it to local memory on every
+    # mainloop iteration. Measured on H100 (16-bit dense GEMM, 8192^3):
+    # 128x256/256x128 pingpong and warpspecialized configurations run at
+    # 44-90 TFLOP/s and 256x256 cooperative at ~43 TFLOP/s, versus ~900 TFLOP/s
+    # for configurations whose accumulator fits.
+    accum_fits_full_tile = cta_m * cta_n <= 64 * 256
+    accum_fits_split_tile = cta_m * cta_n <= 2 * 64 * 256
+    can_do_warpspecialized = accum_fits_full_tile or level >= 1
+    can_do_pingpong = accum_fits_full_tile or level >= 1
+    if level < 1:
+        can_do_cooperative = can_do_cooperative and accum_fits_split_tile
+
     # Filter out invalid kernels
     is_nt = layout[0][0] == LayoutType.ColumnMajor and layout[1][0] == LayoutType.RowMajor
     is_tn = layout[0][0] == LayoutType.RowMajor and layout[1][0] == LayoutType.ColumnMajor
@@ -614,13 +636,16 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
     # Pruning: emit Void-C and Grouped kernels with persistent kernels only
     if (level >= 1 or not is_void_c) and not grouped and not is_blockwise(gemm_kind):
         # Pruning: don't stamp out fp8 kernels with auto schedule
-        if not is_fp8:
+        # Auto resolves to a cooperative-style schedule for large tiles, so it
+        # is subject to the split-tile accumulator budget.
+        if not is_fp8 and (level >= 1 or accum_fits_split_tile):
             schedules.append([KernelScheduleType.ScheduleAuto, auto_epilogue])
-        schedules.append([KernelScheduleType.TmaWarpSpecialized, default_epilogue])
+        if can_do_warpspecialized:
+            schedules.append([KernelScheduleType.TmaWarpSpecialized, default_epilogue])
     stream_k_schedules = []
     
     if CudaToolkitVersionSatisfies(cuda_version, 12, 0):
-        if can_do_tma_epilogue:
+        if can_do_tma_epilogue and can_do_pingpong:
             assert not requires_transposed_epilogue
             # Inconsistency: fp8 pingpong only gets stamped out with fast accum
             if (not is_fp8 or level >= 1) and not is_blockwise(gemm_kind):
@@ -636,16 +661,17 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
 
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         # Pruning: don't stamp out fp8 ping-pong kernel with non-tma epilogue
-        if not is_fp8 or level >= 1:
+        if (not is_fp8 or level >= 1) and can_do_pingpong:
             if not is_blockwise(gemm_kind):
                 schedules.append([to_grouped_schedule(KernelScheduleType.TmaWarpSpecializedPingpong, grouped), to_grouped_schedule(default_epilogue, grouped)])
             else:
                 schedules.append([to_grouped_schedule(KernelScheduleType.BlockwiseTmaWarpSpecializedPingpong, grouped), to_grouped_schedule(default_epilogue, grouped)])
 
         if can_do_fp8_fast_accum:
-            if not grouped:
+            if not grouped and can_do_warpspecialized:
                 schedules.append([KernelScheduleType.TmaWarpSpecializedFP8FastAccum, default_epilogue])
-            schedules.append([to_grouped_schedule(KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, grouped), to_grouped_schedule(default_epilogue, grouped)])
+            if can_do_pingpong:
+                schedules.append([to_grouped_schedule(KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, grouped), to_grouped_schedule(default_epilogue, grouped)])
 
         if can_do_cooperative:
             if is_blockwise(gemm_kind):
