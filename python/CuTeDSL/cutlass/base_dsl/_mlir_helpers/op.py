@@ -58,6 +58,9 @@ def _find_user_frame(start_frame: types.FrameType | None) -> types.FrameType | N
     Returns the first frame whose file is not under the DSL package root.
     Falls back to start_frame if no user frame is found (e.g. all frames are library code).
     """
+    if not _ENABLE_FRAME_FILTERING:
+        return start_frame
+
     frame = start_frame
     while frame is not None:
         if not _is_framework_frame(frame.f_code.co_filename):

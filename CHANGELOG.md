@@ -2,6 +2,12 @@
 
 # CUTLASS 4.x
 
+## [4.5.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.3) (2026-07-03)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Fixed a compilation time regression issue in 4.5.0. Compilation times now match those in the 4.4 and 4.6 branches.
+
 ## [4.5.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.2) (2026-05-22)
 
 ### CuTe DSL
