@@ -82,3 +82,38 @@ def dot(
     )
 
 
+@dsl_user_op
+def dot_sparse(
+    mma_atom: cute.MmaAtom,
+    a: cute.Tensor,
+    e: cute.Tensor,
+    b: cute.Tensor,
+    c: cute.Tensor,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Emit a sparse MMA operation.
+
+    :param mma_atom: Regular sparse MMA atom. The op derives the metadata
+        operand expected by the atom from ``e`` during lowering.
+    :param a: Sparse A operand partitioned as rank-3 ``(V, Rest, K)``.
+    :param e: Sparse metadata operand partitioned as rank-3 ``(V, Rest, K)``.
+    :param b: Dense B operand partitioned as rank-3 ``(V, Rest, K)``.
+    :param c: Accumulator/result operand.
+    :param loc: Optional MLIR location.
+    :param ip: Optional MLIR insertion point.
+    """
+    a = _ensure_rank3(a, loc, ip)
+    e = _ensure_rank3(e, loc, ip)
+    b = _ensure_rank3(b, loc, ip)
+    cutlass_lir.DotSparseOp(
+        mma_atom._unpack(),
+        a.value,
+        e.value,
+        b.value,
+        c.value,
+        loc=loc,
+        ip=ip,
+    )
+
+

@@ -23,6 +23,7 @@ from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, builtin, llvm, math, nvvm as _nvvm_raw, vector
 
 from .constants import WARP_SIZE
+from .elect import make_warp_uniform
 
 from ..core import size
 
@@ -171,7 +172,6 @@ def _enhance_enum_with_str_mapping(enum_class: Any) -> Any:
         str_to_enum_map[str_repr] = member
 
     # Add from_str class method
-    @classmethod  # type: ignore[misc]
     def from_str(cls: Any, s: Any) -> Any:
         """
         Convert a string literal to the corresponding enum member.
@@ -204,7 +204,7 @@ def _enhance_enum_with_str_mapping(enum_class: Any) -> Any:
             )
         return str_to_enum_map[s]
 
-    enum_class.from_str = from_str
+    enum_class.from_str = classmethod(from_str)
     return enum_class
 
 
@@ -331,7 +331,7 @@ def warp_idx(
     ntid_x = Int32(nvvm.read_ptx_sreg_ntid_x(T.i32(), loc=loc, ip=ip))
     ntid_y = Int32(nvvm.read_ptx_sreg_ntid_y(T.i32(), loc=loc, ip=ip))
     tid = tid_x + tid_y * ntid_x + tid_z * ntid_x * ntid_y
-    return tid // WARP_SIZE
+    return make_warp_uniform(tid // WARP_SIZE, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -486,6 +486,119 @@ def dynamic_smem_size(
     Returns the launch dynamic smem size.
     """
     return Int32(nvvm.read_ptx_sreg_dynamic_smem_size(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def total_smem_size(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the total shared memory reserved for the CTA, in bytes.
+
+    This is the static plus dynamic shared-memory size for the CTA.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-total-smem-size
+
+    :return: Total CTA shared-memory size in bytes
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_total_smem_size(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def aggr_smem_size(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the aggregate shared memory across the CTA's cluster, in bytes (sm_90+).
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-aggr-smem-size
+
+    :return: Aggregate cluster shared-memory size in bytes
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_aggr_smem_size(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def gridid(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns a unique identifier for the current grid launch.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-gridid
+
+    :return: Grid launch identifier
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_gridid(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def nwarpid(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the maximum number of warp slots (warp IDs) per SM.
+
+    Defines the valid range for physical_warp_id() as [0, nwarpid() - 1].
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-nwarpid
+
+    :return: Number of warp slots per SM
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_nwarpid(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def warpsize(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the warp size in threads as a runtime register read (``%WARP_SZ``).
+
+    Prefer the compile-time ``WARP_SIZE`` constant unless a runtime read is
+    specifically required; both are 32 on current hardware.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-warpid-nwarpid-warpsize
+
+    :return: Warp size in threads
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_warpsize(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def globaltimer(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int64:
+    """
+    Returns the 64-bit global nanosecond timer (``%globaltimer``).
+
+    Intended for use by NVIDIA tools: the behavior is target-specific and may
+    change or be removed on future architectures.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-globaltimer-globaltimer-lo-globaltimer-hi
+
+    :return: Global timer value in nanoseconds
+    :rtype: Int64
+    """
+    return Int64(nvvm.read_ptx_sreg_globaltimer(T.i64(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def globaltimer_lo(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the low 32 bits of the global nanosecond timer (``%globaltimer_lo``).
+
+    :return: Low 32 bits of the global timer
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_globaltimer_lo(T.i32(), loc=loc, ip=ip))
 
 
 @dsl_user_op
@@ -1308,13 +1421,21 @@ def fmax(
     a: Union[float, Float32],
     b: Union[float, Float32],
     *,
+    abs: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
+    """Floating-point max via ``nvvm.fmax`` (FMNMX, not ``arith.max``/SEL).
+
+    :param abs: When True, lower to the xorsign-abs form
+        ``sign(a ^ b) * max(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
+        plain max. NaN / signed-zero behavior follows the underlying NVVM op.
+    """
     return Float32(
         nvvm.fmax(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
+            abs=abs,
             loc=loc,
             ip=ip,
         )
@@ -1326,13 +1447,21 @@ def fmin(
     a: Union[float, Float32],
     b: Union[float, Float32],
     *,
+    abs: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
+    """Floating-point min via ``nvvm.fmin`` (FMNMX, not ``arith.min``/SEL).
+
+    :param abs: When True, lower to the xorsign-abs form
+        ``sign(a ^ b) * min(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
+        plain min. NaN / signed-zero behavior follows the underlying NVVM op.
+    """
     return Float32(
         nvvm.fmin(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
+            abs=abs,
             loc=loc,
             ip=ip,
         )
@@ -1525,6 +1654,30 @@ def cvt_f32_bf16(
         "=h,f",
     )
     return bf16_val
+
+
+@dsl_user_op
+def cvt_f32_tf32(
+    src_f32: Union[float, Float32, ir.Value],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert one f32 value to a TF32 MMA operand register."""
+    src_val = (
+        src_f32
+        if isinstance(src_f32, ir.Value)
+        else Float32(src_f32).ir_value(loc=loc, ip=ip)
+    )
+    return llvm.inline_asm(
+        Int32.mlir_type,
+        [src_val],
+        "cvt.rna.tf32.f32 $0, $1;",
+        "=r,f",
+        has_side_effects=False,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
 
 
 # Convert vector of 4 int8 values to vector of 4 float32 values
@@ -2009,6 +2162,101 @@ def cvt_i4x8_to_bf16x8(
     vec_bf16x8_type = ir.VectorType.get([8], BFloat16.mlir_type, loc=loc)
     vec_bf16x8 = llvm.bitcast(vec_bf16x8_type, rst_i32, loc=loc, ip=ip)
     return vec_bf16x8
+
+
+@dsl_user_op
+def cvt_i4x8_to_mxf8x8_impl(
+    src_i32: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert eight packed int4 values to two int32 words of FP8 bytes.
+
+    ``src_i32`` holds eight signed int4 values, one nibble per element. The
+    inline PTX uses ``prmt.b32`` with positive and negative E4M3 lookup tables
+    to produce the raw FP8 byte encodings in two 32-bit words.
+
+    :param src_i32: Packed int4 source value containing eight 4-bit elements.
+    :type src_i32: i32
+    :return: Vector of two i32 values, each containing four packed FP8 bytes.
+    :rtype: vector<2xi32>
+    """
+    sign_mask = arith.constant(Int32.mlir_type, 0x88888888, loc=loc, ip=ip)
+    lut_idx_mask = arith.constant(Int32.mlir_type, 0x77777777, loc=loc, ip=ip)
+    final_prmt_base = arith.constant(Int32.mlir_type, 0x32103210, loc=loc, ip=ip)
+    one = arith.constant(Int32.mlir_type, 1, loc=loc, ip=ip)
+    sixteen = arith.constant(Int32.mlir_type, 16, loc=loc, ip=ip)
+
+    POS_E4M3s_REG1 = arith.constant(Int32.mlir_type, 0x44403800, loc=loc, ip=ip)
+    POS_E4M3s_REG2 = arith.constant(Int32.mlir_type, 0x4E4C4A48, loc=loc, ip=ip)
+    NEG_E4M3s_REG1 = arith.constant(Int32.mlir_type, 0xCACCCED0, loc=loc, ip=ip)
+    NEG_E4M3s_REG2 = arith.constant(Int32.mlir_type, 0xB8C0C4C8, loc=loc, ip=ip)
+
+    sign = arith.andi(src_i32, sign_mask, loc=loc, ip=ip)
+    sign = arith.shrui(sign, one, loc=loc, ip=ip)
+
+    lut_idx = arith.andi(src_i32, lut_idx_mask, loc=loc, ip=ip)
+
+    rsts = []
+    for i in range(2):
+        final_prmt_idx = arith.ori(sign, final_prmt_base, loc=loc, ip=ip)
+        rst = llvm.inline_asm(
+            Int32.mlir_type,
+            [
+                POS_E4M3s_REG1,
+                POS_E4M3s_REG2,
+                NEG_E4M3s_REG1,
+                NEG_E4M3s_REG2,
+                lut_idx,
+                final_prmt_idx,
+            ],
+            """{\n\t
+            .reg .b32 pos_f8s, neg_f8s;\n\t
+            prmt.b32 pos_f8s, $1, $2, $5;\n\t
+            prmt.b32 neg_f8s, $3, $4, $5;\n\t
+            prmt.b32 $0, pos_f8s, neg_f8s, $6;\n\t
+            }""",
+            "=r,n,n,n,n,r,r",
+        )
+        rsts.append(rst)
+
+        sign = arith.shrui(sign, sixteen, loc=loc, ip=ip)
+        lut_idx = arith.shrui(lut_idx, sixteen, loc=loc, ip=ip)
+
+    vec_type = ir.VectorType.get([2], Int32.mlir_type, loc=loc)
+    return vector.from_elements(vec_type, rsts, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def cvt_i4x8_to_mxf8x8(
+    src_vec8: ir.Value,
+    *,
+    dst_type: ir.Type,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert eight int4 values to FP8 operand bytes for MXF8 MMA.
+
+    The output values are generated as raw bytes by
+    :func:`cvt_i4x8_to_mxf8x8_impl`, then bitcast to ``vector<8 x dst_type>``.
+    Callers normally pass ``Int8.mlir_type`` and treat the result as raw bytes;
+    higher-level helpers may bitcast those bytes to an FP8 vector afterward.
+    This keeps the conversion instruction sequence small and avoids building
+    intermediate FP8 constants directly.
+
+    :param src_vec8: Source vector with eight int4 elements.
+    :type src_vec8: vector<8xi4>
+    :param dst_type: MLIR element type for the output bytes, usually ``Int8.mlir_type``.
+    :type dst_type: ir.Type
+    :return: Vector with eight FP8 elements.
+    :rtype: vector<8 x dst_type>
+    """
+    # Pack 8 int4 values into 1 int32 value and fill upper bits with 0.
+    src_i32 = llvm.bitcast(Int32.mlir_type, src_vec8, loc=loc, ip=ip)
+    rst_i32x2 = cvt_i4x8_to_mxf8x8_impl(src_i32, loc=loc, ip=ip)
+    vec_mxf8x8_type = ir.VectorType.get([8], dst_type, loc=loc)
+    return llvm.bitcast(vec_mxf8x8_type, rst_i32x2, loc=loc, ip=ip)
 
 
 # Sign extend 4 int4 unpacked in 8b containers
@@ -2627,24 +2875,22 @@ def atomic_fmax(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
-    """
-    Implementation of atomic fmax using integer bitcast.
+    """Atomically apply fmax through integer-bitcast atomics.
 
-    Works for +inf, -inf, and signbit-0 nans including canonical nan.
-    Atomically maxes `val` to the value at memory location `ptr` and returns the old value.
+    This wrapper handles ``+inf``, ``-inf``, and sign-bit-zero NaNs,
+    including canonical NaN.
 
-    :param ptr: Pointer to memory location. Supports:
-        - ir.Value (LLVM pointer)
-        - cute.ptr (_Pointer instance)
-    :param val: value to max
+    :param ptr: Pointer to the memory location.
+    :type ptr: Union[ir.Value, Pointer]
+    :param val: Value to combine with memory.
     :type val: Float32
-    :param sign_bit: Indicates the sign bit of `val` if known beforehand, e.g. abs vals
-    :type sign_bit: Optional[bool]
-    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
-    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
-    :return: Old value at memory location
+    :param sign_bit: Known sign bit of ``val``, defaults to None.
+    :type sign_bit: Optional[bool], optional
+    :param sem: Memory semantic, defaults to None.
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]], optional
+    :param scope: Memory scope, defaults to None.
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]], optional
+    :return: Old value at ``ptr``.
     :rtype: Float32
     """
     intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
@@ -2652,6 +2898,64 @@ def atomic_fmax(
         ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
     )
     else_body = lambda: atomic_max(
+        ptr, Int32(intval), sem=sem, scope=scope, loc=loc, ip=ip
+    )
+
+    if sign_bit is None:
+        old_intval = cutlass_dsl.if_generate(
+            Int32(intval) < 0,
+            then_body,
+            else_body,
+            [],
+            [Int32],
+            loc=loc,
+            ip=ip,
+        )
+    elif sign_bit:
+        old_intval = then_body()
+    else:
+        old_intval = else_body()
+
+    assert not isinstance(old_intval, list)
+    return Float32(
+        llvm.bitcast(T.f32(), old_intval.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+    )
+
+
+@dsl_user_op
+def atomic_fmin(
+    ptr: Union[ir.Value, Pointer],
+    val: Float32,
+    *,
+    sign_bit: Optional[bool] = None,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Float32:
+    """Atomically apply fmin through integer-bitcast atomics.
+
+    This wrapper handles ``+inf``, ``-inf``, and sign-bit-zero NaNs,
+    including canonical NaN.
+
+    :param ptr: Pointer to the memory location.
+    :type ptr: Union[ir.Value, Pointer]
+    :param val: Value to combine with memory.
+    :type val: Float32
+    :param sign_bit: Known sign bit of ``val``, defaults to None.
+    :type sign_bit: Optional[bool], optional
+    :param sem: Memory semantic, defaults to None.
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]], optional
+    :param scope: Memory scope, defaults to None.
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]], optional
+    :return: Old value at ``ptr``.
+    :rtype: Float32
+    """
+    intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+    then_body = lambda: atomic_max(
+        ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
+    )
+    else_body = lambda: atomic_min(
         ptr, Int32(intval), sem=sem, scope=scope, loc=loc, ip=ip
     )
 

@@ -10,7 +10,9 @@
 # is strictly prohibited.
 
 # Local module imports
+from . import vector as vector
 from .dsl import *
+from .pointer import *
 from .runtime import *
 from .._mlir_helpers import lru_cache_ir, dsl_user_op
 from .env_manager import get_str_env_var, detect_gpu_arch

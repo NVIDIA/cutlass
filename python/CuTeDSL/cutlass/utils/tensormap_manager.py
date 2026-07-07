@@ -16,11 +16,11 @@ from typing import Optional, Tuple
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
+from cutlass.address_space import AddressSpace
 from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass.cute as cute
 from cutlass import const_expr
-from cutlass.cute.core import AddressSpace as _CuteAddressSpace
 from cutlass.cute.core import make_ptr as _cute_make_ptr
 
 
@@ -54,14 +54,14 @@ class TensorMapManager:
     def get_tensormap_ptr(
         self,
         ptr: cute.Pointer,
-        address_space: _cute_ir.AddressSpace = _cute_ir.AddressSpace.gmem,
+        address_space: AddressSpace = AddressSpace.gmem,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> cute.Pointer:
         if address_space not in [
-            _cute_ir.AddressSpace.gmem,
-            _cute_ir.AddressSpace.generic,
+            AddressSpace.gmem,
+            AddressSpace.generic,
         ]:
             raise ValueError(f"Invalid address space: {address_space} for tensormap")
 
@@ -148,7 +148,7 @@ class TensorMapManager:
                 _cute_make_ptr(
                     p.dtype,
                     cute.arch.make_warp_uniform(p.toint(), loc=loc, ip=ip),
-                    mem_space=_CuteAddressSpace.smem,
+                    mem_space=AddressSpace.smem,
                     assumed_align=p.alignment,
                 )
                 for p in tensormap_smem_ptr

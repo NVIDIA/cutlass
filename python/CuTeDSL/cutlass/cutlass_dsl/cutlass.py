@@ -34,7 +34,6 @@ from typing import (
 )
 import functools
 import inspect
-import pkgutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import fields
 from math import ceil
@@ -59,8 +58,8 @@ from ..base_dsl.dsl import (
 )
 from ..base_dsl.typing import *
 from ..base_dsl.typing import (
-    DynamicExpression,
     get_mlir_types,
+    Pointer,
     Int32,
     Int64,
     Int8,
@@ -73,7 +72,13 @@ from ..base_dsl.typing import (
     get_c_pointers,
     cast,
 )
-from ..base_dsl.common import DSLRuntimeError, DSLNotImplemented
+from ..base_dsl.common import (
+    DSLRuntimeError,
+    DSLUserCodeError,
+    DSLNotImplemented,
+    active_env_manager,
+)
+from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.utils.logger import log
 from ..base_dsl.utils.tree_utils import (
     Leaf,
@@ -85,7 +90,7 @@ from ..base_dsl.utils.tree_utils import (
 )
 from ..base_dsl.leaf_utils import is_frozen_dataclass
 from ..base_dsl.runtime.jit_arg_adapters import is_arg_annotation_constexpr
-from ..base_dsl.jit_executor import ExecutionArgs  # noqa: F401
+from ..base_dsl.jit_executor import ExecutionArgs, _is_pointer_annotation  # noqa: F401
 from ..base_dsl.runtime import cuda as cuda_helpers
 from .cuda_stream_adapter import CudaDriverStreamAdapter, CudaRuntimeStreamAdapter  # noqa: F401
 from .cuda_library_adapter import CudaDialectLibraryAdapter  # noqa: F401
@@ -210,6 +215,42 @@ def is_cute_algebra_type(arg_spec: object) -> bool:
     return False
 
 
+def _is_cutlass_pointer_annotation(annotation: object) -> bool:
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    return type(annotation).__name__ == "TypedPointer" or (
+        getattr(annotation, "__name__", None) == "Pointer"
+        and getattr(annotation, "__module__", "").endswith("cutlass.base_dsl.typing")
+    )
+
+
+def _is_cute_pointer_like(arg: object) -> bool:
+    module = type(arg).__module__
+    return (
+        module.startswith("cutlass.cute")
+        and hasattr(arg, "dtype")
+        and hasattr(arg, "memspace")
+        and (
+            hasattr(arg, "__get_mlir_types__")
+            or hasattr(arg, "__extract_mlir_values__")
+        )
+    )
+
+
+def _cutlass_pointer_dtype_addrspace(
+    annotation: object,
+    arg: object,
+) -> tuple[type[Numeric], int]:
+    if type(annotation).__name__ == "TypedPointer":
+        dtype = annotation.dtype  # type: ignore[attr-defined]
+        space = annotation.space  # type: ignore[attr-defined]
+    else:
+        dtype = getattr(arg, "dtype", Int8)
+        space = getattr(arg, "memspace", 0)
+    addrspace = getattr(space, "value", space)
+    return dtype, int(addrspace)
+
+
 def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
     """Build launch-time CUDA function attrs that are known before compilation."""
     ATTR_SMEM_CARVEOUT = cuda_helpers.cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT
@@ -254,13 +295,8 @@ class CutlassBaseDSL(BaseDSL):
 
         def attach_and_decorate(func: Callable[..., None]) -> Callable[..., None]:
             if target_cls._KERNEL_ATTR_SPEC_FIELD is None:
-                raise DSLRuntimeError(
-                    f"{target_cls.__name__} does not support kernel-level 'attributes='.",
-                    suggestion=(
-                        "Only DSLs that set _KERNEL_ATTR_SPEC_FIELD support the "
-                        "'attributes=' kwarg on @kernel; remove the argument or use "
-                        "a DSL that supports it."
-                    ),
+                raise DSLUserCodeError(
+                    DiagId.CONFIG_ATTRIBUTES_UNSUPPORTED,
                 )
             setattr(func, target_cls._KERNEL_ATTR_SPEC_FIELD, attr_spec)
             return kernel_decorator(func)
@@ -283,6 +319,7 @@ class CutlassBaseDSL(BaseDSL):
             device_compilation_only=device_compilation_only,
             preprocess=preprocess,
         )
+        self._smem_partition_num: Optional[int] = 2
         self._smem_usage_tracker: Optional[tuple] = None
         # extra function to convert cute arguments to tvm ffi spec params
         # this needs to be reverse registered because the arg convention
@@ -334,15 +371,13 @@ class CutlassBaseDSL(BaseDSL):
             if resolved is None:
                 return {}
             if not isinstance(resolved, dict):
-                raise DSLRuntimeError(
-                    "Kernel attribute resolver must return a dict or None.",
-                    suggestion="Return a dict[str, str | ir.Attribute], or None for no attributes.",
+                raise DSLUserCodeError(
+                    DiagId.CONFIG_RESOLVER_INVALID_RETURN,
                 )
             return resolved
 
-        raise DSLRuntimeError(
-            f"Unsupported kernel decorator attributes spec type: {type(attr_spec)}",
-            suggestion="Use a dict or a callable returning dict[str, str | ir.Attribute].",
+        raise DSLUserCodeError(
+            DiagId.CONFIG_ATTRIBUTES_INVALID_TYPE,
         )
 
     def _collect_extra_kernel_value_attrs(
@@ -361,8 +396,9 @@ class CutlassBaseDSL(BaseDSL):
                     suggestion = f"Use one of the allowed keys: {allowed_keys}."
                 else:
                     suggestion = f"No extra kernel function attributes are supported for '{self.name}'."
-                raise DSLRuntimeError(
-                    f"Unsupported kernel function attribute key '{key}'.",
+                raise DSLUserCodeError(
+                    DiagId.CONFIG_ATTR_KEY_UNSUPPORTED,
+                    key=key,
                     suggestion=suggestion,
                 )
             if isinstance(value, ir.Attribute):
@@ -370,9 +406,9 @@ class CutlassBaseDSL(BaseDSL):
             elif isinstance(value, str):
                 converted_attrs[key] = ir.StringAttr.get(value)
             else:
-                raise DSLRuntimeError(
-                    f"Unsupported kernel function attribute value type for '{key}': {type(value)}",
-                    suggestion="Use str or ir.Attribute as the attribute value.",
+                raise DSLUserCodeError(
+                    DiagId.CONFIG_ATTR_VALUE_TYPE_INVALID,
+                    key=key,
                 )
         return converted_attrs
 
@@ -456,9 +492,8 @@ class CutlassBaseDSL(BaseDSL):
             max_ntid_str = ", ".join(map(str, config.max_number_threads))
             for value in config.max_number_threads:
                 if is_dynamic_expression(value):
-                    raise DSLRuntimeError(
-                        f"User defined max number threads `{max_ntid_str}` contains dynamic expression, cannot generate `nvvm.maxntid`",
-                        suggestion="Consider using `Constexpr` annotation or Python constant",
+                    raise DSLUserCodeError(
+                        DiagId.CONFIG_MAX_THREADS_DYNAMIC,
                     )
             # Use user-defined maxntid
             ret["nvvm.maxntid"] = ir.Attribute.parse(f"array<i32 : {max_ntid_str}>")
@@ -484,20 +519,27 @@ class CutlassBaseDSL(BaseDSL):
         if config.smem_merge_branch_allocs:
             ret["smem.merge_branch_allocs"] = ir.UnitAttr.get()
 
+        # Set smem partition num
+        if self._smem_partition_num is not None:
+            ret["smem.partition_num"] = ir.IntegerAttr.get(
+                ir.IntegerType.get_signless(32), self._smem_partition_num
+            )
+
         return ret
 
     @staticmethod
     def _normalize_static_cluster_dim(dim: Any, config_name: str) -> int:
         if is_dynamic_expression(dim):
-            raise DSLRuntimeError(
-                f"`LaunchConfig.{config_name}` contains dynamic expression, cannot materialize compiler-visible cluster metadata",
-                suggestion="Consider using `Constexpr` annotation or Python constant",
+            raise DSLUserCodeError(
+                DiagId.CONFIG_CLUSTER_DYNAMIC,
+                config_name=config_name,
             )
 
         value = dim.value if isinstance(dim, Integer) else dim
         if isinstance(value, bool) or not isinstance(value, Integral):
-            raise DSLRuntimeError(
-                f"`LaunchConfig.{config_name}` must contain integer dimensions, but got {type(value)}"
+            raise DSLUserCodeError(
+                DiagId.TYPE_CLUSTER_NOT_INT,
+                config_name=config_name,
             )
 
         return int(value)
@@ -517,8 +559,8 @@ class CutlassBaseDSL(BaseDSL):
         cls, config: BaseDSL.LaunchConfig
     ) -> dict[str, ir.Attribute]:
         if config.has_fallback_cluster and not config.has_cluster:
-            raise DSLRuntimeError(
-                "`LaunchConfig.fallback_cluster` requires `LaunchConfig.cluster` to also be set"
+            raise DSLUserCodeError(
+                DiagId.CONFIG_FALLBACK_CLUSTER_REQUIRES_CLUSTER,
             )
 
         if config.has_fallback_cluster:
@@ -647,19 +689,51 @@ class CutlassBaseDSL(BaseDSL):
             ) from e
         files.append((giant_dso_name, so_path, so_size))
 
-        for lib in pkgutil.walk_packages([dsl_path], prefix="cutlass."):
-            spec = lib.module_finder.find_spec(lib.name)  # type: ignore[call-arg]
-            if not spec or not spec.origin:
+        # Walk the filesystem to collect .py files for hashing. We deliberately
+        # avoid pkgutil.walk_packages here because it imports every module it
+        # discovers — and modules with top-level decorator side effects (e.g.
+        # _mlir_helpers/arith.py's @ir.register_value_caster) blow up if they
+        # end up reachable via two import paths in the same process. The hash
+        # only needs file contents, not importability.
+        for entry in sorted(os.listdir(dsl_path)):
+            sub = os.path.join(dsl_path, entry)
+            if not os.path.isdir(sub):
                 continue
-            path = spec.origin
-            try:
-                size = os.path.getsize(path)
-            except Exception as e:
-                raise DSLRuntimeError(
-                    f"Failed to read module file {lib.name}. The file may not exist or may not be readable."
-                    "Please re-install the package."
-                ) from e
-            files.append((lib.name, path, size))
+            if not os.path.isfile(os.path.join(sub, "__init__.py")):
+                # Skip non-package directories (build/, examples/, doc/, ...).
+                # This matches pkgutil.walk_packages, which only descends into
+                # regular packages found on the given path list.
+                continue
+            for root, dirs, fnames in os.walk(sub):
+                # Only descend into subdirectories that are themselves
+                # regular packages — matches pkgutil.walk_packages, which
+                # treats dirs without __init__.py as outside the import
+                # namespace and skips them.
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if d != "__pycache__"
+                    and os.path.isfile(os.path.join(root, d, "__init__.py"))
+                ]
+                for fname in fnames:
+                    if not fname.endswith(".py"):
+                        continue
+                    path = os.path.join(root, fname)
+                    rel = os.path.relpath(path, dsl_path)
+                    no_ext = rel[: -len(".py")]
+                    init_suffix = os.sep + "__init__"
+                    if no_ext.endswith(init_suffix):
+                        no_ext = no_ext[: -len(init_suffix)]
+                    key = "cutlass." + no_ext.replace(os.sep, ".")
+                    try:
+                        size = os.path.getsize(path)
+                    except OSError as e:
+                        raise DSLRuntimeError(
+                            f"Failed to read module file {key}. "
+                            "The file may not exist or may not be readable. "
+                            "Please re-install the package."
+                        ) from e
+                    files.append((key, path, size))
 
         # Submit chunks to a job queue
         chunk_size = 1 << 24  # 16 MB (tuned)
@@ -716,6 +790,24 @@ class CutlassBaseDSL(BaseDSL):
         with ip:
             zero = arith.ConstantOp(return_type, 0).result
         return [zero]
+
+    def _runtime_can_run_compiled(
+        self, runtime_arch: Optional[str], compiled_arch: Optional[str]
+    ) -> bool:
+        """Allow a family-portable target (e.g. sm_100f) to run on its family
+        hardware (e.g. sm_100a), in addition to an exact arch match."""
+        if runtime_arch == compiled_arch:
+            return True
+        if runtime_arch is None or compiled_arch is None:
+            return False
+        from ..base_dsl.arch import Arch
+
+        try:
+            return Arch.from_string(runtime_arch).can_run_binary_built_for(
+                Arch.from_string(compiled_arch)
+            )
+        except KeyError:
+            return False
 
     def compile_and_cache(
         self,
@@ -1251,6 +1343,10 @@ class CutlassBaseDSL(BaseDSL):
                 if not any(
                     (ty is Any)
                     or (isinstance(ty, type) and isinstance(arg, ty))
+                    or (
+                        _is_cutlass_pointer_annotation(ty)
+                        and _is_cute_pointer_like(arg)
+                    )
                     or (get_origin(ty) is tuple and isinstance(arg, tuple))
                     or (
                         get_origin(ty) is Annotated and isinstance(arg, get_args(ty)[0])
@@ -1269,6 +1365,16 @@ class CutlassBaseDSL(BaseDSL):
                 and arg.__class__.__name__ == "_FakeStream"
             ):
                 # allow FakeStream to be passed as CUDA stream
+                pass
+
+            elif getattr(
+                arg, "_python_pointer_address_arg", False
+            ) is True and _is_pointer_annotation(arg_annotation):
+                pass
+
+            elif _is_cutlass_pointer_annotation(
+                arg_annotation
+            ) and _is_cute_pointer_like(arg):
                 pass
 
             elif isinstance(arg_annotation, type):
@@ -1311,7 +1417,17 @@ class CutlassBaseDSL(BaseDSL):
             assert jit_arg_attr is not None
             assert jit_exec_arg is not None
             # Handle DSL specific types
-            if is_cute_algebra_type(arg_spec):
+            if _is_cutlass_pointer_annotation(arg_spec) and _is_cute_pointer_like(arg):
+                _dtype, addrspace = _cutlass_pointer_dtype_addrspace(arg_spec, arg)
+                from cutlass._mlir.dialects import llvm as llvm_dialect
+
+                jit_arg_type.append(llvm_dialect.PointerType.get(addrspace))
+                jit_arg_attr.append(default_attr)
+                if is_host:
+                    jit_exec_arg.extend(get_c_pointers(arg))
+                else:
+                    jit_exec_arg.append(arg.to_llvm_ptr())
+            elif is_cute_algebra_type(arg_spec):
                 dyn_vals = extract_mlir_values(arg)
                 if dyn_vals:
                     # Handle dynamic types
@@ -1366,7 +1482,12 @@ class CutlassBaseDSL(BaseDSL):
         )
         if not ir_arg:
             # Handling DSL specific types
-            if is_cute_algebra_type(arg_spec):
+            if _is_cutlass_pointer_annotation(arg_spec) and _is_cute_pointer_like(arg):
+                dtype, addrspace = _cutlass_pointer_dtype_addrspace(arg_spec, arg)
+                blk_args = fop_args[iv_block_args : iv_block_args + 1]
+                ir_arg.append(Pointer(blk_args[0], dtype=dtype, space=addrspace))
+                iv_block_args += 1
+            elif is_cute_algebra_type(arg_spec):
                 n_args = len(get_mlir_types(arg))
                 blk_args = fop_args[iv_block_args : iv_block_args + n_args]
                 ir_arg.append(new_from_mlir_values(arg, blk_args))
@@ -1535,6 +1656,13 @@ class CuTeDSL(CutlassBaseDSL):
         this generates only a gpu.module containing a cuda.func with no
         host-side wrapper and no launch op. Supports return values.
         """
+        # Device compilation can be invoked directly by cute.compile.
+        with active_env_manager(self.envar):
+            return self._device_func_impl(funcBody, *args, **kwargs)
+
+    def _device_func_impl(
+        self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
         if ir.Context.current is not None and ir.InsertionPoint.current is not None:
             return funcBody(*args, **kwargs)
 
@@ -1640,9 +1768,8 @@ class CuTeDSL(CutlassBaseDSL):
                     elif hasattr(ret_annotation, "_struct_type"):
                         ret_types = [ret_annotation._struct_type]
                     else:
-                        raise DSLRuntimeError(
-                            f"Device function return type annotation must be a DSL type "
-                            f"(e.g. Float32) or @native_struct, got {ret_annotation}"
+                        raise DSLUserCodeError(
+                            DiagId.TYPE_DEVICE_FUNC_RETURN_INVALID,
                         )
 
                 loc = self.get_ir_location(setup.location)
@@ -1677,18 +1804,17 @@ class CuTeDSL(CutlassBaseDSL):
                             # Generate return op
                             if ret_types:
                                 if result is None:
-                                    raise DSLRuntimeError(
-                                        f"Device function '{funcBody.__name__}' has return "
-                                        f"type annotation but returned None"
+                                    raise DSLUserCodeError(
+                                        DiagId.TYPE_DEVICE_FUNC_RETURN_NONE,
                                     )
                                 if hasattr(result, "ir_value"):
                                     ret_val = result.ir_value()
                                 elif hasattr(result, "__extract_mlir_values__"):
                                     extracted_vals = result.__extract_mlir_values__()
                                     if len(extracted_vals) != 1:
-                                        raise DSLRuntimeError(
-                                            f"Device function '{funcBody.__name__}' returned "
-                                            f"{len(extracted_vals)} MLIR values; expected 1"
+                                        raise DSLUserCodeError(
+                                            DiagId.TYPE_DEVICE_FUNC_RETURN_COUNT,
+                                            count=len(extracted_vals),
                                         )
                                     ret_val = extracted_vals[0]
                                 else:
@@ -1710,6 +1836,7 @@ class CuTeDSL(CutlassBaseDSL):
                     pointer_types=ptr_types,
                 )
 
+                self._run_trace_finalize_hooks(module, setup.function_name)
                 module = self.build_module(module, setup.function_name)
 
                 # dryrun: generate IR and header, skip compilation
@@ -1775,12 +1902,10 @@ class _CuteExperimentalJitCompiledFunction(CudaDialectJitCompiledFunction):
         n = self.execution_args._meta.arg_count
         n_extra = builtins.max(0, len(args) - n)
         if n_extra != self.total_added_arguments:
-            raise DSLRuntimeError(
-                "Wrong number of extra workspace arguments",
-                context={
-                    "expected": self.total_added_arguments,
-                    "got": n_extra,
-                },
+            raise DSLUserCodeError(
+                DiagId.ARG_WORKSPACE_COUNT_MISMATCH,
+                expected=self.total_added_arguments,
+                got=n_extra,
             )
         return super().__call__(*args, **kwargs)
 
@@ -1791,8 +1916,9 @@ class _CuteExperimentalJitCompiledFunction(CudaDialectJitCompiledFunction):
 
 
 class CuteExperimentalDSL(CutlassBaseDSL):
+    _KERNEL_EXTRA_ARGS_ATTR = "lir.kernel_extra_args"
     _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset(
-        {"lir.tma_update_mode"}
+        {"lir.tma_update_mode", "lir.tma_override_mode"}
     )
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = "_cute_experimental_kernel_attributes"
     # Marks this class as the deprecated "experimental" CuTe DSL so
@@ -1931,7 +2057,7 @@ class CuteExperimentalDSL(CutlassBaseDSL):
             original_function_name=original_function_name,
             funcBody=funcBody,
         )
-        # Extract the kernel_extra_args attribute written by FuncFinalizationPass
+        # Extract the lir.kernel_extra_args attribute written by FuncFinalizationPass
         # and store it on the compiled function for later retrieval.
         # Maps kernel name → number of extra workspace pointer args added to the
         # host entry point signature.
@@ -1939,13 +2065,15 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         fn.total_added_arguments = 0
         if fn.ir_module is not None:
             attrs = fn.ir_module.operation.attributes
-            if "kernel_extra_args" in attrs:
-                for named in ir.DictAttr(attrs["kernel_extra_args"]):
+            attr_name = self._KERNEL_EXTRA_ARGS_ATTR
+            if attr_name in attrs:
+                for named in ir.DictAttr(attrs[attr_name]):
                     fn.kernel_extra_args[named.name] = ir.IntegerAttr(named.attr).value
                 fn.total_added_arguments = fn.kernel_extra_args.pop(
                     "total_added_arguments", 0
                 )
-        fn.__class__ = CuteExperimentalDSL.JitCompiledFunction
+        if type(fn) is CudaDialectJitCompiledFunction:
+            fn.__class__ = CuteExperimentalDSL.JitCompiledFunction
         return fn
 
 
@@ -2001,8 +2129,8 @@ class KernelLauncher:
         try:
             sig.bind(*func_args, **func_kwargs)
         except TypeError as e:
-            raise DSLRuntimeError(
-                f"Failed to bind arguments to function `{funcBody.__name__}` with signature `{sig}`",
+            raise DSLUserCodeError(
+                DiagId.ARG_BIND_FAILED,
                 cause=e,
             )
 
@@ -2194,19 +2322,16 @@ def unpack_to_irvalue(
             remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
         )
     except DSLTreeFlattenError as e:
-        raise DSLRuntimeError(
-            f"The '{body_name}' statement encountered a user-defined Python object, which cannot be automatically converted into an dynamic expression.",
-            context={
-                e.message: (
-                    f"All expressions within '{body_name}' must be dynamic expressions, "
-                    "mixing Python objects and dynamic expressions is not supported. "
-                    "The DSL failed to convert the Python object into dynamic expressions."
-                )
-            },
-            suggestion=(
-                f"Please ensure '{e.type_str}' implements the '{DynamicExpression.__name__}' or mark with `dataclass`, "
-                f"so it can be treated as a valid dynamic expression or mark '{body_name}' as a constant expression if conditions are Python objects."
-            ),
+        # Strip the "builtins." prefix so the author sees a plain type name.
+        py_type = str(e.type_str).rsplit(".", 1)[-1]
+        # Keep a specific reason (e.g. "`MyClass(...)` has extra field `a`") as a
+        # note, but drop the generic internal "Flatten Error" marker.
+        detail = str(e.message) if e.message else ""
+        raise DSLUserCodeError(
+            DiagId.TYPE_DYNAMIC_EXPR_UNSUPPORTED,
+            body_name=body_name,
+            py_type=py_type,
+            context=detail if detail and "Flatten Error" not in detail else None,
         )
 
     # DEBUG: Print unpacked values after tree_flatten
@@ -2634,6 +2759,11 @@ def all_(iterable: Iterable[Union[Numeric, ir.Value, bool]]) -> Boolean:
         conditions = [a > 0, b < 10, c != 0]
         result = all_(conditions)  # Returns True if all conditions are met
     """
+    from .._mlir_helpers.vector import Vector, all_ as vector_all_
+
+    if isinstance(iterable, Vector):
+        return vector_all_(iterable)
+
     bool_iterable = [Boolean(i) for i in iterable]
     reducer = lambda lhs, rhs: (
         lhs.__dsl_and__(rhs) if hasattr(lhs, "__dsl_and__") else lhs
@@ -2664,6 +2794,11 @@ def any_(iterable: Iterable[Union[Numeric, ir.Value, bool]]) -> Boolean:
         conditions = [a > 10, b < 0, c != 0]
         result = any_(conditions)  # Returns True if any condition is met
     """
+    from .._mlir_helpers.vector import Vector, any_ as vector_any_
+
+    if isinstance(iterable, Vector):
+        return vector_any_(iterable)
+
     bool_iterable = [Boolean(i) for i in iterable]
     reducer = lambda lhs, rhs: (
         lhs.__dsl_or__(rhs) if hasattr(lhs, "__dsl_or__") else lhs
@@ -2688,13 +2823,13 @@ def select_(
             if len(value) == 1:
                 return value[0]
             else:
-                raise DSLRuntimeError(
-                    "Conditional expression must have exactly one value in all expressions"
+                raise DSLUserCodeError(
+                    DiagId.TYPE_CONDITIONAL_VALUE_COUNT,
                 )
         return value
 
     if not is_dynamic_expression(cond):
-        raise DSLRuntimeError("Conditional expression must be dynamic")
+        raise DSLUserCodeError(DiagId.PHASE_CONDITIONAL_NOT_DYNAMIC)
 
     # Extract MLIR values
     cond = extract_mlir_values(cond)
@@ -2759,7 +2894,7 @@ def for_generate(
         if isinstance(p, int):
             p = const(p)
         elif isinstance(p, float):
-            raise DSLRuntimeError(f"{p=} must be int.")
+            raise DSLUserCodeError(DiagId.TYPE_LOOP_PARAM_NOT_INT)
         elif isinstance(p, Integer):
             p = p.ir_value()
         params[i] = p
@@ -2768,12 +2903,12 @@ def for_generate(
 
     def _createI32Attr(value: Union[Int32, int]) -> ir.IntegerAttr:
         if not isinstance(value, int):
-            raise DSLRuntimeError("value must be int.")
+            raise DSLUserCodeError(DiagId.TYPE_PARAM_NOT_INT)
         return ir.IntegerAttr.get(ir.IntegerType.get_signless(32), value)
 
     ir_iter_args = extract_mlir_values(iter_args) if iter_args is not None else None
     if not _validate_iter_args_structure(iter_args, ir_iter_args):
-        raise DSLRuntimeError("iter_args: Elements should be extractable as ir.Value.")
+        raise DSLUserCodeError(DiagId.TYPE_ITER_ARGS_INVALID)
     for_op = scf.ForOp(start, stop, step, ir_iter_args, loc=loc, ip=ip)
     if unroll is not None:
         for_op.attributes["loop_annotation"] = unroll
@@ -2862,7 +2997,7 @@ def if_generate(
     if return_types is not None:
         for t in return_types:
             if not isinstance(t, DslType):
-                raise DSLRuntimeError(f"{t=} must be a DslType.")
+                raise DSLUserCodeError(DiagId.TYPE_RETURN_TYPE_NOT_DSL)
             mlir_return_types.append(t.mlir_type)  # type: ignore[attr-defined]
 
     # Determine whether there's an else branch.
@@ -2942,7 +3077,7 @@ class WhileLoopContext:
         self.input_ir_values = extract_mlir_values(inputs)
 
         if not _validate_iter_args_structure(inputs, self.input_ir_values):
-            raise DSLRuntimeError("inputs: Elements should be extractable as ir.Value.")
+            raise DSLUserCodeError(DiagId.TYPE_WHILE_INPUTS_INVALID)
 
         self.condition = condition
         self.input_ir_types = [i.type for i in self.input_ir_values]
@@ -3038,9 +3173,7 @@ def in_(lhs: object, rhs: Any) -> Union[bool, Boolean]:
         return lhs in rhs
 
     if not isinstance(rhs, Sequence):
-        raise DSLRuntimeError(
-            f"'in' not supported between instances of {type(lhs)} and {type(rhs)}"
-        )
+        raise DSLUserCodeError(DiagId.UNSUP_IN_OPERATOR)
 
     return any_(equal(lhs, r) for r in rhs)
 
@@ -3070,7 +3203,7 @@ def _lte_gte(
             else:
                 return not_(lhs < rhs)
         else:
-            raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
+            raise DSLUserCodeError(DiagId.UNSUP_COMPARISON_OPERATOR, op=op)
 
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
         return native_lte_gte(lhs, rhs, op)
@@ -3186,7 +3319,7 @@ def _compare_dispatch(
     elif op == "<=":
         return less_equal(lhs, rhs)
     else:
-        raise DSLRuntimeError(f"Unsupported comparison operator: {op}")
+        raise DSLUserCodeError(DiagId.UNSUP_COMPARISON_OPERATOR, op=op)
 
 
 def _compare_executor(
@@ -3214,8 +3347,9 @@ def _builtin_redirector(fcn: Callable[..., object]) -> Callable[..., object]:
         if is_dynamic_expression(args):
             if kwargs:
                 # Redirected built-ins do not support keyword arguments
-                raise DSLRuntimeError(
-                    f"Unsupported keyword arguments for built-in function: {fcn}"
+                raise DSLUserCodeError(
+                    DiagId.CALL_BUILTIN_KWARGS_UNSUPPORTED,
+                    fcn=fcn,
                 )
             if fcn is builtins.max:
                 return max(*args)
@@ -3226,7 +3360,7 @@ def _builtin_redirector(fcn: Callable[..., object]) -> Callable[..., object]:
             elif fcn is builtins.all:
                 return all_(*args)
             else:
-                raise DSLRuntimeError(f"Unsupported built-in function: {fcn}")
+                raise DSLUserCodeError(DiagId.UNSUP_BUILTIN_FUNCTION, fcn=fcn)
         else:
             return fcn(*args, **kwargs)
 

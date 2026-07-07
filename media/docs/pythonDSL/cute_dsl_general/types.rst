@@ -561,22 +561,6 @@ Same as ``struct``:
 - ``__alignof__()`` - Returns the alignment of the union in bytes
 
 
-Deprecated Types
-----------------
-
-ThrMma
-~~~~~~
-
-.. deprecated::
-    ``cute.core.ThrMma`` is deprecated, use ``cute.ThrMma`` instead
-
-ThrCopy
-~~~~~~~
-
-.. deprecated::
-    ``cute.core.ThrCopy`` is deprecated, use ``cute.ThrCopy`` instead
-
-
 Type Hierarchies and Relationships
 -----------------------------------
 

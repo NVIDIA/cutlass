@@ -42,7 +42,6 @@ import inspect
 from dataclasses import dataclass
 import string
 
-# Typing.get_overloads requires Python 3.11+; fall back to typing_extensions on 3.10.
 if sys.version_info >= (3, 11):
     from typing import get_overloads
 else:
@@ -54,7 +53,8 @@ from .._mlir.dialects import func, gpu, llvm
 from . import typing as t
 from .typing import get_mlir_types, NumericMeta, as_numeric
 from .dsl import extract_mlir_values
-from .common import DSLRuntimeError
+from .common import DSLRuntimeError, DSLUserCodeError
+from .diagnostics import DiagId
 
 
 @dataclass(frozen=True)
@@ -360,7 +360,7 @@ class ExternCallHandler:
                 break
 
         if not matched:
-            raise DSLRuntimeError("failed to find matching overload for call to ffi")
+            raise DSLUserCodeError(DiagId.CALL_FFI_NO_MATCH)
 
         assert params_types is not None
         assert return_types is not None
@@ -654,10 +654,7 @@ class FFI:
         """
 
         if kwargs:
-            raise DSLRuntimeError(
-                "Keyword arguments are not supported for FFI calls",
-                suggestion="Use positional arguments only",
-            )
+            raise DSLUserCodeError(DiagId.CALL_FFI_NO_KWARGS)
 
         # Get the current insertion point and operation
         try:
@@ -671,9 +668,10 @@ class FFI:
         module_op, insertion_region = self._get_prototype_region(current_op)
 
         if len(args) != len(self.params_types):
-            raise DSLRuntimeError(
-                f"Number of arguments mismatch, expected {len(self.params_types)}, got {len(args)}",
-                suggestion="Make sure the number of arguments matches the number of parameters",
+            raise DSLUserCodeError(
+                DiagId.ARG_COUNT_MISMATCH,
+                got=len(args),
+                expected=len(self.params_types),
             )
 
         # Extract the arguments to MLIR values

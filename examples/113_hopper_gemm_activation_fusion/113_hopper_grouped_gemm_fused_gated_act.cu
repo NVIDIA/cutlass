@@ -87,7 +87,14 @@ using ActivationFn = cutlass::epilogue::thread::Identity<T>;
 
 bool constexpr IsFp8         = true;  // whether to run with fp8 or fp16 input/output
 bool constexpr Quantize      = true;  // whether to quantize output with a per-tensor scale factor
-bool constexpr ExactMode     = false; // whether to reproduce unfused dual gemm+activation exactly
+// Enabled by default here (unlike the other example 113 binaries): in the grouped + gated case
+// the fused epilogue accumulates the gated product alpha*acc in f32, while the unfused reference
+// rounds it to fp16 (ElementIntermediate) before the activation. After SiLU, gating, and fp8
+// (e4m3) quantization, near-zero outputs can land 1-2 ULPs apart on rare elements (data-dependent
+// across the per-group random alphas), which trips the relative-tolerance check. ExactMode makes
+// the fused path also use the fp16 intermediate, so fused and reference match bit-exactly and
+// verification is deterministic.
+bool constexpr ExactMode     = true;  // whether to reproduce unfused dual gemm+activation exactly
 bool constexpr BiasBroadcast = true;  // whether bias is broadcast along columns in each group
 bool constexpr Pingpong      = true;  // whether to use pingpong schedule
 

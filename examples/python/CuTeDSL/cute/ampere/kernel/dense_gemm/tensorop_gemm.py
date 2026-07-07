@@ -28,13 +28,17 @@
 
 import argparse
 import math
+from functools import lru_cache
 from typing import Tuple, Type
+
+import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.cute.testing as testing
+from cutlass import testing
 import cutlass.utils as utils
-from cutlass.cute.runtime import from_dlpack
+from cutlass.utils.tensor_helpers import create_cute_tensor_for_fp8
+from cutlass.utils.tensor_helpers import is_fp8_dtype
 
 """
 A dense GEMM (C = A * B) example for the NVIDIA Ampere architecture using CUTE DSL.
@@ -62,7 +66,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/ampere/tensorop_gemm.py                                  \
+    python examples/cute/ampere/kernel/dense_gemm/tensorop_gemm.py                                  \
       --mnkl 8192,8192,8192,1 --atom_layout_mnk 2,2,1                        \
       --ab_dtype Float16                                                     \
       --c_dtype Float16 --acc_dtype Float32                                  \
@@ -77,7 +81,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/ampere/tensorop_gemm.py                              \
+    ncu python examples/cute/ampere/kernel/dense_gemm/tensorop_gemm.py                              \
       --mnkl 8192,8192,8192,1 --atom_layout_mnk 2,2,1                        \
       --ab_dtype Float16                                                     \
       --c_dtype Float16 --acc_dtype Float32                                  \
@@ -85,9 +89,10 @@ To collect performance with NCU profiler:
       --skip_ref_check --iterations 2
 
 Constraints:
-* Supported input and output data types: fp16
-* Support accumulator data types: f32
-* Default tile shape is set to be 128x128x32
+* Supported input data types: fp16/bf16/fp8
+* Supported output data types: fp16
+* Support accumulator data types: f32/f16
+* Default tile shape is 128x128x32 for fp16/bf16 and 128x128x64 for fp8
 * Atom layout's MNK shape is set so that tile shape can be divided by MMA
   instruction shape
 * The contiguous dimension of A/B/C tensors must be at least 16 bytes aligned,
@@ -96,6 +101,13 @@ Constraints:
 
 
 class TensorOpGemm:
+    _FP16_BF16_DTYPES = (cutlass.Float16, cutlass.BFloat16)
+    _FP8_DTYPES = (cutlass.Float8E4M3FN, cutlass.Float8E5M2)
+    _MMA_SHAPE_FP16_BF16 = (16, 8, 16)
+    _MMA_SHAPE_FP8 = (16, 8, 32)
+    _CTA_TILER_FP16_BF16 = (128, 128, 32)
+    _CTA_TILER_FP8 = (128, 128, 64)
+
     def __init__(
         self,
         ab_dtype: Type[cutlass.Numeric],
@@ -107,14 +119,22 @@ class TensorOpGemm:
         self.ab_dtype = ab_dtype
         self.c_dtype = c_dtype
         self.acc_dtype = acc_dtype
-        self.cta_tiler = (128, 128, 32)
-        self.num_stages = 3
+        self.is_fp8 = self.ab_dtype in self._FP8_DTYPES
+        assert self.ab_dtype in self._FP16_BF16_DTYPES + self._FP8_DTYPES, (
+            "ab_dtype must be one of Float16, BFloat16, Float8E4M3FN, Float8E5M2"
+        )
+        self.cta_tiler = (
+            self._CTA_TILER_FP8 if self.is_fp8 else self._CTA_TILER_FP16_BF16
+        )
+        self.num_stages = 4
         self.atom_layout_mnk = atom_layout_mnk
         atom_lay_M, atom_lay_N, atom_lay_K = self.atom_layout_mnk
         self.num_threads = atom_lay_M * atom_lay_N * atom_lay_K * 32
 
         self.bM, self.bN, self.bK = self.cta_tiler
-        self.mma_inst_shape = (16, 8, 16)
+        self.mma_inst_shape = (
+            self._MMA_SHAPE_FP8 if self.is_fp8 else self._MMA_SHAPE_FP16_BF16
+        )
         mmaM, mmaN, mmaK = self.mma_inst_shape
 
         # M-major C uses C^T = B^T * A^T, swapping atom layout M/N roles.
@@ -142,6 +162,7 @@ class TensorOpGemm:
         mA: cute.Tensor,
         mB: cute.Tensor,
         mC: cute.Tensor,
+        stream: cuda.CUstream,
         epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         # The grid divides the problems's M, N, and L dimensions by the
@@ -166,7 +187,6 @@ class TensorOpGemm:
         else:
             atom_layout_mnk = self.atom_layout_mnk
 
-
         self.a_major_mode = utils.LayoutEnum.from_tensor(mA)
         self.b_major_mode = utils.LayoutEnum.from_tensor(mB)
         self.c_major_mode = utils.LayoutEnum.from_tensor(mC)
@@ -183,13 +203,13 @@ class TensorOpGemm:
 
         # assume the input is 16B align
         ab_copy_bits = 128
-        sA_layout = self._make_smem_layout_AB(
+        sA_layout, sA_swizzle = self._make_smem_layout_AB(
             mA.element_type,
             self.a_major_mode,
             ab_copy_bits,
             (self.cta_tiler[0], self.cta_tiler[2], self.num_stages),
         )
-        sB_layout = self._make_smem_layout_AB(
+        sB_layout, sB_swizzle = self._make_smem_layout_AB(
             mB.element_type,
             self.b_major_mode,
             ab_copy_bits,
@@ -213,9 +233,7 @@ class TensorOpGemm:
 
         # Create a copy atom for a global to shared memory asynchronous copy
         atom_async_copy = cute.make_copy_atom(
-            cute.nvgpu.cpasync.CopyG2SOp(
-                cache_mode=cute.nvgpu.cpasync.LoadCacheMode.GLOBAL
-            ),
+            cute.nvgpu.cpasync.CopyG2SOp(cache_mode=cute.nvgpu.LoadCacheMode.GLOBAL),
             mA.element_type,
             num_bits_per_copy=ab_copy_bits,
         )
@@ -244,10 +262,14 @@ class TensorOpGemm:
         # Tiled MMA
         # ///////////////////////////////////////////////////////////////////////////////
 
-        # Creates a mma atom with 16x8x16 shape for MNK
-        op = cute.nvgpu.warp.MmaF16BF16Op(
-            self.ab_dtype, self.acc_dtype, self.mma_inst_shape
-        )
+        if cutlass.const_expr(self.is_fp8):
+            op = cute.nvgpu.warp.MmaFP8Op(
+                self.ab_dtype, self.acc_dtype, self.mma_inst_shape
+            )
+        else:
+            op = cute.nvgpu.warp.MmaF16BF16Op(
+                self.ab_dtype, self.acc_dtype, self.mma_inst_shape
+            )
 
         permutation_mnk = (
             atom_layout_mnk[0] * self.mma_inst_shape[0],
@@ -291,7 +313,9 @@ class TensorOpGemm:
             mB,
             mC,
             sA_layout,
+            sA_swizzle,
             sB_layout,
+            sB_swizzle,
             sC_layout,
             tiled_copy_A,
             tiled_copy_B,
@@ -302,6 +326,7 @@ class TensorOpGemm:
         ).launch(
             grid=rasterization_remap_grid_dim,
             block=[self.num_threads, 1, 1],
+            stream=stream,
         )
 
     @cute.kernel
@@ -310,8 +335,10 @@ class TensorOpGemm:
         mA: cute.Tensor,
         mB: cute.Tensor,
         mC: cute.Tensor,
-        sA_layout: cute.ComposedLayout,
-        sB_layout: cute.ComposedLayout,
+        sA_layout: cute.Layout,
+        sA_swizzle: cute.Swizzle,
+        sB_layout: cute.Layout,
+        sB_swizzle: cute.Swizzle,
         sC_layout: cute.ComposedLayout,
         tiled_copy_A: cute.TiledCopy,
         tiled_copy_B: cute.TiledCopy,
@@ -428,8 +455,8 @@ class TensorOpGemm:
                 max(SharedStorageAB.size_in_bytes(), SharedStorageC.size_in_bytes()),
                 byte_alignment=16,
             )
-            sA = SharedStorageAB(storage).a.get_tensor(sA_layout)
-            sB = SharedStorageAB(storage).b.get_tensor(sB_layout)
+            sA = SharedStorageAB(storage).a.get_tensor(sA_layout, swizzle=sA_swizzle)
+            sB = SharedStorageAB(storage).b.get_tensor(sB_layout, swizzle=sB_swizzle)
             sC = SharedStorageC(storage).c.get_tensor(sC_layout)
 
             thr_copy_A = tiled_copy_A.get_slice(tidx)
@@ -571,18 +598,42 @@ class TensorOpGemm:
             # ///////////////////////////////////////////////////////////////////////////////
 
             # Create the copy atoms for the copy from shared memory to register
-            atom_copy_s2r_A = cute.make_copy_atom(
-                cute.nvgpu.warp.LdMatrix8x8x16bOp(
-                    self.a_major_mode != utils.LayoutEnum.ROW_MAJOR, 4
-                ),
-                mA.element_type,
-            )
-            atom_copy_s2r_B = cute.make_copy_atom(
-                cute.nvgpu.warp.LdMatrix8x8x16bOp(
-                    self.b_major_mode != utils.LayoutEnum.ROW_MAJOR, 4
-                ),
-                mB.element_type,
-            )
+            if cutlass.const_expr(self.is_fp8):
+                if cutlass.const_expr(self.a_major_mode == utils.LayoutEnum.ROW_MAJOR):
+                    atom_copy_s2r_A = cute.make_copy_atom(
+                        cute.nvgpu.warp.LdMatrix8x16x8bOp(False, 4),
+                        mA.element_type,
+                    )
+                else:
+                    atom_copy_s2r_A = cute.make_copy_atom(
+                        cute.nvgpu.CopyUniversalOp(),
+                        mA.element_type,
+                        num_bits_per_copy=8,
+                    )
+                if cutlass.const_expr(self.b_major_mode == utils.LayoutEnum.ROW_MAJOR):
+                    atom_copy_s2r_B = cute.make_copy_atom(
+                        cute.nvgpu.warp.LdMatrix8x16x8bOp(False, 4),
+                        mB.element_type,
+                    )
+                else:
+                    atom_copy_s2r_B = cute.make_copy_atom(
+                        cute.nvgpu.CopyUniversalOp(),
+                        mB.element_type,
+                        num_bits_per_copy=8,
+                    )
+            else:
+                atom_copy_s2r_A = cute.make_copy_atom(
+                    cute.nvgpu.warp.LdMatrix8x8x16bOp(
+                        self.a_major_mode != utils.LayoutEnum.ROW_MAJOR, 4
+                    ),
+                    mA.element_type,
+                )
+                atom_copy_s2r_B = cute.make_copy_atom(
+                    cute.nvgpu.warp.LdMatrix8x8x16bOp(
+                        self.b_major_mode != utils.LayoutEnum.ROW_MAJOR, 4
+                    ),
+                    mB.element_type,
+                )
 
             # Creates the tiled copy so that it matches the thread-value layout
             # expected by the tiled mma
@@ -669,9 +720,7 @@ class TensorOpGemm:
                         tCrB_copy_view[None, None, k_block_next],
                     )
 
-                    # Fetch next A: To better interleave global memory access and compute
-                    # instructions, we intentionally use the sequence: copy A, perform GEMM,
-                    # then copy B.
+                    # Fetch next A and B and update smem pipeline read/write
                     if k_block == 0:
                         if k_tile + num_smem_stages - 1 < k_tile_count:
                             cute.copy(
@@ -680,18 +729,6 @@ class TensorOpGemm:
                                 tAsA[None, None, None, smem_pipe_write],
                                 pred=tApA,
                             )
-
-                    # Thread-level register gemm for k_block
-                    cute.gemm(
-                        tiled_mma,
-                        tCrC,
-                        tCrA[None, None, k_block],
-                        tCrB[None, None, k_block],
-                        tCrC,
-                    )
-
-                    # Fetch next B and update smem pipeline read/write
-                    if k_block == 0:
                         if k_tile + num_smem_stages - 1 < k_tile_count:
                             cute.copy(
                                 tiled_copy_B,
@@ -705,6 +742,15 @@ class TensorOpGemm:
                         smem_pipe_read = smem_pipe_read + 1
                         if smem_pipe_read == num_smem_stages:
                             smem_pipe_read = 0
+
+                    # Thread-level register gemm for k_block
+                    cute.gemm(
+                        tiled_mma,
+                        tCrC,
+                        tCrA[None, None, k_block],
+                        tCrB[None, None, k_block],
+                        tCrC,
+                    )
 
             # Sync before epilogue
             cute.arch.cp_async_wait_group(0)
@@ -776,23 +822,25 @@ class TensorOpGemm:
         major_mode_size = (
             smem_tiler[1] if major_mode == utils.LayoutEnum.ROW_MAJOR else smem_tiler[0]
         )
-        major_mode_size = 64 if major_mode_size >= 64 else major_mode_size
+        # Cap at 128 bytes (fp16: 64 elems, fp8: 128 elems)
+        max_elems = 128 * 8 // dtype.width
+        major_mode_size = min(major_mode_size, max_elems)
 
         swizzle_bits = int(math.log2(major_mode_size * dtype.width // copy_bits))
         swizzle_bits = min(swizzle_bits, 3)
+        # PDSL: base_bits is in bytes (copy_bits / 8), not in elements
+        base_bits = int(math.log2(copy_bits // 8))
+
+        shift_bits = int(math.log2(copy_bits // dtype.width))
+        swizzle = cute.make_swizzle(swizzle_bits, base_bits, shift_bits)
 
         layout_atom_outer = (
             cute.make_layout((8, major_mode_size), stride=(major_mode_size, 1))
             if major_mode == utils.LayoutEnum.ROW_MAJOR
             else cute.make_layout((major_mode_size, 8), stride=(1, major_mode_size))
         )
-        layout_atom = cute.make_composed_layout(
-            cute.make_swizzle(swizzle_bits, 3, 3),
-            0,
-            layout_atom_outer,
-        )
-        layout = cute.tile_to_shape(layout_atom, smem_tiler, (0, 1, 2))
-        return layout
+        layout = cute.tile_to_shape(layout_atom_outer, smem_tiler, (0, 1, 2))
+        return layout, swizzle
 
     def _make_smem_layout_C(self, dtype, major_mode, copy_bits, smem_tiler):
         major_mode_size = (
@@ -872,164 +920,428 @@ class TensorOpGemm:
         return (new_i, new_j)
 
 
-def run(
+@cute.jit
+def bmm(
+    gemm_op: cutlass.Constexpr,
+    a: cute.Tensor,  # (l, m, k)
+    b: cute.Tensor,  # (l, k, n)
+    c: cute.Tensor,  # (l, m, n)
+    stream: cuda.CUstream,
+    epilogue_op: cutlass.Constexpr = lambda x: x,
+):
+    """
+    Wrapper API for GEMM kernel to follow the convention of PyTorch's batch matrix-multiply (bmm).
+
+    Internally, the tensors are permuted to match CuTe's convention:
+      - a: (m, k, l)
+      - b: (n, k, l)
+      - c: (m, n, l)
+
+    :param gemm_op: Kernel operation, expects (a, b, c, stream, epilogue_op)
+    :type gemm_op: cutlass.Constexpr
+    :param a: Input tensor of shape (l, m, k)
+    :type a: cute.Tensor
+    :param b: Input tensor of shape (l, k, n)
+    :type b: cute.Tensor
+    :param c: Output tensor of shape (l, m, n)
+    :type c: cute.Tensor
+    :param stream: CUDA stream for asynchronous execution
+    :type stream: cuda.CUstream
+    :param epilogue_op: Optional elementwise lambda function to apply per output element, defaults to identity
+    :type epilogue_op: cutlass.Constexpr, optional
+    """
+    # (l,m,k) -> (m,k,l)
+    a = cute.make_tensor(a.iterator, cute.select(a.layout, mode=[1, 2, 0]))
+    # (l,k,n) -> (n,k,l)
+    b = cute.make_tensor(b.iterator, cute.select(b.layout, mode=[2, 1, 0]))
+    # (l,m,n) -> (m,n,l)
+    c = cute.make_tensor(c.iterator, cute.select(c.layout, mode=[1, 2, 0]))
+
+    gemm_op(a, b, c, stream, epilogue_op)
+
+
+@lru_cache(maxsize=1)
+def prepare_tensors(
+    mnkl: Tuple[int, int, int, int],
+    ab_dtype: Type[cutlass.Numeric],
+    c_dtype: Type[cutlass.Numeric],
     a_major: str,
     b_major: str,
     c_major: str,
+    init_random: bool = True,
+):
+    """
+    Prepare input and output tensors for the GEMM operation.
+
+    :param mnkl: Problem size as a tuple (M, N, K, L).
+    :type mnkl: Tuple[int, int, int, int]
+    :param ab_dtype: Data type for input tensors A and B.
+    :type ab_dtype: Type[cutlass.Numeric]
+    :param c_dtype: Data type for output tensor C.
+    :type c_dtype: Type[cutlass.Numeric]
+    :param a_major: Major dimension of the A tensor layout ("m" or "k").
+    :type a_major: str
+    :param b_major: Major dimension of the B tensor layout ("n" or "k").
+    :type b_major: str
+    :param c_major: Major dimension of the C tensor layout ("m" or "n").
+    :type c_major: str
+    :param init_random: Whether to initialize tensors with random values, defaults to True.
+    :type init_random: bool, optional
+
+    :return: Tuple of (a, b, c) torch tensors.
+    :rtype: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    """
+    import torch
+    from cutlass.torch import dtype as torch_dtype
+
+    m, n, k, l = mnkl
+
+    if a_major == "k":
+        a = torch.empty((l, m, k), dtype=torch.float32, device="cuda")
+    elif a_major == "m":
+        a = torch.empty((l, k, m), dtype=torch.float32, device="cuda").permute(0, 2, 1)
+
+    if b_major == "n":
+        b = torch.empty((l, k, n), dtype=torch.float32, device="cuda")
+    elif b_major == "k":
+        b = torch.empty((l, n, k), dtype=torch.float32, device="cuda").permute(0, 2, 1)
+
+    if c_major == "n":
+        c = torch.empty((l, m, n), dtype=torch.float32, device="cuda")
+    elif c_major == "m":
+        c = torch.empty((l, n, m), dtype=torch.float32, device="cuda").permute(0, 2, 1)
+
+    if init_random:
+        a.random_(-2, 3)
+        b.random_(-2, 3)
+        c.random_(-2, 3)
+
+    # For fp8 types, use uint8 as storage to avoid dlpack limitation
+    a_storage_dtype = torch.uint8 if is_fp8_dtype(ab_dtype) else torch_dtype(ab_dtype)
+    b_storage_dtype = torch.uint8 if is_fp8_dtype(ab_dtype) else torch_dtype(ab_dtype)
+    c_storage_dtype = torch.uint8 if is_fp8_dtype(c_dtype) else torch_dtype(c_dtype)
+
+    return (
+        a.to(dtype=a_storage_dtype),
+        b.to(dtype=b_storage_dtype),
+        c.to(dtype=c_storage_dtype),
+        a.clone(),  # fp32 source for fp8 conversion
+        b.clone(),  # fp32 source for fp8 conversion
+        c.clone(),  # fp32 source for fp8 conversion
+    )
+
+
+def mark_dynamic_layout(
+    a,
+    b,
+    c,
+    leading_dim_a: int,
+    leading_dim_b: int,
+    leading_dim_c: int,
+    ab_dtype: Type[cutlass.Numeric],
+    c_dtype: Type[cutlass.Numeric],
+    a_f32=None,
+    b_f32=None,
+    c_f32=None,
+):
+    a_ = create_cute_tensor_for_fp8(a, ab_dtype, leading_dim_a, source_f32_tensor=a_f32)
+    b_ = create_cute_tensor_for_fp8(b, ab_dtype, leading_dim_b, source_f32_tensor=b_f32)
+    c_ = create_cute_tensor_for_fp8(c, c_dtype, leading_dim_c, source_f32_tensor=c_f32)
+
+    a_.mark_compact_shape_dynamic(
+        mode=leading_dim_a,
+        stride_order=(0, 1, 2) if leading_dim_a == 2 else (0, 2, 1),
+        divisibility=128 // ab_dtype.width,
+    )
+    b_.mark_compact_shape_dynamic(
+        mode=leading_dim_b,
+        stride_order=(0, 1, 2) if leading_dim_b == 2 else (0, 2, 1),
+        divisibility=128 // ab_dtype.width,
+    )
+    c_.mark_compact_shape_dynamic(
+        mode=leading_dim_c,
+        stride_order=(0, 1, 2) if leading_dim_c == 2 else (0, 2, 1),
+        divisibility=128 // c_dtype.width,
+    )
+    return a_, b_, c_
+
+
+@lru_cache(maxsize=1)
+def compile_bmm(
+    mnkl: Tuple[int, int, int, int],
+    a: cute.Tensor,
+    b: cute.Tensor,
+    c: cute.Tensor,
     ab_dtype: Type[cutlass.Numeric],
     c_dtype: Type[cutlass.Numeric],
     acc_dtype: Type[cutlass.Numeric],
-    mnkl: Tuple[int, int, int, int],
     atom_layout_mnk: Tuple[int, int, int],
+    epilogue_op: cutlass.Constexpr = lambda x: x,
+):
+    """
+    Compile the BMM kernel with caching.
+
+    :param mnkl: Problem size as a tuple (M, N, K, L).
+    :type mnkl: Tuple[int, int, int, int]
+    :param a: Input tensor A.
+    :type a: cute.Tensor
+    :param b: Input tensor B.
+    :type b: cute.Tensor
+    :param c: Output tensor C.
+    :type c: cute.Tensor
+    :param ab_dtype: Data type for input tensors A and B.
+    :type ab_dtype: Type[cutlass.Numeric]
+    :param c_dtype: Data type for output tensor C.
+    :type c_dtype: Type[cutlass.Numeric]
+    :param acc_dtype: Accumulator data type.
+    :type acc_dtype: Type[cutlass.Numeric]
+    :param atom_layout_mnk: Atom layout shape (M, N, K).
+    :type atom_layout_mnk: Tuple[int, int, int]
+    :param epilogue_op: Optional elementwise lambda function to apply to the output tensor.
+    :type epilogue_op: cutlass.Constexpr, optional
+
+    :return: Compiled kernel function.
+    """
+    from cutlass.cute.runtime import make_fake_stream
+
+    stream = make_fake_stream()
+
+    is_m_major_c = c.leading_dim == 0
+    gemm = TensorOpGemm(ab_dtype, c_dtype, acc_dtype, atom_layout_mnk, is_m_major_c)
+    return cute.compile(bmm, gemm, a, b, c, stream, epilogue_op)
+
+
+def run(
+    mnkl: Tuple[int, int, int, int],
+    ab_dtype: Type[cutlass.Numeric],
+    c_dtype: Type[cutlass.Numeric],
+    acc_dtype: Type[cutlass.Numeric],
+    a_major: str,
+    b_major: str,
+    c_major: str,
+    atom_layout_mnk: Tuple[int, int, int],
+    tolerance: float = 1e-03,
     warmup_iterations: int = 2,
     iterations: int = 100,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
+    benchmark: bool = False,
     **kwargs,
 ):
+    """
+    Execute an Ampere tensor core GEMM operation with performance benchmarking.
+
+    Prepares input tensors, configures and launches the GEMM kernel,
+    optionally performs reference validation, and benchmarks execution.
+
+    :param mnkl: Problem size as a tuple (M, N, K, L).
+    :type mnkl: Tuple[int, int, int, int]
+    :param ab_dtype: Data type for input tensors A and B.
+    :type ab_dtype: Type[cutlass.Numeric]
+    :param c_dtype: Data type for output tensor C.
+    :type c_dtype: Type[cutlass.Numeric]
+    :param acc_dtype: Accumulator data type for the matrix multiplication.
+    :type acc_dtype: Type[cutlass.Numeric]
+    :param a_major: Major dimension of the A tensor layout ("m" or "k").
+    :type a_major: str
+    :param b_major: Major dimension of the B tensor layout ("n" or "k").
+    :type b_major: str
+    :param c_major: Major dimension of the C tensor layout ("m" or "n").
+    :type c_major: str
+    :param atom_layout_mnk: Atom layout shape (M, N, K).
+    :type atom_layout_mnk: Tuple[int, int, int]
+    :param tolerance: Tolerance for reference validation, defaults to 1e-03.
+    :type tolerance: float, optional
+    :param warmup_iterations: Number of warmup iterations before benchmarking, defaults to 2.
+    :type warmup_iterations: int, optional
+    :param iterations: Number of benchmark iterations to run, defaults to 100.
+    :type iterations: int, optional
+    :param skip_ref_check: Whether to skip reference result validation, defaults to False.
+    :type skip_ref_check: bool, optional
+    :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
+    :type use_cold_l2: bool, optional
+    :param benchmark: Whether to only benchmark the kernel, defaults to False.
+    :type benchmark: bool, optional
+    :raises RuntimeError: If CUDA GPU is not available.
+    :return: Execution time of the GEMM kernel.
+    :rtype: float
+    """
     import torch
-    import cutlass.torch as cutlass_torch
+    from cutlass.torch import dtype as torch_dtype
 
-    print("Running Ampere tensor core GEMM example:")
-    print(f"mnkl: {mnkl}")
-    print(
-        f"A dtype: {ab_dtype}, B dtype: {ab_dtype}, C dtype: {c_dtype}, Acc dtype: {acc_dtype}"
+    if not torch.cuda.is_available():
+        raise RuntimeError("GPU is required to run this example!")
+
+    # Get current CUDA stream from PyTorch
+    torch_stream = torch.cuda.current_stream()
+    # Get the raw stream pointer as a CUstream
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
+
+    # Run and verify BMM with torch
+    a, b, c, a_f32, b_f32, c_f32 = prepare_tensors(
+        mnkl, ab_dtype, c_dtype, a_major, b_major, c_major
     )
-    print(f"Matrix majors - A: {a_major}, B: {b_major}, C: {c_major}")
-    print(f"Atoms layout: {atom_layout_mnk}")
-    print(f"Warmup iterations: {warmup_iterations}")
-    print(f"Iterations: {iterations}")
-    print(f"Skip reference checking: {skip_ref_check}")
-    print(f"Use cold L2: {use_cold_l2}")
-    M, N, K, L = mnkl
 
-    # Create and permute tensor A/B/C
-    def create_and_permute_tensor(l, mode0, mode1, is_mode0_major, dtype):
-        # is_mode0_major: (l, mode1, mode0) -> (mode0, mode1, l)
-        # else: (l, mode0, mode1) -> (mode0, mode1, l)
-        shape = (l, mode1, mode0) if is_mode0_major else (l, mode0, mode1)
-        permute_order = (2, 1, 0) if is_mode0_major else (1, 2, 0)
-        torch_tensor = (
-            torch.empty(*shape, dtype=torch.int32)
-            .random_(-2, 2)
-            .to(dtype=cutlass_torch.dtype(dtype))
-            .permute(permute_order)
-            .cuda()
-        )
-        # assume input is 16B aligned
-        cute_tensor = (
-            from_dlpack(torch_tensor, assumed_align=16)
-            .mark_layout_dynamic(leading_dim=(1 if not is_mode0_major else 0))
-            .mark_compact_shape_dynamic(
-                mode=(1 if not is_mode0_major else 0),
-                stride_order=(2, 0, 1) if not is_mode0_major else (2, 1, 0),
-                divisibility=(128 // dtype.width),
-            )
-        )
-        return cute_tensor, torch_tensor
+    leading_dim_a = 2 if a_major == "k" else 1
+    leading_dim_b = 1 if b_major == "k" else 2
+    leading_dim_c = 2 if c_major == "n" else 1
 
-    mA, a_torch = create_and_permute_tensor(L, M, K, a_major == "m", ab_dtype)
-    mB, b_torch = create_and_permute_tensor(L, N, K, b_major == "n", ab_dtype)
-    mC, c_torch = create_and_permute_tensor(L, M, N, c_major == "m", c_dtype)
-    
-    is_m_major_c = c_major == "m"
+    a_, b_, c_ = mark_dynamic_layout(
+        a,
+        b,
+        c,
+        leading_dim_a,
+        leading_dim_b,
+        leading_dim_c,
+        ab_dtype,
+        c_dtype,
+        a_f32,
+        b_f32,
+        c_f32,
+    )
 
-    tensor_op_gemm = TensorOpGemm(
+    compiled_fn = compile_bmm(
+        mnkl,
+        a_,
+        b_,
+        c_,
         ab_dtype,
         c_dtype,
         acc_dtype,
         atom_layout_mnk,
-        is_m_major_c
+        epilogue_op=lambda x: x,
     )
 
-    print("Compiling kernel with cute.compile ...")
-    compiled_gemm = cute.compile(tensor_op_gemm, mA, mB, mC)
-
-    print("Executing GEMM kernel...")
+    print("Running Ampere tensor core GEMM test with:")
+    print(f"mnkl: {mnkl}")
+    print(f"Tolerance: {tolerance}")
+    print(f"Warmup iterations: {warmup_iterations}")
+    print(f"Iterations: {iterations}")
+    print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
 
     if not skip_ref_check:
-        ref = torch.einsum(
-            "mkl,nkl->mnl",
-            a_torch.to(dtype=torch.float32),
-            b_torch.to(dtype=torch.float32),
-        ).to(cutlass_torch.dtype(c_dtype))
-        compiled_gemm(mA, mB, mC)
-        print("Verifying results...")
-        torch.testing.assert_close(c_torch.cpu(), ref.cpu(), atol=1e-03, rtol=1e-05)
-        print("Results verified successfully!")
+        # Use small random number for deterministic result for reference check
+        compiled_fn(a_, b_, c_, current_stream)
+
+        # Manually quantize to be comparable
+        # For fp8 types, use f32 source tensors for reference computation
+        # since a/b/c may be stored as uint8
+        a_ref = a_f32 if is_fp8_dtype(ab_dtype) else a
+        b_ref = b_f32 if is_fp8_dtype(ab_dtype) else b
+        ref = (
+            torch.bmm(a_ref.to(dtype=torch.float32), b_ref.to(dtype=torch.float32))
+            .to(dtype=torch_dtype(c_dtype))
+            .to(dtype=torch.float32)
+        )
+        torch.testing.assert_close(
+            c.to(dtype=torch.float32), ref, atol=tolerance, rtol=1e-05
+        )
+
+    if not benchmark:
+        return 0
 
     def generate_tensors():
-        a_workspace, _ = create_and_permute_tensor(L, M, K, a_major == "m", ab_dtype)
-        b_workspace, _ = create_and_permute_tensor(L, N, K, b_major == "n", ab_dtype)
-        c_workspace, _ = create_and_permute_tensor(L, M, N, c_major == "m", c_dtype)
-        return testing.JitArguments(a_workspace, b_workspace, c_workspace)
+        a, b, c, a_f32, b_f32, c_f32 = prepare_tensors(
+            mnkl,
+            ab_dtype,
+            c_dtype,
+            a_major,
+            b_major,
+            c_major,
+            init_random=True,
+        )
+        a_, b_, c_ = mark_dynamic_layout(
+            a,
+            b,
+            c,
+            leading_dim_a,
+            leading_dim_b,
+            leading_dim_c,
+            ab_dtype,
+            c_dtype,
+            a_f32,
+            b_f32,
+            c_f32,
+        )
+        return testing.JitArguments(a_, b_, c_, current_stream)
 
     workspace_count = 1
     if use_cold_l2:
         one_workspace_bytes = (
-            a_torch.numel() * a_torch.element_size()
-            + b_torch.numel() * b_torch.element_size()
-            + c_torch.numel() * c_torch.element_size()
+            a.numel() * a.element_size()
+            + b.numel() * b.element_size()
+            + c.numel() * c.element_size()
         )
         workspace_count = testing.get_workspace_count(
             one_workspace_bytes, warmup_iterations, iterations
         )
 
-    avg_time_us = testing.benchmark(
-        compiled_gemm,
+    # Return execution time in microseconds
+    exec_time = testing.benchmark(
+        compiled_fn,
         workspace_generator=generate_tensors,
         workspace_count=workspace_count,
+        stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
-        use_cuda_graphs=False,
     )
+    print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
+    return exec_time
 
-    return avg_time_us  # Return execution time in microseconds
+
+def _parse_comma_separated_ints(s: str) -> Tuple[int, ...]:
+    try:
+        return tuple(int(x.strip()) for x in s.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "Invalid format. Expected comma-separated integers."
+        )
 
 
-if __name__ == "__main__":
+def prepare_parser():
+    parser = argparse.ArgumentParser(description="Example of Dense GEMM on Ampere.")
 
-    def parse_comma_separated_ints(s: str) -> Tuple[int, ...]:
-        try:
-            return tuple(int(x.strip()) for x in s.split(","))
-        except ValueError:
-            raise argparse.ArgumentTypeError(
-                "Invalid format. Expected comma-separated integers."
-            )
-
-    parser = argparse.ArgumentParser(
-        description="example of multistage block matmul with CuTe on GPU"
+    parser.add_argument(
+        "--mnkl",
+        type=_parse_comma_separated_ints,
+        default=(256, 256, 512, 1),
+        help="mnkl dimensions (comma-separated)",
     )
     parser.add_argument(
-        "--mnkl", type=parse_comma_separated_ints, default=(112, 136, 40, 1)
+        "--atom_layout_mnk",
+        type=_parse_comma_separated_ints,
+        default=(2, 2, 1),
+        help="Atom layout (comma-separated)",
+    )
+    parser.add_argument("--ab_dtype", type=cutlass.dtype, default=cutlass.Float16)
+    parser.add_argument("--c_dtype", type=cutlass.dtype, default=cutlass.Float16)
+    parser.add_argument("--acc_dtype", type=cutlass.dtype, default=cutlass.Float32)
+    parser.add_argument("--a_major", choices=["k", "m"], type=str, default="m")
+    parser.add_argument("--b_major", choices=["k", "n"], type=str, default="n")
+    parser.add_argument("--c_major", choices=["n", "m"], type=str, default="n")
+    parser.add_argument(
+        "--tolerance", type=float, default=1e-03, help="Tolerance for validation"
     )
     parser.add_argument(
-        "--atom_layout_mnk", type=parse_comma_separated_ints, default=(2, 2, 1)
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["default", "none"],
+        help="Benchmark the kernel with default (cutlass.testing.benchmark) or none",
     )
     parser.add_argument(
-        "--ab_dtype",
-        type=cutlass.dtype,
-        choices=[cutlass.Float16],
-        default=cutlass.Float16,
+        "--warmup_iterations", type=int, default=2, help="Warmup iterations"
     )
     parser.add_argument(
-        "--acc_dtype",
-        type=cutlass.dtype,
-        choices=[cutlass.Float32],
-        default=cutlass.Float32,
+        "--iterations",
+        type=int,
+        default=100,
+        help="Number of iterations to run the kernel",
     )
     parser.add_argument(
-        "--c_dtype",
-        type=cutlass.dtype,
-        choices=[cutlass.Float16],
-        default=cutlass.Float16,
+        "--skip_ref_check", action="store_true", help="Skip reference checking"
     )
-    parser.add_argument("--a_major", choices=["k", "m"], default="m")
-    parser.add_argument("--b_major", choices=["k", "n"], default="n")
-    parser.add_argument("--c_major", choices=["n", "m"], default="n")
-    parser.add_argument("--warmup_iterations", default=2, type=int)
-    parser.add_argument("--iterations", default=100, type=int)
-    parser.add_argument("--skip_ref_check", action="store_true")
     parser.add_argument(
         "--use_cold_l2",
         action="store_true",
@@ -1037,19 +1349,43 @@ if __name__ == "__main__":
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
 
+    return parser
+
+
+if __name__ == "__main__":
+    parser = prepare_parser()
+
     args = parser.parse_args()
+
+    if len(args.mnkl) != 4:
+        parser.error("--mnkl must contain exactly 4 values")
+
+    if len(args.atom_layout_mnk) != 3:
+        parser.error("--atom_layout_mnk must contain exactly 3 values")
+
+    print("[DSL INFO] Compiling Ampere Dense GEMM with:")
+    print(
+        f"[DSL INFO] A dtype: {args.ab_dtype}, B dtype: {args.ab_dtype}, C dtype: {args.c_dtype}, Acc dtype: {args.acc_dtype}"
+    )
+    print(
+        f"[DSL INFO] Matrix majors - A: {args.a_major}, B: {args.b_major}, C: {args.c_major}"
+    )
+    print(f"[DSL INFO] Atom layout (M, N, K): {args.atom_layout_mnk}")
+
     run(
-        args.a_major,
-        args.b_major,
-        args.c_major,
+        args.mnkl,
         args.ab_dtype,
         args.c_dtype,
         args.acc_dtype,
-        args.mnkl,
+        args.a_major,
+        args.b_major,
+        args.c_major,
         args.atom_layout_mnk,
+        args.tolerance,
         args.warmup_iterations,
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
+        args.benchmark == "default",
     )
     print("PASS")

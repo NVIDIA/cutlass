@@ -17,8 +17,7 @@ from cutlass._mlir import ir
 from cutlass.cutlass_dsl import lru_cache_ir
 from cutlass._mlir.dialects.core import OperationTypeEnum
 from cutlass import cute
-from cutlass.cute.core import _pack_coord
-from cutlass.cute.typing import Boolean, Coord, Tensor
+from cutlass.cute.typing import Boolean
 
 
 class _SupportsIrValue(Protocol):
@@ -30,7 +29,7 @@ class _SupportsIrValue(Protocol):
     ) -> ir.Value: ...
 
 
-SkipWaitToken: TypeAlias = bool | ir.Value | _SupportsIrValue
+SkipWaitToken: TypeAlias = Union[bool, ir.Value, _SupportsIrValue]
 
 # A producer/consumer role may be a single operation type or a non-empty
 # sequence of them, for pipelines where a single stage is written (or read)
@@ -69,30 +68,6 @@ def get_mbarrier(
     Returns the mbarrier pointer for a given stage token.
     """
     return cutlass_lir_ir.GetMbarrierOp(stage_token, loc=loc, ip=ip)
-
-
-@dsl_user_op
-def domain_offset(
-    coord: Coord,
-    tensor: Tensor,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tensor:
-    """Shift a tensor's logical domain while preserving its descriptor fields.
-
-    This is the IR-preserving counterpart to ``cute.domain_offset``. It keeps
-    the source-level domain-offset semantics explicit until the IR partitioning
-    passes can apply the offset to generated coordinate tensors.
-    """
-    coord_value = _pack_coord(coord, loc=loc, ip=ip)
-    op = cutlass_lir_ir.DomainOffsetOp(
-        tensor.value,
-        coord_value,
-        results=[tensor.value.type],
-        loc=loc,
-        ip=ip,
-    )
-    return op.result
 
 
 @ir.register_value_caster(cutlass_lir_ir.PipelineStateType.get_static_typeid())
