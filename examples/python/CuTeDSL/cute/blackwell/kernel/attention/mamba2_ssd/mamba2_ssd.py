@@ -58,6 +58,17 @@ from cute.blackwell.kernel.attention.mamba2_ssd.mamba2_ssd_tile_scheduler import
 )
 
 
+def _get_warp_register_counts() -> Tuple[int, int]:
+    """Return register counts tuned for each CUDA backend.
+
+    CUDA 12.9 benefits from the 48/88 uniform/epilogue split, while CUDA 13.1
+    and newer use the 32/104 split.
+    """
+    if cutlass.target_version(min_version="13.1"):
+        return 32, 104
+    return 48, 88
+
+
 class SSDKernel:
     def __init__(
         self,
@@ -142,10 +153,12 @@ class SSDKernel:
         )
 
         # Number of registers used by each warp
-        self.num_regs_uniform_warps = 32
+        (
+            self.num_regs_uniform_warps,
+            self.num_regs_epilogue_warps,
+        ) = _get_warp_register_counts()
         self.num_regs_pre_inter_warps = 168
         self.num_regs_pre_intra_warps = 208
-        self.num_regs_epilogue_warps = 104
 
         # Shared storage
         self.shared_storage = None
