@@ -474,7 +474,7 @@ def new_from_mlir_values(obj: Any, values: Any, *, structured: bool = False) -> 
                 new_from_mlir_values(x, v, structured=True) for x, v in zip(obj, values)
             ]
             obj_ty = type(obj)
-            if hasattr(obj_ty, '_make'):
+            if hasattr(obj_ty, "_make"):
                 return obj_ty._make(res)
             return obj_ty(res)
         elif isinstance(obj, SimpleNamespace):
@@ -497,7 +497,7 @@ def new_from_mlir_values(obj: Any, values: Any, *, structured: bool = False) -> 
                 res.append(new_from_mlir_values(x, values[:n_items]))
                 values = values[n_items:]
             obj_ty = type(obj)
-            if hasattr(obj_ty, '_make'):
+            if hasattr(obj_ty, "_make"):
                 return obj_ty._make(res)
             return obj_ty(res)
         elif isinstance(obj, SimpleNamespace):
@@ -854,23 +854,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             return pipeline
         return None
 
-    @staticmethod
-    def log_additions(
-        func_type: Any, operands: Any = None, types: Any = None, arg_attrs: Any = None
-    ) -> None:
-        if operands is not None and operands != []:
-            log().debug(
-                f"Added {func_type} operands: [%s]", ", ".join(map(str, operands))
-            )
-        if types is not None:
-            log().debug(
-                f"Added {func_type} arg_types: [%s]", ", ".join(map(str, types))
-            )
-        if arg_attrs is not None:
-            log().debug(
-                f"Added {func_type} arg_attrs: [%s]", ", ".join(map(str, arg_attrs))
-            )
-
     def mangle_name(
         self, function_name: str, args: tuple[Any, ...], sig: inspect.Signature
     ) -> str:
@@ -976,7 +959,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             else:
                 ir_arg = ir_arg[0]
 
-            self.log_additions(ir_arg)
             return ir_arg, iv_block_args
 
         fop_args = list(fop.regions[0].blocks[0].arguments)
@@ -993,8 +975,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
             ir_kwargs[name] = ir_arg
 
-        log().debug("execution args: %s", ", ".join(map(str, ir_args)))
-        log().debug("execution kwargs: %s", ", ".join(map(str, ir_kwargs)))
         return ir_args, ir_kwargs
 
     @abstractmethod
@@ -1227,9 +1207,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             is_host=True,
             compile_only=compile_only,
         )
-
-        log().debug("Execution Arguments: %s", ", ".join(map(str, exe_args)))
-        log().debug("Types: %s", ", ".join(map(str, types)))
 
         assert (
             compile_only or self.envar.enable_tvm_ffi or len(exe_args) == len(types)
@@ -2394,10 +2371,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 kernel_func, kernel_name, args, kwargs, signature, is_host=False
             )
         )
-
-        log().debug("Final kernel_operands: %s", ", ".join(map(str, kernel_operands)))
-        log().debug("Final kernel_arg_types: %s", ", ".join(map(str, kernel_arg_types)))
-        log().debug("Final kernel_arg_attrs: %s", ", ".join(map(str, kernel_arg_attrs)))
 
         assert len(kernel_operands) == len(kernel_arg_types) == len(kernel_arg_attrs), (
             "Size of kernel_operands, kernel_arg_types and kernel_arg_attrs must be equal"

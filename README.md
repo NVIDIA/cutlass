@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.5.2
+# CUTLASS 4.5.3
 
-_CUTLASS 4.5.2 - May 2026_
+_CUTLASS 4.5.3 - July 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -75,6 +75,7 @@ To get started quickly - please refer :
   - Fixed Jax int64 stride divisibility issue
   - Fixed issues for SM120 blockscaled MMAs
     - added missing MXFP8MMAOP and MXF8F6F4MMAOP for sm120.
+  - Fixed a compilation time regression issue.
 
 * More examples of authorizing peak-performance kernels
   - MOE examles
