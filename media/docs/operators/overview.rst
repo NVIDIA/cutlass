@@ -110,7 +110,7 @@ Alternatively, choose which dependencies to install:
 Next steps
 ----------
 
-- `Core concepts and basic GEMM <https://github.com/NVIDIA/cutlass/blob/main/operators/examples/000_gemm.ipynb>`__ — a guided tour of the API on a minimal GEMM, covering
+- :doc:`tutorials/000_gemm` — a guided tour of the API on a minimal GEMM, covering
   ``RuntimeArguments``, operator discovery, compile/run, and metadata filtering.
 - More guided notebooks in :doc:`tutorials/index`.
 - :doc:`api_reference/index` — full API reference for ``cutlass.operators``.
