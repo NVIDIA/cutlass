@@ -3,7 +3,7 @@
 
 # CUTLASS 4.6.0
 
-_CUTLASS 4.6.0 - June 2026_
+_CUTLASS 4.6.0 - July 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -44,6 +44,8 @@ To get started quickly - please refer :
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html).
 
 # What's New in CUTLASS 4.6
+
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/master/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
 
 ## CuTe DSL
 * New features
