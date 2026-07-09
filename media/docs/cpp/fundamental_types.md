@@ -344,17 +344,6 @@ multiply_add<Array<half_t, kN>> mad_op;
 d = mad_op(a, b, c);   // efficient multiply-add for Array of half-precision elements
 ```
 
-## Numeric Conversion
-
-Operators are define to convert between numeric types in `numeric_conversion.h`. Conversion operators are defined in
-terms of individual numeric elements and on arrays which enable the possibility of efficient hardware
-support on current and future NVIDIA GPUs.
-
-**Example:** Converting between 32-b and 8-b integers.
-```c++
-
-```
-
 ### Copyright
 
 Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
