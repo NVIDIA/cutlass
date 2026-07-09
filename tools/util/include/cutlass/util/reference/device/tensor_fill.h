@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -554,6 +554,112 @@ struct RandomUniformFunc {
   }
 };
 
+/// Computes an exponent-uniform random distribution for UE8M0 scale factors.
+template <>
+struct RandomUniformFunc<float_ue8m0_t> {
+
+  using Element = float_ue8m0_t;
+  using FloatType = float;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    uint64_t seed;
+    int exp_min;
+    int exp_range;
+    int int_scale;              ///< Retained for Params compatibility; exponent is integral.
+    double pnan;
+    int exclude_zero;           ///< Retained for Params compatibility; unused for UE8M0.
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params() { }
+
+    //
+    // Methods
+    //
+
+    CUTLASS_HOST_DEVICE
+    static int closest_log2_exp(FloatType value) {
+      using CUTLASS_CMATH_NAMESPACE :: log2;
+      using CUTLASS_CMATH_NAMESPACE :: nearbyint;
+
+      // UE8M0 scale factors are strictly positive. Keep invalid lower bounds
+      // finite so callers using the generic [0, max] default do not produce NaN.
+      FloatType min_scale = FloatType(Element::bitcast(0x01));
+      FloatType positive_value = value > FloatType(0) ? value : min_scale;
+      return int(nearbyint(log2(positive_value)));
+    }
+
+    /// Construction of uniform RNG functor.
+    Params(
+      uint64_t seed_ = 0,
+      FloatType max_ = FloatType(1),
+      FloatType min_ = FloatType(0),
+      int int_scale_ = -1,
+      double pnan_ = 0,
+      int exclude_zero_ = -1
+    ):
+      seed(seed_),
+      exp_min(closest_log2_exp(min_)),
+      exp_range(closest_log2_exp(max_) - closest_log2_exp(min_)),
+      int_scale(int_scale_),
+      pnan(pnan_),
+      exclude_zero(exclude_zero_) {
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  /// RNG state object
+  curandState_t rng_state;
+
+  //
+  // Methods
+  //
+
+  /// Device-side initialization of RNG
+  CUTLASS_DEVICE
+  RandomUniformFunc(Params const &params): params(params) {
+
+    uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    curand_init(params.seed, gtid, 0, &rng_state);
+  }
+
+  /// Compute random value and update RNG state
+  CUTLASS_DEVICE
+  Element operator()() {
+
+    // Draw random float in [0.0, 1.0] to determine if element should be NaN.
+    if constexpr (std::numeric_limits<Element>::has_quiet_NaN) {
+      if (params.pnan > 0 && (curand_uniform(&rng_state) < (params.pnan))) {
+        return Element(NAN);
+      }
+    }
+
+    using CUTLASS_CMATH_NAMESPACE :: pow;
+
+    FloatType rnd = random_uniform_float<FloatType>(&rng_state);
+    int exponent_count = params.exp_range + 1;
+    int exponent_offset = int(rnd * FloatType(exponent_count));
+    exponent_offset = exponent_offset < exponent_count ? exponent_offset : exponent_count - 1;
+    FloatType exp = FloatType(params.exp_min + exponent_offset);
+    FloatType sf = FloatType(pow(FloatType(2), exp));
+
+    return Element(sf);
+  }
+};
+
 /// Computes a random Gaussian distribution
 template <typename Real>
 struct RandomUniformFunc<complex<Real>> {
@@ -763,6 +869,16 @@ struct TensorFillRandomUniformFunc {
   }
 };
 
+template <typename Element>
+struct UniformDistributionValueType {
+  using Type = typename RealType<Element>::Type;
+};
+
+template <>
+struct UniformDistributionValueType<float_ue8m0_t> {
+  using Type = float;
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -774,8 +890,10 @@ template <
 void TensorFillRandomUniform(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  typename RealType<Element>::Type max = Element(1), ///< upper bound of distribution
-  typename RealType<Element>::Type min = Element(0), ///< lower bound for distribution
+  typename detail::UniformDistributionValueType<Element>::Type max =
+    typename detail::UniformDistributionValueType<Element>::Type(1), ///< upper bound of distribution
+  typename detail::UniformDistributionValueType<Element>::Type min =
+    typename detail::UniformDistributionValueType<Element>::Type(0), ///< lower bound for distribution
   int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
                                           ///  data.
@@ -805,8 +923,8 @@ void BlockFillRandomUniform(
   Element *ptr,
   size_t capacity,
   uint64_t seed,                          ///< seed for RNG
-  typename RealType<Element>::Type max,   ///< upper bound of distribution
-  typename RealType<Element>::Type min,   ///< lower bound for distribution
+  typename detail::UniformDistributionValueType<Element>::Type max,   ///< upper bound of distribution
+  typename detail::UniformDistributionValueType<Element>::Type min,   ///< lower bound for distribution
   int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
                                           ///  data.
@@ -1768,6 +1886,7 @@ void TensorFillRandom(
   ) {
 
   using Real = typename RealType<Element>::Type;
+  using UniformReal = typename detail::UniformDistributionValueType<Element>::Type;
 
   if (dist.kind == Distribution::Gaussian) {
     TensorFillRandomGaussian<Element, Layout>(
@@ -1782,8 +1901,8 @@ void TensorFillRandom(
     TensorFillRandomUniform<Element, Layout>(
       view,
       seed,
-      static_cast<Real>(dist.uniform.max),
-      static_cast<Real>(dist.uniform.min),
+      static_cast<UniformReal>(dist.uniform.max),
+      static_cast<UniformReal>(dist.uniform.min),
       dist.int_scale,
       dist.uniform.pnan,
       exclude_zero,
@@ -1802,7 +1921,8 @@ void BlockFillSequential(
   Element *ptr,
   int64_t capacity,
   Element v = Element(1),
-  Element s = Element(0)) {
+  Element s = Element(0),
+  cudaStream_t stream = nullptr) {
 
   using Layout = layout::PackedVectorLayout;
   Layout::TensorCoord size(static_cast<Layout::Index>(capacity)); // -Wconversion
@@ -1812,7 +1932,7 @@ void BlockFillSequential(
   Array<Element, Layout::kRank> c{};
   c[0] = v;
 
-  TensorFillLinear(view, c, s);
+  TensorFillLinear(view, c, s, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1830,6 +1950,7 @@ void BlockFillRandom(
   cudaStream_t stream = nullptr) {
 
   using Real = typename RealType<Element>::Type;
+  using UniformReal = typename detail::UniformDistributionValueType<Element>::Type;
 
   if (dist.kind == Distribution::Gaussian) {
     BlockFillRandomGaussian<Element>(
@@ -1846,10 +1967,18 @@ void BlockFillRandom(
       ptr,
       capacity,
       seed,
-      static_cast<Real>(dist.uniform.max),
-      static_cast<Real>(dist.uniform.min),
+      static_cast<UniformReal>(dist.uniform.max),
+      static_cast<UniformReal>(dist.uniform.min),
       dist.int_scale,
       dist.uniform.pnan,
+      stream);
+  }
+  else if (dist.kind == Distribution::Sequential) {
+    BlockFillSequential<Element>(
+      ptr,
+      capacity,
+      static_cast<Real>(dist.sequential.delta),
+      static_cast<Real>(dist.sequential.start),
       stream);
   }
 }

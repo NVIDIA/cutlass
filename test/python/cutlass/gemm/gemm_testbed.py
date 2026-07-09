@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -153,7 +153,7 @@ class GemmUniversalLauncher:
         else:
             data_cutlass = data_ref.transpose(-1, -2).contiguous()
 
-        data_cutlass = data_cutlass_cppgen.to("cuda")
+        data_cutlass = data_cutlass.to("cuda")
 
         # As of this writing, few operations in PyTorch are supported with FP8 data.
         # Thus, we perform computation in FP32 for FP8 reference checks.

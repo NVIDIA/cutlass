@@ -1,17 +1,18 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
+from typing import Any
 
-from cuda.bindings import driver, nvrtc
-
-import cutlass.cute as cute
+from cuda.bindings import driver
+from cutlass import cute
+import tempfile
 
 """
 This class is used to get the hardware info of given GPU device.
@@ -41,8 +42,23 @@ class HardwareInfo:
         self.driver_version = self._checkCudaErrors(driver.cuDriverGetVersion())
 
     # Getting the max active clusters for a given cluster size
-    def get_max_active_clusters(self, cluster_size: int) -> int:
-        self._get_device_function()
+    def get_max_active_clusters(
+        self, cluster_size: int, stream: driver.CUstream = None
+    ) -> int:
+        """
+        Get the maximum number of active clusters for a given cluster size.
+
+        When a stream from a green context is provided, the occupancy calculation
+        will reflect the reduced SM partition of the green context.
+
+        :param cluster_size: Number of blocks per cluster (must be between 1 and 32)
+        :type cluster_size: int
+        :param stream: Optional CUDA stream handle. If provided (especially from a green context),
+                      the occupancy calculation reflects the stream's SM partition.
+        :type stream: driver.CUstream, optional
+        :return: Maximum number of active clusters
+        :rtype: int
+        """
         if self._cuda_driver_version_lt(11, 8):
             raise RuntimeError(
                 "CUDA Driver version < 11.8, cannot get _max_active_clusters"
@@ -52,6 +68,8 @@ class HardwareInfo:
                 f"Cluster size must be between 1 and 32, {cluster_size} is not supported"
             )
 
+        # must do get kernel after set device so runtime context is set correctly
+        self.kernel = self._get_device_function()
         max_shared_memory_per_block = self._checkCudaErrors(
             driver.cuDeviceGetAttribute(
                 driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN,
@@ -67,12 +85,16 @@ class HardwareInfo:
         )
         max_dynamic_shared_memory = self._checkCudaErrors(
             driver.cuOccupancyAvailableDynamicSMemPerBlock(
-                self.kernel, 1, 1  # numBlocks  # blockSize
+                self.kernel,
+                1,
+                1,  # numBlocks  # blockSize
             )
         )
         max_active_blocks = self._checkCudaErrors(
             driver.cuOccupancyMaxActiveBlocksPerMultiprocessor(
-                self.kernel, 1, max_dynamic_shared_memory  # blockSize,
+                self.kernel,
+                1,
+                max_dynamic_shared_memory,  # blockSize,
             )
         )
         # allow non-portable cluster size to support detection of non-portable cluster size
@@ -89,6 +111,13 @@ class HardwareInfo:
         launch_config.blockDimY = 1
         launch_config.blockDimZ = 1
         launch_config.sharedMemBytes = max_dynamic_shared_memory
+
+        # IMPORTANT: Set the stream for green context support
+        # When hStream is set, cuOccupancyMaxActiveClusters will use the context
+        # associated with that stream, which includes the green context's SM partition
+        if stream is not None:
+            launch_config.hStream = stream
+
         launch_config.numAttrs = 1
         # max possible cluster size is 32
         cluster_dims_attr = driver.CUlaunchAttribute()
@@ -126,7 +155,7 @@ class HardwareInfo:
             )
         )
 
-    def _checkCudaErrors(self, result) -> None:
+    def _checkCudaErrors(self, result: Any) -> Any:
         if result[0].value:
             raise RuntimeError(
                 "CUDA error code={}({})".format(
@@ -141,12 +170,10 @@ class HardwareInfo:
         else:
             return result[1:]
 
-    def _cudaGetErrorEnum(self, error) -> str:
+    def _cudaGetErrorEnum(self, error: Any) -> str:
         if isinstance(error, driver.CUresult):
             err, name = driver.cuGetErrorName(error)
             return name if err == driver.CUresult.CUDA_SUCCESS else "<unknown>"
-        elif isinstance(error, nvrtc.nvrtcResult):
-            return nvrtc.nvrtcGetErrorString(error)[1]
         else:
             raise RuntimeError("Unknown error type: {}".format(error))
 
@@ -157,18 +184,35 @@ class HardwareInfo:
         return not self._cuda_driver_version_ge(major, minor)
 
     @cute.kernel
-    def _empty_kernel(self):
+    def _empty_kernel(self) -> None:
         return
 
     @cute.jit
-    def _host_function(self):
+    def _host_function(self) -> None:
         self._empty_kernel().launch(
             grid=[1, 1, 1],
             block=[1, 1, 1],
         )
 
     # get a empty kernel to compute occupancy
-    def _get_device_function(self) -> None:
-        self.compiled_kernel = cute.compile(self._host_function)
-        self.module = next(iter(self.compiled_kernel.cuda_modules.modules)).cuda_module
-        self.kernel = next(iter(self.compiled_kernel.cuda_modules.modules)).kernel_ptr
+    def _get_device_function(self) -> driver.CUfunction:
+        """
+        Get a device function by compiling a dummy kernel using cuteDSL pipeline.
+        """
+        # Create a temporary directory for dumping artifacts
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # keep-cubin will keep the cubin in the artifacts
+            compiled_func = cute.compile(
+                self._host_function, options=f"--dump-dir={temp_dir} --keep-cubin"
+            )
+            # Get the CUBIN from artifacts
+            cubin_data = compiled_func.artifacts.CUBIN
+            cuda_library = self._checkCudaErrors(
+                driver.cuLibraryLoadData(cubin_data, None, None, 0, None, None, 0)
+            )
+            # Enumerate kernels from the library
+            kernels = self._checkCudaErrors(
+                driver.cuLibraryEnumerateKernels(1, cuda_library)
+            )
+            # Get the function from the kernel
+            return self._checkCudaErrors(driver.cuKernelGetFunction(kernels[0]))

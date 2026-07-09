@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -419,16 +419,16 @@ struct FwdRunner {
   using ElementAccumulatorPV = float;
   using ElementOut = cutlass::half_t;
 
-  // Q K D (B H)
+  // Q K D ((H_R, H_K) B)
   using ProblemShapeRegular = cute::tuple<int, int, int, cute::tuple<cute::tuple<int, int>, int>>;
   using ProblemShapeVarlen = cute::tuple<VariableLength, VariableLength, int, cute::tuple<cute::tuple<int, int>, int>>;
   using ProblemShapeType = std::conditional_t<kIsVarlen, ProblemShapeVarlen, ProblemShapeRegular>;
   
-  using StrideQ = cute::tuple<int, _1, cute::tuple<cute::tuple<int, int>, int>>;  // Q D (H_G H_R B)
-  using StrideK = cute::tuple<int, _1, cute::tuple<cute::tuple<_0, int>, int>>;  // K D (H_G H_R B)
+  using StrideQ = cute::tuple<int, _1, cute::tuple<cute::tuple<int, int>, int>>;  // Q D ((H_R, H_K), B)
+  using StrideK = cute::tuple<int, _1, cute::tuple<cute::tuple<_0, int>, int>>;  // K D ((H_R, H_K), B)
   using StrideV = StrideK;
   using StrideO = StrideQ;
-  using StrideLSE = cute::tuple<_1, cute::tuple<cute::tuple<int, int>, int>>;     // Q   (H_G H_R B)
+  using StrideLSE = cute::tuple<_1, cute::tuple<cute::tuple<int, int>, int>>;     // Q ((H_R, H_K), B)
 
   static constexpr bool kIsPersistent = find_option_t<Tag::kIsPersistent, true_type, KernelOptions...>::value;
   using TileScheduler = std::conditional_t<kIsPersistent, cutlass::fmha::kernel::PersistentTileScheduler, cutlass::fmha::kernel::IndividualTileScheduler>;
@@ -611,8 +611,8 @@ struct FwdRunner {
 
     ProblemShapeType problem_size_for_launch;
 
-    get<0>(problem_size_for_launch) = VariableLength{max_seqlen_q};
-    get<1>(problem_size_for_launch) = VariableLength{max_seqlen_kv};
+    get<0>(problem_size_for_launch) = VariableLength{max_seqlen_q, nullptr, total_seqlen_q};
+    get<1>(problem_size_for_launch) = VariableLength{max_seqlen_kv, nullptr, total_seqlen_kv};
     get<2>(problem_size_for_launch) = get<2>(problem_size);
     get<3>(problem_size_for_launch) = get<3>(problem_size);
 
@@ -669,9 +669,9 @@ struct FwdRunner {
     }
 
     auto buffer_init_fn = [&](auto& buffer) {
-      buffer.block_Q.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
-      buffer.block_K.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
-      buffer.block_V.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
+      buffer.block_Q.reset(size(shape_QO));
+      buffer.block_K.reset(size(shape_KV));
+      buffer.block_V.reset(size(shape_KV));
       buffer.block_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
       buffer.block_LSE.reset(size(shape_LSE));
       buffer.block_ref_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
@@ -1036,14 +1036,18 @@ int main_single(int argc, char const **args) {
     return -1;
   }
 
-  if (__CUDACC_VER_MAJOR__ < 12 || props.major != 10) {
-    std::cout
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture "
-      << "(compute capability major 10) and CUDA 12.8 or greater.\n";
+  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 8)) {
+    std::cerr << "This example requires CUDA 12.8 or newer." << std::endl;
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
 
-  //
+  if (props.major != 10) {
+    std::cerr
+      << "This example requires a GPU of NVIDIA's Blackwell Architecture "
+      << "(compute capability 100a)." << std::endl;
+    return 0;
+  }  //
   // Parse options
   //
 

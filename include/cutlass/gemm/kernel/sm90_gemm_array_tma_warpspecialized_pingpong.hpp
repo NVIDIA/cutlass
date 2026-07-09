@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -48,6 +48,7 @@
 #include "cutlass/trace.h"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
+#include "cutlass/arch/grid_dependency_control.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -130,9 +131,9 @@ public:
     cute::is_void_v<TileScheduler_>
     or (
       IsGroupedGemmKernel
-      and cute::is_any_of_v<TileScheduler_, GroupScheduler>
+      and cute::is_base_of_v<GroupScheduler, TileScheduler_>
     ),
-    "Ptr-Array Pingpong and Grouped Gemm Pingpong kernel only supports the default scheduler.");
+    "Ptr-Array Pingpong and Grouped Gemm Pingpong kernel only supports group-compatible schedulers (TileScheduler_ must derive from GroupScheduler).");
 
   using SchedulerTag = cute::conditional_t<
     cute::is_void_v<TileScheduler_>,
@@ -167,8 +168,26 @@ public:
   static constexpr bool     IsMainloopAuxiliaryLoadNeeded = detail::HasAuxiliaryLoad_v<typename CollectiveMainloop::DispatchPolicy>;
 
   /// Register requirement for Load and Math WGs
+  static constexpr int RegsPerThread =
+    2 * size<0>(TileShape{}) * size<1>(TileShape{}) / (NumMmaWarpGroups * NumThreadsPerWarpGroup) *
+    sizeof(ElementAccumulator) / sizeof(uint32_t);
+
+  // Detect if this is SM120 blockscaled kernel which hits low register pressure
+  // on smaller tiles
+  template <typename T>
+  struct IsSm120BlockScaled : cute::false_type {};
+
+  template <int Stages, int SchedStages, class ClusterShape, class KernelSchedule>
+  struct IsSm120BlockScaled<MainloopSm120ArrayTmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>>
+    : cute::true_type {};
+
+  static constexpr bool IsLowRegisterPressure = IsSm120BlockScaled<DispatchPolicy>::value && (RegsPerThread <= 64);
+
+  /// Register requirement for Load and Math WGs
   static constexpr uint32_t LoadRegisterRequirement = 40;
   static constexpr uint32_t MmaRegisterRequirement = 232;
+
+  static constexpr bool IsSm120Family = cute::is_same_v<typename DispatchPolicy::ArchTag, arch::Sm120>;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
@@ -329,7 +348,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
     return implementable;
   }
 
@@ -398,9 +417,6 @@ public:
   get_grid_shape(Params const& params) {
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
     TileSchedulerArguments args{};
-    if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
-      args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
-    }
     args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
     dim3 grid_shape;
     if constexpr (IsGroupedGemmKernel) {
@@ -430,7 +446,7 @@ public:
 
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
 
     // Preconditions
@@ -462,16 +478,6 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    auto scheduler = [&] () {
-      // Group scheduler requires a different constructor that takes a response ptr
-      if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
-        return TileScheduler{params.scheduler, shared_storage.scheduler_response};
-      }
-      else {
-        return TileScheduler{params.scheduler};
-      }
-    } ();
-
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
@@ -493,7 +499,7 @@ public:
     // TileScheduler pipeline
     using TileSchedulerPipeline = typename TileScheduler::Pipeline;
     typename TileSchedulerPipeline::Params tile_scheduler_pipeline_params;
-    if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
+    if constexpr (IsGroupedGemmKernel) {
       if (warp_group_role == WarpGroupRole::Producer
         && producer_warp_role == ProducerWarpRole::Scheduler) {
         tile_scheduler_pipeline_params.role = TileSchedulerPipeline::ThreadCategory::Producer;
@@ -596,6 +602,19 @@ public:
     // Wait for all thread blocks in the Cluster
     cluster_wait_fn();
 
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
+
+    auto scheduler = [&] () {
+      // Group scheduler requires a different constructor that takes a response ptr
+      if constexpr (IsGroupedGemmKernel) {
+        return TileScheduler{params.scheduler, shared_storage.scheduler_response};
+      }
+      else {
+        return TileScheduler{params.scheduler};
+      }
+    } ();
+
     auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
     if (not work_tile_info.is_valid()) {
@@ -643,12 +662,14 @@ public:
     auto k_tile_count = size<3>(gA_mkl);
 
     if (warp_group_role == WarpGroupRole::Producer) {
-      cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
+      if constexpr (!IsLowRegisterPressure) {
+        cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
+      }
 
       if (producer_warp_role == ProducerWarpRole::Scheduler) {
         // GroupScheduler requires a producer warp to iterate over the group infos and push
         // the work tile infos to the downstream pipelines.
-        if constexpr (cute::is_same_v<SchedulerTag, GroupScheduler>) {
+        if constexpr (IsGroupedGemmKernel) {
           do {
             auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(tile_scheduler_pipeline, tile_scheduler_pipe_producer_state);
             work_tile_info = next_work_tile_info;
@@ -743,6 +764,9 @@ public:
             curr_batch = next_batch;
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), 1);
+              load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+              gA_mkl = get<0>(load_inputs);
+              gB_nkl = get<1>(load_inputs);
             }
             collective_mainloop.tensormaps_perform_update(
               shared_storage.tensormaps.mainloop,
@@ -828,7 +852,7 @@ public:
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
         int32_t const sm_count = params.hw_info.sm_count;
 
-        auto epi_load_tensormap = get<0>(collective_epilogue.load_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx));
+        auto epi_load_tensormap = collective_epilogue.load_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx);
 
         bool did_batch_change = true;
         constexpr bool IsEpiLoad = true;
@@ -857,6 +881,9 @@ public:
           if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+              load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+              gA_mkl = get<0>(load_inputs);
+              gB_nkl = get<1>(load_inputs);
             }
 
             // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -869,8 +896,6 @@ public:
               collective_epilogue.template tensormaps_fence_acquire<IsEpiLoad>(epi_load_tensormap);
             }
 
-            bool wait = work_tile_info.is_valid() && curr_batch != next_work_tile_info.L_idx;
-
             epi_load_pipe_producer_state = collective_epilogue.load(
               epi_load_pipeline,
               epi_load_pipe_producer_state,
@@ -881,8 +906,7 @@ public:
               lane_idx,
               shared_storage.tensors.epilogue,
               epi_load_tensormap,
-              work_tile_info.reduction_subtile_idx(),
-              wait
+              work_tile_info.reduction_subtile_idx()
             );
           }
 
@@ -895,6 +919,9 @@ public:
           if (work_tile_info.is_valid() && did_batch_change) {
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+              load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+              gA_mkl = get<0>(load_inputs);
+              gB_nkl = get<1>(load_inputs);
             }
 
             // tensormap update
@@ -910,7 +937,10 @@ public:
 
               // Converge before issuing tensormap fence release since fence is aligned
               __syncwarp();
-              collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
+              collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(
+                shared_storage.tensormaps.epilogue,
+                epi_load_tensormap,
+                0);
             }
           }
 
@@ -922,7 +952,9 @@ public:
     } // Producer Warp Group End
 
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
-      cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
+      if constexpr (!IsLowRegisterPressure) {
+        cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
+      }
 
       // Index of warp group within consumer warp groups
       int consumer_warp_group_idx = warp_group_role == WarpGroupRole::Consumer0 ? 0 : 1;
@@ -932,7 +964,7 @@ public:
       // Do we potentially issue tail arrives for TMA stores, if epilogue load is waiting for it
       bool do_store_tail = false;
       // Get a copy of tensormaps
-      auto epi_store_tensormap = get<0>(collective_epilogue.store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx));
+      auto epi_store_tensormap = collective_epilogue.store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx);
 
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = false;
@@ -950,13 +982,16 @@ public:
         // Converge before issuing tensormap fence release since fence is aligned
         __syncwarp();
         collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
-                                                                    epi_store_tensormap,
-                                                                    consumer_warp_group_idx);
+                                                                            epi_store_tensormap,
+                                                                            consumer_warp_group_idx);
       }
 
       do {
         if constexpr (IsGroupedGemmKernel) {
           problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+          load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+          gA_mkl = get<0>(load_inputs);
+          gB_nkl = get<1>(load_inputs);
         }
 
         int32_t curr_batch = work_tile_info.L_idx;
@@ -977,15 +1012,29 @@ public:
 
           math_wg_order_barrier.wait();
 
-          collective_mainloop.mma(
-            mainloop_pipeline,
-            mainloop_pipe_consumer_state,
-            accumulators,
-            work_k_tile_count,
-            mma_thread_idx,
-            shared_storage.tensors.mainloop,
-            params.mainloop
-          );
+          if constexpr (IsSm120Family) {
+            collective_mainloop.mma(
+              mainloop_pipeline,
+              mainloop_pipe_consumer_state,
+              accumulators,
+              work_k_tile_count,
+              mma_thread_idx,
+              shared_storage.tensors.mainloop,
+              params.mainloop,
+              blk_coord
+            );
+          }
+          else {
+            collective_mainloop.mma(
+              mainloop_pipeline,
+              mainloop_pipe_consumer_state,
+              accumulators,
+              work_k_tile_count,
+              mma_thread_idx,
+              shared_storage.tensors.mainloop,
+              params.mainloop
+            );
+          }
 
           math_wg_order_barrier.arrive();
 
@@ -1037,6 +1086,11 @@ public:
 
         // Get next work tile
         auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info, tile_scheduler_pipeline, tile_scheduler_pipe_consumer_state);
+
+        if (!next_work_tile_info.is_valid()) {
+          cutlass::arch::launch_dependent_grids();
+        }
+
         work_tile_info = next_work_tile_info;
         if (increment_pipe) {
           ++tile_scheduler_pipe_consumer_state;
@@ -1046,6 +1100,9 @@ public:
         if (work_tile_info.is_valid()) {
           if constexpr (IsGroupedGemmKernel) {
             problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+            load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+            gA_mkl = get<0>(load_inputs);
+            gB_nkl = get<1>(load_inputs);
           }
           work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
@@ -1062,6 +1119,9 @@ public:
         if (work_tile_info.is_valid() && did_batch_change) {
           if constexpr (IsGroupedGemmKernel) {
             problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+            load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
+            gA_mkl = get<0>(load_inputs);
+            gB_nkl = get<1>(load_inputs);
           }
           if (warp_idx_in_warp_group == 0) {
             collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
@@ -1075,9 +1135,10 @@ public:
 
             // Converge before issuing tensormap fence release since fence is aligned
             __syncwarp();
-            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
-                                                                       epi_store_tensormap,
-                                                                       consumer_warp_group_idx);
+            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(
+              shared_storage.tensormaps.epilogue,
+              epi_store_tensormap,
+              consumer_warp_group_idx);
           }
         }
 

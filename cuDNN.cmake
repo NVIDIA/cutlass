@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,7 @@ message(STATUS "Configuring cuDNN ...")
 find_path(
     _CUDNN_INCLUDE_DIR cudnn.h
     PATHS
+    $ENV{CUDNN_PATH}
     ${CUDA_TOOLKIT_ROOT_DIR}/include
     $ENV{CUDNN_PATH}/include
     $ENV{CUDA_PATH}/include
@@ -48,6 +49,7 @@ find_path(
 find_library(
     _CUDNN_LIBRARY cudnn
     HINTS
+    $ENV{CUDNN_PATH}
     ${CUDA_TOOLKIT_ROOT_DIR}/lib64
     ${CUDA_TOOLKIT_ROOT_DIR}/lib/x64
     ${CUDA_TOOLKIT_ROOT_DIR}/lib

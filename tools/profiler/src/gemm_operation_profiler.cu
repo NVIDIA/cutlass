@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1264,7 +1264,7 @@ bool GemmOperationProfiler::verify_cutlass(
     }
   }
 
-  // if verification.required is set, then return success iff at least one ref-check was run
+  // if verification.required is set, then return success if at least one ref-check was run
   if (options.verification.required) {
     bool did_any_verification_run = false;
     for (auto provider : options.verification.providers) {

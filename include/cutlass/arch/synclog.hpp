@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -155,6 +155,10 @@ constexpr uint32_t synclog_length_fence_barrier_init = synclog_length_prefix + 0
 constexpr bool     synclog_enable_fence_view_async_shared = true;
 constexpr uint32_t synclog_header_fence_view_async_shared = 17;
 constexpr uint32_t synclog_length_fence_view_async_shared = synclog_length_prefix + 0;
+
+constexpr bool     synclog_enable_fence_view_shared = true;
+constexpr uint32_t synclog_header_fence_view_shared = 39;
+constexpr uint32_t synclog_length_fence_view_shared = synclog_length_prefix + 0;
 
 constexpr bool     synclog_enable_cp_async_wait = true;
 constexpr uint32_t synclog_header_cp_async_wait = 18;
@@ -638,6 +642,19 @@ void synclog_emit_fence_view_async_shared(uint32_t line) {
 }
 
 CUTLASS_DEVICE
+void synclog_emit_fence_view_shared(uint32_t line) {
+  #if defined(CUTLASS_ENABLE_SYNCLOG)
+  if constexpr (!synclog_enable_fence_view_shared) return;
+  if (!synclog_condition_emit()) return;
+  uint32_t* to = synclog_alloc(synclog_length_fence_view_shared);
+  if (to == nullptr) return;
+  synclog_emit_prefix(to, synclog_header_fence_view_shared, line);
+  #else
+  CUTLASS_UNUSED(line);
+  #endif // defined(CUTLASS_ENABLE_SYNCLOG)
+}
+
+CUTLASS_DEVICE
 void synclog_emit_cp_async_wait(
   uint32_t line,
   uint32_t n) {
@@ -1087,6 +1104,14 @@ void synclog_print() {
       if (header == synclog_header_fence_view_async_shared) {
         synclog_print_prefix("fence_view_async_shared", at);
         at += synclog_length_fence_view_async_shared;
+        printf("\n");
+        continue;
+      }
+    }
+    if constexpr (synclog_enable_fence_view_shared) {
+      if (header == synclog_header_fence_view_shared) {
+        synclog_print_prefix("fence_view_shared", at);
+        at += synclog_length_fence_view_shared;
         printf("\n");
         continue;
       }

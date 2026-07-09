@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -102,6 +102,7 @@ public:
   template <int R, typename I, typename L>
   CUTLASS_HOST_DEVICE
   Coord(Coord<R, I, L> other) {
+    static_assert(kRank == R);
     for (int i = 0; i < kRank; ++i) {
       idx[i] = other[i];
     }

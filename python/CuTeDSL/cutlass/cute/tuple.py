@@ -1,0 +1,541 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# Use of this software is governed by the terms and conditions of the
+# NVIDIA End User License Agreement (EULA), available at:
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
+#
+# Any use, reproduction, disclosure, or distribution of this software
+# and related documentation outside the scope permitted by the EULA
+# is strictly prohibited.
+
+
+from inspect import signature
+from itertools import chain
+from typing import Any, Callable, Generator, Optional, Union, Tuple, List, Iterable
+
+from cutlass._mlir import ir
+from cutlass.cutlass_dsl import is_dynamic_expression, dsl_user_op
+import cutlass._mlir.dialects.cute as _cute_ir
+
+from .typing import (
+    XTuple,
+    IntTuple,
+    Shape,
+    Coord,
+    Boolean,
+    is_integer,
+)
+
+
+def wrap(x: XTuple) -> Tuple[Any, ...]:
+    """
+    Wraps the input into a tuple if not a tuple.
+    """
+    if isinstance(x, tuple):
+        return x
+    return (x,)
+
+
+def unwrap(x: XTuple) -> XTuple:
+    """
+    Unwraps the input tuple if it is a single-element tuple, otherwise returns the input.
+
+    Example:
+    >>> unwrap((1,))
+    1
+    >>> unwrap(((1, 2, 3),))
+    (1, 2, 3)
+    >>> unwrap((1, 2, 3))
+    (1, 2, 3)
+    """
+    while isinstance(x, tuple) and len(x) == 1:
+        x = x[0]
+    return x
+
+
+def flatten_to_tuple(a: XTuple) -> Tuple[Any, ...]:
+    """Flattens a potentially nested tuple structure into a flat tuple.
+
+    This function recursively traverses the input structure and flattens it into
+    a single-level tuple, preserving the order of elements.
+
+    :param a: The structure to flatten
+    :type a: Union[IntTuple, Coord, Shape, Stride]
+    :return: A flattened tuple containing all elements from the input
+    :rtype: tuple
+
+    **Examples:**
+
+    .. code-block:: python
+
+        flatten_to_tuple((1, 2, 3))       # Returns (1, 2, 3)
+        flatten_to_tuple(((1, 2), 3))     # Returns (1, 2, 3)
+        flatten_to_tuple((1, (2, (3,))))  # Returns (1, 2, 3)
+    """
+    if not isinstance(a, tuple):
+        return wrap(a)
+    else:
+        return tuple(chain.from_iterable(tuple(flatten_to_tuple(x) for x in a)))
+
+
+def unflatten(
+    sequence: Union[Tuple[Any, ...], List[Any], Iterable[Any]], profile: XTuple
+) -> XTuple:
+    """Unflatten a flat tuple into a nested tuple structure according to a profile.
+
+    This function transforms a flat sequence of elements into a nested tuple structure
+    that matches the structure defined by the profile parameter. It traverses the profile
+    structure and populates it with elements from the sequence.
+
+    sequence must be long enough to fill the profile. Raises RuntimeError if it is not.
+
+    :param sequence: A flat sequence of elements to be restructured
+    :type sequence: Union[Tuple[Any, ...], List[Any], Iterable[Any]]
+    :param profile: A nested tuple structure that defines the shape of the output
+    :type profile: XTuple
+    :return: A nested tuple with the same structure as profile but containing elements from sequence
+    :rtype: XTuple
+
+    **Examples:**
+
+    .. code-block:: python
+
+        unflatten([1, 2, 3, 4], ((0, 0), (0, 0)))  # Returns ((1, 2), (3, 4))
+    """
+
+    def _make_generator() -> Generator[Any, None, None]:
+        for element in sequence:
+            yield element
+
+    xs = _make_generator()
+    return transform_leaf(lambda _: next(xs), profile)
+
+
+@dsl_user_op
+def product(
+    a: Union[IntTuple, Shape],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> IntTuple:
+    # Local import to avoid circular dependency
+    from .core import _pack_int_tuple, _unpack_x_tuple
+
+    """Return product of the given IntTuple or Shape.
+
+    Computes the product of all elements in the input tuple or shape.
+
+    Returns static value if type is static otherwise dynamic value.
+
+    :param a: The input tuple or shape
+    :type a: IntTuple or Shape
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: Static product of IntTuple or Shape if static, otherwise a Value
+    :rtype: int or Value
+    :raises TypeError: If input is not an IntTuple or Shape
+    """
+    if is_integer(a):
+        return a
+    if isinstance(a, tuple):
+        a_val = _pack_int_tuple(a, loc=loc, ip=ip)
+        res = _cute_ir.tuple_product(a_val, loc=loc, ip=ip)
+        return _unpack_x_tuple(res, loc=loc, ip=ip)
+    else:
+        raise TypeError(f"expects IntTuple or Shape, but got {type(a)}")
+
+
+@dsl_user_op
+def product_like(
+    a: IntTuple,
+    target_profile: XTuple,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> IntTuple:
+    """Return product of the given IntTuple or Shape at leaves of `target_profile`.
+
+    This function computes products according to the structure defined by target_profile.
+
+    :param a: The input tuple or shape
+    :type a: IntTuple or Shape
+    :param target_profile: The profile that guides how products are computed
+    :type target_profile: XTuple
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: The resulting tuple with products computed according to target_profile
+    :rtype: IntTuple or Shape
+    :raises TypeError: If inputs have incompatible types
+    :raises ValueError: If inputs have incompatible shapes
+    """
+    # Perform product at leaf of `target_profile`
+    if not isinstance(target_profile, tuple):
+        return product(a, loc=loc, ip=ip)
+
+    if not isinstance(a, tuple):
+        raise TypeError(f"expects `a` tuple but got {a}")
+
+    if len(a) != len(target_profile):
+        raise ValueError("expects `a` and `guide` have the same rank")
+
+    return tuple(product_like(x, g, loc=loc, ip=ip) for x, g in zip(a, target_profile))
+
+
+@dsl_user_op
+def product_each(
+    a: IntTuple,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> IntTuple:
+    from .core import _pack_int_tuple, _unpack_x_tuple
+
+    """Compute products for each component of the input.
+
+    Returns a rank(a) tuple result such that ``get(result, mode=[i]) == product(get(a, mode=[i]))``
+
+    :param a: The input IntTuple or Shape
+    :type a: IntTuple or Shape
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: A tuple containing products for each component
+    :rtype: tuple
+    :raises TypeError: If input is not an IntTuple or Shape
+    """
+    if is_integer(a):
+        return a
+
+    if not isinstance(a, tuple):
+        raise TypeError(f"expects IntTuple or Shape, but got {type(a)}")
+
+    if a == ():
+        return 1
+
+    a_val = _pack_int_tuple(a, loc=loc, ip=ip)
+    res = _cute_ir.tuple_product_each(a_val, loc=loc, ip=ip)
+    return _unpack_x_tuple(res, loc=loc, ip=ip)
+
+
+def find_if(
+    t: XTuple,
+    pred_fn: Callable[[XTuple, Union[int, Tuple[int, ...]]], bool],
+    hierarchical: bool = True,
+) -> Union[int, Tuple[int, ...], None]:
+    from .core import rank, get
+
+    """Find the first position in t where pred_fn(val, pos) returns True.
+
+    :param t: The search space
+    :type t: Union[tuple, ir.Value, int]
+    :param pred_fn: A callable object (lambda, function, etc.) that predicates the value and position in t.
+                    It takes the current leaf value and position, returns True if the value or position is satisfied.
+                    The type must be compatible with rank(t).
+    :type pred_fn: Callable[[Union[tuple, ir.Value, int], int], bool]
+    :return: Index if found at top level, tuple of indices showing nested position, or None if not found
+    :rtype: Union[int, Tuple[int, ...], None]
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Find the first position of x in t
+        t = (3, 4)
+        find_if(t, pred_fn=lambda val, pos: val == x)
+
+    .. code-block:: python
+
+        # find the leading dimension
+        shape = (3, 4)
+        stride = (4, 1)
+        # Find value 1 in stride where the corresponding shape is not 1
+        def pred_fn(val, pos):
+            mode = [pos] if isinstance(pos, int) else list(pos)
+            return val == 1 and get(shape, mode) != 1
+        find_if(stride, pred_fn=pred_fn)
+    """
+
+    def _find_if_impl(
+        curr: XTuple, pos: Union[int, Tuple[int, ...]]
+    ) -> Union[int, Tuple[int, ...], None]:
+        if isinstance(curr, tuple):
+            # Recursively search nested tuple
+            for i in range(rank(curr)):
+                sub_curr = get(curr, mode=[i])
+                sub_pos = (pos, i) if isinstance(pos, int) else pos + (i,)
+                res_pos = _find_if_impl(sub_curr, sub_pos)
+                if res_pos is not None:
+                    return res_pos
+        else:
+            # For leaf values, check if it matches x
+            if pred_fn(curr, pos):
+                return pos
+        return None
+
+    if not callable(pred_fn):
+        raise TypeError(f"pred_fn must be callable, but got {type(pred_fn)}")
+
+    sig = signature(pred_fn)
+
+    if len(sig.parameters) != 2:
+        raise ValueError(
+            f"pred_fn must have two parameters (value, pos), but got {len(sig.parameters)}"
+        )
+
+    for i in range(rank(t)):
+        curr = get(t, mode=[i])
+        res_pos = _find_if_impl(curr, i)
+        if res_pos is not None:
+            if hierarchical:
+                return res_pos
+            else:
+                return (
+                    res_pos
+                    if not isinstance(res_pos, tuple)
+                    else flatten_to_tuple(res_pos)[0]
+                )
+    return None
+
+
+def find(
+    t: XTuple, x: int, hierarchical: bool = True
+) -> Union[int, Tuple[int, ...], None]:
+    """Find the first position of a value ``x`` in a hierarchical structure ``t``.
+
+    Searches for the first occurrence of x in t, optionally excluding positions
+    where a comparison value matches. The search can traverse nested structures
+    and returns either a single index or a tuple of indices for nested positions.
+
+    :param t: The search space
+    :type t: XTuple
+    :param x: The static integer x to search for
+    :type x: int
+    :return: Index if found at top level, tuple of indices showing nested position, or None if not found
+    :rtype: Union[int, Tuple[int, ...], None]
+    """
+    if not isinstance(x, int):
+        raise TypeError(f"find() requires a static x to search for, but got {x}")
+
+    def pred_fn(val: XTuple, pos: Union[int, Tuple[int, ...]]) -> bool:
+        # Skip dynamic values which can't be compared
+        return not is_dynamic_expression(val) and val == x
+
+    return find_if(t, pred_fn=pred_fn, hierarchical=hierarchical)
+
+
+def transform_leaf(f: Callable[..., XTuple], *args: XTuple) -> XTuple:
+    """
+    Apply a function to the leaf nodes of nested tuple structures.
+
+    This function traverses nested tuple structures in parallel and applies the function f
+    to corresponding leaf nodes. All input tuples must have the same nested structure.
+
+    :param f: Function to apply to leaf nodes
+    :type f: Callable
+    :param args: One or more nested tuple structures with matching profiles
+    :return: A new nested tuple with the same structure as the inputs, but with leaf values transformed by f
+    :raises TypeError: If the input tuples have different nested structures
+
+    **Example:**
+
+    .. code-block:: python
+
+        >>> transform_leaf(lambda x: x + 1, (1, 2))
+        (2, 3)
+        >>> transform_leaf(lambda x, y: x + y, (1, 2), (3, 4))
+        (4, 6)
+        >>> transform_leaf(lambda x: x * 2, ((1, 2), (3, 4)))
+        ((2, 4), (6, 8))
+    """
+    if all(isinstance(t, tuple) for t in args):
+        return tuple(transform_leaf(f, *_args) for _args in zip(*args))
+    elif all(not isinstance(t, tuple) for t in args):
+        return f(*args)
+    else:
+        raise TypeError(f"profile of input tuples doesn't match: {args}")
+
+
+@dsl_user_op
+def elem_less(
+    lhs: Union[Shape, IntTuple, Coord],
+    rhs: Union[Shape, IntTuple, Coord],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Boolean:
+    from .core import _pack_coord
+
+    # Coord is super set of IntTuple and Shape
+    lhs_val = _pack_coord(lhs, loc=loc, ip=ip)
+    rhs_val = _pack_coord(rhs, loc=loc, ip=ip)
+    return Boolean(_cute_ir.elem_less(lhs_val, rhs_val, loc=loc, ip=ip))
+
+
+def tuple_cat(*tuples: XTuple) -> Tuple[Any, ...]:
+    """Concatenate multiple tuples into a single tuple.
+
+    This function takes any number of tuples and concatenates them into a single tuple.
+    Non-tuple arguments are treated as single-element tuples.
+
+    :param tuples: Variable number of tuples to concatenate
+    :type tuples: tuple or any
+    :return: A single concatenated tuple
+    :rtype: tuple
+
+    **Examples:**
+
+    .. code-block:: python
+
+        >>> tuple_cat((1, 2), (3, 4))
+        (1, 2, 3, 4)
+        >>> tuple_cat((1,), (2, 3), (4,))
+        (1, 2, 3, 4)
+        >>> tuple_cat(1, (2, 3))
+        (1, 2, 3)
+    """
+    result: Tuple[Any, ...] = ()
+    for t in tuples:
+        if isinstance(t, tuple):
+            result += t
+        else:
+            result += (t,)
+    return result
+
+
+def transform_apply(
+    *args: XTuple, f: Callable[..., XTuple], g: Callable[..., XTuple]
+) -> XTuple:
+    """Transform elements of tuple(s) with f, then apply g to all results.
+
+    This function applies f to corresponding elements across input tuple(s),
+    then applies g to all transformed results. It mimics the C++ CuTe implementation.
+
+    Supports multiple signatures:
+    - transform_apply(t, f, g): For single tuple, computes g(f(t[0]), f(t[1]), ...)
+    - transform_apply(t0, t1, f, g): For two tuples, computes g(f(t0[0], t1[0]), f(t0[1], t1[1]), ...)
+    - transform_apply(t0, t1, t2, ..., f, g): For multiple tuples of same length
+
+    For non-tuple inputs, f is applied to the input(s) and g is applied to that single result.
+
+    :param args: One or more tuples (or non-tuples) to transform
+    :param f: The function to apply to each element (or corresponding elements across tuples)
+    :type f: Callable
+    :param g: The function to apply to all transformed elements
+    :type g: Callable
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: The result of applying g to all transformed elements
+    :rtype: any
+
+    **Examples:**
+
+    .. code-block:: python
+
+        >>> transform_apply((1, 2, 3), f=lambda x: x * 2, g=lambda *args: sum(args))
+        12  # (1*2 + 2*2 + 3*2) = 12
+        >>> transform_apply((1, 2), f=lambda x: (x, x+1), g=tuple_cat)
+        (1, 2, 2, 3)
+        >>> transform_apply((1, 2), (3, 4), f=lambda x, y: x + y, g=lambda *args: args)
+        (4, 6)
+    """
+    if not callable(f):
+        raise TypeError(f"f must be callable, but got {type(f)}")
+    if not callable(g):
+        raise TypeError(f"g must be callable, but got {type(g)}")
+
+    if not args:
+        raise ValueError("transform_apply requires at least one argument")
+
+    def _compatible_xtuples(args: Tuple[XTuple, ...]) -> bool:
+        if isinstance(args[0], tuple):
+            if not all(isinstance(arg, tuple) for arg in args):
+                return False
+            tuple_length = len(args[0])
+            for i, arg in enumerate(args, 1):
+                if len(arg) != tuple_length:
+                    return False
+            for i in range(tuple_length):
+                if not _compatible_xtuples(tuple([arg[i] for arg in args])):
+                    return False
+            return True
+        else:
+            return all(not isinstance(arg, tuple) for arg in args)
+
+    if not _compatible_xtuples(args):
+        raise ValueError("All arguments must be congruent")
+
+    # Check if first argument is a tuple to determine behavior
+    if isinstance(args[0], tuple):
+        flat_args = [flatten_to_tuple(arg) for arg in args]
+        tuple_length = len(flat_args[0])
+
+        # Apply f to corresponding elements across all tuples: g(f(args[0][i], args[1][i], ...), ...)
+        transformed_results = tuple(
+            f(*(arg[i] for arg in flat_args)) for i in range(tuple_length)
+        )
+        return g(*transformed_results)
+    else:
+        # Non-tuple case: apply f to all args, then g to that single result
+        result = f(*args)
+        return g(result)
+
+
+def filter_tuple(*args: XTuple, f: Callable[..., Tuple[Any, ...]]) -> Tuple[Any, ...]:
+    """Filter and flatten tuple elements by applying a function.
+
+    The function f should return tuples, which are then concatenated together
+    to produce the final result. This is useful for filtering and transforming
+    tuple structures in a single pass.
+
+    :param t: The tuple to filter
+    :type t: Union[tuple, ir.Value, int]
+    :param f: The function to apply to each element of t
+    :type f: Callable
+    :param loc: Source location for MLIR, defaults to None
+    :type loc: optional
+    :param ip: Insertion point, defaults to None
+    :type ip: optional
+    :return: A concatenated tuple of all results
+    :rtype: tuple
+
+    **Examples:**
+
+    .. code-block:: python
+
+        >>> # Keep only even numbers, wrapped in tuples
+        >>> filter_tuple((1, 2, 3, 4), lambda x: (x,) if x % 2 == 0 else ())
+        (2, 4)
+        >>> # Duplicate each element
+        >>> filter_tuple((1, 2, 3), lambda x: (x, x))
+        (1, 1, 2, 2, 3, 3)
+    """
+    if not callable(f):
+        raise TypeError(f"f must be callable, but got {type(f)}")
+
+    return transform_apply(*args, f=f, g=lambda *args: tuple_cat(*args))
+
+
+__all__ = [
+    "transform_leaf",
+    "find_if",
+    "find",
+    "flatten_to_tuple",
+    "unflatten",
+    "product",
+    "product_like",
+    "product_each",
+    "elem_less",
+    "tuple_cat",
+    "transform_apply",
+    "filter_tuple",
+    "unwrap",
+    "wrap",
+]

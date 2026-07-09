@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -2827,13 +2827,11 @@ struct TestbedImpl {
     if (result != cudaSuccess) {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
-
-    if (properties.sharedMemPerBlockOptin < smem_size) {
-      printf("failed due to smem_size\n");
-      printf("hardware smem_size: %d, required smem_size: %d\n\n", int(properties.sharedMemPerBlockOptin), int(smem_size));
-      return false;
-    }
-
+      if (properties.sharedMemPerBlockOptin < smem_size) {
+        printf("failed due to smem_size\n");
+        printf("hardware smem_size: %d, required smem_size: %d\n\n", int(properties.sharedMemPerBlockOptin), int(smem_size));
+        return false;
+      }
     return true;
   }
 

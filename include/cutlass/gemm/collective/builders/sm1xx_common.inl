@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -502,6 +502,8 @@ check_input_datatypes() {
             || (cute::is_same_v<BuilderScheduleTag, KernelScheduleBlockScaledGemmSm100>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized1SmBlockScaledSm100>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecialized2SmBlockScaledSm100>)
+            || (cute::is_same_v<BuilderScheduleTag, KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100>)
+            || (cute::is_same_v<BuilderScheduleTag, KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100>)
             // SM100 BS ptr_array
             || (cute::is_same_v<BuilderScheduleTag, KernelSchedulePtrArrayBlockScaledGemmSm100>)
             || (cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmBlockScaledSm100>)
@@ -578,6 +580,8 @@ check_input_datatypes() {
         ((SfVectorSizeA == 32 && cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_same_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_same_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag>)
+      || (SfVectorSizeA == 32 && cute::is_same_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>)
+      || (SfVectorSizeA == 32 && cute::is_same_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_base_of_v<KernelSchedulePtrArrayBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSizeA == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>)
@@ -757,6 +761,8 @@ select_instr() {
          (SfVectorSize == 32 && cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelSchedulePtrArrayBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSize == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -299,6 +299,7 @@ CUTLASS_HOST_DEVICE
 bool relatively_equal<float_ue4m3_t>(float_ue4m3_t a, float_ue4m3_t b, float_ue4m3_t epsilon, float_ue4m3_t nonzero_floor) {
   return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
 }
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

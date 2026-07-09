@@ -1,5 +1,4 @@
-
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -79,6 +78,7 @@ function(cutlass_example_add_executable NAME)
     )
 
 endfunction()
+
 
 foreach(EXAMPLE
   00_basic_gemm
@@ -169,6 +169,13 @@ foreach(EXAMPLE
   89_sm103_fp4_ultra_gemm
   90_sm103_fp4_ultra_grouped_gemm
   91_fp4_gemv
+  92_blackwell_moe_gemm
+  93_blackwell_low_latency_gqa
+  94_ada_fp8_blockwise
+  95_blackwell_gemm_green_context
+  111_hopper_ssd
+  112_blackwell_ssd
+  113_hopper_gemm_activation_fusion
   )
 
   add_subdirectory(${EXAMPLE})

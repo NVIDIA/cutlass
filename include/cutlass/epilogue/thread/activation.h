@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -902,6 +902,41 @@ struct ElementwiseFilter<Array<T, N> > {
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const& values, Arguments const& args = Arguments()) const {
     return this->operator()(values, args.value_to_filter, args.filtered_value);
+  }
+};
+
+// Snake activation: Snake_a(x) = x + (1/a) * sin^2(a*x)
+// Introduced in Ziyin, Hartwig, Ueda, "Neural Networks Fail to Learn
+// Periodic Functions and How to Fix It," NeurIPS 2020 (arXiv:2006.08195).
+// The per-channel learnable frequency `a` is passed as the second operand
+// (intended to flow through an EVT child such as Sm90RowBroadcast).
+// Caller must ensure a != 0 (the formula is singular at a = 0).
+template <typename T>
+struct Snake {
+  static const bool kIsHeavy = true;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& x, T const& alpha) const {
+    float xf = float(x);
+    float af = float(alpha);
+    float s = fast_sin(af * xf);
+    return T(xf + s * s / af);
+  }
+};
+
+template <typename T, int N>
+struct Snake<Array<T, N>> {
+  static const bool kIsHeavy = true;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& x, Array<T, N> const& alpha) const {
+    Array<T, N> result;
+    Snake<T> scalar_op;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i){
+      result[i] = scalar_op(x[i], alpha[i]);
+    }
+    return result;
   }
 };
 

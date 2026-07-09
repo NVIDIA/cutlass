@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -87,6 +87,18 @@ public:
     library::LayoutTypeID layout_id,
     std::vector<int> const &extent,
     std::vector<int64_t> const &stride,
+    int batch_count,
+    size_t device_index);
+
+/// creates a reference tensor of existing memory, a given type, capacity (elements), and name
+  DeviceAllocation *create_ref_tensor(
+    Options const &options,
+    std::string const &name,
+    library::NumericTypeID type,
+    library::LayoutTypeID layout_id,
+    std::vector<int> const &extent,
+    std::vector<int64_t> const &stride,
+    void* ref_pointer_,
     int batch_count,
     size_t device_index);
 

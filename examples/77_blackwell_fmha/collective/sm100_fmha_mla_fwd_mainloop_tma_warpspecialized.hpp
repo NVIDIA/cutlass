@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -77,7 +77,7 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
   static constexpr int StageCountK = 1;
   static constexpr int StageCountV = 1;
   static constexpr int StageCountKV = StageCountK + StageCountV;
-  // Support StageCountKV > 2 in the future. 
+  // Support StageCountKV > 2 in the future.
   static_assert(StageCountK == 1 && StageCountV == 1, "Only support StageCountK = StageCountV = 1!");
   static_assert(std::is_same_v<ThreadShape, Shape<_2, _1, _1>>, "Only support ThreadShape = Shape<_2, _1, _1>");
 
@@ -116,24 +116,24 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
   using SmemLayoutV = decltype(unstageSmemLayout(typename CollectiveMmaPV::SmemLayoutB{}, Int<StageCountV>{}));
 
   using SmemStorageOneStageO = decltype(make_layout(replace<2>(TileShapePV{}, _1{})));
-  
-  // Since the shared memory is not sufficient if we use separate Q, K, V, and O shared memory, 
-  // we reuse shared memory for V and O to address this problem, 
+
+  // Since the shared memory is not sufficient if we use separate Q, K, V, and O shared memory,
+  // we reuse shared memory for V and O to address this problem,
   // and a barrier has been added to coordinate access to shared memory.
   static constexpr bool IsOrderLoadEpilogue = std::is_same_v<OrderLoadEpilogue, cute::true_type>;
   static const int NumWarpsEpilogue = 1;
   static const int NumWarpsLoad = 1;
-  
+
   struct TensorStorageQKVO {
     cute::array_aligned<Element, cute::cosize_v<SmemLayoutQ>> smem_q;
-    cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> smem_k; 
+    cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> smem_k;
     cute::array_aligned<Element, cute::cosize_v<SmemLayoutV>> smem_o; // use as O0
     cute::array_aligned<Element, cute::cosize_v<SmemLayoutV>> smem_v; // use as V0 and O1
   };
 
   struct TensorStorageQKV {
     cute::array_aligned<Element, cute::cosize_v<SmemLayoutQ>> smem_q;
-    cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> smem_k; 
+    cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> smem_k;
     cute::array_aligned<Element, cute::cosize_v<SmemLayoutV>> smem_v;
   };
 
@@ -689,7 +689,7 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
 
     pipeline_c.producer_acquire(pipeline_c_producer_state);
 
-    ElementQK acc_scale = 0.5f * ::exp2f(scale * (old_row_max - row_max_safe));
+    ElementQK acc_scale = (old_row_max == row_max_safe) ? 0.5f : 0.5f * ::exp2f(scale * (old_row_max - row_max_safe));
     row_sum *= acc_scale;
     // row_sum = sum(reg_S)
     float2 local_row_sum_f32x2 = make_float2(row_sum, row_sum);
@@ -755,7 +755,7 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
     Tensor cS = domain_offset(logical_offset, cS_base);
 
     pipeline_c.producer_acquire(pipeline_c_producer_state);
-    
+
     constexpr bool NeedMask = !std::is_same_v<Mask, NoMask>;
 
     CUTLASS_PRAGMA_NO_UNROLL
@@ -841,13 +841,15 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
       copy(tiled_tmem_load, tTMEM_LOADtO_i, tTMrO);
 
 #ifndef ONLY_SOFTMAX
-      CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < size(tTMrO); j += 2) {
-        float2 in = make_float2(tTMrO(j), tTMrO(j+1));
-        float2 out;
-        cute::mul(out, scale_f32x2, in);
-        tTMrO(j) = out.x;
-        tTMrO(j+1) = out.y;
+      if (scale != 1.0f) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int j = 0; j < size(tTMrO); j += 2) {
+          float2 in = make_float2(tTMrO(j), tTMrO(j+1));
+          float2 out;
+          cute::mul(out, scale_f32x2, in);
+          tTMrO(j) = out.x;
+          tTMrO(j+1) = out.y;
+        }
       }
 #endif
 
@@ -1017,11 +1019,14 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
       copy(tiled_tmem_loadv, tTMEM_LOADVtS0, tTMEM_LOADVrS);
 
       // e^(scale * (old_max - new_max)
-      float scale = ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
+      float scale = (tTMEM_LOADVrS(kIdxOldRowMax) == tTMEM_LOADVrS(kIdxNewRowMax)) ? 1.0f : ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
 
       pipeline_o.consumer_wait(pipeline_o_consumer_state);
 
-      correction_rescale(scale, uint32_t(TmemAllocation::O0));
+      bool warp_do_correction = __any_sync(0xFFFFFFFF, scale != 1.0f);
+      if (warp_do_correction) {
+        correction_rescale(scale, uint32_t(TmemAllocation::O0));
+      }
 
       pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
       ++pipeline_s1_c_consumer_state;
@@ -1035,11 +1040,14 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
 
       copy(tiled_tmem_loadv, tTMEM_LOADVtS1, tTMEM_LOADVrS);
 
-      scale = ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
+      scale = (tTMEM_LOADVrS(kIdxOldRowMax) == tTMEM_LOADVrS(kIdxNewRowMax)) ? 1.0f : ::exp2f(params.scale_softmax_log2 * (tTMEM_LOADVrS(kIdxOldRowMax) - tTMEM_LOADVrS(kIdxNewRowMax)));
 
       pipeline_o.consumer_wait(pipeline_o_consumer_state);
 
-      correction_rescale(scale, uint32_t(TmemAllocation::O1));
+      warp_do_correction = __any_sync(0xFFFFFFFF, scale != 1.0f);
+      if (warp_do_correction) {
+        correction_rescale(scale, uint32_t(TmemAllocation::O1));
+      }
 
       pipeline_s0_c.consumer_release(pipeline_s0_c_consumer_state);
       ++pipeline_s0_c_consumer_state;
@@ -1178,10 +1186,10 @@ struct Sm100MlaFwdMainloopTmaWarpspecialized {
     auto tOgO = thr_copy.partition_D(sO);
     auto tOrO = make_tensor<ElementOut>(shape(tOgO(_,_,_,_0{})));
     clear(tOrO);
-    
+
     copy(tiled_copy, tOrO, tOgO(_,_,_,_0{}));
 #endif
-    
+
     if (epilogue.params.ptr_LSE != nullptr) {
       int row_idx = thread_idx + get<0>(TileShape{}) * get<0>(blk_coord);
 

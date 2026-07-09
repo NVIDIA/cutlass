@@ -1,4 +1,4 @@
-# Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,13 +26,14 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-if (CUTLASS_NVCC_ARCHS MATCHES 120a)
+if (CUTLASS_NVCC_ARCHS MATCHES 120a|120f|121a)
 
 add_custom_target(
   cutlass_test_unit_gemm_device_sm120_tensorop
   DEPENDS
   cutlass_test_unit_gemm_device_tensorop_f32_sm120
   cutlass_test_unit_gemm_device_tensorop_f16_sm120
+  cutlass_test_unit_sm120_grouped_gemm_device_tensorop
 )
 
 cutlass_test_unit_gemm_device_add_executable(
@@ -57,6 +58,12 @@ cutlass_test_unit_gemm_device_add_executable(
   sm120_gemm_f4_f4_f16_tensor_op.cu
   sm120_gemm_f6_f6_f16_tensor_op.cu
   sm120_gemm_f8_f8_f16_tensor_op.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_sm120_grouped_gemm_device_tensorop
+
+  sm120_gemm_f8_f8_f32_tensor_op_group_gemm.cu
 )
 
 endif()

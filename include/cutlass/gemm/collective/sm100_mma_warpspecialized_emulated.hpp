@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -82,6 +82,7 @@ template <
   int NumBandsToCompute_,
   int ScalingFactor_,
   int AccPromotionInterval_,
+  class ArchTag_,
   class AccumulatorCopyAtom_,
   class ClusterShape,
   class TileShape_,
@@ -106,7 +107,8 @@ struct CollectiveMma<
       ScalingFactor_,
       AccPromotionInterval_,
       ClusterShape,
-      AccumulatorCopyAtom_>,
+      AccumulatorCopyAtom_,
+      ArchTag_>,
     TileShape_,
     float,
     StrideA_,
@@ -137,7 +139,8 @@ struct CollectiveMma<
                             ScalingFactor_,
                             AccPromotionInterval_,
                             ClusterShape,
-                            AccumulatorCopyAtom_>;
+                            AccumulatorCopyAtom_,
+                            ArchTag_>;
   using TileShape = TileShape_;
   using TiledMma = TiledMma_;
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
@@ -191,6 +194,11 @@ struct CollectiveMma<
   // Thread Counts
   static constexpr uint32_t NumTransformationThreads = 128;
   static constexpr uint32_t NumAccumThreads = 128;
+
+  // Register reconfiguration
+  static constexpr uint32_t GenericRegisterRequirement = 64;
+  static constexpr uint32_t TransformRegisterRequirement = 184;
+  static constexpr uint32_t AccumRegisterRequirement = 256;
 
   // Get the Algorithm parameters
   constexpr static int NumComputeMtxs = 3;

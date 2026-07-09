@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -189,6 +189,19 @@ void fmha_reference(
   dim3 grid(size<0>(mO), size<2>(mO), 1);
   dim3 block(256);
   int shared_mem = size<0>(mK) * int(sizeof(typename TensorLSE::value_type));
+  cudaError_t result;
+  if (shared_mem >= (48 << 10)) {
+    result = cudaFuncSetAttribute(
+        &fmha_reference_kernel<ProblemShapeIn, TensorQ, TensorK, TensorV, TensorO, TensorLSE, Mask>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        shared_mem);
+    if (cudaSuccess != result) {
+      cudaGetLastError(); // Clear the error state
+      throw std::runtime_error("Failed to allocate " +
+                               std::to_string(shared_mem >> 10) + " KB dynamic smem for S/P tensor in ref. check - " +
+                               "please try reducing seq_len or skipping ref. check");
+    }
+  }
   fmha_reference_kernel<<<grid, block, shared_mem>>>(problem_shape_in, mQ, mK, mV, mO, mLSE, mask);
 }
 

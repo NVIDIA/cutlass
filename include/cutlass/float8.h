@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -57,17 +57,31 @@
 #  endif // (__CUDA_ARCH__ >= 900)
 #endif // defined(__CUDA_ARCH__)
 
+#if defined(__CUDA_ARCH__)
+#  if (__CUDA_ARCH__ >= 1000)
+#    if (__CUDACC_VER_MAJOR__ > 13) || ((__CUDACC_VER_MAJOR__ >= 13) && (__CUDACC_VER_MINOR__ >= 2))
+#      define CUDA_PTX_FP8_BF16_CVT_SUPPORTED 1
+#    endif // (__CUDACC_VER_MAJOR__ > 13) || ((__CUDACC_VER_MAJOR__ >= 13) && (__CUDACC_VER_MINOR__ >= 2))
+#  endif // (__CUDA_ARCH__ >= 1000)
+#endif // defined(__CUDA_ARCH__)
+
 
 #if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) ||\
      defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110A_ENABLED) ||\
      defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121A_ENABLED))
 #  define CUDA_PTX_UE8M0_CVT_ENABLED 1
+#  if CUDA_PTX_FP8_BF16_CVT_SUPPORTED
+#       define CUDA_PTX_FP8_BF16_CVT_ENABLED 1
+#  endif
 #endif
 
 #if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) ||\
      defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110F_ENABLED) ||\
      defined(CUTLASS_ARCH_MMA_SM120F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121F_ENABLED))
 #  define CUDA_PTX_UE8M0_CVT_ENABLED 1
+#  if CUDA_PTX_FP8_BF16_CVT_SUPPORTED
+#       define CUDA_PTX_FP8_BF16_CVT_ENABLED 1
+#  endif
 #endif
 
 #ifdef __GNUC__
@@ -1637,46 +1651,46 @@ struct numeric_limits<cutlass::float_ue8m0_t> :
 //
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e4m3_t operator "" _fe4m3(long double x) {
+cutlass::float_e4m3_t operator""_fe4m3(long double x) {
   return cutlass::float_e4m3_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e4m3_t operator "" _fe4m3(unsigned long long int x) {
+cutlass::float_e4m3_t operator""_fe4m3(unsigned long long int x) {
   return cutlass::float_e4m3_t(int(x));
 }
 
 
 CUTLASS_HOST_DEVICE
-cutlass::float_ue4m3_t operator "" _fue4m3(long double x) {
+cutlass::float_ue4m3_t operator""_fue4m3(long double x) {
   return cutlass::float_ue4m3_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_ue4m3_t operator "" _fue4m3(unsigned long long int x) {
+cutlass::float_ue4m3_t operator""_fue4m3(unsigned long long int x) {
   return cutlass::float_ue4m3_t(int(x));
 }
 
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e5m2_t operator "" _fe5m2(long double x) {
+cutlass::float_e5m2_t operator""_fe5m2(long double x) {
   return cutlass::float_e5m2_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e5m2_t operator "" _fe5m2(unsigned long long int x) {
+cutlass::float_e5m2_t operator""_fe5m2(unsigned long long int x) {
   return cutlass::float_e5m2_t(int(x));
 }
 
 
 CUTLASS_HOST_DEVICE
-cutlass::float_ue8m0_t operator "" _fue8m0(long double x)
+cutlass::float_ue8m0_t operator""_fue8m0(long double x)
 {
   return cutlass::float_ue8m0_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_ue8m0_t operator "" _fue8m0(unsigned long long int x)
+cutlass::float_ue8m0_t operator""_fue8m0(unsigned long long int x)
 {
   return cutlass::float_ue8m0_t(int(x));
 }

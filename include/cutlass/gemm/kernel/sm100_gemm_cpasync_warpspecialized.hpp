@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -188,7 +188,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -245,7 +244,8 @@ public:
 
     CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid SM count to " << sm_count);
 
-    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count};
+    KernelHardwareInfo hw_info = args.hw_info;
+    hw_info.sm_count = sm_count;
 
     // Calculate workspace pointers
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
@@ -287,7 +287,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
     
     static constexpr int MaxClusterSize = 16;
     implementable &= size(ClusterShape{}) <= MaxClusterSize;
@@ -371,6 +371,8 @@ public:
 
     using namespace cute;
     using X = Underscore;
+
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     // Separate out problem shape for convenience
     // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});

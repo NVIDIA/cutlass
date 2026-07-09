@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -115,6 +115,18 @@ template<class LayoutB>
 constexpr bool
 is_k_major_B() {
   return is_k_major<TagToStrideB_t<LayoutB>>();
+}
+
+template<class LayoutC>
+constexpr bool
+is_m_major_C() {
+  return is_major<0,TagToStrideC_t<LayoutC>>();
+}
+
+template<class LayoutC>
+constexpr bool
+is_n_major_C() {
+  return is_major<1,TagToStrideC_t<LayoutC>>();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

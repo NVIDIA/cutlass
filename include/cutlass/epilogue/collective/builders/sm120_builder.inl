@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -191,7 +191,9 @@ sm120_compute_tile_shape_or_override() {
         }
       }
       else {
-        return Shape<_64, _32>{};
+        constexpr int EpiN = CTA_N < 32 ? CTA_N : 32;
+        constexpr int EpiM = CTA_N < 16 ? 128 : 64;
+        return Shape<Int<EpiM>, Int<EpiN>>{};
       }
     }
   } // EpilogueTileAuto

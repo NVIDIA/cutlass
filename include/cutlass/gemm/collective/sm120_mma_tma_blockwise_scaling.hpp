@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -472,8 +472,8 @@ struct CollectiveMma<
     Tensor tApA_SFA = make_tensor<bool>(shape(tAsA_SFA(_,_,0)));
     Tensor tBpB_SFB = make_tensor<bool>(shape(tBsB_SFB(_,_,0)));
 
-    auto scale_m_lim = std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
-    auto scale_n_lim = std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
+    auto scale_m_lim = cute::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
+    auto scale_n_lim = cute::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(tApA_SFA); ++i)
@@ -545,8 +545,6 @@ struct CollectiveMma<
     }
   }
 
-  /// Perform a collective-scoped matrix multiply-accumulate
-  /// Consumer Perspective
   template <
     class FrgTensorC
   >
@@ -558,6 +556,25 @@ struct CollectiveMma<
       int thread_idx,
       TensorStorage& shared_tensors,
       Params const& mainloop_params) {
+    auto empty_tuple = make_tuple(_0{}, _0{}, _0{}, _0{});
+    mma(pipeline, smem_pipe_read, accum, k_tile_count, thread_idx, shared_tensors, mainloop_params, empty_tuple);
+  }
+
+  /// Perform a collective-scoped matrix multiply-accumulate
+  /// Consumer Perspective
+  template <
+    class FrgTensorC,
+    class BlockCoord
+  >
+  CUTLASS_DEVICE void
+  mma(MainloopPipeline pipeline,
+      PipelineState smem_pipe_read,
+      FrgTensorC& accum,
+      int k_tile_count,
+      int thread_idx,
+      TensorStorage& shared_tensors,
+      Params const& mainloop_params,
+      [[maybe_unused]] BlockCoord& blk_crd) {
     using namespace cute;
 
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");

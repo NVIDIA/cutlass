@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -185,23 +185,11 @@ public:
 
   /// Constructor
   GemmUniversal3xOperation(char const *name = "unknown_gemm"):
-    GemmOperation3xBase<Operator_>(name, GemmKind::kUniversal) {
-    if constexpr (Operator::ArchTag::kMinComputeCapability == 90) {
-      dim3 cluster_dims(
-        cute::size<0>(typename Operator::GemmKernel::ClusterShape{}),
-        cute::size<1>(typename Operator::GemmKernel::ClusterShape{}),
-        cute::size<2>(typename Operator::GemmKernel::ClusterShape{}));
-      uint32_t threads_per_block = Operator::GemmKernel::MaxThreadsPerBlock;
-      void const* kernel_ptr = (void*)(device_kernel<typename Operator::GemmKernel>);
-      max_active_clusters = cutlass::KernelHardwareInfo::query_device_max_active_clusters(
-        cluster_dims,
-        threads_per_block,
-        kernel_ptr);
-    }
-  }
+    GemmOperation3xBase<Operator_>(name, GemmKind::kUniversal) {}
 
 private:
-  int max_active_clusters{};
+  // mutable because it needs to be set in initialize (see comment in initialize)
+  mutable int max_active_clusters{};
 
 protected:
 
@@ -683,6 +671,21 @@ public:
       void *host_workspace,
       void *device_workspace,
       cudaStream_t stream = nullptr) const override {
+    // this would ideally go in the constructor, but
+    // the constructor is called at profiler startup for EVERY kernel,
+    // REGARDLESS of whether the kernel is actually supported on the device
+    if constexpr (Operator::ArchTag::kMinComputeCapability == 90) {
+      dim3 cluster_dims(
+        cute::size<0>(typename Operator::GemmKernel::ClusterShape{}),
+        cute::size<1>(typename Operator::GemmKernel::ClusterShape{}),
+        cute::size<2>(typename Operator::GemmKernel::ClusterShape{}));
+      uint32_t threads_per_block = Operator::GemmKernel::MaxThreadsPerBlock;
+      void const* kernel_ptr = (void*)(device_kernel<typename Operator::GemmKernel>);
+      max_active_clusters = cutlass::KernelHardwareInfo::query_device_max_active_clusters(
+        cluster_dims,
+        threads_per_block,
+        kernel_ptr);
+    }
     Operator *op = new (host_workspace) Operator;
     return Status::kSuccess;
   }

@@ -752,7 +752,7 @@ We encourage a user to refer to Sm100 unit tests and the generated profiler-base
 
 ### Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

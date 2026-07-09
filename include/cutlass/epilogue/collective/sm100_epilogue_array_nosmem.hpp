@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@
 #include "cute/tensor.hpp"
 #include "cute/numeric/numeric_types.hpp"
 #include "cutlass/cuda_host_adapter.hpp"
+#include "cutlass/numeric_conversion.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -169,6 +170,8 @@ public:
 
   template<
     bool ReuseTmem = false,
+    class LoadPipeline,
+    class LoadPipelineState,
     class AccumulatorPipeline,
     class AccumulatorPipelineState,
     class ProblemShapeMNKL,
@@ -178,6 +181,8 @@ public:
   >
   CUTLASS_DEVICE auto
   operator()(
+      [[maybe_unused]]LoadPipeline load_pipeline,
+      [[maybe_unused]]LoadPipelineState load_pipe_consumer_state,
       AccumulatorPipeline acc_pipeline,
       AccumulatorPipelineState acc_pipe_consumer_state,
       ProblemShapeMNKL problem_shape_mnkl,
@@ -194,11 +199,15 @@ public:
     static_assert(rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
 
     // Separate out problem shape for convenience
-    auto M = get<0>(problem_shape_mnkl);
-    auto N = get<1>(problem_shape_mnkl);
-    auto L = get<3>(problem_shape_mnkl);
+    auto [M, N, K, L] = problem_shape_mnkl;
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = cta_coord_mnkl;
+    bool is_accumulator_needed = K > 0;
+
+    if (is_accumulator_needed) {
+      // Wait for mma warp to fill tmem buffer with accumulator results
+      acc_pipeline.consumer_wait(acc_pipe_consumer_state);
+    }
 
     // Batches are managed by using appropriate pointers to C and D matrices
     auto problem_shape_mnl = append<3>(make_shape(M,N),Int<1>{});
@@ -320,13 +329,17 @@ public:
     else {
       Tensor tAcc = accumulators(make_coord(_,_),_0{},_0{});                                           // (CTA_M,CTA_N)
       Tensor tTR_tAcc = thread_t2r.partition_S(tAcc);                                              // (T2R,T2R_M,T2R_N)
-
-      copy(tiled_t2r, tTR_tAcc, tTR_rAcc);
+      if (is_accumulator_needed) {
+        copy(tiled_t2r, tTR_tAcc, tTR_rAcc);
+      } else {
+        fill(tTR_rAcc, 0);
+      }
     }
-
-    cutlass::arch::fence_view_async_tmem_load();
-    acc_pipeline.consumer_release(acc_pipe_consumer_state);
-    ++acc_pipe_consumer_state;
+    if (is_accumulator_needed) {
+      cutlass::arch::fence_view_async_tmem_load();
+      acc_pipeline.consumer_release(acc_pipe_consumer_state);
+      ++acc_pipe_consumer_state;
+    }
 
     // 2. Apply element-wise operation and store to gmem
     // source is needed
@@ -349,7 +362,7 @@ public:
       copy_if(tDpD, tTR_rD_src, tR2G_rD_dst);
     }
 
-    return cute::make_tuple(acc_pipe_consumer_state);
+    return cute::make_tuple(acc_pipe_consumer_state, load_pipe_consumer_state);
   }
 
   // API with Global Accumulator in registers for FastFP32 (emulated MMA) kernels.
@@ -398,10 +411,33 @@ public:
     if (epilogue_op.is_source_needed()) {
       ptr_C_l = params.ptr_C[l_coord];
     }
+    auto [stride_c, stride_d] = [&, l = l_coord]() {
+      if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
+        // If grouped gemm
+        if (epilogue_op.is_source_needed()) {
+            return make_tuple(
+                detail::get_epilogue_stride<DispatchPolicy>(params.dC[l]),
+                detail::get_epilogue_stride<DispatchPolicy>(params.dD[l])
+            );  
+        }   
+        else {
+          return make_tuple(
+              InternalStrideC{}, 
+              detail::get_epilogue_stride<DispatchPolicy>(params.dD[l])
+          );  
+        }   
+      }   
+      else {
+        return make_tuple(
+            detail::get_epilogue_stride<DispatchPolicy>(params.dC),
+            detail::get_epilogue_stride<DispatchPolicy>(params.dD)
+        );  
+      }   
+    }();
 
     // Represent the full output tensor, slice to get the tile this CTA is responsible for
-    Tensor mC = make_tensor(make_gmem_ptr(ptr_C_l), problem_shape_mnl, append<3>(params.dC,_0{}));           // (M,N,L)
-    Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), problem_shape_mnl, append<3>(params.dD,_0{})); // (M,N,L)
+    Tensor mC = make_tensor(make_gmem_ptr(ptr_C_l), problem_shape_mnl, stride_c);           // (M,N,L)
+    Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), problem_shape_mnl, stride_d); // (M,N,L)
     Tensor gC = local_tile(mC, cta_tiler, cta_coord_mnl);                                              // (CTA_M,CTA_N)
     Tensor gD = local_tile(mD, cta_tiler, cta_coord_mnl);                                              // (CTA_M,CTA_N)
 
@@ -572,17 +608,14 @@ public:
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
-
-    bool fusion_implementable = FusionCallbacks::can_implement(problem_shape, args.thread);
-    if (!fusion_implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum requirements for FusionCallbacks.\n");
-    }
-    return fusion_implementable;
+    return true;
   }
 
 
   template<
     bool ReuseTmem = false,
+    class LoadPipeline,
+    class LoadPipelineState,
     class AccumulatorPipeline,
     class AccumulatorPipelineState,
     class ProblemShapeMNKL,
@@ -592,6 +625,8 @@ public:
   >
   CUTLASS_DEVICE auto
   operator()(
+      [[maybe_unused]]LoadPipeline load_pipeline,
+      [[maybe_unused]]LoadPipelineState load_pipe_consumer_state,
       AccumulatorPipeline acc_pipeline,
       AccumulatorPipelineState acc_pipe_consumer_state,
       ProblemShapeMNKL problem_shape_mnkl,
@@ -610,12 +645,16 @@ public:
     static_assert(rank(CtaCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
     static_assert(cute::sizeof_bits_v<ElementD> != 6, "Output element requires smem");
 
-    auto M = get<0>(problem_shape_mnkl);
-    auto N = get<1>(problem_shape_mnkl);
-    auto L = get<3>(problem_shape_mnkl);
-
+    // Separate out problem shape for convenience
+    auto [M, N, K, L] = problem_shape_mnkl;
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = cta_coord_mnkl;
+    bool is_accumulator_needed = K > 0;
+
+    if (is_accumulator_needed) {
+      // Wait for mma warp to fill tmem buffer with accumulator results
+      acc_pipeline.consumer_wait(acc_pipe_consumer_state);
+    }
 
     // Batches are managed by using appropriate pointers to C and D matrices
     auto problem_shape_mnl = append<3>(make_shape(M,N),Int<1>{});
@@ -722,7 +761,7 @@ public:
     auto synchronize = [] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
     // The Epilogue Loop
-    auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+    auto epi_loop_fn = [&] (auto& cst_callbacks, bool is_accumulator_needed) CUTLASS_LAMBDA_FUNC_INLINE {
       // Ensure there are no threads from the previous wave writing to shared memory being utilized for the current wave.
       synchronize();
       cst_callbacks.begin();
@@ -784,10 +823,15 @@ public:
 
         Tensor tTR_rAcc_frg = recast<Array<ElementAccumulator, FragmentSize>>(coalesce(tTR_rAcc));
 
-        copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
+        if (is_accumulator_needed) {
+          copy(tiled_t2r, tTR_tAcc_mn, tTR_rAcc);
+        }
+        else {
+          fill(tTR_rAcc, 0);
+        }
 
         // After the last tmem load, signal that tmem buffer is consumed and empty
-        if (do_acc_release) {
+        if (do_acc_release && is_accumulator_needed) {
           cutlass::arch::fence_view_async_tmem_load();
           acc_pipeline.consumer_release(acc_pipe_consumer_state);
           ++acc_pipe_consumer_state;
@@ -795,7 +839,12 @@ public:
 
         CUTLASS_PRAGMA_UNROLL
         for (int epi_v = 0; epi_v < size(tTR_rAcc_frg); ++epi_v) {
-          tTR_rD_frg(epi_v) = cst_callbacks.visit(tTR_rAcc_frg(epi_v), epi_v, epi_m, epi_n);
+          auto frg_visited = cst_callbacks.visit(tTR_rAcc_frg(epi_v), epi_v, epi_m, epi_n);
+          // For 4-bit output types (e.g. float_e2m1_t), the visitor returns ElementCompute
+          // (scaled float values) rather than ElementD. Explicitly convert here so the
+          // assignment is always well-typed regardless of visitor return type.
+          using VisitedElement = typename decltype(frg_visited)::Element;
+          tTR_rD_frg(epi_v) = NumericArrayConverter<ElementD, VisitedElement, FragmentSize>{}(frg_visited);
         }
 
         Tensor reduction_buffer = make_tensor(
@@ -868,8 +917,8 @@ public:
     // BEGIN EPILOGUE
     //
     auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
-    epi_loop_fn(cst_callbacks);
-    return cute::make_tuple(acc_pipe_consumer_state);
+    epi_loop_fn(cst_callbacks, is_accumulator_needed);
+    return cute::make_tuple(acc_pipe_consumer_state, load_pipe_consumer_state);
   }
 
 };

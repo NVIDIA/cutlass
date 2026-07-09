@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -645,6 +645,7 @@ endif()
 
 if (CUTLASS_NVCC_DEVICE_COMPILE)
 
+if (NOT CUTLASS_NVCC_ARCHS MATCHES 101|101a|101f|110|110a|110f)
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_blas3
 
@@ -808,7 +809,7 @@ cutlass_test_unit_gemm_device_add_executable(
   hemm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
 )
 
-if (NOT CUTLASS_NVCC_ARCHS MATCHES 100f|101|101a|101f|103|103a|103f)
+if (NOT CUTLASS_NVCC_ARCHS MATCHES 100f|101|101a|101f|110|110a|110f|103|103a|103f)
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_blas3_gaussian
 
@@ -844,6 +845,7 @@ cutlass_test_unit_gemm_device_add_executable(
   her2k_cf64n_cf64n_tensor_op_f64_grouped_sm80.cu
   her2k_cf64h_cf64n_tensor_op_f64_grouped_sm80.cu
 )
+endif()
 
 endif()
 

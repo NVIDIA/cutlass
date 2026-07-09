@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -188,7 +188,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -270,13 +269,17 @@ public:
     bool implementable = true;
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
 
     if constexpr (IsDynamicCluster) {
       static constexpr int MaxClusterSize = 16;
       implementable &= size(args.hw_info.cluster_shape) <= MaxClusterSize;
       implementable &= size(args.hw_info.cluster_shape_fallback) <= MaxClusterSize;
-      implementable &= cutlass::detail::preferred_cluster_can_implement<AtomThrShapeMNK>(args.hw_info.cluster_shape, args.hw_info.cluster_shape_fallback);
+      // Early return if cluster shape validation failed to avoid division by zero below
+      if (not cutlass::detail::preferred_cluster_can_implement<AtomThrShapeMNK>(args.hw_info.cluster_shape, args.hw_info.cluster_shape_fallback)) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Invalid dynamic cluster shape\n");
+        return false;
+      }
     }
 
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, args.hw_info.cluster_shape);
@@ -409,7 +412,7 @@ public:
 
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
-
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop(params.mainloop, cluster_shape, cta_rank_in_cluster);
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);

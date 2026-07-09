@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -310,6 +310,9 @@ constexpr bool is_tma_copy_engine() {
                   || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_2D_GATHER4,            GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_MULTICAST_2D_GATHER4,  GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_STORE_2D_SCATTER4,          GmemTiledCopy>
                   ) {
       return true;
     }

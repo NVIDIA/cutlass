@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -406,8 +406,6 @@ public:
       // Zero-initialize barrier workspace
       if (barrier_workspace)
       {
-        size_t barrier_workspace_bytes = get_barrier_workspace_size();
-
         CUTLASS_TRACE_HOST("  Initialize " << barrier_workspace_bytes << " barrier bytes");
 
         cudaError_t result = cudaMemsetAsync(

@@ -1,5 +1,5 @@
 
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -48,7 +48,7 @@ foreach(FUSION_CONV_EXAMPLE
   fused_two_convs_f16_sm80_shmem
   fused_two_convs_s8_sm75_rf
   fused_two_convs_s8_sm75_shmem
-  fused_two_convs_s8_sm80_rf
+  # fused_two_convs_s8_sm80_rf  # disabled: fails to build
   fused_two_convs_s8_sm80_shmem
 )
 

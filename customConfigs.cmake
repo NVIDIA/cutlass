@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@ set(CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS OFF CACHE BOOL "Utilize profiler-base
 set(CUTLASS_PROFILER_REGRESSION_TEST_LEVEL  ${CUTLASS_TEST_LEVEL} CACHE STRING "Profiler functional regression test level")
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
+
 
 function(cutlass_generate_kernel_filter_and_testlist_files)
 

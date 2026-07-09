@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,8 @@
  **************************************************************************************************/
 
 #pragma once
+
+#include "cutlass/tfloat32.h"
 
 /**
  * \file
@@ -581,6 +583,7 @@ struct alignment_of : std::alignment_of<value_t> {};
 
 #endif
 
+#if CUDA_VERSION >= 11080
 /* 16B specializations where 32-bit Win32 host compiler disagrees with device compiler */
 template <>
 struct alignment_of<int4> {
@@ -607,6 +610,50 @@ struct alignment_of<double2> {
   enum { value = 16 };
 };
 
+#if CUDA_VERSION >= 13000
+template <>
+struct alignment_of<long4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<ulong4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<longlong4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<ulonglong4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<double4_16a> {
+  enum { value = 16 };
+};
+template <>
+struct alignment_of<long4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<ulong4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<longlong4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<ulonglong4_32a> {
+  enum { value = 32 };
+};
+template <>
+struct alignment_of<double4_32a> {
+  enum { value = 32 };
+};
+
+#else
+
 template <>
 struct alignment_of<long4> {
   enum { value = 16 };
@@ -628,6 +675,8 @@ struct alignment_of<double4> {
   enum { value = 16 };
 };
 
+#endif // CUDA_VERSION >= 13000
+#endif // CUDA_VERSION >= 11080
 
 // Specializations for volatile/const qualified types
 template <typename value_t>
@@ -862,6 +911,18 @@ struct numeric_limits<float> {
   static constexpr float infinity() noexcept { return bit_cast<float, int32_t>(0x7f800000);}
   CUTLASS_HOST_DEVICE
   static constexpr float max() noexcept { return bit_cast<float, int32_t>(0x7f7fffff);}
+  static constexpr bool is_integer = false;
+  static constexpr bool has_infinity = true;
+};
+
+template <>
+struct numeric_limits<tfloat32_t> {
+  CUTLASS_HOST_DEVICE
+  static tfloat32_t infinity() noexcept { return tfloat32_t::bitcast(0x7f800000);}
+  CUTLASS_HOST_DEVICE
+  static tfloat32_t max() noexcept { return tfloat32_t::bitcast(0x7f7fffff);}
+  CUTLASS_HOST_DEVICE
+  static tfloat32_t lowest() noexcept { return tfloat32_t::bitcast(0xff7fffff);}
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };

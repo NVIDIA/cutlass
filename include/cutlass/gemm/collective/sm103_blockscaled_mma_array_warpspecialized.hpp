@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -66,6 +66,7 @@ template <
   int LoadSFPipelineStageCount,
   int SchedulerPipelineStageCount,
   int AccumulatorPipelineStageCount,
+  class ArchTag_,
   class ClusterShape,   // Static cluster shape or dynamic (int, int, int)
   cutlass::sm103::detail::KernelPrefetchType PrefetchType,
   class TileShape_,     // (MmaAtomShapeM, MmaAtomShapeN, TileK)
@@ -89,7 +90,8 @@ struct CollectiveMma<
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
       ClusterShape,
-      PrefetchType>,
+      PrefetchType,
+      ArchTag_>,
     TileShape_,
     ElementPairA_,
     StridePairA_,
@@ -117,7 +119,8 @@ struct CollectiveMma<
                           SchedulerPipelineStageCount,
                           AccumulatorPipelineStageCount,
                           ClusterShape,
-                          PrefetchType>;
+                          PrefetchType,
+                          ArchTag_>;
 
   using TileShape = TileShape_;
   // Due to an MSVC bug, we can't use decltype(make_tiled_mma()) interface.

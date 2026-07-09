@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -109,6 +109,13 @@ constexpr int stages_member(DispatchPolicy) {
     return 0;
   }
 }
+
+template <class GemmKernel, class = void>
+struct IsDistGemmKernel : cute::false_type { };
+
+template <typename GemmKernel>
+struct IsDistGemmKernel<GemmKernel, cute::void_t<typename GemmKernel::TP>>
+    : cute::true_type { };
 
 } // namespace detail
 
@@ -396,8 +403,13 @@ public:
                     || GemmKernel::ArchTag::kMinComputeCapability == 103
                     ) {
         if constexpr (!cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape>) {
-          fallback_cluster = params.hw_info.cluster_shape_fallback;
-          cluster = params.hw_info.cluster_shape;
+          if constexpr (detail::IsDistGemmKernel<GemmKernel>::value) {
+            fallback_cluster = params.base.hw_info.cluster_shape_fallback;
+            cluster = params.base.hw_info.cluster_shape;
+          } else {
+            fallback_cluster = params.hw_info.cluster_shape_fallback;
+            cluster = params.hw_info.cluster_shape;
+          }
         }
       }
       

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -328,6 +328,7 @@ struct BlockScaleDescription {
 struct GroupedGemmDescription : public OperationDescription {
   GemmDescription gemm;
   std::optional<BlockScaleDescription> block_scales;
+  bool is_moe{false};
 };
 
 /// Description of all GEMM computations
@@ -347,6 +348,9 @@ struct BlockScaledGemmDescription : public OperationDescription {
 
   /// Describes the destination matrix
   TensorDescription D;
+
+  /// Describes the sparse meta matrices
+  TensorDescription E;
 
   /// Describes the SFA operand
   TensorDescription SFA;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -253,16 +253,59 @@ public:
     return DistSchedule::get_tensor_D(tensor_D, tensor_buffer, device_idx, iteration);
   }
 
+  static
+  auto make_dummy_base_args(Arguments const* args, int device_idx, int iteration, void ** buffer_space) {
+
+    // Set up GEMM arguments for the current stage/iteration
+    auto tensor_a_iter = get_tensor_A_for_iter(args, buffer_space, device_idx, iteration);
+    auto tensor_b_iter = get_tensor_B_for_iter(args, buffer_space, device_idx, iteration);
+    auto tensor_c_iter = get_tensor_C_for_iter(args, buffer_space, device_idx, iteration);
+    auto tensor_d_iter = get_tensor_D_for_iter(args, buffer_space, device_idx, iteration);
+
+    Arguments base_args = args[device_idx];
+    base_args.problem_shape = DistSchedule::get_local_gemm_shape(args[device_idx].problem_shape);
+    base_args.mainloop = {
+      reinterpret_cast<const ElementA*>(tensor_a_iter.data()),
+      tensor_a_iter.stride(),
+      reinterpret_cast<const ElementB*>(tensor_b_iter.data()),
+      tensor_b_iter.stride()
+    };
+    base_args.epilogue = {
+      base_args.epilogue.thread,
+      reinterpret_cast<const ElementC*>(tensor_c_iter.data()),
+      tensor_c_iter.stride(),
+      reinterpret_cast<ElementD*>(tensor_d_iter.data()),
+      tensor_d_iter.stride()
+    };
+
+    if constexpr (DistSchedule::RemoteC) {
+      if (iteration > 0) {
+        base_args.epilogue.thread.beta = 1.0;
+      }
+      else if (iteration == 0){
+        base_args.epilogue.thread.beta = 0.0;
+      }
+    }
+
+    return base_args;
+  }
+
   static size_t
-  get_workspace_size(Arguments const& args) {
+  get_workspace_size(Arguments const* args, int device_idx) {
     size_t workspace_bytes = 0;
 
-    workspace_bytes = get_buffer_space_size(args);
+    workspace_bytes = get_buffer_space_size(args[device_idx]);
+
+    void* dummy_buffer_space[TP_];
 
     for (int iteration = 0; iteration < TP_; ++iteration) {
+      // Workspace sizes can vary if arguments change, therefore we must
+      // construct args for each iteration exactly as it will be run.
+      auto args_base = make_dummy_base_args(args, device_idx, iteration, dummy_buffer_space);
+
       // NOTE: assumes underlying kernels align up to alignment requirements on their own,
       // and that the alignment requirements of the individual kernels match.
-      workspace_bytes += GemmKernel::get_workspace_size(args);
+      workspace_bytes += GemmKernel::get_workspace_size(args_base);
     }
 
     return workspace_bytes;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -760,36 +760,36 @@ struct numeric_limits<cutlass::detail::float_e3m2_unpack8bits_t> : public float_
 // User-defined literals
 //
 CUTLASS_HOST_DEVICE
-cutlass::float_e2m1_t operator"" _fe2m1(long double x)
+cutlass::float_e2m1_t operator""_fe2m1(long double x)
 {
   return cutlass::float_e2m1_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e2m1_t operator"" _fe2m1(unsigned long long int x)
+cutlass::float_e2m1_t operator""_fe2m1(unsigned long long int x)
 {
   return cutlass::float_e2m1_t(int(x));
 }
 CUTLASS_HOST_DEVICE
-cutlass::float_e2m3_t operator"" _fe2m3(long double x)
+cutlass::float_e2m3_t operator""_fe2m3(long double x)
 {
   return cutlass::float_e2m3_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e2m3_t operator"" _fe2m3(unsigned long long int x)
+cutlass::float_e2m3_t operator""_fe2m3(unsigned long long int x)
 {
   return cutlass::float_e2m3_t(int(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e3m2_t operator"" _fe3m2(long double x)
+cutlass::float_e3m2_t operator""_fe3m2(long double x)
 {
   return cutlass::float_e3m2_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e3m2_t operator"" _fe3m2(unsigned long long int x)
+cutlass::float_e3m2_t operator""_fe3m2(unsigned long long int x)
 {
   return cutlass::float_e3m2_t(int(x));
 }

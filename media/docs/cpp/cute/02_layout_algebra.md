@@ -151,7 +151,7 @@ For example,
 * `(3,6,2,8) /  9 => (1,2,2,8)`
 * `(3,6,2,8) / 72 => (1,1,1,4)`
 
-To compute the strides of the strided layout, the residues of the above operation are used to scale the strides of `A`. For instance, the last example `(3,6,2,8):(w,x,y,z) / 72` with strides `(w,x,y,z)` produces `(3*w,6*x,2*x,2*z)` as the strides of the strided layout.
+To compute the strides of the strided layout, the residues of the above operation are used to scale the strides of `A`. For instance, the last example `(3,6,2,8):(w,x,y,z) / 72` with strides `(w,x,y,z)` produces `(72*w,24*x,4*x,2*z)` as the strides of the strided layout.
 
 As you may have noticed, we can only divide shapes by certain values and get a sensible result. This is called the **stride divisibility condition** and is statically checked in CuTe when possible.
 
@@ -171,7 +171,7 @@ This operation causes the result to have a shape that is compatible with `B`.
 
 Again, this operation must satisfy a **shape divisibility condition** to yield a sensible result and is statically checked in CuTe when possible.
 
-From the above examples, we can construct the composition `(3,6,2,8):(w,x,y,z) o 16:9 = (1,2,2,4):(3*w,3*x,y,z)`.
+From the above examples, we can construct the composition `(3,6,2,8):(w,x,y,z) o 16:9 = (1,2,2,4):(9*w,3*x,y,z)`.
 
 ---
 #### Example 1 -- Worked Example of Calculating a Composition
@@ -312,7 +312,7 @@ For convenience, CuTe also interprets `Shape`s as a tiler as well. A `Shape` is 
 // (12,(4,8)):(59,(13,1))
 auto a = make_layout(make_shape (12,make_shape ( 4,8)),
                      make_stride(59,make_stride(13,1)));
-// (8, 3)
+// (3, 8)
 auto tiler = make_shape(Int<3>{}, Int<8>{});
 // Equivalent to <3:1, 8:1>
 // auto tiler = make_tile(Layout<_3,_1>{},  // Apply 3:1 to mode-0
@@ -388,7 +388,7 @@ Informally, `logical_divide(A, B)` splits a layout `A` into two modes -- in the 
 
 Formally, this can be written as
 
-$A \oslash B := A \circ (B,B^*)$
+$$A \oslash B := A \circ (B,B^*)$$
 
 and implemented as
 ```cpp
@@ -583,7 +583,7 @@ flat_product    : (M, N, TileM, TileN, L, ...)
 
 ## Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

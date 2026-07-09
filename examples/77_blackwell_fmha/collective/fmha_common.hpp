@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -75,19 +75,17 @@ CUTE_HOST_DEVICE constexpr
 auto
 to_tiled_mma_sm100_ts(
     TiledMMA<MMA_Atom<
-      MMA_Traits<SM100_MMA_F8F6F4_SS, a_type, b_type, c_type,
-                    cute::C<M>, cute::C<N>,
-                    cute::integral_constant<UMMA::Major, a_major>,
-                    cute::integral_constant<UMMA::Major, b_major>,
-                    cute::integral_constant<UMMA::ScaleIn, a_neg>,
-                    cute::integral_constant<UMMA::ScaleIn, b_neg>>,
+      SM100_MMA_F8F6F4_SS<a_type, b_type, c_type,
+                                      M, N,
+                                      a_major, b_major,
+                                      a_neg, b_neg>,
       TAs...>, TMs...>) {
 
   return TiledMMA<MMA_Atom<
-    MMA_Traits<SM100_MMA_F8F6F4_TS<a_type, b_type, c_type,
+    SM100_MMA_F8F6F4_TS<a_type, b_type, c_type,
                                 M, N,
                                 a_major, b_major,
-                                a_neg, b_neg, UMMA::Saturate::False>>,
+                                a_neg, b_neg, UMMA::Saturate::False>,
     TAs...>, TMs...>{};
 }
 

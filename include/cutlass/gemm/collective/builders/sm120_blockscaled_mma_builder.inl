@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -73,6 +73,10 @@ struct CollectiveBuilder<
        cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
        &&
+      !((cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
+         cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>) &&
+        cute::tuple_element_t<1, TileShape_MNK>::value < 16)
+       &&
       // Alignment check
       detail::sm1xx_blockscaled_gemm_is_aligned<typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairA>::data_type,
                                                 AlignmentA,
@@ -98,7 +102,7 @@ struct CollectiveBuilder<
   static_assert(cute::is_static_v<ClusterShape_MNK>, "Cluster has to be static");
   static_assert(detail::blockscaled::check_input_datatypes<BuilderScheduleTag, ElementPairA, ElementPairB, UmmaMajorA, UmmaMajorB>(), "Incorrect input types");
   static_assert(cute::size(ClusterShape_MNK{}) == Int<1>{}, "no programmatic multicast on this arch");
-  static_assert(size<1>(TileShape_MNK{}) >= 32, "Invalid tile shape N.");
+  static_assert(size<1>(TileShape_MNK{}) >= 8, "Invalid tile shape N.");
 
   static constexpr auto Instr = detail::blockscaled::select_instr<ElementPairA,
                                                                   ElementPairB,
@@ -108,7 +112,7 @@ struct CollectiveBuilder<
                                                                   BuilderScheduleTag>();
   static constexpr bool UseMxf8f6f4 = Instr == detail::blockscaled::BlockScaledInstr::MXF4F6F8;
   using PermTileM = decltype(cute::min(size<0>(TileShape_MNK{}), _128{}));
-  using PermTileN = decltype(detail::sm120_tile_n_permute_selector<SFVectorSize>());
+  using PermTileN = decltype(detail::sm120_tile_n_permute_selector<SFVectorSize, size<1>(TileShape_MNK{})>());
   using PermTileK = cute::conditional_t<(UseMxf8f6f4
                                         ), _32, _64>;
 
@@ -125,7 +129,9 @@ struct CollectiveBuilder<
                 "TileSize and MNK Major does not met with MMA Mix 8-bit TMA load requirement" );
 
   using AtomLayoutMNK = cute::conditional_t<IsCooperative,
-      Layout<Shape<_4,_2,_1>>, Layout<Shape<_2,_2,_1>>>;
+      cute::conditional_t<(size<1>(TileShape_MNK{}) >= 16), Layout<Shape<_4,_2,_1>>,
+                          Layout<Shape<_8,_1,_1>>>,
+      Layout<Shape<_2,_2,_1>>>;
 
   using TiledMma = decltype(cute::make_tiled_mma(
     cute::rr_blockscaled_op_selector_sm120<ElementA,
@@ -166,7 +172,8 @@ struct CollectiveBuilder<
                                                                                  >()), SmemAllocTypeA>;
   using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA,
                                                                                  ElementB,
-                                                                                 UseMxf8f6f4
+                                                                                 UseMxf8f6f4,
+                                                                                 size<1>(TileShape_MNK{})
                                                                                 >()), SmemAllocTypeB>;
 
   using SmemCopyAtomSF = Copy_Atom<UniversalCopy<SmemAllocTypeSF>, SmemAllocTypeSF>; // auto-vectorized LDS
@@ -186,33 +193,30 @@ struct CollectiveBuilder<
   // Basic storage block for new Scaling Factor Layouts
   using mnBasicBlockShape  =  Shape<_32,_4>;
   using mnBasicBlockStride = Stride<_16,_4>;
-  using kBasicBlockShape  = Shape<Int<SFVectorSize>, Int<MMA_NSF>>;
+  using kBasicBlockShape  = Shape<Int<(int)SFVectorSize>, Int<MMA_NSF>>;
   using kBasicBlockStride = Stride<_0, _1>;
   
   using sSFA_shapeM       = decltype(prepend(size<0>(TileShape_MNK{}) / Blk_MN{},   mnBasicBlockShape{}));
   using sSF_strideMN      = decltype(prepend(                        Blk_Elems{},  mnBasicBlockStride{}));
   using sSFA_strideM      = sSF_strideMN;
-  using sSF_shapeK        = decltype(prepend(make_shape( Blk_SF{}/Int<MMA_NSF>{},   size<2>(TileShape_MNK{}) / Int<SFVectorSize>{} / Blk_SF{}),  kBasicBlockShape{}));
+  using sSF_shapeK        = decltype(prepend(make_shape( Blk_SF{}/Int<MMA_NSF>{},   size<2>(TileShape_MNK{}) / Int<(int)SFVectorSize>{} / Blk_SF{}),  kBasicBlockShape{}));
   
   using sSFA_strideK      = decltype(prepend(make_stride(         Int<MMA_NSF>{},   size<0>(TileShape_MNK{}) / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
   using sSFA_shape        = decltype(make_shape(  sSFA_shapeM{},   sSF_shapeK{}));
   using sSFA_stride       = decltype(make_stride(sSFA_strideM{}, sSFA_strideK{}));
   using SmemLayoutAtomSFA = decltype(make_layout(  sSFA_shape{},  sSFA_stride{}));
 
-  using sSFB_shapeN       = decltype(prepend(size<1>(TileShape_MNK{}) / Blk_MN{},   mnBasicBlockShape{}));
+  using sSFBTileShape_N = Int<cute::max(size<1>(TileShape_MNK{}), 128)>;
+
+  using sSFB_shapeN       = decltype(prepend(sSFBTileShape_N{} / Blk_MN{},   mnBasicBlockShape{}));
   using sSFB_strideN      = sSF_strideMN;
-  using sSFB_strideK      = decltype(prepend(make_stride(Int<MMA_NSF>{},   size<1>(TileShape_MNK{}) / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
+  using sSFB_strideK      = decltype(prepend(make_stride(Int<MMA_NSF>{},   sSFBTileShape_N{} / Blk_MN{} * Blk_Elems{}), kBasicBlockStride{}));
   using sSFB_shape        = decltype(make_shape(  sSFB_shapeN{},   sSF_shapeK{}));
   using sSFB_stride       = decltype(make_stride(sSFB_strideN{}, sSFB_strideK{}));
   using SmemLayoutAtomSFB = decltype(make_layout(  sSFB_shape{},  sSFB_stride{}));
 
   using SmemLayoutAtomsA = decltype(cute::make_tuple(SmemLayoutAtomA{}, SmemLayoutAtomSFA{}));
   using SmemLayoutAtomsB = decltype(cute::make_tuple(SmemLayoutAtomB{}, SmemLayoutAtomSFB{}));
-
-  static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockscaled<
-    detail::sm120_smem_capacity_bytes, SmemAllocTypeA, SmemAllocTypeB, TileShape_MNK, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
-
-  static constexpr uint32_t SchedulerPipelineStageCount = 3;
 
   using StrideA = cutlass::gemm::TagToStrideA_t<GmemLayoutATag>;
   using StrideB = cutlass::gemm::TagToStrideB_t<GmemLayoutBTag>;
@@ -231,6 +235,34 @@ struct CollectiveBuilder<
                 cute::is_base_of_v<KernelScheduleAuto, BuilderScheduleTag> ||
                 cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>,
                 "Invalid builder schedule tag for grouped GEMM");
+
+
+  static constexpr uint32_t SchedulerPipelineStageCount = 3;
+  
+  static constexpr int CLCResponseSize = sizeof(typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100<Shape<_1,_1,_1>,1>::CLCResponse{});
+
+  static constexpr auto SchedulerPipelineStorage = IsGroupedGemmKernel ? sizeof(cutlass::PipelineDetail::PipelineAsyncSharedStorage<8>) 
+      : sizeof(typename cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, Shape<_1,_1,_1>>::SharedStorage);
+  static constexpr auto CLCResponseStorage = IsGroupedGemmKernel ? 0 : (SchedulerPipelineStageCount * 
+      CLCResponseSize);
+  static constexpr auto TensorMapStorage = 
+    IsGroupedGemmKernel ? sizeof(cute::TmaDescriptor) * 2 /* We have two tensormaps smem */ :
+    0;
+
+  // TensorMapReady pipeline storage (specific to grouped/array kernels)
+  static constexpr auto TensorMapReadyPipelineStorage = 
+    IsGroupedGemmKernel ? sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage) :
+    0;
+
+  static constexpr int ReducedSmemCapacityBytes = detail::sm120_smem_capacity_bytes - 
+                                                  SchedulerPipelineStorage -
+                                                  TensorMapStorage - 
+                                                  TensorMapReadyPipelineStorage - 
+                                                  CLCResponseStorage;
+
+  static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockscaled<
+    ReducedSmemCapacityBytes, SmemAllocTypeA, SmemAllocTypeB, TileShape_MNK, SmemLayoutAtomSFA, SmemLayoutAtomSFB>(StageCountType{});
+
 
   using KernelSchedule = cute::conditional_t<IsGroupedGemmKernel, 
                                               // PtrArray

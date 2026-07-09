@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -225,7 +225,7 @@ struct CausalMask : NoMask {
     if constexpr (IsQBegin) {
       return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
     } else {
-      const int offset_tile_q = get<1>(problem_size) % get<1>(tile_shape);
+      const int offset_tile_q = (get<1>(problem_size) - get<0>(problem_size)) % get<1>(tile_shape);
       return std::min(trip_count, int(ceil_div(get<0>(tile_shape) + offset_tile_q, get<1>(tile_shape))));
     }
   }

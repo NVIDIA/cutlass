@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -103,6 +103,62 @@ struct FusionCallbacks<
       return
         {    // binary op : alpha * acc
           {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+          {},                     // leaf args : acc
+          {} // binary args : multiplies
+        };   // end binary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+// D = alpha * acc
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpGroups,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementScalar,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm90PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpGroups>,
+    fusion::ScaledAcc<ElementOutput, ElementCompute, ElementScalar, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm90EVT<Sm90Compute<multiplies, ElementOutput, ElementCompute, RoundStyle>,
+      Sm90ScalarBroadcastPtrArray<ElementScalar, Stride<_0,_0,int64_t>>, 
+      Sm90AccFetch
+    > {
+  using Impl = 
+    Sm90EVT<Sm90Compute<multiplies, ElementOutput, ElementCompute, RoundStyle>,
+      Sm90ScalarBroadcastPtrArray<ElementScalar, Stride<_0,_0,int64_t>>,
+      Sm90AccFetch
+    >;
+  using Operation = fusion::ScaledAcc<ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
+
+  struct Arguments {
+    // Give a name and flat ordering to the fusion callback args
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* const* alpha_ptr_array = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+
+    // Conversion to the args expected by the visitor implementation
+    // to_underlying_arguments will implicitly call this
+    operator typename Impl::Arguments() const {
+      return
+        {    // binary op : alpha * acc
+          {{alpha}, {alpha_ptr}, {alpha_ptr_array}, {dAlpha}}, // leaf args : alpha
           {},                     // leaf args : acc
           {} // binary args : multiplies
         };   // end binary op

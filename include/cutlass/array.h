@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -708,6 +708,24 @@ struct maximum_absolute_value_reduction<Array<T, N>, PropogateNaN> {
 
     T result = scalar;
     maximum_absolute_value_reduction<T, PropogateNaN> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result = scalar_op(result, rhs[i]);
+    }
+
+    return result;
+  }
+};
+
+template <typename T, int N, bool PropagateNaN>
+struct maximum_absolute_value_zero_mantissa_reduction<cutlass::Array<T, N>, PropagateNaN> {
+
+  CUTLASS_HOST_DEVICE
+  T operator() (T const& scalar, cutlass::Array<T, N> const& rhs) const {
+
+    T result = scalar;
+    maximum_absolute_value_zero_mantissa_reduction<T, PropagateNaN> scalar_op;
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {

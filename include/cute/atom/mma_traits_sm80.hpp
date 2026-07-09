@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -458,7 +458,7 @@ struct MMA_Traits<SM80_16x8x32_S32S4S4S32_TN> {
                          Stride<Stride<_128, _1>, Stride<_16, _8>>>;
   // (T32,V8) -> (M8,N32)
   using BLayout = Layout<Shape <Shape < _4, _8>, Shape <_8>>,
-                         Stride<Stride<_32, _1>, Stride<_8>>>;
+                         Stride<Stride<_64, _1>, Stride<_8>>>;
   using CLayout = SM80_16x8_Row;
 };
 

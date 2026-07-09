@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -87,7 +87,9 @@ namespace cutlass {
 
 #if ((__CUDACC_VER_MAJOR__ >= 12) ||                               \
     ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))
+#if !(defined(__QNX__) && __QNX__ >= 800 && defined(NV_IS_SAFETY))
 #include <cudaTypedefs.h>
+#endif
 #endif // (__CUDACC_VERSION__ >= 11.8)
 
 #include <driver_types.h>
@@ -405,7 +407,6 @@ public:
 
   /// Fills a buffer in Global Memory with a byte sequence copied from host memory
   template<class FillValueType>
-  CUTLASS_HOST_DEVICE
   Status memsetDevice(
       void* destination,
       FillValueType fill_value, 
