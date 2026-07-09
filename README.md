@@ -3,7 +3,7 @@
 
 # CUTLASS 4.6.0
 
-_CUTLASS 4.6.0 - June 2026_
+_CUTLASS 4.6.0 - July 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -27,14 +27,14 @@ native support of such data types) across NVIDIA's Volta, Turing, Ampere, Ada, H
 
 To this rich ecosystem of C++ based kernel programming abstractions, CUTLASS 4 adds CUTLASS DSLs. These are Python native interfaces for writing high-performance CUDA kernels based on core CUTLASS and CuTe concepts without any performance compromises. This allows for a much smoother learning curve, orders of magnitude faster compile times, native integration with DL frameworks without writing glue code, and much more intuitive metaprogramming that does not require deep C++ expertise.
 
-Overall we envision CUTLASS DSLs as a family of domain-specific languages (DSLs). With the release of 4.0, we are releasing the first of these in CuTe DSL. This is a low level programming model that is fully consistent with CuTe C++ abstractions — exposing core concepts such as layouts, tensors, hardware atoms, and full control over the hardware thread and data hierarchy.
+Overall, we envision CUTLASS DSLs as a family of domain-specific languages (DSLs). With the release of 4.0, we released the first of these in CuTe DSL. This is a low-level programming model that is fully consistent with CuTe C++ abstractions - exposing core concepts such as layouts, tensors, hardware atoms, and full control over the hardware thread and data hierarchy.
 
 CuTe DSL demonstrates optimal matrix multiply and other linear algebra operations
 targeting the programmable, high-throughput _Tensor Cores_ implemented by
 NVIDIA's Ampere, Hopper, and Blackwell architectures.
 
 We believe it will become an indispensable tool for students, researchers, and performance
-engineers alike — flattening the learning curve of GPU programming, rapidly prototyping kernel
+engineers alike - flattening the learning curve of GPU programming, rapidly prototyping kernel
 designs, and bringing optimized solutions into production.
 
 CuTe DSL is currently in public beta and will graduate out of beta by end of summer 2026.
@@ -45,28 +45,30 @@ To get started quickly - please refer :
 
 # What's New in CUTLASS 4.6
 
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
+
 ## CuTe DSL
 * New features
   - New fine-grained compilation API: cute.compile_to that gives control over the what stage the compiler outputs. This feature allows customization of the path from compilation to runtime execution. cute.compile_to is considered experimental in 4.6.
   - Experimental Feature: Added the IKET (In-Kernel-Event-Tracing) profiler for instrumentation-based intra-kernel activities tracing.  This enables fine-grained profiling and makes it easier to understand persistent, warp-specialized kernels' performance.  This is a beta feature provided by CUTLASS Python until a NVIDIA DevTools product is released, there is no guarantee that this interface will remain stable!
-  - Distribute compiler binaries to accomany cute.compile_to allowing users to build customized compile-exececute pipelines outside of Python. Both static and shared compiler and executor/runtime libraries will be provided. Compiler binaries will be uploaded to GitHub with each release.
-  - Supported AoT cross-compilation for aarch64?~@~Qlinux?~@~Qgnu
-  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
-  - Supported auto calculating per-kernel shared memory carveout preference, or use new laucnch option `preferred_smem_carveout` to set manually.
+  - Distribute compiler binaries to accompany cute.compile_to allowing users to build customized compile-execute pipelines outside of Python. Both static and shared compiler and executor/runtime libraries will be provided. Compiler binaries will be uploaded to GitHub with each release.
+  - Supported AoT cross-compilation for aarch64-linux-gnu
+  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programmatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
+  - Supported auto calculating per-kernel shared memory carveout preference, or use new launch option `preferred_smem_carveout` to set manually.
   - Auto-deduced smem size for launching kernels
     - Launch config `smem` now defaults to `None` for auto-calculating kernel shared memory usage, which is recommended unless manual control is required.
     - Warnings will be raised when the manually set shared memory size is insufficient or exceeds the GPU maximum.
     - The default shared memory usage calculation aligns with CUDA C++ static shared memory behavior, i.e. summing all allocations additively.
     - An additional launch option `smem_merge_branch_allocs` is provided to merge shared memory allocations across mutually exclusive code branches, which is recommended for inlined mega-kernels to reduce total footprint.
-   - SASS dumping in DSL is now supported in a self-contained manner - no CUDA toolkit installation required to get nvdisasm
+  - SASS dumping in DSL is now supported in a self-contained manner - no CUDA toolkit installation required to get nvdisasm
 
 * Bug fixing and improvements
   - Add the missing elect_one in cute.copy for bulk copy.
-    - The elect_one required for async bulk copp was missing in cute.copy. It's now generated in cute.copy automatically.
-    - Nesting elect_one will cause funtionality issues. Please remove elect_one around cute.copy with async bulk copy.
+    - The elect_one required for async bulk copy was missing in cute.copy. It's now generated in cute.copy automatically.
+    - Nesting elect_one will cause functionality issues. Please remove elect_one around cute.copy with async bulk copy.
     - Elect_one around direct async bulk copy instruction should be kept as it bypasses the cute.copy layer and will not be affected by this fix.
     - Affected copy atoms are CopyBulkG2SOp, CopyBulkG2SMulticastOp, CopyBulkS2GOp, CopyBulkS2GByteMaskOp, and CopyBulkS2SOp.
-    - Example of changes to avoid nesting elect_ones could be found here: https://github.com/Dao-AILab/quack/pull/164
+    - An Example showing changes to avoid nesting `elect_one` could be found in this [PR](https://github.com/Dao-AILab/quack/pull/164)
   - Improvements on linter support with more type ignores cleaned up
   - Improvements on tvm-ffi CUDA runtime error diagnostics
   - Improvements on dataclass support for TVM-FFI
@@ -93,11 +95,11 @@ To get started quickly - please refer :
 to discover CUTLASS Python DSL kernels & integrate them in your code.
   - `pip install nvidia-cutlass-operators` to get started
 * [Operator API Overview](https://docs.nvidia.com/cutlass/latest/media/docs/operators/overview.html)
-  - See [currently supported kernels](https://docs.nvidia.com/cutlass/latest/master/media/docs/operators/overview.html#supported-and-upcoming-features)
+  - See [currently supported kernels](https://docs.nvidia.com/cutlass/latest/media/docs/operators/overview.html#supported-and-upcoming-features)
 * [Basic GEMM tutorial](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/000_gemm.html)
   - More tutorials [here](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/index.html)
 * [GitHub source](https://github.com/NVIDIA/cutlass/tree/main/operators)
-* [API Reference](https://docs.nvidia.com/cutlass/latest/master/media/docs/operators/api_reference/index.html)
+* [API Reference](https://docs.nvidia.com/cutlass/latest/media/docs/operators/api_reference/index.html)
 
 ## CUTLASS C++
 * Add [example 113](https://github.com/NVIDIA/cutlass/tree/main/examples/113_hopper_gemm_activation_fusion) for Hopper GEMM with activation fusion.

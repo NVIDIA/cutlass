@@ -4,28 +4,30 @@
 
 ## [4.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.0) (2026-07-01)
 
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
+
 ### CuTe DSL
 * New features
   - New fine-grained compilation API: cute.compile_to that gives control over the what stage the compiler outputs. This feature allows customization of the path from compilation to runtime execution. cute.compile_to is considered experimental in 4.6.
   - Experimental Feature: Added the IKET (In-Kernel-Event-Tracing) profiler for instrumentation-based intra-kernel activities tracing.  This enables fine-grained profiling and makes it easier to understand persistent, warp-specialized kernels' performance.  This is a beta feature provided by CUTLASS Python until a NVIDIA DevTools product is released, there is no guarantee that this interface will remain stable!
-  - Distribute compiler binaries to accomany cute.compile_to allowing users to build customized compile-exececute pipelines outside of Python. Both static and shared compiler and executor/runtime libraries will be provided. Compiler binaries will be uploaded to GitHub with each release.
-  - Supported AoT cross-compilation for aarch64‑linux‑gnu
-  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
-  - Supported auto calculating per-kernel shared memory carveout preference, or use new laucnch option `preferred_smem_carveout` to set manually.
+  - Distribute compiler binaries to accompany cute.compile_to allowing users to build customized compile-execute pipelines outside of Python. Both static and shared compiler and executor/runtime libraries will be provided. Compiler binaries will be uploaded to GitHub with each release.
+  - Supported AoT cross-compilation for aarch64-linux-gnu
+  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programmatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
+  - Supported auto calculating per-kernel shared memory carveout preference, or use new launch option `preferred_smem_carveout` to set manually.
   - Auto-deduced smem size for launching kernels
     - Launch config `smem` now defaults to `None` for auto-calculating kernel shared memory usage, which is recommended unless manual control is required.
     - Warnings will be raised when the manually set shared memory size is insufficient or exceeds the GPU maximum.
     - The default shared memory usage calculation aligns with CUDA C++ static shared memory behavior, i.e. summing all allocations additively.
     - An additional launch option `smem_merge_branch_allocs` is provided to merge shared memory allocations across mutually exclusive code branches, which is recommended for inlined mega-kernels to reduce total footprint.
-   - SASS dumping in DSL is now supported in a self-contained manner - no CUDA toolkit installation required to get nvdisasm 
+  - SASS dumping in DSL is now supported in a self-contained manner - no CUDA toolkit installation required to get nvdisasm 
 
 * Bug fixing and improvements
   - Add the missing elect_one in cute.copy for bulk copy.
-    - The elect_one required for async bulk copp was missing in cute.copy. It's now generated in cute.copy automatically.
-    - Nesting elect_one will cause funtionality issues. Please remove elect_one around cute.copy with async bulk copy.
+    - The elect_one required for async bulk copy was missing in cute.copy. It's now generated in cute.copy automatically.
+    - Nesting elect_one will cause functionality issues. Please remove elect_one around cute.copy with async bulk copy.
     - Elect_one around direct async bulk copy instruction should be kept as it bypasses the cute.copy layer and will not be affected by this fix.
     - Affected copy atoms are CopyBulkG2SOp, CopyBulkG2SMulticastOp, CopyBulkS2GOp, CopyBulkS2GByteMaskOp, and CopyBulkS2SOp.
-    - Example of changes to avoid nesting elect_ones could be found here: https://github.com/Dao-AILab/quack/pull/164
+    - An Example showing changes to avoid nesting `elect_one` could be found in this [PR](https://github.com/Dao-AILab/quack/pull/164)
   - Improvements on linter support with more type ignores cleaned up
   - Improvements on tvm-ffi CUDA runtime error diagnostics
   - Improvements on dataclass support for TVM-FFI
@@ -52,11 +54,11 @@
 to discover CUTLASS Python DSL kernels & integrate them in your code.
   - `pip install nvidia-cutlass-operators` to get started
 * [Operator API Overview](https://docs.nvidia.com/cutlass/latest/media/docs/operators/overview.html)
-  - See [currently supported kernels](https://docs.nvidia.com/cutlass/latest/master/media/docs/operators/overview.html#supported-and-upcoming-features)
+  - See [currently supported kernels](https://docs.nvidia.com/cutlass/latest/media/docs/operators/overview.html#supported-and-upcoming-features)
 * [Basic GEMM tutorial](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/000_gemm.html)
   - More tutorials [here](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/index.html)
 * [GitHub source](https://github.com/NVIDIA/cutlass/tree/main/operators)
-* [API Reference](https://docs.nvidia.com/cutlass/latest/master/media/docs/operators/api_reference/index.html)
+* [API Reference](https://docs.nvidia.com/cutlass/latest/media/docs/operators/api_reference/index.html)
 
 ### CUTLASS C++
 * Add [example 113](https://github.com/NVIDIA/cutlass/tree/main/examples/113_hopper_gemm_activation_fusion) for Hopper GEMM with activation fusion.
@@ -72,6 +74,12 @@ to discover CUTLASS Python DSL kernels & integrate them in your code.
 * Fix a CUDA structured bindings header issue.
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
 * Optimal code generation with CUDA toolkit versions 13.3.
+
+## [4.5.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.3) (2026-07-03)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Fixed a compilation time regression issue in 4.5.0. Compilation times now match those in the 4.4 and 4.6 branches.
 
 ## [4.5.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.5.2) (2026-05-22)
 
@@ -168,6 +176,11 @@ to discover CUTLASS Python DSL kernels & integrate them in your code.
   - Add missing reference kernels for blockwise GEMM profiler
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
 * Optimal code generation with CUDA toolkit versions 13.2.
+
+## [4.4.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.3) (2026-06-15)
+
+### CUTLASS C++
+* Make [version.h](https://github.com/NVIDIA/cutlass/blob/release/4.4/include/cutlass/version.h) NVRTC JIT compilation compatible.
 
 ## [4.4.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.4.2) (2026-03-13)
 
@@ -303,6 +316,13 @@ to discover CUTLASS Python DSL kernels & integrate them in your code.
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
 * Optimal code generation with CUDA toolkit versions 13.1.
 
+## [4.3.6](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.6) (2026-06-17)
+
+### CUTLASS C++
+* Make [version.h](https://github.com/NVIDIA/cutlass/blob/release/4.3/include/cutlass/version.h) NVRTC JIT compilation compatible.
+* Allow linking large cutlass library on 64bit platform.
+* Fix alignment-related miscalculation for pipeline stages of Blackwell blockscaled GEMM.
+
 ## [4.3.5](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.5) (2026-01-09)
 
 ### CuTe DSL
@@ -329,6 +349,8 @@ to discover CUTLASS Python DSL kernels & integrate them in your code.
 * Work around a driver TMA descriptor related bug which will cause occasional errors on Blackwell when the tensor's backing memory allocation is less than 128KB and it is not a dense non-overlapping tensor.
 
 ## [4.3.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.3) (2025-12-12)
+
+### CuTe DSL
 * New features
   - Supported namedtuple and kwargs for JIT function arguments in tvm-ffi
   - Supported variadic tuples for JIT function argument in tvm-ffi
@@ -338,6 +360,8 @@ to discover CUTLASS Python DSL kernels & integrate them in your code.
   - Clearer error message for the case of runtime error cudaErrorInsufficientDriver
 
 ## [4.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.3.2) (2025-12-05)
+
+### CuTe DSL
 * New features
   - New env var `CUTE_DSL_CACHE_DIR` to specify the path for dumping caches
 
@@ -452,6 +476,14 @@ to discover CUTLASS Python DSL kernels & integrate them in your code.
     - Fix an issue when epilogue tile N is not divided by default subtile N.
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
 * Optimal code generation with CUDA toolkit versions 13.0U1.
+
+## [4.2.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.2) (2026-06-20)
+
+### CUTLASS C++
+* Make [version.h](https://github.com/NVIDIA/cutlass/blob/release/4.2/include/cutlass/version.h) NVRTC JIT compilation compatible.
+* Allow linking large cutlass library on 64bit platform.
+* Fix alignment-related miscalculation for pipeline stages of Blackwell blockscaled GEMM.
+* Fix for blockwise group gemm nosmem epilogues and no sfd with nosmem group gemm epilogues.
 
 ## [4.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.2.1) (2025-09-22)
 
