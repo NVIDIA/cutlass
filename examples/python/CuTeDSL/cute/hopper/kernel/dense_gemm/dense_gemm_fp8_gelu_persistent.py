@@ -48,11 +48,14 @@ using CuTe DSL.
 - Matrix B is NxKxL, L is batch dimension, B can be row-major("N") or column-major("K")
 - Matrix C is MxNxL, L is batch dimension, C can be row-major("N") or column-major("M")
 
-The high-accuracy fused GELU epilogue uses the erf formulation:
-  GELU(x) = 0.5 * x * (1 + erf(x / sqrt(2)))
-The scale and GELU arithmetic are evaluated in the accumulator type before one
-conversion to the output type. The validated configuration uses FP8 A/B,
-Float32 accumulation, and Float16 or BFloat16 output.
+The fused epilogue accepts a compile-time elementwise operation and provides
+two GELU implementations:
+- ``erf`` evaluates ``0.5 * x * (1 + erf(x / sqrt(2)))``.
+- ``poly11`` approximates the standard-normal CDF with a clipped degree-11
+  polynomial and computes ``x * CDF_approx(x)``.
+Both implementations evaluate the scale and activation in the accumulator
+type before one conversion to the output type. The validated configuration
+uses FP8 A/B, Float32 accumulation, and Float16 or BFloat16 output.
 
 This GEMM kernel supports the following features:
     - Utilizes Tensor Memory Access (TMA) for efficient memory operations
@@ -61,7 +64,9 @@ This GEMM kernel supports the following features:
     - Support persistent tile scheduling to better overlap memory load/store with MMA between tiles
     - Support warp specialization to avoid explicit pipelining between mainloop load and MMA
     - Applies per-tensor scalar scale_a and scale_b factors in the epilogue
-    - Fuses exact GELU into the persistent epilogue
+    - Accepts a compile-time elementwise epilogue operation
+    - Provides erf-GELU and a clipped degree-11 CDF polynomial approximation
+    - Views each epilogue fragment directly in the accumulator registers
 
 This GEMM works as follows:
 1. DMA warp: Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
@@ -80,7 +85,8 @@ To run this example:
 
     python examples/python/CuTeDSL/cute/hopper/kernel/dense_gemm/dense_gemm_fp8_gelu_persistent.py \
       --mnkl 8192,8192,8192,1 --tile_shape_mn 128,256                      \
-      --cluster_shape_mn 1,1 --c_dtype Float16 --scale_a 0.75 --scale_b 1.25
+      --cluster_shape_mn 1,1 --c_dtype Float16 --scale_a 0.75 --scale_b 1.25 \
+      --gelu_kind erf
 
 The above example command computes batched GEMM with M=8192, N=8192, K=8192,
 batch_count=1. The Hopper WGMMA tile shape is 128x256x64 and the cluster shape
@@ -93,7 +99,8 @@ To collect performance with NCU profiler:
 
     ncu python examples/python/CuTeDSL/cute/hopper/kernel/dense_gemm/dense_gemm_fp8_gelu_persistent.py \
       --mnkl 8192,8192,8192,1 --tile_shape_mn 128,256                      \
-      --cluster_shape_mn 1,1 --c_dtype Float16 --scale_a 0.75 --scale_b 1.25
+      --cluster_shape_mn 1,1 --c_dtype Float16 --scale_a 0.75 --scale_b 1.25 \
+      --gelu_kind erf
 
 Constraints are same as dense_gemm.py:
 * This example defaults to FP8 e4m3fn inputs with k-major layout
@@ -109,6 +116,47 @@ Constraints are same as dense_gemm.py:
 DEFAULT_VALIDATION_ATOL = 2.0e-3
 DEFAULT_VALIDATION_RTOL = 1.0e-3
 BF16_VALIDATION_RTOL = 1.6e-2
+
+
+def erf_gelu(acc_vec):
+    """Evaluate erf-form GELU in the accumulator type."""
+    half = cute.full_like(acc_vec, 0.5)
+    one = cute.full_like(acc_vec, 1.0)
+    inv_sqrt2 = cute.full_like(acc_vec, 0.7071067811865476)
+    return half * acc_vec * (one + cute.erf(acc_vec * inv_sqrt2))
+
+
+def poly11_gelu(acc_vec):
+    """Evaluate the clipped degree-11 CDF approximation to erf-GELU."""
+    lower = cute.full_like(acc_vec, -3.5)
+    upper = cute.full_like(acc_vec, 3.5)
+    clipped = cute.where(acc_vec < lower, lower, acc_vec)
+    clipped = cute.where(clipped > upper, upper, clipped)
+
+    half = cute.full_like(acc_vec, 0.5)
+    zero = cute.full_like(acc_vec, 0.0)
+    one = cute.full_like(acc_vec, 1.0)
+    # Phi(z) ~= 0.5 + z * (c1 + z^2 * (c3 + ... + z^8*c11)).
+    c1 = cute.full_like(acc_vec, 0.39639100184010506)
+    c3 = cute.full_like(acc_vec, -0.06247543670746915)
+    c5 = cute.full_like(acc_vec, 0.0077960139440769235)
+    c7 = cute.full_like(acc_vec, -0.000606554913963472)
+    c9 = cute.full_like(acc_vec, 2.5871031157700182e-05)
+    c11 = cute.full_like(acc_vec, -4.5557832301351553e-07)
+    clipped_sq = clipped * clipped
+    cdf = half + clipped * (
+        c1
+        + clipped_sq
+        * (
+            c3
+            + clipped_sq
+            * (c5 + clipped_sq * (c7 + clipped_sq * (c9 + clipped_sq * c11)))
+        )
+    )
+    # Guard against small polynomial overshoot before forming GELU.
+    cdf = cute.where(cdf < zero, zero, cdf)
+    cdf = cute.where(cdf > one, one, cdf)
+    return acc_vec * cdf
 
 
 def resolve_validation_rtol(
@@ -234,6 +282,12 @@ def parse_arguments() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Per-tensor scalar scale factor for B",
+    )
+    parser.add_argument(
+        "--gelu_kind",
+        choices=["erf", "poly11"],
+        default="erf",
+        help="GELU implementation used by the compile-time epilogue operation",
     )
     parser.add_argument(
         "--atol",
@@ -483,10 +537,11 @@ class HopperFP8GeluPersistentGemmKernel:
         a: cute.Tensor,
         b: cute.Tensor,
         c: cute.Tensor,
-        scale_a: cute.Tensor,
-        scale_b: cute.Tensor,
+        scale_ab: cutlass.Float32,
+        apply_scale: cutlass.Constexpr,
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        epilogue_op: cutlass.Constexpr = erf_gelu,
     ):
         """Execute the GEMM operation in steps:
         - Setup static attributes
@@ -501,14 +556,16 @@ class HopperFP8GeluPersistentGemmKernel:
         :type b: cute.Tensor
         :param c: Output tensor C
         :type c: cute.Tensor
-        :param scale_a: Scalar scale factor for A (1-element Float32 tensor)
-        :type scale_a: cute.Tensor
-        :param scale_b: Scalar scale factor for B (1-element Float32 tensor)
-        :type scale_b: cute.Tensor
+        :param scale_ab: Combined scalar scale factor passed by value
+        :type scale_ab: cutlass.Float32
+        :param apply_scale: Compile-time flag for the neutral-scale fast path
+        :type apply_scale: cutlass.Constexpr
         :param max_active_clusters: Maximum number of active clusters
         :type max_active_clusters: cutlass.Constexpr
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
+        :param epilogue_op: Elementwise operation applied to each accumulator fragment
+        :type epilogue_op: cutlass.Constexpr
         """
 
         # setup static attributes before smem/grid/tma computation
@@ -602,8 +659,9 @@ class HopperFP8GeluPersistentGemmKernel:
             self.b_smem_layout_staged,
             self.epi_smem_layout_staged,
             tile_sched_params,
-            scale_a,
-            scale_b,
+            scale_ab,
+            apply_scale,
+            epilogue_op,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -629,8 +687,9 @@ class HopperFP8GeluPersistentGemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: cute.ComposedLayout,
         tile_sched_params: utils.PersistentTileSchedulerParams,
-        scale_a: cute.Tensor,
-        scale_b: cute.Tensor,
+        scale_ab: cutlass.Float32,
+        apply_scale: cutlass.Constexpr,
+        epilogue_op: cutlass.Constexpr,
     ):
         """
         GPU device kernel performing the batched GEMM computation.
@@ -659,10 +718,12 @@ class HopperFP8GeluPersistentGemmKernel:
         :type epi_smem_layout_staged: cute.ComposedLayout
         :param tile_sched_params: Parameters for the persistent tile scheduler
         :type tile_sched_params: utils.PersistentTileSchedulerParams
-        :param scale_a: Scalar scale factor for A (1-element Float32 tensor)
-        :type scale_a: cute.Tensor
-        :param scale_b: Scalar scale factor for B (1-element Float32 tensor)
-        :type scale_b: cute.Tensor
+        :param scale_ab: Combined scalar scale factor passed by value
+        :type scale_ab: cutlass.Float32
+        :param apply_scale: Compile-time flag for the neutral-scale fast path
+        :type apply_scale: cutlass.Constexpr
+        :param epilogue_op: Elementwise operation applied to each accumulator fragment
+        :type epilogue_op: cutlass.Constexpr
         """
 
         tidx, _, _ = cute.arch.thread_idx()
@@ -691,7 +752,6 @@ class HopperFP8GeluPersistentGemmKernel:
         b_mcast_mask = b_mcast_mask if self.is_b_mcast else 0
         a_smem_layout = cute.slice_(a_smem_layout_staged, (None, None, 0))
         b_smem_layout = cute.slice_(b_smem_layout_staged, (None, None, 0))
-        scale_val = scale_a[0] * scale_b[0]
         tma_copy_bytes = cute.size_in_bytes(
             self.a_dtype, a_smem_layout
         ) + cute.size_in_bytes(self.b_dtype, b_smem_layout)
@@ -917,12 +977,12 @@ class HopperFP8GeluPersistentGemmKernel:
             # (R2S, R2S_M, R2S_N)
             tRS_rAcc = tiled_copy_r2s.retile(accumulators)
 
-            # Allocate D registers.
+            # View each FP32 accumulator fragment directly. Only the converted
+            # C-typed output fragment is materialized in additional registers.
             rD_shape = cute.shape(thr_copy_r2s.partition_S(sC))
             tRS_rD_layout = cute.make_layout(rD_shape[:3])
-            tRS_rD = cute.make_rmem_tensor(tRS_rD_layout.shape, self.acc_dtype)
             tRS_rD_out = cute.make_rmem_tensor(tRS_rD_layout.shape, self.c_dtype)
-            size_tRS_rD = cute.size(tRS_rD)
+            size_tRS_rD = cute.size(tRS_rD_layout.shape)
 
             k_pipe_mmas = 1
             prologue_mma_cnt = min(k_pipe_mmas, k_tile_cnt)
@@ -1022,23 +1082,16 @@ class HopperFP8GeluPersistentGemmKernel:
 
                 num_prev_epi_tiles = tile_sched.num_tiles_executed * epi_tile_num
                 for epi_idx in cutlass.range_constexpr(epi_tile_num):
-                    # Copy from accumulators to D registers and apply per-tensor scale.
-                    for epi_v in cutlass.range_constexpr(size_tRS_rD):
-                        tRS_rD[epi_v] = (
-                            tRS_rAcc[epi_idx * size_tRS_rD + epi_v] * scale_val
-                        )
+                    tRS_rAcc_epi = cute.make_tensor(
+                        tRS_rAcc.iterator + epi_idx * size_tRS_rD,
+                        tRS_rD_layout,
+                    )
+                    acc_vec = tRS_rAcc_epi.load()
+                    if cutlass.const_expr(apply_scale):
+                        acc_vec = acc_vec * scale_ab
 
-                    # High-accuracy erf-form GELU, evaluated in the FP32
-                    # accumulator fragment before a single conversion to C:
-                    #   GELU(x) = 0.5 * x * (1 + erf(x / sqrt(2))).
-                    # Keeping the activation in FP32 avoids an intermediate
-                    # Float16/BFloat16 rounding before erf and multiplication.
-                    acc_vec = tRS_rD.load()
-                    half = cute.full_like(acc_vec, 0.5)
-                    one = cute.full_like(acc_vec, 1.0)
-                    inv_sqrt2 = cute.full_like(acc_vec, 0.7071067811865476)
-                    gelu_vec = half * acc_vec * (one + cute.erf(acc_vec * inv_sqrt2))
-                    tRS_rD_out.store(gelu_vec.to(self.c_dtype))
+                    activation = epilogue_op(acc_vec)
+                    tRS_rD_out.store(activation.to(self.c_dtype))
 
                     # Copy from D registers to shared memory
                     epi_buffer = (num_prev_epi_tiles + epi_idx) % cute.size(
@@ -1533,6 +1586,7 @@ def run(
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
     rtol: Optional[float] = None,
+    epilogue_op: cutlass.Constexpr = erf_gelu,
     **kwargs,
 ):
     """
@@ -1563,6 +1617,8 @@ def run(
     :param rtol: Relative term in the mixed reference validation rule. If None,
         use 1e-3 for Float16 and 1.6e-2 for BFloat16 output.
     :type rtol: float, optional
+    :param epilogue_op: Compile-time elementwise operation applied in the epilogue
+    :type epilogue_op: cutlass.Constexpr
     :param warmup_iterations: Number of warmup iterations before benchmarking, defaults to 0
     :type warmup_iterations: int, optional
     :param iterations: Number of benchmark iterations to run, defaults to 1
@@ -1635,16 +1691,12 @@ def run(
     c_tensor, c_torch_gpu = cutlass_torch.cute_tensor_like(
         c_torch_cpu, c_dtype, is_dynamic_layout=True, assumed_align=16
     )
-    scale_a_torch = torch.tensor([scale_a_val], dtype=torch.float32, device="cuda")
-    scale_b_torch = torch.tensor([scale_b_val], dtype=torch.float32, device="cuda")
-    scale_a_tensor, _ = cutlass_torch.cute_tensor_like(
-        scale_a_torch, cutlass.Float32, is_dynamic_layout=True, assumed_align=16
-    )
-    scale_b_tensor, _ = cutlass_torch.cute_tensor_like(
-        scale_b_torch, cutlass.Float32, is_dynamic_layout=True, assumed_align=16
-    )
-    # Match the kernel's Float32 scale multiplication in the CPU reference.
-    scale_ab_val = float((scale_a_torch[0] * scale_b_torch[0]).item())
+    # Combine Float32-rounded inputs once on the host. The same rounded product
+    # is passed to the kernel and used by the CPU reference.
+    scale_a_f32 = torch.tensor(scale_a_val, dtype=torch.float32)
+    scale_b_f32 = torch.tensor(scale_b_val, dtype=torch.float32)
+    scale_ab_val = float((scale_a_f32 * scale_b_f32).item())
+    apply_scale = scale_ab_val != 1.0
 
     gemm = HopperFP8GeluPersistentGemmKernel(
         acc_dtype, tile_shape_mn, cluster_shape_mn, swizzle_size, raster_along_m
@@ -1664,16 +1716,15 @@ def run(
         a_tensor,
         b_tensor,
         c_tensor,
-        scale_a_tensor,
-        scale_b_tensor,
+        scale_ab_val,
+        apply_scale,
         max_active_clusters,
         stream,
+        epilogue_op,
     )
 
     if not skip_ref_check:
-        compiled_gemm(
-            a_tensor, b_tensor, c_tensor, scale_a_tensor, scale_b_tensor, stream
-        )
+        compiled_gemm(a_tensor, b_tensor, c_tensor, scale_ab_val, stream)
         torch.cuda.synchronize()
 
         # Compute reference result: C = GELU(scale_a * scale_b * (A @ B))
@@ -1713,8 +1764,7 @@ def run(
             a_tensor_workspace,
             b_tensor_workspace,
             c_tensor_workspace,
-            scale_a_tensor,
-            scale_b_tensor,
+            scale_ab_val,
             stream,
         )
 
@@ -1764,5 +1814,6 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_cold_l2,
         args.rtol,
+        epilogue_op=erf_gelu if args.gelu_kind == "erf" else poly11_gelu,
     )
     print("PASS")

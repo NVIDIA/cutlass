@@ -32,10 +32,9 @@ import pytest
 
 import cutlass
 from hopper.kernel.dense_gemm.dense_gemm_fp8_gelu_persistent import (
-    run as run_exact_gelu,
-)
-from hopper.kernel.dense_gemm.dense_gemm_fp8_gelu_persistent_approx import (
-    run as run_approx_gelu,
+    erf_gelu,
+    poly11_gelu,
+    run,
 )
 
 
@@ -44,41 +43,41 @@ BF16 = cutlass.BFloat16
 F32 = cutlass.Float32
 
 
-CUSTOMER_CASES = [
+TARGET_PROBLEM_CASES = [
     pytest.param(
-        run_exact_gelu,
+        erf_gelu,
         (12800, 4096, 1024, 1),
         (1, 2),
-        id="exact-up-projection",
+        id="erf-up-projection",
     ),
     pytest.param(
-        run_approx_gelu,
+        poly11_gelu,
         (12800, 4096, 1024, 1),
         (2, 1),
-        id="approx-up-projection",
+        id="poly11-up-projection",
     ),
     pytest.param(
-        run_exact_gelu,
+        erf_gelu,
         (12800, 1024, 4096, 1),
         (2, 2),
-        id="exact-down-projection",
+        id="erf-down-projection",
     ),
     pytest.param(
-        run_approx_gelu,
+        poly11_gelu,
         (12800, 1024, 4096, 1),
         (2, 2),
-        id="approx-down-projection",
+        id="poly11-down-projection",
     ),
 ]
 
 
-def _run_customer_case(
-    run_gemm: Callable[..., float],
+def _run_problem_case(
+    epilogue_op: Callable,
     mnkl: Tuple[int, int, int, int],
     cluster_shape_mn: Tuple[int, int],
     skip_ref_check: bool,
 ):
-    run_gemm(
+    run(
         mnkl=mnkl,
         a_dtype=F8E4,
         b_dtype=F8E4,
@@ -99,20 +98,21 @@ def _run_customer_case(
         iterations=1,
         skip_ref_check=skip_ref_check,
         use_cold_l2=False,
+        epilogue_op=epilogue_op,
     )
 
 
-@pytest.mark.parametrize("run_gemm, mnkl, cluster_shape_mn", CUSTOMER_CASES)
+@pytest.mark.parametrize("epilogue_op, mnkl, cluster_shape_mn", TARGET_PROBLEM_CASES)
 @pytest.mark.L0
 @pytest.mark.L1(0)
-def test_l0_customer_problem_sizes(run_gemm, mnkl, cluster_shape_mn):
-    """Compile and execute both epilogues for the customer problem sizes."""
-    _run_customer_case(run_gemm, mnkl, cluster_shape_mn, skip_ref_check=True)
+def test_l0_target_problem_sizes(epilogue_op, mnkl, cluster_shape_mn):
+    """Compile and execute both epilogues for the target problem sizes."""
+    _run_problem_case(epilogue_op, mnkl, cluster_shape_mn, skip_ref_check=True)
 
 
-@pytest.mark.parametrize("run_gemm, mnkl, cluster_shape_mn", CUSTOMER_CASES)
+@pytest.mark.parametrize("epilogue_op, mnkl, cluster_shape_mn", TARGET_PROBLEM_CASES)
 @pytest.mark.L0(0)
 @pytest.mark.L1
-def test_l1_customer_problem_sizes(run_gemm, mnkl, cluster_shape_mn):
-    """Validate both epilogues at full customer problem sizes."""
-    _run_customer_case(run_gemm, mnkl, cluster_shape_mn, skip_ref_check=False)
+def test_l1_target_problem_sizes(epilogue_op, mnkl, cluster_shape_mn):
+    """Validate both epilogues at full target problem sizes."""
+    _run_problem_case(epilogue_op, mnkl, cluster_shape_mn, skip_ref_check=False)
