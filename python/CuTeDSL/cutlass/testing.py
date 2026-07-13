@@ -290,6 +290,22 @@ def _does_kernel_use_stream(
     return False
 
 
+def _does_kernel_use_stream_with_jit_retry(
+    kernel: Callable[..., Any],
+    stream: cuda_driver.CUstream,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> bool:
+    uses_stream = _does_kernel_use_stream(kernel, stream, args, kwargs)
+    if uses_stream or not hasattr(kernel, "_dsl_cls"):
+        return uses_stream
+
+    # The first invocation of an uncompiled @cute.jit function can spend the
+    # capture attempt compiling instead of recording a launch. Retry once with
+    # the now-compiled callable before reporting a stream mismatch.
+    return _does_kernel_use_stream(kernel, stream, args, kwargs)
+
+
 def benchmark(
     callable: Callable,
     *,
@@ -401,7 +417,7 @@ def benchmark(
     if (
         not use_cuda_graphs
         and int(stream) != int(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
-        and not _does_kernel_use_stream(
+        and not _does_kernel_use_stream_with_jit_retry(
             callable, stream, workspaces[0].args, workspaces[0].kwargs
         )
     ):
@@ -716,7 +732,9 @@ def _benchmark_for_autotune(
 
     if int(current_stream) != int(
         cuda_driver.CUstream(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
-    ) and not _does_kernel_use_stream(callable, current_stream, args, kwargs):
+    ) and not _does_kernel_use_stream_with_jit_retry(
+        callable, current_stream, args, kwargs
+    ):
         raise ValueError(f"Incorrect stream passed to kernel: {current_stream}")
 
     if use_cold_l2:

@@ -132,7 +132,9 @@ from .core import (
     Ratio,
     # FastDivmod operations
     FastDivmodDivisor,
+    FastDivmodDivisorV2,
     fast_divmod_create_divisor,
+    fast_divmod_create_divisor_v2,
     basis_value,
     basis_get,
     nullspace,
@@ -422,7 +424,9 @@ __all__ = [
     "union",
     # FastDivmod operations
     "FastDivmodDivisor",
+    "FastDivmodDivisorV2",
     "fast_divmod_create_divisor",
+    "fast_divmod_create_divisor_v2",
     # Modules
     "arch",
     "export",

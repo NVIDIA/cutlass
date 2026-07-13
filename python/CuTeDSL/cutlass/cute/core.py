@@ -14,6 +14,7 @@ from collections.abc import Iterable
 from functools import partial, reduce
 import inspect
 from inspect import isclass
+import warnings
 from typing import (
     Any,
     Callable,
@@ -442,9 +443,15 @@ class IntValue(cutlass_arith.ArithValue):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> ir.Value:
         if isinstance(self.type, ir.IntegerType):
-            def_op = self.owner.operation
-            if def_op.name == "cute.get_scalars":
-                return def_op.operands[0]
+            # A block argument (e.g. a kernel parameter, such as the scalar
+            # divisor a FastDivmodDivisorV2 carries across the kernel boundary)
+            # is owned by an ir.Block, not an ir.Operation, so it has no
+            # defining op and no cute.get_scalars shortcut. Fall through to
+            # wrap it as an int_tuple in that case.
+            if not isinstance(self.owner, ir.Block):
+                def_op = self.owner.operation
+                if def_op.name == "cute.get_scalars":
+                    return def_op.operands[0]
 
         assert not isinstance(self.type, _cute_ir.IntTupleType)
 
@@ -2174,7 +2181,17 @@ def printf(
             raise TypeError(f"unsupported argument type in printf, got {type(arg)}")
 
     processed_args = [process_arg(a) for a in args]
-    _cute_ir.print_(processed_args, fmt=fmt, loc=loc, ip=ip)
+    operand_signed = [bool(getattr(type(a), "signed", True)) for a in args]
+    if all(operand_signed):
+        _cute_ir.print_(processed_args, fmt=fmt, loc=loc, ip=ip)
+    else:
+        _cute_ir.print_(
+            processed_args,
+            fmt=fmt,
+            operand_signed=ir.DenseBoolArrayAttr.get(operand_signed),
+            loc=loc,
+            ip=ip,
+        )
 
 
 @dsl_user_op
@@ -6262,6 +6279,13 @@ class FastDivmodDivisor:
 
     This class wraps a FastDivmod divisor and enables natural Python operator syntax.
 
+    .. deprecated::
+        Use :class:`FastDivmodDivisorV2` instead. V2 additionally carries the
+        scalar divisor across kernel boundaries (2 MLIR values per object
+        instead of 1), so ``.divisor`` is readable inside kernels;
+        arithmetic is unchanged. This class keeps the legacy 1-value
+        serialization contract for existing integrations.
+
     :ivar divisor: The original divisor value (publicly accessible)
     :ivar _divisor_mlir: The FastDivmod divisor MLIR value (internal)
 
@@ -6290,6 +6314,20 @@ class FastDivmodDivisor:
         :param is_power_of_2: Whether divisor is known to be a power of 2.
                               Defaults to False.
         """
+        # Subclasses (FastDivmodDivisorV2) share this __init__; only direct
+        # use of the legacy class is deprecated.
+        if type(self) is FastDivmodDivisor:
+            warnings.warn(
+                "FastDivmodDivisor is deprecated in favor of "
+                "cute.FastDivmodDivisorV2 / cute.fast_divmod_create_divisor_v2. "
+                "V2 additionally carries the scalar divisor across kernel "
+                "boundaries (2 MLIR values per object instead of 1), so "
+                "'.divisor' is readable inside kernels; "
+                "arithmetic (divmod, //, %) is unchanged.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         # Store the original divisor value for public access
         self._original_divisor = divisor
 
@@ -6407,6 +6445,13 @@ class FastDivmodDivisor:
             batch_fdd = cute.fast_divmod_create_divisor(batch_size)
             print(f"Divisor: {batch_fdd.divisor}")  # Access the divisor value
             some_function(divisor=batch_fdd.divisor)  # Pass to other functions
+
+        .. note::
+            After this object crosses a kernel boundary (e.g. stored in a
+            params structure passed to a ``@cute.kernel``), the returned value
+            still references host-side SSA and fails MLIR region isolation if
+            used inside the kernel (OSS issue #3243). Use
+            :class:`FastDivmodDivisorV2` to read the divisor inside a kernel.
         """
         return self._original_divisor
 
@@ -6454,7 +6499,7 @@ class FastDivmodDivisor:
         return new_obj
 
     def __repr__(self) -> str:
-        return f"FastDivmodDivisor(divisor={self._original_divisor}, type={self._divisor_mlir.type})"
+        return f"{type(self).__name__}(divisor={self._original_divisor}, type={self._divisor_mlir.type})"
 
 
 # Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
@@ -6503,3 +6548,100 @@ def fast_divmod_create_divisor(
         remainder = linear_idx % divisor
     """
     return FastDivmodDivisor(divisor, loc=loc, ip=ip)
+
+
+class FastDivmodDivisorV2(FastDivmodDivisor):
+    """
+    FastDivmod divisor whose ``.divisor`` property is readable inside kernels.
+
+    Same arithmetic behavior as :class:`FastDivmodDivisor` (``divmod``, ``//``,
+    ``%``), but serializes **two** MLIR values across region boundaries — the
+    encoded FastDivmod plus the scalar divisor — so ``.divisor`` resolves to
+    in-region SSA after the object crosses a kernel boundary (OSS issue #3243):
+
+    .. code-block:: python
+
+        @dataclass
+        class Params:
+            fdd: cute.FastDivmodDivisorV2
+
+        @cute.kernel
+        def kernel(out: cute.Tensor, params: Params):
+            out[0] = params.fdd.divisor  # OK: region-local SSA
+
+    :class:`FastDivmodDivisor` keeps the legacy 1-value serialization contract
+    for backward compatibility; its ``.divisor`` is not readable inside a
+    kernel.
+    """
+
+    def __extract_mlir_values__(self) -> List[ir.Value]:
+        """Extract MLIR values for Host->Device transfer.
+
+        Two SSA values are emitted: the encoded FastDivmod (``_divisor_mlir``)
+        and the scalar divisor that was used to build it. The encoded value
+        still flows through GridInvariantCodeMotionPass for host hoisting; the
+        scalar value is needed so ``.divisor`` resolves to in-region SSA after
+        crossing the kernel boundary (issue #3243).
+        """
+        divisor_for_pack = self._original_divisor
+        if isinstance(divisor_for_pack, ir.Value):
+            divisor_ir = divisor_for_pack
+        else:
+            divisor_ir = Int32(divisor_for_pack).ir_value()
+        return [self._divisor_mlir, divisor_ir]
+
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "FastDivmodDivisorV2":
+        """Reconstruct FastDivmodDivisorV2 from MLIR values.
+
+        Rebuilds ``_original_divisor`` from the SSA passed in ``values[1]`` so
+        that ``.divisor`` reads kernel-region SSA, not the host-side template.
+        """
+        if len(values) != 2:
+            raise ValueError(
+                "FastDivmodDivisorV2 expects exactly 2 MLIR values (encoded "
+                f"divisor + scalar divisor SSA), got {len(values)}. If this "
+                "object is held by a params class with a hand-written "
+                "__new_from_mlir_values__, make sure it slices 2 values per "
+                "FastDivmodDivisorV2 field."
+            )
+        new_obj = object.__new__(FastDivmodDivisorV2)
+        new_obj._divisor_mlir = values[0]
+        # values[1] may arrive as a raw ir.Value or as a typed integer wrapper
+        # (the framework value caster reconstructs typed wrappers across the
+        # kernel boundary). Normalize to IntValue so '.divisor' supports
+        # arithmetic and repr inside the kernel.
+        scalar_divisor = values[1]
+        if isinstance(scalar_divisor, ir.Value):
+            scalar_divisor = IntValue(scalar_divisor)
+        new_obj._original_divisor = scalar_divisor
+        return new_obj
+
+
+@dsl_user_op
+def fast_divmod_create_divisor_v2(
+    divisor: Integer,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> FastDivmodDivisorV2:
+    """Create a FastDivmod divisor whose ``.divisor`` is readable inside kernels.
+
+    Behaves like :func:`fast_divmod_create_divisor`, but the returned
+    :class:`FastDivmodDivisorV2` serializes both the encoded FastDivmod and the
+    scalar divisor across kernel boundaries, so ``.divisor`` resolves to
+    region-local SSA inside a kernel (OSS issue #3243).
+
+    :param divisor: The divisor value (should be runtime-dynamic value)
+    :type divisor: Integer
+    :return: FastDivmodDivisorV2 object with operator overloading support
+    :rtype: FastDivmodDivisorV2
+
+    **Example:**
+
+    .. code-block:: python
+
+        divisor = fast_divmod_create_divisor_v2(batch_size)
+        quotient, remainder = divmod(linear_idx, divisor)
+        d = divisor.divisor  # readable on host AND inside kernels
+    """
+    return FastDivmodDivisorV2(divisor, loc=loc, ip=ip)

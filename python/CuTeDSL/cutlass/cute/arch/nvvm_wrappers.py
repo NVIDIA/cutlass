@@ -1422,6 +1422,8 @@ def fmax(
     b: Union[float, Float32],
     *,
     abs: bool = False,
+    nan: bool = False,
+    ftz: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
@@ -1429,13 +1431,20 @@ def fmax(
 
     :param abs: When True, lower to the xorsign-abs form
         ``sign(a ^ b) * max(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
-        plain max. NaN / signed-zero behavior follows the underlying NVVM op.
+        plain max.
+    :param nan: When True, propagate NaN following IEEE 754 ``maximum``
+        (FMNMX.NaN); default False keeps the NaN-quiet ``maximumNumber``
+        behavior of the underlying NVVM op.
+    :param ftz: When True, flush denormal inputs and outputs to zero
+        (FMNMX.FTZ); default False preserves denormals.
     """
     return Float32(
         nvvm.fmax(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
             abs=abs,
+            nan=nan,
+            ftz=ftz,
             loc=loc,
             ip=ip,
         )
@@ -1448,6 +1457,8 @@ def fmin(
     b: Union[float, Float32],
     *,
     abs: bool = False,
+    nan: bool = False,
+    ftz: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
@@ -1455,13 +1466,20 @@ def fmin(
 
     :param abs: When True, lower to the xorsign-abs form
         ``sign(a ^ b) * min(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
-        plain min. NaN / signed-zero behavior follows the underlying NVVM op.
+        plain min.
+    :param nan: When True, propagate NaN following IEEE 754 ``minimum``
+        (FMNMX.NaN); default False keeps the NaN-quiet ``minimumNumber``
+        behavior of the underlying NVVM op.
+    :param ftz: When True, flush denormal inputs and outputs to zero
+        (FMNMX.FTZ); default False preserves denormals.
     """
     return Float32(
         nvvm.fmin(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
             abs=abs,
+            nan=nan,
+            ftz=ftz,
             loc=loc,
             ip=ip,
         )

@@ -47,6 +47,7 @@ _KEEP_ALL_TOKENS: frozenset[str] = frozenset(
         "ir-debug",
         "ptx",
         "cubin",
+        "sass",
     }
 )
 # "all" is a convenience alias that expands to every token above.
@@ -78,6 +79,7 @@ def _parse_keep_tokens(raw: str, prefix: str = "") -> frozenset[str]:
       ir-debug         — Raw IR before any passes (old KEEP_IR=1 behaviour)
       ptx              — PTX assembly
       cubin            — CUBIN binary
+      sass             — SASS disassembly
     """
     tokens = frozenset(t.strip().lower() for t in raw.split(",") if t.strip())
     if "all" in tokens:

@@ -192,12 +192,49 @@ def _find_user_frame(start_frame: types.FrameType | None) -> types.FrameType | N
     return start_frame
 
 
+def _get_caller_frame_info() -> inspect.Traceback | None:
+    cur_frame = inspect.currentframe()
+    if cur_frame is None:
+        return None
+    wrapper_frame = cur_frame.f_back
+    start_frame = wrapper_frame.f_back if wrapper_frame is not None else None
+    frame = _find_user_frame(start_frame)
+    del cur_frame
+    if frame is None:
+        return None
+    return inspect.getframeinfo(frame)
+
+
+def _get_location_from_frame_info(frameInfo: inspect.Traceback) -> ir.Location:
+    # In Python < 3.11, getframeinfo returns a NamedTuple without positions.
+    if not hasattr(frameInfo, "positions"):
+        file_loc = ir.Location.file(
+            frameInfo.filename,
+            frameInfo.lineno,
+            0,
+        )
+    else:
+        file_loc = ir.Location.file(
+            frameInfo.filename,
+            frameInfo.positions.lineno,  # type: ignore[attr-defined]
+            frameInfo.positions.col_offset or 0,  # type: ignore[attr-defined]
+        )
+    return ir.Location.name(
+        (
+            "".join([c.strip() for c in frameInfo.code_context])
+            if frameInfo.code_context
+            else frameInfo.function
+        ),
+        childLoc=file_loc,
+    )
+
+
 def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator for user-facing DSL op wrappers.
 
     Responsibilities:
 
-    1. Attach a source-location to every MLIR op built by ``opFunc`` so that
+    1. Attach source locations when line info / diagnostics are enabled so
        diagnostics and IR dumps point back at the user's Python call site.
     2. Run trace-time MLIR verification on each newly-built op so verifier
        errors surface at the call site rather than at module-verify time.
@@ -220,40 +257,16 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(opFunc)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         # Pop loc= from kwargs so callers that still pass it don't break.
-        # We no longer forward it — LOC_TRACEBACKS captures full stacks automatically.
+        # The wrapper replaces it only when source-location tracking is enabled.
         loc: Any = kwargs.pop("loc", None)
         frameInfo = None
         verifier_error = False
 
-        if loc is None and ir.Context.current is not None:
-            cur_frame = inspect.currentframe()
-            assert cur_frame is not None
-            frame = _find_user_frame(cur_frame.f_back)
-            del cur_frame  # break self-ref
-            assert frame is not None
-            frameInfo = inspect.getframeinfo(frame)
+        if loc is None and ir.Context.current is not None and _ENABLE_FRAME_FILTERING:
+            frameInfo = _get_caller_frame_info()
             try:
-                # In Python < 3.11, getframeinfo returns a NamedTuple without positions
-                if not hasattr(frameInfo, "positions"):
-                    file_loc = ir.Location.file(
-                        frameInfo.filename,
-                        frameInfo.lineno,
-                        0,
-                    )
-                else:
-                    file_loc = ir.Location.file(
-                        frameInfo.filename,
-                        frameInfo.positions.lineno,  # type: ignore[attr-defined]
-                        frameInfo.positions.col_offset or 0,  # type: ignore[attr-defined]
-                    )
-                loc = ir.Location.name(
-                    (
-                        "".join([c.strip() for c in frameInfo.code_context])
-                        if frameInfo.code_context
-                        else frameInfo.function
-                    ),
-                    childLoc=file_loc,
-                )
+                if frameInfo is not None:
+                    loc = _get_location_from_frame_info(frameInfo)
             except RuntimeError:
                 # No MLIR context available (e.g. validation-only call
                 # outside a kernel).  Proceed with loc=None so that the
