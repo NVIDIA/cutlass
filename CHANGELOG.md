@@ -16,7 +16,7 @@
 
 ## [4.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.0) (2026-07-01)
 
-* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.html) that explains how to accurately profiling GEMM performance.
 
 ### CuTe DSL
 * New features
