@@ -29,6 +29,8 @@ def _reduce_ir(fastmath=None):
             fn = func.FuncOp("test", ir.FunctionType.get([vec_ty], []))
             with ir.InsertionPoint(fn.add_entry_block()):
                 Vector(fn.arguments[0]).reduce("add", fastmath=fastmath)
+                func.ReturnOp([])
+        module.operation.verify()
         return str(module)
 
 

@@ -829,7 +829,9 @@ class Vector(ArithValue):
         :param fastmath: Optional fast-math flags for the reduction. Pass
             ``arith.FastMathFlags.reassoc`` to allow the compiler to lower
             the reduction as a tree instead of a strict left-to-right chain.
-            Defaults to ``None``.
+            Defaults to ``None``. Only supported for a full reduction of a
+            1-D vector to a scalar (``dim is None``), raises ValueError
+            for multi-dimensional reductions.
         :param acc: Optional accumulator.  For scalar reduction a scalar value;
             for multi-dim reduction a vector matching the result shape.
         :return: Scalar (when ``dim is None``) or :class:`Vector` (when
@@ -887,6 +889,9 @@ class Vector(ArithValue):
             return self._dtype(raw)
 
         # Multi-dimension reduction
+        if fastmath is not None:
+            raise ValueError("Fastmath flags are only supported for 1-D full reductions.")
+
         if dim is None:
             # Reduce all dims for N-D vector
             reduction_dims = list(range(ndim))
@@ -933,7 +938,7 @@ class Vector(ArithValue):
             vec_1d = vector.multi_reduction(
                 kind, self, acc=p_acc, reduction_dims=partial_dims, loc=loc, ip=ip
             )
-            raw = vector.reduction(elem_ty, kind, vec_1d, acc=acc, **fmf_kwargs, loc=loc, ip=ip)
+            raw = vector.reduction(elem_ty, kind, vec_1d, acc=acc, loc=loc, ip=ip)
             return self._dtype(raw)
 
         if acc is None:
