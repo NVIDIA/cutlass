@@ -121,6 +121,7 @@
 // either structured_bindings.h or the split tuple_size/tuple_element headers.
 #  if defined(__has_include)
 #    if !__has_include(<cuda/std/__tuple_dir/structured_bindings.h>) && \
+        !__has_include(<cuda/std/detail/libcxx/include/__tuple_dir/structured_bindings.h>) && \
         (!__has_include(<cuda/std/__tuple_dir/tuple_size.h>) || \
          !__has_include(<cuda/std/__tuple_dir/tuple_element.h>))
 #      define CUTE_CUDA_STD_NEEDS_TUPLE_PRIMARY_DECLARATIONS
