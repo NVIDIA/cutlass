@@ -45,7 +45,7 @@ To get started quickly - please refer :
 
 # What's New in CUTLASS 4.6
 
-* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.html) that explains how to accurately profiling GEMM performance.
 
 ## CuTe DSL
 * New features
