@@ -26,7 +26,9 @@ from .types import (
     default_tensor_spec,
     TensorSpec,
 )
-from .ffi import get_cutlass_call_ffi_name, is_ffi_registered, register_ffi
+from .ffi import (
+    _register_and_get_default_ffi_call_target,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,7 @@ def cutlass_call(
     output_mode: Any = None,
     input_output_aliases: dict[int, int] | None = None,
     allow_cuda_graph: bool = True,
+    ffi_call_target: str | None = None,
     compile_options: str | None = None,
     use_static_tensors: bool = False,
     **kwargs: Any,
@@ -91,6 +94,14 @@ def cutlass_call(
             Indices are into the flattened input and output pytrees.
         allow_cuda_graph: If ``False``, prevents XLA from capturing this call
             in a CUDA graph.  Defaults to ``True``.
+        ffi_call_target: Exact FFI target name to call without automatic
+            registration or default-target selection.
+            The target must implement the CuTeDSL call ABI, and the caller is
+            responsible for registering it with JAX. *allow_cuda_graph* does
+            not modify an explicit target name. When exporting, the caller
+            must also allow the custom target with
+            :meth:`jax.export.DisabledSafetyCheck.custom_call`. Defaults to
+            ``None``.
         compile_options: Optional string of compiler flags forwarded to
             ``cute.compile``.
         use_static_tensors: If ``True``, tensor shapes and strides are baked in
@@ -108,6 +119,10 @@ def cutlass_call(
     """
     if output_shape_dtype is None:
         raise ValueError("'output_shape_dtype' must be specified.")
+    if ffi_call_target is None:
+        # Resolve the process default before binding so the target participates
+        # in JAX's compilation cache key.
+        ffi_call_target = _register_and_get_default_ffi_call_target(allow_cuda_graph)
 
     output_shape_dtype = jax.tree.map(
         lambda leaf: jax.ShapeDtypeStruct(leaf.shape, leaf.dtype), output_shape_dtype
@@ -137,6 +152,7 @@ def cutlass_call(
         output_spec=output_spec,
         input_output_aliases=input_output_aliases,
         allow_cuda_graph=allow_cuda_graph,
+        ffi_call_target=ffi_call_target,
         compile_options=compile_options,
         use_static_tensors=use_static_tensors,
         **kwargs,
@@ -231,6 +247,7 @@ def _cutlass_call_impl(
     output_spec: Any,
     input_output_aliases: dict[int, int],
     allow_cuda_graph: bool,
+    ffi_call_target: str,
     compile_options: str | None,
     use_static_tensors: bool,
     **kwargs: Any,
@@ -261,6 +278,7 @@ def _cutlass_call_impl(
             output_spec_flat=output_spec_flat,
             input_output_aliases=tuple(input_output_aliases.items()),
             allow_cuda_graph=allow_cuda_graph,
+            ffi_call_target=ffi_call_target,
             compile_options=compile_options,
             use_static_tensors=use_static_tensors,
             **kwargs,
@@ -289,6 +307,7 @@ def cutlass_call_inner_p_impl(
     output_spec_flat: tuple[TensorSpec, ...],
     input_output_aliases: tuple[tuple[int, int], ...],
     allow_cuda_graph: bool,
+    ffi_call_target: str,
     compile_options: str | None,
     use_static_tensors: bool,
     **kwargs: Any,
@@ -309,13 +328,6 @@ def cutlass_call_inner_p_impl(
 
     kernel = get_or_compile_kernel(fn, spec)
 
-    # Ensure our FFI target is registered. We do this lazily here
-    # so that we only load the dependant library if needed.
-    if not is_ffi_registered():
-        register_ffi()
-
-    call_name = get_cutlass_call_ffi_name(allow_cuda_graph)
-
     # Convert explicit layout constraints from CuTeDSL to JAX order. ``None`` is
     # passed through intentionally: jax.ffi.ffi_call treats it as default
     # row-major layout.
@@ -323,7 +335,7 @@ def cutlass_call_inner_p_impl(
     output_layouts = [cutlass_to_jax_layout_order(s.layout) for s in output_spec_flat]
 
     fun = jax.ffi.ffi_call(
-        call_name,
+        ffi_call_target,
         result_shape_dtypes=output_shape_dtype_flat,
         input_output_aliases=dict(spec.input_output_aliases),
         input_layouts=input_layouts,

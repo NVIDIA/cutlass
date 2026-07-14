@@ -65,7 +65,10 @@ if is_available():
         get_export_disabled_safety_checks,
         find_cute_dsl_runtime_library,
         register_ffi,
+        set_ffi_call_targets,
+        disable_automatic_ffi_registration,
         is_ffi_registered,
+        get_cutlass_call_ffi_name,
         get_cutlass_call_ffi_version,
     )
     from . import testing
@@ -88,6 +91,9 @@ if is_available():
         "get_export_disabled_safety_checks",
         "is_ffi_registered",
         "register_ffi",
+        "set_ffi_call_targets",
+        "disable_automatic_ffi_registration",
+        "get_cutlass_call_ffi_name",
         "get_cutlass_call_ffi_version",
         "is_available",
         "testing",

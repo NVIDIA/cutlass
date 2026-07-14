@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.6.0
+# CUTLASS 4.6.1
 
-_CUTLASS 4.6.0 - July 2026_
+_CUTLASS 4.6.1 - July 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -45,7 +45,7 @@ To get started quickly - please refer :
 
 # What's New in CUTLASS 4.6
 
-* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.html) that explains how to accurately profiling GEMM performance.
 
 ## CuTe DSL
 * New features
@@ -78,6 +78,9 @@ To get started quickly - please refer :
     - cute.core.ThrMma, please use cute.ThrMma instead
     - cute.core.ThrCopy, please use cute.ThrCopy instead
     - cute.make_fragment, please use cute.make_rmem_tensor instead
+  - Fixed a compilation failure on Thor with 12.9 wheel
+  - Fixed a per regression of flash attention v2 on Ampere
+  - Allow custom and multiple FFI call registration for Jax
   - Fixed following issues
     - https://github.com/NVIDIA/cutlass/issues/3132
     - https://github.com/NVIDIA/cutlass/issues/3170
@@ -89,6 +92,10 @@ To get started quickly - please refer :
     - https://github.com/NVIDIA/cutlass/issues/3329
     - https://github.com/NVIDIA/cutlass/issues/3342
     - https://github.com/NVIDIA/cutlass/issues/3348
+    - https://github.com/NVIDIA/cutlass/issues/3243
+    - https://github.com/NVIDIA/cutlass/issues/3359
+    - https://github.com/NVIDIA/cutlass/issues/3365
+    - https://github.com/NVIDIA/cutlass/issues/3312
 
 ### CUTLASS Operator API
 * CUTLASS Operator API is a new addition to the CUTLASS Python stack, providing easy interfaces
