@@ -228,18 +228,22 @@ class DeviceInfo:
     def pretty_str(self) -> str:
         """
         Convert DeviceInfo to a formatted string for display.
+
         :return: The formatted string.
         :rtype: str
-        Example:
-        On success:
-            CUDA devices available: <device_count> (current: <current_device>)
-           - Architecture: <arch_name> (<sm_arch>)
-           - Compatible SM archs: <compatible_archs>
-           - Total Memory: <memory_gb> GB
-        On failure:
-            1. CUDA initialization failed
-            2. Failed to get GPU info: <error_message>
-            3. No devices available
+
+        Example success output::
+
+            - CUDA devices available: <device_count> (current: <current_device>)
+            - Architecture: <arch_name> (<sm_arch>)
+            - Compatible SM archs: <compatible_archs>
+            - Total Memory: <memory_gb> GB
+
+        Example failure output::
+
+            - CUDA initialization failed
+            - Failed to get GPU info: <error_message>
+            - No devices available
         """
         info = ""
 

@@ -2,9 +2,21 @@
 
 # CUTLASS 4.x
 
+## [4.6.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.1) (2026-07-13)
+
+* Bug fixing and improvements
+  - Fixed following issues:
+    - https://github.com/NVIDIA/cutlass/issues/3243
+    - https://github.com/NVIDIA/cutlass/issues/3359
+    - https://github.com/NVIDIA/cutlass/issues/3365
+    - https://github.com/NVIDIA/cutlass/issues/3312
+  - Fixed a compilation failure on Thor with 12.9 wheel
+  - Fixed a per regression of flash attention v2 on Ampere
+  - Allow custom and multiple FFI call registration for Jax
+
 ## [4.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.0) (2026-07-01)
 
-* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.md) that explains how to accurately profiling GEMM performance.
+* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.html) that explains how to accurately profiling GEMM performance.
 
 ### CuTe DSL
 * New features

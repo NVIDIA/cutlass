@@ -9,9 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 from pathlib import Path
 from functools import cache
+from threading import Lock
 import logging
 import ctypes
 
@@ -26,66 +27,72 @@ logger = logging.getLogger(__name__)
 
 _CUTE_DSL_RUNTIME_LIBRARY_NAME = "cute_dsl_runtime"
 
-# V1 targets for older jax clients
-_CUTLASS_CALL_TARGETS_V1 = {
-    "CuteDSLRT_NvJaxCutlassCall": {
-        "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v1",
-        "execute": "CuteDSLRT_NvJaxCutlassCallExecute_v1",
+_JAX_FFI_V2_MIN_VERSION = (0, 9, 1)
+
+_CUTLASS_CALL_TARGETS = {
+    # V1 targets for older JAX clients.
+    1: {
+        "CuteDSLRT_NvJaxCutlassCall_v1": {
+            "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v1",
+            "execute": "CuteDSLRT_NvJaxCutlassCallExecute_v1",
+        },
+        "CuteDSLRT_NvJaxCutlassCallNoCudaGraph_v1": {
+            "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v1",
+            "execute": "CuteDSLRT_NvJaxCutlassCallExecuteNoCudaGraph_v1",
+        },
     },
-    "CuteDSLRT_NvJaxCutlassCallNoCudaGraph": {
-        "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v1",
-        "execute": "CuteDSLRT_NvJaxCutlassCallExecuteNoCudaGraph_v1",
+    # V2 targets for newer JAX clients supporting stateful FFI calls.
+    2: {
+        "CuteDSLRT_NvJaxCutlassCall_v2": {
+            "execute": "CuteDSLRT_NvJaxCutlassCallExecute_v2",
+            "instantiate": "CuteDSLRT_NvJaxCutlassCallInstantiate_v2",
+            "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v2",
+        },
+        "CuteDSLRT_NvJaxCutlassCallNoCudaGraph_v2": {
+            "execute": "CuteDSLRT_NvJaxCutlassCallExecuteNoCudaGraph_v2",
+            "instantiate": "CuteDSLRT_NvJaxCutlassCallInstantiate_v2",
+            "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v2",
+        },
+    },
+}
+_CUTLASS_CALL_TYPES = {
+    1: {},
+    2: {
+        "CuteDSLRT_NvJaxCutlassCallTypes_v2": {
+            "type_id": "CuteDSLRT_NvJaxCutlassCallStateTypeId_v2",
+            "type_info": "CuteDSLRT_NvJaxCutlassCallStateTypeInfo_v2",
+        }
     },
 }
 
-# V2 targets for newer jax clients supporting stateful FFI calls.
-_JAX_FFI_V2_MIN_VERSION = (0, 9, 1)
-_CUTLASS_CALL_TARGETS_V2 = {
-    "CuteDSLRT_NvJaxCutlassCall": {
-        "execute": "CuteDSLRT_NvJaxCutlassCallExecute_v2",
-        "instantiate": "CuteDSLRT_NvJaxCutlassCallInstantiate_v2",
-        "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v2",
-    },
-    "CuteDSLRT_NvJaxCutlassCallNoCudaGraph": {
-        "execute": "CuteDSLRT_NvJaxCutlassCallExecuteNoCudaGraph_v2",
-        "instantiate": "CuteDSLRT_NvJaxCutlassCallInstantiate_v2",
-        "prepare": "CuteDSLRT_NvJaxCutlassCallPrepare_v2",
-    },
-}
-_CUTLASS_CALL_TYPES_V2 = {
-    "CuteDSLRT_NvJaxCutlassCallTypes": {
-        "type_id": "CuteDSLRT_NvJaxCutlassCallStateTypeId_v2",
-        "type_info": "CuteDSLRT_NvJaxCutlassCallStateTypeInfo_v2",
-    }
-}
+_FFI_REGISTRATION_LOCK = Lock()
+_REGISTERED_FFI_CALL_TARGETS: set[str] = set()
+_REGISTERED_FFI_TYPES: set[str] = set()
+_AUTOMATIC_FFI_REGISTRATION_ENABLED = True
+_FFI_CALL_TARGETS_OVERRIDE: tuple[str, str] | None = None
 
 
 def get_cutlass_call_ffi_version() -> int:
-    """Returns the FFI API version based on JAX version."""
-    if jax.version.__version_info__ >= _JAX_FFI_V2_MIN_VERSION:
-        return 2
-    else:
-        return 1
+    """Returns the FFI version supported by the installed JAX."""
+    return 2 if jax.version.__version_info__ >= _JAX_FFI_V2_MIN_VERSION else 1
 
 
-def get_cutlass_call_ffi_name(allow_cuda_graph: bool) -> str:
-    """Returns the FFI target to call when running cutlass_call functions."""
-    if allow_cuda_graph:
-        return "CuteDSLRT_NvJaxCutlassCall"
-    else:
-        return "CuteDSLRT_NvJaxCutlassCallNoCudaGraph"
+def get_cutlass_call_ffi_name(allow_cuda_graph: bool, version: int) -> str:
+    """Returns the FFI target for ``version``."""
+    suffix = "" if allow_cuda_graph else "NoCudaGraph"
+    return f"CuteDSLRT_NvJaxCutlassCall{suffix}_v{version}"
 
 
 def get_export_disabled_safety_checks() -> Sequence[jax.export.DisabledSafetyCheck]:
-    """Returns jax.export.DisabledSafetyCheck to allow cutlass_call kernels."""
-    targets = set(_CUTLASS_CALL_TARGETS_V1.keys()) | set(
-        _CUTLASS_CALL_TARGETS_V2.keys()
+    """Returns export safety checks for the built-in FFI targets."""
+    targets = set().union(*_CUTLASS_CALL_TARGETS.values())
+    return tuple(
+        jax.export.DisabledSafetyCheck.custom_call(target) for target in sorted(targets)
     )
-    return tuple([jax.export.DisabledSafetyCheck.custom_call(t) for t in targets])
 
 
 @cache
-def find_cute_dsl_runtime_library() -> Optional[str]:
+def find_cute_dsl_runtime_library() -> str | None:
     """Searches for the CuTeDSL runtime library."""
     dsl = CuTeDSL._get_dsl()
     candidate_libs = []
@@ -125,17 +132,25 @@ def find_cute_dsl_runtime_library() -> Optional[str]:
     return None
 
 
-_FFI_CALLS_REGISTERED = False
+def _is_ffi_version_registered(version: int) -> bool:
+    return all(
+        name in _REGISTERED_FFI_CALL_TARGETS for name in _CUTLASS_CALL_TARGETS[version]
+    ) and all(name in _REGISTERED_FFI_TYPES for name in _CUTLASS_CALL_TYPES[version])
 
 
-def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()) -> None:
-    """Registers custom calls with Jax/XLA runtime.
-
-    A specific version can be requested using `ffi_version` argument. Attempting
-    to register non default FFI versions may not work with your specific JAX.
-    """
-    global _FFI_CALLS_REGISTERED
-    if _FFI_CALLS_REGISTERED:
+def _register_ffi(version: int) -> None:
+    """Registers ``version`` while ``_FFI_REGISTRATION_LOCK`` is held."""
+    call_targets = {
+        name: symbols
+        for name, symbols in _CUTLASS_CALL_TARGETS[version].items()
+        if name not in _REGISTERED_FFI_CALL_TARGETS
+    }
+    type_targets = {
+        name: symbols
+        for name, symbols in _CUTLASS_CALL_TYPES[version].items()
+        if name not in _REGISTERED_FFI_TYPES
+    }
+    if not call_targets and not type_targets:
         return
 
     runtime_library = find_cute_dsl_runtime_library()
@@ -158,32 +173,96 @@ def register_ffi(ffi_version: int = get_cutlass_call_ffi_version()) -> None:
                 handler[stage] = jax.ffi.pycapsule(fn)
             logger.debug(f"Registering ffi handler: {target_name}, {handler}")
             jax.ffi.register_ffi_target(target_name, handler, platform="CUDA")
+            _REGISTERED_FFI_CALL_TARGETS.add(target_name)
 
     def _register_ffi_types(lib: ctypes.CDLL, types: dict[str, dict[str, str]]) -> None:
-        for type_name, type_dict_targets in types.items():
+        for type_name, type_targets in types.items():
             type_dict: dict[str, Any] = {}
-            for field, fn_name in type_dict_targets.items():
+            for field, fn_name in type_targets.items():
                 fn = getattr(lib, fn_name)
                 fn.restype = ctypes.c_void_p
                 type_dict[field] = jax.ffi.pycapsule(fn())
             logger.debug(f"Registering ffi type: {type_name}, {type_dict}")
             jax.ffi.register_ffi_type(type_name, type_dict, platform="CUDA")  # type: ignore[arg-type]
+            _REGISTERED_FFI_TYPES.add(type_name)
 
-    # Register the custom FFI targets.
-    match ffi_version:
-        case 1:
-            _register_ffi_targets(lib, _CUTLASS_CALL_TARGETS_V1)
-            # no types for v1
-        case 2:
-            _register_ffi_types(lib, _CUTLASS_CALL_TYPES_V2)
-            _register_ffi_targets(lib, _CUTLASS_CALL_TARGETS_V2)
-        case _:
-            raise ValueError(f"Invalid FFI version {ffi_version}")
-
-    _FFI_CALLS_REGISTERED = True
+    _register_ffi_types(lib, type_targets)
+    _register_ffi_targets(lib, call_targets)
 
 
-def is_ffi_registered() -> bool:
-    """Returns true if the FFI calls have been registered with Jax/XLA."""
-    global _FFI_CALLS_REGISTERED
-    return _FFI_CALLS_REGISTERED
+def register_ffi(version: int | None = None) -> None:
+    """Explicitly registers a built-in FFI version.
+
+    If ``version`` is omitted, the version supported by the installed JAX is
+    registered. Multiple supported versions may be registered in one process.
+    """
+    if version is None:
+        version = get_cutlass_call_ffi_version()
+
+    with _FFI_REGISTRATION_LOCK:
+        _register_ffi(version)
+
+
+def set_ffi_call_targets(
+    default_call_target: str,
+    no_cuda_graph_call_target: str | None = None,
+) -> None:
+    """Overrides the process-wide targets used by future ``cutlass_call`` objects.
+
+    If ``no_cuda_graph_call_target`` is omitted, ``default_call_target`` is used
+    for both CUDA graph modes. CuTeDSL does not register these targets or add
+    export safety checks for them; the caller is responsible for both. Explicit
+    :func:`register_ffi` calls continue to register built-in targets.
+    """
+    if no_cuda_graph_call_target is None:
+        no_cuda_graph_call_target = default_call_target
+
+    global _FFI_CALL_TARGETS_OVERRIDE
+    with _FFI_REGISTRATION_LOCK:
+        _FFI_CALL_TARGETS_OVERRIDE = (
+            default_call_target,
+            no_cuda_graph_call_target,
+        )
+
+
+def _register_and_get_default_ffi_call_target(allow_cuda_graph: bool) -> str:
+    """Returns and, unless disabled, registers the JAX-compatible FFI target."""
+    with _FFI_REGISTRATION_LOCK:
+        if _FFI_CALL_TARGETS_OVERRIDE is not None:
+            return _FFI_CALL_TARGETS_OVERRIDE[0 if allow_cuda_graph else 1]
+
+        version = get_cutlass_call_ffi_version()
+        if _AUTOMATIC_FFI_REGISTRATION_ENABLED:
+            _register_ffi(version)
+        return get_cutlass_call_ffi_name(allow_cuda_graph, version)
+
+
+def disable_automatic_ffi_registration() -> None:
+    """Disables registration initiated by future ``cutlass_call`` objects.
+
+    Call this before constructing a ``cutlass_call`` to prevent its automatic
+    registration.
+    Existing registrations are unchanged, and explicit :func:`register_ffi`
+    calls remain enabled. This operation is process-wide and idempotent.
+    """
+    global _AUTOMATIC_FFI_REGISTRATION_ENABLED
+    with _FFI_REGISTRATION_LOCK:
+        _AUTOMATIC_FFI_REGISTRATION_ENABLED = False
+
+
+def is_ffi_registered(version: int | None = None, *, name: str | None = None) -> bool:
+    """Returns whether this module registered an FFI version or call/type name.
+
+    ``name`` checks an individual built-in call target or type registered by
+    this module. Without a selector, this checks the built-in version supported
+    by the installed JAX.
+    """
+    if version is not None and name is not None:
+        raise ValueError("'version' and 'name' cannot both be specified")
+    if name is not None:
+        with _FFI_REGISTRATION_LOCK:
+            return name in _REGISTERED_FFI_CALL_TARGETS or name in _REGISTERED_FFI_TYPES
+    if version is None:
+        version = get_cutlass_call_ffi_version()
+    with _FFI_REGISTRATION_LOCK:
+        return _is_ffi_version_registered(version)
