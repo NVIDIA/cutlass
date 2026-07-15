@@ -109,7 +109,10 @@ struct GemmIdentityThreadblockSwizzle {
   CUTLASS_HOST_DEVICE
   static dim3 get_grid_shape(GemmCoord tiled_shape) {
     int tile = 1 << get_log_tile(tiled_shape);
-    return dim3(tiled_shape.m() * tile, (tiled_shape.n() + tile - 1) / tile, tiled_shape.k());
+    return dim3(
+      unsigned(tiled_shape.m() * tile),
+      unsigned((tiled_shape.n() + tile - 1) / tile),
+      unsigned(tiled_shape.k()));
   }
 
   /// Calculates optimal swizzle width
@@ -301,7 +304,10 @@ struct GemmSplitKIdentityThreadblockSwizzle {
   CUTLASS_HOST_DEVICE
   static dim3 get_grid_shape(GemmCoord tiled_shape) {
     int tile = 1 << get_log_tile(tiled_shape);
-    return dim3(tiled_shape.m() * tile, (tiled_shape.n() + tile - 1) / tile, tiled_shape.k());
+    return dim3(
+      unsigned(tiled_shape.m() * tile),
+      unsigned((tiled_shape.n() + tile - 1) / tile),
+      unsigned(tiled_shape.k()));
   }
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)

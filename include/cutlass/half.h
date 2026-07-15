@@ -214,7 +214,7 @@ struct alignas(2) half_t {
     #endif
 
     uint16_t sign = uint16_t((s >> 16) & 0x8000);
-    int16_t exp = uint16_t(((s >> 23) & 0xff) - 127);
+    auto exp = int16_t(((s >> 23) & 0xff) - 127);
     int mantissa = s & 0x7fffff;
     uint16_t u = 0;
 
@@ -238,7 +238,7 @@ struct alignas(2) half_t {
 
     if (exp >= -14) {
       // normal fp32 to normal fp16
-      exp = uint16_t(exp + uint16_t(15));
+      exp = static_cast<decltype(exp)>(exp + 15);
       u = uint16_t(((exp & 0x1f) << 10));
       u = uint16_t(u | (mantissa >> 13));
     } else {
