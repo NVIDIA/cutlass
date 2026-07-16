@@ -31,17 +31,12 @@ import argparse
 import csv
 import socket
 import time
-from pathlib import Path
 
 from math import gcd
-from typing import Optional, Tuple, Type, Union, Literal
+from pathlib import Path
+from typing import List, Optional, Tuple, Type, Union, Literal
 
 import cuda.bindings.driver as cuda
-try:
-    from cuda.core import Device
-except ImportError:
-    from cuda.core.experimental import Device
-from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import torch
 import torch.distributed as dist
@@ -52,64 +47,66 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.torch as cutlass_torch
 from cutlass.torch import dtype as torch_dtype
-from cutlass import testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cutlass_dsl import BaseDSL
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
+from cutlass.cute.typing import Pointer, Int32, Float32
+from cutlass.cutlass_dsl import T, dsl_user_op, while_generate, yield_out
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import vector
+from cutlass._mlir.dialects import llvm
 
 """
-SM100 GEMM + ReduceScatter (LDMC) Fusion Kernel
+SM100 GEMM + AllReduce (Lamport) Fusion Kernel
 
 * Test (correctness only — single launch, no warmup/iteration loop)
-python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
+python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_lamport_blackwell.py  \
     --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
     --a_major k --b_major k --c_major n                                                             \
     --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                   \
     --mnkl 8192,8192,8192,1                                                                         \
-    --use_tma_store --use_2cta_instrs --reduce_scatter LDMC                                         \
+    --use_tma_store --use_2cta_instrs --all_reduce Lamport                                          \
     --benchmark_or_test test
 
 * Benchmark One
-python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
+python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_lamport_blackwell.py  \
     --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
     --a_major k --b_major k --c_major n                                                             \
     --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                   \
     --mnkl 8192,8192,8192,1 --warmup_iterations 10 --iterations 20                                  \
-    --use_tma_store --use_2cta_instrs --reduce_scatter LDMC                                         \
+    --use_tma_store --use_2cta_instrs --all_reduce Lamport                                          \
     --benchmark_or_test benchmark --use_cuda_graph --csv_report ./csv_report.csv
 
 * Benchmark All
-python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_reduce_scatter_blackwell.py  \
+python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_lamport_blackwell.py  \
     --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
     --a_major k --b_major k --c_major n                                                             \
     --mnkl 8192,8192,8192,1 --warmup_iterations 10 --iterations 20                                  \
-    --use_tma_store --reduce_scatter LDMC                                                           \
+    --use_tma_store --all_reduce Lamport                                                            \
     --benchmark_or_test benchmark_all --use_cuda_graph --csv_report ./csv_report.csv
 
 NOTE:
-* multimem.ld_reduce does NOT handle NaN issue for f8.
+* Float8E4M3FN / Float8E5M2 are rejected at allocate_tensors — the -0.0 → +0.0
+  epilogue scrub is implemented for Float32 / Float16 / BFloat16 only.
+* use_tma_store=True is required: multicast TMA store is the only producer
+  path that fans the gemm-epi store out to peers atomically per 16B.
+* C (workspace buffer) is a 3-slot grouped allocation (ping / pong / cooling).
 
 ALGO:
--> Producer
-for each output tile T
-    * store gemm output [data] to local rank global memory with .weak semantics (tma is default .weak semantic)
-    * [flag] update with .release semantics and .gpu scope, UNICAST +1 to owner(T)'s flag slot only
-      (each tile has exactly ONE owner rank in RS, unlike AR where every rank consumes)
+-> Producer (each rank, per output tile)
+    * Clear() kernel scrubs slot[pong] back to the per-byte -0.0 sentinel so the next-iter producer has an armed slot to overwrite
+    * epilogue scrub: acc_vec + (+0.0) — flips any -0.0 lanes in gemm output to +0.0 (IEEE RTNE) so peers don't observe the sentinel as data (for f32/bf16/f16)
+    * TMA multicast store [data] to slot[ping][local_rank] — NVSwitch fans out to every peer's mirror of slot[ping][local_rank] atomically per 16B
+    * NO separate flag tensor — data IS the flag
 
--> Consumer
-for each output tile T owned by this rank (only owner(T) runs this; P CTAs on owner cooperate, splitting T into P m-stripes)
-    * spin lock wait [flag] for >= N with .relaxed / .acquire and .gpu scope (all N producers have written to local rank gmem)
-    * multimem.ld_reduce on this CTA's m-stripe of T: send reduce request to switch, switch send request to all rank's gmem, reduce on switch, return to requester rank
-    * st [data] (UC) to local rank's RS output (each rank keeps only its 1/N shard — NO multimem.st because RS doesn't broadcast back)
-    * consumer-arrival count: atomic_add +1 with .relaxed / .gpu; last CTA (result == 2N-1) resets slot to 0 (placed after data movement so warp[0]'s atomic_add overlaps with other warps' data path)
-before kernel exit
-    * [flag] update with .release semantics and .gpu scope (prior store is to LOCAL gmem only; .gpu suffices — AR needs .sys because its prior multimem.st targets all peers)
-    * spin lock wait [flag] with .relaxed / .acquire and .gpu scope
+-> Consumer (each rank, per output tile)
+    * for each peer r: load with .relaxed .gpu from this rank's UC view of slot[ping][r] (direct P2P, no multimem)
+    * spin while loaded data == -0.0 sentinel;
+    * once data arrive, load data, convert to f32, reduce on f32, convert back.
+        each cta now handle entire output tile, no collaboration with other rank
+    * store data with .weak .gpu to local rank's global memory
 """
 
 #####################################################################
@@ -117,154 +114,443 @@ before kernel exit
 #####################################################################
 
 
+@dsl_user_op
+def ld_weak_global_4xu32(
+    ptr: Pointer,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Int32, Int32, Int32, Int32]:
+    ptr_int = ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    return_struct = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(i32,i32,i32,i32)>"),
+        [ptr_int],
+        "ld.weak.global.v4.u32 {$0, $1, $2, $3}, [$4];",
+        "=r,=r,=r,=r,l",
+        has_side_effects=True,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    return_regs = [llvm.extractvalue(T.i32(), return_struct, [i]) for i in range(4)]
+    return return_regs[0], return_regs[1], return_regs[2], return_regs[3]
+
+
+@dsl_user_op
+def ld_relaxed_gpu_global_4xu32(
+    ptr: Pointer,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Int32, Int32, Int32, Int32]:
+    ptr_int = ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    return_struct = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(i32,i32,i32,i32)>"),
+        [ptr_int],
+        "ld.relaxed.gpu.global.v4.u32 {$0, $1, $2, $3}, [$4];",
+        "=r,=r,=r,=r,l",
+        has_side_effects=True,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    return_regs = [llvm.extractvalue(T.i32(), return_struct, [i]) for i in range(4)]
+    return return_regs[0], return_regs[1], return_regs[2], return_regs[3]
+
+
+@dsl_user_op
+def st_weak_global_4xu32(
+    ptr: Pointer,
+    x: Int32,
+    y: Int32,
+    z: Int32,
+    w: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    ptr_int = ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    x_ir = Int32(x).ir_value(loc=loc, ip=ip)
+    y_ir = Int32(y).ir_value(loc=loc, ip=ip)
+    z_ir = Int32(z).ir_value(loc=loc, ip=ip)
+    w_ir = Int32(w).ir_value(loc=loc, ip=ip)
+    llvm.inline_asm(
+        None,
+        [ptr_int, x_ir, y_ir, z_ir, w_ir],
+        "st.weak.global.v4.u32 [$0], {$1, $2, $3, $4};",
+        "l,r,r,r,r",
+        has_side_effects=True,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_bf16x2_to_2xf32(
+    bf16x2_b32: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    ret = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(f32, f32)>"),
+        [bf16x2_b32],
+        "{ .reg .b16 hl, hh;\n"
+        "  mov.b32 {hl, hh}, $2;\n"
+        "  cvt.f32.bf16 $0, hl;\n"
+        "  cvt.f32.bf16 $1, hh; }",
+        "=f,=f,r",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    f_lo = Float32(llvm.extractvalue(T.f32(), ret, [0]))
+    f_hi = Float32(llvm.extractvalue(T.f32(), ret, [1]))
+    return f_lo, f_hi
+
+
+@dsl_user_op
+def cvt_f16x2_to_2xf32(
+    f16x2_b32: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    ret = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(f32, f32)>"),
+        [f16x2_b32],
+        "{ .reg .b16 hl, hh;\n"
+        "  mov.b32 {hl, hh}, $2;\n"
+        "  cvt.f32.f16 $0, hl;\n"
+        "  cvt.f32.f16 $1, hh; }",
+        "=f,=f,r",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    f_lo = Float32(llvm.extractvalue(T.f32(), ret, [0]))
+    f_hi = Float32(llvm.extractvalue(T.f32(), ret, [1]))
+    return f_lo, f_hi
+
+
+@dsl_user_op
+def cvt_2xf32_to_bf16x2(
+    f_lo: Float32,
+    f_hi: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    return llvm.inline_asm(
+        T.i32(),
+        [
+            Float32(f_lo).ir_value(loc=loc, ip=ip),
+            Float32(f_hi).ir_value(loc=loc, ip=ip),
+        ],
+        "cvt.rn.bf16x2.f32 $0, $2, $1;",
+        "=r,f,f",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_2xf32_to_f16x2(
+    f_lo: Float32,
+    f_hi: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    return llvm.inline_asm(
+        T.i32(),
+        [
+            Float32(f_lo).ir_value(loc=loc, ip=ip),
+            Float32(f_hi).ir_value(loc=loc, ip=ip),
+        ],
+        "cvt.rn.f16x2.f32 $0, $2, $1;",
+        "=r,f,f",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def add_rn_f32(
+    a: Float32,
+    b: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Float32:
+    return Float32(
+        llvm.inline_asm(
+            T.f32(),
+            [Float32(a).ir_value(loc=loc, ip=ip), Float32(b).ir_value(loc=loc, ip=ip)],
+            "add.rn.f32 $0, $1, $2;",
+            "=f,f,f",
+            has_side_effects=False,
+            asm_dialect=0,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def add_rn_f32x2_pair(
+    a_lo: Float32,
+    a_hi: Float32,
+    b_lo: Float32,
+    b_hi: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    ret = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(f32, f32)>"),
+        [
+            Float32(a_lo).ir_value(loc=loc, ip=ip),
+            Float32(a_hi).ir_value(loc=loc, ip=ip),
+            Float32(b_lo).ir_value(loc=loc, ip=ip),
+            Float32(b_hi).ir_value(loc=loc, ip=ip),
+        ],
+        "{ .reg .b64 ab, bb, db;\n"
+        "  mov.b64 ab, {$2, $3};\n"
+        "  mov.b64 bb, {$4, $5};\n"
+        "  add.rn.f32x2 db, ab, bb;\n"
+        "  mov.b64 {$0, $1}, db; }",
+        "=f,=f,f,f,f,f",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    sum_lo = Float32(llvm.extractvalue(T.f32(), ret, [0]))
+    sum_hi = Float32(llvm.extractvalue(T.f32(), ret, [1]))
+    return sum_lo, sum_hi
+
+
+@dsl_user_op
+def cvt_e4m3x4_to_4xf32(
+    e4m3x4_b32: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32, Float32, Float32]:
+    ret = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(f32, f32, f32, f32)>"),
+        [e4m3x4_b32],
+        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
+        "  .reg .b32 f16x2_lo, f16x2_hi;\n"
+        "  .reg .b16 h0, h1, h2, h3;\n"
+        "  mov.b32 {e8x2_lo, e8x2_hi}, $4;\n"
+        "  cvt.rn.f16x2.e4m3x2 f16x2_lo, e8x2_lo;\n"
+        "  cvt.rn.f16x2.e4m3x2 f16x2_hi, e8x2_hi;\n"
+        "  mov.b32 {h0, h1}, f16x2_lo;\n"
+        "  mov.b32 {h2, h3}, f16x2_hi;\n"
+        "  cvt.f32.f16 $0, h0;\n"
+        "  cvt.f32.f16 $1, h1;\n"
+        "  cvt.f32.f16 $2, h2;\n"
+        "  cvt.f32.f16 $3, h3; }",
+        "=f,=f,=f,=f,r",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    return tuple(Float32(llvm.extractvalue(T.f32(), ret, [i])) for i in range(4))
+
+
+@dsl_user_op
+def cvt_e5m2x4_to_4xf32(
+    e5m2x4_b32: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32, Float32, Float32]:
+    ret = llvm.inline_asm(
+        ir.Type.parse("!llvm.struct<(f32, f32, f32, f32)>"),
+        [e5m2x4_b32],
+        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
+        "  .reg .b32 f16x2_lo, f16x2_hi;\n"
+        "  .reg .b16 h0, h1, h2, h3;\n"
+        "  mov.b32 {e8x2_lo, e8x2_hi}, $4;\n"
+        "  cvt.rn.f16x2.e5m2x2 f16x2_lo, e8x2_lo;\n"
+        "  cvt.rn.f16x2.e5m2x2 f16x2_hi, e8x2_hi;\n"
+        "  mov.b32 {h0, h1}, f16x2_lo;\n"
+        "  mov.b32 {h2, h3}, f16x2_hi;\n"
+        "  cvt.f32.f16 $0, h0;\n"
+        "  cvt.f32.f16 $1, h1;\n"
+        "  cvt.f32.f16 $2, h2;\n"
+        "  cvt.f32.f16 $3, h3; }",
+        "=f,=f,=f,=f,r",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+    return tuple(Float32(llvm.extractvalue(T.f32(), ret, [i])) for i in range(4))
+
+
+@dsl_user_op
+def cvt_4xf32_to_e4m3x4(
+    f0: Float32,
+    f1: Float32,
+    f2: Float32,
+    f3: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    return llvm.inline_asm(
+        T.i32(),
+        [
+            Float32(f0).ir_value(loc=loc, ip=ip),
+            Float32(f1).ir_value(loc=loc, ip=ip),
+            Float32(f2).ir_value(loc=loc, ip=ip),
+            Float32(f3).ir_value(loc=loc, ip=ip),
+        ],
+        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
+        "  cvt.rn.satfinite.e4m3x2.f32 e8x2_lo, $2, $1;\n"
+        "  cvt.rn.satfinite.e4m3x2.f32 e8x2_hi, $4, $3;\n"
+        "  mov.b32 $0, {e8x2_lo, e8x2_hi}; }",
+        "=r,f,f,f,f",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_4xf32_to_e5m2x4(
+    f0: Float32,
+    f1: Float32,
+    f2: Float32,
+    f3: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    return llvm.inline_asm(
+        T.i32(),
+        [
+            Float32(f0).ir_value(loc=loc, ip=ip),
+            Float32(f1).ir_value(loc=loc, ip=ip),
+            Float32(f2).ir_value(loc=loc, ip=ip),
+            Float32(f3).ir_value(loc=loc, ip=ip),
+        ],
+        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
+        "  cvt.rn.satfinite.e5m2x2.f32 e8x2_lo, $2, $1;\n"
+        "  cvt.rn.satfinite.e5m2x2.f32 e8x2_hi, $4, $3;\n"
+        "  mov.b32 $0, {e8x2_lo, e8x2_hi}; }",
+        "=r,f,f,f,f",
+        has_side_effects=False,
+        asm_dialect=0,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_b32_to_1xf32(
+    b32_in: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32]:
+    return (Float32(llvm.bitcast(T.f32(), b32_in, loc=loc, ip=ip)),)
+
+
+@dsl_user_op
+def cvt_1xf32_to_b32(
+    f: Float32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    return llvm.bitcast(T.i32(), Float32(f).ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+
+
+@dsl_user_op
+def elem_wise_add_f32(
+    a: Tuple[Float32, ...],
+    b: Tuple[Float32, ...],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, ...]:
+    assert len(a) == len(b), f"Mismatched tuple sizes: {len(a)} vs {len(b)}"
+    n = len(a)
+    if n == 1:
+        return (add_rn_f32(a[0], b[0], loc=loc, ip=ip),)
+    assert n % 2 == 0, f"elem_wise_add_f32: tuple length {n} must be 1 or even"
+    # Pair consecutive f32 values into FADD2 invocations.
+    out: Tuple[Float32, ...] = ()
+    for i in range(0, n, 2):
+        s_lo, s_hi = add_rn_f32x2_pair(a[i], a[i + 1], b[i], b[i + 1], loc=loc, ip=ip)
+        out = out + (s_lo, s_hi)
+    return out
+
+
 @cute.jit
-def LDMC(
+def Lamport(
     kernel,
     cur_tile_coord,
     tiled_mma: cute.TiledMma,
     comm_tidx: cutlass.Int32,
-    tCgCommInMC: cute.Tensor,
+    tCgCommInUC_per_peer: Tuple[cute.Tensor, ...],
     tCgCommOutUC: cute.Tensor,
-    m_cta_tiles_per_rank,
 ) -> None:
-    # Multiple CTAs per rank cooperatively process its RS output tiles
-    #
-    # Naive RS Implementation (inefficient):
-    #   - On rank0: Only CTAs computing partition A tiles would execute load multiple CTA + store operations
-    #   - On rank0: CTAs computing partitions B/C/D tiles would remain idle (since rank0 only stores partition A) for its RS part
-    #   - Result: Limited in-flight load multiple CTA instruction as there's only 1/P CTA tile per rank issuing load multiple CTA instruction
-    #
-    # Our Implementation (efficient):
-    #   - On rank0: All CTAs computing partition A/B/C/D tile would execute load multiple CTA + store operations
-    #   - On rank0: partition A's output tile 0 is computed by
-    #         partition A's output tile 0
-    #         partition B's output tile 0
-    #         partition C's output tile 0
-    #         partition D's output tile 0
-    #       where each RS output tile is computed by P number of CTAs per rank.
-    #   - For row-major: split of work is done horizontally (along M) across each partition.
-    #   - For col-major: split of work is done vertically (along N) across each partition.
-    # Code Explain
-    # % m_tiles_per_rank: get output tile's within partition tileid
-    #   for output tile in rank0 partition B, get it RS tile in partition A
-    # + self.rank_id * m_tiles_per_rank: offset to current rank's RS output tile
-    #   for rank0, this offset to start of partition A
-    #   for rank1, this offset to start of partition B
-    #   for rank2, this offset to start of partition C
-    #   for rank3, this offset to start of partition D
-
-    # RS tile coordinate that current CTA handle (likely different output tile)
-    input_tile_coord = (
-        cur_tile_coord[0] % m_cta_tiles_per_rank
-        + kernel.rank_id * m_cta_tiles_per_rank,
-        cur_tile_coord[1],
-        cur_tile_coord[2],
-    )
-    mma_tile_coord_mnl_input = (
-        (
-            (cur_tile_coord[0] % m_cta_tiles_per_rank)
-            // cute.size(tiled_mma.thr_id.shape)
-        )
-        + kernel.rank_id * (m_cta_tiles_per_rank // cute.size(tiled_mma.thr_id.shape)),
-        cur_tile_coord[1],
-        cur_tile_coord[2],
-    )
-    mma_tile_coord_mnl_output = (
-        (
-            (cur_tile_coord[0] % m_cta_tiles_per_rank)
-            // cute.size(tiled_mma.thr_id.shape)
-        ),
+    mma_tile_coord_mnl = (
+        cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
         cur_tile_coord[1],
         cur_tile_coord[2],
     )
 
-    # partition and slice at tile level
-    tCgCommInMC_slice = tCgCommInMC[((None, None), 0, 0, *mma_tile_coord_mnl_input)]
-    tCgCommOutUC_slice = tCgCommOutUC[((None, None), 0, 0, *mma_tile_coord_mnl_output)]
+    # Per-peer UC views share shape/strides with the local UC tensor (only the
+    # base pointer differs), so one coord pattern slices every peer the same way.
+    tCgCommInUC_slice_per_peer = tuple(
+        t[((None, None), 0, 0, *mma_tile_coord_mnl)] for t in tCgCommInUC_per_peer
+    )
+    tCgCommOutUC_slice = tCgCommOutUC[((None, None), 0, 0, *mma_tile_coord_mnl)]
 
-    #
-    # Partition s.t. each tile handle 1/P of processed tile
-    # For row-major (N-contiguous): each CTA handles a horizontal stripe (M/P, N)
-    # For col-major (M-contiguous): each CTA handles a vertical stripe (M, N/P)
-    #
     cta_mma_tile_m = kernel.mma_tiler[0] // cute.size(tiled_mma.thr_id.shape)
     cta_tile_n = kernel.mma_tiler[1]
     total_comm_threads = len(kernel.comm_warp_id) * cute.arch.WARP_SIZE
 
-    # chunk_id determines which portion of the tile this CTA processes
-    chunk_id = cur_tile_coord[0] // m_cta_tiles_per_rank
+    local_tile_m = cta_mma_tile_m
+    local_tile_n = cta_tile_n
 
-    if cutlass.const_expr(kernel.c_layout.is_n_major_c()):
-        # Row-major (N-contiguous): split along M
-        m_local_rank = int(cta_mma_tile_m / kernel.num_ranks)
-        tCgCommInMC_slice_partitioned = cute.zipped_divide(
-            tCgCommInMC_slice, (m_local_rank, cta_tile_n)
-        )
-        tCgCommOutUC_slice_partitioned = cute.zipped_divide(
-            tCgCommOutUC_slice, (m_local_rank, cta_tile_n)
-        )
-        # Data processed by local CTA: select M chunk
-        tCgCommInMC_local_rank = cute.slice_(
-            tCgCommInMC_slice_partitioned, ((None, None), (chunk_id, 0))
-        )
-        tCgCommOutUC_local_rank = cute.slice_(
-            tCgCommOutUC_slice_partitioned, ((None, None), (chunk_id, 0))
-        )
-        local_tile_m = m_local_rank
-        local_tile_n = cta_tile_n
-    else:
-        # Col-major (M-contiguous): split along N
-        n_local_rank = int(cta_tile_n / kernel.num_ranks)
-        tCgCommInMC_slice_partitioned = cute.zipped_divide(
-            tCgCommInMC_slice, (cta_mma_tile_m, n_local_rank)
-        )
-        tCgCommOutUC_slice_partitioned = cute.zipped_divide(
-            tCgCommOutUC_slice, (cta_mma_tile_m, n_local_rank)
-        )
-        # Data processed by local CTA: select N chunk
-        tCgCommInMC_local_rank = cute.slice_(
-            tCgCommInMC_slice_partitioned, ((None, None), (0, chunk_id))
-        )
-        tCgCommOutUC_local_rank = cute.slice_(
-            tCgCommOutUC_slice_partitioned, ((None, None), (0, chunk_id))
-        )
-        local_tile_m = cta_mma_tile_m
-        local_tile_n = n_local_rank
+    tCgCommInUC_local_rank_per_peer = tCgCommInUC_slice_per_peer
+    tCgCommOutUC_local_rank = tCgCommOutUC_slice
 
-    #
-    # Determine vectorization length based on data size per thread
-    # Always use 128-bit instructions (guaranteed by _pick_num_comm_warp_for_128b)
-    #
     elements_per_thread = (local_tile_m * local_tile_n) // total_comm_threads
-
-    # Always use 128-bit atom size
-    # Guaranteed by _pick_num_comm_warp_for_128b which selects T to ensure
-    # elements_per_thread is divisible by 128-bit atom (16B = 128 bits)
     atom_num_elements_128 = 128 // kernel.c_dtype.width
     atom_num_elements = atom_num_elements_128
 
-    # COMPILE-TIME ASSERTION: Verify 128-bit PTX instruction usage
-    # _pick_num_comm_warp_for_128b selects num_warps such that every thread
-    # in the RS warp group handles exactly atom_num_elements_128 elements,
-    # which means exactly one 128-bit LDMC instruction per RS slab iteration.
-    assert elements_per_thread % atom_num_elements_128 == 0, (
-        f"KERNEL ASSERTION: 128-bit PTX instruction invariant violated. "
-        f"elements_per_thread={elements_per_thread} must be divisible by "
+    # 128-bit ld/st is mandatory; the cvt wrappers assume 32-bit packed atoms.
+    # _pick_num_comm_warp_for_128b ensures divisibility; this assert fires at
+    # @cute.jit time if that invariant ever breaks (a `raise` here would be
+    # rejected by the AST preprocessor).
+    assert cutlass.const_expr(elements_per_thread % atom_num_elements_128 == 0), (
+        f"[Lamport] 128-bit instruction required but not viable: "
+        f"elements_per_thread={elements_per_thread} is not divisible by "
         f"atom_num_elements_128={atom_num_elements_128}. "
-        f"This ensures every thread executes exactly one 128-bit instruction. "
-        f"Configuration: local_tile=({local_tile_m},{local_tile_n}), "
-        f"total_comm_threads={total_comm_threads}, c_dtype={kernel.c_dtype}"
+        f"This should never happen if _pick_num_comm_warp_for_128b is correct."
     )
 
-    #
-    # Create thr_copy_fake with dynamically selected atom size
-    # For row-major: threads spread along N (contiguous), load along N
-    # For col-major: threads spread along M (contiguous), load along M
-    #
+    # Row-major: threads contiguous along N; col-major: along M. GCD handles
+    # non-pow2 widths (e.g. cta_n=192) that don't naively divide thread count.
     if cutlass.const_expr(kernel.c_layout.is_n_major_c()):
-        # Row-major: N is contiguous, spread threads along N.
-        # Use GCD to handle non-power-of-2 tile widths (e.g. cta_n=192)
-        # that don't naively divide the thread count.
         max_thr_n = local_tile_n // atom_num_elements
         atom_thr_n = gcd(max_thr_n, total_comm_threads)
         atom_thr_m = total_comm_threads // atom_thr_n
@@ -273,7 +559,6 @@ def LDMC(
             (1, atom_num_elements), stride=(atom_num_elements, 1)
         )
     else:
-        # Col-major: M is contiguous, spread threads along M.
         max_thr_m = local_tile_m // atom_num_elements
         atom_thr_m = gcd(max_thr_m, total_comm_threads)
         atom_thr_n = total_comm_threads // atom_thr_m
@@ -286,41 +571,351 @@ def LDMC(
     tiled_copy_fake = cute.make_tiled_copy_tv(copy_atom_load, thr_layout, val_layout)
     thr_copy_fake = tiled_copy_fake.get_slice(comm_tidx - kernel.comm_warp_id[0] * 32)
 
-    #
-    # Partition per thread
-    #
-    tTR_gCommInMC = thr_copy_fake.partition_S(tCgCommInMC_local_rank)
+    tTR_gCommInUC_per_peer = tuple(
+        thr_copy_fake.partition_S(t) for t in tCgCommInUC_local_rank_per_peer
+    )
     tTR_gCommOutUC = thr_copy_fake.partition_S(tCgCommOutUC_local_rank)
-    _atom, loop_m, loop_n = tTR_gCommInMC.shape
+    _atom, loop_m, loop_n = tTR_gCommOutUC.shape
+
+    # Dtype dispatch — cvt_to_xf32: i32 → n_per_b32 f32; cvt_back: f32… → i32.
+    # neg_zero_dtype_32bit packs the dtype-specific -0.0 across all lanes of
+    # one i32 so the spin's break test is a single setp.eq, no bit-extract.
+    if cutlass.const_expr(kernel.c_dtype is cutlass.BFloat16):
+        cvt_to_xf32 = cvt_bf16x2_to_2xf32
+        cvt_back = cvt_2xf32_to_bf16x2
+        n_per_b32 = 2
+        neg_zero_dtype_32bit = 0x80008000  # bf16 -0.0 × 2 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float16):
+        cvt_to_xf32 = cvt_f16x2_to_2xf32
+        cvt_back = cvt_2xf32_to_f16x2
+        n_per_b32 = 2
+        neg_zero_dtype_32bit = 0x80008000  # f16 -0.0 × 2 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float8E4M3FN):
+        cvt_to_xf32 = cvt_e4m3x4_to_4xf32
+        cvt_back = cvt_4xf32_to_e4m3x4
+        n_per_b32 = 4
+        neg_zero_dtype_32bit = 0x80808080  # e4m3 -0.0 × 4 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float8E5M2):
+        cvt_to_xf32 = cvt_e5m2x4_to_4xf32
+        cvt_back = cvt_4xf32_to_e5m2x4
+        n_per_b32 = 4
+        neg_zero_dtype_32bit = 0x80808080  # e5m2 -0.0 × 4 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float32):
+        cvt_to_xf32 = cvt_b32_to_1xf32
+        cvt_back = cvt_1xf32_to_b32
+        n_per_b32 = 1
+        neg_zero_dtype_32bit = 0x80000000  # f32 -0.0 × 1 lane
+    else:
+        raise ValueError(
+            f"Lamport: unsupported c_dtype {kernel.c_dtype} "
+            "(supported: BFloat16, Float16, Float8E4M3FN, Float8E5M2, Float32)"
+        )
+
+    # Accumulator stays in f32 across the full peer chain — one cvt_back at
+    # the end preserves the same precision a multimem.ld_reduce path would.
+    # Flat-tuple length n_atom * n_per_b32 is always even (4/8/16), so
+    # elem_wise_add_f32 always lands on FADD2.
+    num_peers = len(tTR_gCommInUC_per_peer)
+    n_atom = 4  # 128b / 32b per i32
+
+    # `unroll=1` on the outer (i, j) lattice forces the CuTe preprocessor to
+    # emit ONE shared body. Full unroll explodes register pressure
+    # (num_peers × n_atom × cvt-tuple f32s live per (i, j)) and the allocator
+    # spills to local memory. Inner peer / atom loops stay range_constexpr
+    # so their unrolling helps instruction scheduling within one (i, j).
+    for i in cutlass.range(loop_m, unroll=1):
+        for j in cutlass.range(loop_n, unroll=1):
+            # (1) Per-peer load with flag-via-data spin: ld.relaxed.gpu on the
+            # peer's UC view, break when g3 (last i32 of the 16B chunk) leaves
+            # the sentinel. g3-only is sound because the producer is a TMA
+            # multicast store, which lands at peer mirrors atomically per 16B
+            # — no torn writes where g3 could update before g0/g1/g2. Random
+            # GEMM bits hitting the sentinel are ~2^-32 / lane and the
+            # producer-side scrub (epilogue_tma_store_handle_neg_zero) flips
+            # -0.0 → +0.0 to remove the only systematic source. If a non-TMA
+            # producer is ever wired in, widen the predicate.
+            peer_loaded = []
+            for r in cutlass.range_constexpr(num_peers):
+                ptr = tTR_gCommInUC_per_peer[r][None, i, j].iterator
+                init_g0, init_g1, init_g2, init_g3 = ld_relaxed_gpu_global_4xu32(ptr)
+                spin = while_generate(
+                    [init_g0, init_g1, init_g2, init_g3],
+                    lambda _g0, _g1, _g2, g3: g3 == neg_zero_dtype_32bit,
+                )
+                with spin:
+                    new_regs = ld_relaxed_gpu_global_4xu32(ptr)
+                    yield_out(list(new_regs))
+                peer_loaded.append(tuple(spin.results))
+
+            # (2) build flat f32 tuple from each peer; init accumulator from
+            #     peer 0, then vectorized-add the rest.
+            acc = ()
+            for r in cutlass.range_constexpr(num_peers):
+                p_acc = ()
+                for k in cutlass.range_constexpr(n_atom):
+                    p_acc = p_acc + cvt_to_xf32(peer_loaded[r][k])
+                acc = p_acc if r == 0 else elem_wise_add_f32(acc, p_acc)
+
+            # (3) cvt accumulator back to source dtype, once per atom.
+            out_regs = []
+            for k in cutlass.range_constexpr(n_atom):
+                chunk = acc[k * n_per_b32 : (k + 1) * n_per_b32]
+                out_regs.append(cvt_back(*chunk))
+
+            # (4) plain st.weak.global.v4.u32 to this rank's local UC slot.
+            out_uc_ptr = tTR_gCommOutUC[None, i, j].iterator
+            st_weak_global_4xu32(out_uc_ptr, *out_regs)
+
+
+@cute.jit
+def Clear(
+    kernel,
+    cur_tile_coord,
+    tiled_mma: cute.TiledMma,
+    comm_tidx: cutlass.Int32,
+    tCgCommClearUC_per_peer: Tuple[cute.Tensor, ...],
+) -> None:
+    # Per-tile scrub of slot[pong] back to the dtype-specific -0.0 sentinel.
+
+    mma_tile_coord_mnl = (
+        cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
+        cur_tile_coord[1],
+        cur_tile_coord[2],
+    )
+
+    tCgCommClearUC_slice_per_peer = tuple(
+        t[((None, None), 0, 0, *mma_tile_coord_mnl)] for t in tCgCommClearUC_per_peer
+    )
+
+    cta_mma_tile_m = kernel.mma_tiler[0] // cute.size(tiled_mma.thr_id.shape)
+    cta_tile_n = kernel.mma_tiler[1]
+    # Partitioned over EPILOGUE warps (vs Lamport's comm warps).
+    total_threads = len(kernel.epilogue_warp_id) * cute.arch.WARP_SIZE
+
+    local_tile_m = cta_mma_tile_m
+    local_tile_n = cta_tile_n
+
+    elements_per_thread = (local_tile_m * local_tile_n) // total_threads
+    atom_num_elements_128 = 128 // kernel.c_dtype.width
+    atom_num_elements = atom_num_elements_128
+
+    assert cutlass.const_expr(elements_per_thread % atom_num_elements_128 == 0), (
+        f"[Clear] 128-bit instruction required but not viable: "
+        f"elements_per_thread={elements_per_thread} is not divisible by "
+        f"atom_num_elements_128={atom_num_elements_128}."
+    )
+
+    if cutlass.const_expr(kernel.c_layout.is_n_major_c()):
+        max_thr_n = local_tile_n // atom_num_elements
+        atom_thr_n = gcd(max_thr_n, total_threads)
+        atom_thr_m = total_threads // atom_thr_n
+        thr_layout = cute.make_layout((atom_thr_m, atom_thr_n), stride=(atom_thr_n, 1))
+        val_layout = cute.make_layout(
+            (1, atom_num_elements), stride=(atom_num_elements, 1)
+        )
+    else:
+        max_thr_m = local_tile_m // atom_num_elements
+        atom_thr_m = gcd(max_thr_m, total_threads)
+        atom_thr_n = total_threads // atom_thr_m
+        thr_layout = cute.make_layout((atom_thr_m, atom_thr_n), stride=(1, atom_thr_m))
+        val_layout = cute.make_layout(
+            (atom_num_elements, 1), stride=(1, atom_num_elements)
+        )
+
+    copy_atom_store = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), kernel.c_dtype)
+    tiled_copy_fake = cute.make_tiled_copy_tv(copy_atom_store, thr_layout, val_layout)
+    thr_copy_fake = tiled_copy_fake.get_slice(
+        comm_tidx - kernel.epilogue_warp_id[0] * 32
+    )
+
+    tTR_gCommClearUC_per_peer = tuple(
+        thr_copy_fake.partition_S(t) for t in tCgCommClearUC_slice_per_peer
+    )
+    _atom, loop_m, loop_n = tTR_gCommClearUC_per_peer[0].shape
+
+    # Same dtype → -0.0 byte pattern as Lamport's neg_zero_dtype_32bit table.
+    if cutlass.const_expr(kernel.c_dtype is cutlass.BFloat16):
+        neg_zero_dtype_32bit = 0x80008000  # bf16 -0.0 × 2 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float16):
+        neg_zero_dtype_32bit = 0x80008000  # f16 -0.0 × 2 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float8E4M3FN):
+        neg_zero_dtype_32bit = 0x80808080  # e4m3 -0.0 × 4 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float8E5M2):
+        neg_zero_dtype_32bit = 0x80808080  # e5m2 -0.0 × 4 lanes
+    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float32):
+        neg_zero_dtype_32bit = 0x80000000  # f32 -0.0 × 1 lane
+    else:
+        raise ValueError(
+            f"Clear: unsupported c_dtype {kernel.c_dtype} "
+            "(supported: BFloat16, Float16, Float8E4M3FN, Float8E5M2, Float32)"
+        )
+
+    num_peers = len(tTR_gCommClearUC_per_peer)
+
+    # `unroll=1` outer (same reason as Lamport); inner peer loop is short
+    # const_expr so it unrolls into back-to-back STG.E.128.
+    for i in cutlass.range(loop_m, unroll=1):
+        for j in cutlass.range(loop_n, unroll=1):
+            for r in cutlass.range_constexpr(num_peers):
+                ptr = tTR_gCommClearUC_per_peer[r][None, i, j].iterator
+                st_weak_global_4xu32(
+                    ptr,
+                    neg_zero_dtype_32bit,
+                    neg_zero_dtype_32bit,
+                    neg_zero_dtype_32bit,
+                    neg_zero_dtype_32bit,
+                )
+
+
+@cute.jit
+def epilogue_tma_store_handle_neg_zero(
+    gemm_kernel,
+    epi_tidx: cutlass.Int32,
+    warp_idx: cutlass.Int32,
+    tma_atom_c: cute.CopyAtom,
+    # Input of epilogue
+    tCtAcc_base: cute.Tensor,
+    # Staging of epilogue
+    sC: cute.Tensor,
+    # Output of epilogue
+    tCgC_base: cute.Tensor,
+    epi_tile: cute.Tile,
+    num_tiles_executed: cutlass.Int32,
+    epilogue_op: cutlass.Constexpr,
+    mma_tile_coord_mnl: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+    acc_consumer_state: pipeline.PipelineState,
+    acc_pipeline: pipeline.PipelineAsync,
+    c_pipeline: pipeline.PipelineTmaStore,
+) -> pipeline.PipelineState:
+    # Fork of cutlass.utils.gemm.sm100.epilogue_tma_store with the Lamport
+    # -0.0 → +0.0 scrub spliced in below; otherwise behaviour-identical to
+    # the upstream helper.
+
+    # Layout transformation for tCgC_base
+    # ((MMA_ATOM_M, MMA_ATOM_N), MMA_M, MMA_N, TILE_M, TILE_N, TILE_K)
+    # -> ((MMA_ATOM_M, MMA_M), (MMA_ATOM_N, MMA_N), TILE_M, TILE_N, TILE_K)
+    tCgC = utils.gemm.sm100.transform_partitioned_tensor_layout(tCgC_base)
+
+    # Layout transformation for tCtAcc_base
+    # ((MMA_ATOM_M, MMA_ATOM_N), MMA_M, MMA_N, STAGE)
+    # -> ((MMA_ATOM_M, MMA_M), (MMA_ATOM_N, MMA_N), STAGE)
+    tCtAcc = utils.gemm.sm100.transform_partitioned_tensor_layout(tCtAcc_base)
+
+    tiled_copy_t2r, tTR_tAcc_base, tTR_rAcc = (
+        utils.gemm.sm100.epilogue_tmem_copy_and_partition(
+            gemm_kernel, epi_tidx, tCtAcc, tCgC, epi_tile, gemm_kernel.use_2cta_instrs
+        )
+    )
+
+    tTR_rC = cute.make_rmem_tensor(tTR_rAcc.shape, gemm_kernel.c_dtype)
+    tiled_copy_r2s, tRS_rC, tRS_sC = utils.gemm.sm100.epilogue_smem_copy_and_partition(
+        gemm_kernel, tiled_copy_t2r, tTR_rC, epi_tidx, sC
+    )
+
+    # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, RestM, RestN, RestL)
+    tCgC_epi = cute.flat_divide(tCgC, epi_tile)
+    # ((ATOM_V, REST_V), EPI_M, EPI_N)
+    # ((ATOM_V, REST_V), EPI_M, EPI_N, RestM, RestN, RestL)
+    bSG_sC, bSG_gC_partitioned = cpasync.tma_partition(
+        tma_atom_c,
+        0,
+        cute.make_layout(1),
+        cute.group_modes(sC, 0, 2),
+        cute.group_modes(tCgC_epi, 0, 2),
+    )
+
+    epilog_sync_barrier = pipeline.NamedBarrier(
+        barrier_id=gemm_kernel.epilog_sync_bar_id,
+        num_threads=32 * len(gemm_kernel.epilogue_warp_id),
+    )
 
     #
-    # Reduce Scatter LDMC — always 128-bit (guaranteed by _pick_num_comm_warp_for_128b)
+    # Slice to per mma tile index
     #
-    tmp_results = []
-    for i in cutlass.range_constexpr(loop_m):
-        for j in cutlass.range_constexpr(loop_n):
-            comm_in_mc_ptr = tTR_gCommInMC[None, i, j].iterator
-            regs = utils.distributed.multimem_ld_reduce(
-                comm_in_mc_ptr, dtype=kernel.c_dtype, num_elements=atom_num_elements
+    # ((ATOM_V, REST_V), EPI_M, EPI_N)
+    bSG_gC = bSG_gC_partitioned[(None, None, None, *mma_tile_coord_mnl)]
+
+    # Set tensor memory buffer for current tile
+    # (T2R, T2R_M, T2R_N, EPI_M, EPI_M)
+    tTR_tAcc = tTR_tAcc_base[(None, None, None, None, None, acc_consumer_state.index)]
+
+    #
+    # Wait for accumulator buffer full
+    #
+    acc_pipeline.consumer_wait(acc_consumer_state)
+
+    tTR_tAcc = cute.group_modes(tTR_tAcc, 3, cute.rank(tTR_tAcc))
+    bSG_gC = cute.group_modes(bSG_gC, 1, cute.rank(bSG_gC))
+
+    #
+    # Store accumulator to global memory in subtiles
+    #
+    subtile_cnt = cute.size(tTR_tAcc.shape, mode=[3])  # type: ignore[union-attr]
+    num_prev_subtiles = num_tiles_executed * subtile_cnt
+    for subtile_idx in range(subtile_cnt):
+        #
+        # Load accumulator from tensor memory buffer to register
+        #
+        tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]  # type: ignore[call-overload]
+        cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
+
+        #
+        # Convert to C type
+        #
+        acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
+        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))  # type: ignore[operator]
+
+        # Lamport scrub: peers spin on -0.0 as the "not arrived" sentinel,
+        # so a legitimate -0.0 in GEMM output must not reach C. IEEE RTNE
+        # gives `-0.0 + +0.0 = +0.0` and is bit-exact pass-through for every
+        # other value, so a +0 lane-tensor add flips only the sentinel
+        # lanes. Not constant-folded: cute doesn't enable nsz globally.
+        if cutlass.const_expr(gemm_kernel.all_reduce == "Lamport"):
+            acc_vec = acc_vec + cute.full_like(acc_vec, 0.0)
+
+        tRS_rC.store(acc_vec)
+
+        #
+        # Store C to shared memory
+        #
+        c_buffer = (num_prev_subtiles + subtile_idx) % gemm_kernel.num_c_stage
+        cute.copy(tiled_copy_r2s, tRS_rC, tRS_sC[(None, None, None, c_buffer)])
+        # Fence and barrier to make sure shared memory store is visible to TMA store
+        cute.arch.fence_proxy(
+            "async.shared",
+            space="cta",
+        )
+        epilog_sync_barrier.arrive_and_wait()
+
+        #
+        # TMA store C to global memory
+        #
+        if warp_idx == gemm_kernel.epilogue_warp_id[0]:
+            cute.copy(
+                tma_atom_c,
+                bSG_sC[(None, c_buffer)],
+                bSG_gC[(None, subtile_idx)],
             )
-            tmp_results.append(regs)
+            # Fence and barrier to make sure shared memory store is visible to TMA store
+            c_pipeline.producer_commit()
+            c_pipeline.producer_acquire()
+        epilog_sync_barrier.arrive_and_wait()
+
+    epilog_sync_barrier.arrive_and_wait()
 
     #
-    # Store to unicast memory with 128-bit vector
+    # Async arrive accumulator buffer empty
     #
-    for i in cutlass.range_constexpr(loop_m):
-        for j in cutlass.range_constexpr(loop_n):
-            comm_out_uc_ptr = tTR_gCommOutUC[None, i, j].iterator.llvm_ptr
-            x, y, z, w = tmp_results[i * loop_n + j]
-            vec_type = ir.VectorType.get([4], cutlass.Int32.mlir_type)
-            vec = vector.from_elements(vec_type, [x, y, z, w])
-            cute.arch.store(comm_out_uc_ptr, vec)
+    with cute.arch.elect_one():
+        acc_pipeline.consumer_release(acc_consumer_state)
+    acc_consumer_state.advance()
+    return acc_consumer_state
 
 
-class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
+class Sm100PersistentDenseGemmAllReduceLamportKernel:
     """
     **Example:**
-        gemm = Sm100PersistentDenseGemmReduceScatterLDMCKernel(
+        gemm = Sm100PersistentDenseGemmAllReduceLamportKernel(
             acc_dtype=cutlass.Float32,
             c_dtype=cutlass.BFloat16,
             use_2cta_instrs=True,
@@ -329,28 +924,26 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
             use_tma_store=True,
             rank_id=rank_id,
             num_ranks=num_ranks,
-            reduce_scatter="LDMC",
+            all_reduce="Lamport",
             swizzle_size=1,
             raster_order="m",
         )
         compiled_gemm = cute.compile(
             gemm,
-            a=a, b=b, c=c,
-            comm_in_multicast_tensor=comm_in_mc,
+            a=a, b=b,
+            c_multicast_tensor=c_mc_slot_ping_local_rank,
+            comm_in_unicast_tensor_per_peer=c_uc_per_peer_slot_ping,
+            comm_clear_unicast_tensor_per_peer=c_uc_per_peer_slot_pong,
             comm_out_unicast_tensor=comm_out_uc,
-            barrier_flag_unicast=flag_unicast,
-            barrier_flag_multicast=flag_multicast,
-            barrier_flag_unicast_per_peer=flag_unicast_per_peer,
             stream=stream,
             max_active_clusters=max_active_clusters,
         )
         compiled_gemm(
-            a=a, b=b, c=c,
-            comm_in_multicast_tensor=comm_in_mc,
+            a=a, b=b,
+            c_multicast_tensor=c_mc_slot_ping_local_rank,
+            comm_in_unicast_tensor_per_peer=c_uc_per_peer_slot_ping,
+            comm_clear_unicast_tensor_per_peer=c_uc_per_peer_slot_pong,
             comm_out_unicast_tensor=comm_out_uc,
-            barrier_flag_unicast=flag_unicast,
-            barrier_flag_multicast=flag_multicast,
-            barrier_flag_unicast_per_peer=flag_unicast_per_peer,
             stream=stream,
         )
     """
@@ -365,7 +958,7 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         use_tma_store: bool,
         rank_id: int,
         num_ranks: int,
-        reduce_scatter: str = "LDMC",
+        all_reduce: str = "Lamport",
         swizzle_size: int = 1,
         raster_order: Literal["m", "n"] = "m",
     ):
@@ -393,14 +986,14 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         self.epilogue_warp_id = (0, 1, 2, 3)
         self.mma_warp_id = 4
         self.tma_warp_id = 5
-        self.reduce_scatter = reduce_scatter
-        if reduce_scatter == "LDMC":
+        self.all_reduce = all_reduce
+        if all_reduce == "Lamport":
             self.rank_id = rank_id
             self.num_ranks = num_ranks
             num_comm_warps = self._pick_num_comm_warp_for_128b(c_dtype)
             self.comm_warp_id = tuple(range(6, 6 + num_comm_warps))
         else:
-            # Other RS mode not support by now.
+            # Other AR mode not support by now.
             self.comm_warp_id = ()
             self.rank_id = 0
             self.num_ranks = 1
@@ -421,19 +1014,21 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
 
     def _pick_num_comm_warp_for_128b(self, c_dtype):
         """Pick the LARGEST comm-warp count W ∈ {4, 3, 2, 1} (T = W·32 ∈
-        {128, 96, 64, 32}) such that the RS slab is evenly distributed
-        across T threads AND every thread gets a full 128 b LDMC payload
+        {128, 96, 64, 32}) such that the AR slab is evenly distributed
+        across T threads AND every thread gets a full 128 b LD/ST payload
         (= ``atom_128`` elements, where ``atom_128 = 16 / sizeof(c_dtype)``).
 
         Iterates W = 4 → 1 and returns the first match, so the largest
         viable W is returned. Smaller W is only chosen when strictly
-        necessary, because larger W means more parallel RS threads and
+        necessary, because larger W means more parallel AR threads and
         proportionally fewer per-thread PTX instructions.
         """
-        # cta-tile dims (the per-CTA M·N output the RS walks). 2cta halves M.
+        # cta-tile dims (the per-CTA M·N output the AR walks). 2cta halves M.
+        # Lamport: each rank handles the entire CTA tile (no // num_ranks split),
+        # so the slab a single rank's comm warps must cover is the full M·N.
         cta_mma_tile_m = self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1)
         cta_tile_n = self.mma_tiler_mn[1]
-        slab_elements = (cta_mma_tile_m * cta_tile_n) // self.num_ranks
+        slab_elements = cta_mma_tile_m * cta_tile_n
         atom_128 = 16 // (c_dtype.width // 8)
         for num_warps in (4, 3, 2, 1):
             T = num_warps * 32
@@ -545,12 +1140,10 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         self,
         a: cute.Tensor,
         b: cute.Tensor,
-        c: cute.Tensor,
-        comm_in_multicast_tensor: cute.Tensor,
+        c_multicast_tensor: cute.Tensor,
+        comm_in_unicast_tensor_per_peer: Tuple[cute.Tensor, ...],
+        comm_clear_unicast_tensor_per_peer: Tuple[cute.Tensor, ...],
         comm_out_unicast_tensor: cute.Tensor,
-        barrier_flag_unicast: cute.Tensor,
-        barrier_flag_multicast: cute.Tensor,
-        barrier_flag_unicast_per_peer: Tuple[cute.Tensor, ...],
         stream: cuda.CUstream,
         max_active_clusters: cutlass.Constexpr,
         epilogue_op: cutlass.Constexpr = lambda x: x,
@@ -558,16 +1151,32 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         # Setup static attributes before smem/grid/tma computation.
         # NOTE: self.c_dtype was set in __init__ from the explicit c_dtype
         # arg. We only sanity-check here that the C tensor matches that hint.
+        # Lamport mandates use_tma_store=True
+        if cutlass.const_expr(self.all_reduce == "Lamport"):
+            assert self.use_tma_store, (
+                "Lamport requires use_tma_store=True (the C tensor is now a "
+                "multicast view; STG on a multicast address does not fan out)."
+            )
+            # f8 is temporarily rejected
+            assert self.c_dtype not in (
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E5M2,
+            ), (
+                f"Lamport currently does not support c_dtype={self.c_dtype}: the "
+                "epilogue -0.0 → +0.0 scrub is implemented for Float32/Float16/"
+                "BFloat16 only. The f8 path will land once the bitwise haszero "
+                "scrub is verified."
+            )
         self.a_dtype: Type[cutlass.Numeric] = a.element_type
         self.b_dtype: Type[cutlass.Numeric] = b.element_type
-        if cutlass.const_expr(c.element_type != self.c_dtype):
+        if cutlass.const_expr(c_multicast_tensor.element_type != self.c_dtype):
             raise TypeError(
-                f"C tensor element_type ({c.element_type}) does not match "
+                f"C tensor element_type ({c_multicast_tensor.element_type}) does not match "
                 f"the c_dtype declared at __init__ ({self.c_dtype})"
             )
         self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
         self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.c_layout = utils.LayoutEnum.from_tensor(c_multicast_tensor)
 
         # Check if input data types are compatible with MMA instruction
         if cutlass.const_expr(self.a_dtype != self.b_dtype):
@@ -632,12 +1241,15 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         if cutlass.const_expr(self.use_tma_store):
             epi_smem_layout = cute.select(self.c_smem_layout_staged, mode=[0, 1])
             tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
-                cpasync.CopyBulkTensorTileS2GOp(), c, epi_smem_layout, self.epi_tile
+                cpasync.CopyBulkTensorTileS2GOp(),
+                c_multicast_tensor,
+                epi_smem_layout,
+                self.epi_tile,
             )
 
         # Compute grid size
         self.tile_sched_params, grid = self._compute_grid(
-            c,
+            c_multicast_tensor,
             self.cta_tile_shape_mnk,
             self.cluster_shape_mn,
             self.swizzle_size,
@@ -665,12 +1277,10 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
             tma_atom_b=tma_atom_b,
             mB_nkl=tma_tensor_b,
             tma_atom_c=tma_atom_c,
-            mC_mnl=(tma_tensor_c if self.use_tma_store else c),
-            mCommInMC_mnl=comm_in_multicast_tensor,
+            mC_mc_mnl=tma_tensor_c,
+            mCommInUC_mnl_per_peer=comm_in_unicast_tensor_per_peer,
+            mCommClearUC_mnl_per_peer=comm_clear_unicast_tensor_per_peer,
             mCommOutUC_mnl=comm_out_unicast_tensor,
-            barrier_flag_unicast=barrier_flag_unicast,
-            barrier_flag_multicast=barrier_flag_multicast,
-            barrier_flag_unicast_per_peer=barrier_flag_unicast_per_peer,
             cluster_layout_vmnk=self.cluster_layout_vmnk,
             a_smem_layout_staged=self.a_smem_layout_staged,
             b_smem_layout_staged=self.b_smem_layout_staged,
@@ -696,12 +1306,10 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         tma_atom_b: cute.CopyAtom,
         mB_nkl: cute.Tensor,
         tma_atom_c: Optional[cute.CopyAtom],
-        mC_mnl: cute.Tensor,
-        mCommInMC_mnl: cute.Tensor,
+        mC_mc_mnl: cute.Tensor,
+        mCommInUC_mnl_per_peer: Tuple[cute.Tensor, ...],
+        mCommClearUC_mnl_per_peer: Tuple[cute.Tensor, ...],
         mCommOutUC_mnl: cute.Tensor,
-        barrier_flag_unicast: cute.Tensor,
-        barrier_flag_multicast: cute.Tensor,
-        barrier_flag_unicast_per_peer: Tuple[cute.Tensor, ...],
         cluster_layout_vmnk: cute.Layout,
         a_smem_layout_staged: cute.ComposedLayout,
         b_smem_layout_staged: cute.ComposedLayout,
@@ -748,7 +1356,10 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Warp)
+        num_tma_producer = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
+        ab_pipeline_consumer_group = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread, num_tma_producer
+        )
         ab_producer, ab_consumer = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
@@ -756,7 +1367,6 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
-            enable_multicast_signaling=True,
             defer_sync=True,
         ).make_participants()
 
@@ -841,9 +1451,13 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         gB_nkl = cute.local_tile(
             mB_nkl, cute.slice_(self.mma_tiler, (0, None, None)), (None, None, None)
         )
-        # (bM, bN, RestM, RestN, RestL)
+        # (bM, bN, RestM, RestN, RestL). For Lamport this is the multicast view
+        # of THIS rank's C_tuple[rank_id]; the TMA store on it broadcasts to
+        # all peers' C_tuple[rank_id].uc.
         gC_mnl = cute.local_tile(
-            mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
+            mC_mc_mnl,
+            cute.slice_(self.mma_tiler, (None, None, 0)),
+            (None, None, None),
         )
         k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
@@ -1103,7 +1717,6 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
 
             m_cta_tiles_in_total = gC_mnl.shape[2] * cute.size(tiled_mma.thr_id.shape)
             n_cta_tiles_in_total = gC_mnl.shape[3]
-            m_cta_tiles_per_rank = m_cta_tiles_in_total // self.num_ranks
 
             #
             # Persistent tile scheduling loop for epilogue
@@ -1121,10 +1734,19 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
                     num_stages=self.num_c_stage, producer_group=c_producer_group
                 )
 
-            epilogue_sync_barrier = pipeline.NamedBarrier(
-                barrier_id=self.epilog_sync_bar_id,
-                num_threads=32 * len(self.epilogue_warp_id),
-            )
+            # Build the per-peer Clear partition
+            if cutlass.const_expr(self.all_reduce == "Lamport"):
+                gCommClearUC_mnl_per_peer = tuple(
+                    cute.local_tile(
+                        t,
+                        cute.slice_(self.mma_tiler, (None, None, 0)),
+                        (None, None, None),
+                    )
+                    for t in mCommClearUC_mnl_per_peer
+                )
+                tCgCommClearUC_per_peer = tuple(
+                    thr_mma.partition_C(g) for g in gCommClearUC_mnl_per_peer
+                )
 
             while work_tile.is_valid_tile:
                 # Get tile coord from tile scheduler
@@ -1141,8 +1763,21 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
                 work_tile = tile_sched.get_current_work()
 
                 num_tiles_executed = tile_sched.num_tiles_executed
+
+                # Per-tile scrub of slot[pong]'s `world_size` local UC slabs
+                # back to the -0.0 sentinel, in preparation for the next-iter
+                # ping write. Runs in the epilogue warp BEFORE the TMA store
+                if cutlass.const_expr(self.all_reduce == "Lamport"):
+                    Clear(
+                        self,
+                        cur_tile_coord=cur_tile_coord,
+                        tiled_mma=tiled_mma,
+                        comm_tidx=tidx,
+                        tCgCommClearUC_per_peer=tCgCommClearUC_per_peer,
+                    )
+
                 if cutlass.const_expr(self.use_tma_store):
-                    acc_consumer_state = utils.gemm.sm100.epilogue_tma_store(
+                    acc_consumer_state = epilogue_tma_store_handle_neg_zero(
                         self,
                         tidx,
                         warp_idx,
@@ -1158,39 +1793,6 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
                         acc_pipeline,
                         c_pipeline,
                     )
-
-                    # Post-epilogue: arrive flag for distributed communication
-                    if cutlass.const_expr(self.reduce_scatter == "LDMC"):
-                        # 1D linear index of current output tile
-                        cta_tile_id_linear = cute.Int32(
-                            cur_tile_coord[0] + cur_tile_coord[1] * m_cta_tiles_in_total
-                        )
-
-                        # Wait for C store complete
-                        # Unlike regular epilogue where we only wait C store complete once at end of each kernel.
-                        # Here we need to wait for C store complete for each output tile before we set the release flag.
-                        c_pipeline.producer_tail()
-
-                        # Update flag with release semantic, unicast to the
-                        # tile's single owner. Each output tile in RS has exactly
-                        # one owner (P CTAs from that one rank consume it), so
-                        # broadcasting +1 to all peers would leave dead state on
-                        # non-owners that nothing ever resets. The constexpr loop
-                        # materializes an N-way dispatch because the DSL can't
-                        # index a tuple of cute Tensors by a runtime Int32.
-                        if warp_idx == self.epilogue_warp_id[0]:
-                            with cute.arch.elect_one():
-                                owner_rank = cur_tile_coord[0] // m_cta_tiles_per_rank
-                                for r in cutlass.range_constexpr(self.num_ranks):
-                                    if owner_rank == r:
-                                        utils.distributed.red_add1(
-                                            lock_ptr=barrier_flag_unicast_per_peer[
-                                                r
-                                            ].iterator
-                                            + cta_tile_id_linear,
-                                            order="release",
-                                            scope="gpu",
-                                        )
                 else:
                     acc_consumer_state = utils.gemm.sm100.epilogue(
                         self,
@@ -1204,40 +1806,18 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
                         acc_pipeline,
                     )
 
-                    # Post-epilogue: arrive flag for distributed communication
-                    if cutlass.const_expr(self.reduce_scatter == "LDMC"):
-                        # 1D linear index of current output tile
-                        cta_tile_id_linear = cute.Int32(
-                            cur_tile_coord[0] + cur_tile_coord[1] * m_cta_tiles_in_total
-                        )
-
-                        # Sync all thread in epilogue warp
-                        # Ensure all thread in epilogue warp have issue store operation
-                        epilogue_sync_barrier.arrive_and_wait()
-
-                        # Producer +1 is routed unicast to the tile's owner —
-                        # see note in the TMA-store branch above.
-                        if warp_idx == self.epilogue_warp_id[0]:
-                            with cute.arch.elect_one():
-                                owner_rank = cur_tile_coord[0] // m_cta_tiles_per_rank
-                                for r in cutlass.range_constexpr(self.num_ranks):
-                                    if owner_rank == r:
-                                        utils.distributed.red_add1(
-                                            lock_ptr=barrier_flag_unicast_per_peer[
-                                                r
-                                            ].iterator
-                                            + cta_tile_id_linear,
-                                            order="release",
-                                            scope="gpu",
-                                        )
+                # Lamport: no per-tile flag release. The data store itself is
+                # the flag — peers spin on the per-i32 -0.0 sentinel inside
+                # their AR warp and observe arrival when the broadcast lands.
 
             if cutlass.const_expr(self.use_tma_store):
-                # Wait for C store complete (only if not using LDMC which does per-tile tail)
-                if cutlass.const_expr(self.reduce_scatter != "LDMC"):
-                    c_pipeline.producer_tail()
+                # Drain all in-flight TMA stores once at end of the loop. For
+                # Lamport this is the only producer-side wait: peers detect
+                # individual tile arrival via data polling, not via this tail.
+                c_pipeline.producer_tail()
             else:
                 # Synchronize before TMEM dealloc
-                if cutlass.const_expr(self.reduce_scatter != "LDMC"):
+                if cutlass.const_expr(self.all_reduce != "Lamport"):
                     tmem_dealloc_barrier.arrive_and_wait()
 
             #
@@ -1247,154 +1827,67 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
             tmem.free(tmem_ptr)
 
         # ///////////////////////////////////////////////////////////////////////////////
-        #  ReduceScatter warps
+        #  AllReduce warps
         # ///////////////////////////////////////////////////////////////////////////////
-        if cutlass.const_expr(self.reduce_scatter == "LDMC"):
+        if cutlass.const_expr(self.all_reduce == "Lamport"):
             if warp_idx >= self.comm_warp_id[0]:
-                # (bM, bN, RestM, RestN, RestL) with multicast memory as comm input
-                gCommInMC_mnl = cute.local_tile(
-                    mCommInMC_mnl,
-                    cute.slice_(self.mma_tiler, (None, None, 0)),
-                    (None, None, None),
+                # Per peer: (bM, bN, RestM, RestN, RestL) with that peer's local
+                # UC view (direct P2P address). Same tile bounds as the MC view —
+                # only the base pointer differs across the tuple. Used by Lamport
+                # to issue per-peer ld.weak.global.v4.u32 loads.
+                gCommInUC_mnl_per_peer = tuple(
+                    cute.local_tile(
+                        t,
+                        cute.slice_(self.mma_tiler, (None, None, 0)),
+                        (None, None, None),
+                    )
+                    for t in mCommInUC_mnl_per_peer
                 )
-                # (bM, bN, RestM, RestN, RestL) with local memory as comm output
+                # (bM, bN, RestM, RestN, RestL) with local UC memory as comm output
                 gCommOutUC_mnl = cute.local_tile(
                     mCommOutUC_mnl,
                     cute.slice_(self.mma_tiler, (None, None, 0)),
                     (None, None, None),
                 )
-                # (MMA, MMA_M, MMA_N, RestM, RestN, RestL) with multicast memory
-                tCgCommInMC = thr_mma.partition_C(gCommInMC_mnl)
-                # (MMA, MMA_M, MMA_N, RestM, RestN, RestL) with peer memory
+                # Per-peer thread-MMA partitioning of the input UC views.
+                tCgCommInUC_per_peer = tuple(
+                    thr_mma.partition_C(g) for g in gCommInUC_mnl_per_peer
+                )
+                # (MMA, MMA_M, MMA_N, RestM, RestN, RestL) with local UC memory
                 tCgCommOutUC = thr_mma.partition_C(gCommOutUC_mnl)
 
-                m_cta_tiles_in_total = gCommInMC_mnl.shape[2] * cute.size(
-                    tiled_mma.thr_id.shape
-                )
-                n_cta_tiles_in_total = gCommInMC_mnl.shape[3]
-
                 #
-                # Persistent tile scheduling loop for reduce scatter
+                # Persistent tile scheduling loop for all reduce
                 #
-                comm_sync_barrier = pipeline.NamedBarrier(
-                    barrier_id=self.comm_sync_bar_id,
-                    num_threads=32 * len(self.comm_warp_id),
-                )
 
-                m_cta_tiles_per_rank = m_cta_tiles_in_total // self.num_ranks
-
-                # ReduceScatter communication pattern (w/ rank4 as example):
+                # AllReduce communication pattern (w/ rank4 as example):
                 #
-                # [rank0 A] [rank1 A] [rank2 A] [rank3 A] -> RS -> [rank0+1+2+3 A]
-                # [rank0 B] [rank1 B] [rank2 B] [rank3 B] -> RS ->                 [rank0+1+2+3 B]
-                # [rank0 C] [rank1 C] [rank2 C] [rank3 C] -> RS ->                                 [rank0+1+2+3 C]
-                # [rank0 D] [rank1 D] [rank2 D] [rank3 D] -> RS ->                                                 [rank0+1+2+3 D]
+                # [rank0 A] [rank1 A] [rank2 A] [rank3 A] -> RS -> [rank0+1+2+3 A] [rank0+1+2+3 A] [rank0+1+2+3 A] [rank0+1+2+3 A]
+                # [rank0 B] [rank1 B] [rank2 B] [rank3 B] -> RS -> [rank0+1+2+3 B] [rank0+1+2+3 B] [rank0+1+2+3 B] [rank0+1+2+3 B]
+                # [rank0 C] [rank1 C] [rank2 C] [rank3 C] -> RS -> [rank0+1+2+3 C] [rank0+1+2+3 C] [rank0+1+2+3 C] [rank0+1+2+3 C]
+                # [rank0 D] [rank1 D] [rank2 D] [rank3 D] -> RS -> [rank0+1+2+3 D] [rank0+1+2+3 D] [rank0+1+2+3 D] [rank0+1+2+3 D]
                 # rank0     rank1     rank2     rank3     -> RS -> rank0           rank1            rank2          rank3
                 #
-                # Each rank's RS output is 1/P (where is number of rank) of RS input (RS input = GEMM output)
-                # Each rank's RS warp only issue load multiple CTA instruction on its corresponding RS output part
+                # Each rank's AR warp only handle 1/P of overall output tiles, and relies on other rank to broadcast data to it
+                #   rank0: compute each tile's [0:1/4] and broadcast it to all rank
+                #   rank1: compute each tile's [1/4:2:4] and broadcast it to all rank
 
                 while work_tile.is_valid_tile:
                     cur_tile_coord = work_tile.tile_idx
-
-                    # Flag index uses the m-chunk-remap so this rank's CTAs
-                    # walk through their owned slice of input tiles. Matches
-                    # the input_tile_coord computation inside LDMC.
-                    input_tile_m = (
-                        cur_tile_coord[0] % m_cta_tiles_per_rank
-                        + self.rank_id * m_cta_tiles_per_rank
-                    )
-                    flag_offset = (
-                        input_tile_m + cur_tile_coord[1] * m_cta_tiles_in_total
-                    )
-
-                    # (1) Per-tile producer-arrival wait.
-                    if warp_idx == self.comm_warp_id[0]:
-                        with cute.arch.elect_one():
-                            utils.distributed.spin_lock_ld_lt_relaxed_wait(
-                                lock_ptr=barrier_flag_unicast.iterator + flag_offset,
-                                expected_val=self.num_ranks,
-                                scope="gpu",
-                            )
-
-                    comm_sync_barrier.arrive_and_wait()
-
-                    # (2) Per-tile data movement.
-                    LDMC(
+                    Lamport(
                         self,
                         cur_tile_coord=cur_tile_coord,
                         tiled_mma=tiled_mma,
                         comm_tidx=tidx,
-                        tCgCommInMC=tCgCommInMC,
+                        tCgCommInUC_per_peer=tCgCommInUC_per_peer,
                         tCgCommOutUC=tCgCommOutUC,
-                        m_cta_tiles_per_rank=m_cta_tiles_per_rank,
                     )
-
-                    # (3) Per-tile consumer-arrival counting. P CTAs from this
-                    # rank cooperatively process the tile; each does +1 and the
-                    # last (result == 2N-1) resets the slot to 0.
-                    if warp_idx == self.comm_warp_id[0]:
-                        with cute.arch.elect_one():
-                            flag_curr_tile_ptr = (
-                                barrier_flag_unicast.iterator + flag_offset
-                            )
-                            result = cute.arch.atomic_add(
-                                ptr=flag_curr_tile_ptr.llvm_ptr,
-                                val=cutlass.Int32(1),
-                                sem="relaxed",
-                                scope="gpu",
-                            )
-                            if result == self.num_ranks * 2 - 1:
-                                cute.arch.store(
-                                    flag_curr_tile_ptr.llvm_ptr,
-                                    cutlass.Int32(0),
-                                    sem="relaxed",
-                                    scope="gpu",
-                                )
 
                     #
                     # Advance to next tile
                     #
                     tile_sched.advance_to_next_work()
                     work_tile = tile_sched.get_current_work()
-
-                # Ensure all threads in reduce scatter warp group have complete issuing reduce scatter operations.
-                comm_sync_barrier.arrive_and_wait()
-
-                #
-                # Set Per SM Flag with Release
-                #
-                # This ensure
-                # 1. no rank early exit while other ranks are still issuing multimem.ld_reduce
-                if warp_idx == self.comm_warp_id[0]:
-                    with cute.arch.elect_one():
-                        # Offset to last tile flag idx
-                        total_num_cta_tile = m_cta_tiles_in_total * n_cta_tiles_in_total
-                        # Linear id of current SM.
-                        sm_id_linear = (
-                            cute.arch.block_idx()[0]
-                            + cute.arch.block_idx()[1] * cute.arch.grid_dim()[0]
-                            + cute.arch.block_idx()[2]
-                            * cute.arch.grid_dim()[0]
-                            * cute.arch.grid_dim()[1]
-                        )
-                        # Release flag with gpu scope
-                        utils.distributed.multimem_red_add1(
-                            lock_ptr=barrier_flag_multicast.iterator
-                            + total_num_cta_tile
-                            + sm_id_linear,
-                            scope="gpu",
-                            order="release",
-                        )
-                        # Acquire spin-lock wait flag with gpu scope
-                        utils.distributed.spin_lock_atom_cas_acquire_wait(
-                            lock_ptr=barrier_flag_unicast.iterator
-                            + total_num_cta_tile
-                            + sm_id_linear,
-                            expected_val=self.num_ranks,
-                            reset_val=0,
-                            scope="gpu",
-                        )
 
     @staticmethod
     def _compute_stages(
@@ -1561,7 +2054,7 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
                 f"[dtype] Unsupported C dtype {c_dtype} for accumulator {self.acc_dtype}"
             )
 
-        # check if c_dtype is supported by multimem reduce-scatter
+        # check if c_dtype is supported by multimem all-reduce
         if cutlass.const_expr(
             c_dtype
             not in {
@@ -1573,7 +2066,7 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
             }
         ):
             raise testing.CantImplementError(
-                f"[dtype] Unsupported C dtype {c_dtype} for multimem reduce-scatter"
+                f"[dtype] Unsupported C dtype {c_dtype} for multimem all-reduce"
             )
 
         return True
@@ -1670,7 +2163,7 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
                     f"[epilogue] Problem shape (M={m}, N={n}) must be divisible by cta tile shape {cta_tile_shape_mn} for non TMA store"
                 )
             # CTA swizzling improves the L2 cache utilization and reduces the number of cache misses.
-            # Make sure the swizzle size divides the cta/cluster count since non TMA epilogue don't support OOB tiles.
+            # Make sure the swizzle size divides the cta/cga count since non TMA epilogue don't support OOB tiles.
             # Swizzle only applies to the dimension orthogonal to the raster direction.
             m_per_swizzle = (m // cta_tile_shape_mn[0]) // self.cluster_shape_mn[0]
             n_per_swizzle = (n // cta_tile_shape_mn[1]) // self.cluster_shape_mn[1]
@@ -1689,83 +2182,16 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         return True
 
     def check_valid_rank_config(self) -> bool:
-        if self.num_ranks not in [2, 4, 8] and self.reduce_scatter != "none":
+        if self.num_ranks not in [2, 4, 8] and self.all_reduce != "none":
             raise testing.CantImplementError(
-                f"[rank_config] Invalid rank config: num_ranks={self.num_ranks}, must be 2, 4, or 8 for reduce-scatter"
+                f"[rank_config] Invalid rank config: num_ranks={self.num_ranks}, must be 2, 4, or 8 for all-reduce"
             )
         return True
 
-    def check_valid_reduce_scatter_mode(self) -> bool:
-        if self.reduce_scatter not in ["LDMC", "none"]:
+    def check_valid_all_reduce_mode(self) -> bool:
+        if self.all_reduce not in ["Lamport", "none"]:
             raise testing.CantImplementError(
-                f"[reduce_scatter_mode] Invalid reduce-scatter mode: {self.reduce_scatter}, expected 'LDMC' or 'none'"
-            )
-        return True
-
-    def check_reduce_scatter_tile_divisibility(self, m: int) -> bool:
-        """
-        Check if the number of M CTA tiles is evenly divisible by the number of ranks
-        and that each rank has enough tiles to support the MMA tile coordination logic.
-
-        For reduce-scatter with LDMC mode, the M dimension tiles are distributed across
-        ranks. Each rank must receive an equal number of tiles, and there must be at
-        least one tile per rank.
-
-        Additionally, for 2CTA mode, each rank must have at least 2 CTA tiles (one per CTA
-        in the cluster) because the MMA tile coordinate calculation divides by the number
-        of CTAs per MMA tile (cute.size(tiled_mma.thr_id.shape)).
-
-        The constraints are:
-        1. (M / cta_tile_m) % num_ranks == 0
-        2. (M / cta_tile_m) >= num_ranks
-        3. (M / cta_tile_m) / num_ranks >= num_ctas_per_mma_tile (2 for 2CTA, 1 otherwise)
-
-        where cta_tile_m = mma_tiler_mn[0] / (2 if use_2cta_instrs else 1)
-
-        :param m: The M dimension of the problem
-        :type m: int
-        :return: True if valid, raises CantImplementError otherwise
-        :rtype: bool
-        """
-        if self.reduce_scatter == "none":
-            return True
-
-        # Calculate CTA tile size in M dimension
-        # For 2CTA mode, mma_tiler covers 2 CTAs, so cta_tile_m = mma_tiler_mn[0] / 2
-        num_ctas_per_mma_tile = 2 if self.use_2cta_instrs else 1
-        cta_tile_m = self.mma_tiler_mn[0] // num_ctas_per_mma_tile
-
-        # Number of CTA tiles in M dimension
-        num_m_cta_tiles = m // cta_tile_m
-
-        # Check divisibility and minimum tile requirement
-        if num_m_cta_tiles % self.num_ranks != 0:
-            raise testing.CantImplementError(
-                f"[rs_tile_divisibility] Number of M CTA tiles ({num_m_cta_tiles}) must be "
-                f"evenly divisible by num_ranks ({self.num_ranks}) for reduce-scatter. "
-                f"Got M={m}, cta_tile_m={cta_tile_m}. "
-                f"Consider using M >= {cta_tile_m * self.num_ranks} (multiple of {cta_tile_m * self.num_ranks})"
-            )
-
-        if num_m_cta_tiles < self.num_ranks:
-            raise testing.CantImplementError(
-                f"[rs_tile_divisibility] Number of M CTA tiles ({num_m_cta_tiles}) must be "
-                f">= num_ranks ({self.num_ranks}) for reduce-scatter. "
-                f"Got M={m}, cta_tile_m={cta_tile_m}. "
-                f"Minimum M required: {cta_tile_m * self.num_ranks}"
-            )
-
-        # For 2CTA mode, each rank needs at least num_ctas_per_mma_tile CTA tiles
-        # because the MMA tile coordinate calculation divides m_cta_tiles_per_rank
-        # by num_ctas_per_mma_tile (cute.size(tiled_mma.thr_id.shape))
-        m_cta_tiles_per_rank = num_m_cta_tiles // self.num_ranks
-        if m_cta_tiles_per_rank < num_ctas_per_mma_tile:
-            min_m_required = cta_tile_m * self.num_ranks * num_ctas_per_mma_tile
-            raise testing.CantImplementError(
-                f"[rs_tile_divisibility] For {'2CTA' if self.use_2cta_instrs else '1CTA'} mode, "
-                f"m_cta_tiles_per_rank ({m_cta_tiles_per_rank}) must be >= {num_ctas_per_mma_tile}. "
-                f"Got M={m}, cta_tile_m={cta_tile_m}, num_ranks={self.num_ranks}. "
-                f"Minimum M required: {min_m_required}"
+                f"[all_reduce_mode] Invalid all-reduce mode: {self.all_reduce}, expected 'Lamport' or 'none'"
             )
         return True
 
@@ -1788,8 +2214,8 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         return True
 
     def check_even_divisible_by_swizzle(self, m: int, n: int) -> bool:
-        # Only check for LDMC mode which uses multimem operations
-        if self.reduce_scatter != "LDMC":
+        # Only check for Lamport mode which uses multimem operations
+        if self.all_reduce != "Lamport":
             return True
 
         cta_tile_m = self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1)
@@ -1804,14 +2230,14 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
             if num_clusters_n % self.swizzle_size != 0:
                 raise testing.CantImplementError(
                     f"[problem_size_divisible_swizzle_size] Number of clusters in N dimension ({num_clusters_n}) "
-                    f"must be divisible by swizzle_size={self.swizzle_size} for LDMC with raster_order_m"
+                    f"must be divisible by swizzle_size={self.swizzle_size} for Lamport with raster_order_m"
                 )
         else:
             # Swizzle applies to M dimension only
             if num_clusters_m % self.swizzle_size != 0:
                 raise testing.CantImplementError(
                     f"[problem_size_divisible_swizzle_size] Number of clusters in M dimension ({num_clusters_m}) "
-                    f"must be divisible by swizzle_size={self.swizzle_size} for LDMC with raster_order_n"
+                    f"must be divisible by swizzle_size={self.swizzle_size} for Lamport with raster_order_n"
                 )
 
         return True
@@ -1835,14 +2261,11 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         m, n, k, l = mnkl
 
         # Skip if GEMM not even divisiable by tilesize
-        # Right now, RS Fusion **ONLY** support even divisiable by tilesize
+        # Right now, AR Fusion **ONLY** support even divisiable by tilesize
         self.check_even_divisiable_by_cluster_tilesize(m, n, k, l)
 
-        # Skip if swizzle doesn't evenly divide the problem (for LDMC communication)
+        # Skip if swizzle doesn't evenly divide the problem (for Lamport communication)
         self.check_even_divisible_by_swizzle(m, n)
-
-        # Skip if M tiles not evenly divisible by num_ranks for reduce-scatter
-        self.check_reduce_scatter_tile_divisibility(m)
 
         # Skip illegal problem shape for load/store alignment
         self.check_tensor_alignment(
@@ -1852,11 +2275,11 @@ class Sm100PersistentDenseGemmReduceScatterLDMCKernel:
         # Skip invalid epilogue store option
         self.check_epilogue_store_option(m, n)
 
-        # Skip invalid reduce-scatter rank config
+        # Skip invalid all-reduce rank config
         self.check_valid_rank_config()
 
-        # Skip invalid reduce-scatter mode
-        self.check_valid_reduce_scatter_mode()
+        # Skip invalid all-reduce mode
+        self.check_valid_all_reduce_mode()
 
         return True
 
@@ -1923,7 +2346,7 @@ def init_distributed():
 
         # LOCAL_RANK = which of this host's GPUs we bind to.
         # RANK       = global identity across all hosts; used for NCCL init
-        #              and for kernel rank_id (slab ownership in the RS).
+        #              and for kernel rank_id (slab ownership in the AR).
         local_rank = int(os.environ["LOCAL_RANK"])
         global_rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
@@ -1981,13 +2404,70 @@ def allocate_tensors(
     a_major: Literal["k", "m"],
     b_major: Literal["k", "n"],
     c_major: Literal["n", "m"],
-    world_size: int,
     num_workspace: int,
+    world_size: int,
+    global_rank: int,
     device: int,
-    slot_init_mode: Literal["test", "benchmark"],
-    global_rank: int = 0,
+    slot_init_mode: Literal["test", "benchmark"] = "test",
 ):
-    def _create_multicast_tensor(*, torch_tensor_ref, dtype, leading_dim):
+    """Allocate every tensor the Lamport kernel touches.
+
+    Lamport requires a 3-slot grouped C buffer (ping / pong / cooling).
+    Each outer slot holds
+    ``world_size`` symmetric-memory allocations (one peer-owned slab apiece),
+    and each allocation exposes a unicast (UC) view, a multicast (MC) view,
+    and a tuple of per-peer direct-P2P UC views built from
+    ``buffer_ptrs[r]`` of the symm_mem rendezvous handle.
+
+    Slot initialization depends on ``slot_init_mode``:
+
+    - ``"test"``: slot[0] is pre-seeded with the per-element Lamport ``-0.0``
+      sentinel; slots [1] and [2] are seeded with random non-sentinel data so
+      the in-kernel clear of slot[1] (back to ``-0.0``) is observable as a
+      bit-pattern change in the post-run verification. The correctness path
+      uses ping=0, pong=1.
+    - ``"benchmark"``: every outer slot is pre-seeded with the ``-0.0``
+      sentinel because the benchmark rotates through all three slots in the
+      ping role, so every slot must look "not-yet-arrived" the first time
+      it is read.
+
+    A and B are allocated as ``num_workspace`` per-device copies (L2-cold
+    ring buffer), all bit-exact equal. ``comm_out`` is a plain per-device
+    tensor — Lamport only writes it locally via ``st.weak.global``; no peer
+    reads, no multicast.
+
+    Returns a dict keyed for ``run_distributed_test`` / ``compile_and_benchmark``.
+    The ``_anchors`` tuple holds every torch handle that keeps the underlying
+    GPU allocations alive for the lifetime of the caller.
+    """
+    NUM_C_BUFFERS = 3
+
+    if c_dtype in (cutlass.Float8E4M3FN, cutlass.Float8E5M2):
+        # Lamport's -0.0 sentinel epilogue is implemented for f32/f16/bf16
+        # only (see the file header). Reject f8 here so the failure surfaces
+        # before any GPU allocation.
+        raise testing.CantImplementError(
+            f"Lamport currently does not support c_dtype={c_dtype}: the "
+            "epilogue -0.0 → +0.0 scrub is implemented for Float32 / Float16 / "
+            "BFloat16 only."
+        )
+
+    def _create_multicast_tensor(
+        *,
+        torch_tensor_ref: torch.Tensor,
+        dtype: Type[cutlass.Numeric],
+        leading_dim: int,
+    ):
+        # PyTorch symmetric-memory allocation + multicast view, mirroring the
+        # pattern used in distributed_gemm_blockscaled_all_reduce_ldmcxstmc_blackwell.py.
+        #
+        # After the collective ``symm_mem.rendezvous(t, group=...)`` the
+        # returned handle exposes:
+        #   - ``multicast_ptr``: VA of the multicast view onto the same
+        #     symmetric allocation. Writes/reads through it hit every rank's
+        #     copy via multimem.*.
+        #   - ``buffer_ptrs[r]``: per-peer VAs onto peer r's slab. Lamport
+        #     issues plain ld.weak.global vector loads through these.
         is_col_major = leading_dim == 0
         shape = torch_tensor_ref.shape
         ref_dtype = torch_tensor_ref.dtype
@@ -2007,6 +2487,28 @@ def allocate_tensors(
 
         torch_tensor_hdl = symm_mem.rendezvous(torch_symm_base, group=dist.group.WORLD)
 
+        if is_col_major:
+            torch_tensor_mc = cutlass_torch.as_tensor(
+                torch_tensor_hdl.multicast_ptr, reversed_shape, ref_dtype
+            ).permute(perm)
+        else:
+            torch_tensor_mc = cutlass_torch.as_tensor(
+                torch_tensor_hdl.multicast_ptr, shape, ref_dtype
+            )
+
+        def _make_peer_torch(r: int) -> torch.Tensor:
+            if is_col_major:
+                return cutlass_torch.as_tensor(
+                    torch_tensor_hdl.buffer_ptrs[r], reversed_shape, ref_dtype
+                ).permute(perm)
+            return cutlass_torch.as_tensor(
+                torch_tensor_hdl.buffer_ptrs[r], shape, ref_dtype
+            )
+
+        torch_tensors_uc_per_peer = tuple(
+            _make_peer_torch(r) for r in range(world_size)
+        )
+
         cute_tensor_uc = from_dlpack(torch_tensor_uc, assumed_align=16)
         cute_tensor_uc.element_type = dtype
         cute_tensor_uc = cute_tensor_uc.mark_layout_dynamic(leading_dim=leading_dim)
@@ -2017,26 +2519,42 @@ def allocate_tensors(
             is_dynamic_layout=True,
         )
 
-        if is_col_major:
-            mc_torch = cutlass_torch.as_tensor(
-                torch_tensor_hdl.multicast_ptr, reversed_shape, ref_dtype
-            ).permute(perm)
-        else:
-            mc_torch = cutlass_torch.as_tensor(
-                torch_tensor_hdl.multicast_ptr, shape, ref_dtype
-            )
-        cute_tensor_mc = from_dlpack(mc_torch, assumed_align=16)
+        cute_tensor_mc = from_dlpack(torch_tensor_mc, assumed_align=16)
         cute_tensor_mc.element_type = dtype
         cute_tensor_mc = cute_tensor_mc.mark_layout_dynamic(leading_dim=leading_dim)
 
-        return cute_tensor_uc, cute_tensor_mc, torch_tensor_uc
+        def _wrap_peer_cute(peer_torch: torch.Tensor):
+            peer_cute = from_dlpack(peer_torch, assumed_align=16)
+            peer_cute.element_type = dtype
+            peer_cute = peer_cute.mark_layout_dynamic(leading_dim=leading_dim)
+            return cutlass_torch.convert_cute_tensor(
+                peer_torch, peer_cute, dtype, is_dynamic_layout=True
+            )
 
+        cute_tensors_uc_per_peer = tuple(
+            _wrap_peer_cute(peer_torch) for peer_torch in torch_tensors_uc_per_peer
+        )
+
+        return (
+            cute_tensor_uc,
+            cute_tensor_mc,
+            cute_tensors_uc_per_peer,
+            torch_tensor_uc,
+            torch_tensor_mc,
+            torch_tensors_uc_per_peer,
+        )
+
+    # Per-rank seed: distinct A/B per rank so AR sees real cross-rank diversity
+    # (matches the original run_distributed init). fp8 is rejected above, so
+    # the fp8-specific same-seed branch is no longer needed.
     torch.manual_seed(42 + global_rank)
 
     m, n, k, l = mnkl
 
+    # CPU random Int32 in [-1, 1] then cast — Lamport uses this narrower
+    # range than ldmcxstmc ([-2, 2]) because the all-reduce sum across N
+    # ranks must not overflow the f16 / bf16 dynamic range.
     _init_lo, _init_hi = (-1, 1) if slot_init_mode == "test" else (-20, 20)
-
     torch_tensor_a_int_cpu = cutlass_torch.matrix(
         l,
         m,
@@ -2064,10 +2582,9 @@ def allocate_tensors(
         init_type=cutlass_torch.TensorInitType.RANDOM,
         init_config=cutlass_torch.RandomInitConfig(min_val=_init_lo, max_val=_init_hi),
     )
-    # comm_out is sharded along M: each rank holds m/world_size rows.
     torch_tensor_comm_out_c_int_cpu = cutlass_torch.matrix(
         l,
-        m // world_size,
+        m,
         n,
         c_major == "m",
         cutlass.Int32,
@@ -2082,6 +2599,15 @@ def allocate_tensors(
         dtype=torch_dtype(c_dtype)
     )
 
+    # The Lamport sentinel-vs-random init pattern depends on slot_init_mode.
+    # In test mode, slot[0] enters as the -0.0 sentinel and slots [1, 2] hold
+    # random data so the in-kernel clear of slot[1] is observable in
+    # _compare_buffer_clear. In benchmark mode every slot enters as the
+    # sentinel because the rotation cycles all three through the ping role.
+    torch_tensor_c_random_cpu = torch_tensor_c_cpu.clone()
+    torch_tensor_c_cpu.fill_(-0.0)
+
+    # A, B GPU: num_workspace copies (L2-cold ring buffer), bit-exact equal.
     cute_tensor_a_list = []
     cute_tensor_b_list = []
     torch_tensor_a_gpu_list = []
@@ -2101,95 +2627,85 @@ def allocate_tensors(
     assert not torch.isnan(torch_tensor_a_gpu_list[0]).any()
     assert not torch.isnan(torch_tensor_b_gpu_list[0]).any()
 
-    (
-        cute_tensor_c,
-        cute_tensor_comm_in_mc,
-        torch_tensor_c_gpu,
-    ) = _create_multicast_tensor(
-        torch_tensor_ref=torch_tensor_c_cpu,
-        dtype=c_dtype,
-        leading_dim=(1 if c_major == "n" else 0),
-    )
+    # Grouped C: NUM_C_BUFFERS outer × world_size inner symmetric allocations.
+    # Each rank "owns" allocation index `global_rank` for scatter — its TMA
+    # multicast store goes through the MC view of slot[s][global_rank], which
+    # NVSwitch fans out to slot[s][global_rank] on every peer. Every rank then
+    # reads slot[s][r] (its own UC view of allocation r) to find peer r's
+    # contribution.
+    leading_dim_c = 1 if c_major == "n" else 0
+    cute_uc_grouped: List[Tuple[cute.Tensor, ...]] = []
+    cute_mc_grouped: List[Tuple[cute.Tensor, ...]] = []
+    torch_uc_grouped: List[Tuple[torch.Tensor, ...]] = []
+    torch_mc_grouped: List[Tuple[torch.Tensor, ...]] = []
+    for buf_idx in range(NUM_C_BUFFERS):
+        cute_uc_list: List[cute.Tensor] = []
+        cute_mc_list: List[cute.Tensor] = []
+        torch_uc_list: List[torch.Tensor] = []
+        torch_mc_list: List[torch.Tensor] = []
+        if slot_init_mode == "test":
+            # Test scaffold: slot[0] enters as the Lamport -0.0 sentinel
+            # (live ping this iteration); slots [1, 2] init with random
+            # non-sentinel data so the kernel-side clear of slot[1] is
+            # observable as a bit-pattern change in the post-run verify.
+            init_ref = torch_tensor_c_cpu if buf_idx == 0 else torch_tensor_c_random_cpu
+        else:
+            # Benchmark: every slot enters as -0.0 because the rotation
+            # cycles all three through the ping role.
+            init_ref = torch_tensor_c_cpu
+        for _ in range(world_size):
+            (
+                _c_uc,
+                _c_mc,
+                _c_uc_per_peer,
+                _t_uc,
+                _t_mc,
+                _t_uc_per_peer,
+            ) = _create_multicast_tensor(
+                torch_tensor_ref=init_ref,
+                dtype=c_dtype,
+                leading_dim=leading_dim_c,
+            )
+            cute_uc_list.append(_c_uc)
+            cute_mc_list.append(_c_mc)
+            torch_uc_list.append(_t_uc)
+            torch_mc_list.append(_t_mc)
+        cute_uc_grouped.append(tuple(cute_uc_list))
+        cute_mc_grouped.append(tuple(cute_mc_list))
+        torch_uc_grouped.append(tuple(torch_uc_list))
+        torch_mc_grouped.append(tuple(torch_mc_list))
 
-    # comm_out is per-rank only — LDMC reduce-scatter writes through unicast.
-    # Allocated as a regular cuda tensor (no symm_mem / multicast required).
+    cute_tensors_c_uc_per_peer_grouped = tuple(cute_uc_grouped)
+    cute_tensors_c_mc_per_peer_grouped = tuple(cute_mc_grouped)
+    torch_tensors_c_uc_per_peer_grouped = tuple(torch_uc_grouped)
+    torch_tensors_c_mc_per_peer_grouped = tuple(torch_mc_grouped)
+
+    # comm_out: plain per-device CUDA tensor (Lamport only writes it locally
+    # via st.weak.global — no multicast, no peer reads).
     cute_tensor_comm_out_uc, torch_tensor_comm_out_gpu = cutlass_torch.cute_tensor_like(
-        torch_tensor_comm_out_c_cpu, c_dtype, is_dynamic_layout=True, assumed_align=16
+        torch_tensor_comm_out_c_cpu,
+        c_dtype,
+        is_dynamic_layout=True,
+        assumed_align=16,
     )
-
-    # Flag tensor sized for the worst-case kernel config: smallest cta_tile is
-    # 64x64, so max #tiles = (m/64) * (n/64). Pad by 160 for per-SM slots
-    # (B200 has 148; 160 is a safe upper bound). The kernel resets these flags
-    # internally on each launch, so a single allocation can be reused across
-    # (mma_tiler, use_2cta) candidates in a benchmark sweep.
-    num_flags = (m // 64) * (n // 64) + 160
-
-    torch_tensor_flag_unicast = symm_mem.empty(
-        (num_flags,), dtype=torch.int32, device=device
-    )
-    torch_tensor_flag_unicast.fill_(0)
-    torch_flag_hdl = symm_mem.rendezvous(
-        torch_tensor_flag_unicast, group=dist.group.WORLD
-    )
-    torch_tensor_flag_multicast = cutlass_torch.as_tensor(
-        torch_flag_hdl.multicast_ptr,
-        torch_tensor_flag_unicast.shape,
-        torch_tensor_flag_unicast.dtype,
-    )
-    cute_tensor_flag_unicast = from_dlpack(torch_tensor_flag_unicast, assumed_align=16)
-    cute_tensor_flag_unicast.element_type = cutlass.Int32
-    cute_tensor_flag_unicast = cute_tensor_flag_unicast.mark_layout_dynamic()
-    cute_tensor_flag_multicast = from_dlpack(
-        torch_tensor_flag_multicast, assumed_align=16
-    )
-    cute_tensor_flag_multicast.element_type = cutlass.Int32
-    cute_tensor_flag_multicast = cute_tensor_flag_multicast.mark_layout_dynamic()
-
-    # Per-peer UC views of the flag tensor. Each rank r's local buffer is
-    # exposed via flag_hdl.buffer_ptrs[r]; from any rank these are direct
-    # NVLink P2P device pointers. Used by the producer epilogue to unicast
-    # +1 to the owning rank's flag slot only (Option C — see
-    # reducescatter_flag_fix.md).
-    peer_flag_torch_anchors = []
-    cute_tensor_flag_uc_per_peer_list = []
-    for r in range(world_size):
-        peer_ptr = torch_flag_hdl.buffer_ptrs[r]
-        peer_flag_torch = cutlass_torch.as_tensor(
-            peer_ptr,
-            torch_tensor_flag_unicast.shape,
-            torch_tensor_flag_unicast.dtype,
-        )
-        peer_flag_cute = from_dlpack(peer_flag_torch, assumed_align=16)
-        peer_flag_cute.element_type = cutlass.Int32
-        peer_flag_cute = peer_flag_cute.mark_layout_dynamic()
-        peer_flag_torch_anchors.append(peer_flag_torch)
-        cute_tensor_flag_uc_per_peer_list.append(peer_flag_cute)
-    cute_tensor_flag_unicast_per_peer = tuple(cute_tensor_flag_uc_per_peer_list)
 
     return {
         "cute_tensor_a_list": cute_tensor_a_list,
         "cute_tensor_b_list": cute_tensor_b_list,
-        "cute_tensor_c": cute_tensor_c,
-        "cute_tensor_comm_in_mc": cute_tensor_comm_in_mc,
+        "cute_tensors_c_uc_per_peer_grouped": cute_tensors_c_uc_per_peer_grouped,
+        "cute_tensors_c_mc_per_peer_grouped": cute_tensors_c_mc_per_peer_grouped,
         "cute_tensor_comm_out_uc": cute_tensor_comm_out_uc,
-        "cute_tensor_flag_unicast": cute_tensor_flag_unicast,
-        "cute_tensor_flag_multicast": cute_tensor_flag_multicast,
-        "cute_tensor_flag_unicast_per_peer": cute_tensor_flag_unicast_per_peer,
         "torch_tensor_a_cpu": torch_tensor_a_cpu,
         "torch_tensor_b_cpu": torch_tensor_b_cpu,
         "torch_tensor_c_cpu": torch_tensor_c_cpu,
-        "torch_tensor_c_gpu": torch_tensor_c_gpu,
+        "torch_tensors_c_uc_per_peer_grouped": torch_tensors_c_uc_per_peer_grouped,
         "torch_tensor_comm_out_gpu": torch_tensor_comm_out_gpu,
-        "torch_tensor_flag_unicast": torch_tensor_flag_unicast,
         "_anchors": (
             torch_tensor_a_gpu_list,
             torch_tensor_b_gpu_list,
-            torch_tensor_c_gpu,
+            torch_tensors_c_uc_per_peer_grouped,
+            torch_tensors_c_mc_per_peer_grouped,
             torch_tensor_comm_out_gpu,
-            torch_tensor_flag_unicast,
-            torch_tensor_flag_multicast,
-            torch_flag_hdl,
-            tuple(peer_flag_torch_anchors),
         ),
     }
 
@@ -2210,16 +2726,23 @@ def run(
     use_tma_store: bool = True,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    reduce_scatter: str = "LDMC",
+    all_reduce: str = "Lamport",
     benchmark_or_test: str = "test",
     use_cuda_graph: bool = False,
     csv_report: str = "./csv_report.csv",
 ):
-    # * Init Distributed *
+    """Top-level Lamport entry point. Initializes distributed, dispatches to
+    the test or benchmark driver, and tears distributed down on exit.
+
+    ``benchmark_or_test`` selects the mode:
+      - ``"test"``: single-launch correctness check via run_distributed_test.
+      - ``"benchmark"``: cudaEvent timing + per-rank CSV on the supplied config.
+      - ``"benchmark_all"``: sweep across kernel-config variants, one row per
+        candidate in the per-rank CSV.
+    """
     global_rank, world_size, device = init_distributed()
 
-    # * Check based on RS mode *
-    if reduce_scatter == "LDMC":
+    if all_reduce == "Lamport":
         if not check_cuda_p2p_access():
             print("CUDA P2P access not available")
             exit(-1)
@@ -2230,9 +2753,8 @@ def run(
             print("Simple torch allreduce test failed")
             exit(-1)
 
-    # * Verbose *
     def _verbose():
-        print("Running Blackwell SM100 Persistent Dense GEMM RS test with:")
+        print("Running Blackwell SM100 Persistent Dense GEMM AR test with:")
         print(f"mnkl: {mnkl}")
         print(f"global_rank: {global_rank}, world_size: {world_size}, device: {device}")
         print(f"AB dtype: {ab_dtype}, C dtype: {c_dtype}, Acc dtype: {acc_dtype}")
@@ -2247,12 +2769,11 @@ def run(
         print(f"Iterations: {iterations}")
         print(f"Use CUDA Graph: {'True' if use_cuda_graph else 'False'}")
         print(f"Mode: {benchmark_or_test}")
-        print(f"Fused ReduceScatter Op: {reduce_scatter}")
+        print(f"Fused AllReduce Op: {all_reduce}")
 
     if global_rank == 0:
         _verbose()
 
-    # * Run Distributed *
     if benchmark_or_test in ("benchmark", "benchmark_all"):
         run_distributed_benchmark(
             global_rank=global_rank,
@@ -2273,7 +2794,7 @@ def run(
             use_tma_store=use_tma_store,
             warmup_iterations=warmup_iterations,
             iterations=iterations,
-            reduce_scatter=reduce_scatter,
+            all_reduce=all_reduce,
             use_cuda_graph=use_cuda_graph,
             benchmark_all=(benchmark_or_test == "benchmark_all"),
             csv_report=csv_report,
@@ -2296,7 +2817,7 @@ def run(
             raster_order=raster_order,
             use_2cta_instrs=use_2cta_instrs,
             use_tma_store=use_tma_store,
-            reduce_scatter=reduce_scatter,
+            all_reduce=all_reduce,
         )
 
     clean_distributed()
@@ -2319,15 +2840,15 @@ def run_distributed_test(
     raster_order: Literal["m", "n"] = "m",
     use_2cta_instrs: bool = True,
     use_tma_store: bool = True,
-    reduce_scatter: str = "LDMC",
+    all_reduce: str = "Lamport",
 ):
     # * CUDA *
     # Non-default stream as we'll use CUDA graphs
     torch_stream = torch.cuda.Stream()
     stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    # * Build GEMM ReduceScatter Object *
-    gemm_reduce_scatter = Sm100PersistentDenseGemmReduceScatterLDMCKernel(
+    # * Build GEMM AllReduce Object *
+    gemm_all_reduce = Sm100PersistentDenseGemmAllReduceLamportKernel(
         acc_dtype,
         c_dtype,
         use_2cta_instrs,
@@ -2336,7 +2857,7 @@ def run_distributed_test(
         use_tma_store,
         rank_id=global_rank,
         num_ranks=world_size,
-        reduce_scatter=reduce_scatter,
+        all_reduce=all_reduce,
         swizzle_size=swizzle_size,
         raster_order=raster_order,
     )
@@ -2349,21 +2870,21 @@ def run_distributed_test(
         param_str = f"ab{ab_dtype}_acc{acc_dtype}_c{c_dtype}_{a_major}{b_major}{c_major}_tile{mma_tiler_mn[0]}x{mma_tiler_mn[1]}_cluster{cluster_shape_mn[0]}x{cluster_shape_mn[1]}_{'2Sm' if use_2cta_instrs else '1Sm'}_{'EpiTma' if use_tma_store else 'EpiStg'}"
         param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
         unique_name = (
-            f"sm100_gemm_rs_{param_hash}_{reduce_scatter}_r{global_rank}_w{world_size}"
+            f"sm100_gemm_ar_{param_hash}_{all_reduce}_r{global_rank}_w{world_size}"
         )
     except Exception:
-        unique_name = f"sm100_gemm_rs_{reduce_scatter}_r{global_rank}_w{world_size}"
-    gemm_reduce_scatter.__call__.set_name_prefix(unique_name)
+        unique_name = f"sm100_gemm_ar_{all_reduce}_r{global_rank}_w{world_size}"
+    gemm_all_reduce.__call__.set_name_prefix(unique_name)
 
     # * can_implement *
-    can_implement = gemm_reduce_scatter.can_implement(
+    can_implement = gemm_all_reduce.can_implement(
         mnkl, ab_dtype, c_dtype, a_major, b_major, c_major
     )
     if not can_implement:
         raise testing.CantImplementError(
             f"[general] The current config is invalid/unsupported: use_2cta_instrs={use_2cta_instrs}, "
             f"mma_tiler_mn={mma_tiler_mn}, cluster_shape_mn={cluster_shape_mn}, "
-            f"use_tma_store={use_tma_store}, reduce_scatter={reduce_scatter}, world_size={world_size}, "
+            f"use_tma_store={use_tma_store}, all_reduce={all_reduce}, world_size={world_size}, "
             f"ab_dtype={ab_dtype}, c_dtype={c_dtype}, acc_dtype={acc_dtype}"
         )
 
@@ -2375,53 +2896,45 @@ def run_distributed_test(
         a_major=a_major,
         b_major=b_major,
         c_major=c_major,
-        world_size=world_size,
         num_workspace=1,
+        world_size=world_size,
+        global_rank=global_rank,
         device=device,
         slot_init_mode="test",
-        global_rank=global_rank,
     )
     cute_tensor_a = tensors["cute_tensor_a_list"][0]
     cute_tensor_b = tensors["cute_tensor_b_list"][0]
-    cute_tensor_c = tensors["cute_tensor_c"]
-    cute_tensor_comm_in_mc = tensors["cute_tensor_comm_in_mc"]
+    cute_tensors_c_uc_per_peer_grouped = tensors["cute_tensors_c_uc_per_peer_grouped"]
+    cute_tensors_c_mc_per_peer_grouped = tensors["cute_tensors_c_mc_per_peer_grouped"]
     cute_tensor_comm_out_uc = tensors["cute_tensor_comm_out_uc"]
-    cute_tensor_flag_unicast = tensors["cute_tensor_flag_unicast"]
-    cute_tensor_flag_multicast = tensors["cute_tensor_flag_multicast"]
-    cute_tensor_flag_unicast_per_peer = tensors["cute_tensor_flag_unicast_per_peer"]
     torch_tensor_a_cpu = tensors["torch_tensor_a_cpu"]
     torch_tensor_b_cpu = tensors["torch_tensor_b_cpu"]
-    torch_tensor_c = tensors["torch_tensor_c_gpu"]
+    torch_tensors_c_uc_per_peer_grouped = tensors["torch_tensors_c_uc_per_peer_grouped"]
     torch_tensor_comm_out = tensors["torch_tensor_comm_out_gpu"]
-    torch_tensor_flag_unicast = tensors["torch_tensor_flag_unicast"]
 
-    # * Compile *
+    # Test mode: ping=0, pong=1. Slot[0]/slot[1] indexing is inlined at the
+    # cute.compile / compiled_gemm call sites rather than hoisted into locals
+    # so the slot semantics stay visible at the kernel boundary.
     compiled_gemm = cute.compile(
-        gemm_reduce_scatter,
+        gemm_all_reduce,
         a=cute_tensor_a,
         b=cute_tensor_b,
-        c=cute_tensor_c,
-        comm_in_multicast_tensor=cute_tensor_comm_in_mc,
+        c_multicast_tensor=cute_tensors_c_mc_per_peer_grouped[0][global_rank],
+        comm_in_unicast_tensor_per_peer=cute_tensors_c_uc_per_peer_grouped[0],
+        comm_clear_unicast_tensor_per_peer=cute_tensors_c_uc_per_peer_grouped[1],
         comm_out_unicast_tensor=cute_tensor_comm_out_uc,
-        barrier_flag_unicast=cute_tensor_flag_unicast,
-        barrier_flag_multicast=cute_tensor_flag_multicast,
-        barrier_flag_unicast_per_peer=cute_tensor_flag_unicast_per_peer,
         stream=stream,
         max_active_clusters=utils.HardwareInfo().get_max_active_clusters(
             cluster_shape_mn[0] * cluster_shape_mn[1]
         ),
     )
-
-    # * Run *
     compiled_gemm(
         a=cute_tensor_a,
         b=cute_tensor_b,
-        c=cute_tensor_c,
-        comm_in_multicast_tensor=cute_tensor_comm_in_mc,
+        c_multicast_tensor=cute_tensors_c_mc_per_peer_grouped[0][global_rank],
+        comm_in_unicast_tensor_per_peer=cute_tensors_c_uc_per_peer_grouped[0],
+        comm_clear_unicast_tensor_per_peer=cute_tensors_c_uc_per_peer_grouped[1],
         comm_out_unicast_tensor=cute_tensor_comm_out_uc,
-        barrier_flag_unicast=cute_tensor_flag_unicast,
-        barrier_flag_multicast=cute_tensor_flag_multicast,
-        barrier_flag_unicast_per_peer=cute_tensor_flag_unicast_per_peer,
         stream=stream,
     )
 
@@ -2429,33 +2942,22 @@ def run_distributed_test(
     # FP8 nan to saturate
     def _fp8_nan_to_saturate(tensor_fp8: torch.Tensor) -> torch.Tensor:
         if tensor_fp8.dtype == torch.float8_e4m3fn:
-            # Map to u8 raw tensor for easier byte handle
             tensor_u8 = tensor_fp8.view(torch.uint8)
-            # pos & neg nan
             is_pos_nan = tensor_u8 == 0x7F
             is_neg_nan = tensor_u8 == 0xFF
-            # Map pos nan to max, neg nan to min
             tensor_f32 = tensor_fp8.to(dtype=torch.float32)
             tensor_f32[is_pos_nan] = 448
             tensor_f32[is_neg_nan] = -448
-            # Cast back to f8
-            tensor_f8_out = tensor_f32.to(dtype=tensor_fp8.dtype)
-        elif tensor_fp8.dtype == torch.float8_e5m2:
-            # Map to u8 raw tensor for easier byte handle
+            return tensor_f32.to(dtype=tensor_fp8.dtype)
+        if tensor_fp8.dtype == torch.float8_e5m2:
             tensor_u8 = tensor_fp8.view(torch.uint8)
-            # pos & neg nan
             is_pos_nan = tensor_u8 == 0x7F
             is_neg_nan = tensor_u8 == 0xFF
-            # Map pos nan to max, neg nan to min
             tensor_f32 = tensor_fp8.to(dtype=torch.float32)
             tensor_f32[is_pos_nan] = 57344
             tensor_f32[is_neg_nan] = -57344
-            # Cast back to f8
-            tensor_f8_out = tensor_f32.to(dtype=tensor_fp8.dtype)
-        else:
-            # Not supported dtype
-            tensor_f8_out = tensor_fp8
-        return tensor_f8_out
+            return tensor_f32.to(dtype=tensor_fp8.dtype)
+        return tensor_fp8
 
     def _compare_gemm(
         torch_tensor_a_cpu: torch.Tensor,
@@ -2465,36 +2967,23 @@ def run_distributed_test(
         atol: float,
         rtol: float,
     ):
-        # GEMM Ref
         gemm_ref_f32 = torch.einsum(
             "mkl,nkl->mnl",
             torch_tensor_a_cpu.to(dtype=torch.float32),
             torch_tensor_b_cpu.to(dtype=torch.float32),
         )
-
-        # For fp8_e4m3, clamp value to [-448, 448] to avoid nan and then cast to fp8_e4m3
         if c_dtype == cutlass.Float8E4M3FN:
             gemm_ref_f32 = torch.clamp(gemm_ref_f32, min=-448, max=448)
             gemm_ref_f32_c = gemm_ref_f32.to(dtype=torch_dtype(c_dtype))
-        # For fp8_e5m2, clamp value to [-57344, 57344] to avoid nan and then cast to fp8_e5m2
         elif c_dtype == cutlass.Float8E5M2:
             gemm_ref_f32 = torch.clamp(gemm_ref_f32, min=-57344, max=57344)
             gemm_ref_f32_c = gemm_ref_f32.to(dtype=torch_dtype(c_dtype))
         else:
             gemm_ref_f32_c = gemm_ref_f32.to(dtype=torch_dtype(c_dtype))
-
-        # Cast ref to fp32 for comparison
         gemm_ref_f32_c_f32 = gemm_ref_f32_c.to(dtype=torch.float32)
-
-        # Cast kernel output to fp32 for comparison
         gemm_out_f32 = torch_tensor_c.cpu().to(dtype=torch.float32)
-
-        # Compare
         torch.testing.assert_close(
-            gemm_out_f32,
-            gemm_ref_f32_c_f32,
-            atol=atol,
-            rtol=rtol,
+            gemm_out_f32, gemm_ref_f32_c_f32, atol=atol, rtol=rtol
         )
 
     def _compare_comm(
@@ -2505,96 +2994,97 @@ def run_distributed_test(
         rtol: float,
     ):
         comm_ref = torch_tensor_comm_in
-
-        # Sync across all rank
         dist.barrier()
-
-        # Reference reduce-scatter — perform an all-reduce on the full comm_in
-        # (C), then take this rank's slice. Matches what the LDMC fused kernel
-        # writes into comm_out for this rank.
         if c_dtype in [cutlass.Float32, cutlass.BFloat16, cutlass.Float16]:
             comm_ref = comm_ref.contiguous()
             dist.all_reduce(comm_ref, op=torch.distributed.ReduceOp.SUM)
             comm_ref_f32 = comm_ref.to(dtype=torch.float32).cpu()
-        # For fp8, cast to higher precision, do AR, then cast back to fp8 and handle nan
         elif c_dtype in [cutlass.Float8E4M3FN, cutlass.Float8E5M2]:
             comm_ref_fp32_acc = comm_ref.to(dtype=torch.float32).contiguous()
             dist.all_reduce(comm_ref_fp32_acc, op=torch.distributed.ReduceOp.SUM)
-            # Add small epsilon to mimic multimem.ld_reduce round up behavior where torch cast round down
             epsilon = 1e-2
-            comm_ref_f32_acc_epsilon = comm_ref_fp32_acc + epsilon
-            comm_ref_c = comm_ref_f32_acc_epsilon.to(dtype=torch_dtype(c_dtype))
+            comm_ref_c = (comm_ref_fp32_acc + epsilon).to(dtype=torch_dtype(c_dtype))
             comm_ref_nan2sat = _fp8_nan_to_saturate(comm_ref_c)
             comm_ref_f32 = comm_ref_nan2sat.to(dtype=torch.float32).cpu()
 
-        # Fusion Kernel Result
-        # multimem.ld_reduce on fp8 will return nan if val is out of range
-        # Need to handle nan the same way as comm ref
         comm_out = torch_tensor_comm_out.cpu()
         if c_dtype in [cutlass.Float8E4M3FN, cutlass.Float8E5M2]:
-            # Handle nan
-            comm_out_nan2sat = _fp8_nan_to_saturate(comm_out)
-            # Cast to fp32 for comparison
-            comm_out_f32 = comm_out_nan2sat.to(dtype=torch.float32)
+            comm_out = _fp8_nan_to_saturate(comm_out)
+        comm_out_f32 = comm_out.to(dtype=torch.float32)
+        torch.testing.assert_close(comm_ref_f32, comm_out_f32, atol=atol, rtol=rtol)
+
+    def _compare_buffer_clear(
+        torch_tensors_c_uc_per_peer_for_slot: Tuple[torch.Tensor, ...],
+        slot_idx: int,
+        c_dtype,
+    ):
+        # Lamport litmus test: after the kernel consumes slot[ping], slot[pong]
+        # must be byte-exact -0.0 across every per-peer slab (sentinel pattern
+        # mirrors the AR kernel's neg_zero_dtype_32bit table).
+        if c_dtype is cutlass.Float32:
+            view_dtype, sentinel, hex_width = torch.int32, -0x80000000, 8
+        elif c_dtype is cutlass.Float16 or c_dtype is cutlass.BFloat16:
+            view_dtype, sentinel, hex_width = torch.int16, -0x8000, 4
+        elif c_dtype is cutlass.Float8E4M3FN or c_dtype is cutlass.Float8E5M2:
+            view_dtype, sentinel, hex_width = torch.uint8, 0x80, 2
         else:
-            # Cast to fp32 for comparison
-            comm_out_f32 = comm_out.to(dtype=torch.float32)
+            raise AssertionError(
+                f"_compare_buffer_clear: unsupported c_dtype {c_dtype}"
+            )
+        mask = (1 << (hex_width * 4)) - 1
+        sentinel_hex = f"0x{sentinel & mask:0{hex_width}x}"
 
-        # Compare
+        for p, slab in enumerate(torch_tensors_c_uc_per_peer_for_slot):
+            elements = slab.contiguous().cpu().view(view_dtype)
+            if not bool((elements == sentinel).all().item()):
+                bad_idx = (elements != sentinel).nonzero(as_tuple=False)[0].tolist()
+                bad_val = int(elements[tuple(bad_idx)].item()) & mask
+                raise AssertionError(
+                    f"comm_in slot[{slot_idx}][{p}] not cleared to "
+                    f"-0.0 sentinel: element at {bad_idx} = "
+                    f"0x{bad_val:0{hex_width}x} (expected {sentinel_hex}). "
+                    f"Kernel-side buffer-clear pass not yet wired."
+                )
 
-        # Slice the all-reduced reference to this rank's chunk.
-        chunk_per_rank = comm_ref_f32.shape[0] // world_size
-        start_idx = global_rank * chunk_per_rank
-        end_idx = start_idx + chunk_per_rank
-
-        torch.testing.assert_close(
-            comm_ref_f32[start_idx:end_idx, :],
-            comm_out_f32,
-            atol=atol,
-            rtol=rtol,
-        )
+    torch_tensor_c_local_slot = torch_tensors_c_uc_per_peer_grouped[0][global_rank]
 
     # compare
-    # Impose a strick check on GEMM as input is uniform random int
+    # Impose a strict check on GEMM as input is uniform random int
     gemm_atol = 1e-05
     gemm_rtol = 1e-05
     _compare_gemm(
         torch_tensor_a_cpu=torch_tensor_a_cpu,
         torch_tensor_b_cpu=torch_tensor_b_cpu,
-        torch_tensor_c=torch_tensor_c,
+        torch_tensor_c=torch_tensor_c_local_slot,
         c_dtype=c_dtype,
         atol=gemm_atol,
         rtol=gemm_rtol,
     )
 
-    if reduce_scatter == "LDMC":
-        # Relaxed tolerance — reference uses NCCL dist.all_reduce, which
+    if all_reduce != "none":
+        # Relaxed tolerance — _compare_comm uses NCCL dist.all_reduce, which
         # reduces in a different order than the fused multimem kernel.
-        comm_atol = 5
         comm_rtol = 1e-1
+        comm_atol = 5
         if c_dtype in [cutlass.Float8E4M3FN, cutlass.Float8E5M2]:
             comm_rtol = 1e-1
             comm_atol = 0.0
         _compare_comm(
-            torch_tensor_comm_in=torch_tensor_c,
+            torch_tensor_comm_in=torch_tensor_c_local_slot,
             torch_tensor_comm_out=torch_tensor_comm_out,
             c_dtype=c_dtype,
             atol=comm_atol,
             rtol=comm_rtol,
         )
 
-    # * Check flags are reset *
-    # The kernel uses the flag tensor for cross-CTA / cross-rank synchronization
-    # and is expected to leave every entry at 0 once it returns. If any entry is
-    # non-zero, a tile didn't drain its slot — re-running the kernel would block
-    # forever on that stale flag.
-    torch.cuda.synchronize()
-    flag_after = torch_tensor_flag_unicast.cpu()
-    nonzero_count = int(torch.count_nonzero(flag_after).item())
-    assert nonzero_count == 0, (
-        f"Kernel did not reset all barrier flags to zero: "
-        f"{nonzero_count}/{flag_after.numel()} entries non-zero"
-    )
+    # * Check slot[pong] cleared *
+    # Lamport scrubs slot[1] back to -0.0 after consuming slot[0]; verify here.
+    if all_reduce == "Lamport":
+        _compare_buffer_clear(
+            torch_tensors_c_uc_per_peer_grouped[1],
+            slot_idx=1,
+            c_dtype=c_dtype,
+        )
 
 
 def compile_and_benchmark(
@@ -2612,7 +3102,7 @@ def compile_and_benchmark(
     raster_order,
     use_2cta_instrs,
     use_tma_store,
-    reduce_scatter,
+    all_reduce,
     global_rank,
     world_size,
     num_workspace,
@@ -2623,27 +3113,37 @@ def compile_and_benchmark(
     iterations,
     use_cuda_graph,
 ):
-    """Instantiate one LDMC kernel candidate, compile it, and time the
-    warmup + benchmark loop.
+    """Compile one Lamport candidate, time warmup + benchmark with slot rotation.
 
-    Reads cute views out of ``tensors`` (produced by :func:`allocate_tensors`)
-    and uses the caller-supplied ``torch_stream`` / ``stream`` pair so every
-    candidate in a sweep shares a single CUDA stream + event pool.
-    Returns the mean per-iteration time in microseconds over the benchmark
-    iterations (warmup timings are recorded but not included in the average).
+    Slot rotation is:
+
+        signal = i (per-iteration counter)
+        ping    = signal       % NUM_C_BUFFERS    # this iter's read+write+epi target
+        pong    = (signal + 1) % NUM_C_BUFFERS    # this iter's clear target
+        cooling = (signal + 2) % NUM_C_BUFFERS    # untouched (draining)
+
+    ``num_workspace`` is locked to ``len(cute_tensors_c_uc_per_peer_grouped)``
+    so the A/B ring buffer rotates in lockstep with the slot rotation —
+    a single set of NUM_C_BUFFERS captured CUDA graphs covers both.
+
+    Returns the mean per-iteration time in microseconds (warmup excluded).
     """
     cute_tensor_a_list = tensors["cute_tensor_a_list"]
     cute_tensor_b_list = tensors["cute_tensor_b_list"]
-    cute_tensor_c = tensors["cute_tensor_c"]
-    cute_tensor_comm_in_mc = tensors["cute_tensor_comm_in_mc"]
+    cute_tensors_c_uc_per_peer_grouped = tensors["cute_tensors_c_uc_per_peer_grouped"]
+    cute_tensors_c_mc_per_peer_grouped = tensors["cute_tensors_c_mc_per_peer_grouped"]
     cute_tensor_comm_out_uc = tensors["cute_tensor_comm_out_uc"]
-    cute_tensor_flag_unicast = tensors["cute_tensor_flag_unicast"]
-    cute_tensor_flag_multicast = tensors["cute_tensor_flag_multicast"]
-    cute_tensor_flag_unicast_per_peer = tensors["cute_tensor_flag_unicast_per_peer"]
+
+    num_c_buffers = len(cute_tensors_c_uc_per_peer_grouped)
+    assert num_workspace == num_c_buffers, (
+        f"compile_and_benchmark requires num_workspace == NUM_C_BUFFERS "
+        f"({num_c_buffers}) so the A/B ring buffer rotates in lockstep "
+        f"with the Lamport slot rotation; got num_workspace={num_workspace}."
+    )
 
     # Build kernel + can_implement first — before any cross-rank op, so a
     # deterministic skip keeps all ranks in lockstep for the next candidate.
-    gemm_reduce_scatter = Sm100PersistentDenseGemmReduceScatterLDMCKernel(
+    gemm_all_reduce = Sm100PersistentDenseGemmAllReduceLamportKernel(
         acc_dtype,
         c_dtype,
         use_2cta_instrs,
@@ -2652,7 +3152,7 @@ def compile_and_benchmark(
         use_tma_store,
         rank_id=global_rank,
         num_ranks=world_size,
-        reduce_scatter=reduce_scatter,
+        all_reduce=all_reduce,
         swizzle_size=swizzle_size,
         raster_order=raster_order,
     )
@@ -2668,65 +3168,64 @@ def compile_and_benchmark(
         )
         param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
         unique_name = (
-            f"sm100_gemm_rs_{param_hash}_{reduce_scatter}_r{global_rank}_w{world_size}"
+            f"sm100_gemm_ar_{param_hash}_{all_reduce}_r{global_rank}_w{world_size}"
         )
     except Exception:
-        unique_name = f"sm100_gemm_rs_{reduce_scatter}_r{global_rank}_w{world_size}"
-    gemm_reduce_scatter.__call__.set_name_prefix(unique_name)
+        unique_name = f"sm100_gemm_ar_{all_reduce}_r{global_rank}_w{world_size}"
+    gemm_all_reduce.__call__.set_name_prefix(unique_name)
 
-    can_implement = gemm_reduce_scatter.can_implement(
+    can_implement = gemm_all_reduce.can_implement(
         mnkl, ab_dtype, c_dtype, a_major, b_major, c_major
     )
     if not can_implement:
         raise testing.CantImplementError(
             f"[general] The current config is invalid/unsupported: use_2cta_instrs={use_2cta_instrs}, "
             f"mma_tiler_mn={mma_tiler_mn}, cluster_shape_mn={cluster_shape_mn}, "
-            f"use_tma_store={use_tma_store}, reduce_scatter={reduce_scatter}, world_size={world_size}, "
+            f"use_tma_store={use_tma_store}, all_reduce={all_reduce}, world_size={world_size}, "
             f"ab_dtype={ab_dtype}, c_dtype={c_dtype}, acc_dtype={acc_dtype}"
         )
 
-    def make_kernel_kwargs(ws):
+    def make_kernel_kwargs(i):
+        ping = i % num_c_buffers
+        pong = (i + 1) % num_c_buffers
         return dict(
-            a=cute_tensor_a_list[ws],
-            b=cute_tensor_b_list[ws],
-            c=cute_tensor_c,
-            comm_in_multicast_tensor=cute_tensor_comm_in_mc,
+            a=cute_tensor_a_list[i % num_workspace],
+            b=cute_tensor_b_list[i % num_workspace],
+            c_multicast_tensor=cute_tensors_c_mc_per_peer_grouped[ping][global_rank],
+            comm_in_unicast_tensor_per_peer=cute_tensors_c_uc_per_peer_grouped[ping],
+            comm_clear_unicast_tensor_per_peer=cute_tensors_c_uc_per_peer_grouped[pong],
             comm_out_unicast_tensor=cute_tensor_comm_out_uc,
-            barrier_flag_unicast=cute_tensor_flag_unicast,
-            barrier_flag_multicast=cute_tensor_flag_multicast,
-            barrier_flag_unicast_per_peer=cute_tensor_flag_unicast_per_peer,
             stream=stream,
         )
 
-    kernel_kwargs_list = [make_kernel_kwargs(i) for i in range(num_workspace)]
+    kernel_kwargs_list = [make_kernel_kwargs(i) for i in range(num_c_buffers)]
 
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1]
     )
     compiled_gemm = cute.compile(
-        gemm_reduce_scatter,
+        gemm_all_reduce,
         **kernel_kwargs_list[0],
         max_active_clusters=max_active_clusters,
     )
 
-    # Per-iteration runnable. Under --use_cuda_graph we capture one graph per
-    # workspace (pointers are baked in at capture time, so N_workspace graphs
-    # are required to rotate A/B). Without graphs we dispatch the compiled
-    # kernel directly with the appropriate kernel_kwargs entry.
+    # Under --use_cuda_graph capture NUM_C_BUFFERS graphs (one per slot
+    # rotation — pointers are baked at capture time). Without it dispatch
+    # the compiled kernel directly with the rotated kwargs.
     if use_cuda_graph:
         graphs = []
-        for ws in range(num_workspace):
+        for r in range(num_c_buffers):
             g = torch.cuda.CUDAGraph()
             with torch.cuda.graph(g, stream=torch_stream):
-                compiled_gemm(**kernel_kwargs_list[ws])
+                compiled_gemm(**kernel_kwargs_list[r])
             graphs.append(g)
 
         def run_one_iter(i):
-            graphs[i % num_workspace].replay()
+            graphs[i % num_c_buffers].replay()
     else:
 
         def run_one_iter(i):
-            compiled_gemm(**kernel_kwargs_list[i % num_workspace])
+            compiled_gemm(**kernel_kwargs_list[i % num_c_buffers])
 
     # One loop for warmup + benchmark. Every iteration is bracketed by its own
     # event pair; only the trailing `iterations` event pairs contribute to the
@@ -2781,14 +3280,29 @@ def run_distributed_benchmark(
     use_tma_store: bool = True,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    reduce_scatter: str = "LDMC",
+    all_reduce: str = "Lamport",
     use_cuda_graph: bool = False,
     benchmark_all: bool = False,
     csv_report: str = "./csv_report.csv",
 ):
-    # Allocate every kernel-side tensor (A/B/C/comm_out/flags) up front —
-    # shared across all candidates in the --benchmark_all loop.
-    num_workspace = 10
+    """Lamport benchmark driver — single config or full sweep + per-rank CSV.
+
+    All allocations happen once up front; the A/B ring buffer length is
+    locked to ``len(cute_tensors_c_uc_per_peer_grouped)`` so a single set
+    of captured CUDA graphs covers both A/B and slot rotations.
+
+    --benchmark_all sweeps raster ∈ {m, n}, swizzle ∈ {1, 2, 4, 8}, and the
+    (use_2cta_instrs, cluster_shape_mn, mma_tiler_mn) joint variants from
+    the LDMCxSTMC sweep list (cluster_m ∈ {2,4,8} requires 2cta).
+
+    Lamport rejects use_tma_store=False at the kernel layer, so the
+    candidate list keeps the user-supplied value rather than sweeping it.
+    """
+    # NUM_C_BUFFERS = 3 is fixed inside allocate_tensors. num_workspace is
+    # locked to the same value here so the A/B ring rotates in lockstep
+    # with the slot rotation. The compile_and_benchmark assert below
+    # enforces the invariant against whatever allocate_tensors returns.
+    num_workspace = 3
     tensors = allocate_tensors(
         mnkl=mnkl,
         ab_dtype=ab_dtype,
@@ -2796,11 +3310,11 @@ def run_distributed_benchmark(
         a_major=a_major,
         b_major=b_major,
         c_major=c_major,
-        world_size=world_size,
         num_workspace=num_workspace,
+        world_size=world_size,
+        global_rank=global_rank,
         device=device,
         slot_init_mode="benchmark",
-        global_rank=global_rank,
     )
 
     # One non-default stream shared across every candidate. `torch_stream` is
@@ -2825,7 +3339,7 @@ def run_distributed_benchmark(
         b_major=b_major,
         c_major=c_major,
         use_tma_store=use_tma_store,
-        reduce_scatter=reduce_scatter,
+        all_reduce=all_reduce,
         global_rank=global_rank,
         world_size=world_size,
         num_workspace=num_workspace,
@@ -2945,7 +3459,7 @@ def run_distributed_benchmark(
         "cluster_n",
         "use_2cta_instrs",
         "use_tma_store",
-        "reduce_scatter",
+        "all_reduce",
         "use_cuda_graph",
         "raster_order",
         "swizzle_size",
@@ -2983,7 +3497,7 @@ def run_distributed_benchmark(
                     "cluster_n": cand["cluster_shape_mn"][1],
                     "use_2cta_instrs": cand["use_2cta_instrs"],
                     "use_tma_store": use_tma_store,
-                    "reduce_scatter": reduce_scatter,
+                    "all_reduce": all_reduce,
                     "use_cuda_graph": use_cuda_graph,
                     "raster_order": cand["raster_order"],
                     "swizzle_size": cand["swizzle_size"],
@@ -3066,14 +3580,14 @@ def prepare_parser():
         "--use_cuda_graph",
         action="store_true",
         default=False,
-        help="Capture one iteration into a CUDA graph and replay per iteration",
+        help="Capture one CUDA graph per slot rotation (3) and replay per iteration",
     )
     parser.add_argument(
-        "--reduce_scatter",
-        choices=["LDMC", "none"],
+        "--all_reduce",
+        choices=["Lamport", "none"],
         type=str,
-        default="LDMC",
-        help="ReduceScatter algorithm to fuse with gemm",
+        default="Lamport",
+        help="Allreduce algorithm to fuse with gemm",
     )
     parser.add_argument(
         "--swizzle_size",
@@ -3129,7 +3643,7 @@ if __name__ == "__main__":
         args.use_tma_store,
         args.warmup_iterations,
         args.iterations,
-        args.reduce_scatter,
+        args.all_reduce,
         args.benchmark_or_test,
         args.use_cuda_graph,
         args.csv_report,
