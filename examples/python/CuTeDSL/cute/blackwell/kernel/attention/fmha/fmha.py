@@ -3795,6 +3795,16 @@ def run(
     )
 
     print("Compiling kernel with cute.compile ...")
+    cutlass_major_minor = tuple(
+        map(int, cutlass.__version__.split(".")[:2])
+    )
+    cuda_version = cutlass.CUDA_VERSION
+    compile_options = (
+        "--opt-level=2"
+        if cutlass_major_minor >= (4, 6)
+        and (cuda_version.major, cuda_version.minor) == (12, 9)
+        else ""
+    )
     start_time = time.time()
     # compile fmha kernel
     compiled_fmha = cute.compile(
@@ -3818,7 +3828,7 @@ def run(
         total_softmax_count,
         current_stream,
         use_pdl,
-        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
+        options=compile_options,
     )
     compilation_time = time.time() - start_time
     print(f"Compilation time: {compilation_time:.4f} seconds")
