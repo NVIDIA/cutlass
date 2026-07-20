@@ -37,11 +37,6 @@ from math import gcd
 from typing import Optional, Tuple, Type, Union, Literal
 
 import cuda.bindings.driver as cuda
-try:
-    from cuda.core import Device
-except ImportError:
-    from cuda.core.experimental import Device
-from cuda.pathfinder import load_nvidia_dynamic_lib
 
 import torch
 import torch.distributed as dist
@@ -52,7 +47,6 @@ import cutlass.cute as cute
 import cutlass.cute.testing as testing
 import cutlass.torch as cutlass_torch
 from cutlass.torch import dtype as torch_dtype
-from cutlass import testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
