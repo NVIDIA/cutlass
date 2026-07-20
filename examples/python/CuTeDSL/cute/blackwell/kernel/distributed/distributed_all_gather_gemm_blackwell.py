@@ -2195,7 +2195,6 @@ def run(
                     b_tensor,
                     c_local_list[m_dim_offset],
                     cuda.CUstream(gemm_stream.cuda_stream),
-                    flag_offset=m_dim_offset,
                     gate_a_flags=from_dlpack(gate_a_flags),
                 )
             else:  # gemm process remote data with gated a load
@@ -2204,7 +2203,6 @@ def run(
                     b_tensor,
                     c_local_list[m_dim_offset],
                     cuda.CUstream(gemm_stream.cuda_stream),
-                    flag_offset=m_dim_offset,
                     gate_a_flags=from_dlpack(gate_a_flags),
                 )
 
