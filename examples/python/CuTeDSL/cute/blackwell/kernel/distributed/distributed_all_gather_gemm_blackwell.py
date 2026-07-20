@@ -235,6 +235,36 @@ class SyncNvlDevices:
         )
 
 
+class ReleaseFlagSet:
+    """Signals AG data-ready for one step by adding 1 to ``gate_a_flags[step]``
+    with PTX release semantics (``utils.distributed.red_add1``), matching the
+    release/acquire idiom used by sibling distributed kernels (e.g.
+    ``distributed_gemm_all_reduce_blackwell.py``'s ``spin_lock_atom_cas_acquire_wait``
+    usage). This replaces a host-issued ``cuMemsetD32Async``, which cannot carry
+    release semantics since no PTX instruction is generated for it.
+    """
+
+    @cute.kernel
+    def kernel(
+        self,
+        gate_a_flags: cute.Tensor,
+        step: cutlass.Int32,
+    ):
+        flag_ptr = gate_a_flags.iterator + step
+        utils.distributed.red_add1(lock_ptr=flag_ptr, order="release", scope="sys")
+
+    @cute.jit
+    def __call__(
+        self,
+        gate_a_flags: cute.Tensor,
+        step: cutlass.Int32,
+        stream: cuda.CUstream,
+    ):
+        self.kernel(gate_a_flags, step).launch(
+            grid=[1, 1, 1], block=[1, 1, 1], cluster=(1, 1, 1), smem=0, stream=stream
+        )
+
+
 class PersistentDenseGemmKernel:
     """This class implements batched matrix multiplication (C = A x B) with support for various data types
     and architectural features specific to Blackwell GPUs with persistent tile scheduling and warp specialization.
@@ -910,22 +940,26 @@ class PersistentDenseGemmKernel:
             if self.gated_a_load:
                 # wait_on_flag
                 if lane_idx == 0:
-                    # Wait until input_ready_flags[iteration_i] is set.
-                    # Use cop="cv" (cache-volatile) so every iteration bypasses L1
-                    # and reads from L2/DRAM, guaranteeing visibility of the plain
-                    # cuMemsetD32Async write issued by the copy stream.
-                    # ld.relaxed.sys requires a matching st.release on the writer side;
-                    # cuMemsetD32Async does not provide that, so cop="cv" is correct here.
+                    # Acquire-wait until input_ready_flags[iteration_i] is set.
+                    # Pairs with the release store issued by ReleaseFlagSet
+                    # (utils.distributed.red_add1, order="release") on the copy
+                    # stream once the A-tile DMA completes, matching the
+                    # release/acquire idiom used by sibling distributed kernels
+                    # (e.g. distributed_gemm_all_reduce_blackwell.py's
+                    # spin_lock_atom_cas_acquire_wait usage) instead of relying
+                    # on a cache-volatile load against a plain host memset.
                     ready_flag = cute.arch.load(
                         gate_a_flag.iterator,
                         cutlass.Int32,
-                        cop="cv",
+                        sem="acquire",
+                        scope="sys",
                     )
                     while ready_flag == 0:
                         ready_flag = cute.arch.load(
                             gate_a_flag.iterator,
                             cutlass.Int32,
-                            cop="cv",
+                            sem="acquire",
+                            scope="sys",
                         )
                 cute.arch.sync_warp()
             #########################################################
@@ -2174,6 +2208,14 @@ def run(
         stream=current_stream,
     )
 
+    release_flag_set_instance = ReleaseFlagSet()
+    compiled_release_flag_set = cute.compile(
+        release_flag_set_instance,
+        gate_a_flags=from_dlpack(gate_a_flags),
+        step=cutlass.Int32(0),
+        stream=current_stream,
+    )
+
     g = torch.cuda.CUDAGraph()
     capture_stream = torch.cuda.Stream(local_rank)
     copy_stream = torch.cuda.Stream(local_rank)
@@ -2222,14 +2264,10 @@ def run(
                     copy_bytes,
                     copy_stream.cuda_stream,
                 )
-                memset_address = (
-                    gate_a_flags.data_ptr() + m_dim_offset * gate_a_flags.element_size()
-                )
-                driver.cuMemsetD32Async(
-                    memset_address,
-                    1,  # value_to_set
-                    1,  # size
-                    copy_stream.cuda_stream,
+                compiled_release_flag_set(
+                    from_dlpack(gate_a_flags),
+                    cutlass.Int32(m_dim_offset),
+                    cuda.CUstream(copy_stream.cuda_stream),
                 )
 
         capture_stream.wait_stream(copy_stream)
