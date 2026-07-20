@@ -3263,6 +3263,12 @@ def load(
         mlir_type = dtype.mlir_type
         scalar_dtype = dtype
 
+    # nvvm.load.ext rejects f16/bf16 result types; route them through a
+    # uint16 load + llvm.bitcast to the requested FP type.
+    fp16_bitcast = scalar_dtype in (Float16, BFloat16)
+    if fp16_bitcast:
+        mlir_type = Uint16.mlir_type
+
     result = nvvm.load_ext(
         res=mlir_type,
         addr=ptr,
@@ -3275,6 +3281,9 @@ def load(
         loc=loc,
         ip=ip,
     )
+
+    if fp16_bitcast:
+        result = llvm.bitcast(scalar_dtype.mlir_type, result, loc=loc, ip=ip)
 
     # Return raw ir.Value for vectors, wrapped Numeric for scalars
     if is_vector:
