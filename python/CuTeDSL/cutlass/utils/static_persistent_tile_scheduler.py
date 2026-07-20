@@ -296,16 +296,20 @@ class PersistentTileSchedulerParams:
 
         if hasattr(self, "_fastdivmod_indices") and len(self._fastdivmod_indices) > 0:
             # Override the FastDivmod divisors created by __init__ with reconstructed ones
-            for j, original_index in enumerate(self._fastdivmod_indices):
+            fdd_tail_offset = 0
+            for original_index in self._fastdivmod_indices:
                 fdd_name = fdd_names[original_index]
-                # Get the original FastDivmodDivisor object
                 original_fdd = getattr(self, fdd_name)
-                if original_fdd is not None and j < len(values_copy):
-                    # Each FastDivmodDivisor has 1 MLIR value
+                if original_fdd is None:
+                    continue
+                n_fdd = len(extract_mlir_values(original_fdd))
+                end = fdd_tail_offset + n_fdd
+                if end <= len(values_copy):
                     reconstructed_fdd = new_from_mlir_values(
-                        original_fdd, [values_copy[j]]
+                        original_fdd, values_copy[fdd_tail_offset:end]
                     )
                     setattr(new_params, fdd_name, reconstructed_fdd)
+                fdd_tail_offset = end
 
         return new_params
 
