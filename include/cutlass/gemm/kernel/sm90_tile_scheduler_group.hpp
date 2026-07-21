@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -49,7 +49,7 @@ class PersistentTileSchedulerSm90Group {
   // Data members
   //
 
-private:
+protected:
   uint64_t current_work_linear_idx_ = 0;
   uint64_t total_grid_size_ = 0;
 
@@ -59,6 +59,7 @@ private:
     uint64_t start_linear_idx = 0;
     uint64_t total_tiles = 0;
     uint64_t problem_blocks_along_raster_order = 0;
+    int32_t log_swizzle_size = 0;
   } current_group_info_;
 
 public:
@@ -135,7 +136,7 @@ public:
 
   // Sink scheduler params as a member
   Params scheduler_params;
-  SchedulerResponse *response_ptr_ = nullptr;
+  void *response_ptr_ = nullptr;
   ProblemShape cached_problem_shapes_[2];
 
   //
@@ -225,6 +226,8 @@ public:
       for (int group = 0; group < groups; group++) {
         auto ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes.get_host_problem_shape(group)), cute::shape<0>(cta_shape)));
         auto ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes.get_host_problem_shape(group)), cute::shape<1>(cta_shape)));
+        if(ctas_along_m <= 0) ctas_along_m = 1;
+        if(ctas_along_n <= 0) ctas_along_n = 1;
         auto problem_blocks_m = round_up(ctas_along_m, cute::get<0>(cluster_shape));
         auto problem_blocks_n = round_up(ctas_along_n, cute::get<1>(cluster_shape));
         total_ctas += problem_blocks_m * problem_blocks_n;
@@ -238,12 +241,33 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
+  can_implement(Arguments const& args, KernelHardwareInfo const&) {
     return true;
+  }
+
+  // Calculate the log of the swizzle size based on the problem CTAs and the max swizzle size
+  CUTLASS_DEVICE
+  static int32_t
+  get_log_swizzle_size(int problem_ctas_m, int problem_ctas_n, int max_swizzle_size) {
+    int min_cta_dim = platform::min(problem_ctas_m, problem_ctas_n);
+    if (max_swizzle_size >= 8 && min_cta_dim >= 6) {
+      return 3;
+    }
+    else if (max_swizzle_size >= 4 && min_cta_dim >= 3) {
+      return 2;
+    }
+    else if (max_swizzle_size >= 2 && min_cta_dim >= 2) {
+      return 1;
+    }
+    else {
+      return 0;
+    }
   }
 
   PersistentTileSchedulerSm90Group() = default;
 
+  // Note: constructing this tile scheduler can touch global memory that was
+  // written to by the prior kernel.
   CUTLASS_DEVICE explicit PersistentTileSchedulerSm90Group(Params const& params_, SchedulerResponse* response_ptr) : scheduler_params(params_), response_ptr_(response_ptr) {
     // MSVC requires protecting use of CUDA-specific nonstandard syntax,
     // like blockIdx and gridDim, with __CUDA_ARCH__.
@@ -263,8 +287,8 @@ public:
     total_grid_size_ = uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z);
     uint64_t ctas_along_m, ctas_along_n;
     ProblemShape problem_shape = params_.problem_shapes_.get_problem_shape(0);
-    if (is_tuple<decltype(cute::shape<0>(problem_shape))>::value ||
-        is_tuple<decltype(cute::shape<1>(problem_shape))>::value) {
+    if constexpr (is_tuple<decltype(cute::shape<0>(problem_shape))>::value ||
+                  is_tuple<decltype(cute::shape<1>(problem_shape))>::value) {
       ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shape), scheduler_params.cta_shape_.m()));
       ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shape), scheduler_params.cta_shape_.n()));
     }
@@ -272,8 +296,9 @@ public:
       ctas_along_m = scheduler_params.divmod_cta_shape_m_.divide(cute::shape<0>(problem_shape) +  scheduler_params.divmod_cta_shape_m_.divisor - 1);
       ctas_along_n = scheduler_params.divmod_cta_shape_n_.divide(cute::shape<1>(problem_shape) +  scheduler_params.divmod_cta_shape_n_.divisor - 1);
     }
-    auto problem_blocks_m = round_up(ctas_along_m, (1 << params_.log_swizzle_size_) * params_.cluster_shape_.m());
-    auto problem_blocks_n = round_up(ctas_along_n, (1 << params_.log_swizzle_size_) * params_.cluster_shape_.n());
+    current_group_info_.log_swizzle_size = get_log_swizzle_size(ctas_along_m, ctas_along_n, params_.max_swizzle_size_);
+    auto problem_blocks_m = round_up(ctas_along_m, (1 << current_group_info_.log_swizzle_size) * params_.cluster_shape_.m());
+    auto problem_blocks_n = round_up(ctas_along_n, (1 << current_group_info_.log_swizzle_size) * params_.cluster_shape_.n());
     current_group_info_.total_tiles = problem_blocks_m * problem_blocks_n;
     current_group_info_.problem_blocks_along_raster_order = params_.raster_order_ == RasterOrder::AlongN ? problem_blocks_n : problem_blocks_m;
 
@@ -283,7 +308,7 @@ public:
   }
 
   // get work_idx_m, work_idx_n from linear_idx while applying swizzle
-  template<class WorkTileInfo, class GroupInfo, class ProblemShape, class RasterOrder>
+  template<class WorkTileInfo, class GroupInfo, class ProblemShape, class CtaShape, class RasterOrder>
   static
   CUTLASS_DEVICE
   WorkTileInfo
@@ -292,21 +317,20 @@ public:
       GroupInfo& group_info,
       GroupProblemShape &problem_shapes,
       ProblemShape (&cached_problem_shapes)[2],
-      GemmCoord cta_shape,
+      CtaShape cta_shape,
       GemmCoord cluster_shape,
       FastDivmodU64Pow2 const& divmod_cluster_shape_major,
       FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
       FastDivmodU64 const& divmod_cta_shape_m,
       FastDivmodU64 const& divmod_cta_shape_n,
-      int32_t log_swizzle_size, 
+      int32_t max_swizzle_size, 
       RasterOrder raster_order) {
 
-    int32_t valid_tile = 1;
+    uint8_t valid_tile = 1;
 
     // Use a warp to "speculatively" check if the work tile maps to the next 32 groups
     int lane_idx = canonical_lane_idx();
     int total_problem_groups = problem_shapes.groups();
-
     if (linear_idx >= group_info.total_tiles + group_info.start_linear_idx) {
       group_info.group_idx += lane_idx;
       for ( ; ; group_info.group_idx += NumThreadsPerWarp) {
@@ -316,20 +340,22 @@ public:
         }
         if (group_info.group_idx < total_problem_groups) {
           uint64_t ctas_along_m, ctas_along_n;
-          if (is_tuple<decltype(cute::shape<0>(cached_problem_shapes[0]))>::value ||
-              is_tuple<decltype(cute::shape<1>(cached_problem_shapes[0]))>::value) {
-            ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(cached_problem_shapes[0]), cta_shape.m()));
-            ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(cached_problem_shapes[0]), cta_shape.n()));
+          if constexpr (is_tuple<decltype(cute::shape<0>(cached_problem_shapes[0]))>::value ||
+                        is_tuple<decltype(cute::shape<1>(cached_problem_shapes[0]))>::value) {
+            ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(cached_problem_shapes[0]), get<0>(cta_shape)));
+            ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(cached_problem_shapes[0]), get<1>(cta_shape)));
           }
           else {
             ctas_along_m = divmod_cta_shape_m.divide(cute::shape<0>(cached_problem_shapes[0]) +  divmod_cta_shape_m.divisor - 1);
             ctas_along_n = divmod_cta_shape_n.divide(cute::shape<1>(cached_problem_shapes[0]) +  divmod_cta_shape_n.divisor - 1);
           }
-          auto problem_blocks_m = round_up(ctas_along_m, (1 << log_swizzle_size) * cluster_shape.m());
-          auto problem_blocks_n = round_up(ctas_along_n, (1 << log_swizzle_size) * cluster_shape.n());
+          group_info.log_swizzle_size = get_log_swizzle_size(ctas_along_m, ctas_along_n, max_swizzle_size);
+          auto problem_blocks_m = round_up(ctas_along_m, (1 << group_info.log_swizzle_size) * cluster_shape.m());
+          auto problem_blocks_n = round_up(ctas_along_n, (1 << group_info.log_swizzle_size) * cluster_shape.n());
           group_info.problem_blocks_along_raster_order = raster_order == RasterOrder::AlongN ? problem_blocks_n : problem_blocks_m;
           group_info.total_tiles = problem_blocks_m * problem_blocks_n;
-        } else {
+        }
+        else {
           group_info.total_tiles = INT_MAX;
         }
 
@@ -351,6 +377,7 @@ public:
           group_info.start_linear_idx = __shfl_sync(0xffffffff, group_info.start_linear_idx, first_succeeding_thread);
           group_info.total_tiles = __shfl_sync(0xffffffff, group_info.total_tiles, first_succeeding_thread);
           group_info.problem_blocks_along_raster_order = __shfl_sync(0xffffffff, group_info.problem_blocks_along_raster_order, first_succeeding_thread);
+          group_info.log_swizzle_size = __shfl_sync(0xffffffff, group_info.log_swizzle_size, first_succeeding_thread);
           if (group_info.group_idx + lane_idx < total_problem_groups) {
             cached_problem_shapes[1] = problem_shapes.get_problem_shape(group_info.group_idx + lane_idx);
           }
@@ -385,15 +412,15 @@ public:
     
     uint64_t cluster_idx_minor_div_swizzle, extra, offset;
 
-    offset = cluster_id & ((1 << log_swizzle_size) - 1);
-    extra = cluster_id >> log_swizzle_size;
+    offset = cluster_id & ((1 << group_info.log_swizzle_size) - 1);
+    extra = cluster_id >> group_info.log_swizzle_size;
 
     uint64_t curr_group_cluster_blk_major = divmod_cluster_shape_major.divide(group_info.problem_blocks_along_raster_order);
 
     cluster_idx_minor_div_swizzle = extra / curr_group_cluster_blk_major;
     cluster_idx_major = extra % curr_group_cluster_blk_major;
 
-    cluster_idx_minor = cluster_idx_minor_div_swizzle * (1 << log_swizzle_size) + offset;
+    cluster_idx_minor = cluster_idx_minor_div_swizzle * (1 << group_info.log_swizzle_size) + offset;
 
     auto minor_work_idx = static_cast<int32_t>(cluster_idx_minor * divmod_cluster_shape_minor.divisor + 
                                                cluster_minor_offset);
@@ -425,26 +452,34 @@ public:
               scheduler_params.divmod_cluster_shape_minor_,
               scheduler_params.divmod_cta_shape_m_,
               scheduler_params.divmod_cta_shape_n_,
-              scheduler_params.log_swizzle_size_, 
+              scheduler_params.max_swizzle_size_, 
               scheduler_params.raster_order_);
   }
-  template <typename TileSchedulerPipeline, typename TileSchedulerPipelineState>
+
+  template <typename TileSchedulerPipeline, typename TileSchedulerPipelineState, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
   advance_to_next_work(
     TileSchedulerPipeline& scheduler_pipeline,
     TileSchedulerPipelineState scheduler_pipe_producer_state,
-    uint32_t advance_count = 1) {
+    uint32_t advance_count = 1,
+    CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo info) { return info;}) {
 
     current_work_linear_idx_ += total_grid_size_ * uint64_t(advance_count);
     auto work_tile = get_current_work_for_linear_idx(current_work_linear_idx_);
+    using WorkTileWithCallbackInfo = decltype(callback_before_commit(work_tile));
+    WorkTileWithCallbackInfo work_tile_with_callback_info = work_tile;
     scheduler_pipeline.producer_acquire(scheduler_pipe_producer_state);
+    if (work_tile_with_callback_info.is_valid()) {
+      work_tile_with_callback_info = callback_before_commit(work_tile);
+    }
+
     if (cute::elect_one_sync()) {
-      response_ptr_[scheduler_pipe_producer_state.index()] = work_tile;
+      reinterpret_cast<WorkTileWithCallbackInfo *>(response_ptr_)[scheduler_pipe_producer_state.index()] = work_tile_with_callback_info;
       cutlass::arch::fence_view_async_shared();
       scheduler_pipeline.producer_commit(scheduler_pipe_producer_state);
     }
-    return cute::make_tuple(work_tile, true);
+    return cute::make_tuple(work_tile_with_callback_info, true);
   }
 
   // Returns whether the block assigned this work should compute the epilogue for the corresponding
@@ -555,31 +590,37 @@ public:
   }
 
   // Kernel helper function to get next work tile
-  template <typename TileSchedulerPipeline, typename TileSchedulerPipelineState>
+  template <typename WorkTileWithCallbackInfo, typename TileSchedulerPipeline, typename TileSchedulerPipelineState>
   CUTLASS_DEVICE
   auto
   fetch_next_work(
-    WorkTileInfo work_tile_info,
+    WorkTileWithCallbackInfo work_tile_with_callback_info,
     TileSchedulerPipeline& scheduler_pipeline,
     TileSchedulerPipelineState scheduler_pipe_consumer_state) {
 
-    if (continue_current_work(work_tile_info)) {
-      return cute::make_tuple(work_tile_info, true);
+    if (continue_current_work(work_tile_with_callback_info)) {
+      return cute::make_tuple(work_tile_with_callback_info, true);
     }
     scheduler_pipeline.consumer_wait(scheduler_pipe_consumer_state);
-    auto work_tile = response_ptr_[scheduler_pipe_consumer_state.index()];
+    work_tile_with_callback_info = reinterpret_cast<WorkTileWithCallbackInfo *>(response_ptr_)[scheduler_pipe_consumer_state.index()];
     cutlass::arch::fence_view_async_shared();
     scheduler_pipeline.consumer_release(scheduler_pipe_consumer_state);
 
-    return cute::make_tuple(work_tile, true);
+    return cute::make_tuple(work_tile_with_callback_info, true);
   }
   
   // Returns the initial work tile info that will be computed over
-  template <class ClusterShape>
+  template <class ClusterShape, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
-  initial_work_tile_info(ClusterShape) {
-    return get_current_work_for_linear_idx(current_work_linear_idx_);
+  initial_work_tile_info(ClusterShape, CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo response) { return response;}) {
+    auto work_tile = get_current_work_for_linear_idx(current_work_linear_idx_);
+    using WorkTileWithCallbackInfo = decltype(callback_before_commit(work_tile));
+    WorkTileWithCallbackInfo work_tile_with_callback_info = work_tile;
+    if (work_tile_with_callback_info.is_valid()) {
+      work_tile_with_callback_info = callback_before_commit(work_tile);
+    }
+    return work_tile_with_callback_info;
   }
 };
 

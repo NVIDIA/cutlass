@@ -57,6 +57,10 @@ authors:
     family-names: Blasig
     email: dblasig@nvidia.com
     affiliation: NVIDIA
+  - given-names: Aditya
+    family-names: Atluri
+    email: aatluri@nvidia.com
+    affiliation: NVIDIA
   - given-names: Fengqi
     family-names: Qiao
     email: fqiao@nvidia.com

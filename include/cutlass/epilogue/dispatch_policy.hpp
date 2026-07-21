@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,13 +61,28 @@ struct PtrArrayTmaWarpSpecializedCooperative { static constexpr int NumEpilogueW
 // Blackwell direct store schedules
 struct NoSmemWarpSpecialized1Sm {};
 struct NoSmemWarpSpecialized2Sm {};
+struct FastF32NoSmemWarpSpecialized1Sm : NoSmemWarpSpecialized1Sm {};
+struct FastF32NoSmemWarpSpecialized2Sm : NoSmemWarpSpecialized2Sm {};
+struct BlockwiseNoSmemWarpSpecialized1Sm : NoSmemWarpSpecialized1Sm {};
+struct BlockwiseNoSmemWarpSpecialized2Sm : NoSmemWarpSpecialized2Sm {};
 struct PtrArrayNoSmemWarpSpecialized1Sm : NoSmemWarpSpecialized1Sm {};
 struct PtrArrayNoSmemWarpSpecialized2Sm : NoSmemWarpSpecialized2Sm {};
+struct PtrArrayFastF32NoSmemWarpSpecialized1Sm : PtrArrayNoSmemWarpSpecialized1Sm {};
+struct PtrArrayFastF32NoSmemWarpSpecialized2Sm : PtrArrayNoSmemWarpSpecialized2Sm {};
+struct PtrArrayBlockwiseNoSmemWarpSpecialized1Sm : PtrArrayNoSmemWarpSpecialized1Sm {};
+struct PtrArrayBlockwiseNoSmemWarpSpecialized2Sm : PtrArrayNoSmemWarpSpecialized2Sm {};
+struct PtrArrayPlanarComplexNoSmemWarpSpecialized1Sm : PtrArrayNoSmemWarpSpecialized1Sm {};
+struct PtrArrayPlanarComplexNoSmemWarpSpecialized2Sm : PtrArrayNoSmemWarpSpecialized2Sm {};
 // Blackwell TMA schedules 
 struct TmaWarpSpecialized1Sm {};
 struct TmaWarpSpecialized2Sm {};
 struct PtrArrayTmaWarpSpecialized1Sm : TmaWarpSpecialized1Sm {};
 struct PtrArrayTmaWarpSpecialized2Sm : TmaWarpSpecialized2Sm {};
+
+struct PlanarComplexTmaWarpSpecialized1Sm : TmaWarpSpecialized1Sm {};
+struct PlanarComplexTmaWarpSpecialized2Sm : TmaWarpSpecialized2Sm {};
+struct PtrArrayPlanarComplexTmaWarpSpecialized1Sm : PlanarComplexTmaWarpSpecialized1Sm {};
+struct PtrArrayPlanarComplexTmaWarpSpecialized2Sm : PlanarComplexTmaWarpSpecialized2Sm {};
 struct TmaWarpSpecialized1SmNvf4     final : TmaWarpSpecialized1Sm {};
 struct TmaWarpSpecialized2SmNvf4     final : TmaWarpSpecialized2Sm {};
 struct TmaWarpSpecialized1SmMxf4     final : TmaWarpSpecialized1Sm {};
@@ -234,11 +249,63 @@ struct Sm100PtrArrayTmaWarpSpecialized {
   static_assert(StagesD >= 1, "StagesD must be >= 1");
 };
 
-// default elementwise operator epilogue without smem
-struct Sm100NoSmem {};
-struct Sm100NoSmemWarpSpecialized {};
-struct Sm100PtrArrayNoSmem {};
-struct Sm100PtrArrayNoSmemWarpSpecialized {};
+struct Sm100NoSmem {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
+
+struct Sm100NoSmemWarpSpecialized {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
+struct Sm100PtrArrayNoSmem {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
+
+struct Sm100PtrArrayNoSmemWarpSpecialized {
+  constexpr static int StagesC = 1;
+  constexpr static int StagesD = 1;
+  constexpr static int FragmentSize = 1;
+};
+struct Sm100PtrArrayPlanarComplexNoSmem {};
+struct Sm100PtrArrayPlanarComplexNoSmemWarpSpecialized {};
+
+template<
+  int StagesC_,
+  int StagesD_,
+  int FragmentSize_,
+  bool ReuseSmemC_,
+  bool DelayTmaStore_
+>
+struct Sm100PlanarComplexTmaWarpSpecialized 
+          : public Sm100TmaWarpSpecialized<StagesC_,
+                                           StagesD_,
+                                           FragmentSize_,
+                                           ReuseSmemC_,
+                                           DelayTmaStore_>
+{
+};
+
+
+template<
+  int StagesC_,
+  int StagesD_,
+  int FragmentSize_,
+  bool ReuseSmemC_,
+  bool DelayTmaStore_
+>
+struct Sm100PtrArrayPlanarComplexTmaWarpSpecialized 
+          : public Sm100TmaWarpSpecialized<StagesC_,
+                                           StagesD_,
+                                           FragmentSize_,
+                                           ReuseSmemC_,
+                                           DelayTmaStore_>
+{
+};
 
 template<
   int StagesC_,

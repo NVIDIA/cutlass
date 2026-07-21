@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,9 +35,9 @@
 #pragma once
 
 #include "cutlass/detail/helper_macros.hpp"
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
@@ -120,44 +120,34 @@ constexpr uint32_t synclog_length_cluster_barrier_init = synclog_length_prefix +
 
 constexpr bool     synclog_enable_cluster_barrier_wait = true;
 constexpr uint32_t synclog_header_cluster_barrier_wait = 6;
-constexpr uint32_t synclog_length_cluster_barrier_wait = synclog_length_prefix + 4;
-
+constexpr uint32_t synclog_length_cluster_barrier_wait = synclog_length_prefix + 2;
 constexpr bool     synclog_enable_cluster_barrier_test_wait = true;
 constexpr uint32_t synclog_header_cluster_barrier_test_wait = 7;
-constexpr uint32_t synclog_length_cluster_barrier_test_wait = synclog_length_prefix + 5;
-
+constexpr uint32_t synclog_length_cluster_barrier_test_wait = synclog_length_prefix + 3;
 constexpr bool     synclog_enable_cluster_barrier_try_wait = true;
 constexpr uint32_t synclog_header_cluster_barrier_try_wait = 8;
-constexpr uint32_t synclog_length_cluster_barrier_try_wait = synclog_length_prefix + 4;
-
+constexpr uint32_t synclog_length_cluster_barrier_try_wait = synclog_length_prefix + 2;
 constexpr bool     synclog_enable_cluster_barrier_arrive_cluster = true;
 constexpr uint32_t synclog_header_cluster_barrier_arrive_cluster = 9;
-constexpr uint32_t synclog_length_cluster_barrier_arrive_cluster = synclog_length_prefix + 5;
-
+constexpr uint32_t synclog_length_cluster_barrier_arrive_cluster = synclog_length_prefix + 3;
 constexpr bool     synclog_enable_cluster_barrier_arrive = true;
 constexpr uint32_t synclog_header_cluster_barrier_arrive = 10;
-constexpr uint32_t synclog_length_cluster_barrier_arrive = synclog_length_prefix + 3;
-
+constexpr uint32_t synclog_length_cluster_barrier_arrive = synclog_length_prefix + 1;
 constexpr bool     synclog_enable_cluster_barrier_invalidate = true;
 constexpr uint32_t synclog_header_cluster_barrier_invalidate = 11;
-constexpr uint32_t synclog_length_cluster_barrier_invalidate = synclog_length_prefix + 3;
-
+constexpr uint32_t synclog_length_cluster_barrier_invalidate = synclog_length_prefix + 1;
 constexpr bool     synclog_enable_cluster_transaction_barrier_arrive_and_expect_tx = true;
 constexpr uint32_t synclog_header_cluster_transaction_barrier_arrive_and_expect_tx = 12;
-constexpr uint32_t synclog_length_cluster_transaction_barrier_arrive_and_expect_tx = synclog_length_prefix + 4;
-
+constexpr uint32_t synclog_length_cluster_transaction_barrier_arrive_and_expect_tx = synclog_length_prefix + 2;
 constexpr bool     synclog_enable_cluster_transaction_barrier_arrive_and_expect_tx_cluster = true;
 constexpr uint32_t synclog_header_cluster_transaction_barrier_arrive_and_expect_tx_cluster = 13;
-constexpr uint32_t synclog_length_cluster_transaction_barrier_arrive_and_expect_tx_cluster = synclog_length_prefix + 6;
-
+constexpr uint32_t synclog_length_cluster_transaction_barrier_arrive_and_expect_tx_cluster = synclog_length_prefix + 4;
 constexpr bool     synclog_enable_cluster_transaction_barrier_expect_transaction = true;
 constexpr uint32_t synclog_header_cluster_transaction_barrier_expect_transaction = 14;
-constexpr uint32_t synclog_length_cluster_transaction_barrier_expect_transaction = synclog_length_prefix + 4;
-
+constexpr uint32_t synclog_length_cluster_transaction_barrier_expect_transaction = synclog_length_prefix + 2;
 constexpr bool     synclog_enable_cluster_transaction_barrier_complete_transaction = true;
 constexpr uint32_t synclog_header_cluster_transaction_barrier_complete_transaction = 15;
-constexpr uint32_t synclog_length_cluster_transaction_barrier_complete_transaction = synclog_length_prefix + 6;
-
+constexpr uint32_t synclog_length_cluster_transaction_barrier_complete_transaction = synclog_length_prefix + 4;
 constexpr bool     synclog_enable_fence_barrier_init = true;
 constexpr uint32_t synclog_header_fence_barrier_init = 16;
 constexpr uint32_t synclog_length_fence_barrier_init = synclog_length_prefix + 0;
@@ -165,6 +155,10 @@ constexpr uint32_t synclog_length_fence_barrier_init = synclog_length_prefix + 0
 constexpr bool     synclog_enable_fence_view_async_shared = true;
 constexpr uint32_t synclog_header_fence_view_async_shared = 17;
 constexpr uint32_t synclog_length_fence_view_async_shared = synclog_length_prefix + 0;
+
+constexpr bool     synclog_enable_fence_view_shared = true;
+constexpr uint32_t synclog_header_fence_view_shared = 39;
+constexpr uint32_t synclog_length_fence_view_shared = synclog_length_prefix + 0;
 
 constexpr bool     synclog_enable_cp_async_wait = true;
 constexpr uint32_t synclog_header_cp_async_wait = 18;
@@ -228,12 +222,11 @@ constexpr uint32_t synclog_length_wgmma_smem_smem = synclog_length_prefix + 4;
 
 constexpr bool     synclog_enable_cpasync_barrier_arrive = true;
 constexpr uint32_t synclog_header_cpasync_barrier_arrive = 33;
-constexpr uint32_t synclog_length_cpasync_barrier_arrive = synclog_length_prefix + 3;
-
+constexpr uint32_t synclog_length_cpasync_barrier_arrive = synclog_length_prefix + 1;
 CUTLASS_DEVICE
 bool synclog_condition_emit() {
   #if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
-  return threadIdx.x%NumThreadsPerWarp == 0 && threadIdx.y == 0 && threadIdx.z == 0 &&
+  return threadIdx.x % NumThreadsPerWarp == 0 && threadIdx.y == 0 && threadIdx.z == 0 &&
     blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0;
   #else
   return 0;
@@ -270,17 +263,6 @@ void synclog_print_prefix(char const* header, uint32_t at) {
     blockIdxX, blockIdxY, blockIdxZ
   );
   #endif
-}
-
-CUTLASS_DEVICE
-uint64_t synclog_mbarrier_bits(uint32_t smem_addr) {
-  uint64_t bits = 0;
-  asm volatile (
-    "mbarrier.inval.shared::cta.b64 [%1];\n"
-    "ld.shared::cta.b64 %0, [%1];\n"
-    : "=l"(bits) : "r"(smem_addr)
-  );
-  return bits;
 }
 
 CUTLASS_DEVICE
@@ -429,14 +411,11 @@ void synclog_emit_cluster_barrier_wait(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_barrier_wait) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_barrier_wait);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_barrier_wait, line);
   to[synclog_length_prefix + 0] = smem_addr;
   to[synclog_length_prefix + 1] = phase;
-  to[synclog_length_prefix + 2] = bits;
-  to[synclog_length_prefix + 3] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -453,15 +432,12 @@ void synclog_emit_cluster_barrier_test_wait(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_barrier_test_wait) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_barrier_test_wait);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_barrier_test_wait, line);
   to[synclog_length_prefix + 0] = smem_addr;
   to[synclog_length_prefix + 1] = phase;
   to[synclog_length_prefix + 2] = pred;
-  to[synclog_length_prefix + 3] = bits;
-  to[synclog_length_prefix + 4] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -478,14 +454,11 @@ void synclog_emit_cluster_barrier_try_wait(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_barrier_try_wait) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_barrier_try_wait);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_barrier_try_wait, line);
   to[synclog_length_prefix + 0] = smem_addr;
   to[synclog_length_prefix + 1] = phase;
-  to[synclog_length_prefix + 2] = bits;
-  to[synclog_length_prefix + 3] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -502,15 +475,12 @@ void synclog_emit_cluster_barrier_arrive_cluster(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_barrier_arrive_cluster) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_barrier_arrive_cluster);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_barrier_arrive_cluster, line);
   to[synclog_length_prefix + 0] = smem_addr;
   to[synclog_length_prefix + 1] = cta_id;
   to[synclog_length_prefix + 2] = pred;
-  to[synclog_length_prefix + 3] = bits;
-  to[synclog_length_prefix + 4] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -526,13 +496,10 @@ void synclog_emit_cluster_barrier_arrive(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_barrier_arrive) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_barrier_arrive);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_barrier_arrive, line);
   to[synclog_length_prefix + 0] = smem_addr;
-  to[synclog_length_prefix + 1] = bits;
-  to[synclog_length_prefix + 2] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -546,13 +513,10 @@ void synclog_emit_cluster_barrier_invalidate(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_barrier_invalidate) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_barrier_invalidate);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_barrier_invalidate, line);
   to[synclog_length_prefix + 0] = smem_addr;
-  to[synclog_length_prefix + 1] = bits;
-  to[synclog_length_prefix + 2] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -567,14 +531,11 @@ void synclog_emit_cluster_transaction_barrier_arrive_and_expect_tx(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_transaction_barrier_arrive_and_expect_tx) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_transaction_barrier_arrive_and_expect_tx);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_transaction_barrier_arrive_and_expect_tx, line);
   to[synclog_length_prefix + 0] = smem_addr;
   to[synclog_length_prefix + 1] = transaction_bytes;
-  to[synclog_length_prefix + 2] = bits;
-  to[synclog_length_prefix + 3] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -592,7 +553,6 @@ void synclog_emit_cluster_transaction_barrier_arrive_and_expect_tx_cluster(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_transaction_barrier_arrive_and_expect_tx_cluster) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_transaction_barrier_arrive_and_expect_tx_cluster);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_transaction_barrier_arrive_and_expect_tx_cluster, line);
@@ -600,8 +560,6 @@ void synclog_emit_cluster_transaction_barrier_arrive_and_expect_tx_cluster(
   to[synclog_length_prefix + 1] = transaction_bytes;
   to[synclog_length_prefix + 2] = cta_id;
   to[synclog_length_prefix + 3] = pred;
-  to[synclog_length_prefix + 4] = bits;
-  to[synclog_length_prefix + 5] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -619,14 +577,11 @@ void synclog_emit_cluster_transaction_barrier_expect_transaction(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_transaction_barrier_expect_transaction) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_transaction_barrier_expect_transaction);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_transaction_barrier_expect_transaction, line);
   to[synclog_length_prefix + 0] = smem_addr;
   to[synclog_length_prefix + 1] = transaction_bytes;
-  to[synclog_length_prefix + 2] = bits;
-  to[synclog_length_prefix + 2] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -644,7 +599,6 @@ void synclog_emit_cluster_transaction_barrier_complete_transaction(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cluster_transaction_barrier_complete_transaction) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cluster_transaction_barrier_complete_transaction);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cluster_transaction_barrier_complete_transaction, line);
@@ -652,8 +606,6 @@ void synclog_emit_cluster_transaction_barrier_complete_transaction(
   to[synclog_length_prefix + 1] = dst_cta_id;
   to[synclog_length_prefix + 2] = transaction_bytes;
   to[synclog_length_prefix + 3] = pred;
-  to[synclog_length_prefix + 4] = bits;
-  to[synclog_length_prefix + 5] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -684,6 +636,19 @@ void synclog_emit_fence_view_async_shared(uint32_t line) {
   uint32_t* to = synclog_alloc(synclog_length_fence_view_async_shared);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_fence_view_async_shared, line);
+  #else
+  CUTLASS_UNUSED(line);
+  #endif // defined(CUTLASS_ENABLE_SYNCLOG)
+}
+
+CUTLASS_DEVICE
+void synclog_emit_fence_view_shared(uint32_t line) {
+  #if defined(CUTLASS_ENABLE_SYNCLOG)
+  if constexpr (!synclog_enable_fence_view_shared) return;
+  if (!synclog_condition_emit()) return;
+  uint32_t* to = synclog_alloc(synclog_length_fence_view_shared);
+  if (to == nullptr) return;
+  synclog_emit_prefix(to, synclog_header_fence_view_shared, line);
   #else
   CUTLASS_UNUSED(line);
   #endif // defined(CUTLASS_ENABLE_SYNCLOG)
@@ -977,13 +942,10 @@ void synclog_emit_cpasync_barrier_arrive(
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_cpasync_barrier_arrive) return;
   if (!synclog_condition_emit()) return;
-  uint64_t bits = synclog_mbarrier_bits(smem_addr);
   uint32_t* to = synclog_alloc(synclog_length_cpasync_barrier_arrive);
   if (to == nullptr) return;
   synclog_emit_prefix(to, synclog_header_cpasync_barrier_arrive, line);
   to[synclog_length_prefix + 0] = smem_addr;
-  to[synclog_length_prefix + 1] = bits;
-  to[synclog_length_prefix + 2] = bits >> 32;
   #else
   CUTLASS_UNUSED(line);
   CUTLASS_UNUSED(smem_addr);
@@ -1054,7 +1016,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_barrier_wait) {
         synclog_print_prefix("cluster_barrier_wait", at);
         at += synclog_length_cluster_barrier_wait;
-        printf("smem_addr=%u phase=%u", synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u phase=%u\n", synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1062,7 +1024,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_barrier_test_wait) {
         synclog_print_prefix("cluster_barrier_test_wait", at);
         at += synclog_length_cluster_barrier_test_wait;
-        printf("smem_addr=%u phase=%u pred=%u", synclog_buf[at-5], synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u phase=%u pred=%u\n", synclog_buf[at-3], synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1070,7 +1032,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_barrier_try_wait) {
         synclog_print_prefix("cluster_barrier_try_wait", at);
         at += synclog_length_cluster_barrier_try_wait;
-        printf("smem_addr=%u phase=%u", synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u phase=%u\n", synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1078,7 +1040,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_barrier_arrive_cluster) {
         synclog_print_prefix("cluster_barrier_arrive_cluster", at);
         at += synclog_length_cluster_barrier_arrive_cluster;
-        printf("smem_addr=%u cta_id=%u pred=%u", synclog_buf[at-5], synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u cta_id=%u pred=%u\n", synclog_buf[at-3], synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1086,7 +1048,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_barrier_arrive) {
         synclog_print_prefix("cluster_barrier_arrive", at);
         at += synclog_length_cluster_barrier_arrive;
-        printf("smem_addr=%u", synclog_buf[at-3]);
+        printf("smem_addr=%u\n", synclog_buf[at-1]);
         continue;
       }
     }
@@ -1094,7 +1056,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_barrier_invalidate) {
         synclog_print_prefix("cluster_barrier_invalidate", at);
         at += synclog_length_cluster_barrier_invalidate;
-        printf("smem_addr=%u", synclog_buf[at-3]);
+        printf("smem_addr=%u\n", synclog_buf[at-1]);
         continue;
       }
     }
@@ -1102,7 +1064,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_transaction_barrier_arrive_and_expect_tx) {
         synclog_print_prefix("cluster_transaction_barrier_arrive_and_expect_tx", at);
         at += synclog_length_cluster_transaction_barrier_arrive_and_expect_tx;
-        printf("smem_addr=%u transaction_bytes=%u", synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u transaction_bytes=%u\n", synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1110,7 +1072,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_transaction_barrier_arrive_and_expect_tx_cluster) {
         synclog_print_prefix("cluster_transaction_barrier_arrive_and_expect_tx_cluster", at);
         at += synclog_length_cluster_transaction_barrier_arrive_and_expect_tx_cluster;
-        printf("smem_addr=%u transaction_bytes=%u cta_id=%u pred=%u", synclog_buf[at-6], synclog_buf[at-5], synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u transaction_bytes=%u cta_id=%u pred=%u\n", synclog_buf[at-4], synclog_buf[at-3], synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1118,7 +1080,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_transaction_barrier_expect_transaction) {
         synclog_print_prefix("cluster_transaction_barrier_expect_transaction", at);
         at += synclog_length_cluster_transaction_barrier_expect_transaction;
-        printf("smem_addr=%u transaction_bytes=%u", synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u transaction_bytes=%u\n", synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1126,7 +1088,7 @@ void synclog_print() {
       if (header == synclog_header_cluster_transaction_barrier_complete_transaction) {
         synclog_print_prefix("cluster_transaction_barrier_complete_transaction", at);
         at += synclog_length_cluster_transaction_barrier_complete_transaction;
-        printf("smem_addr=%u dst_cta_id=%u transaction_bytes=%u pred=%u", synclog_buf[at-6], synclog_buf[at-5], synclog_buf[at-4], synclog_buf[at-3]);
+        printf("smem_addr=%u dst_cta_id=%u transaction_bytes=%u pred=%u\n", synclog_buf[at-4], synclog_buf[at-3], synclog_buf[at-2], synclog_buf[at-1]);
         continue;
       }
     }
@@ -1142,6 +1104,14 @@ void synclog_print() {
       if (header == synclog_header_fence_view_async_shared) {
         synclog_print_prefix("fence_view_async_shared", at);
         at += synclog_length_fence_view_async_shared;
+        printf("\n");
+        continue;
+      }
+    }
+    if constexpr (synclog_enable_fence_view_shared) {
+      if (header == synclog_header_fence_view_shared) {
+        synclog_print_prefix("fence_view_shared", at);
+        at += synclog_length_fence_view_shared;
         printf("\n");
         continue;
       }
@@ -1283,7 +1253,7 @@ void synclog_print() {
       if (header == synclog_header_cpasync_barrier_arrive) {
         synclog_print_prefix("cpasync_barrier_arrive", at);
         at += synclog_length_cpasync_barrier_arrive;
-        printf("smem_addr=%u", synclog_buf[at-3]);
+        printf("smem_addr=%u\n", synclog_buf[at-1]);
         continue;
       }
     }
@@ -1302,6 +1272,7 @@ void synclog_print() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
 #if defined(CUTLASS_ENABLE_SYNCLOG)
 #undef __syncthreads
 #define __syncthreads() do {\
@@ -1317,6 +1288,7 @@ void synclog_print() {
   __syncwarp(__VA_ARGS__);\
 } while (0)
 #endif // defined(CUTLASS_ENABLE_SYNCLOG)
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

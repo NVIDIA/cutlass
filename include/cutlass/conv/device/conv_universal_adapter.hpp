@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -351,7 +351,8 @@ public:
         }
         else {
           if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 100 ||
-                        ConvKernel::ArchTag::kMinComputeCapability == 101) {
+                        ConvKernel::ArchTag::kMinComputeCapability == 101
+                        ) { 
             launch_result = ClusterLauncher::launch_with_fallback_cluster(
               grid,
               cluster,

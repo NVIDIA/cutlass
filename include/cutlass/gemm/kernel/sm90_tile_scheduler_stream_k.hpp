@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -245,9 +245,10 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
-    // Split count > 1 is only valid for heuristic and split-K decomposition modes
-    return (args.splits == 1 ||
+  can_implement(Arguments const& args, KernelHardwareInfo const&) {
+    // Split count must be positive, and > 1 is only valid for heuristic and split-K decomposition modes
+    return args.splits >= 1 &&
+           (args.splits == 1 ||
             args.decomposition_mode == DecompositionMode::Heuristic ||
             args.decomposition_mode == DecompositionMode::SplitK);
   }
@@ -328,13 +329,15 @@ public:
 
   CUTLASS_DEVICE
   bool is_last_tile(WorkTileInfo work_tile_info, uint32_t advance_count = 1) const {
-     // Never pass this by reference; it needs a copy,
+    // Never pass this by reference; it needs a copy,
     // because continue_current_work will modify it.
     if (continue_current_work(work_tile_info)) {
       return false;
     }
+    // Create a copy to avoid unit_iter_start_ being modified
+    uint32_t unit_iter_start = unit_iter_start_;
     return not get_current_work_for_linear_idx(
-        unit_iter_start_,
+        unit_iter_start,
         current_work_linear_idx_ + (
           uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z) * uint64_t(advance_count)
           ),

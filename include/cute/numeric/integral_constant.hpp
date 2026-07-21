@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -516,7 +516,7 @@ constexpr uint64_t parse_int_digits(uint64_t result, int digit, Ts... digits)
 //  var has type cute::constant<int,32>.
 //
 template <char... digits>
-constexpr cute::constant<int,detail::parse_int_digits(0, (digits - '0')...)> operator "" _c()
+constexpr cute::constant<int,detail::parse_int_digits(0, (digits - '0')...)> operator""_c()
 {
   static_assert((('0' <= digits && digits <= '9') && ...),
                 "Expected 0 <= digit <= 9 for each digit of the integer.");

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -148,9 +148,10 @@ public:
   static constexpr uint32_t NumFixupBarriers = 1;
   static constexpr uint32_t CLCResponseSize = sizeof(typename TileScheduler::CLCResponse);
 
-  // Transfer registers from regular warps to Accum warps
-  static constexpr uint32_t GenericRegisterRequirement = 152;
-  static constexpr uint32_t AccumRegisterRequirement = 200;
+  // Register reconfiguration
+  static constexpr uint32_t GenericRegisterRequirement = CollectiveMainloop::GenericRegisterRequirement;
+  static constexpr uint32_t TransformRegisterRequirement = CollectiveMainloop::TransformRegisterRequirement;
+  static constexpr uint32_t AccumRegisterRequirement = CollectiveMainloop::AccumRegisterRequirement;
 
   // Pipeline and pipeline state types
   using Load2TransformPipeline = typename CollectiveMainloop::Load2TransformPipeline;
@@ -222,7 +223,6 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
 
   // Host facing host arguments
   struct Arguments {
@@ -324,7 +324,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
 
     if constexpr (IsDynamicCluster) {
       static constexpr int MaxClusterSize = 16;
@@ -413,6 +413,22 @@ public:
     return dim3(MaxThreadsPerBlock, 1, 1);
   }
 
+  // Register alloc/dealloc behavior might change according to the underlying collective used
+  template <uint32_t NReg>
+  CUTLASS_DEVICE
+  static constexpr void
+  warpgroup_reg_reconfig() {
+    // Compute default-allocated registers per thread: round_down((512 / NumWG), 8)
+    constexpr int32_t MaxWarpGroupsPerBlock = ceil_div(MaxThreadsPerBlock, NumThreadsPerWarpGroup);
+    constexpr int32_t NumRegsPerThread = (512 / MaxWarpGroupsPerBlock) / 8 * 8;
+    if constexpr (NReg < NumRegsPerThread) {
+      arch::warpgroup_reg_dealloc<NReg>();
+    }
+    else if constexpr (NReg > NumRegsPerThread) {
+      arch::warpgroup_reg_alloc<NReg>();
+    }
+  }
+
   CUTLASS_DEVICE
   void
   operator() (Params const& params, char* smem_buf) {
@@ -420,6 +436,7 @@ public:
     using namespace cute;
     using X = Underscore;
 
+    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
     auto problem_shape = params.problem_shape;
 
     // Account for multiple epilogue and transformation warps
@@ -649,17 +666,20 @@ public:
     transform2mma_pipeline.init_masks(cluster_shape);
     mma2accum_pipeline.init_masks(cluster_shape);
 
+    // Allocate accumulators
+    auto acc_shape = collective_mainloop.partition_accumulator_shape();
+
+    // Ensure memory ops in this kernel are not done prior to completion of dependent grids.
+    cutlass::arch::wait_on_dependent_grids();
+
     // TileID scheduler
     TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
-    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
 
+    typename TileScheduler::WorkTileInfo work_tile_info = scheduler.initial_work_tile_info(cluster_shape);
     auto cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
 
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
-
-    // Allocate accumulators
-    auto acc_shape = collective_mainloop.partition_accumulator_shape();
 
     // NOTE: we can assume the tmem buf starts at zero since we allocate all tmem in this kernel
     auto bulk_tmem = TiledMma::make_fragment_C(append(acc_shape,
@@ -674,7 +694,7 @@ public:
 
     if (is_participant.main_load) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
@@ -788,7 +808,7 @@ public:
 
     else if (is_participant.transformation) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<TransformRegisterRequirement>();
 
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
@@ -830,7 +850,7 @@ public:
 
     else if (is_participant.sched) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
@@ -895,7 +915,7 @@ public:
 
     else if (is_participant.mma) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Allocate all tmem
       tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
@@ -963,7 +983,7 @@ public:
 
     else if (is_participant.epi_load) {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
@@ -1048,7 +1068,7 @@ public:
 
     else if (is_participant.epilogue) {
       // Register reconfiguration
-      arch::warpgroup_reg_alloc<AccumRegisterRequirement>();
+      warpgroup_reg_reconfig<AccumRegisterRequirement>();
 
       // Throttle the epilogue warps to improve prologue performance
       static constexpr int epilogue_throttle_phase_bit = 0;
@@ -1143,7 +1163,9 @@ public:
           // support fixup operations needed by split-/stream-K. These operations are pushed
           // to the collective layer so that they can reuse the TMEM -> RF copy performed
           // at the collective layer.
-          auto [mma2accum_pipeline_state_next] = collective_epilogue(
+          auto [mma2accum_pipeline_state_next, epi_load_pipe_consumer_state_next] = collective_epilogue(
+            epi_load_pipeline,
+            epi_load_pipe_consumer_state,
             mma2accum_pipeline,
             mma2accum_pipeline_consumer_state,
             problem_shape_MNKL,
@@ -1154,6 +1176,7 @@ public:
           );
           // Advance the mm2accum pipe
           mma2accum_pipeline_consumer_state = mma2accum_pipeline_state_next;
+          epi_load_pipe_consumer_state = epi_load_pipe_consumer_state_next;
         }
 
         work_tile_info = next_work_tile_info;
@@ -1176,7 +1199,7 @@ public:
 
     else {
       // Register reconfiguration
-      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+      warpgroup_reg_reconfig<GenericRegisterRequirement>();
     }
   }
 };

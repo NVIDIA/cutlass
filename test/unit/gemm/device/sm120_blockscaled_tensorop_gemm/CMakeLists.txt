@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -71,6 +71,8 @@ cutlass_test_unit_gemm_device_add_executable(
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_bs_grouped_gemm_device_tensorop_sm120
   sm120_bs_gemm_nvf4_nvf4_f32_nvf4_group_gemm_fusion.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_bf16_group_gemm.cu
+  sm120_bs_gemm_mxf8_mxf4_f32_group_gemm_fusion.cu
 )
 
 endif()

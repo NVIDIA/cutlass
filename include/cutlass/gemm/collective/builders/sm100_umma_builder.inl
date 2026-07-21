@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -153,6 +153,7 @@ check_input_datatypes() {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+  class ArchTag,
   class ElementA,
   class GmemLayoutATag,
   int AlignmentA,
@@ -166,7 +167,7 @@ template <
   class BuilderScheduleTag
 >
 struct CollectiveBuilder<
-    arch::Sm100,
+    ArchTag,
     arch::OpClassTensorOp,
     ElementA,
     GmemLayoutATag,
@@ -180,10 +181,15 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      (cute::is_same_v<ArchTag, arch::Sm100> 
+      ) &&
       not cute::is_tuple_v<ElementA>   && not cute::is_tuple_v<ElementB> &&
       not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&
       // Dense Gemm / PtrArrayDenseGemm
       (
+       (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
+       (not cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized2SmSm100, BuilderScheduleTag>) && 
+       (not cute::is_same_v<KernelWarpSpecialized1SmSm100, BuilderScheduleTag>) && 
        (cute::is_base_of_v<KernelScheduleSm100DenseGemm, BuilderScheduleTag> ||
         cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)) &&
       // Alignment check
@@ -263,11 +269,17 @@ struct CollectiveBuilder<
 
   // Calculate scheduler pipeline stages. Having one more stage than the accumulator allows more latency hiding.
   using StrideA = cutlass::gemm::TagToStrideA_t<GmemLayoutATag>;
+  using StrideB = cutlass::gemm::TagToStrideB_t<GmemLayoutBTag>;
   using InternalStrideA  = cute::remove_pointer_t<StrideA>;
+  using InternalStrideB  = cute::remove_pointer_t<StrideB>;
   static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayDenseGemm, BuilderScheduleTag>);
+
   // Grouped GEMM(where Stride type is Stride*) uses specific static tile scheduler.
-  static constexpr bool IsGroupGemm = !cute::is_same_v<StrideA, InternalStrideA>;
-  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm>(8, 2);
+  // Perform checks for both StrideA and StrideB to filter out Ragged Continguous Group Gemm
+  static constexpr bool IsGroupGemm = !(cute::is_same_v<StrideA, InternalStrideA>) && !(cute::is_same_v<StrideB, InternalStrideB>);
+  static constexpr bool IsRCGroupGemm = (cute::is_same_v<StrideA, InternalStrideA>) && !(cute::is_same_v<StrideB, InternalStrideB>);
+
+  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm || IsRCGroupGemm>(8, 2);
   
   static constexpr uint32_t KernelSmemCarveout = detail::Sm100DenseGemmTmaUmmaCarveout<
       ClusterShape_MNK,
@@ -277,28 +289,40 @@ struct CollectiveBuilder<
       IsArrayOfPointersGemm
     >::KernelSmemCarveout;
   // Reduce SMEM capacity available for buffers considering barrier allocations.
-  static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
+  static constexpr int ReducedSmemCapacityBytes = detail::sm100_reduced_smem_capacity_bytes<ArchTag, KernelSmemCarveout>();
+  
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
   using MainloopPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override<
-      Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, MainloopPipelineStorage>(StageCountType{});
+      ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, SmemTileShape, MainloopPipelineStorage>(StageCountType{});
   static_assert(PipelineStages > 0, "Smem usage is too high. Can't create any SMEM buffers for A, and B.");
 
   using DispatchPolicy = 
       cute::conditional_t<IsArrayOfPointersGemm, 
-      cutlass::gemm::MainloopSm100ArrayTmaUmmaWarpSpecialized<
-          PipelineStages,
-          SchedulerPipelineStageCount,
-          AccumulatorPipelineStageCount,
-          ClusterShape_MNK
-      >,
+        cute::conditional_t<IsRCGroupGemm, 
+          cutlass::gemm::MainloopSm100RCGroupGemmTmaUmmaWarpSpecialized<
+            PipelineStages,
+            SchedulerPipelineStageCount,
+            AccumulatorPipelineStageCount,
+            ClusterShape_MNK,
+            ArchTag
+          >,
+          cutlass::gemm::MainloopSm100ArrayTmaUmmaWarpSpecialized<
+            PipelineStages,
+            SchedulerPipelineStageCount,
+            AccumulatorPipelineStageCount,
+            ClusterShape_MNK,
+            ArchTag
+          >
+        >,
       cutlass::gemm::MainloopSm100TmaUmmaWarpSpecialized<
           PipelineStages,
           SchedulerPipelineStageCount,
           AccumulatorPipelineStageCount,
-          ClusterShape_MNK
+          ClusterShape_MNK,
+          ArchTag
       >
     >;
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,9 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/gemm/collective/fp8_accumulation.hpp"
 #include "cutlass/trace.h"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/numeric_types.h"
 
 #include "cute/arch/cluster_sm90.hpp"
@@ -73,7 +75,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<Stages, ClusterShape, KernelSchedule>,
     TileShape_,
     ElementA_,
     StridePairA_,
@@ -91,7 +93,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>;
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<Stages, ClusterShape, KernelSchedule>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = cute::tuple_element_t<0,StridePairA_>;
@@ -134,9 +136,12 @@ struct CollectiveMma<
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
+  static constexpr bool MMajorSFA = size<0,1>(LayoutSFA{}.stride()) == 1;
+  static constexpr bool NMajorSFB = size<0,1>(LayoutSFB{}.stride()) == 1;
+
   static constexpr int ScaleTmaThreshold = 32;
-  static constexpr bool IsTmaLoadSFA = ScaleMsPerTile >= ScaleTmaThreshold && ScaleNsPerTile < ScaleTmaThreshold;
-  static constexpr bool IsTmaLoadSFB = ScaleNsPerTile >= ScaleTmaThreshold && ScaleMsPerTile < ScaleTmaThreshold;
+  static constexpr bool IsTmaLoadSFA = ScaleMsPerTile >= ScaleTmaThreshold && ScaleNsPerTile < ScaleTmaThreshold && MMajorSFA;
+  static constexpr bool IsTmaLoadSFB = ScaleNsPerTile >= ScaleTmaThreshold && ScaleMsPerTile < ScaleTmaThreshold && NMajorSFB;
   // Two threads per CTA are producers (1 for operand tile `tma`, and 32 for scales `cp.async`)
   static constexpr int NumProducerThreadEvents = ((IsTmaLoadSFA && IsTmaLoadSFB)? 1 : 33);
 
@@ -151,7 +156,12 @@ struct CollectiveMma<
   static_assert((size<0>(TileShape{}) % ScaleGranularityM) == 0, "FP8 scaling granularity must evenly divide tile shape along M.");
   static_assert((size<1>(TileShape{}) % ScaleGranularityN) == 0, "FP8 scaling granularity must evenly divide tile shape along N.");
 
-  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<
+      ScaleGranularityM, 
+      ScaleGranularityN, 
+      ScaleGranularityK,
+      MMajorSFA ? cute::GMMA::Major::MN : cute::GMMA::Major::K,
+      NMajorSFB ? cute::GMMA::Major::MN : cute::GMMA::Major::K>;
   using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(TileShape{}));
   using SmemLayoutAtomSFB = decltype(ScaleConfig::smem_atom_layoutSFB(TileShape{}));
 
@@ -170,8 +180,8 @@ struct CollectiveMma<
   using CopyAtomSFA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
 
-  static constexpr int AlignmentSFA = 1;
-  static constexpr int AlignmentSFB = 1;
+  static constexpr int AlignmentSFA = IsTmaLoadSFA ? 128 / cutlass::sizeof_bits<ElementBlockScale>::value : 1;
+  static constexpr int AlignmentSFB = IsTmaLoadSFB ? 128 / cutlass::sizeof_bits<ElementBlockScale>::value : 1;
 
   // Block scaling smem layout
   using SmemLayoutSFA = decltype(make_layout(
@@ -194,6 +204,9 @@ struct CollectiveMma<
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
   static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
              "ElementAccumulator and ElementBlockScale should be same datatype");
+
+  using NumSplitsM = cute::C<get<0>(TileShape_{}) / 128>;
+  static_assert(NumSplitsM{} == 1 || NumSplitsM{} == 2);
 
   struct SharedStorage
   {
@@ -382,12 +395,6 @@ struct CollectiveMma<
     if (IsTmaLoadSFB && !cutlass::detail::check_alignment<min_tma_aligned_elements_S>(args.layout_SFB)) {
       implementable = false;
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size doesn't meet the minimum alignment requirements for using TMA to load scale B.\n");
-    }
-
-    // We expect full tiles in K
-    if (K % size<2>(TileShape{}) != 0) {
-      implementable = false;
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size K is incompatible with tile size.\n");
     }
     return implementable;
   }
@@ -669,7 +676,7 @@ struct CollectiveMma<
       Tensor tSFAcSFA_compact = filter_zeros(tSFAcSFA);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tSFApSFA); ++i) {
-        tSFApSFA(i) = load_sfa && elem_less(get<0>(tSFAcSFA_compact(i)), get<0>(SFA_shape));
+        tSFApSFA(i) = load_sfa && elem_less(tSFAcSFA_compact(i), SFA_shape);
       }
 
       bool load_sfb = thread_idx < ScaleNsPerTile;
@@ -677,7 +684,7 @@ struct CollectiveMma<
       Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tSFBpSFB); ++i) {
-        tSFBpSFB(i) = load_sfb && elem_less(get<0>(tSFBcSFB_compact(i)), get<0>(SFB_shape));
+        tSFBpSFB(i) = load_sfb && elem_less(tSFBcSFB_compact(i), SFB_shape);
       }
       int write_stage = smem_pipe_write.index();
       // Copy scale tensors from global memory to shared memory
@@ -718,34 +725,36 @@ struct CollectiveMma<
   }
 
   template<
+    class AccumSlice,
     class EngineAccum,
     class LayoutAccum,
     class ScaleFactor
   >
   CUTLASS_DEVICE
-  void scale_if_needed(GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor scaleFactor) {
+  void scale_if_needed(AccumSlice & accum, GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor scaleFactor) {
     if constexpr (ScalePromotionInterval != 4) {
-      accumulation.scale_if_needed(scaleFactor);
+      accumulation.scale_if_needed(accum, scaleFactor);
     }
     else {
       // avoid unnecessary tests when granularity is the finnest
-      accumulation.scale(scaleFactor);
+      accumulation.scale(accum, scaleFactor);
     }
   }
   template<
+    class AccumSlice,
     class EngineAccum,
     class LayoutAccum,
     class ScaleFactor1,
     class ScaleFactor2
   >
   CUTLASS_DEVICE
-  void scale_if_needed(GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor1 scaleFactor1, ScaleFactor2 scaleFactor2) {
+  void scale_if_needed(AccumSlice & accum, GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor1 scaleFactor1, ScaleFactor2 scaleFactor2) {
     if constexpr (ScalePromotionInterval != 4) {
-      accumulation.scale_if_needed(scaleFactor1, scaleFactor2);
+      accumulation.scale_if_needed(accum, scaleFactor1, scaleFactor2);
     }
     else {
       // avoid unnecessary tests when granularity is the finnest
-      accumulation.scale(scaleFactor1, scaleFactor2);
+      accumulation.scale(accum, scaleFactor1, scaleFactor2);
     }
   }
 
@@ -850,70 +859,27 @@ struct CollectiveMma<
     // Prologue GMMAs
 
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+    // Tile accum
 
+    using NumSplitsM_Scale = cute::conditional_t<ScaleMsPerTile == 1, _1, NumSplitsM>;
+    static constexpr int ScaleMsPerWave = ScaleMsPerTile == 1 ? 1 : ScaleMsPerTile / NumSplitsM{};
+
+    auto accum_tiled = tiled_divide(accum, cute::tuple<_1, NumSplitsM>{});
+    auto tCrA_tiled = tiled_divide(tCrA, cute::tuple<_1, NumSplitsM>{});
+    auto tCsSFA_tiled = tiled_divide(tCsSFA, cute::tuple<_1, NumSplitsM_Scale>{});
+    auto tCrSFA_tiled = tiled_divide(tCrSFA, cute::tuple<_1, NumSplitsM_Scale>{});
+    auto tCrSFB_tiled = tiled_divide(tCrSFB, cute::tuple<_1, NumSplitsM_Scale>{});
+    // Temporary accumulator used by MMA
+    // On promotion, accumulated values are scaled and copied into `accum`
+    auto accum_temp = cute::make_fragment_like(accum_tiled(_0{}, _, _, _));
     // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
     auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
     pipeline.consumer_wait(smem_pipe_read, barrier_token);
-    GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
-    warpgroup_fence_operand(accumulation());
-    {
-      int read_stage = smem_pipe_read.index();
-
-      // Load per block scale values from shared memory to registers
-      copy(tCsSFA(_,_,_,make_coord(_0{}, read_stage)), tCrSFA);
-      copy(tCsSFB(_,_,_,make_coord(_0{}, read_stage)), tCrSFB);
-
-      warpgroup_fence_operand(accumulation());
-      warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M) x (V,N) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accumulation());
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
-      warpgroup_commit_batch();
-      warpgroup_fence_operand(accumulation());
-
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_b = tCrSFB(_0{});
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
-          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
-        }
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        ElementBlockScale scale_a = tCrSFA(_0{});
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
-          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
-        }
-      }
-      warpgroup_wait<0>();
-      ++smem_pipe_read;
-      barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
-      // Block scale the accumulators with reg tensor `tCrSFA` and `tCrSFB`
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrSFA(_0{});
-        scale_if_needed(accumulation, scale_ab);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        scale_if_needed(accumulation, tCrSFA);
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFB);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFA, tCrSFB);
-      }
-    }
+    // Secondary accumulator for FP32 accum
+    GmmaFP8Accumulation accumulation(accum_temp, ScalePromotionInterval, size<2>(tCrA));
 
     warpgroup_fence_operand(accumulation());
     // Mainloop GMMAs
-    k_tile_count -= 1;
 
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 1; --k_tile_count)
@@ -927,71 +893,86 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
 
       // Load per block scale values from shared memory to registers (at most twice per block along M and/or N)
-      copy(tCsSFA(_,_,_,make_coord(_0{}, read_stage)), tCrSFA);
       copy(tCsSFB(_,_,_,make_coord(_0{}, read_stage)), tCrSFB);
 
-      if constexpr (ScalePromotionInterval != 4) {
-        if (accumulation.prepare_if_needed()) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int m_split = 0; m_split < NumSplitsM{}; ++m_split) {
+        auto tCrA_local = tCrA_tiled(m_split, _, _, _, _);
+        auto tCrSFA_local = tCrSFA_tiled(m_split, _, _, _);
+        auto tCrSFB_local = tCrSFB_tiled(m_split, _, _, _);
+        auto accum_local = accum_tiled(m_split, _, _, _);
+        copy(tCsSFA_tiled(m_split, _, _, _, make_coord(_0{}, read_stage)), tCrSFA_local);
+        bool is_last = (m_split == NumSplitsM{} - 1);
+
+        if constexpr (ScalePromotionInterval != 4) {
+          if (accumulation.prepare_if_needed()) {
+            tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+          }
+        }
+        else {
+          // Always zero out the accumulator for finest granularity
           tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
         }
-      }
-      else {
-        // Always zero out the accumulator for finest granularity
-        tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
-      }
 
-      warpgroup_fence_operand(accumulation());
-      warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M) x (V,N) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accumulation());
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
-      warpgroup_commit_batch();
-
-      /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
-      warpgroup_fence_operand(accumulation());
-
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_b = tCrSFB(_0{});
+        warpgroup_fence_operand(accumulation());
+        warpgroup_arrive();
+        // Unroll the K mode manually to set scale D to 1
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
-          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
+        for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+          // (V,M) x (V,N) => (V,M,N)
+          cute::gemm(tiled_mma, tCrA_local(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accumulation());
+          tiled_mma.accumulate_ = GMMA::ScaleOut::One;
         }
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        ElementBlockScale scale_a = tCrSFA(_0{});
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
-          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
-        }
-      }
-      warpgroup_wait<0>();
-      pipeline.consumer_release(smem_pipe_release); // Unlock previous tile
-      ++smem_pipe_read;
-      barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
-      // Block scale the accumulators with reg tensor `tCrSFA` and `tCrSFB`
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrSFA(_0{});
-        scale_if_needed(accumulation, scale_ab);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        scale_if_needed(accumulation, tCrSFA);
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFB);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFA, tCrSFB);
-      }
+        warpgroup_commit_batch();
 
-      // Advance smem_pipe_read and smem_pipe_release
-      ++smem_pipe_release;
+        /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
+        warpgroup_fence_operand(accumulation());
+
+
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile == 1) {
+          tCrSFA_local(_0{}) = tCrSFA_local(_0{}) * tCrSFB(_0{});
+        }
+        if constexpr (ScaleMsPerWave  > 1 && ScaleNsPerTile == 1) {
+          ElementBlockScale scale_b = tCrSFB(_0{});
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < size(filter_zeros(tCrSFA_local)); i++) {
+            filter_zeros(tCrSFA_local)(i) = filter_zeros(tCrSFA_local)(i) * scale_b;
+          }
+        }
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile  > 1) {
+          ElementBlockScale scale_a = tCrSFA_local(_0{});
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < size(filter_zeros(tCrSFB_local)); i++) {
+            filter_zeros(tCrSFB_local)(i) = filter_zeros(tCrSFB_local)(i) * scale_a;
+          }
+        }
+
+        warpgroup_wait<0>();
+        if (is_last) {
+          pipeline.consumer_release(smem_pipe_release); // Unlock previous tile
+          ++smem_pipe_read;
+          barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+        }
+        // Block scale the accumulators with reg tensor `tCrSFA_local` and `tCrSFB`
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile == 1) {
+          ElementBlockScale scale_ab = tCrSFA_local(_0{});
+          scale_if_needed(accum_local, accumulation, scale_ab);
+        }
+        if constexpr (ScaleMsPerWave  > 1 && ScaleNsPerTile == 1) {
+          scale_if_needed(accum_local, accumulation, tCrSFA_local);
+        }
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile  > 1) {
+          scale_if_needed(accum_local, accumulation, tCrSFB_local);
+        }
+        if constexpr (ScaleMsPerWave  > 1 && ScaleNsPerTile  > 1) {
+          scale_if_needed(accum_local, accumulation, tCrSFA_local, tCrSFB_local);
+        }
+
+        if (is_last) {
+          // Advance smem_pipe_read and smem_pipe_release
+          ++smem_pipe_release;
+        }
+      } // end for (m_split)
     }
     if (k_tile_count) {
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
@@ -1003,93 +984,101 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
 
       // Load per block scale values from shared memory to registers (at most twice per block along M and/or N)
-      copy(tCsSFA(_,_,_,make_coord(_0{}, read_stage)), tCrSFA);
       copy(tCsSFB(_,_,_,make_coord(_0{}, read_stage)), tCrSFB);
+      CUTLASS_PRAGMA_UNROLL
+      for (int m_split = 0; m_split < NumSplitsM{}; ++m_split) {
+        auto tCrA_local = tCrA_tiled(m_split, _, _, _, _);
+        auto tCrSFA_local = tCrSFA_tiled(m_split, _, _, _);
+        auto tCrSFB_local = tCrSFB_tiled(m_split, _, _, _);
+        auto accum_local = accum_tiled(m_split, _, _, _);
+        copy(tCsSFA_tiled(m_split, _, _, _, make_coord(_0{}, read_stage)), tCrSFA_local);
+        bool is_last = (m_split == NumSplitsM{} - 1);
 
-      if constexpr (ScalePromotionInterval != 4) {
-        if (accumulation.prepare_if_needed()) {
+        if constexpr (ScalePromotionInterval != 4) {
+          if (accumulation.prepare_if_needed()) {
+            tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+          }
+        }
+        else {
+          // Always zero out the accumulator for finest granularity
           tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
         }
-      }
-      else {
-        // Always zero out the accumulator for finest granularity
-        tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
-      }
 
-      warpgroup_fence_operand(accumulation());
-      warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M) x (V,N) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accumulation());
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
-      warpgroup_commit_batch();
-
-      /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
-      warpgroup_fence_operand(accumulation());
-
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_b = tCrSFB(_0{});
+        warpgroup_fence_operand(accumulation());
+        warpgroup_arrive();
+        // Unroll the K mode manually to set scale D to 1
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
-          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
+        for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+          // (V,M) x (V,N) => (V,M,N)
+          cute::gemm(tiled_mma, tCrA_local(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accumulation());
+          tiled_mma.accumulate_ = GMMA::ScaleOut::One;
         }
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        ElementBlockScale scale_a = tCrSFA(_0{});
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
-          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
-        }
-      }
-      warpgroup_wait<0>();
-      pipeline.consumer_release(smem_pipe_release); // Unlock previous tile
-      // Block scale the accumulators with reg tensor `tCrSFA` and `tCrSFB`
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrSFA(_0{});
-        scale_if_needed(accumulation, scale_ab);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        scale_if_needed(accumulation, tCrSFA);
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFB);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFA, tCrSFB);
-      }
-    }
-    if constexpr (ScalePromotionInterval != 4) {
-      // residues only exists when granularity is not the finnest
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrSFA(_0{});
-        accumulation.scale_residue_if_needed(scale_ab);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        accumulation.scale_residue_if_needed(tCrSFA);
-      }
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_residue_if_needed(tCrSFB);
-      }
-      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_residue_if_needed(tCrSFA, tCrSFB);
-      }
-    }
+        warpgroup_commit_batch();
 
-    warpgroup_fence_operand(accumulation());
+        /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
+        warpgroup_fence_operand(accumulation());
+
+
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile == 1) {
+          tCrSFA_local(_0{}) = tCrSFA_local(_0{}) * tCrSFB(_0{});
+        }
+        if constexpr (ScaleMsPerWave  > 1 && ScaleNsPerTile == 1) {
+          ElementBlockScale scale_b = tCrSFB(_0{});
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < size(filter_zeros(tCrSFA_local)); i++) {
+            filter_zeros(tCrSFA_local)(i) = filter_zeros(tCrSFA_local)(i) * scale_b;
+          }
+        }
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile  > 1) {
+          ElementBlockScale scale_a = tCrSFA_local(_0{});
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < size(filter_zeros(tCrSFB_local)); i++) {
+            filter_zeros(tCrSFB_local)(i) = filter_zeros(tCrSFB_local)(i) * scale_a;
+          }
+        }
+        warpgroup_wait<0>();
+        if (is_last) {
+          pipeline.consumer_release(smem_pipe_release); // Unlock previous tile
+        }
+        // Block scale the accumulators with reg tensor `tCrSFA_local` and `tCrSFB`
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile == 1) {
+          ElementBlockScale scale_ab = tCrSFA_local(_0{});
+          scale_if_needed(accum_local, accumulation, scale_ab);
+        }
+        if constexpr (ScaleMsPerWave  > 1 && ScaleNsPerTile == 1) {
+          scale_if_needed(accum_local, accumulation, tCrSFA_local);
+        }
+        if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile  > 1) {
+          scale_if_needed(accum_local, accumulation, tCrSFB_local);
+        }
+        if constexpr (ScaleMsPerWave  > 1 && ScaleNsPerTile  > 1) {
+          scale_if_needed(accum_local, accumulation, tCrSFA_local, tCrSFB_local);
+        }
+        if constexpr (ScalePromotionInterval != 4) {
+          // residues only exists when granularity is not the finnest
+          if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+            ElementBlockScale scale_ab = tCrSFA_local(_0{});
+            accumulation.scale_residue_if_needed(accum_local, scale_ab);
+          }
+          if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+            accumulation.scale_residue_if_needed(accum_local, tCrSFA_local);
+          }
+          if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+            accumulation.scale_residue_if_needed(accum_local, tCrSFB_local);
+          }
+          if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
+            accumulation.scale_residue_if_needed(accum_local, tCrSFA_local, tCrSFB_local);
+          }
+        }
+
+        warpgroup_fence_operand(accumulation());
+      } // end for (m_split)
+    }
   }
 
   /// Perform a Consumer Epilogue to release all buffers
   CUTLASS_DEVICE void
   mma_tail(MainloopPipeline pipeline, PipelineState smem_pipe_release, int k_tile_count) {
-    // The pipeline is not released in the first iteration
-    smem_pipe_release.advance(k_tile_count - 1);
-    pipeline.consumer_release(smem_pipe_release);
   }
 };
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -86,7 +86,8 @@ public:
   using ElementC = ElementC_;
   using LayoutC = LayoutC_;
   using ElementD = ElementD_;
-  using TensorRefC = TensorRef<ElementC, LayoutC>;
+  using NonVoidElementC = cute::conditional_t<cute::is_void_v<ElementC>, ElementD, ElementC>;
+  using TensorRefC = TensorRef<NonVoidElementC, LayoutC>;
   using TensorRefD = TensorRef<ElementD, LayoutC>;
   using ElementCompute = ElementCompute_;
   using ElementAccumulator = ElementAccumulator_;
@@ -199,7 +200,7 @@ public:
 
     TensorRefA ref_A{static_cast<ElementA *>(const_cast<void *>(args.A)), LayoutA(int(config.lda))};
     TensorRefB ref_B{static_cast<ElementB *>(const_cast<void *>(args.B)), LayoutB(int(config.ldb))};
-    TensorRefC ref_C{static_cast<ElementC *>(const_cast<void *>(args.C)), LayoutC(int(config.ldc))};
+    TensorRefC ref_C{static_cast<NonVoidElementC *>(const_cast<void *>(args.C)), LayoutC(int(config.ldc))};
     TensorRefD ref_D{static_cast<ElementD *>(args.D), LayoutC(int(config.ldd))};
 
     if (kProvider == Provider::kReferenceHost) {
@@ -209,7 +210,7 @@ public:
         LayoutA,
         ElementB,
         LayoutB,
-        ElementC,
+        NonVoidElementC,
         LayoutC,
         ElementCompute,
         ElementAccumulator,
@@ -243,7 +244,7 @@ public:
         LayoutA,
         ElementB,
         LayoutB,
-        ElementC,
+        NonVoidElementC,
         LayoutC,
         ElementCompute,
         ElementAccumulator,
@@ -434,7 +435,7 @@ template <
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
   typename ElementD_ = ElementC_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_interleaved_layouts(Manifest &manifest) {

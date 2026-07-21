@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -285,6 +285,11 @@ struct Sm100BlockScaleFactorRowStore {
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [tile_coord_m, tile_coord_n, tile_coord_k, tile_coord_l] = args.tile_coord_mnkl;
     using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<SFVecSize>;
+    // Batch/group index for the norm constant lookup below. In the
+    // ptr-array/grouped case tile_coord_l is zeroed after selecting the per-group
+    // scale factor pointer (each group's SFD tensor has no batch mode),
+    // but the norm constant tensor is still indexed per group.
+    int l_norm_const = tile_coord_l;
     UnderlyingElementBlockScaleFactor* ptr_scale_factor = nullptr;
     // If Ptr-Array/Grouped GEMM with BlockScaleFactor per batch/group
     if constexpr (!cute::is_same_v<UnderlyingElementBlockScaleFactor, ElementBlockScaleFactor>) {
@@ -307,7 +312,7 @@ struct Sm100BlockScaleFactorRowStore {
 
     // Fetch and compute these during initialization
     Tensor mNormConst= make_tensor(make_gmem_ptr(params_ptr->norm_constant_ptr), make_layout(make_shape(M, N, L), params_ptr->norm_constant_stride));
-    ElementCompute norm_constant = mNormConst(_0{},_0{},tile_coord_l);
+    ElementCompute norm_constant = mNormConst(_0{},_0{},l_norm_const);
     ElementCompute fp_max = ElementCompute(cutlass::platform::numeric_limits<ElementOutput>::max());
     ElementCompute scale_down_factor = cutlass::reciprocal_approximate_ftz<ElementCompute>{}(fp_max);
     ElementCompute norm_constant_scaled_down = cutlass::multiplies<ElementCompute>{}(norm_constant, scale_down_factor);
@@ -602,6 +607,11 @@ struct Sm100BlockScaleFactorColStore {
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [tile_coord_m, tile_coord_n, tile_coord_k, tile_coord_l] = args.tile_coord_mnkl;
     using Sm1xxBlockScaledOutputConfig = cutlass::detail::Sm1xxBlockScaledOutputConfig<SFVecSize, UMMA::Major::MN>;
+    // Batch/group index for the norm constant lookup below. In the
+    // ptr-array/grouped case tile_coord_l is zeroed after selecting the per-group
+    // scale factor pointer (each group's SFD tensor has no batch mode),
+    // but the norm constant tensor is still indexed per group.
+    int l_norm_const = tile_coord_l;
     UnderlyingElementBlockScaleFactor* ptr_scale_factor = nullptr;
     // If Ptr-Array/Grouped GEMM with BlockScaleFactor per batch/group
     if constexpr (!cute::is_same_v<UnderlyingElementBlockScaleFactor, ElementBlockScaleFactor>) {
@@ -629,7 +639,7 @@ struct Sm100BlockScaleFactorColStore {
 
     // Fetch and compute these during initialization
     Tensor mNormConst= make_tensor(make_gmem_ptr(params_ptr->norm_constant_ptr), make_layout(make_shape(M, N, L), params_ptr->norm_constant_stride));
-    ElementCompute norm_constant = mNormConst(_0{},_0{},tile_coord_l);
+    ElementCompute norm_constant = mNormConst(_0{},_0{},l_norm_const);
     ElementCompute fp_max = ElementCompute(cutlass::platform::numeric_limits<ElementOutput>::max());
     ElementCompute scale_down_factor = cutlass::reciprocal_approximate_ftz<ElementCompute>{}(fp_max);
     ElementCompute norm_constant_scaled_down = cutlass::multiplies<ElementCompute>{}(norm_constant, scale_down_factor);

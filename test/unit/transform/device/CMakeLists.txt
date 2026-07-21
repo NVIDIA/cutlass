@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -54,5 +54,52 @@ cutlass_test_unit_add_executable(
     cutlass_test_unit_sm90_structured_sparse_gemm_compressor_f8
 
     sm90_sparse_gemm_compressor_f8.cu
+)
+
+add_custom_target(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor
+    DEPENDS
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f32
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f16
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f8
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f6
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_qmma
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_omma
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f32
+
+    sm100_sparse_gemm_compressor_f32.cu
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f16
+
+    sm100_sparse_gemm_compressor_f16.cu
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f8
+
+    sm100_sparse_gemm_compressor_f8.cu
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f6
+
+    sm100_sparse_gemm_compressor_f6.cu
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_qmma
+
+    sm100_sparse_gemm_compressor_f4_qmma.cu
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_omma
+
+    sm100_sparse_gemm_compressor_f4_omma.cu
 )
 

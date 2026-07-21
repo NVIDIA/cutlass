@@ -4,7 +4,7 @@
 
 This directory contains Python packages that are associated with CUTLASS:
 
-* `cutlass`: the CUTLASS Python interface, which enables one to compile and run CUTLASS kernels from within Python
+* `cutlass_cppgen`: the CUTLASS Python interface, which enables one to compile and run CUTLASS kernels from within Python. Note that this was previously named `cutlass`, but was renamed to disambiguate with the CuTe Python DSL.
 * `cutlass_library`: utilities used for enumerating and emitting C++ code for CUTLASS kernels
 
 ## CUTLASS Python Interface
@@ -181,7 +181,7 @@ You can also use the [generator.py](/python/cutlass_library/generator.py) script
 
 # Copyright
 
-Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

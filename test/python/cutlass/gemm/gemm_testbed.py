@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -47,11 +47,11 @@ from cutlass_library import (
     SwizzlingFunctor
 )
 
-from cutlass.backend import compiler
-from cutlass.backend.gemm_operation import GemmArguments, GemmOperationUniversal
-from cutlass.backend.reduction_operation import ReductionArguments, ReductionOperation
-from cutlass.shape import GemmCoord, MatrixCoord
-from cutlass.utils.datatypes import torch_type
+from cutlass_cppgen.backend import compiler
+from cutlass_cppgen.backend.gemm_operation import GemmArguments, GemmOperationUniversal
+from cutlass_cppgen.backend.reduction_operation import ReductionArguments, ReductionOperation
+from cutlass_cppgen.shape import GemmCoord, MatrixCoord
+from cutlass_cppgen.utils.datatypes import torch_type
 
 
 class GemmUniversalLauncher:

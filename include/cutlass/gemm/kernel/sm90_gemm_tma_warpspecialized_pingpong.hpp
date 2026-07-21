@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -147,6 +147,8 @@ public:
   static constexpr uint32_t LoadRegisterRequirement = !HeavyRegisterPressure ? 40 : 24;
   static constexpr uint32_t MmaRegisterRequirement = !HeavyRegisterPressure ? 232 : 240;
 
+  static constexpr bool IsSm120Family = cute::is_same_v<typename DispatchPolicy::ArchTag, arch::Sm120>;
+
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
 
@@ -215,7 +217,6 @@ public:
   to_underlying_arguments(Arguments const& args, void* workspace) {
     CUTLASS_TRACE_HOST("to_underlying_arguments():");
 
-    (void) workspace;
     auto problem_shape = args.problem_shape;
     if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
@@ -244,8 +245,10 @@ public:
       CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid cluster count to " << max_active_clusters);
     }
 
-    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count, max_active_clusters};
-
+    KernelHardwareInfo hw_info = args.hw_info;
+    hw_info.sm_count = sm_count;
+    hw_info.max_active_clusters = max_active_clusters;
+  
     // Calculate workspace pointers
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
@@ -284,7 +287,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
 
     return implementable;
   }
@@ -354,12 +357,14 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
-#  define ENABLE_SM90_KERNEL_LEVEL 1
-#endif
+#  if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL) ||\
+      CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1210))
+#    define ENABLE_SM90_KERNEL_LEVEL 1
+#  endif
+
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
 
     // Preconditions
@@ -798,18 +803,18 @@ public:
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
 
-      #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-      // It is possible to have work tiles start off invalid,
-      // so we have to check that first.
-      if (not work_tile_info.is_valid()) {
-        // Hint on an early release of global memory resources.
-        // The timing of calling this function only influences performance,
-        // not functional correctness.
-        cutlass::arch::launch_dependent_grids();
+      if constexpr (!IsSm120Family) {
+        // It is possible to have work tiles start off invalid,
+        // so we have to check that first.
+        if (not work_tile_info.is_valid()) {
+          // Hint on an early release of global memory resources.
+          // The timing of calling this function only influences performance,
+          // not functional correctness.
+          cutlass::arch::launch_dependent_grids();
 
-        return;
+          return;
+        }
       }
-      #endif
       
       if constexpr (IsSchedDynamicPersistent) {
         // Consumer0's initial tile is static. It starts consuming the 2nd tile.
@@ -844,15 +849,29 @@ public:
         // Order two Math WG's MMA one after the other, helps hide Epilogue
         math_wg_order_barrier.wait();
 
-        collective_mainloop.mma(
-          mainloop_pipeline,
-          mainloop_pipe_consumer_state,
-          accumulators,
-          k_tile_count,
-          warp_group_thread_idx,
-          shared_storage.tensors.mainloop,
-          params.mainloop
-        );
+        if constexpr (IsSm120Family) {
+          collective_mainloop.mma(
+            mainloop_pipeline,
+            mainloop_pipe_consumer_state,
+            accumulators,
+            k_tile_count,
+            warp_group_thread_idx,
+            shared_storage.tensors.mainloop,
+            params.mainloop,
+            blk_coord
+          );
+        }
+        else {
+          collective_mainloop.mma(
+            mainloop_pipeline,
+            mainloop_pipe_consumer_state,
+            accumulators,
+            k_tile_count,
+            warp_group_thread_idx,
+            shared_storage.tensors.mainloop,
+            params.mainloop
+          );
+        }
 
         // Cue for next Math WG's MMA to start
         math_wg_order_barrier.arrive();
@@ -866,15 +885,15 @@ public:
         // Update starting mainloop pipeline state for the next tile
         mainloop_pipe_consumer_state.advance(k_tile_count * NumMmaWarpGroups);
 
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        if (scheduler.is_last_tile(work_tile_info, NumMmaWarpGroups)) {
-          // Hint on an early release of global memory resources.
-          // The timing of calling this function only influences performance,
-          // not functional correctness.
-          cutlass::arch::launch_dependent_grids();
+        if constexpr (!IsSm120Family) {
+          if (scheduler.is_last_tile(work_tile_info, NumMmaWarpGroups)) {
+            // Hint on an early release of global memory resources.
+            // The timing of calling this function only influences performance,
+            // not functional correctness.
+            cutlass::arch::launch_dependent_grids();
 
+          }
         }
-        #endif
 
         // Order two Math WG's Epilogue one after the other
         math_wg_order_barrier.wait();

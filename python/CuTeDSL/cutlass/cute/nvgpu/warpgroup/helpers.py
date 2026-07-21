@@ -1,29 +1,34 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Type
+from typing import Any, Optional, Type
 
 from cutlass.cutlass_dsl import dsl_user_op
 
+from cutlass._mlir import ir
 from cutlass._mlir.dialects import nvvm
 
-from ...typing import Numeric, NumericMeta
+from ...typing import Numeric, NumericMeta, ComposedLayout
 from ... import core
 from .mma import SmemLayoutAtomKind
 
 
 @dsl_user_op
 def make_smem_layout_atom(
-    kind: SmemLayoutAtomKind, element_type: Type[Numeric], *, loc=None, ip=None
-) -> core.ComposedLayout:
+    kind: SmemLayoutAtomKind,
+    element_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ComposedLayout:
     """
     Makes a SMEM layout Atom.
 
@@ -35,7 +40,7 @@ def make_smem_layout_atom(
     :param element_type: The element data type to construct the layout for
     :type element_type:  Type[Numeric]
     :return:             The SMEM layout atom
-    :rtype:              core.ComposedLayout
+    :rtype:              ComposedLayout
     """
     if not isinstance(element_type, NumericMeta):
         raise TypeError(f"element_type must be a Numeric, but got {element_type}")
@@ -86,7 +91,9 @@ def make_smem_layout_atom(
 
 
 @dsl_user_op
-def fence(*, loc=None, ip=None) -> None:
+def fence(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> None:
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-multiply-and-accumulate-instruction-wgmma-fence>`__.
     """
@@ -94,7 +101,9 @@ def fence(*, loc=None, ip=None) -> None:
 
 
 @dsl_user_op
-def commit_group(*, loc=None, ip=None) -> None:
+def commit_group(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> None:
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-commit-group>`__.
     """
@@ -102,7 +111,12 @@ def commit_group(*, loc=None, ip=None) -> None:
 
 
 @dsl_user_op
-def wait_group(group, *, loc=None, ip=None) -> None:
+def wait_group(
+    group: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
     """
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-multiply-and-accumulate-instruction-wgmma-wait-group>`__.
     """

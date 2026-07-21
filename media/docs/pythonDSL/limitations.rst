@@ -17,14 +17,8 @@ the DSL.
 Notable unsupported features
 ----------------------------
 
-- GeForce RTX 50 Series support
-- Programmatic Dependent Launch (PDL)
-- narrow-precision data type support, including related tensor core instructions
 - convolutions
-- full support for ahead of time compilation
 - preferred clusters
-- CLC-based tile schedulers
-- EVT support
 - Windows support
 
 Programming Model
@@ -84,16 +78,30 @@ Programming Model
                 xs.append(Float32(1.0))
 
 **Python Function**
-    The DSL currently does not implement support for return values from Python functions,
-    although this capability is planned for future releases.
+    The DSL currently has **limited support for return values** from Python functions.  
+    At the moment, only ``constexpr`` values can be returned, while returning **dynamic values** is **not yet supported**.  
+    This capability is planned for a future release.
 
     Example:
 
-    .. code:: python
+    .. code-block:: python
 
         @cute.jit
-        def foo():
-            return 1  # Currently unsupported in CuTe DSL
+        def baz(a: cutlass.Constexpr):
+            return a + 1
+
+        @cute.jit
+        def foo(a: cutlass.Int32):
+            return a + 1
+
+        @cute.jit
+        def bar(a: cutlass.Int32):
+            val = foo(a)  # works
+
+        val = baz(10)   # works
+        val = bar(10)   # works
+        foo(10)         # currently unsupported in CuTe DSL
+        
 
 **Expression or Statement with Dependent Type**
     CuTe DSL implements static typing and does not support dependent types.
@@ -209,17 +217,67 @@ Programming Model
 
 
 **CuTe Layout algebra in native Python**
-    Entirety of CuTe Layout algebra operations and APIs require JIT compilation. These 
-    functionalities are exclusively available within JIT-compiled functions and cannot be 
+    Entirety of CuTe Layout algebra operations and APIs require JIT compilation. These
+    functionalities are exclusively available within JIT-compiled functions and cannot be
     accessed in standard Python execution environments.
-    
-    Additionally, there exists a restricted set of data types that can be passed as arguments 
-    to JIT-compiled functions, which further constrains their usage in native Python contexts. 
-    Only following CuTe algebra types are supported as JIT function arguments: ``Tensor``, ``Pointer``, 
+
+    Additionally, there exists a restricted set of data types that can be passed as arguments
+    to JIT-compiled functions, which further constrains their usage in native Python contexts.
+    Only following CuTe algebra types are supported as JIT function arguments: ``Tensor``, ``Pointer``,
     ``Shape``, ``Stride``, ``Coord`` and ``IntTuple``. For ``Stride``, we don't support ``ScacledBasis``
-    from native Python Context. Unfortunately, in the first release, we don't support 
+    from native Python Context. Unfortunately, in the first release, we don't support
     passing ``Layout`` under native Python Context.
 
+
+**Block-level Utilities (block_copy)**
+    The block-level utility ``block_copy`` provides a high-level abstraction
+    for common copy patterns, but has the following limitations:
+
+    **block_copy limitations:**
+
+    - **Limited copy op support**: Currently only ``TmaCopyOp``-based tiled copies
+      (TMA loads/stores) and S2T copies (SMEM to TMEM, e.g., ``tcgen05.Cp*Op``) are
+      supported. Other ``TiledCopy`` ops will raise ``NotImplementedError``. Support
+      for additional copy ops may be added in future releases.
+
+
+**Global variables**
+    CuTe DSL does not support global variables.
+    It is not allowed to use ``global`` in the DSL.
+    The following example illustrates functionality in Python that is not supported in the DSL:
+    
+    .. code:: python
+    
+        @cute.jit
+        def foo():
+            global x
+            x = 1
+
+        foo()
+
+    The example above fails to compile because ``global x`` is not supported in the DSL.
+
+
+**Nonlocal variables**
+    The use of the ``nonlocal`` keyword is restricted in CuTe DSL. CuTe DSL does not support capturing variables
+    from an outer (enclosing) scope that is outside of the JIT-compiled function. If you try to use ``nonlocal``
+    to refer to a variable defined in Python code that is not tracked by current JIT context, a runtime error will be raised.
+
+    .. code:: python
+
+        def outer():
+            x = 1
+
+            @cute.jit
+            def inner():
+                nonlocal x  # Not supported
+                x = 2
+
+            inner()
+
+    The above code will fail with a runtime error because ``x`` is defined in a scope not managed
+    by the CuTe DSL's JIT compilation. Nonlocal variables must be managed within the same JIT context;
+    otherwise, a runtime error will be raised.
 
 Suggestions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

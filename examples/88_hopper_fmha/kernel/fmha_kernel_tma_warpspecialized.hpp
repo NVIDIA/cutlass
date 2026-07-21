@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -160,6 +160,9 @@ struct FmhaKernelTmaWarpSpecialized {
   }
 
   CUTLASS_DEVICE void operator()(const Params &params, char* smem) {
+#if ! defined(CUTLASS_ARCH_MMA_SM90A_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+#else
 
     enum class WarpGroupRole {
       Producer = 0,
@@ -412,6 +415,7 @@ struct FmhaKernelTmaWarpSpecialized {
         if constexpr (kIsEpilogueLocked) ; math_wg_order_barrier.arrive();
       }
     }
+#endif
   }
 };
 

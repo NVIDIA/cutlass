@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -222,6 +222,27 @@ template <auto c, auto a, auto b>
 CUTE_HOST_DEVICE constexpr
 bool_constant<R<a,b>::num == c && R<a,b>::den == 1>
 operator==(C<c>, R<a,b>) {
+  return {};
+}
+
+template <auto a, auto b, auto x, auto y>
+CUTE_HOST_DEVICE constexpr
+bool_constant<R<a,b>::num * R<x,y>::den < R<x,y>::num * R<a,b>::den>
+operator<(R<a,b>, R<x,y>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+bool_constant<R<a,b>::num < c * R<a,b>::den>
+operator<(R<a,b>, C<c>) {
+  return {};
+}
+
+template <auto c, auto x, auto y>
+CUTE_HOST_DEVICE constexpr
+bool_constant<c * R<x,y>::den < R<x,y>::num>
+operator<(C<c>, R<x,y>) {
   return {};
 }
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -100,6 +100,13 @@ public:
     cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
     int swizzle_size{1};
 
+    /// For profiling purposes
+    std::vector<gemm::GemmCoord> problem_sizes;
+    std::vector<std::array<int64_t, 3>> leading_dims;
+    std::vector<std::array<int64_t, 3>> preferred_clusters;
+    std::vector<std::array<int64_t, 3>> fallback_clusters;
+    std::vector<cutlass::library::RasterOrder> raster_orders;
+    std::vector<int> swizzle_sizes;
     
     cutlass::library::RuntimeDatatype runtime_input_datatype_a{};
     cutlass::library::RuntimeDatatype runtime_input_datatype_b{};
@@ -121,6 +128,14 @@ public:
       library::BlockwiseGemmDescription const &operation_desc,
       ProblemSpace const &problem_space,
       ProblemSpace::Problem const &problem);
+
+    int64_t bytes_with_problem_shape(
+      library::BlockwiseGemmDescription const &operation_desc,
+      gemm::GemmCoord const &problem_shape) const;
+
+    int64_t flops_with_problem_shape(
+      library::BlockwiseGemmDescription const &operation_desc,
+      gemm::GemmCoord const &problem_shape) const;
 
     /// Total number of bytes loaded
     int64_t bytes(library::BlockwiseGemmDescription const &operation_desc) const;

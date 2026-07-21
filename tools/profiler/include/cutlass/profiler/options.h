@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -345,6 +345,10 @@ public:
 
   /// Vector of operation name substrings
   std::vector<std::string> operation_names;
+
+  /// Map of problems to run for each operation
+  /// [operation_name] -> vector of problems, each problem specified as a vector of [argument name] -> [argument value]
+  std::unordered_map<std::string, std::vector<CommandLine>> operation_problems;
 
   /// Vector of operation name substrings
   std::vector<std::string> excluded_operation_names;

@@ -1,16 +1,25 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
 # NVIDIA End User License Agreement (EULA), available at:
-# https://docs.nvidia.com/cutlass/media/docs/pythonDSL/license.html
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-# Use the auto-generated enum AddressSpace
-from cutlass._mlir.dialects.cute import AddressSpace
+from collections.abc import Callable
+from typing import Any
+
+# Keep AddressSpace aligned with the public cutlass namespace.
+from cutlass.address_space import AddressSpace as _AddressSpace
+from cutlass._mlir.dialects.cute_nvgpu import CacheEvictionPriority
+
+# Keep ``cute.AddressSpace`` as a quiet compatibility alias. Documentation marks
+# this spelling as scheduled for deprecation; runtime warnings will be enabled in
+# a later release.
+AddressSpace = _AddressSpace
 
 # Explicitly import types that might be directly used by other modules.
 # This is a fix for using Sphinx to generate documentation
@@ -26,8 +35,13 @@ from .typing import (
     XTuple,
     Tiler,
     Layout,
+    ComposedLayout,
     Pointer,
     Tensor,
+    SymInt,
+    Numeric,
+    Int32,
+    Int16,
 )
 
 # Import everything else
@@ -35,47 +49,36 @@ from .typing import *
 
 from .core import (
     assume,
-    is_integer,
-    is_int_tuple,
     is_static,
     size,
+    static,
+    get_leaves,
     has_underscore,
     slice_,
     make_ptr,
     make_layout,
     recast_layout,
-    make_fragment_like,
     depth,
     rank,
-    flatten_to_tuple,
     flatten,
-    unflatten,
-    product,
-    product_like,
     shape,
     size_in_bytes,
     make_identity_layout,
     make_ordered_layout,
+    make_layout_like,
     make_composed_layout,
     make_layout_tv,
     make_swizzle,
     recast_ptr,
-    make_tensor,
-    make_identity_tensor,
-    make_fragment,
-    recast_tensor,
     get,
     select,
     front,
     is_major,
     leading_dim,
-    find,
-    find_if,
     coalesce,
     group_modes,
     cosize,
     dice,
-    product_each,
     prepend,
     append,
     prepend_ones,
@@ -83,9 +86,8 @@ from .core import (
     ceil_div,
     slice_and_offset,
     crd2idx,
-    domain_offset,
-    elem_less,
-    transform_leaf,
+    idx2crd,
+    increment_coord,
     filter_zeros,
     filter,
     tile_to_shape,
@@ -109,7 +111,81 @@ from .core import (
     local_partition,
     local_tile,
     printf,
+    get_nonswizzle_portion,
+    get_swizzle_portion,
+    # Wrapper classes
+    Swizzle,
+    E,
+    # User defined struct
+    struct,
+    union,
+    pretty_str,
+    make_layout_image_mask,
+    repeat,
+    repeat_as_tuple,
+    repeat_like,
+    round_up,
+    is_congruent,
+    is_weakly_congruent,
+    ScaledBasis,
+    get_divisibility,
+    Ratio,
+    # FastDivmod operations
+    FastDivmodDivisor,
+    FastDivmodDivisorV2,
+    fast_divmod_create_divisor,
+    fast_divmod_create_divisor_v2,
+    basis_value,
+    basis_get,
+    nullspace,
+)
+
+from .tuple import (
+    transform_leaf,
+    find_if,
+    find,
+    flatten_to_tuple,
+    unflatten,
+    product,
+    product_like,
+    product_each,
+    elem_less,
+    tuple_cat,
+    transform_apply,
+    filter_tuple,
+    unwrap,
+    wrap,
+)
+from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
+from .tensor import (
+    TensorSSA,
+    ReductionOp,
+    make_tensor,
+    make_identity_tensor,
+    make_fragment_like,
+    make_rmem_tensor_like,
+    make_rmem_tensor,
+    recast_tensor,
+    domain_offset,
     print_tensor,
+    full,
+    full_like,
+    empty_like,
+    ones_like,
+    zeros_like,
+    where,
+    any_,
+    all_,
+)
+from .atom import (
+    Atom,
+    MmaAtom,
+    CopyAtom,
+    TiledCopy,
+    TiledMma,
+    ThrMma,
+    ThrCopy,
+    make_atom,
     # tiled mma/tiled copy
     make_mma_atom,
     make_tiled_mma,
@@ -122,79 +198,93 @@ from .core import (
     make_tiled_copy_B,
     make_tiled_copy_C,
     make_tiled_copy_C_atom,
-    basic_copy,
-    basic_copy_if,
-    autovec_copy,
-    copy,
-    gemm,
-    # Wrapper classes
-    ComposedLayout,
-    Swizzle,
-    E,
-    Atom,
-    MmaAtom,
-    CopyAtom,
-    TiledCopy,
-    TiledMma,
-    TensorSSA,
-    ReductionOp,
-    full,
-    full_like,
-    empty_like,
-    ones_like,
-    zeros_like,
-    where,
-    any_,
-    all_,
-    # User defined struct
-    struct,
-    pretty_str,
-    make_layout_image_mask,
-    repeat_like,
-    round_up,
-    is_congruent,
-    is_weakly_congruent,
-    ScaledBasis,
-    get_divisibility,
-    Ratio,
+    make_cotiled_copy,
+    copy_atom_call,
+    mma_atom_call,
 )
+from .algorithm import gemm, copy, basic_copy, basic_copy_if, autovec_copy, prefetch
 
+from . import typing as typing_module
+from . import core
 from . import arch
+
+from . import export
+
 from . import nvgpu
 from . import testing
 from . import runtime
+from . import math
+
+from . import experimental
 
 # Export all math ops without "math."
 from .math import *
 
-# Used as internal symbol
+# Package-private symbol used by exported aliases below.
 from .. import cutlass_dsl as _dsl
 
+from .ffi import ffi, extern, BitCode, ConstValue, mangle
+
 # Aliases
-jit = _dsl.CuTeDSL.jit
-kernel = _dsl.CuTeDSL.kernel
+jit: Callable[..., Any] = _dsl.CuTeDSL.jit
+kernel: Callable[..., Any] = _dsl.CuTeDSL.kernel
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
-compile = _dsl.compile
+compile = _dsl.CompileCallable()
+compile_to = compile.compile_to
+OptLevel = _dsl.OptLevel
+
+PtxasOptions = _dsl.PtxasOptions
+EnableAssertions = _dsl.EnableAssertions
+GenerateLineInfo = _dsl.GenerateLineInfo
+KeepCUBIN = _dsl.KeepCUBIN
+KeepPTX = _dsl.KeepPTX
+KeepSASS = _dsl.KeepSASS
+NvdisasmOptions = _dsl.NvdisasmOptions
+GPUArch = _dsl.GPUArch
+LinkLibraries = _dsl.LinkLibraries
+EnableTVMFFI = _dsl.EnableTVMFFI
+DeviceTarget = _dsl.DeviceTarget
+RDC = _dsl.RDC
+native_struct = _dsl.native_struct
+make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
+
+# attach the TVM FFI ABI interface postprocessor to the DSL
+from . import _tvm_ffi_args_spec_converter
+
+_tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
+_tvm_ffi_args_spec_converter.attach_args_spec_converter(
+    _dsl.CuteExperimentalDSL._get_dsl()
+)
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
     # Core types
+    *core.__all__,
     "AddressSpace",
+    "CacheEvictionPriority",
     "Tensor",
     "Layout",
+    "Numeric",
     "ComposedLayout",
     "Swizzle",
     "E",
+    "ScaledBasis",
     "Atom",
     "MmaAtom",
     "CopyAtom",
     "TiledCopy",
     "TiledMma",
+    "ThrMma",
+    "ThrCopy",
     "TensorSSA",
+    "ReductionOp",
+    "ReductionKind",
+    "SymInt",
     # Basic utility functions
     "assume",
     "is_integer",
     "is_int_tuple",
+    "is_int_tuple_type",
     "is_static",
     "size",
     "has_underscore",
@@ -210,15 +300,20 @@ __all__ = [
     "recast_layout",
     "make_identity_layout",
     "make_ordered_layout",
+    "make_layout_like",
     "make_composed_layout",
     "make_layout_tv",
     "make_layout_image_mask",
+    "get_nonswizzle_portion",
+    "get_swizzle_portion",
+    "nullspace",
     # Tensor functions
     "make_ptr",
     "make_tensor",
     "make_identity_tensor",
-    "make_fragment",
     "make_fragment_like",
+    "make_rmem_tensor",
+    "make_rmem_tensor_like",
     "recast_ptr",
     "recast_tensor",
     # Tensor manipulation
@@ -229,6 +324,9 @@ __all__ = [
     "leading_dim",
     "find",
     "find_if",
+    "transform_leaf",
+    "basis_value",
+    "basis_get",
     "coalesce",
     "group_modes",
     "cosize",
@@ -236,6 +334,7 @@ __all__ = [
     # Tuple operations
     "flatten_to_tuple",
     "flatten",
+    "unflatten",
     "product",
     "product_like",
     "product_each",
@@ -243,14 +342,20 @@ __all__ = [
     "append",
     "prepend_ones",
     "append_ones",
+    "elem_less",
+    "tuple_cat",
+    "transform_apply",
+    "filter_tuple",
+    "unwrap",
+    "wrap",
     # Math operations
     "ceil_div",
     "round_up",
     # Layout operations
     "slice_and_offset",
     "crd2idx",
+    "increment_coord",
     "domain_offset",
-    "elem_less",
     "filter_zeros",
     "filter",
     "tile_to_shape",
@@ -279,19 +384,30 @@ __all__ = [
     "tiled_divide",
     "local_partition",
     "local_tile",
-    # MMA and Copy operations
+    # MMA and Copy atom operations
+    "make_atom",
     "make_mma_atom",
     "make_tiled_mma",
     "make_copy_atom",
     "make_tiled_copy_tv",
     "make_tiled_copy",
+    "make_tiled_copy_S",
+    "make_tiled_copy_D",
+    "make_tiled_copy_A",
+    "make_tiled_copy_B",
+    "make_tiled_copy_C",
     "make_tiled_copy_C_atom",
+    "make_cotiled_copy",
+    "copy_atom_call",
+    "mma_atom_call",
+    # Algorithm operations
     "basic_copy",
     "basic_copy_if",
     "autovec_copy",
     "copy",
+    "prefetch",
     "gemm",
-    # Tensor creation
+    # Tensor SSA
     "full",
     "full_like",
     "empty_like",
@@ -300,18 +416,37 @@ __all__ = [
     "where",
     "any_",
     "all_",
+    "repeat_as_tuple",
+    "repeat",
     "repeat_like",
-    "ScaledBasis",
     # User defined struct
     "struct",
+    "union",
+    # FastDivmod operations
+    "FastDivmodDivisor",
+    "FastDivmodDivisorV2",
+    "fast_divmod_create_divisor",
+    "fast_divmod_create_divisor_v2",
     # Modules
     "arch",
+    "export",
     "nvgpu",
     "testing",
     "runtime",
+    # Math utils
+    *math.__all__,
     # Decorators and code generation
     "jit",
     "kernel",
     "register_jit_arg_adapter",
     "compile",
+    "compile_to",
+    "ArtifactType",
+    "PreCompiledMlirArtifact",
+    # Foreign function interface
+    "ffi",
+    "extern",
+    "BitCode",
+    "ConstValue",
+    "mangle",
 ]

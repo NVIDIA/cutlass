@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
@@ -88,9 +89,7 @@ public:
     static_assert(cute::is_static<TileShape>::value);
 
     auto selected_cluster_shape = cutlass::detail::select_cluster_shape(cluster_shape_mnk, hw_info.cluster_shape);
-    auto cta_shape = cute::conditional_return<not cute::is_static_v<ClusterShape>>(
-        shape_div(tile_shape_mnk, atom_thr_shape_mnk),      // Dynamic Cluster: For 2SM kernels, use CTA tile shape for the underlying scheduler
-        shape_div(tile_shape_mnk, selected_cluster_shape)); // Static Cluster: Blackwell builders expects TileShape to be Cluster's Tile Shape, Hopper doesn't
+    auto cta_shape = shape_div(tile_shape_mnk, atom_thr_shape_mnk); // For 2SM kernels, use CTA tile shape for the underlying scheduler
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
       problem_shapes,
@@ -112,29 +111,32 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
+  can_implement(Arguments const& args, KernelHardwareInfo const&) {
     return true;
   }
 
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100Group() { }
-
+  
+  // Note: constructing this tile scheduler can touch global memory that was
+  // written to by the prior kernel.
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100Group(CLCResponse* clc_response_ptr, Params const& params)
     : scheduler_params(params),
       scheduler_sm90(params.params_sm90_, clc_response_ptr) { }
-
+  // Note: constructing this tile scheduler can touch global memory that was
+  // written to by the prior kernel.
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100Group(CLCResponse* clc_response_ptr, Params const& params, dim3 /* block_id_in_cluster */)
     : scheduler_params(params),
       scheduler_sm90(params.params_sm90_, clc_response_ptr) { }
 
   // Returns the initial work tile info that will be computed over
-  template <typename ClusterShape>
+  template <typename ClusterShape, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
-  initial_work_tile_info(ClusterShape cluster_shape) {
-    return scheduler_sm90.initial_work_tile_info(cluster_shape);
+  initial_work_tile_info(ClusterShape cluster_shape, CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo info) { return info;}) {
+    return scheduler_sm90.initial_work_tile_info(cluster_shape, callback_before_commit);
   }
 
   template<class BlockShape, class ClusterShape>
@@ -163,9 +165,6 @@ public:
 
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
     Arguments args{};
-    if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
-      args.max_swizzle_size = 1 << params.params_sm90_.log_swizzle_size_;
-    }
     args.raster_order = params.params_sm90_.raster_order_ == RasterOrder::AlongN ? RasterOrderOptions::AlongN : RasterOrderOptions::AlongM;
 
     return Params::get_grid_shape(
@@ -191,15 +190,16 @@ public:
     );
   }
 
-  template <typename CLCPipeline, typename CLCPipelineState>
+  template <typename CLCPipeline, typename CLCPipelineState, typename CallbackBeforeCommit = WorkTileInfo(*)(WorkTileInfo)>
   CUTLASS_DEVICE
   auto
   advance_to_next_work(
     CLCPipeline& clc_pipeline,
     CLCPipelineState clc_pipe_producer_state,
-    uint32_t advance_count = 1) {
+    uint32_t advance_count = 1,
+    CallbackBeforeCommit callback_before_commit = [] (WorkTileInfo info) { return info;}) {
 
-    return scheduler_sm90.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, advance_count);
+    return scheduler_sm90.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, advance_count, callback_before_commit);
   }
 
   //
@@ -241,6 +241,27 @@ public:
   CUTLASS_DEVICE
   void
   fixup(WorkTileInfo const&, FrgTensorC&, uint32_t, uint32_t, uint32_t = 1) const { }
+
+  template <
+    bool IsComplex,
+    class TiledMma,
+    class AccEngine,
+    class AccLayout,
+    class AccumulatorPipeline,
+    class AccumulatorPipelineState,
+    class CopyOpT2R
+  >
+  CUTLASS_DEVICE
+  AccumulatorPipelineState
+  fixup(
+      TiledMma const& ,
+      WorkTileInfo const&,
+      cute::Tensor<AccEngine, AccLayout>&,
+      AccumulatorPipeline,
+      AccumulatorPipelineState acc_pipe_consumer_state,
+      CopyOpT2R) const {
+    return acc_pipe_consumer_state;
+  }
 
   template <class ProblemShape, class ElementAccumulator>
   static size_t
@@ -285,11 +306,11 @@ public:
   }
 
   // Kernel helper function to get next CLC ID
-  template <class CLCPipeline, class CLCPipelineState>
+  template <class WorkTileWithCallbackInfo, class CLCPipeline, class CLCPipelineState>
   CUTLASS_DEVICE
   auto
   fetch_next_work(
-    WorkTileInfo work_tile_info,
+    WorkTileWithCallbackInfo work_tile_info,
     CLCPipeline& clc_pipeline,
     CLCPipelineState clc_pipe_consumer_state) {
 
@@ -301,7 +322,7 @@ private:
   // Methods
   //
   [[nodiscard]] CUTLASS_DEVICE
-  static CLCResponse
+  static auto
   load_query_response(uint32_t smem_ptr) {
     return UnderlyingScheduler::load_query_response(smem_ptr);
   }

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -149,7 +149,7 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
   can_implement(Arguments const& args) {
     bool mode_implementable = args.mode == GemmUniversalMode::kGemm or
           (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
-    return mode_implementable && TileScheduler::can_implement(args.scheduler);
+    return mode_implementable && TileScheduler::can_implement(args.scheduler, args.hw_info);
   }
 
   static size_t

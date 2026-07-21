@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,14 +33,12 @@
 */
 
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#include CUDA_STD_HEADER(cstdint)
 #else
 #include <cstdint>
 #endif
-
-#include "cutlass/cutlass.h"
 
 namespace cutlass {
 
@@ -104,6 +102,7 @@ public:
   template <int R, typename I, typename L>
   CUTLASS_HOST_DEVICE
   Coord(Coord<R, I, L> other) {
+    static_assert(kRank == R);
     for (int i = 0; i < kRank; ++i) {
       idx[i] = other[i];
     }
@@ -418,7 +417,7 @@ Coord<Rank, Index> operator/(Coord<Rank, Index> coord, Index s) {
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Helper to make a 2-element coordinate
+/// Helper to make a 1-element coordinate
 template <typename T> 
 CUTLASS_HOST_DEVICE
 Coord<1, T> make_Coord(T _0) {

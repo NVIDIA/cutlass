@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -176,7 +176,7 @@ Status GemmOperationProfiler::GemmProblem::parse(
 
   if (!arg_as_int(this->cluster_m, "cluster_m", problem_space, problem)) {
     // default value
-    this->cluster_m = 1;
+    this->cluster_m = std::string(operation_desc.name).find("_2sm") != std::string::npos ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n, "cluster_n", problem_space, problem)) {
@@ -191,17 +191,17 @@ Status GemmOperationProfiler::GemmProblem::parse(
 
   if (!arg_as_int(this->cluster_m_fallback, "cluster_m_fallback", problem_space, problem)) {
     // default value
-    this->cluster_m_fallback = 0;
+    this->cluster_m_fallback = (this->cluster_m % 2 == 0) ? 2 : 1;
   }
 
   if (!arg_as_int(this->cluster_n_fallback, "cluster_n_fallback", problem_space, problem)) {
     // default value
-    this->cluster_n_fallback = 0;
+    this->cluster_n_fallback = 1;
   }
 
   if (!arg_as_int(this->cluster_k_fallback, "cluster_k_fallback", problem_space, problem)) {
     // default value
-    this->cluster_k_fallback = 0;
+    this->cluster_k_fallback = 1;
   }
 
   if (!arg_as_bool(this->use_pdl, "use_pdl", problem_space, problem)) {
@@ -1264,7 +1264,7 @@ bool GemmOperationProfiler::verify_cutlass(
     }
   }
 
-  // if verification.required is set, then return success iff at least one ref-check was run
+  // if verification.required is set, then return success if at least one ref-check was run
   if (options.verification.required) {
     bool did_any_verification_run = false;
     for (auto provider : options.verification.providers) {

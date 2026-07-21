@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -132,7 +132,21 @@ public:
   static constexpr int RegsPerThread =
     size<0>(TileShape{}) * size<1>(TileShape{}) / NumMMAThreads *
     sizeof(ElementAccumulator) / sizeof(uint32_t);
-  static constexpr bool HeavyRegisterPressure = RegsPerThread >= 208;
+  
+  // Detect if this is SM120 blockscaled kernel which hits high register pressure
+  // on smaller tiles (e.g. 256x128 registers per thread)
+  template <typename T>
+  struct IsSm120BlockScaled : cute::false_type {};
+  
+  template <int Stages, int SchedStages, class ClusterShape, class KernelSchedule>
+  struct IsSm120BlockScaled<MainloopSm120TmaWarpSpecializedBlockScaled<Stages, SchedStages, ClusterShape, KernelSchedule>> 
+    : cute::true_type {};
+  
+  static constexpr bool IsSm120Family = cute::is_same_v<typename DispatchPolicy::ArchTag, arch::Sm120>;
+  
+  static constexpr bool HeavyRegisterPressure = 
+    IsSm120BlockScaled<DispatchPolicy>::value ? (RegsPerThread >= 128) : (RegsPerThread >= 208);
+  
   static constexpr uint32_t LoadRegisterRequirement = !HeavyRegisterPressure ? 40 : 24;
   static constexpr uint32_t MmaRegisterRequirement = !HeavyRegisterPressure ? 232 : 240;
 
@@ -228,8 +242,10 @@ public:
       CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid cluster count to " << max_active_clusters);
     }
 
-    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count, max_active_clusters};
-
+    KernelHardwareInfo hw_info = args.hw_info;
+    hw_info.sm_count = sm_count;
+    hw_info.max_active_clusters = max_active_clusters;
+  
     // Calculate workspace pointers
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
@@ -273,7 +289,7 @@ public:
     }
     implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
     implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
-    implementable &= TileScheduler::can_implement(args.scheduler);
+    implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
     return implementable;
   }
 
@@ -342,12 +358,14 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
-#  define ENABLE_SM90_KERNEL_LEVEL 1
-#endif
+#  if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL) ||\
+      CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1210))
+#    define ENABLE_SM90_KERNEL_LEVEL 1
+#  endif
+
 // Any Tensor Op MMA Atom in the ISA is arch conditional.
 #if ! defined(ENABLE_SM90_KERNEL_LEVEL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
+    CUTE_INVALID_CONTROL_PATH("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
 
     // Preconditions
@@ -768,15 +786,29 @@ public:
         // MSVC CTAD breaks if we say "Tensor" here, so we use "auto" instead.
         auto accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));                 // (MMA,MMA_M,MMA_N)
         if (TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
-          collective_mainloop.mma(
-            mainloop_pipeline,
-            mainloop_pipe_consumer_state,
-            accumulators,
-            work_k_tile_count,
-            mma_thread_idx,
-            shared_storage.tensors.mainloop,
-            params.mainloop
-          );
+          if constexpr (IsSm120Family) {
+            collective_mainloop.mma(
+              mainloop_pipeline,
+              mainloop_pipe_consumer_state,
+              accumulators,
+              work_k_tile_count,
+              mma_thread_idx,
+              shared_storage.tensors.mainloop,
+              params.mainloop,
+              blk_coord
+            );
+          }
+          else {
+            collective_mainloop.mma(
+              mainloop_pipeline,
+              mainloop_pipe_consumer_state,
+              accumulators,
+              work_k_tile_count,
+              mma_thread_idx,
+              shared_storage.tensors.mainloop,
+              params.mainloop
+            );
+          }
 
           // Make sure the math instructions are done and free buffers before entering the epilogue
           collective_mainloop.mma_tail(
@@ -788,15 +820,16 @@ public:
           // Update starting mainloop pipeline state for the next tile
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
         }
-        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
-        if (scheduler.is_last_tile(work_tile_info)) {
-          // Hint on an early release of global memory resources.
-          // The timing of calling this function only influences performance,
-          // not functional correctness.
-          cutlass::arch::launch_dependent_grids();
 
+        if constexpr (!IsSm120Family) {
+          if (scheduler.is_last_tile(work_tile_info)) {
+            // Hint on an early release of global memory resources.
+            // The timing of calling this function only influences performance,
+            // not functional correctness.
+            cutlass::arch::launch_dependent_grids();
+
+          }
         }
-        #endif
 
         // Index of warp group within consumer warp groups
         int consumer_warp_group_idx = canonical_warp_group_idx() - NumLoadWarpGroups;

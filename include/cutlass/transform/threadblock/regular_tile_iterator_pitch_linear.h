@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -204,7 +204,7 @@ public:
   void store(Fragment const &frag, TensorCoord const & tile_offset) {
     store_with_pointer_offset(
       frag,
-      tile_offset.contiguous() * Shape::kContiguous + tile_offset.strided() * Shape::kStrided * stride_
+      tile_offset.contiguous() * Shape::kContiguous / ThreadMap::kElementsPerAccess + tile_offset.strided() * Shape::kStrided * stride_
     );
   }
 

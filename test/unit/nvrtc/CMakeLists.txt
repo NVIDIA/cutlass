@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,7 @@ macro(add_nvrtc_headers BASE_DIR FILES)
       -DFILE_IN="${BASE_DIR}/${CUTLASS_FILE}"
       -DFILE_OUT="${OUTPUT_FILE}"
       -DVARIABLE_NAME="${VARIABLE_NAME}"
+      -DMSVC=${MSVC}
       -P ${PROJECT_SOURCE_DIR}/bin2hex.cmake
       DEPENDS ${BASE_DIR}/${CUTLASS_FILE}
     )

@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,7 @@ set(CUTLASS_PROFILER_REGRESSION_TEST_LEVEL  ${CUTLASS_TEST_LEVEL} CACHE STRING "
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
+
 function(cutlass_generate_kernel_filter_and_testlist_files)
 
   set(options)
@@ -65,7 +66,12 @@ endfunction()
 
 if(CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS)
 
-    set(PROFILER_ARCH_LIST 100a 100f 101a 101f 120a 120f)
+    set(PROFILER_ARCH_LIST 100a 100f 103a 120a 120f 121a)
+    if (CUDA_VERSION VERSION_LESS 13.0)
+      list(APPEND PROFILER_ARCH_LIST 101a 101f)
+    else()
+      list(APPEND PROFILER_ARCH_LIST 110a 110f)
+    endif()
     foreach(ARCH IN LISTS CUTLASS_NVCC_ARCHS)
       if(NOT (ARCH IN_LIST PROFILER_ARCH_LIST))
         message(FATAL_ERROR "Only SM${PROFILER_ARCH_LIST} compute capabilities are supported with profiler-based unit tests")

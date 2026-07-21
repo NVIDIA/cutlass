@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -73,6 +73,16 @@ endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
+# nvcc supports response files with --options-file but some tools like clangd
+# might choke on it. Thus provide a way to control the use of this feature.
+set(CUTLASS_CUDA_USE_RESPONSE_FILE ON CACHE BOOL "Enable CUDA response files for includes, libraries, and objects")
+
+if(NOT CUTLASS_CUDA_USE_RESPONSE_FILE)
+  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES 0)
+  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_LIBRARIES 0)
+  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_OBJECTS 0)
+endif()
+
 if (CUDA_VERSION VERSION_LESS 11.3)
   message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 11.4 or higher, and strongly recommends CUDA 11.8 or higher.")
 elseif (CUDA_VERSION VERSION_LESS 11.4)
@@ -86,8 +96,6 @@ endif()
 if (CUTLASS_CLANG_DEVICE_COMPILE AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
   message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
 endif()
-find_package(Doxygen QUIET)
-
 ################################################################################
 
 #
@@ -165,7 +173,10 @@ set(CUTLASS_ENABLE_SELF_CONTAINED_INCLUDES_CHECK ON CACHE BOOL "Enable CUTLASS c
 
 set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
 if (CUDA_VERSION VERSION_GREATER_EQUAL 11.4)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70 72 75 80 86 87)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 75 80 86 87)
+endif()
+if (CUDA_VERSION VERSION_GREATER_EQUAL 11.4 AND CUDA_VERSION VERSION_LESS 13.0)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70 72)
 endif()
 if (CUDA_VERSION VERSION_GREATER_EQUAL 11.8)
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 89 90)
@@ -175,13 +186,25 @@ if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
 endif()
 
 if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a 120 120a)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 101 101a)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a 120 120a 121 121a)
+  if (CUDA_VERSION VERSION_LESS 13.0)
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 101 101a)
+  else()
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 110 110a)
+  endif()
 endif()
 
 if (CUDA_VERSION VERSION_GREATER_EQUAL 12.9)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100f 120f)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 101f)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100f 120f 121f 103a 103f)
+  if (CUDA_VERSION VERSION_LESS 13.0)
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 101f)
+  else()
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 110f)
+  endif()
+endif()
+
+if (CUDA_VERSION VERSION_GREATER_EQUAL 13.0)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 110 110a)
 endif()
 
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
@@ -245,6 +268,10 @@ if (WIN32)
   # Disable warning on Unicode characters
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/wd4819)
 
+  # Disable warning on macro expansion producing 'defined' has undefined behavior
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/wd5105)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd5105")
+
   # Disable excess x86 floating point precision that can lead to results being labeled incorrectly
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/fp:strict)
 endif(WIN32)
@@ -288,17 +315,49 @@ if (KERNEL_FILTER_FILE)
   set(KERNEL_FILTER_FILE "${KERNEL_FILTER_FILE}" CACHE STRING "KERNEL FILTER FILE FULL PATH" FORCE)
 endif()
 
+if (CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
+  get_filename_component(CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE "${CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE}" ABSOLUTE)
+  set(CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE "${CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE}" CACHE STRING "HEURISTICS FILE FULL PATH" FORCE)
+endif()
+
 set(SELECTED_KERNEL_LIST "selected" CACHE STRING "Name of the filtered kernel list")
 
 if(KERNEL_FILTER_FILE)
   message(STATUS "Full path of filter file: ${KERNEL_FILTER_FILE}")
 endif()
 
+if(CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
+  message(STATUS "Full path of heuristics problems file: ${CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE}")
+  if(DEFINED CUTLASS_NVMMH_URL)
+    message(STATUS "CUTLASS_NVVMH_URL is set. Fetching dependency")
+    include(FetchContent)
+    FetchContent_Declare(
+      nvmmh
+      URL ${CUTLASS_NVMMH_URL}
+    )
+    FetchContent_MakeAvailable(nvmmh)
+    FetchContent_GetProperties(nvmmh SOURCE_DIR nvmmh_dir)
+    set(CUTLASS_NVMMH_PATH "${nvmmh_dir}")
+  endif()
+
+  if(DEFINED CUTLASS_NVMMH_PATH)
+    message(STATUS "CUTLASS_NVMMH_PATH is set. Using package at: ${CUTLASS_NVMMH_PATH}")
+
+    set(CUTLASS_NVMMH_PY_DIR "${CUTLASS_NVMMH_PATH}/python/")
+    set(ENV{CUTLASS_NVMMH_SO_PATH} "${CUTLASS_NVMMH_PATH}/lib/libnvMatmulHeuristics.so")
+  endif()
+endif()
+
 set(CUTLASS_LIBRARY_OPERATIONS "all" CACHE STRING "Comma-delimited list of operation name filters. Default '' means all operations are enabled.")
 set(CUTLASS_LIBRARY_KERNELS ${CUTLASS_LIBRARY_KERNELS_INIT} CACHE STRING "Comma-delimited list of kernel name filters. If unspecified, only the largest tile size is enabled. If the string 'all' is specified, all kernels are enabled.")
 set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma-delimited list of kernels to exclude from build. This option ONLY takes effect if CUTLASS_LIBRARY_KERNELS is set.")
 set(CUTLASS_LIBRARY_EXCLUDE_KERNELS "" CACHE STRING "Comma-delimited list of kernels to exclude from build. This option always takes effect, whether or not CUTLASS_LIBRARY_KERNELS is set. It also can exclude kernels from the filter file (see KERNEL_FILTER_FILE).")
-set(CUTLASS_LIBRARY_INSTANTIATION_LEVEL "" CACHE STRING "Instantiation level for SM90 kernels. Set to `max` and make sure CUTLASS_LIBRARY_KERNELS is non-empty to stamp all possible kernel configurations.")
+set(CUTLASS_LIBRARY_INSTANTIATION_LEVEL "" CACHE STRING "Instantiation level for SM90 and SM100 kernels. Set to `max` and make sure CUTLASS_LIBRARY_KERNELS is non-empty to stamp all possible kernel configurations.")
+
+if(CUTLASS_LIBRARY_INSTANTIATION_LEVEL OR CUTLASS_LIBRARY_HEURISTICS_PROBLEMS_FILE)
+  message(STATUS "Enable extended SM90 WGMMA instruction shapes for instantiation levels")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
+endif()
 
 ################################################################################
 
@@ -347,6 +406,10 @@ if(CUTLASS_ENABLE_SM90_EXTENDED_MMA_SHAPES)
 endif()
 
 if (CUTLASS_NVCC_ARCHS MATCHES 100f OR CUTLASS_NVCC_ARCHS MATCHES 101f)
+list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_SM100_FAMILY_ARCHS_ENABLED)
+endif()
+
+if (CUTLASS_NVCC_ARCHS MATCHES 110f)
 list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_SM100_FAMILY_ARCHS_ENABLED)
 endif()
 
@@ -427,8 +490,6 @@ endif()
 # Blackwell features
 #
 ###################################################################################################
-
-
 
 # Warnings-as-error exceptions and warning suppressions for Clang builds
 if (CUTLASS_CLANG_HOST_COMPILE)
@@ -564,8 +625,8 @@ if (MSVC)
   #
   # See https://developercommunity.visualstudio.com/t/msvc-incorrectly-defines-cplusplus/139261
 
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler  /Zc:__cplusplus")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus /Zc:preprocessor")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /Zc:__cplusplus -Xcompiler /Zc:preprocessor")
 
 endif()
 
@@ -704,8 +765,15 @@ target_include_directories(
   CUTLASS
   SYSTEM INTERFACE
   $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
-  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include/cccl>
   )
+
+if(CUDA_VERSION VERSION_GREATER_EQUAL 13.0)
+  target_include_directories(
+    CUTLASS
+    SYSTEM INTERFACE
+    $<BUILD_INTERFACE:${CUTLASS_CUDA_CCCL_INCLUDE_DIR}>
+    )
+endif()
 
 install(
   DIRECTORY
@@ -722,38 +790,13 @@ install(
 
 ################################################################################
 
-# Doxygen is available. Generate documentation
-if (DOXYGEN_FOUND)
-    # DOT is available. Enable graph generation in the documentation
-    if (DOXYGEN_DOT_EXECUTABLE)
-        set(CUTLASS_ENABLE_DOXYGEN_DOT ON CACHE BOOL "Use dot to generate graphs in the doxygen documentation.")
-    else()
-        set(CUTLASS_ENABLE_DOXYGEN_DOT OFF CACHE BOOL "Use dot to generate graphs in the doxygen documentation." FORCE)
-    endif()
-
-    if (CUTLASS_ENABLE_DOXYGEN_DOT)
-        set(HAVE_DOT "YES")
-    else()
-        set(HAVE_DOT "NO")
-    endif()
-
-    # Add custom target for Doxygen.
-    add_custom_target(cutlass_docs ${CMAKE_COMMAND} -E env
-        "DOT_PATH=${DOXYGEN_DOT_EXECUTABLE}"
-        "HAVE_DOT=${HAVE_DOT}"
-        ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        VERBATIM
-    )
-endif()
-
 if(NOT WIN32)
   # Add common library search paths so executables and libraries can load and run
   # without LD_LIBRARY_PATH being set.
   link_libraries(
-    "-Wl,-rpath,'$ORIGIN'"
-    "-Wl,-rpath,'$ORIGIN/../lib64'"
-    "-Wl,-rpath,'$ORIGIN/../lib'"
+    "-Wl,-rpath,'$$ORIGIN'"
+    "-Wl,-rpath,'$$ORIGIN/../lib64'"
+    "-Wl,-rpath,'$$ORIGIN/../lib'"
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
     ${CMAKE_DL_LIBS}
@@ -881,7 +924,7 @@ function(cutlass_add_executable_tests NAME TARGET)
 
      install(
        FILES ${__RESULT_CACHE_FILE}
-       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}/
+       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}
        )
 
     endif()
@@ -1009,7 +1052,7 @@ function(cutlass_generate_profiler_tests NAME)
 
   install(
     FILES ${CUTLASS_PROFILER_REGRESSION_LIST_FILE}
-    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass/
+    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass
     RENAME profiler_regressions.csv
     )
 
@@ -1071,6 +1114,8 @@ function(cutlass_generate_profiler_tests NAME)
     endif()
 
   endforeach()
+  message(STATUS "Finished processing ${CUTLASS_PROFILER_REGRESSION_LIST_FILE} to generate profiler-based tests.")
+
 
   cutlass_add_executable_tests(
     ${NAME} cutlass_profiler
@@ -1131,7 +1176,7 @@ if (CUTLASS_INSTALL_TESTS)
 
   install(
     FILES "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake"
-    DESTINATION "${CUTLASS_TEST_INSTALL_PREFIX}/"
+    DESTINATION "${CUTLASS_TEST_INSTALL_PREFIX}"
     )
 
 endif()
@@ -1154,13 +1199,13 @@ install(
   FILES
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass
   )
 
 install(
   EXPORT NvidiaCutlass
   NAMESPACE nvidia::cutlass::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass
   FILE NvidiaCutlassTargets.cmake
   )
 

@@ -1,0 +1,3233 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# Use of this software is governed by the terms and conditions of the
+# NVIDIA End User License Agreement (EULA), available at:
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
+#
+# Any use, reproduction, disclosure, or distribution of this software
+# and related documentation outside the scope permitted by the EULA
+# is strictly prohibited.
+
+
+from typing import Any, Callable, Optional, Union, Type, Tuple, overload, List
+from inspect import isclass
+import operator
+
+from cutlass.cutlass_dsl import (
+    dsl_user_op,
+    lru_cache_ir,
+    T,
+    cutlass_arith,
+    _binary_op_type_promote,
+    MLIR_DYNAMIC,
+    BaseDSL,
+)
+from cutlass._mlir import ir
+import cutlass._mlir.dialects.cute as _cute_ir
+from cutlass._mlir.dialects.cute import ReductionOp as ReductionOp
+import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+from cutlass._mlir.dialects import vector, arith, llvm
+from cutlass._mlir.dialects.cute import (
+    SparseElemType as _SparseElemType,
+)
+from cutlass._mlir_helpers.vector import Vector
+from cutlass.base_dsl.typing import Pointer as _BasePointer
+
+from .typing import (
+    Numeric,
+    Integer,
+    Boolean,
+    Int4,
+    Uint8,
+    Int8,
+    Int32,
+    BFloat16,
+    Float32,
+    IntTuple,
+    Coord,
+    Shape,
+    Stride,
+    Pointer,
+    Layout,
+    ComposedLayout,
+    Tensor,
+    AddressSpace,
+    _element_precision_width,
+    is_integer,
+    is_int_tuple,
+    is_int_tuple_type,
+    as_numeric,
+)
+
+from .core import (
+    _unpack_x_tuple,
+    _pack_int_tuple,
+    _pack_coord,
+    _pack_shape,
+    _ComposedLayout,
+    _ComposedLayoutWithInnerFunc,
+    append_ones,
+    is_major,
+    is_static,
+    is_weakly_congruent,
+    rank,
+    append,
+    depth,
+    flatten,
+    has_underscore,
+    make_layout,
+    make_ptr,
+    select,
+    slice_,
+    crd2idx,
+    size,
+    leading_dim,
+    recast_ptr,
+    recast_layout,
+)
+
+from .tuple import transform_leaf, product, product_like, flatten_to_tuple
+from .arch import (
+    cvt_i8_bf16_intrinsic,
+    cvt_i4_bf16_intrinsic,
+)
+
+
+__all__ = [
+    "TensorSSA",
+    "ReductionOp",
+    "make_tensor",
+    "make_identity_tensor",
+    "make_fragment_like",
+    "make_rmem_tensor_like",
+    "make_rmem_tensor",
+    "recast_tensor",
+    "domain_offset",
+    "print_tensor",
+    "full",
+    "full_like",
+    "empty_like",
+    "ones_like",
+    "zeros_like",
+    "where",
+    "any_",
+    "all_",
+]
+
+
+@ir.register_value_caster(_cute_ir.MemRefType.get_static_typeid(), replace=True)
+@ir.register_value_caster(_cute_ir.CoordTensorType.get_static_typeid(), replace=True)
+@ir.register_value_caster(
+    _cute_nvgpu_ir.SmemDescViewType.get_static_typeid(), replace=True
+)
+class _Tensor(Tensor):
+    r"""Builtin Tensor Type as an IR value supporting standard iterator and layout..
+
+    :param value: The MLIR operation result value to initialize the tensor with
+    :type value: ir.Value
+    :param dtype: The user specified data type of the tensor elements. It could be \
+        different from the underlying dtype in the iterator. The default is None.
+    :type dtype: Type[Numeric], optional
+    :param loc: The source location for the operation, defaults to None
+    :type loc: Location, optional
+    :param ip: The insertion point for the operation, defaults to None
+    :type ip: InsertionPoint, optional
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a tensor with shape (4,8) in row-major layout
+        tensor = make_tensor(ptr, make_layout(shape=(4,8), stride=(8,1)))
+
+        # Access individual element
+        val = tensor[0, 0]    # or val = tensor[(0, 0)]
+
+        # Slice operation - get first column
+        subtensor = tensor[None, 0]  # or subtensor = tensor[(None, 0)]
+    """
+
+    _dtype: Union[Type[Numeric], Type[IntTuple], None]
+
+    @dsl_user_op
+    def __init__(
+        self,
+        value: Union[ir.Value, "_Tensor"],
+        dtype: Optional[Type[Numeric]] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Initialize a Tensor from an MLIR value.
+
+        :param value: The MLIR operation result value or another Tensor to initialize from
+        :type value: Union[ir.Value, _Tensor]
+        :param dtype: The user specified data type of the tensor elements, defaults to None
+        :type dtype: Optional[Type[Numeric]]
+        :param loc: The source location for the operation, defaults to None
+        :type loc: Optional[Location]
+        :param ip: The insertion point for the operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :raises TypeError: If value is not ir.Value or _Tensor
+        :raises TypeError: If iterator type is not supported
+        """
+        self._dtype = dtype
+        if isinstance(value, ir.Value):
+            self.value = value
+        elif isinstance(value, _Tensor):
+            self.value = value.value
+        else:
+            raise TypeError(f"Expected ir.Value or _Tensor, got {type(value)}")
+
+        # Set iterator
+        iter_val = _cute_ir.get_iter(self.value, loc=loc, ip=ip)
+        if isinstance(iter_val, Pointer):
+            self._iterator = iter_val
+        elif isinstance(iter_val.type, _cute_ir.ArithTupleIteratorType):
+            itup_val = _cute_ir.deref_arith_tuple_iter(iter_val)
+            self._iterator = _unpack_x_tuple(itup_val)  # type: ignore[assignment]
+        elif isinstance(iter_val, ir.Value):
+            # SMEM descriptor iterator requires specific vec_mode layout configuration
+            self._iterator = iter_val
+        else:
+            raise TypeError(f"unsupported iterator type, got {type(iter_val)}")
+
+        # Set dtype
+        if self._dtype is None:
+            if is_int_tuple(self.iterator):
+                self._dtype = IntTuple  # type: ignore[assignment]
+            elif isinstance(self.iterator, Pointer):
+                self._dtype = self.iterator.value_type
+            elif isinstance(self.type, _cute_nvgpu_ir.SmemDescViewType):
+                # SmemDescViewType requires specific vec_mode layout configuration
+                self._dtype = None
+            else:
+                raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __str__(self) -> str:
+        from .core import pretty_str
+
+        return f"tensor<{pretty_str(self.iterator)} o {pretty_str(self.layout)}>"
+
+    def __extract_mlir_values__(self) -> List[ir.Value]:
+        return [self.value]
+
+    def __new_from_mlir_values__(
+        self, values: List[Union["_Tensor", ir.Value]]
+    ) -> "_Tensor":
+        # Only expecting single value of _Tensor or ir.Value
+        # In this context, a _Tensor instance is an encapsulated ir.Value which is automatically created
+        # by value caster for MemRef/CoordTensor/SmemDescView typed values
+        assert len(values) == 1, f"Expected 1 value, but got {len(values)}"
+        assert isinstance(values[0], (_Tensor, ir.Value)), (
+            f"Expected _Tensor or ir.Value, but got {type(values[0])}"
+        )
+        return _Tensor(
+            values[0] if isinstance(values[0], ir.Value) else values[0].value,
+            dtype=self.element_type,
+        )
+
+    @dsl_user_op
+    def __getitem__(
+        self,
+        crd: Coord,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Union[Tensor, Numeric, IntTuple]:
+        """Access or slice tensor elements using coordinates.
+
+        This method implements
+        * tensor evaluation T(c) = *(E + L(c)) when `c` is a coordinate without slicing, or
+        * tensor slicing operations T(c) = make_tensor(E + L(c), slice(L, c))
+        where E is the iterator/engine and L is the layout
+
+        :param crd: Coordinate or slice specification for accessing tensor elements
+        :type crd: Coord
+        :param loc: Source location for MLIR operation tracking, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :return: Tensor element value or sliced subtensor
+        :rtype: Union[Tensor, ir.Value, IntTuple]
+
+        :raises ValueError: If coordinate access is invalid for the tensor layout
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Create a tensor with pointer iterator
+            ptr = make_ptr(cutlass.Float32, 0, cutlass.AddressSpace.gmem)
+            layout = make_layout((64, 128))  # leftmost mode is major
+            tensor = make_tensor(ptr, layout)  # Tensor using pointer iterator
+
+            # Direct element access loads from memory
+            val = tensor[0]  # Loads element at offset 0
+            val = tensor[1]  # Loads element at offset 4 (4bytes per Float32)
+            val = tensor[(0, 1)]  # Loads element at offset 64
+
+            # Create a coord tensor
+            layout = make_layout((64, 128), stride=(1 * E(0), 1 * E(1)))
+            tensor = make_tensor((128, 128), layout)
+
+            # Direct element access
+            val = tensor[0]  # Returns (128, 128)
+            val = tensor[(0, 1)]  # Returns (128, 129)
+
+            # Slice access
+            sliced = view[(3, None)]  # Returns tensor slice
+
+        .. note::
+            Sub-byte types like Float4E2M1FN and Float6E3M2FN are not supported for scalar
+            dereference operations. Attempting to set individual elements of tensors with
+            these element types will result in errors.
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Unsupported operations with sub-byte types:
+            ptr = make_ptr(cutlass.Float4E2M1FN, 0, cutlass.AddressSpace.gmem)
+            tensor = make_tensor(ptr, layout)
+            # The following will raise an error:
+            val = tensor[0]  # Error: sub-byte scalar dereference not supported
+
+            # Similarly for other sub-byte types:
+            ptr = make_ptr(cutlass.Float6E3M2FN, 0, cutlass.AddressSpace.gmem)
+            tensor = make_tensor(ptr, layout)
+            val = tensor[0]  # Error: sub-byte scalar dereference not supported
+        """
+        if has_underscore(crd):
+            return slice_(self, crd, loc=loc, ip=ip)
+        elif isinstance(self.type, _cute_ir.CoordTensorType):
+            res = _cute_ir.get_iter(
+                slice_(self, crd, loc=loc, ip=ip).value,
+                loc=loc,
+                ip=ip,
+            )
+            itup_val = _cute_ir.deref_arith_tuple_iter(res)
+            return _unpack_x_tuple(itup_val)
+        else:
+            self._check_can_load_store()
+            self._check_can_dereference()
+
+            crd_val = _pack_coord(crd, loc=loc, ip=ip)
+            data_val = _cute_ir.memref_load(self.value, crd_val, loc=loc, ip=ip)
+            return self.element_type(data_val)
+
+    def _cvt_to_dest(
+        self,
+        data: Union["TensorSSA", Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.Value:
+        orig_dtype = data.dtype
+        elem_type = self.element_type
+        assert not is_int_tuple_type(elem_type)
+        # Implicit upcast to wider type
+        if data.dtype.is_same_kind(elem_type) and elem_type.width >= data.dtype.width:
+            data = data.to(elem_type, loc=loc, ip=ip)
+
+        if data.dtype.width != elem_type.width:
+            raise ValueError(
+                f"Type mismatch, store {orig_dtype} (-> {data.dtype}) "
+                f"to Tensor with element type {elem_type}"
+            )
+
+        if data.dtype is Boolean and self.element_type is Boolean:
+            # Boolean Numeric and Boolean TensorSSA both hold i1 value, but we need int8 value store to memory
+            val = data.ir_value_int8(loc=loc, ip=ip)  # type: ignore[union-attr]
+        else:
+            val = data.ir_value(loc=loc, ip=ip)
+        return val
+
+    @dsl_user_op
+    def __setitem__(
+        self,
+        crd: Coord,
+        data: Union[int, float, ir.Value, Numeric, "TensorSSA"],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Set tensor elements at specified coordinates.
+
+        Assigns values to tensor elements through direct coordinate access or slice assignment.
+        For slice assignment, the value must be a TensorSSA with matching shape.
+
+        :param crd: Coordinate or slice specification for tensor element assignment
+        :type crd: Coord
+        :param data: Value to assign - can be scalar or TensorSSA for slice assignment
+        :type data: Union[int, float, ir.Value, Numeric, TensorSSA]
+        :param loc: Source location for MLIR operation tracking, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+
+        :raises ValueError: If tensor type doesn't support load/store operations
+        :raises ValueError: If slice assignment value is not a TensorSSA
+        :raises ValueError: If value type doesn't match tensor element type
+        :raises NotImplementedError: If value type is not supported
+
+        .. note::
+            Sub-byte types like Float4E2M1FN and Float6E3M2FN are not supported for scalar
+            dereference operations. Attempting to set individual elements of tensors with
+            these element types will result in errors.
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Unsupported operations with sub-byte types:
+            ptr = make_ptr(cutlass.Float4E2M1FN, 0, cutlass.AddressSpace.gmem)
+            tensor = make_tensor(ptr, layout)
+            # The following will raise an error:
+            tensor[0] = 1.0  # Error: sub-byte scalar dereference not supported
+
+            # Similarly for other sub-byte types:
+            ptr = make_ptr(cutlass.Float6E3M2FN, 0, cutlass.AddressSpace.gmem)
+            tensor = make_tensor(ptr, layout)
+            tensor[0] = 0.5  # Error: sub-byte scalar dereference not supported
+        """
+        self._check_can_load_store()
+
+        # convert scalar type
+        if not has_underscore(crd):
+            self._check_can_dereference()
+            if isinstance(data, ir.Value):
+                data = as_numeric(data)
+            elif isinstance(data, (int, float, bool)):
+                data = as_numeric(data)
+
+            if not isinstance(data, Numeric):
+                raise ValueError(f"unsupported data type: {type(data)}")
+
+            # Implicit upcast to wider type
+            val = self._cvt_to_dest(data, loc=loc, ip=ip)
+            if val.type != self.type.value_type:
+                raise ValueError(
+                    f"type mismatch, store {val.type} to {self.element_type}"
+                )
+
+            crd_val = _pack_coord(crd, loc=loc, ip=ip)
+            _cute_ir.memref_store(self.value, crd_val, val, loc=loc, ip=ip)
+        else:
+            if not isinstance(data, TensorSSA):
+                raise ValueError(f"Expected TensorSSA, but got {data}")
+
+            self.__getitem__(crd, loc=loc, ip=ip).store(data, loc=loc, ip=ip)
+
+    # Cheat to let `Type(_Tensor())` to return cute.Tensor
+    @property  # type: ignore[misc]
+    def __class__(self) -> Type[Tensor]:  # type: ignore[override]
+        return Tensor
+
+    # Make it behave as if it inherited from ir.Value
+    @property
+    @lru_cache_ir()
+    def type(self) -> ir.Type:
+        return self.value.type
+
+    @property
+    @lru_cache_ir()
+    def iterator(self) -> Union[Pointer, IntTuple]:
+        return self._iterator
+
+    @property
+    @dsl_user_op
+    @lru_cache_ir()
+    def layout(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Layout:
+        return _cute_ir.get_layout(self.value, loc=loc, ip=ip)
+
+    @property
+    @dsl_user_op
+    @lru_cache_ir()
+    def shape(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Shape:
+        return self.layout.shape_method(loc=loc, ip=ip)
+
+    @property
+    @lru_cache_ir()
+    def stride(self) -> Stride:
+        if isinstance(self.layout.type, _cute_ir.ComposedLayoutType):
+            raise ValueError("can't get stride from composed layout")
+        return self.layout.stride
+
+    @property
+    def leading_dim(self) -> Union[int, Tuple[int, ...], None]:
+        """Get the leading dimension of this Tensor.
+
+        :return: The index or indices of the first mode (from left to right) with stride 1
+        :rtype: Union[int, Tuple[int, ...], None]
+        :returns:
+            - int: Single leading dimension index if found
+            - Tuple[int, ...]: Tuple of indices for nested leading dimensions
+            - None: If no leading dimension is found
+
+        :postcondition: ``get(self.stride(), mode=self.leading_dim()) == 1 if self.leading_dim() != None else True``
+        """
+        return leading_dim(self.shape, self.stride)
+
+    @property
+    def dtype(self) -> Union[Type[Numeric], Type[IntTuple], None]:  # type: ignore[override]
+        return self._dtype
+
+    @property
+    @lru_cache_ir()
+    def element_type(self) -> Union[Type[Numeric], Type[IntTuple], None]:
+        return self._dtype
+
+    @element_type.setter
+    def element_type(
+        self, new_type: Union[Type[Numeric], Type[IntTuple], None]
+    ) -> None:
+        # Compile-time _Tensor's dtype is bound to the underlying MLIR ir.Value;
+        # mutating _dtype here would desync from self.value.type, and the
+        # @lru_cache_ir() on the getter would serve stale values.
+        raise NotImplementedError(
+            "Compile-time _Tensor does not support setting element_type"
+        )
+
+    @property
+    @lru_cache_ir()
+    def memspace(self) -> AddressSpace:
+        if isinstance(self.iterator, Pointer):
+            return self.iterator.memspace
+
+        raise ValueError(f"{self} doesn't have memspace")
+
+    @dsl_user_op
+    def load(
+        self,
+        *,
+        mask: Optional["TensorSSA"] = None,
+        pass_thru: Optional["TensorSSA"] = None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """Load tensor elements as a vector.
+
+        Loads all elements of the tensor into a vector representation, assuming the tensor
+        has a static shape and is in a memory space that supports load operations.
+
+        :param mask: Mask vector, defaults to None
+        :type mask: Optional[TensorSSA]
+        :param pass_thru: Pass through vector, defaults to None
+        :type pass_thru: Optional[TensorSSA]
+        :param loc: Source location for MLIR operation tracking, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :return: Vector representation of tensor elements
+        :rtype: TensorSSA
+
+        :raises ValueError: If tensor has dynamic layout
+        :raises ValueError: If tensor memory space doesn't support load operations
+        """
+        from .core import is_static
+
+        if not is_static(self.shape):
+            raise ValueError("dynamic layout doesn't support load")
+
+        self._check_can_load_store(vectorized=True)
+
+        # For non-rmem unmasked loads, copy to an intermediate rmem tensor so
+        # that autovec_copy vectorises the gmem/smem transfer regardless of
+        # stride order.
+        if self.memspace != AddressSpace.rmem and mask is None:
+            from .algorithm import autovec_copy  # avoid circular import
+
+            rmem = make_rmem_tensor_like(self, dtype=self.element_type, loc=loc, ip=ip)
+            autovec_copy(self, rmem, loc=loc, ip=ip)
+            return rmem.load(loc=loc, ip=ip)
+
+        mask_val = None if mask is None else mask.ir_value(loc=loc, ip=ip)
+        pass_thru_val = (
+            None if pass_thru is None else self._cvt_to_dest(pass_thru, loc=loc, ip=ip)
+        )
+        res_vect = _cute_ir.memref_load_vec(
+            self.value, mask=mask_val, pass_thru=pass_thru_val, loc=loc, ip=ip
+        )
+        if self.element_type is Boolean:
+            assert res_vect.type.element_type == T.i8(), (
+                f"Boolean tensor must be stored as i8 in memory, but got {res_vect.type.element_type}"
+            )
+            zeros = full_like(self, 0, Int8, loc=loc, ip=ip)
+            res_vect = arith.cmpi(
+                arith.CmpIPredicate.ne, res_vect, zeros, loc=loc, ip=ip
+            )
+        return TensorSSA(res_vect, self.shape, self.element_type)
+
+    @dsl_user_op
+    def store(
+        self,
+        data: "TensorSSA",
+        *,
+        mask: Optional["TensorSSA"] = None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Store vector data into tensor.
+
+        Stores vector data into the tensor, assuming matching shapes and a memory space
+        that supports store operations.
+
+        :param data: Vector data to store into tensor
+        :type data: TensorSSA
+        :param mask: Mask vector, defaults to None
+        :type mask: Optional[TensorSSA]
+        :param loc: Source location for MLIR operation tracking, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+
+        :raises ValueError: If tensor has dynamic layout
+        :raises ValueError: If tensor memory space doesn't support store operations
+        :raises ValueError: If data shape doesn't match tensor shape
+        """
+        if not isinstance(data, TensorSSA):
+            raise ValueError(f"Expected TensorSSA, but got {type(data)}")
+
+        if not is_static(self.shape):
+            raise ValueError("Dynamic layout doesn't support vectorized store")
+
+        self._check_can_load_store(vectorized=True)
+
+        n_elems = size(self.shape, loc=loc, ip=ip)
+        if n_elems != size(data.shape, loc=loc, ip=ip):
+            raise ValueError(
+                f"lhs and rhs must have the same shape, but got {self.shape} and {data.shape}"
+            )
+
+        # For non-rmem unmasked stores, route through an intermediate rmem
+        # tensor so autovec_copy vectorises the gmem/smem write regardless of
+        # stride order.
+        element_precision_width = _element_precision_width(self.element_type)
+        is_sub_byte = self.element_type is not Boolean and element_precision_width < 8
+        if self.memspace != AddressSpace.rmem and mask is None and not is_sub_byte:
+            from .algorithm import autovec_copy  # avoid circular import
+
+            rmem = make_rmem_tensor_like(self, dtype=self.element_type, loc=loc, ip=ip)
+            for i in range(size(rmem)):
+                rmem[i] = data[i]
+            autovec_copy(rmem, self, loc=loc, ip=ip)
+            return
+
+        elem_mlir_type = cutlass_arith.element_type(data.dtype.mlir_type)
+        if (
+            cutlass_arith.is_narrow_precision(elem_mlir_type)
+            and elem_mlir_type.width < 8
+        ):
+            n_elems = size(self.shape, loc=loc, ip=ip)
+            if elem_mlir_type.width * n_elems % 32 != 0:
+                raise ValueError(
+                    f"narrow precision type must be 32-bit aligned vector, "
+                    f"but got {elem_mlir_type} with {n_elems} elements"
+                )
+
+        # Implicit upcast to wider type
+        new_data = self._cvt_to_dest(data, loc=loc, ip=ip)
+
+        mask_val = None if mask is None else mask.ir_value(loc=loc, ip=ip)
+
+        return _cute_ir.memref_store_vec(
+            new_data, self.value, mask=mask_val, loc=loc, ip=ip
+        )
+
+    @dsl_user_op
+    def fill(
+        self,
+        value: Numeric,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Fill tensor with a constant value.
+
+        Fills all elements of the tensor with the specified value, assuming static size
+        and supported memory space.
+
+        :param value: Value to fill tensor with
+        :type value: Union[int, float]
+        :param loc: Source location for MLIR operation tracking, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+
+        :raises NotImplementedError: If tensor has dynamic size
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Create tensor from numpy array
+            b = np.random.randn(4, 8).astype(np.float32)
+            tensor = from_dlpack(b)
+
+            # Fill tensor with constant value
+            tensor.fill(0.5)  # All elements become 0.5
+        """
+        self._check_can_load_store(vectorized=True)
+
+        sz = size(self, loc=loc, ip=ip)
+        if type(sz) is not int:
+            raise NotImplementedError(f"dynamic size is not supported: {self.type}")
+
+        # Should we cast to destination type even with narrow cast?
+        dst_type = self.element_type
+        scalar_val = dst_type(value, loc=loc, ip=ip)
+        vect_val = full(
+            self.shape, fill_value=scalar_val, dtype=dst_type, loc=loc, ip=ip
+        )
+        self.store(vect_val, loc=loc, ip=ip)
+
+    def _check_can_load_store(self, vectorized: bool = False) -> None:
+        if not isinstance(self.type, _cute_ir.MemRefType) or self.memspace not in (
+            AddressSpace.rmem,
+            AddressSpace.smem,
+            AddressSpace.gmem,
+            AddressSpace.generic,
+        ):
+            raise ValueError(f"{self} doesn't support load and store")
+
+        if vectorized and isinstance(self.layout, ComposedLayout):
+            raise NotImplementedError(
+                "vectorized load/store on tensor with composed layout is not supported yet"
+            )
+
+    def _check_can_dereference(self) -> None:
+        sub_byte_types = (
+            type(Boolean),
+        )
+        # Check for sub-byte types and raise error if needed
+        if self.element_type.width % 8 != 0 and not isinstance(
+            self.element_type, sub_byte_types
+        ):
+            raise ValueError(
+                f"Sub-byte scalar dereference not supported for type {self.element_type}"
+            )
+
+
+#
+# Tensor API
+#
+
+
+@dsl_user_op
+def make_tensor(
+    iterator: Union[Pointer, IntTuple, ir.Value],
+    layout: Union[Shape, Layout, ComposedLayout],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Creates a tensor by composing an engine (iterator/pointer) with a layout.
+
+    A tensor is defined as T = E ∘ L, where E is an engine (array, pointer, or counting iterator)
+    and L is a layout that maps logical coordinates to physical offsets. The tensor
+    evaluates coordinates by applying the layout mapping and dereferencing the engine
+    at the resulting offset.
+
+    :param iterator: Engine component that provides data access capabilities. Can be:
+                    - A pointer (Pointer type)
+                    - An integer or integer tuple for coordinate tensors
+                    - A shared memory descriptor (SmemDescType)
+    :type iterator: Union[Pointer, IntTuple, ir.Value]
+    :param layout: Layout component that defines the mapping from logical coordinates to
+                  physical offsets. Can be:
+                  - A shape tuple that will be converted to a layout
+                  - A Layout object
+                  - A ComposedLayout object (must be a normal layout)
+    :type layout: Union[Shape, Layout, ComposedLayout]
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A tensor object representing the composition E ∘ L
+    :rtype: Tensor
+
+    :raises TypeError: If iterator type is not a supported type
+    :raises ValueError: If layout is a composed layout with customized inner functions
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a tensor with row-major layout from a pointer
+        ptr = make_ptr(Float32, base_ptr, AddressSpace.gmem)
+        layout = make_layout((64, 128), stride=(128, 1))
+        tensor = make_tensor(ptr, layout)
+
+        # Create a tensor with hierarchical layout in shared memory
+        smem_ptr = make_ptr(Float16, base_ptr, AddressSpace.smem)
+        layout = make_layout(((128, 8), (1, 4, 1)), stride=((32, 1), (0, 8, 4096)))
+        tensor = make_tensor(smem_ptr, layout)
+
+        # Create a coordinate tensor
+        layout = make_layout(2, stride=16 * E(0))
+        tensor = make_tensor(5, layout)  # coordinate tensor with iterator starting at 5
+
+    Notes:
+        - The engine (iterator) must support random access operations
+        - Common engine types include raw pointers, arrays, and random-access iterators
+        - The layout defines both the shape (logical dimensions) and stride (physical mapping)
+        - Supports both direct coordinate evaluation T(c) and partial evaluation (slicing)
+        - ComposedLayouts must be "normal" layouts (no inner functions)
+        - For coordinate tensors, the iterator is converted to a counting sequence
+    """
+    if isinstance(layout, _ComposedLayoutWithInnerFunc):
+        raise ValueError(
+            f"CuTe DSL tensor does not support composed layouts with inner functions: {layout}"
+        )
+
+    if not isinstance(layout, (Layout, ComposedLayout)):
+        layout = make_layout(layout, loc=loc, ip=ip)
+    # Automatic decay to normal layout
+    elif isinstance(layout, ComposedLayout) and layout.is_normal:
+        layout = layout.outer
+
+    res_ty = None
+    if is_integer(iterator) or isinstance(iterator, tuple):
+        itup_val = _pack_int_tuple(iterator, loc=loc, ip=ip)  # type: ignore[arg-type]
+        iter_ty = _cute_ir.ArithTupleIteratorType.get(itup_val.type)
+        iterator = _cute_ir.make_arith_tuple_iter(
+            iter=iter_ty, value=itup_val, loc=loc, ip=ip
+        )
+        res_ty = _cute_ir.CoordTensorType.get(itup_val.type, layout.type)  # type: ignore[union-attr]
+    elif isinstance(iterator, Pointer):
+        iterator = iterator.value
+        res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
+    elif isinstance(iterator, _BasePointer):
+        iterator = make_ptr(
+            iterator.dtype,
+            iterator.to_llvm_ptr(loc=loc, ip=ip),
+            assumed_align=iterator.max_alignment,
+            loc=loc,
+            ip=ip,
+        ).value
+        res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
+    elif isinstance(iterator, ir.Value) and isinstance(
+        iterator.type,
+        _cute_nvgpu_ir.SmemDescType,
+    ):
+        # SmemDescType requires specific vec_mode layout configuration
+        res_ty = _cute_nvgpu_ir.SmemDescViewType.get(layout.type)  # type: ignore[union-attr]
+    else:
+        raise TypeError(f"unsupported iterator type, got {type(iterator)}")
+
+    if isinstance(layout, _ComposedLayout):
+        layout = layout.value
+    return _cute_ir.make_view(
+        result=res_ty, iter=iterator, layout=layout, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def make_identity_tensor(
+    shape: Shape,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Creates an identity tensor with the given shape.
+
+    An identity tensor maps each coordinate to itself, effectively creating a counting
+    sequence within the shape's bounds. This is useful for generating coordinate indices
+    or creating reference tensors for layout transformations.
+
+    :param shape: The shape defining the tensor's dimensions. Can be a simple integer
+                 sequence or a hierarchical structure ((m,n),(p,q))
+    :type shape: Shape
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A tensor that maps each coordinate to itself
+    :rtype: Tensor
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a simple 1D coord tensor
+        tensor = make_identity_tensor(6)  # [0,1,2,3,4,5]
+
+        # Create a 2D coord tensor
+        tensor = make_identity_tensor((3,2))  # [(0,0),(1,0),(2,0),(0,1),(1,1),(2,1)]
+
+        # Create hierarchical coord tensor
+        tensor = make_identity_tensor(((2,1),3))
+        # [((0,0),0),((1,0),0),((0,0),1),((1,0),1),((0,0),2),((1,0),2)]
+
+    Notes:
+        - The shape parameter follows CuTe's IntTuple concept
+        - Coordinates are ordered colexicographically
+        - Useful for generating reference coordinates in layout transformations
+    """
+    shape_val = _pack_shape(shape, loc=loc, ip=ip)
+    return _cute_ir.make_identity_tensor(shape_val, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_rmem_tensor(
+    layout_or_shape: Union[Layout, Shape],
+    dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Creates a tensor in register memory with the specified layout/shape and data type.
+
+    This function allocates a tensor in register memory (rmem) usually on stack with
+    either a provided layout or creates a new layout from the given shape. The tensor
+    will have elements of the specified numeric data type.
+
+    :param layout_or_shape: Either a Layout object defining the tensor's memory organization,
+                          or a Shape defining its dimensions
+    :type layout_or_shape: Union[Layout, Shape]
+    :param dtype: The data type for tensor elements (must be a Numeric type)
+    :type dtype: Type[Numeric]
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A tensor allocated in register memory
+    :rtype: Tensor
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create rmem tensor with explicit layout
+        layout = make_layout((128, 32))
+        tensor = make_rmem_tensor(layout, cutlass.Float16)
+
+        # Create rmem tensor directly from shape
+        tensor = make_rmem_tensor((64, 64), cutlass.Float32)
+
+    Notes:
+        - Uses 32-byte alignment to support .128 load/store operations
+        - Boolean types are stored as 8-bit integers
+        - Handles both direct shapes and Layout objects
+    """
+    if not issubclass(dtype, Numeric):
+        raise TypeError(f"value_type must be a type of Numeric, but got {type(dtype)}")
+    elem_ty = dtype.mlir_type if dtype is not Boolean else T.i8()
+
+    # Alignment for register memory is useless(?), pick-up large enough number
+    # to allow .128 (> 16B) load store
+    alignment = 32
+    layout = None
+    if not isinstance(layout_or_shape, Layout):
+        layout = make_layout(layout_or_shape, loc=loc, ip=ip)
+    elif isinstance(layout_or_shape, _ComposedLayout):
+        # Defensive check: make_rmem_tensor doesn't accept ComposedLayout objects
+        layout = layout_or_shape.value
+    else:
+        layout = layout_or_shape
+
+    ptr_ty = _cute_ir.PtrType.get(elem_ty, AddressSpace.rmem, alignment)
+    res_ty = _cute_ir.MemRefType.get(ptr_ty, layout.type)
+    tensor = _cute_ir.memref_alloca(res_ty, layout=layout, loc=loc, ip=ip)
+    return _Tensor(tensor.value, dtype)
+
+
+@dsl_user_op
+def make_rmem_tensor_like(
+    src: Union[Layout, ComposedLayout, Tensor, "TensorSSA"],
+    dtype: Optional[Type[Numeric]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Creates a tensor in register memory with the same shape as the input layout but
+       compact col-major strides. This is equivalent to calling `make_rmem_tensor(make_layout_like(tensor))`.
+
+    This function allocates a tensor in register memory (rmem) usually on stack with
+    with the compact layout like the source. The tensor will have elements of the
+    specified numeric data type or the same as the source.
+
+    :param src: The source layout or tensor whose shape will be matched
+    :type src: Union[Layout, ComposedLayout, Tensor]
+    :param dtype: The element type for the fragment tensor, defaults to None
+    :type dtype: Type[Numeric], optional
+    :param loc: Source location for MLIR operations, defaults to None
+    :type loc: Location, optional
+    :param ip: Insertion point for MLIR operations, defaults to None
+    :type ip: InsertionPoint, optional
+
+    :return: A new layout or fragment tensor with matching shape
+    :rtype: Union[Layout, Tensor]
+
+    **Examples:**
+
+    Creating a rmem tensor from a tensor:
+
+    .. code-block:: python
+
+        smem_tensor = cute.make_tensor(smem_ptr, layout)
+        rmem_tensor = cute.make_rmem_tensor_like(smem_tensor, cutlass.Float32)
+        # frag_tensor will be a register-backed tensor with the same shape
+
+    Creating a fragment with a different element type:
+
+    .. code-block:: python
+
+        tensor = cute.make_tensor(gmem_ptr, layout)
+        rmem_bool_tensor = cute.make_rmem_tensor_like(tensor, cutlass.Boolean)
+        # bool_frag will be a register-backed tensor with Boolean elements
+
+    **Notes**
+
+    - When used with a Tensor, if a type is provided, it will create a new
+      fragment tensor with that element type.
+    - For layouts with ScaledBasis strides, the function creates a fragment
+      from the shape only.
+    - This function is commonly used in GEMM and other tensor operations to
+      create register storage for intermediate results.
+
+    """
+    if not isinstance(src, (Layout, ComposedLayout, Tensor, TensorSSA)):
+        raise TypeError(
+            f"src must be a Layout or ComposedLayout or Tensor, got {type(src)}"
+        )
+
+    if isinstance(src, Tensor):
+        if isinstance(src.type, _cute_ir.CoordTensorType):  # type: ignore[union-attr]
+            if dtype is None:
+                raise ValueError(
+                    "dtype must be provided when src is a coordinate tensor"
+                )
+
+            res_dtype = dtype
+            compact_layout = make_layout(src.shape, loc=loc, ip=ip)
+            src_layout = _cute_ir.make_layout_like(compact_layout, loc=loc, ip=ip)
+        else:
+            res_dtype = dtype or src.element_type
+            src_layout = src.layout
+    elif isinstance(src, TensorSSA):
+        res_dtype = dtype or src.element_type
+        src_layout = make_layout(src.shape, loc=loc, ip=ip)
+    else:
+        if dtype is None:
+            raise ValueError("dtype must be provided when src is a layout")
+
+        res_dtype = dtype
+        src_layout = src
+
+    if isinstance(src_layout, _ComposedLayout):
+        src_layout = src_layout.value
+
+    res_layout = _cute_ir.make_layout_like(src_layout, loc=loc, ip=ip)
+    return make_rmem_tensor(res_layout, res_dtype, loc=loc, ip=ip)
+
+
+@overload
+def make_fragment_like(
+    src: Tensor,
+    dtype: Optional[Type[Numeric]],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor: ...
+@overload
+def make_fragment_like(
+    src: Layout,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Layout: ...
+@overload
+def make_fragment_like(
+    src: ComposedLayout,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ComposedLayout: ...
+
+
+@dsl_user_op
+def make_fragment_like(
+    src: Union[Layout, ComposedLayout, Tensor],
+    dtype: Optional[Type[Numeric]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Layout, Tensor]:
+    # Keep code to avoid potential regression
+    if isinstance(src, (Layout, _ComposedLayout)):
+        if isinstance(src, _ComposedLayout):
+            src = src.value
+        new_layout = _cute_ir.make_fragment_like(src, loc=loc, ip=ip)
+
+        if dtype is not None:
+            # call make_rmem_tensor to convert layout to tensor
+            return make_rmem_tensor(new_layout, dtype, loc=loc, ip=ip)
+        else:
+            return new_layout
+    else:
+        return make_rmem_tensor_like(src, dtype, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def recast_tensor(
+    src: Tensor,
+    dtype: Type[Numeric],
+    swizzle_: object = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Recast a tensor to a different data type by changing the element interpretation.
+
+    This function reinterprets the memory of a tensor with a different element type,
+    adjusting both the iterator pointer type and the layout to maintain consistency.
+
+    :param src: The source tensor to recast
+    :type src: Tensor
+    :param dtype: The target data type for tensor elements
+    :type dtype: Type[Numeric]
+    :param swizzle_: Optional swizzle parameter (reserved for future use), defaults to None
+    :type swizzle_: Optional, unused
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A new tensor with the same memory but reinterpreted as dtype
+    :rtype: Tensor
+    :raises TypeError: If dtype is not a subclass of Numeric
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a Float32 tensor
+        tensor_f32 = make_rmem_tensor((4, 8), Float32)
+
+        # Recast to Int32 to manipulate bits
+        tensor_i32 = recast_tensor(tensor_f32, Int32)
+
+        # Both tensors share the same memory, but interpret it differently
+    """
+    dst_width = None
+    if dst_width is None:
+        if not isclass(dtype) or not issubclass(dtype, Numeric):
+            raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
+        dst_width = 8 if dtype is Boolean else dtype.width
+
+    if src.element_type is Boolean:
+        src_width = 8
+    else:
+        src_width = src.element_type.width
+
+    src_iter = recast_ptr(src.iterator, dtype=dtype, loc=loc, ip=ip)
+    src_layout = recast_layout(dst_width, src_width, src.layout, loc=loc, ip=ip)
+    return type(src)(  # type: ignore[call-arg]
+        make_tensor(src_iter, src_layout, loc=loc, ip=ip), dtype=dtype, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def domain_offset(
+    coord: Coord,
+    tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Offset the tensor domain by the given coordinate.
+
+    This function creates a new tensor by offsetting the iterator/pointer of the input tensor
+    by the amount corresponding to the given coordinate in its layout.
+
+    :param coord: The coordinate offset to apply
+    :type coord: Coord
+    :param tensor: The source tensor to offset
+    :type tensor: Tensor
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: A new tensor with the offset iterator
+    :rtype: Tensor
+    :raises ValueError: If the tensor type doesn't support domain offsetting
+
+    **Examples:**
+
+    .. code-block:: python
+
+        # Create a tensor with a row-major layout
+        ptr = make_ptr(Float32, base_ptr, AddressSpace.gmem)
+        layout = make_layout((64, 128), stride=(128, 1))
+        tensor = make_tensor(ptr, layout)
+
+        # Offset by coordinate (3, 5)
+        offset_tensor = domain_offset((3, 5), tensor)
+        # offset_tensor now points to element at (3, 5)
+    """
+    offset = crd2idx(coord, tensor.layout, loc=loc, ip=ip)
+    if isinstance(tensor.iterator, Pointer):
+        return make_tensor(
+            tensor.iterator.__add__(offset, loc=loc, ip=ip),  # type: ignore[call-arg]
+            tensor.layout,
+            loc=loc,
+            ip=ip,
+        )
+    elif is_integer(tensor.iterator) or isinstance(tensor.iterator, tuple):
+        new_iter = _cute_ir.tuple_add(
+            _pack_int_tuple(tensor.iterator, loc=loc, ip=ip),
+            _pack_int_tuple(offset, loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+        return make_tensor(
+            _unpack_x_tuple(new_iter, loc=loc, ip=ip),
+            tensor.layout,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        # Defensive check: all valid tensors have Pointer or int/tuple iterators
+        raise ValueError(f"unsupported tensor for domain_offset, got {tensor}")
+
+@dsl_user_op
+def print_tensor(
+    tensor: Union[Tensor, "TensorSSA"],
+    *,
+    verbose: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Print content of the tensor in human readable format.
+
+    Outputs the tensor data in a structured format showing both metadata
+    and the actual data values. The output includes tensor type information,
+    layout details, and a formatted array representation of the values.
+
+    :param tensor: The tensor to print
+    :type tensor: Tensor
+    :param verbose: If True, includes additional debug information in the output
+    :type verbose: bool
+    :param loc: Source location where it's called, defaults to None
+    :type loc: source location, optional
+    :param ip: Insertion pointer for IR generation, defaults to None
+    :type ip: insertion pointer, optional
+    :raises NotImplementedError: If the tensor type doesn't support trivial dereferencing
+
+    **Example output:**
+
+    .. code-block:: text
+
+        tensor(raw_ptr<@..., Float32, generic, align(4)> o (8,5):(5,1), data=
+               [[-0.4326, -0.5434,  0.1238,  0.7132,  0.8042],
+                [-0.8462,  0.9871,  0.4389,  0.7298,  0.6948],
+                [ 0.3426,  0.5856,  0.1541,  0.2923,  0.6976],
+                [-0.1649,  0.8811,  0.1788,  0.1404,  0.2568],
+                [-0.2944,  0.8593,  0.4171,  0.8998,  0.1766],
+                [ 0.8814,  0.7919,  0.7390,  0.4566,  0.1576],
+                [ 0.9159,  0.7577,  0.6918,  0.0754,  0.0591],
+                [ 0.6551,  0.1626,  0.1189,  0.0292,  0.8655]])
+    """
+    if isinstance(tensor, TensorSSA):
+        tmp = make_rmem_tensor(tensor.shape, tensor.dtype)
+        tmp.store(tensor)
+        tensor = tmp
+
+    if isinstance(tensor.type, _cute_ir.MemRefType):  # type: ignore[union-attr]
+        elem_type = tensor.element_type
+        if issubclass(elem_type, Integer):
+            signed = elem_type.signed
+        else:
+            signed = False
+    elif isinstance(tensor.type, _cute_ir.CoordTensorType):  # type: ignore[union-attr]
+        signed = True
+    else:
+        # Defensive check: all valid tensors are either MemRefType or CoordTensorType
+        raise ValueError(f"unsupported tensor type for print_tensor, got {tensor.type}")  # type: ignore[union-attr]
+    _cute_ir.print_view(tensor.value, verbose=verbose, is_signed=signed, loc=loc, ip=ip)
+
+
+def _get_row_and_col_map(col_maj_shape_1d: tuple, is_row_to_col: bool) -> list:
+    """Create an index mapping mask for converting between row-major and column-major vector ordering.
+
+    This helper function generates a permutation array that maps between row-major and
+    column-major orderings of vector elements.
+
+    :param col_maj_shape_1d: The shape tuple in column-major order
+    :type col_maj_shape_1d: tuple
+    :param is_row_to_col: If True, generates row-to-column mapping; if False, column-to-row
+    :type is_row_to_col: bool
+    :return: A list representing the index permutation
+    :rtype: list
+    :raises ValueError: If col_maj_shape_1d is None
+    """
+
+    # create row-major layout with compact row-major stride
+    if col_maj_shape_1d is None:
+        raise ValueError("vector shape for row/col map cannot be None")
+    if isinstance(col_maj_shape_1d, tuple):
+        row_maj_shape_1d = tuple(reversed(flatten(col_maj_shape_1d)))
+    else:
+        # Single dimension
+        row_maj_shape_1d = col_maj_shape_1d
+
+    flat_shape = flatten(row_maj_shape_1d)
+    if isinstance(flat_shape, tuple):
+        strides = []
+        current_stride = 1
+        flat_shape = tuple(reversed(flat_shape))
+        for dim in flat_shape:
+            strides.append(current_stride)
+            current_stride *= dim
+        row_maj_stride = tuple(reversed(strides))
+    else:
+        # Single dimension
+        row_maj_stride = 1  # type: ignore[assignment]
+
+    row_maj_lay_1d = make_layout(row_maj_shape_1d, stride=row_maj_stride)
+
+    # get idx map
+    shape_size = size(row_maj_shape_1d)
+    mask = [0] * shape_size
+
+    for col_index in range(shape_size):
+        row_index = crd2idx(col_index, row_maj_lay_1d)
+        if is_row_to_col:
+            mask[row_index] = col_index
+        else:
+            mask[col_index] = row_index
+
+    return mask
+
+
+def _row2col(
+    vec: ir.Value,
+    *,
+    shape: Shape,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert a vector or tensor from row-major order to column-major order.
+
+    :param vec: The input vector in row-major order
+    :type vec: ir.Value
+    :param shape: The shape of the vector
+    :type shape: Shape
+    :param loc: Source location for MLIR operations, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operations, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: The vector reordered to column-major layout
+    :rtype: ir.Value
+    """
+    row_and_col_map = _get_row_and_col_map(shape, is_row_to_col=True)  # type: ignore[arg-type]
+    return vector.shuffle(vec, vec, row_and_col_map, loc=loc, ip=ip)
+
+
+def _col2row(
+    vec: ir.Value,
+    *,
+    shape: Shape,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert a vector or tensor from column-major order to row-major order.
+
+    :param vec: The input vector in column-major order
+    :type vec: ir.Value
+    :param shape: The shape of the vector
+    :type shape: Shape
+    :param loc: Source location for MLIR operations, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operations, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: The vector reordered to row-major layout
+    :rtype: ir.Value
+    """
+    row_and_col_map = _get_row_and_col_map(shape, is_row_to_col=False)  # type: ignore[arg-type]
+    return vector.shuffle(vec, vec, row_and_col_map, loc=loc, ip=ip)
+
+
+def _infer_broadcast_shape(*shapes: Shape) -> Shape:
+    """
+    Infer the broadcasted shape from multiple input shapes according to broadcasting rules.
+
+    :param shapes: Variable number of tensor shapes to broadcast together.
+    :type shapes: Shape
+    :return: The broadcasted shape.
+    :rtype: Shape
+    :raises ValueError: If no shapes provided or shapes cannot be broadcast together.
+    """
+
+    if len(shapes) == 0:
+        raise ValueError("At least one shape must be provided")
+    elif len(shapes) == 1:
+        return shapes[0]
+
+    def _broadcast(*values: int) -> int:
+        non_one_values = [v for v in values if v != 1]
+        if len(non_one_values) == 0:
+            return 1
+        elif len(set(non_one_values)) == 1:
+            return non_one_values[0]
+        else:
+            raise ValueError(f"cannot broadcast {values}")
+
+    # Use list comprehension instead of generator to avoid keeping frames on stack
+    # which can cause recursion issues with @dsl_user_op decorated functions
+    max_rank = max([rank(shape) for shape in shapes])
+    ext_shapes = tuple([append(shape, 1, up_to_rank=max_rank) for shape in shapes])
+    res_shape = transform_leaf(_broadcast, *ext_shapes)
+    return res_shape
+
+
+class TensorSSA(Vector):
+    """A class representing thread local data from CuTe Tensor in value semantic and immutable.
+
+    :param value: Flatten vector as ir.Value holding logic data of SSA Tensor
+    :type value: ir.Value
+    :param shape: The nested shape in CuTe of the vector
+    :type shape: Shape
+    :param dtype: Data type of the tensor elements
+    :type dtype: Type[Numeric]
+
+    :ivar _shape: The nested shape in CuTe of the vector
+    :ivar _dtype: Data type of the tensor elements
+
+    :raises ValueError: If shape is not static
+    """
+
+    @dsl_user_op
+    def __init__(
+        self,
+        value: ir.Value,
+        shape: Shape,
+        dtype: Optional[Type[Numeric]] = None,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """
+        Create a :class:`TensorSSA` object: an immutable, thread-local tensor backed by a flattened MLIR vector.
+
+        :param value: A :class:`ir.Value` holding the flattened MLIR vector value of the tensor.
+        :type value: :class:`ir.Value`
+        :param shape: The logical (possibly nested) shape of the tensor.
+        :type shape: Shape
+        :param dtype: The data type of the tensor elements. If None,
+            this is inferred from the MLIR element type.
+        :type dtype: Type[Numeric], optional
+
+        :keyword loc: Optional location for op construction.
+        :keyword ip: Optional insertion point for op construction.
+
+        :raises ValueError: If ``value`` is not an ``ir.Value``, is not of vector type,
+            or if ``shape`` is not statically known.
+
+        .. note::
+            - Instances are immutable and represent per-thread local SSA values using value semantics.
+            - The tensor's broadcast shape and static element type are registered; dynamic shapes are not supported.
+        """
+        if not isinstance(value, ir.Value):
+            raise ValueError(f"Expected value to be an ir.Value, got {type(value)}")
+
+        if not isinstance(value.type, ir.VectorType):
+            raise ValueError(
+                f"Expected value to be a vector type, got {type(value.type)}"
+            )
+
+        if not is_static(shape):
+            raise ValueError("dynamic shape is not supported")
+
+        if dtype is None:
+            dtype = Numeric.from_mlir_type(value.type.element_type)
+
+        # Vector.__init__ infers flat _shape from value.type; we override
+        # with CuTe nested shape below.
+        Vector.__init__(self, value, dtype=dtype, loc=loc, ip=ip)
+
+        self._shape = shape  # type: ignore[assignment]  # CuTe Shape (possibly nested)
+        self._layout = None
+
+    @staticmethod
+    @dsl_user_op
+    def from_vector(
+        value: ir.Value,
+        *,
+        dtype: Optional[Type[Numeric]] = None,
+        shape: Optional[Shape] = None,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Construct a :class:`TensorSSA` from a given MLIR vector value.
+
+        This helper interprets the given 1D or n-D MLIR vector value and returns a TensorSSA view.
+        If the input is an n-D vector, it shape-casts it into a 1D vector holding the same number of elements.
+
+        :param value: The ir.Value representing an MLIR vector value (1D or n-D).
+        :param dtype: Optional explicit type of the elements. Deduced from MLIR type if not provided.
+        :param loc: Optional MLIR location.
+        :param ip: Optional MLIR insertion point.
+        :return: A TensorSSA view over the vector value.
+        """
+        if not isinstance(value, ir.Value):
+            raise ValueError(f"Expected value to be an ir.Value, got {type(value)}")
+
+        if not isinstance(value.type, ir.VectorType):
+            raise ValueError(
+                f"Expected value to be a vector type, got {type(value.type)}"
+            )
+
+        if dtype is None:
+            dtype = Numeric.from_mlir_type(value.type.element_type)
+
+        shape = shape or tuple(value.type.shape)
+        if not is_static(shape):
+            raise ValueError("dynamic shape is not supported")
+
+        if rank(shape) > 1:
+            flat_vect_ty = ir.VectorType.get(
+                [product(shape, loc=loc, ip=ip)], value.type.element_type
+            )
+            value = vector.shape_cast(flat_vect_ty, value, loc=loc, ip=ip)
+
+        value = _row2col(value, shape=shape, loc=loc, ip=ip)
+        return TensorSSA(value, shape, dtype, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def to_vector(
+        self,
+        *,
+        force_flatten: bool = False,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Vector:
+        """
+        Convert the tensor to :class:`Vector` carrying the tensor's dtype.
+
+        Returns a :class:`Vector` wrapping the underlying MLIR vector value;
+        the DSL dtype is propagated so callers can use :meth:`Vector.reduce`,
+        :meth:`Vector.to`, and element-wise arithmetic.
+        """
+
+        if depth(self.shape) > 1:
+            if not force_flatten:
+                raise ValueError(
+                    "Cannot convert non-flattened tensor to vector, use force_flatten=True to flatten nested shape"
+                )
+            shape = flatten_to_tuple(self.shape)
+        else:
+            shape = self.shape  # type: ignore[assignment]
+
+        shape_list = [shape] if isinstance(shape, int) else list(shape)
+        res_ty = ir.VectorType.get(shape_list, self.dtype.mlir_type)
+        val = _col2row(self, shape=shape, loc=loc, ip=ip)
+        vec_ir = vector.shape_cast(res_ty, val, loc=loc, ip=ip)
+        return Vector(vec_ir, dtype=self.dtype, loc=loc, ip=ip)
+
+    @property
+    def dtype(self) -> Type[Numeric]:
+        return self._dtype
+
+    @property
+    def element_type(self) -> Type[Numeric]:
+        return self._dtype
+
+    def __extract_mlir_values__(self) -> list:
+        return [self]
+
+    def __new_from_mlir_values__(self, values: list) -> "TensorSSA":
+        return TensorSSA(values[0], self.shape, self.dtype)
+
+    def _wrap_like(self, result_ir: "ir.Value") -> "TensorSSA":
+        """Preserve CuTe nested shape when the math foundation wraps a
+        per-element op's result back into a TensorSSA."""
+        return TensorSSA(result_ir, shape=self._shape, dtype=self._dtype)
+
+    @property
+    def _count(self) -> int:
+        """Total element count — flatten CuTe nested shape before multiplying.
+
+        Overrides :attr:`Vector._count`, which assumes a flat MLIR shape tuple.
+        TensorSSA carries a possibly-nested CuTe shape (e.g. ``((4, 2), 8)``),
+        so the base implementation's ``result *= dim`` produces garbage for
+        nested shapes (tuple-repetition instead of arithmetic). ``numel``
+        picks up this override automatically.
+        """
+        result = 1
+        for dim in flatten_to_tuple(self._shape):
+            result *= dim
+        return result
+
+    def __str__(self) -> str:
+        return f"tensor_value<{self.type} o {self.shape}>"
+
+    @property
+    def shape(self) -> Shape:  # type: ignore[override]
+        return self._shape
+
+    def _apply_op(
+        self,
+        op: Callable,
+        other: object,
+        flip: bool = False,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        # Canonicalize into Numeric
+        if isinstance(other, (int, float, bool)) or (
+            not isinstance(other, TensorSSA)
+            and isinstance(other, cutlass_arith.ArithValue)
+        ):
+            other = as_numeric(other)
+
+        assert isinstance(other, (Numeric, TensorSSA)), (
+            f"Expected other to be Numeric or TensorSSA after canonicalization, but got {type(other)}"
+        )
+
+        # Promote types
+        lhs, rhs, res_type = _binary_op_type_promote(self, other)
+        assert isinstance(lhs, TensorSSA)
+
+        # Promote scalar to vector
+        if not isinstance(rhs, TensorSSA):
+            assert isinstance(rhs, Numeric), (
+                f"Expected rhs to be Numeric, but got {rhs}"
+            )
+            vect_val = vector.broadcast(lhs.type, rhs.ir_value(loc=loc, ip=ip))
+
+            rhs = TensorSSA(vect_val, lhs.shape, lhs.dtype)
+
+        if flip:
+            lhs, rhs = rhs, lhs
+
+        if op in (
+            operator.lt,
+            operator.le,
+            operator.gt,
+            operator.ge,
+            operator.eq,
+            operator.ne,
+        ):
+            res_type = Boolean
+
+        assert isinstance(rhs, TensorSSA), f"rhs must be TensorSSA but got {rhs}"
+
+        # broadcast to the same shape
+        res_shape = _infer_broadcast_shape(lhs.shape, rhs.shape)
+        lhs = lhs.broadcast_to(res_shape)
+        rhs = rhs.broadcast_to(res_shape)
+
+        if (
+            op in (operator.add, operator.sub)
+            and lhs.dtype == Boolean
+            and rhs.dtype == Boolean
+        ):
+            res = op(lhs.to(Int32), rhs.to(Int32))
+            zero = zeros_like(res)
+            res = res.__ne__(zero).to(res_type)
+        else:
+            lhs_val = lhs.maybe_downcast()
+            rhs_val = rhs.maybe_downcast()
+
+            if issubclass(lhs.dtype, Integer):
+                lhs_val = lhs_val.with_signedness(lhs.dtype.signed)
+
+            if issubclass(rhs.dtype, Integer):
+                rhs_val = rhs_val.with_signedness(rhs.dtype.signed)
+
+            # Use ArithValue's operator method directly to avoid recursion
+            # through TensorSSA's __add__/__sub__/etc. when op() dispatches
+            # back to the subclass method
+            arith_op: Optional[Callable[..., Any]] = None
+            if op.__name__ == "_min":
+                arith_op = cutlass_arith._min
+            elif op.__name__ == "_max":
+                arith_op = cutlass_arith._max
+            elif op in (operator.and_, operator.or_):
+                arith_op_name = f"__{op.__name__}_"
+                arith_op = getattr(cutlass_arith.ArithValue, arith_op_name)
+            else:
+                arith_op_name = f"__{op.__name__}__"
+                arith_op = getattr(cutlass_arith.ArithValue, arith_op_name, None)
+            if arith_op:
+                res_vect = arith_op(lhs_val, rhs_val, loc=loc, ip=ip)
+            else:
+                res_vect = op(lhs_val, rhs_val)
+            res = TensorSSA(res_vect, lhs._shape, res_type)
+
+        return res
+
+    @dsl_user_op
+    def apply_op(
+        self,
+        op: Callable,
+        other: object,
+        flip: bool = False,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Apply a binary operation to this tensor and another operand.
+
+        This public API method wraps the internal ``_apply_op`` for external usage, allowing custom operations to be performed on tensors.
+
+        :param op: The operation function (e.g., :obj:`operator.add`, :obj:`operator.mul`, etc.).
+        :type op: Callable
+        :param other: The other operand. Can be a :class:`TensorSSA`, ArithValue, or scalar.
+        :type other: TensorSSA or ArithValue or scalar
+        :param flip: If ``True``, flips the operands (applies operation as ``op(other, self)``).
+        :type flip: bool, optional
+        :param loc: MLIR location, optional.
+        :type loc: object, optional
+        :param ip: MLIR insertion point, optional.
+        :type ip: object, optional
+
+        :return: The result of applying the binary operation.
+        :rtype: TensorSSA
+
+        **Example**
+
+        .. code-block:: python
+
+            import operator
+
+            tensor1 = cute.Tensor(...)
+            tensor2 = cute.Tensor(...)
+            result = tensor1.apply_op(operator.add, tensor2)
+            # Equivalent to: tensor1 + tensor2
+
+        """
+        return self._apply_op(op, other, flip=flip, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def broadcast_to(
+        self,
+        target_shape: Shape,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """Broadcast the tensor to the target shape.
+
+        This method broadcasts the tensor to match a target shape following NumPy-style
+        broadcasting rules. Dimensions of size 1 can be broadcast to any size, and
+        missing dimensions are added with size 1.
+
+        :param target_shape: The desired output shape
+        :type target_shape: Shape
+        :param loc: Source location for MLIR operations, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operations, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :return: A new tensor broadcast to the target shape
+        :rtype: TensorSSA
+        :raises ValueError: If shapes are incompatible for broadcasting
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Broadcast a (1, 4) tensor to (3, 4)
+            src = cute.full((1, 4), 1.0, Float32)
+            dst = src.broadcast_to((3, 4))
+            # dst now has shape (3, 4) with the first row replicated
+        """
+        # pad source shape to the same rank
+        shape = append(self.shape, 1, up_to_rank=rank(target_shape))
+        if shape == target_shape:
+            return self
+
+        def _check_broadcast(s: int, t: int) -> None:
+            if s != t and s != 1:
+                raise ValueError(
+                    f"src_shape and target_shape must be the same when src_shape is not 1, but got {s} and {t}"
+                )
+
+        transform_leaf(_check_broadcast, shape, target_shape)
+
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
+        row_major_vec = _col2row(self, shape=shape, loc=loc, ip=ip)
+        # reshape to flatten N-D vector
+        flat_shp = flatten_to_tuple(shape)
+        temp_ty = ir.VectorType.get(list(flat_shp), self.dtype.mlir_type)
+        temp_vect = vector.shape_cast(temp_ty, row_major_vec, loc=loc, ip=ip)
+
+        # broadcast to result N-D vector
+        flat_tgt_shp = flatten_to_tuple(target_shape)
+        temp_tgt_ty = ir.VectorType.get(list(flat_tgt_shp), self.dtype.mlir_type)
+        temp_tgt_vect = vector.broadcast(temp_tgt_ty, temp_vect, loc=loc, ip=ip)
+
+        return self._build_result(
+            temp_tgt_vect, target_shape, row_major=True, loc=loc, ip=ip
+        )
+
+    @dsl_user_op
+    def __pow__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the results of tensor^other.
+
+        :param other: The other tensor for exponent.
+        :type other: TensorSSA
+        :return: The power of the tensor.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.pow, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rpow__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the results of other^tensor.
+
+        :param other: The other tensor to compute power with.
+        :type other: TensorSSA
+        :return: The element-wise power of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.pow, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __add__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the sum of the tensor and another tensor.
+
+        :param other: The other tensor to add.
+        :type other: TensorSSA
+        :return: The sum of the two tensors with the same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.add, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __radd__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the sum of the tensor and another tensor (reverse add)
+
+        :param other: The other tensor to add.
+        :type other: TensorSSA
+        :return: The sum of the two tensors with the same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.add, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __sub__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the difference of the tensor and another tensor.
+
+        :param other: The other tensor to subtract.
+        :type other: TensorSSA
+        :return: The subtraction of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.sub, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rsub__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the difference of the tensor and another tensor (reverse subtract)
+
+        :param other: The other tensor to subtract.
+        :type other: TensorSSA
+        :return: The subtraction of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.sub, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __mul__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the multiplication of the tensor and another tensor.
+
+        :param other: The other tensor to multiply.
+        :type other: TensorSSA
+        :return: The multiplication of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.mul, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rmul__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the multiplication of the tensor and another tensor (reverse multiply)
+
+        :param other: The other tensor to multiply.
+        :type other: TensorSSA
+        :return: The multiplication of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.mul, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __mod__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the modulo of the tensor and another tensor.
+
+        :param other: The other tensor to compute modulo with.
+        :type other: TensorSSA
+        :return: The element-wise modulo of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.mod, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rmod__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the modulo of the tensor and another tensor (reverse modulo)
+
+        :param other: The other tensor to compute modulo with.
+        :type other: TensorSSA
+        :return: The element-wise modulo of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.mod, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __floordiv__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the floordiv(//) of the tensor and another tensor.
+
+        :param other: The other tensor to compute floordiv with.
+        :type other: TensorSSA
+        :return: The floordiv of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.floordiv, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rfloordiv__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the floordiv(//) of the tensor and another tensor (reverse floordiv)
+
+        :param other: The other tensor to compute floordiv with.
+        :type other: TensorSSA
+        :return: The floordiv of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.floordiv, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __truediv__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the truediv(/) of the tensor and another tensor.
+
+        :param other: The other tensor to compute truediv with.
+        :type other: TensorSSA
+        :return: The truediv of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.truediv, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rtruediv__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the truediv(/) of the tensor and another tensor (reverse truediv)
+
+        :param other: The other tensor to compute truediv with.
+        :type other: TensorSSA
+        :return: The truediv of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.truediv, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __eq__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the comparison of the tensor and another tensor as mask
+
+        :param other: The other tensor to compare.
+        :type other: TensorSSA
+        :return: The comparison of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.eq, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __ne__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise not equal comparison of the tensor and another tensor.
+
+        :param other: The other tensor to compare.
+        :type other: TensorSSA
+        :return: A boolean tensor with same shape as inputs, True where self != other.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.ne, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __lt__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise less than comparison of the tensor and another tensor.
+
+        :param other: The other tensor to compare with.
+        :type other: TensorSSA
+        :return: A boolean tensor with same shape as inputs, True where self < other.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.lt, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __le__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise less than or equal comparison of the tensor and another tensor.
+
+        :param other: The other tensor to compare with.
+        :type other: TensorSSA
+        :return: A boolean tensor with same shape as inputs, True where self <= other.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.le, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __gt__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise greater than comparison of the tensor and another tensor.
+
+        :param other: The other tensor to compare with.
+        :type other: TensorSSA
+        :return: A boolean tensor with same shape as inputs, True where self > other.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.gt, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __ge__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise greater than or equal comparison of the tensor and another tensor.
+
+        :param other: The other tensor to compare with.
+        :type other: TensorSSA
+        :return: A boolean tensor with same shape as inputs, True where self >= other.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.ge, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __xor__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise XOR of the tensor and another tensor.
+
+        :param other: The other tensor to perform XOR with.
+        :type other: TensorSSA
+        :return: The element-wise XOR of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.xor, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rxor__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the bitwise XOR of the tensor and another tensor.
+
+        :param other: The other tensor to compute XOR with.
+        :type other: TensorSSA
+        :return: The element-wise bitwise XOR of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.xor, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __or__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise OR of the tensor and another tensor.
+
+        :param other: The other tensor to perform OR with.
+        :type other: TensorSSA
+        :return: The element-wise OR of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.or_, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __ror__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise OR of the tensor and another tensor.
+
+        :param other: The other tensor to perform OR with.
+        :type other: TensorSSA
+        :return: The element-wise OR of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.or_, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __and__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise AND of the tensor and another tensor.
+
+        :param other: The other tensor to perform AND with.
+        :type other: TensorSSA
+        :return: The element-wise AND of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.and_, other, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rand__(
+        self,
+        other: object,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise AND of the tensor and another tensor.
+
+        :param other: The other tensor to perform AND with.
+        :type other: TensorSSA
+        :return: The element-wise AND of two tensors with same shape as inputs.
+        :rtype: TensorSSA
+        """
+        return self._apply_op(operator.and_, other, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __neg__(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the negation of the tensor.
+
+        :return: The element-wise negation of the tensor
+        :rtype: TensorSSA
+        """
+
+        return self._apply_op(operator.sub, 0, flip=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __abs__(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """
+        Returns the element-wise absolute value of the tensor.
+
+        :return: The element-wise absolute value of the tensor
+        :rtype: TensorSSA
+        """
+        res_vect = abs(self.maybe_downcast())
+        return TensorSSA(res_vect, self._shape, self.dtype)
+
+    def _flatten_shape_and_coord(
+        self,
+        crd: Coord,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Tuple[Shape, Coord]:
+        # Coalesce and flatten source layout at terminal of coordinate
+        # (N_0,(N_1,...), ...) -> (N_0,N_1,N_2,...)
+        crd_shp = product_like(self._shape, target_profile=crd, loc=loc, ip=ip)
+
+        # Flatten coordinate
+        flat_shp = flatten(crd_shp)
+        assert isinstance(flat_shp, tuple) and is_static(flat_shp)
+        # (C_0,(C_1,...), ...) -> (C_0,C_1,C_2,...)
+        flat_crd = flatten(crd)
+
+        assert isinstance(flat_crd, tuple) and is_static(flat_crd)
+        return flat_shp, flat_crd
+
+    def _build_result(
+        self,
+        res_vect: ir.Value,
+        res_shp: Shape,
+        *,
+        row_major: bool = False,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        if isinstance(res_shp, ir.Value):
+            # Defensive check: internal method, public API never passes dynamic shapes
+            raise ValueError(f"Expected static shape, but got {self._shape}")
+        # cast back to 1D vector
+        res_1d_ty = ir.VectorType.get([size(res_shp)], self.type.element_type)
+        res_1d_vect = vector.shape_cast(res_1d_ty, res_vect, loc=loc, ip=ip)
+
+        if row_major:
+            res_1d_vect = _row2col(res_1d_vect, shape=res_shp, loc=loc, ip=ip)
+
+        return TensorSSA(res_1d_vect, res_shp, self.dtype)
+
+    @dsl_user_op
+    def reshape(
+        self,
+        shape: Shape,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """Reshape the tensor to a new shape.
+
+        :param shape: The new shape to reshape to.
+        :type shape: Shape
+        :return: A new tensor with the same elements but with the new shape.
+        :rtype: TensorSSA
+        :raises NotImplementedError: If dynamic size is not supported
+        :raises ValueError: If the new shape is not compatible with the current shape
+        """
+
+        cur_size = size(self.shape, loc=loc, ip=ip)
+        shp_size = size(shape, loc=loc, ip=ip)
+
+        if type(shp_size) is not int:
+            raise NotImplementedError(f"dynamic shape is not supported: {shape}")
+        if cur_size != shp_size:
+            raise ValueError(
+                f"expected reshaped size to be the same: {self.shape} -> {shape}"
+            )
+
+        return TensorSSA(self, shape, self.dtype)
+
+    @dsl_user_op
+    def __getitem__(  # type: ignore[override]
+        self,
+        crd: Coord,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Union["TensorSSA", Numeric]:
+        """Access or slice tensor elements using coordinates.
+
+        This method implements tensor evaluation T(c) = *(E + L(c)) where E is the iterator/engine
+        and L is the layout. It supports both direct element access and slicing operations.
+
+        :param crd: Coordinate or slice specification for accessing tensor elements
+        :type crd: Coord
+        :param loc: Source location for MLIR operation tracking, defaults to None
+        :type loc: Optional[Location]
+        :param ip: Insertion point for MLIR operation, defaults to None
+        :type ip: Optional[InsertionPoint]
+        :return: Tensor element value or sliced subtensor
+        :rtype: Union[TensorSSA, Numeric]
+
+        :raises ValueError: If coordinate access is invalid for the tensor layout
+
+        **Examples:**
+
+        .. code-block:: python
+
+            # Create a fragment from rmem as shape (8, 4)
+            layout = make_layout((8, 4))
+            tensor = make_rmem_tensor(layout, Float32)
+            frg = tensor.load()
+
+            # Direct element access
+            val = frg[0]  # Returns first element of fragment
+            val = frg[(0, 1)]  # Returns element at (0, 1)
+
+            # Slice access
+            sliced = frg[(3, None)]  # Returns fragment slice
+        """
+        # short-cut to no-op
+        if crd is None:
+            return self
+
+        if not has_underscore(crd):
+            if self._layout is None:
+                self._layout = make_layout(self._shape, loc=loc, ip=ip)
+            idx = crd2idx(crd, self._layout, loc=loc, ip=ip)
+            assert not isinstance(idx, tuple), "index must be scalar"
+            idx_val = as_numeric(idx).ir_value(loc=loc, ip=ip)
+            idx_val = arith.index_cast(T.index(), idx_val, loc=loc, ip=ip)
+            res_val = vector.extract(self, [idx_val], [MLIR_DYNAMIC], loc=loc, ip=ip)
+            return self.dtype(res_val)
+
+        if not is_static(crd):
+            raise ValueError("dynamic coordinate is not supported")
+
+        flat_shp, flat_crd = self._flatten_shape_and_coord(crd, loc=loc, ip=ip)
+
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
+        row_major_vec = _col2row(self, shape=self._shape, loc=loc, ip=ip)
+        multi_dim_ty = ir.VectorType.get(list(flat_shp), self.type.element_type)  # type: ignore[arg-type]
+        # vector<NxTy> -> vector<N_0xN_1x...xTy>
+        tmp_vect = vector.shape_cast(multi_dim_ty, row_major_vec, loc=loc, ip=ip)
+
+        # Slice and keep dims matching `_` or None
+        res_shp = slice_(self._shape, crd, loc=loc, ip=ip)
+        assert not isinstance(res_shp, ir.Value), (
+            f"Expected static shape and coordinates, but got {self._shape} and {crd}"
+        )
+
+        # Offsets is index of coordinates if NOT `_` otherwise 0
+        offsets = [c if c is not None else 0 for c in flat_crd]  # type: ignore[union-attr]
+        # Sizes is size of shapes if `_` otherwise 1
+        sizes = [s if c is None else 1 for s, c in zip(flat_shp, flat_crd)]  # type: ignore[arg-type]
+        # Logic stride to index vector. Only support stride-1 by vector
+        strides = [1] * rank(flat_shp)
+
+        # Vector slice on N-D vector
+        res_ty = ir.VectorType.get(list(sizes), self.type.element_type)
+        res_vect = vector.extract_strided_slice(
+            res_ty,
+            tmp_vect,
+            offsets=offsets,
+            sizes=sizes,
+            strides=strides,
+            loc=loc,
+            ip=ip,
+        )
+
+        # Slice and keep dims matching `_` or None
+        res_shp = slice_(self._shape, crd, loc=loc, ip=ip)
+        return self._build_result(res_vect, res_shp, row_major=True, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def to(
+        self,
+        dtype: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """Convert the tensor to a different numeric type.
+
+        :param dtype: The target numeric type to cast to.
+        :type dtype: Type[Numeric]
+        :return: A new tensor with the same shape but with elements cast to the target type.
+        :rtype: TensorSSA
+        :raises TypeError: If dtype is not a subclass of Numeric.
+        :raises NotImplementedError: If dtype is an unsigned integer type.
+        """
+        if dtype is ir.Value:
+            return self
+
+        if not isclass(dtype) or not issubclass(dtype, Numeric):
+            raise TypeError(f"dtype must be a type of Numeric, but got {type(dtype)}")
+
+        src_dtype = self.dtype
+        if src_dtype == dtype:
+            return self
+
+        # maybe downcast can lose signedness
+        src = self.maybe_downcast().with_signedness(self.signed)
+        if src_dtype.is_float and dtype.is_float:
+
+            def convert_fp_to_fp(
+                src: cutlass_arith.ArithValue,
+                dst_dtype: Type[Numeric],
+                loc: Optional[ir.Location],
+                ip: Optional[ir.InsertionPoint],
+            ) -> ir.Value:
+                return cutlass_arith.cvtf(src, dst_dtype.mlir_type, loc=loc, ip=ip)
+
+            res_vect = convert_fp_to_fp(src, dtype, loc, ip)
+        elif src_dtype.is_float and issubclass(dtype, Integer):
+            res_vect = cutlass_arith.fptoi(
+                src, dtype.signed, dtype.mlir_type, loc=loc, ip=ip
+            )
+        elif issubclass(src_dtype, Integer) and dtype.is_float:
+            # check if there is a fast conversion path for given data types and arch
+            fast_cvt_func = None
+            if src_dtype in (Int8, Uint8) and dtype == BFloat16:
+                fast_cvt_func = cvt_i8_bf16_intrinsic
+            elif src_dtype == Int4 and dtype == BFloat16:
+                fast_cvt_func = cvt_i4_bf16_intrinsic
+            arch = BaseDSL._get_dsl().get_arch_enum()
+            if fast_cvt_func is not None and arch in fast_cvt_func.supported_archs:  # type: ignore[attr-defined]
+                res_vect = fast_cvt_func(src, size(self.shape), loc=loc, ip=ip)
+            else:
+                res_vect = cutlass_arith.itofp(
+                    src, src_dtype.signed, dtype.mlir_type, loc=loc, ip=ip
+                )
+        else:
+            res_vect = cutlass_arith.int_to_int(src, dtype, loc=loc, ip=ip)
+
+        return TensorSSA(res_vect, self._shape, dtype)
+
+    @dsl_user_op
+    def bitcast(
+        self,
+        dtype: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        """Reinterpret the bits of this tensor as a different element type.
+
+        Total bit width is preserved; the element count adjusts proportionally.
+        For example, a ``TensorSSA`` of shape ``(4,)`` with ``Float32`` bitcast
+        to ``Float16`` yields a ``TensorSSA`` of shape ``(8,)`` with ``Float16``
+        (4 × 32 = 8 × 16 bits).  Multi-dimensional shapes are flattened.
+
+        :param dtype: Target DSL element type (e.g. ``Int32``, ``Float16``).
+        :type dtype: Type[Numeric]
+        :return: A new :class:`TensorSSA` with bits reinterpreted as ``dtype``.
+        :rtype: TensorSSA
+        :raises TypeError: If ``dtype`` is not a subclass of :class:`Numeric`.
+        """
+        if not isclass(dtype) or not issubclass(dtype, Numeric):
+            raise TypeError(f"dtype must be a Numeric type, but got {dtype}")
+        if dtype is self._dtype:
+            return self
+        old_count = size(self._shape)
+        assert isclass(self._dtype) and issubclass(self._dtype, Numeric)
+        new_count = old_count * self._dtype.width // dtype.width
+        target_vec_ty = ir.VectorType.get([new_count], dtype.mlir_type)
+        res_vec = vector.bitcast(target_vec_ty, self, loc=loc, ip=ip)
+        return TensorSSA(res_vec, (new_count,), dtype, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def ir_value(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "TensorSSA":
+        return self
+
+    @dsl_user_op
+    def ir_value_int8(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.Value:
+        """
+        Returns int8 ir value of Boolean tensor.
+        When we need to store Boolean tensor ssa, use ir_value_int8().
+
+        :param loc: Source location information, defaults to None
+        :type loc: Optional[Location], optional
+        :param ip: Insertion point for MLIR operations, defaults to None
+        :type ip: Optional[InsertionPoint], optional
+        :return: The int8 value of this Boolean
+        :rtype: ir.Value
+        """
+        assert self.element_type is Boolean, (
+            f"Only boolean type needs to be converted to int8, got {self.element_type}"
+        )
+
+        if not hasattr(self, "_value_int8"):
+            self._value_int8 = arith.extsi(
+                T.vector(self.type.shape[0], T.i8()), self, loc=loc, ip=ip
+            )
+        return self._value_int8
+
+    @dsl_user_op
+    def reduce(
+        self,
+        op: ReductionOp,
+        init_val: object,
+        reduction_profile: Coord,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Union["TensorSSA", ir.Value]:
+        """
+        Perform reduce on selected modes with given predefined reduction op.
+
+        :param op: The reduction operator to use (operator.add or operator.mul)
+        :type op: operator
+        :param init_val: The initial value for the reduction
+        :type init_val: numeric
+        :param reduction_profile: Specifies which dimensions to reduce. Dimensions marked with `None` are kept.
+        :type reduction_profile: Coord
+
+        :return: The reduced tensor
+        :rtype: TensorSSA
+
+        **Examples:**
+
+        .. code-block:: python
+
+            reduce(f32 o (4,))
+              => f32
+
+            reduce(f32 o (4, 5))
+              => f32
+            reduce(f32 o (4, (5, 4)), reduction_profile=(None, 1))
+              => f32 o (4,)
+            reduce(f32 o (4, (5, 4)), reduction_profile=(None, (None, 1)))
+              => f32 o (4, (5,))
+        """
+        # short-cut to no-op
+        if reduction_profile is None:
+            return self
+
+        if not is_weakly_congruent(reduction_profile, self.shape):
+            raise ValueError(
+                f"Expected reduction_profile be weakly congruent to the shape of the tensor, "
+                f"but got {reduction_profile} and {self.shape}"
+            )
+
+        if op is ReductionOp.ADD:
+            red_kind = vector.CombiningKind.ADD
+        elif op is ReductionOp.MUL:
+            red_kind = vector.CombiningKind.MUL
+        elif op is ReductionOp.MAX:
+            red_kind = vector.CombiningKind.MAXIMUMF
+        elif op is ReductionOp.MIN:
+            red_kind = vector.CombiningKind.MINIMUMF
+        else:
+            # Defensive check: ReductionOp enum only has 4 valid values
+            raise NotImplementedError(
+                f"{op} is not supported, expected one of "
+                f"{ReductionOp.ADD, ReductionOp.MUL, ReductionOp.MAX, ReductionOp.MIN}"
+            )
+        elem_type = self.element_type
+        # Canonicalize to `Numeric` and convert into MLIR value
+        init_val = (
+            as_numeric(init_val).to(elem_type, loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+        )
+
+        if depth(reduction_profile) == 0:
+            return vector.reduction(
+                elem_type.mlir_type, red_kind, self, acc=init_val, loc=loc, ip=ip
+            )
+
+        flat_shp, flat_prof = self._flatten_shape_and_coord(
+            reduction_profile, loc=loc, ip=ip
+        )
+        assert isinstance(flat_prof, tuple), (
+            f"Expected flat_prof to be a tuple, got {type(flat_prof)}"
+        )
+        assert depth(flat_shp) == 1 and depth(flat_prof) == 1
+        assert rank(flat_shp) == rank(flat_prof)
+
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
+        row_major_vec = _col2row(self, shape=self._shape, loc=loc, ip=ip)
+        temp_ty = ir.VectorType.get(list(flat_shp), elem_type.mlir_type)  # type: ignore[arg-type]
+        temp_vect = vector.shape_cast(temp_ty, row_major_vec, loc=loc, ip=ip)
+
+        red_dims = [i for i, x in enumerate(flat_prof) if x is not None]
+
+        temp_acc_shp = slice_(flat_shp, flat_prof, loc=loc, ip=ip)
+        temp_acc_ty = ir.VectorType.get(list(temp_acc_shp), elem_type.mlir_type)
+
+        init_val = vector.broadcast(temp_acc_ty, init_val, loc=loc, ip=ip)
+        res_vect = vector.multi_reduction(
+            red_kind, temp_vect, acc=init_val, reduction_dims=red_dims, loc=loc, ip=ip
+        )
+
+        # Slice and keep dims matching `_` or None
+        res_shp = slice_(self.shape, reduction_profile, loc=loc, ip=ip)
+        return self._build_result(res_vect, res_shp, row_major=True, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def full(
+    shape: Shape,
+    fill_value: Union[ir.Value, int, float, bool, Numeric],
+    dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Return a new TensorSSA of given shape and type, filled with fill_value.
+
+    :param shape: Shape of the new tensor.
+    :type shape: tuple
+    :param fill_value: Value to fill the tensor with.
+    :type fill_value: scalar
+    :param dtype: Data type of the tensor.
+    :type dtype: Type[Numeric]
+    :return: Tensor of fill_value with the specified shape and dtype.
+    :rtype: TensorSSA
+    """
+    size = product(shape, loc=loc, ip=ip)
+    if not is_static(size):
+        raise ValueError("shape must be static")
+
+    if isinstance(fill_value, (ir.Value, int, float, bool)):
+        fill_value = dtype(fill_value)
+    elif isinstance(fill_value, Numeric):
+        fill_value = fill_value.to(dtype, loc=loc, ip=ip)
+    else:
+        raise ValueError(f"Expected fill_value be numeric type, but got {fill_value}")
+
+    res_ty = T.vector(size, dtype.mlir_type)
+    res_val = vector.broadcast(
+        res_ty, fill_value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+    )
+    return TensorSSA(res_val, shape, dtype)
+
+
+@dsl_user_op
+def full_like(
+    a: Union[TensorSSA, Tensor],
+    fill_value: object,
+    dtype: Union[None, Type[Numeric]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Return a full TensorSSA with the same shape and type as a given array.
+
+    :param a: The shape and data-type of `a` define these same attributes of the returned array.
+    :type a: array_like
+    :param fill_value: Fill value.
+    :type fill_value: array_like
+    :param dtype: Overrides the data type of the result, defaults to None
+    :type dtype: Union[None, Type[Numeric]], optional
+    :return: Tensor of `fill_value` with the same shape and type as `a`.
+    :rtype: TensorSSA
+
+    .. seealso::
+       :func:`empty_like`: Return an empty array with shape and type of input.
+       :func:`ones_like`: Return an array of ones with shape and type of input.
+       :func:`zeros_like`: Return an array of zeros with shape and type of input.
+       :func:`full`: Return a new array of given shape filled with value.
+
+    **Examples:**
+
+    .. code-block:: python
+
+        frg = cute.make_rmem_tensor((2, 3), Float32)
+        a = frg.load()
+        b = cute.full_like(a, 1.0)
+    """
+    if not hasattr(a, "shape"):
+        raise TypeError(f"Expected `a` be shaped type, but got {type(a)}")
+
+    res_dtype = dtype if dtype is not None else a.dtype
+    return full(a.shape, fill_value, res_dtype, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def empty_like(
+    a: Union[TensorSSA, Tensor],
+    dtype: Optional[Type[Numeric]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Return a new TensorSSA with the same shape and type as a given array, without initializing entries.
+
+    :param a: The shape and data-type of `a` define these same attributes of the returned array.
+    :type a: TensorSSA
+    :param dtype: Overrides the data type of the result, defaults to None
+    :type dtype: Type[Numeric], optional
+    :return: Uninitialized tensor with the same shape and type (unless overridden) as `a`.
+    :rtype: TensorSSA
+    """
+    return full_like(a, 0, dtype, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def ones_like(
+    a: Union[TensorSSA, Tensor],
+    dtype: Optional[Type[Numeric]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Return a TensorSSA of ones with the same shape and type as a given array.
+
+    :param a: The shape and data-type of `a` define these same attributes of the returned array.
+    :type a: TensorSSA
+    :param dtype: Overrides the data type of the result, defaults to None
+    :type dtype: Type[Numeric], optional
+    :return: Tensor of ones with the same shape and type (unless overridden) as `a`.
+    :rtype: TensorSSA
+    """
+    return full_like(a, 1, dtype, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def zeros_like(
+    a: Union[TensorSSA, Tensor],
+    dtype: Optional[Type[Numeric]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Return a TensorSSA of zeros with the same shape and type as a given array.
+
+    :param a: The shape and data-type of `a` define these same attributes of the returned array.
+    :type a: TensorSSA
+    :param dtype: Overrides the data type of the result, defaults to None
+    :type dtype: Type[Numeric], optional
+    :return: Tensor of zeros with the same shape and type (unless overridden) as `a`.
+    :rtype: TensorSSA
+    """
+    return full_like(a, 0, dtype, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def where(
+    cond: TensorSSA,
+    x: Union[TensorSSA, Numeric],
+    y: Union[TensorSSA, Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Return elements chosen from x or y depending on condition; will auto broadcast x or y if needed.
+
+    :param cond: Where True, yield x, where False, yield y.
+    :type cond: TensorSSA
+    :param x: Values from which to choose when condition is True.
+    :type x: Union[TensorSSA, Numeric]
+    :param y: Values from which to choose when condition is False.
+    :type y: Union[TensorSSA, Numeric]
+    :return: A tensor with elements from x where condition is True, and elements from y where condition is False.
+    :rtype: TensorSSA
+    """
+
+    # Helper function to promote scalars to tensors or broadcast tensors to target shape
+    def promote_and_broadcast(
+        v: Union[TensorSSA, Numeric, bool, int, float, ir.Value], shape: Shape
+    ) -> TensorSSA:
+        if isinstance(v, TensorSSA):
+            return v.broadcast_to(shape)
+        elif isinstance(v, (bool, int, float, ir.Value, Numeric)):
+            v = as_numeric(v)
+            return full(shape, v, v.dtype)
+        else:
+            raise ValueError(f"cannot promote {type(v)} to tensor")
+
+    # Determine shapes for broadcasting - at least one input must be a tensor
+    x_is_tensor = isinstance(x, TensorSSA)
+    y_is_tensor = isinstance(y, TensorSSA)
+    if not (x_is_tensor or y_is_tensor):
+        raise ValueError(
+            f"at least one of x and y must be tensor, but got {type(x)} and {type(y)}"
+        )
+    x_shape = x.shape if x_is_tensor else y.shape  # type: ignore[union-attr]
+    y_shape = y.shape if y_is_tensor else x.shape  # type: ignore[union-attr]
+
+    # Promote both operands to tensors with broadcast shape
+    res_shape = _infer_broadcast_shape(cond.shape, x_shape, y_shape)
+    cond = promote_and_broadcast(cond, res_shape)
+    x = promote_and_broadcast(x, res_shape)
+    y = promote_and_broadcast(y, res_shape)
+
+    if x.dtype != y.dtype:
+        raise ValueError(
+            f"x and y must have the same dtype, but got {x.dtype} and {y.dtype}"
+        )
+
+    if cond.dtype != Boolean:
+        raise ValueError(f"cond must be Boolean type, but got {cond.dtype}")
+
+    cond_val = cond.ir_value(loc=loc, ip=ip)
+    res_val = arith.select(cond_val, x, y, loc=loc, ip=ip)
+    return TensorSSA(res_val, x.shape, x.dtype)
+
+
+@dsl_user_op
+def any_(
+    x: TensorSSA,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Boolean:
+    """
+    Test whether any tensor element evaluates to True.
+
+    :param x: Input tensor.
+    :type x: TensorSSA
+    :return: Returns a TensorSSA scalar containing True if any element of x is True, False otherwise.
+    :rtype: TensorSSA
+    """
+    is_true = x != full_like(x, 0, x.dtype, loc=loc, ip=ip)
+    return Boolean(
+        vector.reduction(T.bool(), vector.CombiningKind.OR, is_true, loc=loc, ip=ip)
+    )
+
+
+@dsl_user_op
+def all_(
+    x: TensorSSA,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Boolean:
+    """
+    Test whether all tensor elements evaluate to True.
+
+    :param x: Input tensor.
+    :type x: TensorSSA
+    :return: Returns a TensorSSA scalar containing True if all elements of x are True, False otherwise.
+    :rtype: TensorSSA
+    """
+    is_true = x != full_like(x, 0, x.dtype, loc=loc, ip=ip)
+    return Boolean(
+        vector.reduction(T.bool(), vector.CombiningKind.AND, is_true, loc=loc, ip=ip)
+    )
+
+
+@dsl_user_op
+def gather(
+    input: Tensor,
+    mode: int,
+    index: TensorSSA,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TensorSSA:
+    """
+    Gather elements from input tensor along the index specified by mode.
+
+    For each value in the output, its load index is specified by its index in itself
+    for m != `mode` and by the corresponding value in `index` for m = `mode`.
+
+    E.g., for a 3D case, the result TensorSSA `output` is specified by:
+    ```
+    output[i][j][k] = input[index[i][j][k]][j][k]  # if mode == 0
+    output[i][j][k] = input[i][index[i][j][k]][k]  # if mode == 1
+    output[i][j][k] = input[i][j][index[i][j][k]]  # if mode == 2
+    ```
+
+    * `input` and `index` must have the same rank and congruent shapes.
+    * `output` will have the same shape as `index`.
+    * Regarding the shape of `index`:
+        * size(index.shape[m]) <= size(input.shape[m]) for all modes m != mode
+        * all values in `index` must be in the range [0, size(input.shape[mode])),
+          otherwise, it will result in an undefined behavior
+
+    :param input: The input tensor
+    :type input: Tensor
+    :param mode: The mode along which to gather
+    :type mode: int
+    :param index: The index tensor
+    :type index: TensorSSA
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    :return: The gathered tensor ssa
+    :rtype: TensorSSA
+    """
+
+    _check_can_gather_scatter(input, mode, index)
+
+    input_elem_type = input.element_type
+    assert not is_int_tuple_type(input_elem_type)
+    idx_layout = make_layout(index.shape)
+    src_layout = make_layout(index.shape, stride=input.stride)
+
+    # Split src and index layouts into two parts respectively:
+    #   * gather part: {mode}
+    #   * rest part:   [0, mode) ∪ (mode, rank)
+    # Append ones (i.e., 1:0) to the layouts in case the rest part is empty
+    idx_layout = append_ones(idx_layout)
+    src_layout = append_ones(src_layout)
+    gather_modes = [mode]
+    rest_modes = [m for m in range(rank(idx_layout)) if m not in gather_modes]
+    idx_layout_gather = select(idx_layout, gather_modes)
+    idx_layout_rest = select(idx_layout, rest_modes)
+    src_layout_gather = select(src_layout, gather_modes)
+    src_layout_rest = select(src_layout, rest_modes)
+
+    res_elems = [None] * size(index.shape)
+    res_vect_ty = T.vector(size(index.shape), input_elem_type.mlir_type)
+
+    # Optimized path: lower to vector.gather when the tensor is col-major
+    # and gathering along the left-most mode
+    input_iter = input.iterator
+    if (
+        mode == 0
+        and is_major(mode, input.stride)
+        and isinstance(input_iter, Pointer)
+        and not input_iter.value.type.is_swizzled
+    ):
+        vect_sz = size(idx_layout_gather)
+        vect_ty = T.vector(vect_sz, input_elem_type.mlir_type)
+        idx_vect_ty = T.vector(vect_sz, index.element_type.mlir_type)
+        mask_all_ones = vector.constant_mask(
+            T.vector(vect_sz, T.bool()), [vect_sz], loc=loc, ip=ip
+        )
+        pass_thru_poison = llvm.mlir_poison(vect_ty, loc=loc, ip=ip)
+        for rest_crd in range(size(select(idx_layout.shape, rest_modes))):
+            curr_ptr = input.iterator + src_layout_rest(rest_crd)
+            idx_vect = vector.extract_strided_slice(
+                idx_vect_ty,
+                index.ir_value(loc=loc, ip=ip),
+                offsets=[rest_crd * vect_sz],
+                sizes=[vect_sz],
+                strides=[1],
+                loc=loc,
+                ip=ip,
+            )
+            res_vect = vector.gather(
+                result=vect_ty,
+                base=curr_ptr._to_builtin_memref(loc=loc, ip=ip),
+                offsets=[],
+                indices=idx_vect,
+                mask=mask_all_ones,
+                pass_thru=pass_thru_poison,
+                alignment=input_iter.alignment,
+                loc=loc,
+                ip=ip,
+            )
+            vect_elems = vector.to_elements(res_vect)
+            res_start_idx = rest_crd * vect_sz
+            if vect_sz == 1:
+                res_elems[res_start_idx] = vect_elems
+            else:
+                res_elems[res_start_idx : res_start_idx + vect_sz] = vect_elems
+        res_vect = vector.from_elements(res_vect_ty, res_elems)
+        return TensorSSA(res_vect, index.shape, input.element_type)
+
+    # Normal path: gather by computing the new index for each element
+    for gather_crd in range(size(select(idx_layout.shape, gather_modes))):
+        for rest_crd in range(size(select(idx_layout.shape, rest_modes))):
+            index_crd = idx_layout_gather(gather_crd) + idx_layout_rest(rest_crd)
+            src_crd_gather = index[index_crd]
+            src_crd = src_layout_gather(src_crd_gather) + src_layout_rest(rest_crd)
+            src_crd_hier = input.layout.get_hier_coord(src_crd, loc=loc, ip=ip)  # type: ignore[union-attr]
+            res_elems[index_crd] = input[src_crd_hier].ir_value(loc=loc, ip=ip)  # type: ignore[union-attr]
+    res_vect = vector.from_elements(res_vect_ty, res_elems)
+    return TensorSSA(res_vect, index.shape, input.element_type)
+
+
+@dsl_user_op
+def scatter(
+    output: Tensor,
+    mode: int,
+    index: TensorSSA,
+    data: TensorSSA,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Scatter elements to output tensor along the index specified by `mode`.
+
+    For each value in `data`, its store index is specified by its index in itself
+    for m != `mode` and by the corresponding value in `index` for m = `mode`.
+
+    E.g., for a 3D case, the tensor `output` is updated as:
+    ```
+    output[index[i][j][k]][j][k] = data[i][j][k]  # if dim == 0
+    output[i][index[i][j][k]][k] = data[i][j][k]  # if dim == 1
+    output[i][j][index[i][j][k]] = data[i][j][k]  # if dim == 2
+    ```
+
+    * `output` and `index` must have the same rank and congruent shapes.
+    * `data` must have the same shape as `index`.
+    * Regarding the shape of `index`:
+        * size(index.shape[m]) <= size(output.shape[m]) for all modes m != mode
+        * all values in `index` must be in the range [0, size(output.shape[mode])),
+          otherwise, it will result in an undefined behavior
+    * If the index vector contains two or more duplicate indices, the behavior
+      is undefined. Underlying implementation may enforce strict col-major
+      sequential semantics.
+
+    :param output: The output tensor
+    :type output: Tensor
+    :param mode: The mode along which to scatter
+    :type mode: int
+    :param index: The index tensor
+    :type index: TensorSSA
+    :param data: The data tensor
+    :type data: TensorSSA
+    :param loc: Source location for MLIR operation tracking, defaults to None
+    :type loc: Optional[Location]
+    :param ip: Insertion point for MLIR operation, defaults to None
+    :type ip: Optional[InsertionPoint]
+    """
+
+    _check_can_gather_scatter(output, mode, index, data)
+
+    output_elem_type = output.element_type
+    assert not is_int_tuple_type(output_elem_type)
+    idx_layout = make_layout(index.shape)
+    dst_layout = make_layout(index.shape, stride=output.stride)
+
+    # Split dst and index layouts into two parts respectively:
+    #   * scatter part: {mode}
+    #   * rest part:    [0, mode) ∪ (mode, rank)
+    # Append ones (i.e., 1:0) to the layouts in case the rest part is empty
+    idx_layout = append_ones(idx_layout)
+    dst_layout = append_ones(dst_layout)
+    scatter_modes = [mode]
+    rest_modes = [m for m in range(rank(idx_layout)) if m not in scatter_modes]
+    idx_layout_scatter = select(idx_layout, scatter_modes)
+    idx_layout_rest = select(idx_layout, rest_modes)
+    dst_layout_scatter = select(dst_layout, scatter_modes)
+    dst_layout_rest = select(dst_layout, rest_modes)
+
+    # Optimized path: lower to vector.scatter when tensor is col-major and
+    # scattering along the left-most mode
+    output_iter = output.iterator
+    if (
+        mode == 0
+        and is_major(mode, output.stride)
+        and isinstance(output_iter, Pointer)
+        and not output_iter.value.type.is_swizzled
+    ):
+        vect_sz = size(idx_layout_scatter)
+        vect_ty = T.vector(vect_sz, output_elem_type.mlir_type)
+        idx_vect_ty = T.vector(vect_sz, index.element_type.mlir_type)
+        mask_all_ones = vector.constant_mask(
+            T.vector(vect_sz, T.bool()), [vect_sz], loc=loc, ip=ip
+        )
+        for rest_crd in range(size(select(idx_layout.shape, rest_modes))):
+            curr_ptr = output.iterator + dst_layout_rest(rest_crd)
+            idx_vect = vector.extract_strided_slice(
+                idx_vect_ty,
+                index.ir_value(loc=loc, ip=ip),
+                offsets=[rest_crd * vect_sz],
+                sizes=[vect_sz],
+                strides=[1],
+                loc=loc,
+                ip=ip,
+            )
+            data_vect = vector.extract_strided_slice(
+                vect_ty,
+                data.ir_value(loc=loc, ip=ip),
+                offsets=[rest_crd * vect_sz],
+                sizes=[vect_sz],
+                strides=[1],
+                loc=loc,
+                ip=ip,
+            )
+            vector.scatter(
+                result=None,
+                base=curr_ptr._to_builtin_memref(loc=loc, ip=ip),
+                offsets=[],
+                indices=idx_vect,
+                mask=mask_all_ones,
+                value_to_store=data_vect,
+                alignment=output_iter.alignment,
+                loc=loc,
+                ip=ip,
+            )
+        return
+
+    # Normal path: scatter by computing the new index for each element
+    for scatter_crd in range(size(select(idx_layout.shape, scatter_modes))):
+        for rest_crd in range(size(select(idx_layout.shape, rest_modes))):
+            index_crd = idx_layout_scatter(scatter_crd) + idx_layout_rest(rest_crd)
+            dst_crd_scatter = index[index_crd]
+            dst_crd = dst_layout_scatter(dst_crd_scatter) + dst_layout_rest(rest_crd)
+            dst_crd_hier = output.layout.get_hier_coord(dst_crd, loc=loc, ip=ip)  # type: ignore[union-attr]
+            output[dst_crd_hier] = data[index_crd]
+
+
+def _check_can_gather_scatter(
+    tensor: Tensor, mode: int, index: TensorSSA, data: Optional[TensorSSA] = None
+) -> None:
+    # Check static
+    if not is_static(tensor.shape):
+        raise ValueError(
+            f"gather/scatter on tensor with dynamic shape is not supported, got: {tensor.type}"  # type: ignore[attr-defined]
+        )
+
+    # Check modes
+    n_modes = rank(tensor.layout)
+    if mode < 0 or mode >= n_modes:
+        raise ValueError(f"mode must be in the range [0, {n_modes}), got: {mode}")
+    if n_modes != rank(index.shape):
+        raise ValueError(
+            f"source and index must have the same rank, got: {n_modes} and {rank(index.shape)}"
+        )
+
+    # Check layout
+    if isinstance(tensor.layout, ComposedLayout):
+        raise NotImplementedError(
+            f"gather/scatter on tensor with composed layout is not supported, got: {tensor.layout}"
+        )
+    if depth(tensor.layout) > 1 or depth(index.shape) > 1:
+        raise NotImplementedError(
+            f"gather/scatter on tensor with nested layout is not supported, got: {tensor.layout} and {index.shape}"
+        )
+    index_shape = index.shape
+    tensor_shape = tensor.shape
+    assert isinstance(index_shape, tuple)
+    assert isinstance(tensor_shape, tuple)
+    for m in range(n_modes):
+        if m != mode and size(index_shape[m]) > size(tensor_shape[m]):
+            raise ValueError(
+                f"index dimension {m} must be less than or equal to the corresponding source dimension,"
+                f"got: {size(index_shape[m])} and {size(tensor_shape[m])}"
+            )
+    if data is not None and index.shape != data.shape:
+        raise ValueError(
+            f"index and data must have the same shape, got: {index.shape} and {data.shape}"
+        )
+
+    # Check data type
+    if not issubclass(index.dtype, Integer):
+        raise TypeError(f"index must be integer TensorSSA, got {index.dtype}")
+    elem_type = tensor.element_type
+    assert not is_int_tuple_type(elem_type)
+    if elem_type.width % 8 != 0:
+        raise TypeError(
+            f"gather/scatter for sub-byte element type is not supported, got: {tensor.element_type}"
+        )
+    if data is not None and data.dtype != tensor.element_type:
+        raise TypeError(
+            f"element type of data must be {tensor.element_type}, got: {data.dtype}"
+        )

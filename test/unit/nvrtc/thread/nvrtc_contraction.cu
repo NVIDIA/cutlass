@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ TEST(SM90_nvrtc_kernel, Contraction) {
     "-arch=sm_90",
     "-I" CUDA_INCLUDE_DIR,
 #if (__CUDACC_VER_MAJOR__ >= 13)
-    "-I" CUDA_INCLUDE_DIR "/cccl",
+    "-I" CUDA_CCCL_INCLUDE_DIR,
 #endif // __CUDACC_VER_MAJOR__ >= 13
   };
 

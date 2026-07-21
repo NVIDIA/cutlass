@@ -217,7 +217,7 @@ for (int i = 0; i < A.size(); ++i)
 
 ## Tiling a Tensor
 
-Many of the [`Layout` algebra operations](https://github.com/NVIDIA/cutlass/blob/main/media/docs/cute/02_layout_algebra.md) can also be applied to `Tensor`.
+Many of the [`Layout` algebra operations](https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/02_layout_algebra.md) can also be applied to `Tensor`.
 ```cpp
    composition(Tensor, Tiler)
 logical_divide(Tensor, Tiler)
@@ -373,7 +373,7 @@ for (int j = 0; j < size<1>(gmem_tiled); ++j) {
 }
 ```
 
-This applies a statically shaped `Tiler` to the global memory `Tensor`, creates an register `Tensor` that is compatible with the shape of that tile, then loops through each tile to copy it into memory and `do_something`.
+This applies a statically shaped `Tiler` to the global memory `Tensor`, creates a register `Tensor` that is compatible with the shape of that tile, then loops through each tile to copy it into memory and `do_something`.
 
 ## Summary
 
@@ -390,7 +390,7 @@ This applies a statically shaped `Tiler` to the global memory `Tensor`, creates 
 
 ## Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

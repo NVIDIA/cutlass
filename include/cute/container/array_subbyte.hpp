@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -555,9 +555,9 @@ void fill(array_subbyte<T,N>& a, T const& value)
 //
 // Specialize tuple-related functionality for cute::array_subbyte
 //
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/tuple>
+#include CUDA_STD_HEADER(tuple)
 #else
 #include <tuple>
 #endif
@@ -617,12 +617,18 @@ struct tuple_element<I, cute::array_subbyte<T,N>>
 namespace std
 {
 
-#if defined(__CUDACC_RTC__)
-template <class... _Tp>
-struct tuple_size;
+#if CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE
 
-template <size_t _Ip, class... _Tp>
-struct tuple_element;
+#include <cuda/std/__tuple_dir/structured_bindings.h>
+
+#else
+#if defined(__CUDACC_RTC__)
+  template <class _Tp>
+  struct tuple_size;
+
+  template <size_t _Ip, class _Tp>
+  struct tuple_element;
+#endif
 #endif
 
 template <class T, size_t N>

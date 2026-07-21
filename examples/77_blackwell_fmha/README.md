@@ -8,7 +8,7 @@ For generation usage, use an M-blocking (Num-Groups) of 128 (although the limit 
 
 Context loads are done via TMA, whereas generation usage utilized `cp.async` and is thus more amenable to complex load patterns.
 
-For variable sequence lenght, the code requires a batch of valid (but never used) padding memory ahead of the first input batch. This is achieved with least overhead by leaving one batch free and then arranging QKV consecutively.
+For variable sequence length, the code requires a batch of valid (but never used) padding memory ahead of the first output batch. No padding is needed for the input tensor, but it requires that the input tensor contain no NaN or Inf values. Note that users should set `total_length` to the `problem_shape`.
 
 The approach of this implementation is to reuse the selection logic of the collective gemm builder and recombine the result into an FMHA kernel.
 The kernel and collective layer are then formulated to be fmha-specific.
@@ -67,9 +67,13 @@ For detailed information on how to invoke them, check out either the tests in `C
   to simplify the sample, clarified that `fmha_gen`  sample only supports head
   dim 128.
 
+* 4.3.0: For variable sequence length, the code requires a batch of valid (but never used) padding memory ahead of the first output batch. No padding is needed for the input tensor, but it requires that the input tensor contain no NaN or Inf values. Note that users should set `total_length` to the `problem_shape`.
+
+* 4.4.0: Added support for Blackwell Ultra (Sm103).
+
 # Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

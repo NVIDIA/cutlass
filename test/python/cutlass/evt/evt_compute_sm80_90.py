@@ -1,6 +1,6 @@
 ################################################################################
 #
-# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -36,14 +36,14 @@ Unit test for compute node in SM90
 import logging
 import unittest
 
-import cutlass
-from cutlass.backend import *
-from cutlass.epilogue import *
-from cutlass import swizzle
+import cutlass_cppgen
+from cutlass_cppgen.backend import *
+from cutlass_cppgen.epilogue import *
+from cutlass_cppgen import swizzle
 
 from utils.evt_testbed import EVTTestBed, EVTTestCaseBase
 
-cutlass.set_log_level(logging.WARNING)
+cutlass_cppgen.set_log_level(logging.WARNING)
 
 
 @unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")

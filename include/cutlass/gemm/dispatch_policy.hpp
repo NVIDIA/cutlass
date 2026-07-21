@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,7 @@
 #include "cute/layout.hpp"
 #include "cute/numeric/integral_constant.hpp" // cute::false_type
 #include "cute/atom/copy_traits_sm100.hpp"
+#include "cutlass/detail/collective/sm103_kernel_type.hpp"
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -126,10 +127,15 @@ struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
 // FP8 related policies (including Blocked Scaled Accumulation)
-struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
-struct KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelTmaWarpSpecializedPingpong { };
-struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedCooperative { };
-struct KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperativeFP8Blockwise: KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedPingpongFP8Blockwise: KernelTmaWarpSpecializedPingpong { };
+struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise: KernelPtrArrayTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise: KernelPtrArrayTmaWarpSpecializedPingpong { };
+
+using KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum = KernelTmaWarpSpecializedCooperativeFP8Blockwise;
+using KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum = KernelTmaWarpSpecializedPingpongFP8Blockwise;
+using KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum = KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise;
+using KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum = KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise;
 
 // Policies to opt into mixed type GEMMs
 struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
@@ -318,17 +324,17 @@ struct MainloopSm90TmaGmmaWarpSpecializedFP8
 
 
 // n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule
-// For FP8 kernels with Block Scaling
+// For FP8 kernels with Blockwise (Software) Scaling
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum
+  class KernelSchedule = KernelTmaWarpSpecializedCooperativeFP8Blockwise
 >
-struct MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8
+struct MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8
   : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
-    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum> ||
-    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum>,
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8Blockwise> ||
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpongFP8Blockwise>,
     "KernelSchedule must be one of the warp specialized FP8 block scale policies");
 };
 
@@ -410,19 +416,43 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecializedMixedInput {
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise
 >
-struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling
+struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise
   : MainloopSm90ArrayTmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
     cute::is_any_of_v<
       KernelSchedule,
-      KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum,
-      KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum
+      KernelPtrArrayTmaWarpSpecializedCooperativeFP8Blockwise,
+      KernelPtrArrayTmaWarpSpecializedPingpongFP8Blockwise
     >,
     "KernelSchedule must be one of the warp specialized FP8 block scale policies");
 };
 
+//////////////////////////////////////////////////////////////////////////////
+
+//
+// Kernel Scheduler Tag
+//
+
+// Dense GEMM: SM100 tensor op policy that applies to both 1SM and 2SM MMA atoms
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelWarpSpecializedSm100 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelMixedTmaCpAsyncWarpSpecializedSm100 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
 
 template<
   int SchedulerPipelineStageCount_,
@@ -461,6 +491,24 @@ struct KernelPtrArrayTmaWarpSpecializedMmaTransformSm100 final {
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
 
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelTmaWarpSpecializedBlockScaledSm103 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelPtrArrayTmaWarpSpecializedBlockScaledSm103 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
 // Sparse Gemm
 template<
   int SchedulerPipelineStageCount_,
@@ -491,7 +539,7 @@ struct KernelTmaWarpSpecializedInputTransformSm100 final {
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
 
-// InputTransform GEMM
+// Mixed Input Transform GEMM
 template<
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_
@@ -619,7 +667,7 @@ template<
   class KernelSchedule
 >
 struct HasAuxiliaryLoad<
-  MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<
+  MainloopSm90ArrayTmaGmmaWarpSpecializedBlockwise<
     Stages,
     ClusterShape,
     KernelSchedule
@@ -632,7 +680,7 @@ template<
   class KernelSchedule
 >
 struct HasAuxiliaryLoad<
-  MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<
+  MainloopSm90TmaGmmaWarpSpecializedBlockwiseFP8<
     Stages,
     ClusterShape,
     KernelSchedule
@@ -665,6 +713,10 @@ struct KernelScheduleSm100DenseGemm : KernelScheduleSm100 {};   // Base policy
 // Dense GEMM: Specialize for 1SM vs 2SM
 struct KernelTmaWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};  // Use for 1SM Dense GEMM Kernels for Collective Mainloop Builder
 struct KernelTmaWarpSpecialized2SmSm100 final : KernelSchedule2Sm, KernelScheduleSm100DenseGemm {};  // Use for 2SM Dense GEMM Kernels for Collective Mainloop Builder
+struct KernelWarpSpecialized1SmSm100    final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};  // Use for 1SM Dense GEMM Kernels for Collective Mainloop Builder Without TMA
+struct KernelMixedTmaCpAsyncWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100DenseGemm {};
+struct KernelMixedTmaCpAsyncWarpSpecialized2SmSm100 final : KernelSchedule2Sm, KernelScheduleSm100DenseGemm {};
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 Ptr-Array Dense GEMM Dispatch Policies
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -721,6 +773,8 @@ struct KernelScheduleSm100MixedInputGemm           : KernelScheduleSm100 {};
 struct KernelTmaWarpSpecializedMixedInputSmemSm100 : KernelScheduleSm100MixedInputGemm { };
 struct KernelTmaWarpSpecialized1SmMixedInputSm100 final : KernelSchedule1Sm, KernelScheduleSm100MixedInputGemm { };
 struct KernelTmaWarpSpecialized1SmMixedInputSmemSm100 final : KernelSchedule1Sm, KernelTmaWarpSpecializedMixedInputSmemSm100 { };
+struct KernelTmaWarpSpecialized2SmMixedInputSm100 final : KernelSchedule2Sm, KernelScheduleSm100MixedInputGemm { };
+struct KernelTmaWarpSpecialized2SmMixedInputSmemSm100 final : KernelSchedule2Sm, KernelTmaWarpSpecializedMixedInputSmemSm100 { };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 Ptr-Array FastF32 (9xBF16) GEMM Dispatch Policies
@@ -733,6 +787,24 @@ struct KernelPtrArrayTmaWarpSpecialized1SmFastFP32Sm100     final : KernelSchedu
 struct KernelPtrArrayTmaWarpSpecialized2SmFastFP32Sm100     final : KernelSchedule2Sm, KernelScheduleSm100PtrArrayFastFP32Gemm { };
 struct KernelPtrArrayTmaWarpSpecialized1SmFastFP32SmemSm100 final : KernelSchedule1Sm, KernelTmaWarpSpecializedPtrArrayFastFP32SmemSm100 { };
 struct KernelPtrArrayTmaWarpSpecialized2SmFastFP32SmemSm100 final : KernelSchedule2Sm, KernelTmaWarpSpecializedPtrArrayFastFP32SmemSm100 { };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// SM100 Interleaved Complex GEMM Dispatch Policies
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+struct KernelScheduleSm100InterleavedComplexTF32Gemm : KernelScheduleSm100 {};
+// Transform GEMM: Specialize for Interleaved Complex GEMMs
+struct KernelTmaWarpSpecialized1SmInterleavedComplexTF32Sm100 final : KernelSchedule1Sm, KernelScheduleSm100InterleavedComplexTF32Gemm { };
+struct KernelTmaWarpSpecialized2SmInterleavedComplexTF32Sm100 final : KernelSchedule2Sm, KernelScheduleSm100InterleavedComplexTF32Gemm { };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// SM100 Ptr-Array Interleaved Complex GEMM Dispatch Policies
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// Interleaved Complex GEMM + (Ptr array or Group GEMM)
+struct KernelScheduleSm100PtrArrayInterleavedComplexTF32Gemm : KernelScheduleSm100InterleavedComplexTF32Gemm {};
+// Ptr-Array Transform GEMM: Specialize for 1SM vs 2SM Complex GEMM
+// Transform GEMM: Specialize for Interleaved Complex GEMMs
+struct KernelPtrArrayTmaWarpSpecialized1SmInterleavedComplexTF32Sm100 final : KernelSchedule1Sm, KernelScheduleSm100PtrArrayInterleavedComplexTF32Gemm { };
+struct KernelPtrArrayTmaWarpSpecialized2SmInterleavedComplexTF32Sm100 final : KernelSchedule2Sm, KernelScheduleSm100PtrArrayInterleavedComplexTF32Gemm { };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 Sparse GEMM Dispatch Policies
@@ -757,6 +829,9 @@ struct KernelTmaWarpSpecialized1SmMxf4Sm100              final : KernelSchedule1
 struct KernelTmaWarpSpecialized2SmMxf4Sm100              final : KernelSchedule2Sm, KernelScheduleMxNvf4Sm100 { };
 struct KernelTmaWarpSpecialized1SmMxf8f6f4Sm100          final : KernelSchedule1Sm, KernelScheduleMxf8f6f4Sm100 { };
 struct KernelTmaWarpSpecialized2SmMxf8f6f4Sm100          final : KernelSchedule2Sm, KernelScheduleMxf8f6f4Sm100 { };
+struct KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100 final : KernelSchedule1Sm, KernelScheduleBlockScaledGemmSm100 {};
+struct KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100 final : KernelSchedule2Sm, KernelScheduleBlockScaledGemmSm100 {};
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 BlockScaled Ptr Array Dense GEMM Dispatch Policies
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -788,6 +863,54 @@ struct KernelSparseTmaWarpSpecialized1SmNvf4Sm100        final : KernelSchedule1
 struct KernelSparseTmaWarpSpecialized2SmNvf4Sm100        final : KernelSchedule2Sm, KernelScheduleSparseMxNvf4Sm100 { };
 struct KernelSparseTmaWarpSpecialized1SmMxf4Sm100        final : KernelSchedule1Sm, KernelScheduleSparseMxNvf4Sm100 { };
 struct KernelSparseTmaWarpSpecialized2SmMxf4Sm100        final : KernelSchedule2Sm, KernelScheduleSparseMxNvf4Sm100 { };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//          SM103 Dispatch Policies
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct KernelScheduleSm103 {};
+struct KernelScheduleSm103BlockScaledGemm                  : KernelScheduleSm103 {};
+struct KernelScheduleSm103BlockScaledMxNvf4UltraTmaPrefetch     : KernelScheduleSm103BlockScaledGemm {};
+struct KernelScheduleSm103BlockScaledMxNvf4UltraDisablePrefetch : KernelScheduleSm103BlockScaledGemm {};
+
+// Blockscaled Gemm: Specialized for instruction type, scale factor vector size, and 1SM vs. 2SM
+// These are the public dispatch policy name
+struct KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch final : KernelSchedule1Sm, KernelScheduleSm103BlockScaledMxNvf4UltraTmaPrefetch { };
+struct KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch final : KernelSchedule2Sm, KernelScheduleSm103BlockScaledMxNvf4UltraTmaPrefetch { };
+struct KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103TmaPrefetch final : KernelSchedule1Sm, KernelScheduleSm103BlockScaledMxNvf4UltraTmaPrefetch { };
+struct KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103TmaPrefetch final : KernelSchedule2Sm, KernelScheduleSm103BlockScaledMxNvf4UltraTmaPrefetch { };
+
+struct KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch final : KernelSchedule1Sm, KernelScheduleSm103BlockScaledMxNvf4UltraDisablePrefetch { };
+struct KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch final : KernelSchedule2Sm, KernelScheduleSm103BlockScaledMxNvf4UltraDisablePrefetch { };
+struct KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch final : KernelSchedule1Sm, KernelScheduleSm103BlockScaledMxNvf4UltraDisablePrefetch { };
+struct KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch final : KernelSchedule2Sm, KernelScheduleSm103BlockScaledMxNvf4UltraDisablePrefetch { };
+
+using KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103 = KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch;
+using KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103 = KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch;
+using KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103 = KernelTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103TmaPrefetch;
+using KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103 = KernelTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103TmaPrefetch;
+
+
+struct KernelSchedulePtrArraySm103BlockScaledGemm                  : KernelScheduleSm103 {};
+struct KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraTmaPrefetch     : KernelSchedulePtrArraySm103BlockScaledGemm {};
+struct KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraDisablePrefetch : KernelSchedulePtrArraySm103BlockScaledGemm {};
+
+struct KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch final : KernelSchedule1Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraTmaPrefetch { };
+struct KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch final : KernelSchedule2Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraTmaPrefetch { };
+struct KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103TmaPrefetch final : KernelSchedule1Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraTmaPrefetch { };
+struct KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103TmaPrefetch final : KernelSchedule2Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraTmaPrefetch { };
+
+struct KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch final : KernelSchedule1Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraDisablePrefetch { };
+struct KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch final : KernelSchedule2Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraDisablePrefetch { };
+struct KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch final : KernelSchedule1Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraDisablePrefetch { };
+struct KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch final : KernelSchedule2Sm, KernelSchedulePtrArraySm103BlockScaledMxNvf4UltraDisablePrefetch { };
+
+using KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103 = KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch;
+using KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103 = KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch;
+using KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103 = KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch;
+using KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103 = KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -844,18 +967,69 @@ struct KernelSparseTmaWarpSpecializedMxf4Sm120           final : KernelScheduleS
 struct KernelSparseTmaWarpSpecializedMxf8f6f4Sm120       final : KernelScheduleSparseMxf8f6f4Sm120 { };
 struct KernelSparseTmaWarpSpecializedMxf8f6f4Acc2x4Sm120 final : KernelScheduleSparseMxf8f6f4Sm120, KernelScheduleAcc2x4Sm120 { };
 
+//////////////////////////////////////////////////////////////////////////////
+
+//
+// Collective Mainloop Dispatch Policies
+//
+
+// n-buffer in smem, pipelined with Blackwell UMMA and CPASYNC, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100UmmaCpAsyncWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
+
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100UmmaMixedTmaCpAsyncWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelMixedTmaCpAsyncWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  constexpr static bool IsOverlappingAccum = false;
+};
+
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100UmmaMixedTmaCpAsyncWarpSpecializedBlockScaled {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelMixedTmaCpAsyncWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  constexpr static bool IsOverlappingAccum = false;
+};
 
 // n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
 template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -865,12 +1039,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedBlockwiseScaling {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedMmaTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -880,12 +1055,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedBlockwiseScaling {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelPtrArrayTmaWarpSpecializedMmaTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
   constexpr static bool IsOverlappingAccum = false;
 };
@@ -895,12 +1071,13 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedBlockScaled {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -909,13 +1086,14 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedSparse {
   constexpr static int Stages = Stages_;
   constexpr static int MetadataS2TStages = 4;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelSparseTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -924,13 +1102,14 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedBlockScaledSparse {
   constexpr static int Stages = Stages_;
   constexpr static int MetadataS2TStages = 4;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelSparseTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -964,7 +1143,8 @@ template<
   class ClusterShape_ = Shape<_1,_1,_1>,
   // The TMEM_LOAD atom to be used for loading local accumulator
   // from TMEM to registers
-  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100TmaUmmaWarpSpecializedFastF32 {
   constexpr static int Load2TransformPipelineStageCount = Load2TransformPipelineStageCount_;
@@ -975,7 +1155,7 @@ struct MainloopSm100TmaUmmaWarpSpecializedFastF32 {
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::FastF32;
   using ClusterShape = ClusterShape_;
   using AccumulatorCopyAtom = AccumulatorCopyAtom_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -983,18 +1163,94 @@ struct MainloopSm100TmaUmmaWarpSpecializedFastF32 {
 };
 
 
+template<
+  // Number of Pipeline stages for
+  // MainloopLoad <-> Transformation
+  int ComputationPipelineStageCount_,
+  // TileScheduler pipeline depth
+  int SchedulerPipelineStageCount_,
+  // Accmulator pipeline depth
+  int AccumulatorPipelineStageCount_,
+  // Number of Pipeline stages for
+  // Transformation <-> MMA
+  int TransformationPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_16dp256b1x,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100TmaUmmaWarpSpecializedInterleavedComplexTF32 {
+  constexpr static int ComputationPipelineStageCount = ComputationPipelineStageCount_;
+  constexpr static int TransformationPipelineStageCount = TransformationPipelineStageCount_;
+  constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::InterleavedComplexTF32;
+  using ClusterShape = ClusterShape_;
+  using AccumulatorCopyAtom = AccumulatorCopyAtom_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+
+  // For backwards compatibility with GemmUniversalAdapter.
+  constexpr static int Stages = ComputationPipelineStageCount;
+};
+
+// n-buffer in smem, pipelined with Blackwell Mixed Input kernel with UMMA (HwScaled) and TMA,
+template<
+  // Number of Pipeline stages for
+  // MainloopLoad <-> Conversion <-> MainLoad
+  int Load2TransformPipelineStageCount_,
+  // Number of Pipeline stages for
+  // MainloopLoad <-> Conversion <-> MainLoad
+  int Transform2MmaPipelineStageCount_,
+  // TileScheduler pipeline depth
+  int SchedulerPipelineStageCount_,
+  // Accmulator pipeline depth
+  int AccumulatorPipelineStageCount_,
+  // ClusterShape for the kernel
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100TmaUmmaWarpSpecializedMixedInput {
+  constexpr static int Load2TransformPipelineStageCount = Load2TransformPipelineStageCount_;
+  constexpr static int Load2MmaPipelineStageCount = Load2TransformPipelineStageCount_;
+  constexpr static int Transform2MmaPipelineStageCount = Transform2MmaPipelineStageCount_;
+  constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::MixedInput;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelTmaWarpSpecializedMixedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+
+  // For backwards compatibility with GemmUniversalAdapter.
+  constexpr static int Stages = Load2TransformPipelineStageCount;
+};
+
+
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  // TileScheduler pipeline depth
+  int SchedulerPipelineStageCount_,
+  // Accmulator pipeline depth
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100TmaUmmaWarpSpecializedPlanarComplex {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  constexpr static bool IsOverlappingAccum = false;
+};
 
 // n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
 template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = false;
   using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
@@ -1004,16 +1260,66 @@ template<
   int Stages_,
   int SchedulerPipelineStageCount_,
   int AccumulatorPipelineStageCount_,
-  class ClusterShape_ = Shape<_1,_1,_1>
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
 >
-struct MainloopSm100ArrayTmaUmmaWarpSpecializedBlockScaled {
+struct MainloopSm100RCGroupGemmTmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
+  constexpr static bool IsOverlappingAccum = false;
+  using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
+
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100RCGroupGemmTmaUmmaWarpSpecializedBlockScaled {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
   constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
   using Schedule = KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
 
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100ArrayTmaUmmaWarpSpecializedBlockScaled {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
+  using Schedule = KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
+
+
+
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100ArrayTmaUmmaWarpSpecializedPlanarComplex {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  constexpr static bool IsOverlappingAccum = false;
+  using Schedule = KernelPtrArrayTmaWarpSpecializedSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
 
 
 // n-buffer in smem, pipelined with Blackwell Fast FP32 kernel with UMMA (HwScaled) and TMA,
@@ -1045,7 +1351,8 @@ template<
   class ClusterShape_ = Shape<_1,_1,_1>,
   // The TMEM_LOAD atom to be used for loading local accumulator
   // from TMEM to registers
-  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_32dp32b32x,
+  class ArchTag_ = arch::Sm100
 >
 struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
   constexpr static int Load2TransformPipelineStageCount = Load2TransformPipelineStageCount_;
@@ -1056,7 +1363,7 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
   constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::FastF32;
   using ClusterShape = ClusterShape_;
   using AccumulatorCopyAtom = AccumulatorCopyAtom_;
-  using ArchTag = arch::Sm100;
+  using ArchTag = ArchTag_;
   using Schedule = KernelPtrArrayTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 
   // For backwards compatibility with GemmUniversalAdapter.
@@ -1064,8 +1371,79 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
 };
 
 
+template<
+  // Number of Pipeline stages for
+  // MainloopLoad <-> Transformation
+  int ComputationPipelineStageCount_,
+  // TileScheduler pipeline depth
+  int SchedulerPipelineStageCount_,
+  // Accmulator pipeline depth
+  int AccumulatorPipelineStageCount_,
+  // Number of Pipeline stages for
+  // Transformation <-> MMA
+  int TransformationPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class AccumulatorCopyAtom_ = cute::SM100_TMEM_LOAD_16dp256b1x,
+  class ArchTag_ = arch::Sm100
+>
+struct MainloopSm100ArrayTmaUmmaWarpSpecializedInterleavedComplexTF32 {
+  constexpr static int ComputationPipelineStageCount = ComputationPipelineStageCount_;
+  constexpr static int TransformationPipelineStageCount = TransformationPipelineStageCount_;
+  constexpr static detail::KernelInputTransformType InputTransformType = detail::KernelInputTransformType::InterleavedComplexTF32;
+  using ClusterShape = ClusterShape_;
+  using AccumulatorCopyAtom = AccumulatorCopyAtom_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelPtrArrayTmaWarpSpecializedInputTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+
+  // For backwards compatibility with GemmUniversalAdapter.
+  constexpr static int Stages = ComputationPipelineStageCount;
+};
+
+
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int LoadABPipelineStageCount_,
+  int LoadSFPipelineStageCount_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  cutlass::sm103::detail::KernelPrefetchType PrefetchType_ = cutlass::sm103::detail::KernelPrefetchType::TmaPrefetch,
+  class ArchTag_ = arch::Sm103
+>
+struct MainloopSm103TmaUmmaWarpSpecializedBlockScaled {
+  constexpr static int LoadABPipelineStageCount = LoadABPipelineStageCount_;
+  constexpr static int LoadSFPipelineStageCount = LoadSFPipelineStageCount_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
+  using Schedule = KernelTmaWarpSpecializedBlockScaledSm103<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  // For backwards compatibility with GemmUniversalAdapter.
+  constexpr static int Stages = LoadABPipelineStageCount;
+  constexpr static cutlass::sm103::detail::KernelPrefetchType PrefetchType = PrefetchType_;
+};
 
 // Mainloop schedule for array-based TMA
+
+template<
+  int LoadABPipelineStageCount_,
+  int LoadSFPipelineStageCount_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  cutlass::sm103::detail::KernelPrefetchType PrefetchType_ = cutlass::sm103::detail::KernelPrefetchType::TmaPrefetch,
+  class ArchTag_ = arch::Sm103
+>
+struct MainloopSm103ArrayTmaUmmaWarpSpecializedBlockScaled {
+  constexpr static int LoadABPipelineStageCount = LoadABPipelineStageCount_;
+  constexpr static int LoadSFPipelineStageCount = LoadSFPipelineStageCount_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  constexpr static bool IsOverlappingAccum = AccumulatorPipelineStageCount_ == 1;
+  using Schedule = KernelPtrArrayTmaWarpSpecializedBlockScaledSm103<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  // For backwards compatibility with GemmUniversalAdapter.
+  constexpr static int Stages = LoadABPipelineStageCount;
+  constexpr static cutlass::sm103::detail::KernelPrefetchType PrefetchType = PrefetchType_;
+};
 
 template<
   int Stages_,

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -439,7 +439,8 @@ struct CollectiveMma<
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Consumer Perspective
   template <
-    class FrgTensorC
+    class FrgTensorC,
+    class BlockCoord
   >
   CUTLASS_DEVICE void
   mma(MainloopPipeline pipeline,
@@ -448,7 +449,8 @@ struct CollectiveMma<
       int k_tile_count,
       int thread_idx,
       TensorStorage& shared_tensors,
-      Params const& mainloop_params) {
+      Params const& mainloop_params,
+      [[maybe_unused]] BlockCoord& blk_crd) {
     using namespace cute;
 
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");

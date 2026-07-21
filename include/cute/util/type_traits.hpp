@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,13 +29,13 @@
  *
  **************************************************************************************************/
 #pragma once
-
+#include "cutlass/cutlass.h"
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/type_traits>
-#include <cuda/std/utility>
-#include <cuda/std/cstddef>
-#include <cuda/std/cstdint>
-#include <cuda/std/limits>
+#include CUDA_STD_HEADER(type_traits)
+#include CUDA_STD_HEADER(utility)
+#include CUDA_STD_HEADER(cstddef)
+#include CUDA_STD_HEADER(cstdint)
+#include CUDA_STD_HEADER(limits)
 #else
 #include <type_traits>
 #include <utility>      // tuple_size, tuple_element

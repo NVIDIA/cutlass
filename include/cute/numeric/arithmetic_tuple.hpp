@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -469,7 +469,9 @@ CUTE_HOST_DEVICE void print(ArithmeticTupleIterator<ArithTuple> const& iter)
 template <class T, int... Ns>
 CUTE_HOST_DEVICE void print(ScaledBasis<T,Ns...> const& e)
 {
-  print(e.value()); (void(printf("@%d", Ns)), ...);
+  print(e.value());
+  // Param pack trick to print in reverse
+  [[maybe_unused]] int dummy; (dummy = ... = (void(printf("@%d", Ns)), 0));
 }
 
 #if !defined(__CUDACC_RTC__)
@@ -482,7 +484,9 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, ArithmeticTupleIterator<Ari
 template <class T, int... Ns>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, ScaledBasis<T,Ns...> const& e)
 {
-  os << e.value(); (void(os << "@" << Ns), ...);
+  os << e.value();
+  // Param pack trick to print in reverse
+  [[maybe_unused]] int dummy; (dummy = ... = (void(os << "@" << Ns),0));
   return os;
 }
 #endif
@@ -509,12 +513,18 @@ struct tuple_element<I, cute::ArithmeticTuple<T...>>
 namespace std
 {
 
-#if defined(__CUDACC_RTC__)
-template <class... _Tp>
-struct tuple_size;
+#if CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE
 
-template <size_t _Ip, class... _Tp>
-struct tuple_element;
+#include <cuda/std/__tuple_dir/structured_bindings.h>
+
+#else
+#if defined(__CUDACC_RTC__)
+  template <class _Tp>
+  struct tuple_size;
+
+  template <size_t _Ip, class _Tp>
+  struct tuple_element;
+#endif
 #endif
 
 template <class... T>

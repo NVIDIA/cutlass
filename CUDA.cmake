@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,24 @@ if(NOT CUDA_TOOLKIT_ROOT_DIR)
   # In some scenarios, such as clang device compilation, the toolkit root may not be set, so we 
   # force it here to the nvcc we found via the CUDAToolkit package.
   get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CUDAToolkit_NVCC_EXECUTABLE}/../.." ABSOLUTE)
+endif()
+
+set(CUTLASS_CUDA_CCCL_INCLUDE_DIR "")
+foreach(__CUTLASS_CUDA_INCLUDE_DIR IN LISTS CUDAToolkit_INCLUDE_DIRS CUDA_INCLUDE_DIRS CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES)
+  if(NOT __CUTLASS_CUDA_INCLUDE_DIR)
+    continue()
+  endif()
+  if(EXISTS "${__CUTLASS_CUDA_INCLUDE_DIR}/cccl/cuda/std/cstdint")
+    set(CUTLASS_CUDA_CCCL_INCLUDE_DIR "${__CUTLASS_CUDA_INCLUDE_DIR}/cccl")
+    break()
+  elseif(EXISTS "${__CUTLASS_CUDA_INCLUDE_DIR}/cuda/std/cstdint")
+    set(CUTLASS_CUDA_CCCL_INCLUDE_DIR "${__CUTLASS_CUDA_INCLUDE_DIR}")
+    break()
+  endif()
+endforeach()
+
+if(NOT CUTLASS_CUDA_CCCL_INCLUDE_DIR)
+  set(CUTLASS_CUDA_CCCL_INCLUDE_DIR "${CUDA_TOOLKIT_ROOT_DIR}/include/cccl")
 endif()
 
 if (CMAKE_CUDA_COMPILER_ID MATCHES "(nvcc|[Nn][Vv][Ii][Dd][Ii][Aa])")

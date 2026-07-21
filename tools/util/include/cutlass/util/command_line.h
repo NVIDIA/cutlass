@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <cuda_runtime.h>
 
@@ -56,6 +57,7 @@ namespace cutlass {
  * Utility for parsing command line arguments
  */
 struct CommandLine {
+  std::string program_path;
   std::vector<std::string> keys;
   std::vector<std::string> values;
   std::vector<std::string> args;
@@ -63,7 +65,7 @@ struct CommandLine {
   /**
    * Constructor
    */
-  CommandLine(int argc, const char** argv) {
+  CommandLine(int argc, const char** argv) : program_path(argc > 0 ? argv[0] : "") {
     using namespace std;
 
     for (int i = 1; i < argc; i++) {
@@ -86,6 +88,16 @@ struct CommandLine {
 
       keys.push_back(key);
       values.push_back(val);
+    }
+  }
+
+  /**
+   * Constructor to represent a command line from a map of [argument] -> [value]
+   */
+  CommandLine(std::unordered_map<std::string, std::string>& arg_map) {
+    for (const auto& [key, value] : arg_map) {
+      keys.push_back(key);
+      values.push_back(value);
     }
   }
 

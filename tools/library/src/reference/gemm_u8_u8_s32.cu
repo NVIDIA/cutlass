@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -92,6 +92,49 @@ void initialize_gemm_reference_operations_u8_u8_s32(Manifest &manifest) {
     uint8_t,                          // ElementA
     uint8_t,                          // ElementB
     int8_t,                           // ElementC
+    float,                            // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    uint8_t,                          // ElementD
+    NumericConverterClamp<uint8_t, float> // From Scalar to D
+  >(manifest);
+
+  // 1.
+  make_gemm_real_canonical_layouts<
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    void,                             // ElementC
+    int32_t,                          // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    int32_t                           // ElementD
+  >(manifest);
+
+  // 2.
+  make_gemm_real_canonical_layouts<
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    void,                             // ElementC
+    float,                            // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    int32_t,                          // ElementD
+    NumericConverterClamp<int32_t, float> // From Scalar to D
+  >(manifest);
+
+  // 3.
+  make_gemm_real_canonical_layouts<
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    void,                             // ElementC
+    float,                            // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    int8_t,                           // ElementD
+    NumericConverterClamp<int8_t, float> // From Scalar to D
+  >(manifest);
+
+  // 4.
+  make_gemm_real_canonical_layouts<
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    void,                             // ElementC
     float,                            // ElementScalar / ElementCompute
     int32_t,                          // ElementAccumulator
     uint8_t,                          // ElementD

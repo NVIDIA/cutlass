@@ -1,5 +1,5 @@
 
-# Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,9 @@
 
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES 100a)
-cutlass_example_add_executable(
-  74_blackwell_gemm_streamk
-  blackwell_gemm_streamk.cu
+if(CUTLASS_NVCC_ARCHS MATCHES "100a|100f|101a|101f|103a|103f")
+  cutlass_example_add_executable(
+    74_blackwell_gemm_streamk
+    blackwell_gemm_streamk.cu
   )
 endif()

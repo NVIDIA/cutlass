@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 
 #include "cute/int_tuple.hpp"
 
+#include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/arch/config.h"
 #include "cutlass/arch/barrier.h"
 #include "cutlass/detail/cluster.hpp" 
@@ -337,7 +338,7 @@ public:
   }
 
   static bool
-  can_implement(Arguments const& args) {
+  can_implement(Arguments const& args, KernelHardwareInfo const&) {
     return true;
   }
 
@@ -621,7 +622,7 @@ public:
                     , "r"(clc_response.data[1])
                     , "r"(clc_response.data[2])
                     , "r"(clc_response.data[3]));
-    cutlass::arch::fence_view_async_shared();
+    cutlass::arch::fence_view_shared();
     #endif
   }
 

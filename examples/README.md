@@ -1,5 +1,14 @@
 # CUTLASS - Programming Examples
 
+> [!IMPORTANT]
+> ### ⚠️ **Not for Benchmarking!** ⚠️
+> 
+> These examples are designed **solely for demonstrating CUTLASS functionality** and may **NOT optimized for performance benchmarking**.
+> 
+> **For accurate performance measurements**, please use the **[CUTLASS Profiler](../tools/profiler/)** instead (recommended) or manually auto-tune the example, if unavailable via the profiler.
+> 
+
+
 * [00_basic_gemm](00_basic_gemm/)
     
     launches a basic GEMM with single precision inputs and outputs
@@ -310,7 +319,7 @@ Examples leveraging CUTLASS's [Python interface](../python/README.md) are locate
 
 # Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

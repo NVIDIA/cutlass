@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -138,8 +138,7 @@ using FusionOperation = cutlass::epilogue::fusion::LinCombEltActBlockScaleFactor
 
 // Core kernel configurations
 using ArchTag             = cutlass::arch::Sm100;                           // Tag indicating the minimum SM that supports the intended feature
-using EpilogueOperatorClass = cutlass::arch::OpClassTensorOp;               // Epilogue Operator class tag
-using MainloopOperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;    // Mainloop Operator class tag
+using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;            // Operator class tag
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
 
 // Runtime Cluster Shape
@@ -159,7 +158,7 @@ struct MMA2SMConfig {
 };
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, EpilogueOperatorClass,
+    ArchTag, OperatorClass,
     typename MMA1SMConfig::MmaTileShape, ClusterShape,
     Shape<_128,_64>,
     ElementAccumulator, ElementAccumulator,
@@ -169,7 +168,7 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
     // , FusionOperation  // Enable for SF Output
 >::CollectiveOp;
 using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-  ArchTag, MainloopOperatorClass,
+  ArchTag, OperatorClass,
   ElementA, LayoutA *, AlignmentA,
   ElementB, LayoutB *, AlignmentB,
   ElementAccumulator,
@@ -187,7 +186,7 @@ using Gemm1SM = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 using Gemm = Gemm1SM;
 
 using CollectiveEpilogue2SM = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, EpilogueOperatorClass,
+    ArchTag, OperatorClass,
     typename MMA2SMConfig::MmaTileShape, ClusterShape,
     Shape<_128,_64>,
     ElementAccumulator, ElementAccumulator,
@@ -197,13 +196,13 @@ using CollectiveEpilogue2SM = typename cutlass::epilogue::collective::Collective
     // , FusionOperation  // Enable for SF Output
 >::CollectiveOp;
 using CollectiveMainloop2SM = typename cutlass::gemm::collective::CollectiveBuilder<
-  ArchTag, MainloopOperatorClass,
+  ArchTag, OperatorClass,
   ElementA, LayoutA *, AlignmentA,
   ElementB, LayoutB *, AlignmentB,
   ElementAccumulator,
     typename MMA2SMConfig::MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
-      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      static_cast<int>(sizeof(typename CollectiveEpilogue2SM::SharedStorage))>,
     typename MMA2SMConfig::KernelSchedule
 >::CollectiveOp;
 using GemmKernel2SM = cutlass::gemm::kernel::GemmUniversal<
@@ -233,7 +232,7 @@ using LayoutSFD = typename Sm1xxBlockScaledOutputConfig::LayoutSF;
 std::vector<StrideA> stride_A_host;
 std::vector<StrideB> stride_B_host;
 std::vector<LayoutSFA> layout_SFA_host;
-std::vector<LayoutSFA> layout_SFB_host;
+std::vector<LayoutSFB> layout_SFB_host;
 std::vector<StrideC> stride_C_host;
 std::vector<StrideD> stride_D_host;
 
@@ -310,6 +309,8 @@ struct Options {
   dim3 cluster_shape = dim3(2,1,1);
   dim3 cluster_shape_fallback = dim3(2,1,1);
   RasterOrderOptions raster_order = RasterOrderOptions::AlongN;
+  char raster_char = 'N';
+  int swizzle = 1;
   int max_sm_count = INT_MAX;
   std::string benchmark_path;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
@@ -357,7 +358,6 @@ struct Options {
       randomize_problems(cmd);
     }
 
-    char raster_char;
     cmd.get_cmd_line_argument("raster", raster_char);
 
     if (raster_char == 'N' || raster_char == 'n') {
@@ -366,6 +366,7 @@ struct Options {
     else if (raster_char == 'M' || raster_char == 'm') {
       raster_order = RasterOrderOptions::AlongM;
     }
+    cmd.get_cmd_line_argument("swizzle", swizzle, 1);
   }
 
   void randomize_problems(cutlass::CommandLine &cmd) {
@@ -380,14 +381,14 @@ struct Options {
       int m = cmd_line_m;
       int n = cmd_line_n;
       int k = cmd_line_k;
-      if (m < 1) {
-        m = alignment * ((rand() % 64) + 1);
+      if (m < 0) {
+        m = alignment * ((rand() % 64));
       }
-      if (n < 1) {
-        n = alignment * ((rand() % 64) + 1);
+      if (n < 0) {
+        n = alignment * ((rand() % 64));
       }
-      if (k < 1) {
-        k = alignment * ((rand() % 64) + 1);
+      if (k < 0) {
+        k = alignment * ((rand() % 64));
       }
       problem_sizes_host.push_back({m, n, k});
     }
@@ -442,7 +443,8 @@ struct Options {
       << "  --norm_constant=<f32>                                        Epilogue scalar normalization constant for the output matrix\n\n"
       << "  --cluster_m=<int>          and --cluster_n=<int>             Sets the X,Y dims of the preferred cluster shape\n"
       << "  --cluster_fallback_m=<int> and --cluster_fallback_n=<int>    Sets the X,Y dims of the fallback cluster shape\n\n"
-      << "  --raster=<char>                                              CTA Rasterization direction (N for along N, M for along M)\n\n"
+      << "  --raster=<char>                                              Cluster rasterization direction (N for along N, M for along M)\n"
+      << "  --swizzle=<int>                                              Cluster swizzle (swizzle up to 8 and with the nearest multiple of 2)\n\n"
       << "  --iterations=<int>                                           Number of profiling iterations to perform\n\n"
       << "  --benchmark=<str>                                            Executes a benchmark problem size\n"
       << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n"
@@ -723,6 +725,7 @@ typename Gemm::Arguments args_from_options(Options &options, bool host_problem_s
 
   typename Gemm::GemmKernel::TileSchedulerArguments scheduler;
   scheduler.raster_order = options.raster_order;
+  scheduler.max_swizzle_size = options.swizzle;
 
   if (host_problem_shapes_available) {
     arguments = typename Gemm::Arguments {
@@ -814,7 +817,13 @@ int run(Options &options, bool host_problem_shapes_available = true)
     std::cout << "    " << options.problem_sizes_host.at(i);
     std::cout << ", " << alpha_host.at(i) << ", " << beta_host.at(i) << std::endl;
   }
-  std::cout << "  Groups      : " << options.groups  << std::endl;
+  std::cout << "  Groups : " << options.groups  << std::endl;
+
+  std::cout << "  Cluster Shape          : " << options.cluster_shape.x << "x" << options.cluster_shape.y << std::endl;
+  std::cout << "  Cluster Fallback Shape : " << options.cluster_shape_fallback.x << "x" << options.cluster_shape_fallback.y << std::endl;
+
+  std::cout << "  Raster Order     : Along-" << options.raster_char << std::endl;
+  std::cout << "  Max Swizzle Size : " << options.swizzle << std::endl;
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm;
@@ -897,9 +906,8 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (!(props.major == 10 && props.minor == 0)) {
-    std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture (compute capability 100a).\n";
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 

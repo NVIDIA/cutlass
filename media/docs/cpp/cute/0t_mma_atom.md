@@ -403,7 +403,7 @@ using CLayout = Layout<Shape <Shape <  _4, _8, ...>, Shape < _2, _2>>,
                        Stride<Stride<_128, _1, ...>, Stride<_64, _8>>>;
 ```
 
-Finally, we get this entire pattern repeating four times, once for each warp, down the `M`-mode starting at `(m,n) = (16,0) = 16`. where two core matrices that belong to the same warp are stacked on top of each other. This makes the size of the final sub-mode of M 4. As for the stride, this time we go to `(T32, V0)`, which makes it a stride of 32.
+Finally, we get this entire pattern repeating four times, once for each warp, down the `M`-mode starting at `(m,n) = (16,0) = 16`, where four core matrices that belong to the same warp are stacked on top of each other. This makes the size of the final sub-mode of `thrID` 4 (there are four warps) with a stride of `16` (to take us to coordinate `(16,0) = 16`).
 
 ```cpp
 // (T128,V4) -> (M64,N8)
@@ -426,7 +426,7 @@ where we see 16 copies of the 64x8 tile.
 GMMA atoms that consume A and B sources directly from shared memory are a bit interesting. The GMMA Descriptor is constructed on an entire tile of A and/or B data in shared memory rather than being partitioned by threads. That is, every thread sees the entire tile of data and the tile is not reordered so that the descriptor can be constructed on it. In `ALayout` form, this can be expressed
 
 ```cpp
-// (T128,V64x8) -> (M64,K16)
+// (T128,V64x16) -> (M64,K16)
 using ALayout = Layout<Shape <_128, Shape <_64,_16>>,
                        Stride<  _0, Stride< _1,_64>>>;
 ```
@@ -510,7 +510,7 @@ To see how these `TiledMMA`s are used to partition data tensors, see the [`0x_ge
 
 ## Copyright
 
-Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

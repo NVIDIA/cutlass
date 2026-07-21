@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -107,6 +107,10 @@ initialize_tensor(cutlass::TensorView<Element, Layout> view, cutlass::Distributi
       scope_max = 2;
       scope_min = 0;
     }
+    else if (bits_input <= 6) {
+      scope_max = 2;
+      scope_min = -2;
+    }
     else if (bits_input <= 8) {
         scope_max = 1;
         scope_min = -1;
@@ -155,9 +159,11 @@ public:
   using ElementA = typename CompressorKernel::ElementA;
   using LayoutATag = typename CompressorKernel::LayoutATag;
   using StrideA = typename CompressorKernel::StrideA;
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
   using ArrayElementA = 
-    ElementA
-  ;
+    cute::conditional_t<IsRuntimeDataTypeA,
+                        cute::uint_bit_t<cute::sizeof_bits_v<ElementA>>,
+    ElementA>;
 
   using ElementE = typename CompressorKernel::ElementEMmaRaw;
   using LayoutETag = cutlass::layout::RowMajor;  // We don't care about the major here, just to allocate tensor
@@ -300,14 +306,14 @@ public:
 
     compressor_utility.structure_sparse_zero_mask_fill(datas.tensor_A.host_data(), seed + 6);
 
-    // Check for failed devide
+    // Check for failed device
     CUDA_CHECK_FALSE(cudaGetLastError());
 
     datas.tensor_A.sync_device();
     datas.tensor_A_Comp.sync_device();
     datas.tensor_E.sync_device();
 
-    // Check for failed devide
+    // Check for failed device
     CUDA_CHECK_FALSE(cudaGetLastError());
 
     return true;
@@ -369,18 +375,6 @@ public:
 
     datas.tensor_A_Comp.sync_host();
     datas.tensor_E.sync_host();
-
-    #if 0
-    {
-      printf("\n--> DEVICE OUTPUT\n");
-      printf("datas.tensor_A\n");
-      std::cout << datas.tensor_A.host_view() << std::endl << std::endl;
-      printf("datas.tensor_A_Comp\n");
-      std::cout << datas.tensor_A_Comp.host_view() << std::endl << std::endl;
-      printf("datas.tensor_E\n");
-      std::cout << datas.tensor_E.host_view() << std::endl << std::endl;
-    }
-    #endif
 
     return true;
   }
@@ -810,9 +804,11 @@ public:
       printf("compare_reference() DEVICE <-> LEGACY HOST fail\n");
       return false;
     }
-    // else {
-    //   printf("DEVICE <-> HOST PASS\n");
-    // }
+    #if 0
+    else {
+      printf("DEVICE <-> HOST PASS\n");
+    }
+    #endif
 
     return true;
   }

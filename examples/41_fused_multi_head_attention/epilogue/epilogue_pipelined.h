@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,14 +40,12 @@
   Note that in general the fragment passed to the OutputOp could
   span multiple rows but it does not happen with the configurations we have
 */
-
 #pragma once
-
-#include <cuda/std/cassert>
 
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
+#include CUDA_STD_HEADER(cassert)
 #include "cutlass/functional.h"
 #include "cutlass/layout/tensor.h"
 #include "cutlass/layout/vector.h"

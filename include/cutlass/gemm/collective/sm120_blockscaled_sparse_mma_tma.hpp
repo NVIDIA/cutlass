@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -101,7 +101,8 @@ struct CollectiveMma<
   using StridePairB = StridePairB_;
   using SmemCopyAtomsA = SmemCopyAtomsA_;
   using SmemCopyAtomsB = SmemCopyAtomsB_;
-
+  using RuntimeDataTypeA = void*;
+  using RuntimeDataTypeB = void*;
   using TiledMma = TiledMma_;
   using AtomThrShapeMNK = Shape<decltype(shape<0>(typename TiledMma::ThrLayoutVMNK{})), _1, _1>;
   using DispatchPolicy = MainloopSm120TmaWarpSpecializedSparseBlockScaled<StagesA, StagesB, StagesE, SchedulerPipelineStageCount, ClusterShape>;
@@ -295,9 +296,9 @@ struct CollectiveMma<
     struct TensorStorage : cute::aligned_struct<128> {
       alignas(1024) cute::ArrayEngine<SmemAllocTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
       alignas(1024) cute::ArrayEngine<SmemAllocTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
-      cute::ArrayEngine<ElementSF, cute::cosize_v<SmemLayoutSFA>> smem_SFA;
-      cute::ArrayEngine<ElementSF, cute::cosize_v<SmemLayoutSFB>> smem_SFB;
-      cute::ArrayEngine<ElementEMma, Int<SmemSizeE>{}> smem_E;
+      alignas(16)   cute::ArrayEngine<ElementSF, cute::cosize_v<SmemLayoutSFA>> smem_SFA;
+      alignas(16)   cute::ArrayEngine<ElementSF, cute::cosize_v<SmemLayoutSFB>> smem_SFB;
+      alignas(16)   cute::ArrayEngine<ElementEMma, Int<SmemSizeE>{}> smem_E;
     } tensors;
 
     using PipelineStorageMK = typename MainloopPipelineMK::SharedStorage;

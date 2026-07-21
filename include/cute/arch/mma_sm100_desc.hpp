@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,9 @@
 
 #include <cute/container/bit_field.hpp>
 #include <cute/container/array.hpp> // cute::array
+
+#include <cute/tensor_impl.hpp>     // Tensor, make_tensor, recast, Layout, logical_divide, etc.
+#include <cute/swizzle.hpp>         // get_swizzle_t
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -263,6 +266,7 @@ enum class BMatrixBufferId : uint8_t {
 };
 
 enum class BMatrixBufferReuse : uint8_t {
+  None           = 0u,
   Keep           = 1u,
   Reuse          = 2u,
   ReuseAndKeep   = 3u
@@ -449,8 +453,8 @@ union InstrDescriptorBlockScaled
                             : 1,  //
              b_sf_id_       : 2,  // bit [ 4, 6) : Matrix B Scale Factor ID
                             : 1,  //
-             a_format_      : 3,  // bit [ 7, 9) : MXF8F6F4Format:0 = E4M3, 1 = E5M2, 3 = E2M3, 4 = E3M2, 5 = E2M1. F32F16Format: 0 = F16, 1 = BF16, 2 = TF32. S8: 0 unsigned 8 bit, 1 signed 8 bit. BMMA: 0 Boolean
-             b_format_      : 3,  // bit [10,12) : MXF8F6F4Format:0 = E4M3, 1 = E5M2, 3 = E2M3, 4 = E3M2, 5 = E2M1. F32F16Format: 0 = F16, 1 = BF16, 2 = TF32. S8: 0 unsigned 8 bit, 1 signed 8 bit. BMMA: 0 Boolean
+             a_format_      : 3,  // bit [ 7, 10): MXF8F6F4Format:0 = E4M3, 1 = E5M2, 3 = E2M3, 4 = E3M2, 5 = E2M1. F32F16Format: 0 = F16, 1 = BF16, 2 = TF32. S8: 0 unsigned 8 bit, 1 signed 8 bit. BMMA: 0 Boolean
+             b_format_      : 3,  // bit [10,13) : MXF8F6F4Format:0 = E4M3, 1 = E5M2, 3 = E2M3, 4 = E3M2, 5 = E2M1. F32F16Format: 0 = F16, 1 = BF16, 2 = TF32. S8: 0 unsigned 8 bit, 1 signed 8 bit. BMMA: 0 Boolean
              a_negate_      : 1,  // bit [13,14) : 0 = no negate. 1 = negate. 1 value valid only for F32F16Format and MXF8F6F4Format
              b_negate_      : 1,  // bit [14,15) : 0 = no negate. 1 = negate. 1 value valid only for F32F16Format and MXF8F6F4Format
              a_major_       : 1;  // bit [15,16) : 0 = K-major. 1 = MN-major. Major value of 1 is only valid for E4M3, E5M2, INT8 (signed and unsigned), F16, BF16 and TF32 source formats
@@ -459,7 +463,7 @@ union InstrDescriptorBlockScaled
              scale_format_  : 1,  // bit [23,24) : 0=E4M3, 1=E8M0
              m_dim_         : 5,  // bit [24,29) : 4 LSBs not included. Valid values are: 4 (M=64), 8 (M=128), 16 (M=256)
              a_sf_id_       : 2,  // bit [29,31) : Matrix A Scale Factor ID
-                            : 1;  //
+             k_size_        : 1;  // bit [31,32) : MMA-K Dim. MXF8F6F4Format: 0=[dense: K32, sparse: K64]. S8Format: 0=[dense: K32, sparse: invalid]. MXF4Format: 0=[dense: K64, sparse: K128], 1=[dense: K96, sparse: invalid].
   };
 
   // Decay to a uint32_t
@@ -647,5 +651,281 @@ make_runtime_instr_desc_block_scaled(UMMA::InstrDescriptorBlockScaled desc_i,
   return idescE;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Tensor (position-dependent swizzle) to LayoutType utility
+///////////////////////////////////////////////////////////////////////////////
+
+template <class Engine, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+LayoutType
+layout_type(Tensor<Engine, Layout<Shape,Stride>> const&)
+{
+  static_assert(is_same<uint128_t, typename Engine::value_type>::value,
+                "Expected uint128_t type in LayoutType conversion.");
+
+  using Swizzle = get_swizzle_t<Engine>;
+  constexpr int B = Swizzle::num_bits;
+  constexpr int M = Swizzle::num_base;
+  constexpr int S = Swizzle::num_shft;
+
+  if constexpr (M == 4) {
+    static_assert(S == 3, "Expected S = 3 when M == 4. Unsupported layout swizzle.");
+    switch (B) {
+      default: static_assert(0 <= B && B <= 3, "Expected B = 0,1,2, or 3 when M == 4. Unsupported layout swizzle.");
+      case 0:  return LayoutType::SWIZZLE_NONE;
+      case 1:  return LayoutType::SWIZZLE_32B;
+      case 2:  return LayoutType::SWIZZLE_64B;
+      case 3:  return LayoutType::SWIZZLE_128B;
+    }
+  } else
+  if constexpr (M == 5) {
+    static_assert(B == 2, "Expected B = 2 when M == 5. Unsupported layout swizzle.");
+    static_assert(S == 2, "Expected S = 2 when M == 5. Unsupported layout swizzle.");
+    return LayoutType::SWIZZLE_128B_BASE32B;
+  } else {
+    static_assert(M==5,   "Only 16B and 32B Atoms are supported for UMMA. Unsupported layout swizzle.");
+    return LayoutType::SWIZZLE_NONE;  // ERROR
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Construction method for UMMA Descriptors
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+* ///////////////////////////////
+* // make_umma_desc<Major::MN> //
+* ///////////////////////////////
+* Each UmmaDescriptor Major-MN describes a canonical layout of the form
+*
+* LayoutType::INTERLEAVE   : Swizzle<0,4,3> o smem_ptr o ((T,1,m),(8,k)):((1,T,SBO),(1T,LBO))
+* LayoutType::B32          : Swizzle<1,4,3> o smem_ptr o ((T,2,m),(8,k)):((1,T,LBO),(2T,SBO))
+* LayoutType::B64          : Swizzle<2,4,3> o smem_ptr o ((T,4,m),(8,k)):((1,T,LBO),(4T,SBO))
+* LayoutType::B128         : Swizzle<3,4,3> o smem_ptr o ((T,8,m),(8,k)):((1,T,LBO),(8T,SBO))
+* LayoutType::128B_BASE32B : Swizzle<2,5,2> o smem_ptr o ((T,8,m),(4,k)):((1,T,LBO),(?T,SBO))
+*
+* where
+*   T  : sizeof(uint128_t) / sizeof(value_type)
+*   m  : integer in [1,16] corresponding to UMMA shape
+*   k  : integer in [1,32] corresponding to UMMA shape
+*   SBO: stride byte offset
+*   LBO: leading byte offset
+*
+* See UMMA::Layout_MN_XXX_Atom<value_type> for building canonical UmmaDescriptor Major-MN layouts.
+* For example,
+*   auto smem_layout = tile_to_shape(Layout_MN_SW128_Atom<value_type>{}, Shape<_128,_64>{});
+* is guaranteed to be accepted by make_umma_desc<Major::MN> for appropriate value_type.
+*
+* //////////////////////////////
+* // make_umma_desc<Major::K> //
+* //////////////////////////////
+* Each UmmaDescriptor Major-K describes a canonical layout of the form
+*
+* LayoutType::INTERLEAVE : Swizzle<0,4,3> o smem_ptr o ((8,m),(T,2)):((1T,SBO),(1,LBO))
+* LayoutType::B32        : Swizzle<1,4,3> o smem_ptr o ((8,m),(T,2)):((2T,SBO),(1, T ))
+* LayoutType::B64        : Swizzle<2,4,3> o smem_ptr o ((8,m),(T,2)):((4T,SBO),(1, T ))
+* LayoutType::B128       : Swizzle<3,4,3> o smem_ptr o ((8,m),(T,2)):((8T,SBO),(1, T ))
+*
+* See UMMA::Layout_K_XXX_Atom<value_type> for building canonical UmmaDescriptor Major-K layouts.
+* For example,
+*   auto smem_layout = tile_to_shape(Layout_K_SW128_Atom<value_type>{}, Shape<_128,_64>{});
+* is guaranteed to be accepted by make_umma_desc<Major::K> for appropriate value_type.
+*/
+template <UMMA::Major MajorMode, class TEngine, class TLayout>
+CUTE_HOST_DEVICE constexpr
+SmemDescriptor
+make_umma_desc(Tensor<TEngine,TLayout> const& tensor)
+{
+  static_assert(is_smem<TEngine>::value, "UMMA Descriptors can only be constructed on smem.");
+  static_assert(TLayout::rank == 2, "UMMA Descriptors can only be constructed on rank-2 tensors.");
+
+  Tensor u128_tensor = recast<uint128_t const>(tensor);
+
+  // Result
+  SmemDescriptor desc;
+  desc.version_ = 1;     // Set the version for blackwell
+  desc.lbo_mode_ = 0; // set to legacy mode by default
+
+  // Layout type
+  constexpr UMMA::LayoutType LAYOUT_TYPE = UMMA::layout_type(u128_tensor);
+  desc.layout_type_ = uint8_t(LAYOUT_TYPE);
+
+  // Start address (4LSB not included)
+  uint32_t start_address = cast_smem_ptr_to_uint(raw_pointer_cast(u128_tensor.data()));
+  desc.start_address_ = static_cast<uint16_t>(start_address >> 4);
+
+  constexpr uint8_t base_offset = 0;
+  desc.base_offset_ = base_offset;
+
+  // LayoutType meta
+  constexpr int SwizzleAtomMNSize = LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_NONE         ? 1 :
+                                    LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_32B          ? 2 :
+                                    LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_64B          ? 4 :
+                                    LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_128B         ? 8 :
+                                    LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_128B_BASE32B ? 8 : -1;
+
+  if constexpr (MajorMode == UMMA::Major::MN)
+  {
+    /* In units of uint128_t, each UmmaDescriptor Major-MN describes a canonical layout of the form
+     *
+     * LayoutType::INTERLEAVE         : Swizzle<0,4,3> o smem_ptr o ((1,n),(8,k)):((X,SBO),(1,LBO))
+     * LayoutType::B32                : Swizzle<1,4,3> o smem_ptr o ((2,n),(8,k)):((1,LBO),(2,SBO))
+     * LayoutType::B64                : Swizzle<2,4,3> o smem_ptr o ((4,n),(8,k)):((1,LBO),(4,SBO))
+     * LayoutType::B128               : Swizzle<3,4,3> o smem_ptr o ((8,n),(8,k)):((1,LBO),(8,SBO))
+     * LayoutType::B128_BASE32B       : Swizzle<2,5,2> o smem_ptr o ((8,n),(4,k)):((1,LBO),(4,SBO))
+     */
+
+    constexpr int SwizzleAtomKSize = LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_128B_BASE32B ? 4 : 8;
+
+    // Construct the canonical UMMA T Layout with shape ((SwizzleAtomMNSize,n),(SwizzleAtomKSize,2))
+    Layout canonical_layout = logical_divide(layout(u128_tensor), Tile<Layout<Int<SwizzleAtomMNSize>>,Layout<Int<SwizzleAtomKSize>>>{});
+
+    // Check profile of canonical
+    CUTE_STATIC_ASSERT_V(congruent(canonical_layout, Shape<Shape<_1,_1>,Shape<_1,_1>>{}), "Not a canonical UMMA_MN Layout: Expected profile failure.");
+    // Check canonical mode strides
+    constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
+    constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_NONE ? stride<0,0>(canonical_layout) : 1;
+    static_assert(stride_00 == expected_stride_00, "Not a canonical UMMA_MN Layout: Expected stride failure.");
+    constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
+    constexpr uint32_t expected_stride_10 = SwizzleAtomMNSize;
+    static_assert(stride_10 == expected_stride_10, "Not a canonical UMMA_MN Layout: Expected stride failure.");
+
+    // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
+    constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
+    constexpr uint32_t stride_11 = stride<1,1>(canonical_layout);
+
+    desc.stride_byte_offset_  = (LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_NONE) ? stride_01 : stride_11;
+    desc.leading_byte_offset_ = (LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_NONE) ? stride_11 : stride_01;
+  } else
+  if constexpr (MajorMode == UMMA::Major::K)
+  {
+    /* In units of uint128_t, each UmmaDescriptor Major-K describes a canonical layout of the form
+     *
+     * LayoutType::INTERLEAVE    : Swizzle<0,4,3> o smem_ptr o ((8,n),2):((1,SBO),LBO)
+     * LayoutType::B32           : Swizzle<1,4,3> o smem_ptr o ((8,n),2):((2,SBO),1)
+     * LayoutType::B64           : Swizzle<2,4,3> o smem_ptr o ((8,n),2):((4,SBO),1)
+     * LayoutType::B128          : Swizzle<3,4,3> o smem_ptr o ((8,n),2):((8,SBO),1)
+     * LayoutType::B128_BASE32B  : Not applicable for Major-K
+     */
+
+    static_assert(LAYOUT_TYPE != UMMA::LayoutType::SWIZZLE_128B_BASE32B, "SWIZZLE_128B_BASE32B is invalid for Major-K");
+    CUTE_STATIC_ASSERT_V(size<0>(u128_tensor) % Int<8>{} == Int<0>{},          // N|M size
+                         "Not a canonical UMMA_K Layout: Expected MN-size multiple of 8.");
+
+    // Construct the canonical UMMA N Layout with shape ((8,n),(2,1))
+    Layout canonical_layout = logical_divide(layout(u128_tensor), Tile<Layout<_8,_1>,Layout<_2,_1>>{});
+
+    // Check profile of canonical
+    CUTE_STATIC_ASSERT_V(congruent(canonical_layout, Shape<Shape<_1,_1>,Shape<_1,_1>>{}), "Not a canonical UMMA_K Layout: Expected profile failure.");
+    // Check canonical mode strides
+    constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
+    constexpr uint32_t expected_stride_00 = SwizzleAtomMNSize;
+    static_assert(stride_00 == expected_stride_00, "Not a canonical UMMA_K Layout: Expected stride failure.");
+    constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
+    constexpr uint32_t expected_stride_10 = (LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_NONE) ? stride<1,0>(canonical_layout) : 1;
+    static_assert(stride_10 == expected_stride_10, "Not a canonical UMMA_K Layout: Expected stride failure.");
+
+    // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
+    constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
+
+    desc.stride_byte_offset_  = stride_01;
+    desc.leading_byte_offset_ = stride_10;
+  } else {
+    static_assert(MajorMode != UMMA::Major::MN && MajorMode != UMMA::Major::K, "Unrecognized MajorMode!");
+  }
+  return desc;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Higher level UMMA Descriptor utilities
+///////////////////////////////////////////////////////////////////////////////
+
+struct DescriptorIterator
+{
+  using reference    = SmemDescriptor;
+  using element_type = SmemDescriptor;
+  using value_type   = SmemDescriptor;
+
+  SmemDescriptor desc_;
+
+  // Dereference returns the UmmaDescriptor
+  CUTE_HOST_DEVICE constexpr
+  reference operator*() const { return desc_; }
+
+  // Advance and return a new UmmaDescriptor
+  template <class Index>
+  CUTE_HOST_DEVICE constexpr
+  reference operator[](Index const& i) const { return *(*this + i); }
+
+  // Return an advanced iterator
+  template <class Index>
+  CUTE_HOST_DEVICE constexpr
+  DescriptorIterator operator+(Index const& offset) const
+  {
+#if (__CUDACC_VER_MAJOR__ > 13) || ((__CUDACC_VER_MAJOR__ == 13) && (__CUDACC_VER_MINOR__ > 3))
+    return { desc_ + uint64_t(offset) };
+#else
+    // Use 32-bit calculation rather than 64-bit calculation as we only update part of desc.
+    SmemDescriptor ret;
+    ret.lo = desc_.lo + uint32_t(offset);
+    ret.hi = desc_.hi;
+    return { ret };
+#endif
+  }
+};
+
+template <class T>
+CUTE_HOST_DEVICE constexpr
+SmemDescriptor
+raw_pointer_cast(DescriptorIterator const& ptr) {
+  return ptr.desc_;
+}
+
+CUTE_HOST_DEVICE void
+print(DescriptorIterator const&) {
+  printf("UMMA::DescriptorIterator");
+}
+
+// Flag for smem descriptor allocation/creation
+template <UMMA::Major>
+struct smem_desc : DescriptorIterator {};
+
+template <UMMA::Major>
+struct sparse_smem_desc : DescriptorIterator {};
+
 } // end namespace UMMA
+
+// Customization point for creating a UMMA::smem_desc Tensor
+template <UMMA::Major MajorMode>
+struct MakeTensor<UMMA::smem_desc<MajorMode>>
+{
+  template <class TEngine, class TLayout>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Tensor<TEngine,TLayout> const& smem_tensor)
+  {
+    static_assert(is_smem<TEngine>::value, "Expected SMEM Tensor to construct a UMMA Desc Tensor");
+    return make_tensor(UMMA::DescriptorIterator{UMMA::make_umma_desc<MajorMode>(tensor<0>(smem_tensor))},
+                       replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+  }
+};
+
+// Customization point for creating a UMMA::sparse_smem_desc Tensor
+template <UMMA::Major MajorMode>
+struct MakeTensor<UMMA::sparse_smem_desc<MajorMode>>
+{
+  // Note that this is the exact same as UMMA::smem_desc above.
+  // Only the interface validates that we are passed a sparse_ptr, which is recast away to construct
+  //   the smem desc tensor
+  template <class TEngine, class TLayout>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Tensor<TEngine,TLayout> const& smem_tensor)
+  {
+    static_assert(is_smem<TEngine>::value, "Expected SMEM Tensor to construct a UMMA Desc Tensor");
+    static_assert(is_sparse<typename TEngine::value_type>::value, "Expected sparse value_type.");
+    static_assert(is_sparse_ptr<TEngine>::value, "Expected sparse iter.");
+    return make_tensor(UMMA::DescriptorIterator{UMMA::make_umma_desc<MajorMode>(tensor<0>(smem_tensor))},
+                       replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+  }
+};
+
 } // namespace cute
