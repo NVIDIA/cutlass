@@ -367,7 +367,7 @@ def LDMCxSTMC(
 
 
 class Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel:
-    """Persistent block-scaled GEMM + AllReduce (LDMCxSTMC) fusion kernel for Blackwell GPUs.
+    """SM100 Persistent block-scaled GEMM + AllReduce (LDMCxSTMC) fusion kernel for Blackwell GPUs.
 
     **Example:**
         gemm = Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel(
@@ -2190,6 +2190,47 @@ class Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel:
         return is_valid
 
     @staticmethod
+    def is_valid_problem_shape_for_cluster_tile(
+        m: int,
+        n: int,
+        mma_tiler_mn: Tuple[int, int],
+        cluster_shape_mn: Tuple[int, int],
+    ) -> bool:
+        """Return True if (M, N) is evenly divisible by the cluster tile size.
+
+        The LDMCxSTMC AR warp group has no boundary predicate (raw multimem.ld_reduce/
+        multimem.st on every scheduler-assigned tile), so partial tiles are unsupported.
+        """
+        cta_tile_m = mma_tiler_mn[0] // (2 if mma_tiler_mn[0] == 256 else 1)
+        cta_tile_n = mma_tiler_mn[1]
+        cluster_tile_m = cta_tile_m * cluster_shape_mn[0]
+        cluster_tile_n = cta_tile_n * cluster_shape_mn[1]
+        return m % cluster_tile_m == 0 and n % cluster_tile_n == 0
+
+    @staticmethod
+    def is_valid_problem_shape_for_swizzle(
+        m: int,
+        n: int,
+        mma_tiler_mn: Tuple[int, int],
+        cluster_shape_mn: Tuple[int, int],
+        swizzle_size: int,
+        raster_order: Literal["m", "n"],
+    ) -> bool:
+        """Return True if the cluster count divides evenly by swizzle_size along the
+        swizzled axis (N for raster_order="m", M for raster_order="n").
+
+        Same no-predicate reasoning as is_valid_problem_shape_for_cluster_tile.
+        """
+        cta_tile_m = mma_tiler_mn[0] // (2 if mma_tiler_mn[0] == 256 else 1)
+        cta_tile_n = mma_tiler_mn[1]
+        num_clusters_m = m // (cta_tile_m * cluster_shape_mn[0])
+        num_clusters_n = n // (cta_tile_n * cluster_shape_mn[1])
+        if raster_order == "m":
+            return num_clusters_n % swizzle_size == 0
+        else:
+            return num_clusters_m % swizzle_size == 0
+
+    @staticmethod
     def is_valid_tensor_alignment(
         m: int,
         n: int,
@@ -2289,6 +2330,8 @@ class Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel:
         mma_tiler_mn: Tuple[int, int],
         cluster_shape_mn: Tuple[int, int],
         num_ranks: int = 8,
+        swizzle_size: int = 1,
+        raster_order: Literal["m", "n"] = "m",
     ) -> bool:
         """Return True if all dtype, layout, tiler, cluster-shape, alignment, and AR-warp checks pass."""
         # Unpack parameters
@@ -2307,6 +2350,17 @@ class Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel:
         # Skip invalid mma tile shape and cluster shape
         if not Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel.is_valid_mma_tiler_and_cluster_shape(
             mma_tiler_mn, cluster_shape_mn
+        ):
+            can_implement = False
+        # Skip if problem shape is not evenly divisible by the cluster tile — the AR
+        # (LDMCxSTMC) warp group has no boundary predicate, so partial tiles are unsupported.
+        if not Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel.is_valid_problem_shape_for_cluster_tile(
+            m, n, mma_tiler_mn, cluster_shape_mn
+        ):
+            can_implement = False
+        # Skip if swizzle doesn't evenly divide the cluster count, same no-predicate reason.
+        if not Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel.is_valid_problem_shape_for_swizzle(
+            m, n, mma_tiler_mn, cluster_shape_mn, swizzle_size, raster_order
         ):
             can_implement = False
         # Skip illegal problem shape for load/store alignment
@@ -3282,9 +3336,11 @@ def run_distributed_test(
             f"_cluster{cluster_shape_mn[0]}x{cluster_shape_mn[1]}"
         )
         param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
-        unique_name = f"sm100_blockscale_dense_gemm_ar_ar_{param_hash}_r{global_rank}_w{world_size}"
+        unique_name = (
+            f"sm100_blockscale_dense_gemm_ar_{param_hash}_r{global_rank}_w{world_size}"
+        )
     except Exception:
-        unique_name = f"sm100_blockscale_dense_gemm_ar_ar_r{global_rank}_w{world_size}"
+        unique_name = f"sm100_blockscale_dense_gemm_ar_r{global_rank}_w{world_size}"
     gemm.__call__.set_name_prefix(unique_name)
 
     if not Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel.can_implement(
@@ -3300,6 +3356,8 @@ def run_distributed_test(
         mma_tiler_mn,
         cluster_shape_mn,
         num_ranks=world_size,
+        swizzle_size=swizzle_size,
+        raster_order=raster_order,
     ):
         raise testing.CantImplementError(
             f"Unsupported config: a={a_dtype} b={b_dtype} sf={sf_dtype} sfv={sf_vec_size} "
@@ -3506,8 +3564,6 @@ def compile_and_benchmark(
     """Compile one blockscaled-GEMM + AR candidate and time it. Returns avg_us."""
     m, n, k, l = mnkl
 
-    print(f"Swizzle Size: {swizzle_size}")
-    print(f"Raster Order: {raster_order}")
     gemm = Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel(
         sf_vec_size,
         mma_tiler_mn,
@@ -3528,9 +3584,11 @@ def compile_and_benchmark(
             f"_cluster{cluster_shape_mn[0]}x{cluster_shape_mn[1]}"
         )
         param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
-        unique_name = f"sm100_blockscale_dense_gemm_ar_ar_{param_hash}_r{global_rank}_w{world_size}"
+        unique_name = (
+            f"sm100_blockscale_dense_gemm_ar_{param_hash}_r{global_rank}_w{world_size}"
+        )
     except Exception:
-        unique_name = f"sm100_blockscale_dense_gemm_ar_ar_r{global_rank}_w{world_size}"
+        unique_name = f"sm100_blockscale_dense_gemm_ar_r{global_rank}_w{world_size}"
     gemm.__call__.set_name_prefix(unique_name)
 
     if not Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel.can_implement(
@@ -3546,6 +3604,8 @@ def compile_and_benchmark(
         mma_tiler_mn,
         cluster_shape_mn,
         num_ranks=world_size,
+        swizzle_size=swizzle_size,
+        raster_order=raster_order,
     ):
         raise testing.CantImplementError(
             f"Unsupported config: a={a_dtype} b={b_dtype} sf={sf_dtype} sfv={sf_vec_size} "
