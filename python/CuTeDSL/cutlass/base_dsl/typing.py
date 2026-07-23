@@ -556,15 +556,22 @@ class IntegerMeta(NumericMeta):
         else:
             np_dtype = getattr(np, f"uint{width}")
 
+        _cptr_cache: dict = {}
+
         def _c_pointers(self: "Integer") -> list[ctypes.c_void_p]:
+            key = self.value
+            cached = _cptr_cache.get(key)
+            if cached is not None:
+                return cached
             if width == 1:
                 c_value = ctypes.c_bool(self.value)  # type: ignore[arg-type]
             elif signed:
                 c_value = getattr(ctypes, f"c_int{width}")(self.value)
             else:
                 c_value = getattr(ctypes, f"c_uint{width}")(self.value)
-
-            return [ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)]
+            result = [ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)]
+            _cptr_cache[key] = result
+            return result
 
         new_attrs = {
             "__c_pointers__": _c_pointers,
@@ -2080,16 +2087,25 @@ class Uint128(
 
 
 class Float64(Float, metaclass=FloatMeta, width=64, mlir_type=T.f64):
+    _cptr_cache: dict = {}
+
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
-
-        return [
-            ctypes.cast(ctypes.pointer(ctypes.c_double(self.value)), ctypes.c_void_p)
+        v = self.value
+        cached = Float64._cptr_cache.get(v)
+        if cached is not None:
+            return cached
+        result = [
+            ctypes.cast(ctypes.pointer(ctypes.c_double(v)), ctypes.c_void_p)
         ]
+        Float64._cptr_cache[v] = result
+        return result
 
 
 class Float32(Float, metaclass=FloatMeta, width=32, mlir_type=T.f32):
+    _cptr_cache: dict = {}
+
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
         return ctypes.cast(ctypes.pointer(ctypes.c_float(value)), ctypes.c_void_p)
@@ -2097,18 +2113,33 @@ class Float32(Float, metaclass=FloatMeta, width=32, mlir_type=T.f32):
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
-
-        return [Float32._get_c_pointer(self.value)]
+        v = self.value
+        cached = Float32._cptr_cache.get(v)
+        if cached is not None:
+            return cached
+        result = [Float32._get_c_pointer(v)]
+        Float32._cptr_cache[v] = result
+        return result
 
 
 class TFloat32(Float, metaclass=FloatMeta, width=32, mlir_type=T.tf32):
+    _cptr_cache: dict = {}
+
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
-        return [Float32._get_c_pointer(self.value)]
+        v = self.value
+        cached = TFloat32._cptr_cache.get(v)
+        if cached is not None:
+            return cached
+        result = [Float32._get_c_pointer(v)]
+        TFloat32._cptr_cache[v] = result
+        return result
 
 
 class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
+    _cptr_cache: dict = {}
+
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
         # Convert float to float16 binary representation
@@ -2123,16 +2154,28 @@ class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
-        return [Float16._get_c_pointer(self.value)]
+        v = self.value
+        cached = Float16._cptr_cache.get(v)
+        if cached is not None:
+            return cached
+        result = [Float16._get_c_pointer(v)]
+        Float16._cptr_cache[v] = result
+        return result
 
 
 class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
+    _cptr_cache: dict = {}
+
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
+        v = self.value
+        cached = BFloat16._cptr_cache.get(v)
+        if cached is not None:
+            return cached
         # Convert float32 to bfloat16 representation
         # First convert the value to float32 bit representation
-        f32_val = np.float32(self.value)
+        f32_val = np.float32(v)
         # Get the 32-bit integer representation
         bits = int(f32_val.view(np.uint32))
         # Truncate to 16 bits, keeping the high 16 bits
@@ -2140,7 +2183,9 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(bf16_bits)  # type: ignore[arg-type]
         c_pointer = ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
-        return [c_pointer]
+        result = [c_pointer]
+        BFloat16._cptr_cache[v] = result
+        return result
 
 
 class Float8E5M2(Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E5M2): ...
