@@ -789,8 +789,65 @@ class DSLPreprocessor(ast.NodeTransformer):
             # Under REPL mode, there is no way to get source of a function object, error out
             raise DSLRuntimeError(
                 f"Failed to parse function {func_name}",
-                suggestion="DSL does not support REPL mode, save the function to a file instead.",
+                suggestion=(
+                    "DSL does not support REPL mode, save the function to a file instead. "
+                    "If the source file was modified after the module was imported (e.g. the "
+                    "package was upgraded in place), restart the process or reload the module."
+                ),
             )
+
+        # Step 1.1 Guard against stale source. Preprocessing is lazy (it runs on the
+        # first call), and the source is re-read from disk here. If the file changed
+        # after the module was imported, co_firstlineno points at the wrong block and
+        # the extracted source belongs to a different statement or function. Without
+        # this check that either silently skips preprocessing (the function later
+        # fails with a confusing dynamic-value-to-bool error on its first dynamic
+        # `if`), or dies replacing __code__ ("requires a code object with N free
+        # vars"), or -- worst -- silently transforms a *different same-named* function
+        # and swaps its code into this one.
+        # (Lambdas have no retrievable `def` block and are skipped by the decorator
+        # check below anyway, so they are exempt from this guard.)
+        parsed = tree.body[0] if tree.body else None
+        if func_name != "<lambda>":
+            stale_reason = None
+            if not isinstance(parsed, ast.FunctionDef) or parsed.name != func_name:
+                found = getattr(
+                    parsed, "name", type(parsed).__name__ if parsed is not None else "<empty>"
+                )
+                stale_reason = f"defines `{found}` instead"
+            else:
+                # Same name: cross-check the declared parameters against the code
+                # object we hold; a stale line number can land on a same-named
+                # function of another class or scope with a different signature.
+                arg_spec = parsed.args
+                declared_params = [p.arg for p in arg_spec.posonlyargs + arg_spec.args + arg_spec.kwonlyargs]
+                if arg_spec.vararg is not None:
+                    declared_params.append(arg_spec.vararg.arg)
+                if arg_spec.kwarg is not None:
+                    declared_params.append(arg_spec.kwarg.arg)
+                code = function_pointer.__code__
+                n_params = (
+                    code.co_argcount
+                    + code.co_kwonlyargcount
+                    + bool(code.co_flags & inspect.CO_VARARGS)
+                    + bool(code.co_flags & inspect.CO_VARKEYWORDS)
+                )
+                if (
+                    len(arg_spec.posonlyargs) + len(arg_spec.args) != code.co_argcount
+                    or len(arg_spec.kwonlyargs) != code.co_kwonlyargcount
+                    or declared_params != list(code.co_varnames[:n_params])
+                ):
+                    stale_reason = "declares a different signature"
+            if stale_reason is not None:
+                raise DSLRuntimeError(
+                    f"Source extracted for function `{func_name}` ({file_name}:{start_line}) "
+                    f"{stale_reason} -- the source file appears to have been modified "
+                    "after the module was imported.",
+                    suggestion=(
+                        "Restart the process (or re-import/reload the module) so the "
+                        "in-memory code and the on-disk source agree."
+                    ),
+                )
 
         # Step 1.2 Check the decorator
         if not self.check_decorator(tree.body[0]):
