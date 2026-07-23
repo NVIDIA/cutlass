@@ -2591,7 +2591,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         pipeline = kwargs.pop("pipeline", None)
         gpu_module_attrs = kwargs.pop("gpu_module_attrs", {})
-        no_cache = kwargs.pop("no_cache", False)
+        # `None` means the caller expressed no preference, so the conservative
+        # defaults below apply. An explicit value is treated as an opt-in and is
+        # not overridden by the compile-only rule.
+        no_cache_arg = kwargs.pop("no_cache", None)
+        no_cache_explicit = no_cache_arg is not None
+        no_cache = bool(no_cache_arg)
         no_jit_engine = kwargs.pop("no_jit_engine", False)
         compile_only = kwargs.pop("compile_only", False)
 
@@ -2608,7 +2613,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             no_cache = True
             self.print_warning("Cache is disabled as user wants to generate PTX/ASM.")
 
-        if not no_cache and compile_only:
+        if not no_cache and compile_only and not no_cache_explicit:
             no_cache = True
             self.print_warning("Cache is disabled as user wants to compile only.")
 

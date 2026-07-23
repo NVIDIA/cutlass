@@ -1300,6 +1300,9 @@ class CompileCallable:
             the same token string as ``CUTE_DSL_COMPILER_OPT``. For the
             full option catalog, see
             ``write-kernel/references/compiler-options.md``.
+            ``no_cache=False`` opts this compile into the content-addressed
+            compile cache; it defaults to ``True`` because compile-only
+            results are not cached by default.
         :return: A compiled callable.
         :raises DSLRuntimeError: If ``func`` is not callable or not
             decorated with ``@cute.jit``.
@@ -1316,7 +1319,11 @@ class CompileCallable:
         finalize_hook = kwargs.pop("trace_finalize_hooks", None)
 
         kwargs["compile_only"] = True
-        kwargs["no_cache"] = True
+        # Default to bypassing the cache, but let an explicit `no_cache=False` from
+        # the caller opt back in. This used to be an unconditional assignment, which
+        # meant `cute.compile` could never reach the content-addressed compile cache
+        # and re-ran the full MLIR build even for a byte-identical artifact.
+        kwargs.setdefault("no_cache", True)
 
         if inspect.isfunction(func):
             # regular function
