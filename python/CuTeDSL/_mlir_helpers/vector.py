@@ -808,6 +808,7 @@ class Vector(ArithValue):
         op: Literal["add", "mul", "min", "max"] = "add",
         *,
         dim: Optional[Union[int, list[int]]] = None,
+        fastmath: Optional[arith.FastMathFlags] = None,
         acc: Any = None,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -825,6 +826,12 @@ class Vector(ArithValue):
             vs unsigned integer).
         :param dim: Dimension(s) to reduce.  ``None`` reduces all dims to a
             scalar.  An int or list of ints reduces only those dims.
+        :param fastmath: Optional fast-math flags for the reduction. Pass
+            ``arith.FastMathFlags.reassoc`` to allow the compiler to lower
+            the reduction as a tree instead of a strict left-to-right chain.
+            Defaults to ``None``. Only supported for a full reduction of a
+            1-D vector to a scalar (``dim is None``), raises ValueError
+            for multi-dimensional reductions.
         :param acc: Optional accumulator.  For scalar reduction a scalar value;
             for multi-dim reduction a vector matching the result shape.
         :return: Scalar (when ``dim is None``) or :class:`Vector` (when
@@ -872,15 +879,19 @@ class Vector(ArithValue):
         kind = kind_fn(self)
         vec_ty = ir.VectorType(self.type)
         elem_ty = vec_ty.element_type
+        fmf_kwargs = {"fastmath": fastmath} if fastmath is not None else {}
 
         ndim = len(vec_ty.shape)
 
         if dim is None and ndim == 1:
             # 1-D full reduction to scalar — wrap in _dtype so type info is preserved
-            raw = vector.reduction(elem_ty, kind, self, acc=acc, loc=loc, ip=ip)
+            raw = vector.reduction(elem_ty, kind, self, acc=acc, **fmf_kwargs, loc=loc, ip=ip)
             return self._dtype(raw)
 
         # Multi-dimension reduction
+        if fastmath is not None:
+            raise ValueError("Fastmath flags are only supported for 1-D full reductions.")
+
         if dim is None:
             # Reduce all dims for N-D vector
             reduction_dims = list(range(ndim))
