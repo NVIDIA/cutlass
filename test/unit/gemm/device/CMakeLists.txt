@@ -574,6 +574,12 @@ cutlass_test_unit_gemm_device_add_executable(
 )
 
 cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm89_blockwise
+
+  gemm_f8t_f8n_bf16t_tensor_op_f32_blockwise_sm89.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_grouped
 
   BATCH_SOURCES ON
