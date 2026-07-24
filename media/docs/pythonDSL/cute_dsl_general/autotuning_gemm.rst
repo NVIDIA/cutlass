@@ -156,11 +156,11 @@ The manual ``autotune_gemm`` loop above demonstrates the general principle behin
 CuTeDSL provides a higher-level interface for this process which relies on the same underlying mechanism, 
 which is the ``autotune_jit`` decorator from ``cutlass.cute.testing``. It performs the same "compile every
 configuration, benchmark, keep the best" strategy but it does so automatically,
-with handling the search space sweep lazily when function is called, performing the cold-L2 benchmarking 
-and caching compiled kernel automatically for you.
+handling the search-space sweep lazily when the function is called, performing the cold-L2 benchmarking,
+and caching the compiled kernel automatically for you.
 
 We still use the persistent GEMM kernel as an example. We first need to define the ``@cute.jit`` function.
-It should accepts the turnable parameters as ``Constexpr`` keyword arguments.
+It should accept the tunable parameters as ``Constexpr`` keyword arguments.
 
 The non-autotuned version should look like this:
 
@@ -280,7 +280,7 @@ When calling the decorated function, you still need to pass them as normal argum
 
     autotuned_gemm(a, b, c, stream, M, N, K)  # first call for this (M, N, K) autotunes
     autotuned_gemm(a, b, c, stream, M, N, K)  # subsequent calls reuse the cached best kernel
-    print(f"Best config for autotuned_gemm: {autotuned_gemm._best_config}")
+    print(f"Best config for autotuned_gemm: {autotuned_gemm._best_config[(M, N, K)]}")
 
 Autotuning JIT kernels with classes
 -----------------------------------
@@ -320,12 +320,12 @@ Take a small elementwise-add kernel as an example, where ``elementwise_add`` is 
     autotuned_add = ElementwiseAddKernel()   # instantiate (no tunable params)
     autotuned_add(a, b, c, M, N)             # first call for this (M, N) autotunes
     autotuned_add(a, b, c, M, N)             # subsequent calls reuse the cached best kernel
-    print(f"Best config for autotuned_add: {autotuned_add._best_config}")
+    print(f"Best config for autotuned_add: {autotuned_add._best_config[(M, N)]}")
 
 
 - ``params_dict`` takes the tuneable parameters that are passed to the class constructor (``COPY_BITS``,
-  ``THREADS_M``). These are constexprs that instantiate the kernel, and are fixed at the runtime.
-  When user create an instance of the decorated class, they do not need to pass these parameters, and they will be auto-tuned.
+  ``THREADS_M``). These are constexprs used to instantiate the kernel, and are baked in at compile time.
+  When you create an instance of the decorated class, you do not need to pass these parameters; they will be auto-tuned.
   These tuneable parameters are removed from the decorated class's constructor signature.
   For non-tuneable parameters, user should still pass them when creating the instance as usual.
   And ``derived_params`` and ``prune_configs`` work the same way as in the function case.
@@ -333,7 +333,7 @@ Take a small elementwise-add kernel as an example, where ``elementwise_add`` is 
   (``M``, ``N``). When any of these change, the decorated class will re-tune and cache a new best kernel for that combination.
 - Because the tunable parameters are separated into the constructor, the ``@cute.jit`` ``__call__`` takes only the dynamic arguments. 
   Therefore, unlike the decorated CuTeDSL function where it takes both the dynamic and tunable parameters in the signature,
-  the separation here is clearer: the constructor parameters defines the kernel configuration which are used to compile the kernel.
+  the separation here is clearer: the constructor parameters define the kernel configuration used to compile the kernel.
   Then, ``__call__`` takes the dynamic arguments that may change per execution.
 
 
@@ -343,8 +343,8 @@ Choosing one configuration for many shapes
 The JIT path tunes each problem size on its first call. When you instead need a single configuration baked into an ahead-of-time (AOT) build, 
 or you simply don't want to compile kernels too often when input shapes change frequently, you can use ``autotune_suite`` to find one that performs well
 across the shapes your application sees. ``autotune_suite`` allows you to grid-search the same space over a list of representative problem sizes.
-For each case it builds fresh inputs with ``make_arguments`` whose parameters , compiles and benchmarks every
-configuration (cycling through cold-L2 workspaces), and returns per-case timings plus a ranked list of recommended configurations. 
+For each case it builds fresh inputs with ``make_arguments``, compiles and benchmarks every
+configuration (cycling through cold-L2 workspaces), and returns per-case timings plus a ranked list of recommended configurations.
 
 You may then pick a configuration that you think is best and compile it ahead of time for use with all shapes.
 
@@ -395,21 +395,21 @@ Note: autotune_suite expects a non-autotuned CuTeDSL function or class that is n
 ``reports`` holds one timing table per case (each configuration's measured time, fastest first) so user can use this to decide what's their favorite configuration, 
 and ``recommended`` ranks configurations by how many cases accepted them within each input case's top ``accept_percentile`` configurations. 
 
-The heruistic behind is simple. You don't want a configuration that is the fastest for one case but slow for others, and a configuration that is consistently good 
+The heuristic behind this is simple. You don't want a configuration that is the fastest for one case but slow for others, and a configuration that is consistently good
 among all these representative cases is more likely to be the preferred choice in general (even if it's never the best for any of those cases). 
 
 Note: about ``workspace_count``, this is the parameter that is crucial to ensure the benchmarking is accurate in terms of memory bandwidth.
 This means ``autotune_suite`` will allocate a workspace of size ``workspace_count`` copies of input arguments using ``make_arguments`` you pass, 
 and it will cycle through these workspaces ``warmup_iterations`` + ``iterations`` times.
 To let the benchmark correctly reflect the achieved memory bandwidth, we would like to make sure our kernel is reading from HBM instead of L2 cache during the benchmarking. 
-Therefore, we need to make sure the workspace is large enough so that its size exceeds the L2 cache size, so when we finish one lap around the workspace ring buffer and get back To
+Therefore, we need to make sure the workspace is large enough so that its size exceeds the L2 cache size, so when we finish one lap around the workspace ring buffer and get back to
 the first workspace, the data is no longer in L2 cache and we are reading from HBM again.
 
 For example, suppose our input tensors use 2MB of memory, and the L2 cache size is 10MB. If we set ``workspace_count`` to 6, then the total workspace size is 12MB, 
 which **exceeds** the L2 cache size. In this case, when we are at iteration 7, the L2 cache would hold the 5 copies of inputs from workspace 2 to 6, and 
 iteration 7 uses workspace 1, which is no longer in L2 cache and is read from HBM. 
-In addition, a workspace whose size is equal to the L2 cache size is not sufficient, because in this case ``workspace_count`` is 5, which means at the 6th iteration we are back to workspace 1, 
-but it's is still in L2 cache because L2 cache is large enough to hold all 5 copies of the input tensors. Therefore, we would be reading from L2 cache instead of HBM, which is not what we want.
+In addition, a total workspace size equal to the L2 cache size is not sufficient, because in this case ``workspace_count`` is 5, which means at the 6th iteration we are back to workspace 1,
+but it is still in L2 cache because L2 cache is large enough to hold all 5 copies of the input tensors. Therefore, we would be reading from L2 cache instead of HBM, which is not what we want.
 The rule of thumb is that we need ``(workspace_count - 1) * size_of_input_data >= L2_cache_size`` to guarantee that when we finish one round and get back to the first workspace, its data is no longer in L2 cache.
 
 In conclusion, you should always set ``workspace_count`` to a proper value that ensures that the current benchmark run always reads from HBM due to its input being evicted from L2 cache, 
