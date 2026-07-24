@@ -393,10 +393,20 @@ Note: autotune_suite expects a non-autotuned CuTeDSL function or class that is n
     compiled_gemm(*args)
 
 ``reports`` holds one timing table per case (each configuration's measured time, fastest first) so user can use this to decide what's their favorite configuration, 
-and ``recommended`` ranks configurations by how many cases accepted them within each input case's top ``accept_percentile`` configurations. 
+and ``recommended`` ranks configurations by how many cases accepted them within each input case's top ``accept_percentile`` configurations
 
 The heuristic behind this is simple. You don't want a configuration that is the fastest for one case but slow for others, and a configuration that is consistently good
-among all these representative cases is more likely to be the preferred choice in general (even if it's never the best for any of those cases). 
+among all these representative cases is more likely to be the preferred choice in general (even if it's never the best for any of those cases). It will return the top 5
+most widely accepted configurations like this:
+
+.. code-block:: text
+
+    recommended configs:
+        {'cluster_shape_mn': (2, 1), 'max_active_clusters': 76, 'mma_tiler_mn': (128, 128), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 2/2 cases
+        {'cluster_shape_mn': (2, 1), 'max_active_clusters': 76, 'mma_tiler_mn': (256, 256), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 2/2 cases
+        {'cluster_shape_mn': (2, 2), 'max_active_clusters': 36, 'mma_tiler_mn': (256, 128), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 1/2 cases
+        {'cluster_shape_mn': (2, 1), 'max_active_clusters': 76, 'mma_tiler_mn': (256, 128), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 1/2 cases
+        {'cluster_shape_mn': (2, 2), 'max_active_clusters': 36, 'mma_tiler_mn': (256, 128), 'use_2cta_instrs': True, 'use_tma_store': False}: accepted in 1/2 cases
 
 Note: about ``workspace_count``, this is the parameter that is crucial to ensure the benchmarking is accurate in terms of memory bandwidth.
 This means ``autotune_suite`` will allocate a workspace of size ``workspace_count`` copies of input arguments using ``make_arguments`` you pass, 
