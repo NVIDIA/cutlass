@@ -148,3 +148,231 @@ approximation doesn't negatively impact performance for your specific use case.
 
 By following the methods above, you can customize your own auto-tuner to find the optimal GEMM kernel configuration 
 for specific matrix dimensions and data types, significantly improving computational performance for models.
+
+Autotuning JIT kernels with CuTeDSL functions
+---------------------------------------------
+
+The manual ``autotune_gemm`` loop above demonstrates the general principle behind tuning CuTeDSL kernels. 
+CuTeDSL provides a higher-level interface for this process which relies on the same underlying mechanism, 
+which is the ``autotune_jit`` decorator from ``cutlass.cute.testing``. It performs the same "compile every
+configuration, benchmark, keep the best" strategy but it does so automatically,
+with handling the search space sweep lazily when function is called, performing the cold-L2 benchmarking 
+and caching compiled kernel automatically for you.
+
+We still use the persistent GEMM kernel as an example. We first need to define the ``@cute.jit`` function.
+It should accepts the turnable parameters as ``Constexpr`` keyword arguments.
+The non-autotuned version should look like this:
+
+.. code-block:: python
+
+    import cutlass
+    import cutlass.cute as cute
+    import cutlass.cute.testing as testing
+    from dense_gemm_persistent import PersistentDenseGemmKernel
+
+    @cute.jit
+    def gemm(
+        a, b, c, stream, m, n, k,
+        use_2cta_instrs: cutlass.Constexpr = True,
+        use_tma_store: cutlass.Constexpr = True,
+        mma_tiler_mn: cutlass.Constexpr = (256, 256),
+        cluster_shape_mn: cutlass.Constexpr = (2, 1),
+        max_active_clusters: cutlass.Constexpr = 0,
+    ):
+        kernel = PersistentDenseGemmKernel(
+            cutlass.Float32,  # acc_dtype
+            use_2cta_instrs,
+            mma_tiler_mn,
+            cluster_shape_mn,
+            use_tma_store,
+        )
+        kernel(a, b, c, max_active_clusters, stream)
+
+Since ``cluster_shape_mn`` is a tunable parameter and it's unknown when we do the grid sweep and search the optimal configuration, 
+``autotune_jit`` needs to know how to compute ``max_active_clusters`` on the host side based on the current  ``cluster_shape_mn`` value when tuning.
+Therefore, to allow this function to be autotuned with ``max_active_clusters`` being a parameter, we need to define an 
+auxiliary function on the host side to derive the ``max_active_clusters`` parameter from the swept ``cluster_shape_mn`` value when tuning.
+
+
+.. code-block:: python
+
+    # max_active_clusters is derived from the swept cluster_shape_mn. It is
+    # computed on the host, because HardwareInfo cannot run inside @cute.jit.
+    def derive_max_active_clusters(cluster_shape_mn):
+        return cutlass.utils.HardwareInfo().get_max_active_clusters(
+            cluster_shape_mn[0] * cluster_shape_mn[1]
+        )
+
+
+The search space is a dictionary mapping each tunable parameter to its candidate
+values; every combination is tried. Add more candidates to a list to widen the
+sweep:
+
+.. code-block:: python
+
+    search_space = {
+        "use_2cta_instrs": [True],
+        "use_tma_store": [False, True],
+        "mma_tiler_mn": [(128, 128), (256, 128), (256, 256)],
+        "cluster_shape_mn": [(2, 1), (2, 2)],
+    }
+
+Then we can decorate the CuTeDSL function with ``autotune_jit`` to sweep this search space and find the best configuration.
+The first call to the decorated function for a given m, n, k problem size sweeps the search space, benchmarks each configuration and caches the best compiled kernel; 
+and subsequent calls whose ``update_on_change`` values (here ``m, n, k``) are unchanged reuse it without re-tuning. 
+
+For parameters in ``param_dict``, they are removed from the decorated function's signature so when calling the decorated function you do not need to pass them, and they are automatically tuned.
+And parameters in ``derived_params`` work similarly; you don't pass them and their value will be derived from the current values of the other parameters in ``param_dict`` using the function you provides, 
+whose signature must match the parameters in ``param_dict`` that it depends on with the same name. So for example, ``derive_max_active_clusters`` above takes ``cluster_shape_mn`` as an argument, 
+and it will use the current value of ``cluster_shape_mn`` for each configuration during the sweep to derive the value of ``max_active_clusters`` argument.
+For parameters in ``update_on_change``, they are used as the key to cache compiled kernels, so when any of them changes the decorated function will re-tune and cache a new best kernel for that combination. 
+When calling the decorated function, you still need to pass them as normal arguments.
+
+.. code-block:: python
+
+    import cutlass
+    import cutlass.cute as cute
+    import cutlass.cute.testing as testing
+    from dense_gemm_persistent import PersistentDenseGemmKernel
+
+    @testing.autotune_jit(
+        params_dict=search_space,
+        update_on_change=["m", "n", "k"],
+        derived_params={"max_active_clusters": derive_max_active_clusters},
+        warmup_iterations=5,
+        iterations=100,
+    )
+    @cute.jit
+    def autotuned_gemm(
+        a, b, c, stream, m, n, k,
+        use_2cta_instrs: cutlass.Constexpr = True,
+        use_tma_store: cutlass.Constexpr = True,
+        mma_tiler_mn: cutlass.Constexpr = (256, 256),
+        cluster_shape_mn: cutlass.Constexpr = (2, 1),
+        max_active_clusters: cutlass.Constexpr = 0,
+    ):
+        kernel = PersistentDenseGemmKernel(
+            cutlass.Float32,  # acc_dtype
+            use_2cta_instrs,
+            mma_tiler_mn,
+            cluster_shape_mn,
+            use_tma_store,
+        )
+        kernel(a, b, c, max_active_clusters, stream)
+
+    autotuned_gemm(a, b, c, stream, m, n, k)  # first call for this (m, n, k) autotunes
+    autotuned_gemm(a, b, c, stream, m, n, k)  # subsequent calls reuse the cached best kernel
+
+Autotuning JIT kernels with classes
+-----------------------------------
+
+Many CuTe DSL kernels are written as classes: the tunable configuration is passed
+to the constructor, and a ``@cute.jit`` ``__call__`` method takes only the dynamic
+runtime arguments (which is the structure of ``PersistentDenseGemmKernel`` used
+above). ``autotune_jit`` can decorate such a class directly, without writing an
+adapter. It turns the class into a *partial* class: the tunable constructor
+parameters are removed (which are auto-tuned), so you can use the decorated class like a
+normal class -- you just do not pass the tunable parameters when instantiating.
+
+Take a small elementwise-add kernel as an example, where ``elementwise_add`` is a
+``@cute.jit`` function implementing the vectorized addition operation:
+
+.. code-block:: python
+
+    @testing.autotune_jit(
+        params_dict={"COPY_BITS": [32, 64, 128], "THREADS_M": [4, 8]},
+        update_on_change=["M", "N"],
+        warmup_iterations=10,
+        iterations=50,
+    )
+    class ElementwiseAddKernel:
+        def __init__(self, COPY_BITS=128, THREADS_M=4):
+            self.COPY_BITS = COPY_BITS
+            self.THREADS_M = THREADS_M
+
+        @cute.jit
+        def __call__(self, mA, mB, mC, M, N):
+            elementwise_add(
+                mA, mB, mC, M, N,
+                copy_bits=self.COPY_BITS,
+                threads_m=self.THREADS_M,
+            )
+
+    autotuned_add = ElementwiseAddKernel()   # instantiate (no tunable params)
+    autotuned_add(a, b, c, M, N)             # first call for this (M, N) autotunes
+    autotuned_add(a, b, c, M, N)             # subsequent calls reuse the cached best kernel
+
+
+- ``params_dict`` takes the tuneable parameters that are passed to the class constructor (``COPY_BITS``,
+  ``THREADS_M``). These are constexprs that instantiate the kernel, and are fixed at the runtime.
+  When user create an instance of the decorated class, they do not need to pass these parameters, and they will be auto-tuned.
+  These tuneable parameters are removed from the decorated class's constructor signature.
+  For non-tuneable parameters, user should still pass them when creating the instance as usual.
+- ``update_on_change`` names the ``__call__`` arguments to key the cache on
+  (``M``, ``N``). When any of these change, the decorated class will re-tune and cache a new best kernel for that combination.
+- Because the tunable parameters are separated into the constructor, the ``@cute.jit`` ``__call__`` takes only the dynamic arguments. 
+  Therefore, unlike the decorated CuTeDSL function where it takes both the dynamic and tunable parameters in the signature,
+  the separation here is clearer: the constructor parameters defines the kernel configuration which are used to compile the kernel.
+  Then, ``__call__`` takes the dynamic arguments that may change per execution.
+
+
+Choosing one configuration for many shapes
+-------------------------------------------
+
+The JIT path tunes each problem size on its first call. When you instead need a single configuration baked into an ahead-of-time (AOT) build, 
+or you simply don't want to compile kernels too often when input shapes change frequently, you can use ``autotune_suite`` to find one that performs well
+across the shapes your application sees. ``autotune_suite`` allows you to grid-search the same space over a list of representative problem sizes.
+For each case it builds fresh inputs with ``make_arguments`` whose parameters , compiles and benchmarks every
+configuration (cycling through cold-L2 workspaces), and returns per-case timings plus a ranked list of recommended configurations. 
+You may then pick a configuration that you think is best and compile it ahead of time for use with all shapes. 
+
+.. code-block:: python
+
+    import cuda.bindings.driver as cuda
+
+    torch_stream = torch.cuda.Stream()
+    stream = cuda.CUstream(torch_stream.cuda_stream)
+
+    def make_arguments(m, n, k):
+        # Batched GEMM with a hardcoded batch size l = 1. The kernel takes
+        # rank-3 tensors, so we build torch tensors with the shape and major
+        # ordering it expects and pass them directly -- CuTe DSL accepts torch
+        # tensors via DLPack (a plain 2D torch tensor would be the wrong rank):
+        #   A: (m, k, l) m-major, B: (n, k, l) k-major, C: (m, n, l) m-major
+        l = 1
+        a = torch.randn(l, k, m, dtype=torch.float16, device="cuda").permute(2, 1, 0)
+        b = torch.randn(l, n, k, dtype=torch.float16, device="cuda").permute(1, 2, 0)
+        c = torch.zeros(l, n, m, dtype=torch.float16, device="cuda").permute(2, 1, 0)
+        return a, b, c, stream, m, n, k
+
+    with torch.cuda.stream(torch_stream):
+        reports, recommended = testing.autotune_suite(
+            gemm,
+            make_arguments,
+            cases=[
+                (2048, 2048, 4096),  # representative (m, n, k) problem sizes
+                (4096, 4096, 2048),
+            ],
+            params_dict=search_space,
+            derived_params={"max_active_clusters": derive_max_active_clusters},
+            accept_percentile=50,  # keep each case's fastest half of the configs
+            stream=stream,
+        )
+
+    # recommended is ranked by how many cases accepted each config within the
+    # percentile; pick the top one and compile it ahead of time.
+    best_config = recommended[0]["config"]
+    args = make_arguments(2048, 2048, 4096)
+    compiled_gemm = cute.compile(gemm, *args, **best_config)
+    compiled_gemm(*args)
+
+``reports`` holds one timing table per case (each configuration's measured time,
+fastest first), and ``recommended`` ranks configurations by how many cases
+accepted them within ``accept_percentile``. Use ``reports[i]["best_config"]`` when
+a separate kernel per problem size is acceptable, or ``recommended[0]["config"]``
+when a single configuration must serve all shapes.
+
+For stable, reproducible measurements, lock the GPU's SM and memory frequencies
+with ``nvidia-smi`` before running the sweep; the number of warmup iterations,
+timed iterations and cold-L2 workspaces are controlled by ``autotune_suite``'s
+``warmup_iterations``, ``iterations`` and ``workspace_count`` parameters.
