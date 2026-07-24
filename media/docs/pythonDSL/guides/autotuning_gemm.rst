@@ -305,9 +305,10 @@ Take a small elementwise-add kernel as an example, where ``elementwise_add`` is 
         iterations=50,
     )
     class ElementwiseAddKernel:
-        def __init__(self, COPY_BITS=128, THREADS_M=4):
+        THREADS_M = 4 # default value; can be overridden by autotune_jit
+
+        def __init__(self, COPY_BITS=128):
             self.COPY_BITS = COPY_BITS
-            self.THREADS_M = THREADS_M
 
         @cute.jit
         def __call__(self, mA, mB, mC, M, N):
