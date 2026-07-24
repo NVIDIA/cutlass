@@ -924,9 +924,29 @@ class autotune_jit:
                         derived = outer._compute_derived(
                             self._derived_params, current_config
                         )
-                        kernel = self._original_kernel_cls(
-                            **{**self._fixed_kwargs, **current_config, **derived}
-                        )
+                        config_with_derived = {
+                            **self._fixed_kwargs, **current_config, **derived
+                        }
+                        kernel_cls = self._original_kernel_cls
+                        init_params = inspect.signature(kernel_cls.__init__).parameters
+                        # Config set through __init__ vs. as class attributes.
+                        init_configs = {
+                            k: v for k, v in config_with_derived.items()
+                            if k in init_params
+                        }
+                        attr_configs = {
+                            k: v for k, v in config_with_derived.items()
+                            if k not in init_params
+                        }
+                        kernel = kernel_cls(**init_configs)
+                        # Override class attributes
+                        for k, v in attr_configs.items():
+                            if not hasattr(kernel, k):
+                                raise AttributeError(
+                                    f"Kernel class {kernel_cls.__name__} has no "
+                                    f"attribute {k} to override"
+                                )
+                            setattr(kernel, k, v)
                         compiled_func = compile(kernel, *args, **kwargs)
                         cur_time = _benchmark_for_autotune(
                             compiled_func,
@@ -937,7 +957,9 @@ class autotune_jit:
                             print_verbose=False,
                             **kwargs,
                         )
-                    except NotImplementedError:
+                    except AttributeError:
+                        # Raise exception when keys in params_dict are not recognized as either
+                        # constructor parameters or class attributes of the kernel class.
                         raise
                     except Exception as e:
                         outer.log().info(f"   Configuration skipped: {e}")
@@ -1176,9 +1198,23 @@ def autotune_suite(
                         **{k: v for k, v in config.items() if k in fn_params}
                     )
                 if inspect.isclass(func_or_cls):
-                    # Instantiate the kernel class with the current config and derived params,
+                    config_with_derived = {**config, **derived}
+                    init_params = inspect.signature(func_or_cls.__init__).parameters
+                    # Attributes to override that are initialized in __init__ method
+                    init_configs = {k: v for k, v in config_with_derived.items() if k in init_params}
+                    # Attributes to override that set along with the class definition
+                    attr_configs = {k: v for k, v in config_with_derived.items() if k not in init_params}
+                    # Instantiate the kernel class with the config and derived params,
                     # then compile it with the dynamic args.
-                    compiled = cute.compile(func_or_cls(**config, **derived), *args)
+                    kernel_obj = func_or_cls(**init_configs)
+                    # Override class attributes
+                    for k, v in attr_configs.items():
+                        if not hasattr(kernel_obj, k):
+                            raise AttributeError(
+                                f"Kernel class {func_or_cls.__name__} has no attribute {k} to override"
+                            )
+                        setattr(kernel_obj, k, v)
+                    compiled = cute.compile(kernel_obj, *args)
                 else:
                     compiled = cute.compile(func_or_cls, *args, **config, **derived)
                 compiled(*args)
@@ -1193,7 +1229,9 @@ def autotune_suite(
                     iterations=iterations,
                     stream=stream,
                 )
-            except NotImplementedError:
+            except AttributeError:
+                # Raise exception when keys in params_dict are not recognized as either
+                # constructor parameters or class attributes of the kernel class.
                 raise
             except Exception as e:
                 if print_summary:
