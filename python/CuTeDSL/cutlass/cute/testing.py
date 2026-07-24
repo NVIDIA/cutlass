@@ -13,10 +13,11 @@
 import functools
 import inspect
 import logging
+import math
 import os
 from itertools import product
 from time import time
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from cutlass.cutlass_dsl import Constexpr, CuTeDSL, T, dsl_user_op, const_expr
 
@@ -553,8 +554,12 @@ def convert(src: Tensor, dst: Tensor) -> None:
 class autotune_jit:
     """Auto-tuning tool supporting both dictionary and parameterized decorator styles.
     The autotune_jit class can be used as a decorator or a function.
-    When used as a decorator, it will automatically tune the function based on the parameters.
+    When used as a decorator, it will automatically tune the function or class based on the parameters.
+    When decorating a class, the class must have the structure where the tunable parameters are passed to the constructor,
+    and the @cute.jit __call__ method takes only the dynamic arguments.
+
     When used as a function, it will return a decorator that can be used to decorate a function.
+
     For example:
     .. code-block:: python
 
@@ -563,6 +568,17 @@ class autotune_jit:
         def user_function(param1=1, param2=2, param3=3):
             # contents of the function
             pass
+
+        @autotune_jit(params_dict={'param1': [1, 2, 3], 'param2': [4, 5, 6]}, update_on_change=['param3'])
+        class UserKernel:
+            def __init__(self, param1=1, param2=2, param3=3):
+                # constructor contents
+                pass
+
+            @cute.jit
+            def __call__(self, *args, **kwargs):
+                # contents of the __call__ method
+                pass
 
     The function will be automatically tuned over all combinations of param1 and param2 whenever param3 changes .
     For non-specified parameters, the default value in user_function will be used (e.g., `param3` in `user_function`).
@@ -574,6 +590,10 @@ class autotune_jit:
     - Only supports functions that are decorated with cute.jit
     - If the function which is decorated with cute.jit is call method of a class, and the class has internal state that
       is used as constexpr arguments in the function, the autotuner will not be able to find the best configuration.
+    - The tunable (``params_dict``) and derived (``derived_params``) parameters are supplied by keyword during tuning,
+      so for a decorated function they must all follow the positional runtime arguments in its signature -- otherwise they will
+      collide with the positional parameter.
+      A ``Constexpr`` parameter without a default value must be either swept, derived, or passed at the call site.
 
     Note: The autotuner has the same semantics as cute.compile. If the function is compiled, but global variables are changed,
     the autotuner will not recompile the kernel.
@@ -605,6 +625,22 @@ class autotune_jit:
         assert cls._logger is not None, "logger is not initialized"
         return cls._logger
 
+    @staticmethod
+    def _compute_derived(
+        derived_params: Dict[str, Callable[..., Any]], config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Compute configuration-derived compile-time arguments on the host.
+
+        Each derive function is called with the ``config`` values whose names
+        match its parameters, and its return value becomes the keyword argument
+        of the same name (see ``benchmark_suite``'s ``derived_params``).
+        """
+        derived = {}
+        for name, fn in (derived_params or {}).items():
+            fn_params = inspect.signature(fn).parameters
+            derived[name] = fn(**{k: v for k, v in config.items() if k in fn_params})
+        return derived
+
     @classmethod
     def _create_tuning_wrapper(
         cls,
@@ -615,8 +651,16 @@ class autotune_jit:
     ) -> Callable[..., Any]:
         """Create a wrapper function that performs auto-tuning
 
+        The search space (``func._autotune_params``) and the derived-parameter
+        functions (``func._derived_params``) are read from attributes on ``func``
+        at call time -- they are populated by ``__call__`` after this wrapper is
+        built, so stacked decorators can accumulate into them.
+
         Args:
             func: Original function
+            warmup_iterations: Number of warmup iterations for benchmarking.
+            iterations: Number of benchmark iterations for benchmarking.
+            autotune_update_params: List of parameter names that trigger re-tuning when changed.
 
         Returns:
             Decorated wrapper function
@@ -631,6 +675,8 @@ class autotune_jit:
             func._autotune_update_params = autotune_update_params  # type: ignore[attr-defined]
             func._best_kernel = dict()  # type: ignore[attr-defined]
             func._best_config = dict()  # type: ignore[attr-defined]
+            func._timings = dict()  # type: ignore[attr-defined]
+            func._derived_params = {}  # type: ignore[attr-defined]
 
             # Create wrapper function for auto-tuning
             @functools.wraps(func)
@@ -659,6 +705,7 @@ class autotune_jit:
                 min_time = float("inf")
 
                 best_kernel = None
+                config_timings: List[Dict[str, Any]] = []
                 # Record start time
                 start = time()
 
@@ -669,10 +716,14 @@ class autotune_jit:
                     cls.log().info(f"Tuning configuration: {current_config}")
 
                     try:
+                        # Compute derived parameters using the function user provides
+                        derived = cls._compute_derived(
+                            func._derived_params, current_config  # type: ignore[attr-defined]
+                        )
                         # Call the original function, using current configuration to replace default parameters
                         # For example, if current_config contains "cluster_shape_mn": (2, 1)
                         # It will override func's default parameter value
-                        merged_kwargs = {**kwargs, **current_config}
+                        merged_kwargs = {**kwargs, **current_config, **derived}
                         compiled_func = compile(
                             func._original_func,  # type: ignore[attr-defined]
                             *args,
@@ -685,7 +736,13 @@ class autotune_jit:
                         for arg in compiled_func.execution_args.get_constexpr_args():
                             if arg["argument_name"] in merged_kwargs:
                                 del merged_kwargs[arg["argument_name"]]
-                            elif arg["argument_index"] is not None:
+                            elif (
+                                arg["argument_index"] is not None
+                                and arg["argument_index"] < len(args)
+                            ):
+                                # Only strip arguments that were passed positionally. A constexpr that is not passed positionally
+                                # (and isn't a kwarg, handled above) should use its default value defined in the function signature,
+                                # in which case we shouldn't strip it.
                                 indexes_to_remove.append(arg["argument_index"])
                             if arg["argument_name"] not in func._autotune_update_params:  # type: ignore[attr-defined]
                                 # Handle the case where the programmer avoided autotuning over constexpr values, and
@@ -711,6 +768,10 @@ class autotune_jit:
                         )
 
                         cls.log().info(f"   Execution time: {cur_time} us")
+
+                        config_timings.append(
+                            {"config": dict(current_config), "time_us": cur_time}
+                        )
 
                         # Update best results
                         if cur_time < min_time:
@@ -744,6 +805,7 @@ class autotune_jit:
                 cls.log().info(f"Total tuning time: {tuning_time} s")
                 func._best_kernel[tuning_key] = best_kernel  # type: ignore[attr-defined]
                 func._best_config[tuning_key] = best_config  # type: ignore[attr-defined]
+                func._timings[tuning_key] = config_timings  # type: ignore[attr-defined]
                 return best_kernel(*args, **kwargs)
 
             # Append autotune wrapper to not conflict with the jit kernel names
@@ -754,14 +816,164 @@ class autotune_jit:
 
         return func  # If already has a wrapper, return the original function
 
+    @classmethod
+    def _create_class_tuning_wrapper(
+        cls,
+        kernel_cls: type,
+        warmup_iterations: int,
+        iterations: int,
+        autotune_update_params: list[str],
+    ) -> Callable[..., Any]:
+        """Create an auto-tuning wrapper for a kernel class that performs auto-tuning.
+
+        The search space (``kernel_cls._autotune_params``) and the
+        derived-parameter functions (``kernel_cls._derived_params``) are read
+        from attributes on ``kernel_cls`` at call time -- they are populated by
+        ``__call__`` after this wrapper is built, so stacked decorators can
+        accumulate into them.
+
+        Args:
+            kernel_cls: The kernel class to be wrapped.
+            warmup_iterations: Number of warmup iterations for benchmarking.
+            iterations: Number of benchmark iterations for benchmarking.
+            autotune_update_params: List of parameter names that trigger re-tuning when changed.
+
+        Returns:
+            Decorated wrapper function
+        """
+        from cutlass.cute import compile
+        from cutlass.testing import _benchmark_for_autotune
+
+        if not hasattr(kernel_cls, "_autotune_params"):
+            kernel_cls._original_kernel_cls = kernel_cls  # type: ignore[attr-defined]
+            kernel_cls._autotune_params = {}  # type: ignore[attr-defined]
+            kernel_cls._autotune_update_params = autotune_update_params  # type: ignore[attr-defined]
+            kernel_cls._best_kernel = dict()  # type: ignore[attr-defined]
+            kernel_cls._best_config = dict()  # type: ignore[attr-defined]
+            kernel_cls._timings = dict()  # type: ignore[attr-defined]
+            kernel_cls._derived_params = {}  # type: ignore[attr-defined]
+
+            # Create wrapper function I auto-tuning
+            @functools.wraps(kernel_cls.__call__)
+            def tuning_wrapper(*args: Any, **kwargs: Any) -> Any:
+                # ``update_on_change`` names refer to the dynamic arguments the wrapper is called with, 
+                # which live in ``__call__``'s signature.
+                # The constructor only takes the tunable params as constexpr but not the runtime arguments
+                # that trigger re-tuning.
+                call_parameters = [
+                    name
+                    for name in inspect.signature(kernel_cls.__call__).parameters
+                    if name != "self"
+                ]
+                tuning_key: Any = list()
+                for param_name in kernel_cls._autotune_update_params:  # type: ignore[attr-defined]
+                    if param_name in kwargs.keys():
+                        tuning_key.append(kwargs[param_name])
+                    else:
+                        index = call_parameters.index(param_name)
+                        if index < len(args):
+                            tuning_key.append(args[index])
+                tuning_key = tuple(tuning_key)
+                if tuning_key in kernel_cls._best_kernel:
+                    cls.log().info(
+                        f"Using cached best configuration: {kernel_cls._best_config[tuning_key]}"
+                    )
+                    return kernel_cls._best_kernel[tuning_key](*args, **kwargs)
+
+                # Get all parameter configurations
+                params_dict = kernel_cls._autotune_params  # type: ignore[attr-defined]
+                keys = list(params_dict.keys())
+                values = list(params_dict.values())
+
+                min_time = float("inf")
+
+                best_kernel = None
+                best_config = None
+                config_timings: List[Dict[str, Any]] = []
+                # Record start time
+                start = time()
+
+                # Iterate through all possible configuration combinations
+                for config_values in product(*values):
+                    # Build current configuration
+                    current_config = dict(zip(keys, config_values))
+                    cls.log().info(f"Tuning configuration: {current_config}")
+
+                    try:
+                        # Create an instance of the kernel class with the current configuration,
+                        # using current configuration to replace default parameters
+                        kernel = kernel_cls(**current_config)
+                        # Compute derived parameters using the function user provides
+                        derived = cls._compute_derived(
+                            kernel_cls._derived_params, current_config  # type: ignore[attr-defined]
+                        )
+                        # Call the kernel object; configuration-derived compile
+                        # arguments are computed on the host and passed by keyword.
+                        compiled_func = compile(kernel, *args, **kwargs, **derived)
+                        cur_time = _benchmark_for_autotune(
+                            compiled_func,
+                            *args,
+                            warmup_iterations=warmup_iterations,
+                            iterations=iterations,
+                            use_cold_l2=True,
+                            print_verbose=False,
+                            **kwargs,
+                        )
+                    except NotImplementedError as e:
+                        raise e
+                    except Exception as e:
+                        cls.log().info(f"   Configuration skipped: {e}")
+                        continue
+
+                    cls.log().info(f"   Execution time: {cur_time} us")
+                    config_timings.append(
+                        {"config": dict(current_config), "time_us": cur_time}
+                    )
+                    if cur_time < min_time:
+                        min_time = cur_time
+                        best_kernel = compiled_func
+                        best_config = current_config
+
+                if best_kernel is None:
+                    raise ValueError("No best kernel found")
+
+                cls.log().info(
+                    f"Best configuration: {best_config}, execution time: {min_time} us"
+                )
+                cls.log().info(f"Total tuning time: {time() - start} s")
+                kernel_cls._best_kernel[tuning_key] = best_kernel
+                kernel_cls._best_config[tuning_key] = best_config
+                kernel_cls._timings[tuning_key] = config_timings
+                return best_kernel(*args, **kwargs)
+            
+            # Append autotune wrapper to not conflict with the jit kernel names
+            tuning_wrapper.__name__ = kernel_cls.__name__ + "_autotune_wrapper"
+            tuning_wrapper.__qualname__ = kernel_cls.__qualname__ + "_autotune_wrapper"
+
+            # Expose the tuning state on the wrapper too
+            tuning_wrapper._autotune_params = kernel_cls._autotune_params  # type: ignore[attr-defined]
+            tuning_wrapper._autotune_update_params = kernel_cls._autotune_update_params  # type: ignore[attr-defined]
+            tuning_wrapper._best_kernel = kernel_cls._best_kernel  # type: ignore[attr-defined]
+            tuning_wrapper._best_config = kernel_cls._best_config  # type: ignore[attr-defined]
+            tuning_wrapper._timings = kernel_cls._timings  # type: ignore[attr-defined]
+            tuning_wrapper._derived_params = kernel_cls._derived_params  # type: ignore[attr-defined]
+
+            return tuning_wrapper
+
+        return kernel_cls  # If already has a wrapper, return the original class
+
     def __init__(
         self,
         params_dict: Optional[Dict[str, List[Any]]] = None,
         update_on_change: Optional[List[str]] = None,
         warmup_iterations: int = 10,
         iterations: int = 100,
+        derived_params: Optional[Dict[str, Callable[..., Any]]] = None,
     ) -> None:
         """Initialize the autotune_jit decorator.
+
+        Note: The parameters in ``params_dict`` and ``derived_params`` must all follow the dynamic arguments (positional) in
+        the function signature of the decorated function or class.
 
         :param params_dict: Dictionary containing parameter names and their possible values
         :type params_dict: Dict[str, List[Any]], optional
@@ -771,6 +983,8 @@ class autotune_jit:
         :type warmup_iterations: int, optional
         :param iterations: Number of benchmark iterations, defaults to 100
         :type iterations: int, optional
+        :param derived_params: a dict to derive the values of parameters from other parameters passed in params_dict.
+        :type derived_params: Dict[str, Callable], optional
         """
         # Initialize logger
         self._initialize_logger()
@@ -778,6 +992,7 @@ class autotune_jit:
         # Save parameter dictionary
         self.params_dict = params_dict or {}
         self.update_on_change = update_on_change or list()
+        self.derived_params = derived_params or {}
 
         # Save iterations
         self.warmup_iterations = warmup_iterations
@@ -786,15 +1001,24 @@ class autotune_jit:
     def __call__(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Called when class instance is used as a decorator.
 
-        :param func: Function to be decorated
+        :param func: Function (``@cute.jit``) or kernel class to be decorated.
+            A class should take the tunable parameters in its constructor and
+            define a ``@cute.jit`` ``__call__`` with only dynamic arguments.
         :type func: Callable
         :return: Decorated function
         :rtype: Callable
         """
-        # Create wrapper function
-        decorated_func = self._create_tuning_wrapper(
-            func, self.warmup_iterations, self.iterations, self.update_on_change
-        )
+        # Create wrapper function; an already-wrapped func (carrying
+        # _autotune_params) is returned unchanged by either path so stacked
+        # decorators merge their params instead of nesting tuners.
+        if inspect.isclass(func):
+            decorated_func = self._create_class_tuning_wrapper(
+                func, self.warmup_iterations, self.iterations, self.update_on_change
+            )
+        else:
+            decorated_func = self._create_tuning_wrapper(
+                func, self.warmup_iterations, self.iterations, self.update_on_change
+            )
 
         # Use the wrapper if it exists, otherwise use the original function
         result_func = (
@@ -805,7 +1029,210 @@ class autotune_jit:
         for param_name, param_values in self.params_dict.items():
             result_func._autotune_params[param_name] = param_values
 
+        # Merge derived-parameter functions the same way (stacked decorators
+        # accumulate them into the shared dict the sweep reads).
+        for name, fn in self.derived_params.items():
+            result_func._derived_params[name] = fn
+
         return result_func
+
+def benchmark_suite(
+    func_or_cls: Callable[..., Any],
+    make_arguments: Callable[..., tuple],
+    cases: List[Any],
+    params_dict: Dict[str, List[Any]],
+    derived_params: Optional[Dict[str, Callable[..., Any]]] = None,
+    accept_percentile: Optional[float] = None,
+    print_summary: bool = False,
+    warmup_iterations: int = 10,
+    iterations: int = 100,
+    workspace_count: int = 10,
+    stream: Optional[Any] = None,
+) -> Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
+    """Benchmark every configuration of a kernel over a series of input cases and 
+    report the per-configuration timings for each case along with best configuration recommendations.
+
+    Example:
+
+    .. code-block:: python
+
+        @cute.jit
+        def my_kernel(a, b, c, M, N, copy_bits: cutlass.Constexpr = 128):
+            ...
+
+        reports, recommended = benchmark_suite(
+            my_kernel,
+            lambda M, N: make_tensors(M, N) + (M, N),
+            cases=[(4096, 4096), (8192, 2048)],
+            params_dict={"copy_bits": [64, 128]},
+            accept_percentile=50,  # keep each case's fastest half of the configs
+        )
+        best = recommended[0]["config"]  # accepted in the most cases
+        aot = cute.compile(my_kernel, *args, **best)
+
+    :param func_or_cls: A ``cute.jit`` function whose tunable (``params_dict``)
+        and derived (``derived_params``) parameters must all follow the dynamic
+        ones in its signature. Those are supplied by keyword at compile time,
+        so any that appears before a dynamic (positional) argument collides
+        with the positional fill; keep every dynamic argument first, then the
+        tunable and derived parameters. A ``Constexpr`` parameter without a
+        default must be supplied through ``params_dict``, ``derived_params`` or
+        ``make_arguments``; one with a default falls back to it. Alternatively a
+        kernel class whose constructor
+        takes the tunable parameters and whose ``@cute.jit`` ``__call__`` takes
+        the dynamic arguments (followed by any derived ones); each configuration
+        is instantiated as ``func_or_cls(**config)``.
+    :type func_or_cls: Callable
+    :param make_arguments: Builds the non-tunable (dynamic) positional arguments for one case. 
+        It must match the signature of ``func_or_cls`` in the same order except for the tunable parameters 
+        (which are indicated by ``params_dict``) since they are omitted when the function is called at runtime.
+    :type make_arguments: Callable
+    :param cases: Input cases to sweep. Its items are passed to ``make_arguments`` to generate the inputs for each case.
+    :type cases: List
+    :param params_dict: Parameter names and candidate values to sweep
+    :type params_dict: Dict[str, List[Any]]
+    :param derived_params: Optional map from a keyword-argument name to a
+        function that computes it from the current configuration. For each
+        config, the function is called on the host with the ``params_dict``
+        values whose names match its parameters, and its return value is passed
+        as that keyword argument at compile time (alongside ``config``). Use
+        this for configuration-derived compile-time arguments that cannot be
+        produced by ``make_arguments`` (which is config-blind) nor computed
+        inside a ``@cute.jit`` function -- e.g. a Blackwell persistent GEMM's
+        ``max_active_clusters``, which depends on the swept ``cluster_shape_mn``
+        and must be obtained from ``HardwareInfo`` on the host. Like the tunable
+        parameters, each derived parameter is passed by keyword, so it must come
+        after every dynamic argument in the signature; if the kernel expects it
+        interleaved with dynamic arguments (as the persistent GEMM's
+        ``max_active_clusters`` sits before ``stream`` in ``__call__``), wrap the
+        kernel in a thin ``@cute.jit`` adapter that takes the derived parameter
+        last and positions it correctly for the real call, defaults to None
+    :type derived_params: Dict[str, Callable], optional
+    :param accept_percentile: If set (0 < p <= 100), each case's ``timings`` keeps
+        only its fastest ``p`` percent of configurations (at least one); slower
+        configurations are discarded from the report. ``None`` keeps every
+        configuration, defaults to None
+    :type accept_percentile: float, optional
+    :param print_summary: Print the per-case timing tables and, when
+        ``accept_percentile`` is set, the recommended configs, defaults to True
+    :type print_summary: bool, optional
+    :param warmup_iterations: Warmup iterations per benchmark, defaults to 10
+    :type warmup_iterations: int, optional
+    :param iterations: Benchmark iterations per configuration, defaults to 100
+    :type iterations: int, optional
+    :param workspace_count: Number of workspaces cycled through while
+        benchmarking to keep the L2 cache cold, defaults to 10
+    :type workspace_count: int, optional
+    :param stream: CUDA stream the kernel launches in; must be the same stream
+        ``make_arguments`` puts in its argument tuple. Defaults to the default
+        CUDA stream
+    :type stream: CUstream, optional
+    :return: ``(case_reports, recommended)``. ``case_reports`` holds one report
+        per case, in ``cases`` order: a dict with ``case``, ``best_config`` and
+        ``timings`` (sorted fastest first, truncated by ``accept_percentile``).
+        ``recommended`` holds up to 5 configurations ranked by how many cases
+        accepted them within ``accept_percentile``, each as
+        ``{"config": dict, "count": int}``; it is None when
+        ``accept_percentile`` is None
+    :rtype: Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]
+    """
+    from cutlass import cute
+    from cutlass import testing
+
+    if accept_percentile is not None and not 0 < accept_percentile <= 100:
+        raise ValueError(
+            f"accept_percentile must be in (0, 100] or None to accept all configs, got {accept_percentile}"
+        )
+
+    keys = list(params_dict.keys())
+    case_reports = []
+    for case in cases:
+
+        def case_arguments(case=case):
+            return (
+                make_arguments(*case)
+                if isinstance(case, tuple)
+                else make_arguments(case)
+            )
+
+        timings = []
+        for config_values in product(*params_dict.values()):
+            config = dict(zip(keys, config_values))
+            try:
+                args = case_arguments()
+                # Compute configuration-derived compile-time arguments on the
+                # host (e.g. max_active_clusters from cluster_shape_mn), passing
+                # each derive function the config values whose names it declares.
+                derived = {}
+                for name, fn in (derived_params or {}).items():
+                    fn_params = inspect.signature(fn).parameters
+                    derived[name] = fn(
+                        **{k: v for k, v in config.items() if k in fn_params}
+                    )
+                if inspect.isclass(func_or_cls):
+                    # class-style kernel: constexpr config goes to the constructor and the @cute.jit __call__ takes
+                    # only the dynamic arguments.
+                    compiled = cute.compile(func_or_cls(**config), *args, **derived)
+                else:
+                    compiled = cute.compile(func_or_cls, *args, **config, **derived)
+                compiled(*args)
+
+                time_us = testing.benchmark(
+                    compiled,
+                    workspace_generator=lambda: testing.JitArguments(
+                        *case_arguments()
+                    ),
+                    workspace_count=workspace_count,
+                    warmup_iterations=warmup_iterations,
+                    iterations=iterations,
+                    stream=stream,
+                )
+            except NotImplementedError:
+                raise
+            except Exception as e:
+                if print_summary:
+                    print(f"case {case}: skipping config {config}: {e}")
+                continue
+            timings.append({"config": config, "time_us": time_us})
+
+        timings.sort(key=lambda entry: entry["time_us"])
+        if accept_percentile is not None:
+            keep = max(1, math.ceil(len(timings) * accept_percentile / 100))
+            timings = timings[:keep]
+        case_reports.append(
+            {
+                "case": case,
+                "best_config": timings[0]["config"] if timings else None,
+                "timings": timings,
+            }
+        )
+
+    recommended = None
+    if accept_percentile is not None:
+        counts: Dict[tuple, int] = {}
+        for report in case_reports:
+            for entry in report["timings"]:
+                config = tuple(sorted(entry["config"].items()))
+                counts[config] = counts.get(config, 0) + 1
+        recommended = [
+            {"config": dict(config), "count": count}
+            for config, count in sorted(counts.items(), key=lambda kv: -kv[1])[:5]
+        ]
+
+    if print_summary:
+        for report in case_reports:
+            print(f"case {report['case']}: best config {report['best_config']}")
+            for entry in report["timings"]:
+                print(f"    {entry['config']}: {entry['time_us']:.2f} us")
+        if recommended is not None:
+            print("recommended configs:")
+            for entry in recommended:
+                print(
+                    f"    {entry['config']}: accepted in "
+                    f"{entry['count']}/{len(case_reports)} cases"
+                )
+
+    return case_reports, recommended
 
 
 ################################################
