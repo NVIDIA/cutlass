@@ -1,4 +1,4 @@
-# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2026 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,8 @@
 import os
 import argparse
 import csv
+import glob
+import json
 import socket
 import time
 from pathlib import Path
@@ -50,41 +52,52 @@ from cutlass.torch import dtype as torch_dtype
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-from cutlass.cutlass_dsl import BaseDSL
+from cutlass.cutlass_dsl import BaseDSL, Boolean
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
-from cutlass.cute.typing import Pointer, Int32, Float32
-from cutlass.cutlass_dsl import T, dsl_user_op
-from cutlass._mlir import ir
-from cutlass._mlir.dialects import llvm
+from cutlass.utils.static_persistent_tile_scheduler import WorkTileInfo
 
 """
-SM100 GEMM + AllReduce (LDxSTMC) Fusion Kernel
+SM100 SYRK + AllReduce (LDMCxSTMC) Fusion Kernel — CLC dynamic persistent scheduler variant.
+
+SYRK computes C = A x A^T, producing a symmetric result matrix. Only the
+upper-triangular part of C (row <= col, including the diagonal) is computed
+and written; the lower-left triangle is never touched by the kernel and is
+excluded from correctness checking.
+
+Because CLC dispatches whole cluster tiles (not individual CTAs), the SYRK
+skip decision is made once per cluster tile, not per CTA: a cluster tile is
+skipped only when every CTA tile it contains lies strictly below the
+diagonal (entirely inside the untouched lower-left triangle). If any CTA
+tile in the cluster is on or above the diagonal, the whole cluster still
+runs its mainloop — a few of its CTAs may then compute output that falls
+below the diagonal, but that spillover is simply never read back since only
+the upper triangle is consumed/verified downstream.
 
 * Test (correctness only — single launch, no warmup/iteration loop)
-python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_ldxstmc_blackwell.py  \
+python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_syrk_persistent_dynamic_all_reduce.py  \
     --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
     --a_major k --b_major k --c_major n                                                             \
     --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                   \
     --mnkl 8192,8192,8192,1                                                                         \
-    --use_tma_store --use_2cta_instrs --all_reduce LDxSTMC                                          \
+    --use_tma_store --use_2cta_instrs --all_reduce LDMCxSTMC                                        \
     --benchmark_or_test test
 
 * Benchmark One
-python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_ldxstmc_blackwell.py  \
+python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_syrk_persistent_dynamic_all_reduce.py  \
     --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
     --a_major k --b_major k --c_major n                                                             \
     --mma_tiler_mn 256,256 --cluster_shape_mn 2,1                                                   \
     --mnkl 8192,8192,8192,1 --warmup_iterations 10 --iterations 20                                  \
-    --use_tma_store --use_2cta_instrs --all_reduce LDxSTMC                                          \
+    --use_tma_store --use_2cta_instrs --all_reduce LDMCxSTMC                                        \
     --benchmark_or_test benchmark --use_cuda_graph --csv_report ./csv_report.csv
 
 * Benchmark All
-python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_ldxstmc_blackwell.py  \
+python3 -m torch.distributed.run --nproc-per-node=auto examples/python/CuTeDSL/cute/blackwell/kernel/distributed/distributed_syrk_persistent_dynamic_all_reduce.py  \
     --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                                        \
     --a_major k --b_major k --c_major n                                                             \
     --mnkl 8192,8192,8192,1 --warmup_iterations 10 --iterations 20                                  \
-    --use_tma_store --all_reduce LDxSTMC                                                            \
+    --use_tma_store --all_reduce LDMCxSTMC                                                          \
     --benchmark_or_test benchmark_all --use_cuda_graph --csv_report ./csv_report.csv
 
 NOTE:
@@ -98,10 +111,8 @@ for each output tile
 
 -> Consumer
 for each output tile
-    * spin lock wait [flag] (UC) with .relaxed / .acquire and .gpu scope (all rank have write their data to local rank gmem) on local unicast flag ptr
-    * for each peer r in [0, P):
-        - load [data] with .weak semantic from all peer rank's global memory
-        - convert to f32, reduce, convert back to original dtype
+    * spin lock wait [flag] (UC) with .relaxed / .acquire and .gpu scope (all rank have write their data to local rank gmem)
+    * multimem.ld_reduce send [data] (MC) reduce request to switch, switch send request to all rank's gmem, reduce on switch, return to requester rank
     * multimem.st broadcast reduced [data] (MC) to all rank as each output tile is handled collectively by P rank
 before kernel exit
     * [flag] (MC) update with .release semantics and .sys scope (prior store broadcast data to all rank in sys)
@@ -113,374 +124,52 @@ before kernel exit
 #####################################################################
 
 
-@dsl_user_op
-def ld_weak_global_4xu32(
-    ptr: Pointer,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Int32, Int32, Int32, Int32]:
-    ptr_int = ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
-    return_struct = llvm.inline_asm(
-        ir.Type.parse("!llvm.struct<(i32,i32,i32,i32)>"),
-        [ptr_int],
-        "ld.weak.global.v4.u32 {$0, $1, $2, $3}, [$4];",
-        "=r,=r,=r,=r,l",
-        has_side_effects=True,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-    return_regs = [llvm.extractvalue(T.i32(), return_struct, [i]) for i in range(4)]
-    return return_regs[0], return_regs[1], return_regs[2], return_regs[3]
+@cute.jit
+def is_valid_syrk_tile(
+    work_tile: WorkTileInfo, cta_tile_shape_mnk: Tuple[int, int, int], loc=None, ip=None
+) -> Boolean:
+    cta_id_in_cluster_3d = cute.arch.block_in_cluster_idx()
+    cluster_shape_3d = cute.arch.block_in_cluster_dim()
 
+    # * Criteria
+    # Skip all cta in cluster if all cta tile below diagonal
+    # Execute all cta in cluster if any cta tile is partially above diagonal
+    # * Assumption
+    # No split-k is used
+    # * Tile coordinate grid (m, n):
+    # | (0,0)   | (0,1)   | (0,2)   | ... | (0,n-1)   |
+    # | (1,0)   | (1,1)   | (1,2)   | ... | (1,n-1)   |
+    # | (2,0)   | (2,1)   | (2,2)   | ... | (2,n-1)   |
+    # | ....    | ....    | ....    | ... | ....      |
+    # | (m-1,0) | (m-1,1) | (m-1,2) | ... | (m-1,n-1) |
+    # * Cluster span cta tile
+    # M : [cluster_base_cta_tile_m, cluster_base_cta_tile_m + cluster_shape_3d[0] - 1]
+    # N : [cluster_base_cta_tile_n, cluster_base_cta_tile_n + cluster_shape_3d[1] - 1]
 
-@dsl_user_op
-def st_weak_global_4xu32(
-    ptr: Pointer,
-    x: Int32,
-    y: Int32,
-    z: Int32,
-    w: Int32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> None:
-    ptr_int = ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
-    llvm.inline_asm(
-        None,
-        [ptr_int, x, y, z, w],
-        "st.weak.global.v4.u32 [$0], {$1, $2, $3, $4};",
-        "l,r,r,r,r",
-        has_side_effects=True,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
+    # Cluster_Cta(0,0) output tile coordinate
+    cluster_base_cta_tile_m = work_tile.tile_idx[0] - cta_id_in_cluster_3d[0]
+    cluster_base_cta_tile_n = work_tile.tile_idx[1] - cta_id_in_cluster_3d[1]
+
+    # Check if upper right corner of upper right cta tile in cluster is below diagonal
+    cluster_upper_right_cta_m_loc = cluster_base_cta_tile_m * cta_tile_shape_mnk[0]
+    cluster_upper_right_cta_n_loc = (
+        cluster_base_cta_tile_n + cluster_shape_3d[1]
+    ) * cta_tile_shape_mnk[1] - 1
+
+    is_any_cta_in_cluster_partially_above_diagonal = (
+        cluster_upper_right_cta_m_loc <= cluster_upper_right_cta_n_loc
     )
 
-
-@dsl_user_op
-def cvt_bf16x2_to_2xf32(
-    bf16x2_b32: Int32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, Float32]:
-    ret = llvm.inline_asm(
-        ir.Type.parse("!llvm.struct<(f32, f32)>"),
-        [bf16x2_b32],
-        "{ .reg .b16 hl, hh;\n"
-        "  mov.b32 {hl, hh}, $2;\n"
-        "  cvt.f32.bf16 $0, hl;\n"
-        "  cvt.f32.bf16 $1, hh; }",
-        "=f,=f,r",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-    f_lo = Float32(llvm.extractvalue(T.f32(), ret, [0]))
-    f_hi = Float32(llvm.extractvalue(T.f32(), ret, [1]))
-    return f_lo, f_hi
-
-
-@dsl_user_op
-def cvt_f16x2_to_2xf32(
-    f16x2_b32: Int32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, Float32]:
-    ret = llvm.inline_asm(
-        ir.Type.parse("!llvm.struct<(f32, f32)>"),
-        [f16x2_b32],
-        "{ .reg .b16 hl, hh;\n"
-        "  mov.b32 {hl, hh}, $2;\n"
-        "  cvt.f32.f16 $0, hl;\n"
-        "  cvt.f32.f16 $1, hh; }",
-        "=f,=f,r",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-    f_lo = Float32(llvm.extractvalue(T.f32(), ret, [0]))
-    f_hi = Float32(llvm.extractvalue(T.f32(), ret, [1]))
-    return f_lo, f_hi
-
-
-@dsl_user_op
-def cvt_2xf32_to_bf16x2(
-    f_lo: Float32,
-    f_hi: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Int32:
-    return llvm.inline_asm(
-        T.i32(),
-        [
-            Float32(f_lo).ir_value(loc=loc, ip=ip),
-            Float32(f_hi).ir_value(loc=loc, ip=ip),
-        ],
-        "cvt.rn.bf16x2.f32 $0, $2, $1;",
-        "=r,f,f",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-
-
-@dsl_user_op
-def cvt_2xf32_to_f16x2(
-    f_lo: Float32,
-    f_hi: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Int32:
-    return llvm.inline_asm(
-        T.i32(),
-        [
-            Float32(f_lo).ir_value(loc=loc, ip=ip),
-            Float32(f_hi).ir_value(loc=loc, ip=ip),
-        ],
-        "cvt.rn.f16x2.f32 $0, $2, $1;",
-        "=r,f,f",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-
-
-@dsl_user_op
-def add_rn_f32(
-    a: Float32,
-    b: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Float32:
-    return Float32(
-        llvm.inline_asm(
-            T.f32(),
-            [Float32(a).ir_value(loc=loc, ip=ip), Float32(b).ir_value(loc=loc, ip=ip)],
-            "add.rn.f32 $0, $1, $2;",
-            "=f,f,f",
-            has_side_effects=False,
-            asm_dialect=0,
-            loc=loc,
-            ip=ip,
-        )
-    )
-
-
-@dsl_user_op
-def add_rn_f32x2_pair(
-    a_lo: Float32,
-    a_hi: Float32,
-    b_lo: Float32,
-    b_hi: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, Float32]:
-    ret = llvm.inline_asm(
-        ir.Type.parse("!llvm.struct<(f32, f32)>"),
-        [
-            Float32(a_lo).ir_value(loc=loc, ip=ip),
-            Float32(a_hi).ir_value(loc=loc, ip=ip),
-            Float32(b_lo).ir_value(loc=loc, ip=ip),
-            Float32(b_hi).ir_value(loc=loc, ip=ip),
-        ],
-        "{ .reg .b64 ab, bb, db;\n"
-        "  mov.b64 ab, {$2, $3};\n"
-        "  mov.b64 bb, {$4, $5};\n"
-        "  add.rn.f32x2 db, ab, bb;\n"
-        "  mov.b64 {$0, $1}, db; }",
-        "=f,=f,f,f,f,f",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-    sum_lo = Float32(llvm.extractvalue(T.f32(), ret, [0]))
-    sum_hi = Float32(llvm.extractvalue(T.f32(), ret, [1]))
-    return sum_lo, sum_hi
-
-
-@dsl_user_op
-def cvt_e4m3x4_to_4xf32(
-    e4m3x4_b32: Int32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, Float32, Float32, Float32]:
-    ret = llvm.inline_asm(
-        ir.Type.parse("!llvm.struct<(f32, f32, f32, f32)>"),
-        [e4m3x4_b32],
-        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
-        "  .reg .b32 f16x2_lo, f16x2_hi;\n"
-        "  .reg .b16 h0, h1, h2, h3;\n"
-        "  mov.b32 {e8x2_lo, e8x2_hi}, $4;\n"
-        "  cvt.rn.f16x2.e4m3x2 f16x2_lo, e8x2_lo;\n"
-        "  cvt.rn.f16x2.e4m3x2 f16x2_hi, e8x2_hi;\n"
-        "  mov.b32 {h0, h1}, f16x2_lo;\n"
-        "  mov.b32 {h2, h3}, f16x2_hi;\n"
-        "  cvt.f32.f16 $0, h0;\n"
-        "  cvt.f32.f16 $1, h1;\n"
-        "  cvt.f32.f16 $2, h2;\n"
-        "  cvt.f32.f16 $3, h3; }",
-        "=f,=f,=f,=f,r",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-    return tuple(Float32(llvm.extractvalue(T.f32(), ret, [i])) for i in range(4))
-
-
-@dsl_user_op
-def cvt_e5m2x4_to_4xf32(
-    e5m2x4_b32: Int32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, Float32, Float32, Float32]:
-    ret = llvm.inline_asm(
-        ir.Type.parse("!llvm.struct<(f32, f32, f32, f32)>"),
-        [e5m2x4_b32],
-        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
-        "  .reg .b32 f16x2_lo, f16x2_hi;\n"
-        "  .reg .b16 h0, h1, h2, h3;\n"
-        "  mov.b32 {e8x2_lo, e8x2_hi}, $4;\n"
-        "  cvt.rn.f16x2.e5m2x2 f16x2_lo, e8x2_lo;\n"
-        "  cvt.rn.f16x2.e5m2x2 f16x2_hi, e8x2_hi;\n"
-        "  mov.b32 {h0, h1}, f16x2_lo;\n"
-        "  mov.b32 {h2, h3}, f16x2_hi;\n"
-        "  cvt.f32.f16 $0, h0;\n"
-        "  cvt.f32.f16 $1, h1;\n"
-        "  cvt.f32.f16 $2, h2;\n"
-        "  cvt.f32.f16 $3, h3; }",
-        "=f,=f,=f,=f,r",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-    return tuple(Float32(llvm.extractvalue(T.f32(), ret, [i])) for i in range(4))
-
-
-@dsl_user_op
-def cvt_4xf32_to_e4m3x4(
-    f0: Float32,
-    f1: Float32,
-    f2: Float32,
-    f3: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Int32:
-    return llvm.inline_asm(
-        T.i32(),
-        [
-            Float32(f0).ir_value(loc=loc, ip=ip),
-            Float32(f1).ir_value(loc=loc, ip=ip),
-            Float32(f2).ir_value(loc=loc, ip=ip),
-            Float32(f3).ir_value(loc=loc, ip=ip),
-        ],
-        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
-        "  cvt.rn.satfinite.e4m3x2.f32 e8x2_lo, $2, $1;\n"
-        "  cvt.rn.satfinite.e4m3x2.f32 e8x2_hi, $4, $3;\n"
-        "  mov.b32 $0, {e8x2_lo, e8x2_hi}; }",
-        "=r,f,f,f,f",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-
-
-@dsl_user_op
-def cvt_4xf32_to_e5m2x4(
-    f0: Float32,
-    f1: Float32,
-    f2: Float32,
-    f3: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Int32:
-    return llvm.inline_asm(
-        T.i32(),
-        [
-            Float32(f0).ir_value(loc=loc, ip=ip),
-            Float32(f1).ir_value(loc=loc, ip=ip),
-            Float32(f2).ir_value(loc=loc, ip=ip),
-            Float32(f3).ir_value(loc=loc, ip=ip),
-        ],
-        "{ .reg .b16 e8x2_lo, e8x2_hi;\n"
-        "  cvt.rn.satfinite.e5m2x2.f32 e8x2_lo, $2, $1;\n"
-        "  cvt.rn.satfinite.e5m2x2.f32 e8x2_hi, $4, $3;\n"
-        "  mov.b32 $0, {e8x2_lo, e8x2_hi}; }",
-        "=r,f,f,f,f",
-        has_side_effects=False,
-        asm_dialect=0,
-        loc=loc,
-        ip=ip,
-    )
-
-
-@dsl_user_op
-def cvt_b32_to_1xf32(
-    b32_in: Int32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32]:
-    return (Float32(llvm.bitcast(T.f32(), b32_in, loc=loc, ip=ip)),)
-
-
-@dsl_user_op
-def cvt_1xf32_to_b32(
-    f: Float32,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Int32:
-    return llvm.bitcast(T.i32(), Float32(f).ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
-
-
-@dsl_user_op
-def elem_wise_add_f32(
-    a: Tuple[Float32, ...],
-    b: Tuple[Float32, ...],
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, ...]:
-    assert len(a) == len(b), f"Mismatched tuple sizes: {len(a)} vs {len(b)}"
-    n = len(a)
-    if n == 1:
-        return (add_rn_f32(a[0], b[0], loc=loc, ip=ip),)
-    assert n % 2 == 0, f"elem_wise_add_f32: tuple length {n} must be 1 or even"
-    # Pair consecutive f32 values into FADD2 invocations.
-    out: Tuple[Float32, ...] = ()
-    for i in range(0, n, 2):
-        s_lo, s_hi = add_rn_f32x2_pair(a[i], a[i + 1], b[i], b[i + 1], loc=loc, ip=ip)
-        out = out + (s_lo, s_hi)
-    return out
+    return Boolean(is_any_cta_in_cluster_partially_above_diagonal)
 
 
 @cute.jit
-def LDxSTMC(
+def LDMCxSTMC(
     kernel,
     cur_tile_coord,
     tiled_mma: cute.TiledMma,
     comm_tidx: cutlass.Int32,
-    tCgCommInUC_per_peer: Tuple[cute.Tensor, ...],
+    tCgCommInMC: cute.Tensor,
     tCgCommOutMC: cute.Tensor,
 ) -> None:
     mma_tile_coord_mnl = (
@@ -489,52 +178,90 @@ def LDxSTMC(
         cur_tile_coord[2],
     )
 
-    # Per-peer views share layout with the local UC; only the base pointer differs.
-    tCgCommInUC_slice_per_peer = tuple(
-        t[((None, None), 0, 0, *mma_tile_coord_mnl)] for t in tCgCommInUC_per_peer
-    )
+    # partition and slice at tile level
+    tCgCommInMC_slice = tCgCommInMC[((None, None), 0, 0, *mma_tile_coord_mnl)]
     tCgCommOutMC_slice = tCgCommOutMC[((None, None), 0, 0, *mma_tile_coord_mnl)]
 
+    #
+    # Partition s.t. each rank handle 1/P of this tile
+    # For row-major (N-contiguous): split along M to keep memory contiguous per rank
+    # For col-major (M-contiguous): split along N to keep memory contiguous per rank
+    #
     cta_mma_tile_m = kernel.mma_tiler[0] // cute.size(tiled_mma.thr_id.shape)
     cta_tile_n = kernel.mma_tiler[1]
     total_comm_threads = len(kernel.comm_warp_id) * cute.arch.WARP_SIZE
 
-    # Split this rank's 1/P chunk along the contiguous axis so each rank's
-    # slice stays contiguous: split M for row-major C, split N for col-major C.
     if cutlass.const_expr(kernel.c_layout.is_n_major_c()):
-        local_tile_m = int(cta_mma_tile_m / kernel.num_ranks)
-        local_tile_n = cta_tile_n
-        rank_slice_coord = (kernel.rank_id, 0)
-    else:
-        local_tile_m = cta_mma_tile_m
-        local_tile_n = int(cta_tile_n / kernel.num_ranks)
-        rank_slice_coord = (0, kernel.rank_id)
-    div_shape = (local_tile_m, local_tile_n)
-
-    def _partition_to_local_rank(t):
-        return cute.slice_(
-            cute.zipped_divide(t, div_shape), ((None, None), rank_slice_coord)
+        # Row-major (N-contiguous): split along M
+        m_local_rank = int(cta_mma_tile_m / kernel.num_ranks)
+        tCgCommInMC_slice_partitioned = cute.zipped_divide(
+            tCgCommInMC_slice, (m_local_rank, cta_tile_n)
         )
+        tCgCommOutMC_slice_partitioned = cute.zipped_divide(
+            tCgCommOutMC_slice, (m_local_rank, cta_tile_n)
+        )
+        # Data processed by local rank: select M chunk
+        tCgCommInMC_local_rank = cute.slice_(
+            tCgCommInMC_slice_partitioned, ((None, None), (kernel.rank_id, 0))
+        )
+        tCgCommOutMC_local_rank = cute.slice_(
+            tCgCommOutMC_slice_partitioned, ((None, None), (kernel.rank_id, 0))
+        )
+        local_tile_m = m_local_rank
+        local_tile_n = cta_tile_n
+    else:
+        # Col-major (M-contiguous): split along N
+        n_local_rank = int(cta_tile_n / kernel.num_ranks)
+        tCgCommInMC_slice_partitioned = cute.zipped_divide(
+            tCgCommInMC_slice, (cta_mma_tile_m, n_local_rank)
+        )
+        tCgCommOutMC_slice_partitioned = cute.zipped_divide(
+            tCgCommOutMC_slice, (cta_mma_tile_m, n_local_rank)
+        )
+        # Data processed by local rank: select N chunk
+        tCgCommInMC_local_rank = cute.slice_(
+            tCgCommInMC_slice_partitioned, ((None, None), (0, kernel.rank_id))
+        )
+        tCgCommOutMC_local_rank = cute.slice_(
+            tCgCommOutMC_slice_partitioned, ((None, None), (0, kernel.rank_id))
+        )
+        local_tile_m = cta_mma_tile_m
+        local_tile_n = n_local_rank
 
-    tCgCommInUC_local_rank_per_peer = tuple(
-        _partition_to_local_rank(s) for s in tCgCommInUC_slice_per_peer
-    )
-    tCgCommOutMC_local_rank = _partition_to_local_rank(tCgCommOutMC_slice)
-
-    # _pick_num_comm_warp_for_128b sizes the comm warp group so each thread
-    # owns exactly one 128-bit atom per iteration. The assert guards that
-    # invariant; violation means the picker is wrong, not the input.
+    #
+    # Determine vectorization length based on data size per thread
+    # Always use 128-bit instructions (guaranteed by _pick_num_comm_warp_for_128b)
+    #
     elements_per_thread = (local_tile_m * local_tile_n) // total_comm_threads
+
+    # Always use 128-bit atom size
+    # Guaranteed by _pick_num_comm_warp_for_128b which selects T to ensure
+    # elements_per_thread is divisible by 128-bit atom (16B = 128 bits)
     atom_num_elements_128 = 128 // kernel.c_dtype.width
     atom_num_elements = atom_num_elements_128
-    assert cutlass.const_expr(elements_per_thread % atom_num_elements_128 == 0), (
-        f"[LDxSTMC] 128-bit invariant violated: elements_per_thread="
-        f"{elements_per_thread} not divisible by atom={atom_num_elements_128}"
+
+    # COMPILE-TIME ASSERTION: Verify 128-bit PTX instruction usage
+    # _pick_num_comm_warp_for_128b selects num_warps such that every thread
+    # in the AllReduce warp group handles exactly atom_num_elements_128 elements,
+    # which means exactly one 128-bit LDMC/STMC instruction per AR slab iteration.
+    assert elements_per_thread % atom_num_elements_128 == 0, (
+        f"KERNEL ASSERTION: 128-bit PTX instruction invariant violated. "
+        f"elements_per_thread={elements_per_thread} must be divisible by "
+        f"atom_num_elements_128={atom_num_elements_128}. "
+        f"This ensures every thread executes exactly one 128-bit instruction. "
+        f"Configuration: local_tile=({local_tile_m},{local_tile_n}), "
+        f"total_comm_threads={total_comm_threads}, c_dtype={kernel.c_dtype}"
     )
 
-    # Spread threads along the contiguous axis. GCD handles non-power-of-2
-    # tile widths (e.g. cta_n=192) that don't naively divide thread count.
+    #
+    # Create thr_copy_fake with dynamically selected atom size
+    # For row-major: threads spread along N (contiguous), load along N
+    # For col-major: threads spread along M (contiguous), load along M
+    #
     if cutlass.const_expr(kernel.c_layout.is_n_major_c()):
+        # Row-major: N is contiguous, spread threads along N.
+        # Use GCD to handle non-power-of-2 tile widths (e.g. cta_n=192)
+        # that don't naively divide the thread count.
         max_thr_n = local_tile_n // atom_num_elements
         atom_thr_n = gcd(max_thr_n, total_comm_threads)
         atom_thr_m = total_comm_threads // atom_thr_n
@@ -543,6 +270,7 @@ def LDxSTMC(
             (1, atom_num_elements), stride=(atom_num_elements, 1)
         )
     else:
+        # Col-major: M is contiguous, spread threads along M.
         max_thr_m = local_tile_m // atom_num_elements
         atom_thr_m = gcd(max_thr_m, total_comm_threads)
         atom_thr_n = total_comm_threads // atom_thr_m
@@ -555,66 +283,160 @@ def LDxSTMC(
     tiled_copy_fake = cute.make_tiled_copy_tv(copy_atom_load, thr_layout, val_layout)
     thr_copy_fake = tiled_copy_fake.get_slice(comm_tidx - kernel.comm_warp_id[0] * 32)
 
-    tTR_gCommInUC_per_peer = tuple(
-        thr_copy_fake.partition_S(t) for t in tCgCommInUC_local_rank_per_peer
-    )
+    #
+    # Partition per thread
+    #
+    tTR_gCommInMC = thr_copy_fake.partition_S(tCgCommInMC_local_rank)
     tTR_gCommOutMC = thr_copy_fake.partition_S(tCgCommOutMC_local_rank)
-    _atom, loop_m, loop_n = tTR_gCommOutMC.shape
+    _atom, loop_m, loop_n = tTR_gCommInMC.shape
 
-    # cvt_to_xf32: i32 → tuple of n_per_b32 f32 ; cvt_back: inverse.
-    if cutlass.const_expr(kernel.c_dtype is cutlass.BFloat16):
-        cvt_to_xf32, cvt_back, n_per_b32 = cvt_bf16x2_to_2xf32, cvt_2xf32_to_bf16x2, 2
-    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float16):
-        cvt_to_xf32, cvt_back, n_per_b32 = cvt_f16x2_to_2xf32, cvt_2xf32_to_f16x2, 2
-    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float8E4M3FN):
-        cvt_to_xf32, cvt_back, n_per_b32 = cvt_e4m3x4_to_4xf32, cvt_4xf32_to_e4m3x4, 4
-    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float8E5M2):
-        cvt_to_xf32, cvt_back, n_per_b32 = cvt_e5m2x4_to_4xf32, cvt_4xf32_to_e5m2x4, 4
-    elif cutlass.const_expr(kernel.c_dtype is cutlass.Float32):
-        cvt_to_xf32, cvt_back, n_per_b32 = cvt_b32_to_1xf32, cvt_1xf32_to_b32, 1
-    else:
-        raise ValueError(f"LDxSTMC: unsupported c_dtype {kernel.c_dtype}")
+    #
+    # All Reduce LDMCxSTMC — adaptive variant based on ldmcxstmc_default_inflight_depth:
+    # - ldmcxstmc_default_inflight_depth=2: pair-issue (2-element chunks)
+    # - ldmcxstmc_default_inflight_depth=4: quad-issue (4-element chunks)
+    # The chunk loop is staged as scf.for with explicit `unroll=1` hint.
+    #
+    total_iters = loop_m * loop_n
 
-    # Accumulate in f32 across all peers; cvt_back only once at the end so
-    # partial sums keep f32 precision (matches multimem.ld_reduce semantics).
-    num_peers = len(tTR_gCommInUC_per_peer)
-    n_atom = 4  # 128 bits / 32 bits per i32
+    if cutlass.const_expr(kernel.ldmcxstmc_default_inflight_depth == 2):
+        # Pair-issue variant (inflight2)
+        num_pairs = total_iters // 2
+        for k in cutlass.range(num_pairs, unroll=1):
+            i0 = (2 * k) // loop_n
+            j0 = (2 * k) % loop_n
+            i1 = (2 * k + 1) // loop_n
+            j1 = (2 * k + 1) % loop_n
 
-    # Outer (loop_m, loop_n) is `unroll=1` so the DSL emits one shared body
-    # instead of loop_m * loop_n copies — keeps the (num_peers * n_atom *
-    # n_per_b32) live f32 register footprint from spilling. Inner peer/atom
-    # loops stay constexpr (short, benefit from unrolling for ILP).
-    for i in cutlass.range(loop_m, unroll=1):
-        for j in cutlass.range(loop_n, unroll=1):
-            # Explicit `.append` because the AST preprocessor doesn't unroll
-            # range_constexpr inside generator expressions.
-            peer_loaded = []
-            for r in cutlass.range_constexpr(num_peers):
-                peer_loaded.append(
-                    ld_weak_global_4xu32(tTR_gCommInUC_per_peer[r][None, i, j].iterator)
-                )
+            in0 = tTR_gCommInMC[None, i0, j0].iterator
+            out0 = tTR_gCommOutMC[None, i0, j0].iterator
+            in1 = tTR_gCommInMC[None, i1, j1].iterator
+            out1 = tTR_gCommOutMC[None, i1, j1].iterator
 
-            acc = ()
-            for r in cutlass.range_constexpr(num_peers):
-                p_acc = ()
-                for k in cutlass.range_constexpr(n_atom):
-                    p_acc = p_acc + cvt_to_xf32(peer_loaded[r][k])
-                acc = p_acc if r == 0 else elem_wise_add_f32(acc, p_acc)
-
-            out_regs = []
-            for k in cutlass.range_constexpr(n_atom):
-                chunk = acc[k * n_per_b32 : (k + 1) * n_per_b32]
-                out_regs.append(cvt_back(*chunk))
-
-            utils.distributed.multimem_st(
-                tTR_gCommOutMC[None, i, j].iterator, *out_regs
+            regs0 = utils.distributed.multimem_ld_reduce(
+                in0, dtype=kernel.c_dtype, num_elements=atom_num_elements
             )
+            regs1 = utils.distributed.multimem_ld_reduce(
+                in1, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            utils.distributed.multimem_st(out0, *regs0)
+            utils.distributed.multimem_st(out1, *regs1)
+
+        # Trailing odd iteration (singleton) when total_iters is odd.
+        if cutlass.const_expr(total_iters % 2 == 1):
+            last = total_iters - 1
+            i = last // loop_n
+            j = last % loop_n
+            in_ = tTR_gCommInMC[None, i, j].iterator
+            out_ = tTR_gCommOutMC[None, i, j].iterator
+            regs = utils.distributed.multimem_ld_reduce(
+                in_, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            utils.distributed.multimem_st(out_, *regs)
+    else:
+        # Quad-issue variant (inflight4, default)
+        num_quads = total_iters // 4
+        for k in cutlass.range(num_quads, unroll=1):
+            i0 = (4 * k) // loop_n
+            j0 = (4 * k) % loop_n
+            i1 = (4 * k + 1) // loop_n
+            j1 = (4 * k + 1) % loop_n
+            i2 = (4 * k + 2) // loop_n
+            j2 = (4 * k + 2) % loop_n
+            i3 = (4 * k + 3) // loop_n
+            j3 = (4 * k + 3) % loop_n
+
+            in0 = tTR_gCommInMC[None, i0, j0].iterator
+            out0 = tTR_gCommOutMC[None, i0, j0].iterator
+            in1 = tTR_gCommInMC[None, i1, j1].iterator
+            out1 = tTR_gCommOutMC[None, i1, j1].iterator
+            in2 = tTR_gCommInMC[None, i2, j2].iterator
+            out2 = tTR_gCommOutMC[None, i2, j2].iterator
+            in3 = tTR_gCommInMC[None, i3, j3].iterator
+            out3 = tTR_gCommOutMC[None, i3, j3].iterator
+
+            regs0 = utils.distributed.multimem_ld_reduce(
+                in0, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            regs1 = utils.distributed.multimem_ld_reduce(
+                in1, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            regs2 = utils.distributed.multimem_ld_reduce(
+                in2, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            regs3 = utils.distributed.multimem_ld_reduce(
+                in3, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            utils.distributed.multimem_st(out0, *regs0)
+            utils.distributed.multimem_st(out1, *regs1)
+            utils.distributed.multimem_st(out2, *regs2)
+            utils.distributed.multimem_st(out3, *regs3)
+
+        # Tail: total_iters % 4 == 1 → 1 trailing LDMC + 1 STMC.
+        if cutlass.const_expr(total_iters % 4 == 1):
+            last = total_iters - 1
+            i = last // loop_n
+            j = last % loop_n
+            in_ = tTR_gCommInMC[None, i, j].iterator
+            out_ = tTR_gCommOutMC[None, i, j].iterator
+            regs = utils.distributed.multimem_ld_reduce(
+                in_, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            utils.distributed.multimem_st(out_, *regs)
+        # Tail: total_iters % 4 == 2 → 2 trailing LDMCs + 2 STMCs.
+        if cutlass.const_expr(total_iters % 4 == 2):
+            flat0 = total_iters - 2
+            flat1 = total_iters - 1
+            i0 = flat0 // loop_n
+            j0 = flat0 % loop_n
+            i1 = flat1 // loop_n
+            j1 = flat1 % loop_n
+            in0 = tTR_gCommInMC[None, i0, j0].iterator
+            out0 = tTR_gCommOutMC[None, i0, j0].iterator
+            in1 = tTR_gCommInMC[None, i1, j1].iterator
+            out1 = tTR_gCommOutMC[None, i1, j1].iterator
+            regs0 = utils.distributed.multimem_ld_reduce(
+                in0, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            regs1 = utils.distributed.multimem_ld_reduce(
+                in1, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            utils.distributed.multimem_st(out0, *regs0)
+            utils.distributed.multimem_st(out1, *regs1)
+        # Tail: total_iters % 4 == 3 → 3 trailing LDMCs + 3 STMCs.
+        if cutlass.const_expr(total_iters % 4 == 3):
+            flat0 = total_iters - 3
+            flat1 = total_iters - 2
+            flat2 = total_iters - 1
+            i0 = flat0 // loop_n
+            j0 = flat0 % loop_n
+            i1 = flat1 // loop_n
+            j1 = flat1 % loop_n
+            i2 = flat2 // loop_n
+            j2 = flat2 % loop_n
+            in0 = tTR_gCommInMC[None, i0, j0].iterator
+            out0 = tTR_gCommOutMC[None, i0, j0].iterator
+            in1 = tTR_gCommInMC[None, i1, j1].iterator
+            out1 = tTR_gCommOutMC[None, i1, j1].iterator
+            in2 = tTR_gCommInMC[None, i2, j2].iterator
+            out2 = tTR_gCommOutMC[None, i2, j2].iterator
+            regs0 = utils.distributed.multimem_ld_reduce(
+                in0, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            regs1 = utils.distributed.multimem_ld_reduce(
+                in1, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            regs2 = utils.distributed.multimem_ld_reduce(
+                in2, dtype=kernel.c_dtype, num_elements=atom_num_elements
+            )
+            utils.distributed.multimem_st(out0, *regs0)
+            utils.distributed.multimem_st(out1, *regs1)
+            utils.distributed.multimem_st(out2, *regs2)
 
 
-class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
+class Sm100PersistentDynamicSYRKAllReduceLDMCxSTMCKernel:
     """
     **Example:**
-        gemm = Sm100PersistentDenseGemmAllReduceLDxSTMCKernel(
+        gemm = Sm100PersistentDynamicSYRKAllReduceLDMCxSTMCKernel(
             acc_dtype=cutlass.Float32,
             c_dtype=cutlass.BFloat16,
             use_2cta_instrs=True,
@@ -623,23 +445,22 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             use_tma_store=True,
             rank_id=rank_id,
             num_ranks=num_ranks,
-            all_reduce="LDxSTMC",
+            all_reduce="LDMCxSTMC",
             swizzle_size=1,
             raster_order="m",
         )
         compiled_gemm = cute.compile(
             gemm,
             a=a, b=b, c=c,
-            comm_in_unicast_tensors_per_peer=comm_in_uc_per_peer,
+            comm_in_multicast_tensor=comm_in_mc,
             comm_out_multicast_tensor=comm_out_mc,
             barrier_flag_unicast=flag_unicast,
             barrier_flag_multicast=flag_multicast,
             stream=stream,
-            max_active_clusters=max_active_clusters,
         )
         compiled_gemm(
             a=a, b=b, c=c,
-            comm_in_unicast_tensors_per_peer=comm_in_uc_per_peer,
+            comm_in_multicast_tensor=comm_in_mc,
             comm_out_multicast_tensor=comm_out_mc,
             barrier_flag_unicast=flag_unicast,
             barrier_flag_multicast=flag_multicast,
@@ -657,7 +478,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         use_tma_store: bool,
         rank_id: int,
         num_ranks: int,
-        all_reduce: str = "LDxSTMC",
+        all_reduce: str = "LDMCxSTMC",
         swizzle_size: int = 1,
         raster_order: Literal["m", "n"] = "m",
     ):
@@ -685,12 +506,24 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         self.epilogue_warp_id = (0, 1, 2, 3)
         self.mma_warp_id = 4
         self.tma_warp_id = 5
+        self.sched_warp_id = 6
         self.all_reduce = all_reduce
-        if all_reduce == "LDxSTMC":
+        if all_reduce == "LDMCxSTMC":
             self.rank_id = rank_id
             self.num_ranks = num_ranks
             num_comm_warps = self._pick_num_comm_warp_for_128b(c_dtype)
-            self.comm_warp_id = tuple(range(6, 6 + num_comm_warps))
+            self.comm_warp_id = tuple(range(7, 7 + num_comm_warps))
+            # Determine inflight depth: use inflight2 for special case (128x256 P=8), else inflight4
+            # For 2SM kernel: cta_tile_m = mma_tile_m / 2, for 1SM: cta_tile_m = mma_tile_m
+            mma_tile_m, mma_tile_n = mma_tiler_mn
+            cta_tile_m = mma_tile_m // 2 if use_2cta_instrs else mma_tile_m
+            cta_tile_n = mma_tile_n
+            if cta_tile_m == 128 and cta_tile_n == 256 and num_ranks == 8:
+                # Special case for largest tile + rank = 8 prefer in-flight = 2
+                self.ldmcxstmc_default_inflight_depth = 2
+            else:
+                # For most cases, in-flight depth = 4 is best as it fully utilize overlapping ability
+                self.ldmcxstmc_default_inflight_depth = 4
         else:
             # No AR mode — no comm warps.
             self.comm_warp_id = ()
@@ -701,6 +534,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             (
                 self.mma_warp_id,
                 self.tma_warp_id,
+                self.sched_warp_id,
                 *self.epilogue_warp_id,
                 *self.comm_warp_id,
             )
@@ -714,7 +548,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
     def _pick_num_comm_warp_for_128b(self, c_dtype):
         """Pick the LARGEST comm-warp count W ∈ {4, 3, 2, 1} (T = W·32 ∈
         {128, 96, 64, 32}) such that the AR slab is evenly distributed
-        across T threads AND every thread gets a full 128 b LD/ST payload
+        across T threads AND every thread gets a full 128 b LDMC payload
         (= ``atom_128`` elements, where ``atom_128 = 16 / sizeof(c_dtype)``).
 
         Iterates W = 4 → 1 and returns the first match, so the largest
@@ -739,19 +573,6 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         )
 
     def _setup_attributes(self):
-        """Set up configurations that are dependent on GEMM inputs
-
-        This method configures various attributes based on the input tensor properties
-        (data types, leading dimensions) and kernel settings:
-        - Configuring tiled MMA
-        - Computing MMA/cluster/tile shapes
-        - Computing cluster layout
-        - Computing multicast CTAs for A/B
-        - Computing epilogue subtile
-        - Setting up A/B/C stage counts in shared memory
-        - Computing A/B/C shared memory layout
-        - Computing tensor memory allocation columns
-        """
         tiled_mma = utils.sm100.make_trivial_tiled_mma(
             self.a_dtype,
             self.b_dtype,
@@ -815,6 +636,10 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             c_smem_layout,
         )
 
+        # Setup clc stage by default
+        self.num_clc_stage = 1
+        assert self.num_clc_stage == 1, "Only single-stage CLC pipeline is supported"
+
         self.a_smem_layout_staged = utils.sm100.make_smem_layout_a(
             tiled_mma, self.mma_tiler, self.a_dtype, self.num_ab_stage
         )
@@ -838,12 +663,11 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         a: cute.Tensor,
         b: cute.Tensor,
         c: cute.Tensor,
-        comm_in_unicast_tensors_per_peer: Tuple[cute.Tensor, ...],
+        comm_in_multicast_tensor: cute.Tensor,
         comm_out_multicast_tensor: cute.Tensor,
         barrier_flag_unicast: cute.Tensor,
         barrier_flag_multicast: cute.Tensor,
         stream: cuda.CUstream,
-        max_active_clusters: cutlass.Constexpr,
         epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         # Setup static attributes before smem/grid/tma computation.
@@ -916,6 +740,8 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
         b_copy_size = cute.size_in_bytes(self.b_dtype, b_smem_layout)
         self.num_tma_load_bytes = (a_copy_size + b_copy_size) * atom_thr_size
+        # Response size is 4B * 4 elements
+        self.num_clc_response_bytes = 16
 
         # Setup TMA store for C
         tma_atom_c = None
@@ -933,7 +759,6 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             self.cluster_shape_mn,
             self.swizzle_size,
             self.raster_order,
-            max_active_clusters,
         )
 
         # Define shared storage for kernel
@@ -945,6 +770,12 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             ]
             tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
+            clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
+            clc_response_align_bytes = self.num_clc_response_bytes
+            clc_response: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Int32, 4],
+                clc_response_align_bytes,
+            ]
 
         self.shared_storage = SharedStorage
 
@@ -957,7 +788,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             mB_nkl=tma_tensor_b,
             tma_atom_c=tma_atom_c,
             mC_mnl=(tma_tensor_c if self.use_tma_store else c),
-            mCommInUC_mnl_per_peer=comm_in_unicast_tensors_per_peer,
+            mCommInMC_mnl=comm_in_multicast_tensor,
             mCommOutMC_mnl=comm_out_multicast_tensor,
             barrier_flag_unicast=barrier_flag_unicast,
             barrier_flag_multicast=barrier_flag_multicast,
@@ -987,7 +818,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         mB_nkl: cute.Tensor,
         tma_atom_c: Optional[cute.CopyAtom],
         mC_mnl: cute.Tensor,
-        mCommInUC_mnl_per_peer: Tuple[cute.Tensor, ...],
+        mCommInMC_mnl: cute.Tensor,
         mCommOutMC_mnl: cute.Tensor,
         barrier_flag_unicast: cute.Tensor,
         barrier_flag_multicast: cute.Tensor,
@@ -996,7 +827,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
         warp_idx = cute.arch.warp_idx()
@@ -1023,6 +854,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         cta_rank_in_cluster = cute.arch.make_warp_uniform(
             cute.arch.block_idx_in_cluster()
         )
+        is_first_cta_in_cluster = cta_rank_in_cluster == 0
         block_in_cluster_coord_vmnk = cluster_layout_vmnk.get_flat_coord(
             cta_rank_in_cluster
         )
@@ -1037,10 +869,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_tma_producer = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_tma_producer
-        )
+        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Warp)
         ab_producer, ab_consumer = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
@@ -1048,6 +877,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
+            enable_multicast_signaling=True,
             defer_sync=True,
         ).make_participants()
 
@@ -1064,6 +894,29 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             num_stages=self.num_acc_stage,
             producer_group=acc_pipeline_producer_group,
             consumer_group=acc_pipeline_consumer_group,
+            cta_layout_vmnk=cluster_layout_vmnk,
+            defer_sync=True,
+        )
+
+        # Initialize clc_pipeline (barrier) and states.
+        # Consumers are every warp group that reads the current work tile each
+        # iteration: sched(1) + cluster_size * (tma(1) + epilogue(4) + mma(1) + comm(len(comm_warp_id))).
+        clc_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
+        cluster_size = cute.size(self.cluster_shape_mn)
+        num_clc_consumer_threads = 32 * (
+            1
+            + cluster_size
+            * (1 + len(self.epilogue_warp_id) + 1 + len(self.comm_warp_id))
+        )
+        clc_pipeline_consumer_group = pipeline.CooperativeGroup(
+            pipeline.Agent.Thread, num_clc_consumer_threads
+        )
+        clc_pipeline = pipeline.PipelineClcFetchAsync.create(
+            barrier_storage=storage.clc_mbar_ptr.data_ptr(),
+            num_stages=self.num_clc_stage,
+            producer_group=clc_pipeline_producer_group,
+            consumer_group=clc_pipeline_consumer_group,
+            tx_count=self.num_clc_response_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
             defer_sync=True,
         )
@@ -1089,6 +942,13 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
 
         # Cluster arrive after barrier init
         pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
+
+        # Initial clc response pointer
+        clc_response_ptr = storage.clc_response.data_ptr()
+
+        clc_consumer_state = pipeline.make_pipeline_state(
+            pipeline.PipelineUserType.Consumer, self.num_clc_stage
+        )
 
         #
         # Setup smem tensor A/B/C
@@ -1201,10 +1061,11 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         #
         # Construct the scheduler
         #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
+        tile_sched = utils.ClcDynamicPersistentTileScheduler.create(
             tile_sched_params,
             cute.arch.block_idx(),
             cute.arch.grid_dim(),
+            clc_response_ptr,
         )
         work_tile = tile_sched.initial_work_tile_info()
 
@@ -1217,68 +1078,99 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             # Persistent tile scheduling loop
             #
             while work_tile.is_valid_tile:
-                # Get tile coord from tile scheduler
-                cur_tile_coord = work_tile.tile_idx
-                mma_tile_coord_mnl = (
-                    cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-                    cur_tile_coord[1],
-                    cur_tile_coord[2],
-                )
-
-                #
-                # Slice to per mma tile index
-                #
-                # ((atom_v, rest_v), RestK)
-                tAgA_slice = tAgA[
-                    (None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])
-                ]
-                # ((atom_v, rest_v), RestK)
-                tBgB_slice = tBgB[
-                    (None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])
-                ]
-
-                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt
-                ab_producer.reset()
-                peek_ab_empty_status = ab_producer.try_acquire()
-
-                #
-                # Tma load loop
-                #
-                for k_tile in cutlass.range(0, k_tile_cnt, 1, unroll=1):
-                    # Conditionally wait for AB buffer empty
-                    handle = ab_producer.acquire_and_advance(peek_ab_empty_status)
-
-                    # TMA load A/B
-                    cute.copy(
-                        tma_atom_a,
-                        tAgA_slice[(None, handle.count)],
-                        tAsA[(None, handle.index)],
-                        tma_bar_ptr=handle.barrier,
-                        mcast_mask=a_full_mcast_mask,
-                    )
-                    cute.copy(
-                        tma_atom_b,
-                        tBgB_slice[(None, handle.count)],
-                        tBsB[(None, handle.index)],
-                        tma_bar_ptr=handle.barrier,
-                        mcast_mask=b_full_mcast_mask,
+                # Check SYRK tile validity
+                valid_syrk_tile = is_valid_syrk_tile(work_tile, self.cta_tile_shape_mnk)
+                if valid_syrk_tile:
+                    # Get tile coord from tile scheduler
+                    cur_tile_coord = work_tile.tile_idx
+                    mma_tile_coord_mnl = (
+                        cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
+                        cur_tile_coord[1],
+                        cur_tile_coord[2],
                     )
 
-                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
-                    peek_ab_empty_status = cutlass.Boolean(1)
-                    if handle.count + 1 < k_tile_cnt:
-                        peek_ab_empty_status = ab_producer.try_acquire()
+                    #
+                    # Slice to per mma tile index
+                    #
+                    # ((atom_v, rest_v), RestK)
+                    tAgA_slice = tAgA[
+                        (None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])
+                    ]
+                    # ((atom_v, rest_v), RestK)
+                    tBgB_slice = tBgB[
+                        (None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])
+                    ]
+
+                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt
+                    ab_producer.reset()
+                    peek_ab_empty_status = ab_producer.try_acquire()
+
+                    #
+                    # Tma load loop
+                    #
+                    for k_tile in cutlass.range(0, k_tile_cnt, 1, unroll=1):
+                        # Conditionally wait for AB buffer empty
+                        handle = ab_producer.acquire_and_advance(peek_ab_empty_status)
+
+                        # TMA load A/B
+                        cute.copy(
+                            tma_atom_a,
+                            tAgA_slice[(None, handle.count)],
+                            tAsA[(None, handle.index)],
+                            tma_bar_ptr=handle.barrier,
+                            mcast_mask=a_full_mcast_mask,
+                        )
+                        cute.copy(
+                            tma_atom_b,
+                            tBgB_slice[(None, handle.count)],
+                            tBsB[(None, handle.index)],
+                            tma_bar_ptr=handle.barrier,
+                            mcast_mask=b_full_mcast_mask,
+                        )
+
+                        # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
+                        peek_ab_empty_status = cutlass.Boolean(1)
+                        if handle.count + 1 < k_tile_cnt:
+                            peek_ab_empty_status = ab_producer.try_acquire()
 
                 #
                 # Advance to next tile
                 #
-                tile_sched.advance_to_next_work()
+                clc_pipeline.consumer_wait(clc_consumer_state)
                 work_tile = tile_sched.get_current_work()
+                clc_pipeline.consumer_release(clc_consumer_state)
+                clc_consumer_state.advance()
 
             #
             # Wait A/B buffer empty
             #
             ab_producer.tail()
+
+        #
+        # Sched warp
+        #
+        if warp_idx == self.sched_warp_id and is_first_cta_in_cluster:
+            #
+            # Persistent tile scheduling loop
+            #
+            clc_producer_state = pipeline.make_pipeline_state(
+                pipeline.PipelineUserType.ProducerConsumer, self.num_clc_stage
+            )
+
+            while work_tile.is_valid_tile:
+                #
+                # Advance to next tile
+                #
+                clc_pipeline.producer_acquire(clc_producer_state)
+                mbarrier_addr = clc_pipeline.producer_get_barrier(clc_producer_state)
+                tile_sched.advance_to_next_work(mbarrier_addr)
+                clc_producer_state.advance()
+
+                clc_pipeline.consumer_wait(clc_consumer_state)
+                work_tile = tile_sched.get_current_work()
+                clc_pipeline.consumer_release(clc_consumer_state)
+                clc_consumer_state.advance()
+            clc_pipeline.producer_tail(clc_producer_state)
 
         #
         # Specialized MMA warp
@@ -1300,65 +1192,70 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             )
 
             while work_tile.is_valid_tile:
-                # Get tile coord from tile scheduler
-                cur_tile_coord = work_tile.tile_idx
-                mma_tile_coord_mnl = (
-                    cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-                    cur_tile_coord[1],
-                    cur_tile_coord[2],
-                )
+                # Check SYRK tile validity
+                valid_syrk_tile = is_valid_syrk_tile(work_tile, self.cta_tile_shape_mnk)
+                if valid_syrk_tile:
+                    # Get tile coord from tile scheduler
+                    cur_tile_coord = work_tile.tile_idx
+                    mma_tile_coord_mnl = (
+                        cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
+                        cur_tile_coord[1],
+                        cur_tile_coord[2],
+                    )
 
-                # Set tensor memory buffer for current tile
-                # (MMA, MMA_M, MMA_N)
-                tCtAcc = tCtAcc_base[(None, None, None, acc_producer_state.index)]
+                    # Set tensor memory buffer for current tile
+                    # (MMA, MMA_M, MMA_N)
+                    tCtAcc = tCtAcc_base[(None, None, None, acc_producer_state.index)]
 
-                # Peek (try_wait) AB buffer full for k_tile = 0
-                ab_consumer.reset()
-                peek_ab_full_status = cutlass.Boolean(1)
-                if is_leader_cta:
-                    peek_ab_full_status = ab_consumer.try_wait()
-
-                #
-                # Wait for accumulator buffer empty
-                #
-                if is_leader_cta:
-                    acc_pipeline.producer_acquire(acc_producer_state)
-
-                #
-                # Mma mainloop
-                #
-                for k_tile in range(k_tile_cnt):
+                    # Peek (try_wait) AB buffer full for k_tile = 0
+                    ab_consumer.reset()
+                    peek_ab_full_status = cutlass.Boolean(1)
                     if is_leader_cta:
-                        # Conditionally wait for AB buffer full
-                        handle = ab_consumer.wait_and_advance(peek_ab_full_status)
+                        peek_ab_full_status = ab_consumer.try_wait()
 
-                        # tCtAcc += tCrA * tCrB
-                        tiled_mma.set(tcgen05.Field.ACCUMULATE, k_tile != 0)
-                        tile_crd = (None, None, None, handle.index)
-                        cute.gemm(
-                            tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc
-                        )
+                    #
+                    # Wait for accumulator buffer empty
+                    #
+                    if is_leader_cta:
+                        acc_pipeline.producer_acquire(acc_producer_state)
 
-                        # Async arrive AB buffer empty
-                        handle.release()
+                    #
+                    # Mma mainloop
+                    #
+                    for k_tile in range(k_tile_cnt):
+                        if is_leader_cta:
+                            # Conditionally wait for AB buffer full
+                            handle = ab_consumer.wait_and_advance(peek_ab_full_status)
 
-                        # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
-                        peek_ab_full_status = cutlass.Boolean(1)
-                        if handle.count + 1 < k_tile_cnt:
-                            peek_ab_full_status = ab_consumer.try_wait()
+                            # tCtAcc += tCrA * tCrB
+                            tiled_mma.set(tcgen05.Field.ACCUMULATE, k_tile != 0)
+                            tile_crd = (None, None, None, handle.index)
+                            cute.gemm(
+                                tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc
+                            )
 
-                #
-                # Async arrive accumulator buffer full
-                #
-                if is_leader_cta:
-                    acc_pipeline.producer_commit(acc_producer_state)
-                acc_producer_state.advance()
+                            # Async arrive AB buffer empty
+                            handle.release()
+
+                            # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
+                            peek_ab_full_status = cutlass.Boolean(1)
+                            if handle.count + 1 < k_tile_cnt:
+                                peek_ab_full_status = ab_consumer.try_wait()
+
+                    #
+                    # Async arrive accumulator buffer full
+                    #
+                    if is_leader_cta:
+                        acc_pipeline.producer_commit(acc_producer_state)
+                    acc_producer_state.advance()
 
                 #
                 # Advance to next tile
                 #
-                tile_sched.advance_to_next_work()
+                clc_pipeline.consumer_wait(clc_consumer_state)
                 work_tile = tile_sched.get_current_work()
+                clc_pipeline.consumer_release(clc_consumer_state)
+                clc_consumer_state.advance()
 
             #
             # Wait for accumulator buffer empty
@@ -1417,108 +1314,117 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             )
 
             while work_tile.is_valid_tile:
-                # Get tile coord from tile scheduler
-                cur_tile_coord = work_tile.tile_idx
-                mma_tile_coord_mnl = (
-                    cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-                    cur_tile_coord[1],
-                    cur_tile_coord[2],
-                )
+                # Check SYRK tile validity
+                valid_syrk_tile = is_valid_syrk_tile(work_tile, self.cta_tile_shape_mnk)
+                if valid_syrk_tile:
+                    # Get tile coord from tile scheduler
+                    cur_tile_coord = work_tile.tile_idx
+                    mma_tile_coord_mnl = (
+                        cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
+                        cur_tile_coord[1],
+                        cur_tile_coord[2],
+                    )
+                    num_tiles_executed = tile_sched.num_tiles_executed
+                    if cutlass.const_expr(self.use_tma_store):
+                        acc_consumer_state = utils.gemm.sm100.epilogue_tma_store(
+                            self,
+                            tidx,
+                            warp_idx,
+                            tma_atom_c,
+                            tCtAcc_base,
+                            sC,
+                            tCgC,
+                            epi_tile,
+                            num_tiles_executed,
+                            epilogue_op,
+                            mma_tile_coord_mnl,
+                            acc_consumer_state,
+                            acc_pipeline,
+                            c_pipeline,
+                        )
+
+                        # Post-epilogue: arrive flag for distributed communication
+                        if cutlass.const_expr(self.all_reduce == "LDMCxSTMC"):
+                            # 1D linear index of current output tile
+                            cta_tile_id_linear = cute.Int32(
+                                cur_tile_coord[0]
+                                + cur_tile_coord[1] * m_cta_tiles_in_total
+                            )
+
+                            # Wait for C store complete
+                            # Unlike regular epilogue where we only wait C store complete once at end of each kernel.
+                            # Here we need to wait for C store complete for each output tile before we set the release flag.
+                            c_pipeline.producer_tail()
+
+                            # Update flag with release semantic with GPU scope
+                            if warp_idx == self.epilogue_warp_id[0]:
+                                with cute.arch.elect_one():
+                                    flag_curr_tile = (
+                                        barrier_flag_multicast.iterator
+                                        + cta_tile_id_linear
+                                    )
+                                    # Release flag MUST be `release` semantic
+                                    # Refer to CUDA PTX doc Memory Consistency Model for more detail
+                                    utils.distributed.multimem_red_add1(
+                                        lock_ptr=flag_curr_tile,
+                                        order="release",
+                                        scope="gpu",
+                                    )
+                    else:
+                        acc_consumer_state = utils.gemm.sm100.epilogue(
+                            self,
+                            tidx,
+                            tCtAcc_base,
+                            tCgC,
+                            epi_tile,
+                            epilogue_op,
+                            mma_tile_coord_mnl,
+                            acc_consumer_state,
+                            acc_pipeline,
+                        )
+
+                        # Post-epilogue: arrive flag for distributed communication
+                        if cutlass.const_expr(self.all_reduce == "LDMCxSTMC"):
+                            # 1D linear index of current output tile
+                            cta_tile_id_linear = cute.Int32(
+                                cur_tile_coord[0]
+                                + cur_tile_coord[1] * m_cta_tiles_in_total
+                            )
+
+                            # Sync all thread in epilogue warp
+                            # Ensure all thread in epilogue warp have issue store operation
+                            epilogue_sync_barrier.arrive_and_wait()
+
+                            # Update flag with release semantic with GPU scope
+                            if warp_idx == self.epilogue_warp_id[0]:
+                                with cute.arch.elect_one():
+                                    flag_curr_tile = (
+                                        barrier_flag_multicast.iterator
+                                        + cta_tile_id_linear
+                                    )
+                                    # Release flag MUST be `release` semantic
+                                    # Refer to CUDA PTX doc Memory Consistency Model for more detail
+                                    utils.distributed.multimem_red_add1(
+                                        lock_ptr=flag_curr_tile,
+                                        order="release",
+                                        scope="gpu",
+                                    )
+
                 #
-                # Pre-advance to next tile
+                # Advance to next tile
                 #
-                tile_sched.advance_to_next_work()
+                clc_pipeline.consumer_wait(clc_consumer_state)
                 work_tile = tile_sched.get_current_work()
-
-                num_tiles_executed = tile_sched.num_tiles_executed
-                if cutlass.const_expr(self.use_tma_store):
-                    acc_consumer_state = utils.gemm.sm100.epilogue_tma_store(
-                        self,
-                        tidx,
-                        warp_idx,
-                        tma_atom_c,
-                        tCtAcc_base,
-                        sC,
-                        tCgC,
-                        epi_tile,
-                        num_tiles_executed,
-                        epilogue_op,
-                        mma_tile_coord_mnl,
-                        acc_consumer_state,
-                        acc_pipeline,
-                        c_pipeline,
-                    )
-
-                    # Post-epilogue: arrive flag for distributed communication
-                    if cutlass.const_expr(self.all_reduce == "LDxSTMC"):
-                        # 1D linear index of current output tile
-                        cta_tile_id_linear = cute.Int32(
-                            cur_tile_coord[0] + cur_tile_coord[1] * m_cta_tiles_in_total
-                        )
-
-                        # Wait for C store complete
-                        # Unlike regular epilogue where we only wait C store complete once at end of each kernel.
-                        # Here we need to wait for C store complete for each output tile before we set the release flag.
-                        c_pipeline.producer_tail()
-
-                        # Update flag with release semantic with GPU scope
-                        if warp_idx == self.epilogue_warp_id[0]:
-                            with cute.arch.elect_one():
-                                flag_curr_tile = (
-                                    barrier_flag_multicast.iterator + cta_tile_id_linear
-                                )
-                                # Release flag MUST be `release` semantic
-                                # Refer to CUDA PTX doc Memory Consistency Model for more detail
-                                utils.distributed.multimem_red_add1(
-                                    lock_ptr=flag_curr_tile,
-                                    order="release",
-                                    scope="gpu",
-                                )
-                else:
-                    acc_consumer_state = utils.gemm.sm100.epilogue(
-                        self,
-                        tidx,
-                        tCtAcc_base,
-                        tCgC,
-                        epi_tile,
-                        epilogue_op,
-                        mma_tile_coord_mnl,
-                        acc_consumer_state,
-                        acc_pipeline,
-                    )
-
-                    # Post-epilogue: arrive flag for distributed communication
-                    if cutlass.const_expr(self.all_reduce == "LDxSTMC"):
-                        # 1D linear index of current output tile
-                        cta_tile_id_linear = cute.Int32(
-                            cur_tile_coord[0] + cur_tile_coord[1] * m_cta_tiles_in_total
-                        )
-
-                        # Sync all thread in epilogue warp
-                        # Ensure all thread in epilogue warp have issue store operation
-                        epilogue_sync_barrier.arrive_and_wait()
-
-                        # Update flag with release semantic with GPU scope
-                        if warp_idx == self.epilogue_warp_id[0]:
-                            with cute.arch.elect_one():
-                                flag_curr_tile = (
-                                    barrier_flag_multicast.iterator + cta_tile_id_linear
-                                )
-                                # Release flag MUST be `release` semantic
-                                # Refer to CUDA PTX doc Memory Consistency Model for more detail
-                                utils.distributed.multimem_red_add1(
-                                    lock_ptr=flag_curr_tile,
-                                    order="release",
-                                    scope="gpu",
-                                )
+                clc_pipeline.consumer_release(clc_consumer_state)
+                clc_consumer_state.advance()
 
             if cutlass.const_expr(self.use_tma_store):
-                # Wait for C store complete (only if not using LDxSTMC which does per-tile tail)
-                if cutlass.const_expr(self.all_reduce != "LDxSTMC"):
+                # Wait for C store complete (only if not using LDMCxSTMC which does per-tile tail)
+                if cutlass.const_expr(self.all_reduce != "LDMCxSTMC"):
                     c_pipeline.producer_tail()
             else:
                 # Synchronize before TMEM dealloc
-                if cutlass.const_expr(self.all_reduce != "LDxSTMC"):
+                if cutlass.const_expr(self.all_reduce != "LDMCxSTMC"):
                     tmem_dealloc_barrier.arrive_and_wait()
 
             #
@@ -1530,19 +1436,13 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         # ///////////////////////////////////////////////////////////////////////////////
         #  AllReduce warps
         # ///////////////////////////////////////////////////////////////////////////////
-        if cutlass.const_expr(self.all_reduce == "LDxSTMC"):
+        if cutlass.const_expr(self.all_reduce == "LDMCxSTMC"):
             if warp_idx >= self.comm_warp_id[0]:
-                # Per peer: (bM, bN, RestM, RestN, RestL) with that peer's local
-                # UC view (direct P2P address). Same tile bounds as the MC view —
-                # only the base pointer differs across the tuple. Used by LDxSTMC
-                # to issue per-peer ld.weak.global.v4.u32 loads.
-                gCommInUC_mnl_per_peer = tuple(
-                    cute.local_tile(
-                        t,
-                        cute.slice_(self.mma_tiler, (None, None, 0)),
-                        (None, None, None),
-                    )
-                    for t in mCommInUC_mnl_per_peer
+                # (bM, bN, RestM, RestN, RestL) with multicast memory as comm input
+                gCommInMC_mnl = cute.local_tile(
+                    mCommInMC_mnl,
+                    cute.slice_(self.mma_tiler, (None, None, 0)),
+                    (None, None, None),
                 )
                 # (bM, bN, RestM, RestN, RestL) with multicast memory as comm output
                 gCommOutMC_mnl = cute.local_tile(
@@ -1550,17 +1450,14 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
                     cute.slice_(self.mma_tiler, (None, None, 0)),
                     (None, None, None),
                 )
-                # Per-peer thread-MMA partitioning of the input UC views.
-                tCgCommInUC_per_peer = tuple(
-                    thr_mma.partition_C(g) for g in gCommInUC_mnl_per_peer
-                )
                 # (MMA, MMA_M, MMA_N, RestM, RestN, RestL) with multicast memory
+                tCgCommInMC = thr_mma.partition_C(gCommInMC_mnl)
                 tCgCommOutMC = thr_mma.partition_C(gCommOutMC_mnl)
 
-                m_cta_tiles_in_total = gCommOutMC_mnl.shape[2] * cute.size(
+                m_cta_tiles_in_total = gCommInMC_mnl.shape[2] * cute.size(
                     tiled_mma.thr_id.shape
                 )
-                n_cta_tiles_in_total = gCommOutMC_mnl.shape[3]
+                n_cta_tiles_in_total = gCommInMC_mnl.shape[3]
 
                 #
                 # Persistent tile scheduling loop for all reduce
@@ -1583,39 +1480,61 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
                 #   rank1: compute each tile's [1/4:2:4] and broadcast it to all rank
 
                 while work_tile.is_valid_tile:
-                    cur_tile_coord = work_tile.tile_idx
-
-                    # (1) Per-tile flag wait.
-                    cta_tile_id_linear = (
-                        cur_tile_coord[0] + cur_tile_coord[1] * m_cta_tiles_in_total
+                    # Check SYRK tile validity
+                    valid_syrk_tile = is_valid_syrk_tile(
+                        work_tile, self.cta_tile_shape_mnk
                     )
-                    if warp_idx == self.comm_warp_id[0]:
-                        with cute.arch.elect_one():
-                            utils.distributed.spin_lock_atom_cas_acquire_wait(
-                                lock_ptr=barrier_flag_unicast.iterator
-                                + cta_tile_id_linear,
-                                expected_val=self.num_ranks,
-                                reset_val=0,
-                                scope="gpu",
-                            )
+                    if valid_syrk_tile:
+                        cur_tile_coord = work_tile.tile_idx
 
-                    comm_sync_barrier.arrive_and_wait()
+                        # (1) Per-tile flag wait.
+                        cta_tile_id_linear = (
+                            cur_tile_coord[0] + cur_tile_coord[1] * m_cta_tiles_in_total
+                        )
 
-                    # (2) Per-tile data movement (per-peer ld.weak + accumulate + multimem.st).
-                    LDxSTMC(
-                        self,
-                        cur_tile_coord=cur_tile_coord,
-                        tiled_mma=tiled_mma,
-                        comm_tidx=tidx,
-                        tCgCommInUC_per_peer=tCgCommInUC_per_peer,
-                        tCgCommOutMC=tCgCommOutMC,
-                    )
+                        #
+                        # Fetch next tile FIRST
+                        # Avoid AR warp block schedule warp for fetching next tile
+                        #
+                        clc_pipeline.consumer_wait(clc_consumer_state)
+                        next_work_tile = tile_sched.get_current_work()
+                        clc_pipeline.consumer_release(clc_consumer_state)
+                        clc_consumer_state.advance()
 
-                    #
-                    # Advance to next tile
-                    #
-                    tile_sched.advance_to_next_work()
-                    work_tile = tile_sched.get_current_work()
+                        if warp_idx == self.comm_warp_id[0]:
+                            with cute.arch.elect_one():
+                                utils.distributed.spin_lock_atom_cas_acquire_wait(
+                                    lock_ptr=barrier_flag_unicast.iterator
+                                    + cta_tile_id_linear,
+                                    expected_val=self.num_ranks,
+                                    reset_val=0,
+                                    scope="gpu",
+                                )
+
+                        comm_sync_barrier.arrive_and_wait()
+
+                        # (2) Per-tile data movement (multimem.ld_reduce + multimem.st).
+                        LDMCxSTMC(
+                            self,
+                            cur_tile_coord=cur_tile_coord,
+                            tiled_mma=tiled_mma,
+                            comm_tidx=tidx,
+                            tCgCommInMC=tCgCommInMC,
+                            tCgCommOutMC=tCgCommOutMC,
+                        )
+
+                        #
+                        # Advance to next tile
+                        #
+                        work_tile = next_work_tile
+                    else:
+                        #
+                        # Fetch next tile
+                        #
+                        clc_pipeline.consumer_wait(clc_consumer_state)
+                        work_tile = tile_sched.get_current_work()
+                        clc_pipeline.consumer_release(clc_consumer_state)
+                        clc_consumer_state.advance()
 
                 # Ensure all threads in allreduce warp group have complete issuing all reduce operations.
                 comm_sync_barrier.arrive_and_wait()
@@ -1716,19 +1635,16 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         cluster_shape_mn: Tuple[int, int],
         swizzle_size: int,
         raster_order: Literal["m", "n"],
-        max_active_clusters: cutlass.Constexpr,
-    ) -> Tuple[utils.PersistentTileSchedulerParams, Tuple[int, int, int]]:
+    ) -> Tuple[utils.ClcDynamicPersistentTileSchedulerParams, Tuple[int, int, int]]:
         c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
         gc = cute.zipped_divide(c, tiler=c_shape)
         num_ctas_mnl = gc[(0, (None, None, None))].shape
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
-        tile_sched_params = utils.PersistentTileSchedulerParams(
+        tile_sched_params = utils.ClcDynamicPersistentTileSchedulerParams(
             num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_order == "m"
         )
-        grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            tile_sched_params, max_active_clusters
-        )
+        grid = utils.ClcDynamicPersistentTileScheduler.get_grid_shape(tile_sched_params)
 
         return tile_sched_params, grid
 
@@ -1741,7 +1657,9 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
     ) -> int:
         acc_shape = tiled_mma.partition_shape_C(mma_tiler[:2])
         tCtAcc_fake = tiled_mma.make_fragment_C(cute.append(acc_shape, num_acc_stage))
-        num_tmem_alloc_cols = utils.get_num_tmem_alloc_cols(tCtAcc_fake, arch=arch)
+        num_tmem_alloc_cols = utils.get_num_tmem_alloc_cols(
+            tCtAcc_fake, arch=arch
+        )
 
         return num_tmem_alloc_cols
 
@@ -1930,7 +1848,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
                     f"[epilogue] Problem shape (M={m}, N={n}) must be divisible by cta tile shape {cta_tile_shape_mn} for non TMA store"
                 )
             # CTA swizzling improves the L2 cache utilization and reduces the number of cache misses.
-            # Make sure the swizzle size divides the block/cluster count since non TMA epilogue don't support OOB tiles.
+            # Make sure the swizzle size divides the cta/cluster count since non TMA epilogue don't support OOB tiles.
             # Swizzle only applies to the dimension orthogonal to the raster direction.
             m_per_swizzle = (m // cta_tile_shape_mn[0]) // self.cluster_shape_mn[0]
             n_per_swizzle = (n // cta_tile_shape_mn[1]) // self.cluster_shape_mn[1]
@@ -1956,10 +1874,18 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         return True
 
     def check_valid_all_reduce_mode(self) -> bool:
-        if self.all_reduce not in ["LDxSTMC", "none"]:
+        if self.all_reduce not in ["LDMCxSTMC", "none"]:
             raise testing.CantImplementError(
-                f"[all_reduce_mode] Invalid all-reduce mode: {self.all_reduce}, expected 'LDxSTMC' or 'none'"
+                f"[all_reduce_mode] Invalid all-reduce mode: {self.all_reduce}, expected 'LDMCxSTMC' or 'none'"
             )
+        return True
+
+    def check_syrk_gemm_m_n_equal(self, m: int, n: int) -> bool:
+        """
+        Check if gemm_m = gemm_n for syrk
+        """
+        if m != n:
+            raise testing.CantImplementError(f"Invalid problem size: {m}, {n}")
         return True
 
     def check_even_divisiable_by_cluster_tilesize(
@@ -1981,8 +1907,8 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         return True
 
     def check_even_divisible_by_swizzle(self, m: int, n: int) -> bool:
-        # Only check for LDxSTMC mode which uses multimem operations
-        if self.all_reduce != "LDxSTMC":
+        # Only check for LDMCxSTMC mode which uses multimem operations
+        if self.all_reduce != "LDMCxSTMC":
             return True
 
         cta_tile_m = self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1)
@@ -1997,14 +1923,14 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
             if num_clusters_n % self.swizzle_size != 0:
                 raise testing.CantImplementError(
                     f"[problem_size_divisible_swizzle_size] Number of clusters in N dimension ({num_clusters_n}) "
-                    f"must be divisible by swizzle_size={self.swizzle_size} for LDxSTMC with raster_order_m"
+                    f"must be divisible by swizzle_size={self.swizzle_size} for LDMCxSTMC with raster_order_m"
                 )
         else:
             # Swizzle applies to M dimension only
             if num_clusters_m % self.swizzle_size != 0:
                 raise testing.CantImplementError(
                     f"[problem_size_divisible_swizzle_size] Number of clusters in M dimension ({num_clusters_m}) "
-                    f"must be divisible by swizzle_size={self.swizzle_size} for LDxSTMC with raster_order_n"
+                    f"must be divisible by swizzle_size={self.swizzle_size} for LDMCxSTMC with raster_order_n"
                 )
 
         return True
@@ -2031,7 +1957,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         # Right now, AR Fusion **ONLY** support even divisiable by tilesize
         self.check_even_divisiable_by_cluster_tilesize(m, n, k, l)
 
-        # Skip if swizzle doesn't evenly divide the problem (for LDxSTMC communication)
+        # Skip if swizzle doesn't evenly divide the problem (for LDMCxSTMC communication)
         self.check_even_divisible_by_swizzle(m, n)
 
         # Skip illegal problem shape for load/store alignment
@@ -2048,6 +1974,9 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         # Skip invalid all-reduce mode
         self.check_valid_all_reduce_mode()
 
+        # Check if gemm_m = gemm_n for syrk
+        self.check_syrk_gemm_m_n_equal(m, n)
+
         return True
 
 
@@ -2060,18 +1989,12 @@ _DISTRIBUTED_INITIALIZED = False
 
 # Check for device p2p access
 def check_cuda_p2p_access():
-    import torch
-
     num_devices = torch.cuda.device_count()
-    cuda_p2p_access_available = True
     for i in range(num_devices - 1):
         for j in range(i + 1, num_devices):
             if not torch.cuda.can_device_access_peer(i, j):
-                cuda_p2p_access_available = False
-                break
-        if not cuda_p2p_access_available:
-            break
-    return cuda_p2p_access_available
+                return False
+    return True
 
 
 # Check for multicast support
@@ -2080,8 +2003,7 @@ def check_multicast_support():
         from torch._C._autograd import DeviceType
         from torch._C._distributed_c10d import _SymmetricMemory
 
-        device_count = torch.cuda.device_count()
-        for device_id in range(device_count):
+        for device_id in range(torch.cuda.device_count()):
             if not _SymmetricMemory.has_multicast_support(DeviceType.CUDA, device_id):
                 return False
         return True
@@ -2149,18 +2071,117 @@ def clean_distributed():
 
 
 def test_simple_torch_allreduce(device):
-    def _simple_torch_allreduce():
-        tensor = symm_mem.empty((16384), dtype=torch.float32, device=device)
+    try:
+        tensor = symm_mem.empty((16384,), dtype=torch.float32, device=device)
         symm_mem.rendezvous(tensor, group=dist.group.WORLD)
         torch.ops.symm_mem.multimem_all_reduce_(
             tensor, "sum", dist.group.WORLD.group_name
         )
-
-    try:
-        _simple_torch_allreduce()
     except Exception:
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Dump / Load helpers for determinism verification
+# ---------------------------------------------------------------------------
+
+
+def _make_tensor_filename(
+    local_rank, global_rank, world_size, hostname, name, tensor
+) -> str:
+    dtype_str = str(tensor.dtype).replace("torch.", "")
+    shape_str = "x".join(str(d) for d in tensor.shape)
+    return (
+        f"rank{local_rank}_global{global_rank}_world{world_size}"
+        f"_{hostname}_{name}_{dtype_str}_{shape_str}.pt"
+    )
+
+
+def _dump_tensors(
+    dump_dir, local_rank, global_rank, world_size, hostname, named_tensors: dict
+):
+    os.makedirs(dump_dir, exist_ok=True)
+    for name, tensor in named_tensors.items():
+        fname = _make_tensor_filename(
+            local_rank, global_rank, world_size, hostname, name, tensor
+        )
+        torch.save(tensor, os.path.join(dump_dir, fname))
+
+
+def _write_metadata_json(
+    dump_dir,
+    global_rank,
+    world_size,
+    mnkl,
+    ab_dtype,
+    c_dtype,
+    acc_dtype,
+    a_major,
+    b_major,
+    c_major,
+):
+    """ALL ranks call this (for all_gather_object). Only rank 0 writes the file."""
+    hostnames = [None] * world_size
+    dist.all_gather_object(hostnames, socket.gethostname())
+    if global_rank == 0:
+        os.makedirs(dump_dir, exist_ok=True)
+        meta = {
+            "mnkl": list(mnkl),
+            "world_size": world_size,
+            "ab_dtype": ab_dtype.__name__,
+            "c_dtype": c_dtype.__name__,
+            "acc_dtype": acc_dtype.__name__,
+            "a_major": a_major,
+            "b_major": b_major,
+            "c_major": c_major,
+            "hostnames": hostnames,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        with open(os.path.join(dump_dir, "metadata.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+
+
+def _load_input_tensors(
+    load_dir,
+    local_rank,
+    global_rank,
+    world_size,
+    ab_dtype,
+    expected_shape_a,
+    expected_shape_b,
+):
+    """Load A and B for this rank from dump dir. Validates dtype and shape."""
+    expected_torch_dtype = torch_dtype(ab_dtype)
+
+    def _load_one(name, expected_shape):
+        pattern = os.path.join(
+            load_dir,
+            f"rank*_global{global_rank}_world{world_size}_*_{name}_*.pt",
+        )
+        matches = glob.glob(pattern)
+        if len(matches) == 0:
+            raise FileNotFoundError(f"[load_input] No file for {name}: {pattern}")
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"[load_input] Multiple files matched for {name}: {matches}"
+            )
+        tensor = torch.load(matches[0], weights_only=True)
+        if tensor.dtype != expected_torch_dtype:
+            raise ValueError(
+                f"[load_input] dtype mismatch for {name}: got {tensor.dtype}, "
+                f"expected {expected_torch_dtype}"
+            )
+        if tuple(tensor.shape) != tuple(expected_shape):
+            raise ValueError(
+                f"[load_input] shape mismatch for {name}: got {tuple(tensor.shape)}, "
+                f"expected {tuple(expected_shape)}"
+            )
+        return tensor
+
+    torch_tensor_a_cpu = _load_one("a", expected_shape_a)
+    torch_tensor_b_cpu = _load_one("b", expected_shape_b)
+    return torch_tensor_a_cpu, torch_tensor_b_cpu
 
 
 def allocate_tensors(
@@ -2171,21 +2192,15 @@ def allocate_tensors(
     a_major: Literal["k", "m"],
     b_major: Literal["k", "n"],
     c_major: Literal["n", "m"],
-    world_size: int,
     num_workspace: int,
     device: int,
     slot_init_mode: Literal["test", "benchmark"],
     global_rank: int = 0,
+    local_rank: int = 0,
+    world_size: int = 1,
+    load_input_dir: Optional[str] = None,
 ):
-    """Allocate every kernel-side tensor required by the LDxSTMC AllReduce
-    fused GEMM in one place.
-
-    Symmetric/multicast tensors (``comm_in``, ``comm_out``, barrier flags)
-    are backed by ``torch.distributed._symmetric_memory`` so the kernel can
-    issue per-peer ``ld.weak.global`` loads (input side) and
-    ``multimem.st`` broadcasts (output side) on them. Returns a dict whose
-    keys exactly match the LDMCxSTMC sibling for symmetry.
-    """
+    _init_lo, _init_hi = (-5, 5) if slot_init_mode == "test" else (-20, 20)
 
     def _create_multicast_tensor(*, torch_tensor_ref, dtype, leading_dim):
         is_col_major = leading_dim == 0
@@ -2217,7 +2232,6 @@ def allocate_tensors(
             is_dynamic_layout=True,
         )
 
-        # Multicast view: multimem.st on cute_tensor_mc fans out to every peer.
         if is_col_major:
             mc_torch = cutlass_torch.as_tensor(
                 torch_tensor_hdl.multicast_ptr, reversed_shape, ref_dtype
@@ -2230,65 +2244,50 @@ def allocate_tensors(
         cute_tensor_mc.element_type = dtype
         cute_tensor_mc = cute_tensor_mc.mark_layout_dynamic(leading_dim=leading_dim)
 
-        # Per-peer UC views — one per rank in the world team. Each peer view
-        # has identical shape/strides to the local UC; only the base pointer
-        # differs (via symm_mem buffer_ptrs[r]). LDxSTMC issues one
-        # ld.weak.global.v4.u32 per peer per atom against this tuple.
-        peer_torch_anchors = []
-        cute_tensors_uc_per_peer_list = []
-        for r in range(world_size):
-            peer_ptr = torch_tensor_hdl.buffer_ptrs[r]
-            if is_col_major:
-                peer_torch_base = cutlass_torch.as_tensor(
-                    peer_ptr, reversed_shape, ref_dtype
-                )
-                peer_torch = peer_torch_base.permute(perm)
-            else:
-                peer_torch_base = cutlass_torch.as_tensor(peer_ptr, shape, ref_dtype)
-                peer_torch = peer_torch_base
-            peer_cute = from_dlpack(peer_torch, assumed_align=16)
-            peer_cute.element_type = dtype
-            peer_cute = peer_cute.mark_layout_dynamic(leading_dim=leading_dim)
-            peer_cute = cutlass_torch.convert_cute_tensor(
-                peer_torch, peer_cute, dtype, is_dynamic_layout=True
-            )
-            peer_torch_anchors.append(peer_torch_base)
-            cute_tensors_uc_per_peer_list.append(peer_cute)
-        cute_tensors_uc_per_peer = tuple(cute_tensors_uc_per_peer_list)
-
-        return (
-            cute_tensor_uc,
-            cute_tensor_mc,
-            cute_tensors_uc_per_peer,
-            torch_tensor_uc,
-            mc_torch,
-            tuple(peer_torch_anchors),
-        )
-
-    torch.manual_seed(42 + global_rank)
+        return cute_tensor_uc, cute_tensor_mc, torch_tensor_uc
 
     m, n, k, l = mnkl
 
-    _init_lo, _init_hi = (-1, 1) if slot_init_mode == "test" else (-20, 20)
+    if load_input_dir is not None:
+        # k-major A stored as (m,k,l); m-major A stored as (l,m,k) — same as cutlass_torch.matrix permute
+        expected_shape_a = (m, k, l) if a_major == "k" else (l, m, k)
+        expected_shape_b = (n, k, l) if b_major == "k" else (l, n, k)
+        torch_tensor_a_cpu, torch_tensor_b_cpu = _load_input_tensors(
+            load_dir=load_input_dir,
+            local_rank=local_rank,
+            global_rank=global_rank,
+            world_size=world_size,
+            ab_dtype=ab_dtype,
+            expected_shape_a=expected_shape_a,
+            expected_shape_b=expected_shape_b,
+        )
+    else:
+        torch.manual_seed(42 + global_rank)
+        torch_tensor_a_int_cpu = cutlass_torch.matrix(
+            l,
+            m,
+            k,
+            a_major == "m",
+            cutlass.Int32,
+            init_type=cutlass_torch.TensorInitType.RANDOM,
+            init_config=cutlass_torch.RandomInitConfig(
+                min_val=_init_lo, max_val=_init_hi
+            ),
+        )
+        torch_tensor_b_int_cpu = cutlass_torch.matrix(
+            l,
+            n,
+            k,
+            b_major == "n",
+            cutlass.Int32,
+            init_type=cutlass_torch.TensorInitType.RANDOM,
+            init_config=cutlass_torch.RandomInitConfig(
+                min_val=_init_lo, max_val=_init_hi
+            ),
+        )
+        torch_tensor_a_cpu = torch_tensor_a_int_cpu.to(dtype=torch_dtype(ab_dtype))
+        torch_tensor_b_cpu = torch_tensor_b_int_cpu.to(dtype=torch_dtype(ab_dtype))
 
-    torch_tensor_a_int_cpu = cutlass_torch.matrix(
-        l,
-        m,
-        k,
-        a_major == "m",
-        cutlass.Int32,
-        init_type=cutlass_torch.TensorInitType.RANDOM,
-        init_config=cutlass_torch.RandomInitConfig(min_val=_init_lo, max_val=_init_hi),
-    )
-    torch_tensor_b_int_cpu = cutlass_torch.matrix(
-        l,
-        n,
-        k,
-        b_major == "n",
-        cutlass.Int32,
-        init_type=cutlass_torch.TensorInitType.RANDOM,
-        init_config=cutlass_torch.RandomInitConfig(min_val=_init_lo, max_val=_init_hi),
-    )
     torch_tensor_c_int_cpu = cutlass_torch.matrix(
         l,
         m,
@@ -2308,8 +2307,6 @@ def allocate_tensors(
         init_config=cutlass_torch.RandomInitConfig(min_val=_init_lo, max_val=_init_hi),
     )
 
-    torch_tensor_a_cpu = torch_tensor_a_int_cpu.to(dtype=torch_dtype(ab_dtype))
-    torch_tensor_b_cpu = torch_tensor_b_int_cpu.to(dtype=torch_dtype(ab_dtype))
     torch_tensor_c_cpu = torch_tensor_c_int_cpu.to(dtype=torch_dtype(c_dtype))
     torch_tensor_comm_out_c_cpu = torch_tensor_comm_out_c_int_cpu.to(
         dtype=torch_dtype(c_dtype)
@@ -2337,10 +2334,7 @@ def allocate_tensors(
     (
         cute_tensor_c,
         cute_tensor_comm_in_mc,
-        cute_tensor_comm_in_uc_per_peer,
         torch_tensor_c_gpu,
-        _torch_tensor_c_mc_anchor,
-        _torch_tensor_c_peer_anchors,
     ) = _create_multicast_tensor(
         torch_tensor_ref=torch_tensor_c_cpu,
         dtype=c_dtype,
@@ -2349,10 +2343,7 @@ def allocate_tensors(
     (
         _cute_tensor_comm_out_uc,
         cute_tensor_comm_out_mc,
-        _cute_tensor_comm_out_uc_per_peer,
         torch_tensor_comm_out_gpu,
-        _torch_tensor_comm_out_mc_anchor,
-        _torch_tensor_comm_out_peer_anchors,
     ) = _create_multicast_tensor(
         torch_tensor_ref=torch_tensor_comm_out_c_cpu,
         dtype=c_dtype,
@@ -2392,7 +2383,6 @@ def allocate_tensors(
         "cute_tensor_b_list": cute_tensor_b_list,
         "cute_tensor_c": cute_tensor_c,
         "cute_tensor_comm_in_mc": cute_tensor_comm_in_mc,
-        "cute_tensor_comm_in_uc_per_peer": cute_tensor_comm_in_uc_per_peer,
         "cute_tensor_comm_out_mc": cute_tensor_comm_out_mc,
         "cute_tensor_flag_unicast": cute_tensor_flag_unicast,
         "cute_tensor_flag_multicast": cute_tensor_flag_multicast,
@@ -2410,10 +2400,6 @@ def allocate_tensors(
             torch_tensor_flag_unicast,
             torch_tensor_flag_multicast,
             torch_flag_hdl,
-            _torch_tensor_c_mc_anchor,
-            _torch_tensor_c_peer_anchors,
-            _torch_tensor_comm_out_mc_anchor,
-            _torch_tensor_comm_out_peer_anchors,
         ),
     }
 
@@ -2434,16 +2420,25 @@ def run(
     use_tma_store: bool = True,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    all_reduce: str = "LDxSTMC",
+    all_reduce: str = "LDMCxSTMC",
     benchmark_or_test: str = "test",
     use_cuda_graph: bool = False,
     csv_report: str = "./csv_report.csv",
+    dump_input: Optional[str] = None,
+    dump_output: Optional[str] = None,
+    load_input: Optional[str] = None,
 ):
     # * Init Distributed *
     global_rank, world_size, device = init_distributed()
 
+    # * Validate dump/load flags *
+    if (dump_input or dump_output or load_input) and benchmark_or_test != "test":
+        raise ValueError(
+            "--dump_input / --dump_output / --load_input are only valid in test mode"
+        )
+
     # * Check based on AR mode *
-    if all_reduce == "LDxSTMC":
+    if all_reduce == "LDMCxSTMC":
         if not check_cuda_p2p_access():
             print("CUDA P2P access not available")
             exit(-1)
@@ -2456,7 +2451,7 @@ def run(
 
     # * Verbose *
     def _verbose():
-        print("Running Blackwell SM100 Persistent Dense GEMM AR test with:")
+        print("Running Blackwell SM100 Persistent SYRK AR test with:")
         print(f"mnkl: {mnkl}")
         print(f"global_rank: {global_rank}, world_size: {world_size}, device: {device}")
         print(f"AB dtype: {ab_dtype}, C dtype: {c_dtype}, Acc dtype: {acc_dtype}")
@@ -2521,6 +2516,9 @@ def run(
             use_2cta_instrs=use_2cta_instrs,
             use_tma_store=use_tma_store,
             all_reduce=all_reduce,
+            dump_input=dump_input,
+            dump_output=dump_output,
+            load_input=load_input,
         )
 
     clean_distributed()
@@ -2543,15 +2541,21 @@ def run_distributed_test(
     raster_order: Literal["m", "n"] = "m",
     use_2cta_instrs: bool = True,
     use_tma_store: bool = True,
-    all_reduce: str = "LDxSTMC",
+    all_reduce: str = "LDMCxSTMC",
+    dump_input: Optional[str] = None,
+    dump_output: Optional[str] = None,
+    load_input: Optional[str] = None,
 ):
     # * CUDA *
     # Non-default stream as we'll use CUDA graphs
     torch_stream = torch.cuda.Stream()
     stream = cuda.CUstream(torch_stream.cuda_stream)
 
+    local_rank = int(os.environ.get("LOCAL_RANK", global_rank))
+    hostname = socket.gethostname()
+
     # * Build GEMM AllReduce Object *
-    gemm_all_reduce = Sm100PersistentDenseGemmAllReduceLDxSTMCKernel(
+    gemm_all_reduce = Sm100PersistentDynamicSYRKAllReduceLDMCxSTMCKernel(
         acc_dtype,
         c_dtype,
         use_2cta_instrs,
@@ -2573,10 +2577,10 @@ def run_distributed_test(
         param_str = f"ab{ab_dtype}_acc{acc_dtype}_c{c_dtype}_{a_major}{b_major}{c_major}_tile{mma_tiler_mn[0]}x{mma_tiler_mn[1]}_cluster{cluster_shape_mn[0]}x{cluster_shape_mn[1]}_{'2Sm' if use_2cta_instrs else '1Sm'}_{'EpiTma' if use_tma_store else 'EpiStg'}"
         param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
         unique_name = (
-            f"sm100_gemm_ar_{param_hash}_{all_reduce}_r{global_rank}_w{world_size}"
+            f"sm100_syrk_ar_dyn_{param_hash}_{all_reduce}_r{global_rank}_w{world_size}"
         )
     except Exception:
-        unique_name = f"sm100_gemm_ar_{all_reduce}_r{global_rank}_w{world_size}"
+        unique_name = f"sm100_syrk_ar_dyn_{all_reduce}_r{global_rank}_w{world_size}"
     gemm_all_reduce.__call__.set_name_prefix(unique_name)
 
     # * can_implement *
@@ -2599,16 +2603,18 @@ def run_distributed_test(
         a_major=a_major,
         b_major=b_major,
         c_major=c_major,
-        world_size=world_size,
         num_workspace=1,
         device=device,
         slot_init_mode="test",
         global_rank=global_rank,
+        local_rank=local_rank,
+        world_size=world_size,
+        load_input_dir=load_input,
     )
     cute_tensor_a = tensors["cute_tensor_a_list"][0]
     cute_tensor_b = tensors["cute_tensor_b_list"][0]
     cute_tensor_c = tensors["cute_tensor_c"]
-    cute_tensor_comm_in_uc_per_peer = tensors["cute_tensor_comm_in_uc_per_peer"]
+    cute_tensor_comm_in_mc = tensors["cute_tensor_comm_in_mc"]
     cute_tensor_comm_out_mc = tensors["cute_tensor_comm_out_mc"]
     cute_tensor_flag_unicast = tensors["cute_tensor_flag_unicast"]
     cute_tensor_flag_multicast = tensors["cute_tensor_flag_multicast"]
@@ -2618,20 +2624,40 @@ def run_distributed_test(
     torch_tensor_comm_out = tensors["torch_tensor_comm_out_gpu"]
     torch_tensor_flag_unicast = tensors["torch_tensor_flag_unicast"]
 
+    # * Dump input (before compile/run) *
+    if dump_input is not None:
+        _dump_tensors(
+            dump_input,
+            local_rank,
+            global_rank,
+            world_size,
+            hostname,
+            {"a": torch_tensor_a_cpu, "b": torch_tensor_b_cpu},
+        )
+        _write_metadata_json(
+            dump_input,
+            global_rank,
+            world_size,
+            mnkl,
+            ab_dtype,
+            c_dtype,
+            acc_dtype,
+            a_major,
+            b_major,
+            c_major,
+        )
+
     # * Compile *
     compiled_gemm = cute.compile(
         gemm_all_reduce,
         a=cute_tensor_a,
         b=cute_tensor_b,
         c=cute_tensor_c,
-        comm_in_unicast_tensors_per_peer=cute_tensor_comm_in_uc_per_peer,
+        comm_in_multicast_tensor=cute_tensor_comm_in_mc,
         comm_out_multicast_tensor=cute_tensor_comm_out_mc,
         barrier_flag_unicast=cute_tensor_flag_unicast,
         barrier_flag_multicast=cute_tensor_flag_multicast,
         stream=stream,
-        max_active_clusters=utils.HardwareInfo().get_max_active_clusters(
-            cluster_shape_mn[0] * cluster_shape_mn[1]
-        ),
     )
 
     # * Run *
@@ -2639,12 +2665,36 @@ def run_distributed_test(
         a=cute_tensor_a,
         b=cute_tensor_b,
         c=cute_tensor_c,
-        comm_in_unicast_tensors_per_peer=cute_tensor_comm_in_uc_per_peer,
+        comm_in_multicast_tensor=cute_tensor_comm_in_mc,
         comm_out_multicast_tensor=cute_tensor_comm_out_mc,
         barrier_flag_unicast=cute_tensor_flag_unicast,
         barrier_flag_multicast=cute_tensor_flag_multicast,
         stream=stream,
     )
+
+    # * Dump output (before compare — _compare_comm mutates C in-place for n-major) *
+    torch_stream.synchronize()
+    if dump_output is not None:
+        _dump_tensors(
+            dump_output,
+            local_rank,
+            global_rank,
+            world_size,
+            hostname,
+            {"c": torch_tensor_c.cpu(), "comm_out": torch_tensor_comm_out.cpu()},
+        )
+        _write_metadata_json(
+            dump_output,
+            global_rank,
+            world_size,
+            mnkl,
+            ab_dtype,
+            c_dtype,
+            acc_dtype,
+            a_major,
+            b_major,
+            c_major,
+        )
 
     # * Compare *
     # FP8 nan to saturate
@@ -2710,6 +2760,20 @@ def run_distributed_test(
         # Cast kernel output to fp32 for comparison
         gemm_out_f32 = torch_tensor_c.cpu().to(dtype=torch.float32)
 
+        # SYRK only computes/writes the upper triangle (row <= col, incl.
+        # diagonal); the lower-left triangle is never touched by the kernel,
+        # so mask it out of both ref and kernel output before comparing.
+        m_dim, n_dim = gemm_ref_f32_c_f32.shape[0], gemm_ref_f32_c_f32.shape[1]
+        mask = torch.triu(
+            torch.ones(m_dim, n_dim, dtype=torch.bool, device=gemm_ref_f32_c_f32.device)
+        )
+        mask_expanded = mask.unsqueeze(-1)
+        zero = torch.tensor(
+            0.0, dtype=gemm_ref_f32_c_f32.dtype, device=gemm_ref_f32_c_f32.device
+        )
+        gemm_ref_f32_c_f32 = torch.where(mask_expanded, gemm_ref_f32_c_f32, zero)
+        gemm_out_f32 = torch.where(mask_expanded, gemm_out_f32, zero)
+
         # Compare
         torch.testing.assert_close(
             gemm_out_f32,
@@ -2759,6 +2823,24 @@ def run_distributed_test(
             # Cast to fp32 for comparison
             comm_out_f32 = comm_out.to(dtype=torch.float32)
 
+        # SYRK only computes/writes the upper triangle (row <= col, incl.
+        # diagonal); mask out the untouched lower-left triangle before comparing.
+        m_dim, n_dim = comm_ref_f32.shape[0], comm_ref_f32.shape[1]
+        mask = torch.triu(
+            torch.ones(m_dim, n_dim, dtype=torch.bool, device=comm_ref_f32.device)
+        )
+        mask_expanded = mask.unsqueeze(-1)
+        comm_ref_f32 = torch.where(
+            mask_expanded,
+            comm_ref_f32,
+            torch.tensor(0.0, dtype=comm_ref_f32.dtype, device=comm_ref_f32.device),
+        )
+        comm_out_f32 = torch.where(
+            mask_expanded,
+            comm_out_f32,
+            torch.tensor(0.0, dtype=comm_out_f32.dtype, device=comm_out_f32.device),
+        )
+
         # Compare
         torch.testing.assert_close(
             comm_ref_f32,
@@ -2780,7 +2862,7 @@ def run_distributed_test(
         rtol=gemm_rtol,
     )
 
-    if all_reduce == "LDxSTMC":
+    if all_reduce == "LDMCxSTMC":
         # Relaxed tolerance — reference uses NCCL dist.all_reduce, which
         # reduces in a different order than the fused multimem kernel.
         comm_atol = 5
@@ -2837,7 +2919,7 @@ def compile_and_benchmark(
     iterations,
     use_cuda_graph,
 ):
-    """Instantiate one LDxSTMC kernel candidate, compile it, and time the
+    """Instantiate one LDMCxSTMC kernel candidate, compile it, and time the
     warmup + benchmark loop.
 
     Reads cute views out of ``tensors`` (produced by :func:`allocate_tensors`)
@@ -2849,14 +2931,14 @@ def compile_and_benchmark(
     cute_tensor_a_list = tensors["cute_tensor_a_list"]
     cute_tensor_b_list = tensors["cute_tensor_b_list"]
     cute_tensor_c = tensors["cute_tensor_c"]
-    cute_tensor_comm_in_uc_per_peer = tensors["cute_tensor_comm_in_uc_per_peer"]
+    cute_tensor_comm_in_mc = tensors["cute_tensor_comm_in_mc"]
     cute_tensor_comm_out_mc = tensors["cute_tensor_comm_out_mc"]
     cute_tensor_flag_unicast = tensors["cute_tensor_flag_unicast"]
     cute_tensor_flag_multicast = tensors["cute_tensor_flag_multicast"]
 
     # Build kernel + can_implement first — before any cross-rank op, so a
     # deterministic skip keeps all ranks in lockstep for the next candidate.
-    gemm_all_reduce = Sm100PersistentDenseGemmAllReduceLDxSTMCKernel(
+    gemm_all_reduce = Sm100PersistentDynamicSYRKAllReduceLDMCxSTMCKernel(
         acc_dtype,
         c_dtype,
         use_2cta_instrs,
@@ -2881,10 +2963,10 @@ def compile_and_benchmark(
         )
         param_hash = hashlib.md5(param_str.encode()).hexdigest()[:8]
         unique_name = (
-            f"sm100_gemm_ar_{param_hash}_{all_reduce}_r{global_rank}_w{world_size}"
+            f"sm100_syrk_ar_dyn_{param_hash}_{all_reduce}_r{global_rank}_w{world_size}"
         )
     except Exception:
-        unique_name = f"sm100_gemm_ar_{all_reduce}_r{global_rank}_w{world_size}"
+        unique_name = f"sm100_syrk_ar_dyn_{all_reduce}_r{global_rank}_w{world_size}"
     gemm_all_reduce.__call__.set_name_prefix(unique_name)
 
     can_implement = gemm_all_reduce.can_implement(
@@ -2903,7 +2985,7 @@ def compile_and_benchmark(
             a=cute_tensor_a_list[ws],
             b=cute_tensor_b_list[ws],
             c=cute_tensor_c,
-            comm_in_unicast_tensors_per_peer=cute_tensor_comm_in_uc_per_peer,
+            comm_in_multicast_tensor=cute_tensor_comm_in_mc,
             comm_out_multicast_tensor=cute_tensor_comm_out_mc,
             barrier_flag_unicast=cute_tensor_flag_unicast,
             barrier_flag_multicast=cute_tensor_flag_multicast,
@@ -2912,13 +2994,9 @@ def compile_and_benchmark(
 
     kernel_kwargs_list = [make_kernel_kwargs(i) for i in range(num_workspace)]
 
-    max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-        cluster_shape_mn[0] * cluster_shape_mn[1]
-    )
     compiled_gemm = cute.compile(
         gemm_all_reduce,
         **kernel_kwargs_list[0],
-        max_active_clusters=max_active_clusters,
     )
 
     # Per-iteration runnable. Under --use_cuda_graph we capture one graph per
@@ -2993,7 +3071,7 @@ def run_distributed_benchmark(
     use_tma_store: bool = True,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    all_reduce: str = "LDxSTMC",
+    all_reduce: str = "LDMCxSTMC",
     use_cuda_graph: bool = False,
     benchmark_all: bool = False,
     csv_report: str = "./csv_report.csv",
@@ -3008,7 +3086,6 @@ def run_distributed_benchmark(
         a_major=a_major,
         b_major=b_major,
         c_major=c_major,
-        world_size=world_size,
         num_workspace=num_workspace,
         device=device,
         slot_init_mode="benchmark",
@@ -3282,9 +3359,9 @@ def prepare_parser():
     )
     parser.add_argument(
         "--all_reduce",
-        choices=["LDxSTMC", "none"],
+        choices=["LDMCxSTMC", "none"],
         type=str,
-        default="LDxSTMC",
+        default="LDMCxSTMC",
         help="Allreduce algorithm to fuse with gemm",
     )
     parser.add_argument(
@@ -3307,21 +3384,35 @@ def prepare_parser():
         help="Path for the per-rank benchmark CSV. Each rank appends "
         "_rank{R}_world{W} before the extension to avoid collisions.",
     )
-
+    parser.add_argument(
+        "--dump_input",
+        type=str,
+        default=None,
+        help="(test mode only) Dump A and B tensors to this directory after init.",
+    )
+    parser.add_argument(
+        "--dump_output",
+        type=str,
+        default=None,
+        help="(test mode only) Dump C and comm_out tensors to this directory after kernel.",
+    )
+    parser.add_argument(
+        "--load_input",
+        type=str,
+        default=None,
+        help="(test mode only) Load A and B from this directory instead of random init.",
+    )
     return parser
 
 
 if __name__ == "__main__":
     parser = prepare_parser()
-
     args = parser.parse_args()
 
     if len(args.mnkl) != 4:
         parser.error("--mnkl must contain exactly 4 values")
-
     if len(args.mma_tiler_mn) != 2:
         parser.error("--mma_tiler_mn must contain exactly 2 values")
-
     if len(args.cluster_shape_mn) != 2:
         parser.error("--cluster_shape_mn must contain exactly 2 values")
 
@@ -3345,6 +3436,9 @@ if __name__ == "__main__":
         args.benchmark_or_test,
         args.use_cuda_graph,
         args.csv_report,
+        dump_input=args.dump_input,
+        dump_output=args.dump_output,
+        load_input=args.load_input,
     )
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])

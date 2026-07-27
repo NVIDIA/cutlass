@@ -2163,7 +2163,7 @@ class Sm100PersistentDenseGemmAllReduceLamportKernel:
                     f"[epilogue] Problem shape (M={m}, N={n}) must be divisible by cta tile shape {cta_tile_shape_mn} for non TMA store"
                 )
             # CTA swizzling improves the L2 cache utilization and reduces the number of cache misses.
-            # Make sure the swizzle size divides the cta/cga count since non TMA epilogue don't support OOB tiles.
+            # Make sure the swizzle size divides the block/cluster count since non TMA epilogue don't support OOB tiles.
             # Swizzle only applies to the dimension orthogonal to the raster direction.
             m_per_swizzle = (m // cta_tile_shape_mn[0]) // self.cluster_shape_mn[0]
             n_per_swizzle = (n // cta_tile_shape_mn[1]) // self.cluster_shape_mn[1]
@@ -3423,7 +3423,7 @@ def run_distributed_benchmark(
         print(f"Total number of candidate configs: {len(candidates)}", flush=True)
 
     # Run each candidate. Tensors (A/B/C/comm_out/flags) are reused across
-    # candidates; the kernel resets flags internally. Skip any combo the kernel
+    # candidates; the kernel resets flags between candidates. Skip any combo the kernel
     # can't implement — can_implement is deterministic so all ranks skip the
     # same ones, keeping rendezvous collective operations lockstep.
     # ~2s sleep between candidates to let the GPU cool down.

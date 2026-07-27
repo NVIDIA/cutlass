@@ -1267,7 +1267,6 @@ class Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel:
                     (None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])
                 ]
 
-                # Apply SFB slicing hack when cta_tile_shape_n=64
                 slice_n = mma_tile_coord_mnl[1]
                 if cutlass.const_expr(self.cta_tile_shape_mnk[1] == 64):
                     slice_n = mma_tile_coord_mnl[1] // 2
@@ -1437,7 +1436,6 @@ class Sm100PersistentBlockScaleDenseGemmAllReduceLDMCxSTMCKernel:
                 if is_leader_cta:
                     acc_pipeline.producer_acquire(acc_producer_state)
 
-                # Apply TMEM pointer offset hack when cta_tile_shape_n=192 or cta_tile_shape_n=64
                 tCtSFB_mma = tCtSFB
                 if cutlass.const_expr(self.cta_tile_shape_mnk[1] in {64, 192}):
                     # If this is an ODD tile, shift the TMEM start address for cta_tile_shape_n=192 case by two words (ignores first 64 columns of SFB)

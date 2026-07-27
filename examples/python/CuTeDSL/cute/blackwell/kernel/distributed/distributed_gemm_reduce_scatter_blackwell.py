@@ -2114,7 +2114,7 @@ def allocate_tensors(
     # Flag tensor sized for the worst-case kernel config: smallest cta_tile is
     # 64x64, so max #tiles = (m/64) * (n/64). Pad by 160 for per-SM slots
     # (B200 has 148; 160 is a safe upper bound). The kernel resets these flags
-    # internally on each launch, so a single allocation can be reused across
+    # on each launch, so a single allocation can be reused across
     # (mma_tiler, use_2cta) candidates in a benchmark sweep.
     num_flags = (m // 64) * (n // 64) + 160
 
@@ -2903,7 +2903,7 @@ def run_distributed_benchmark(
         print(f"Total number of candidate configs: {len(candidates)}", flush=True)
 
     # Run each candidate. Tensors (A/B/C/comm_out/flags) are reused across
-    # candidates; the kernel resets flags internally. Skip any combo the kernel
+    # candidates; the kernel resets flags between candidates. Skip any combo the kernel
     # can't implement — can_implement is deterministic so all ranks skip the
     # same ones, keeping rendezvous collective operations lockstep.
     # ~2s sleep between candidates to let the GPU cool down.

@@ -383,7 +383,7 @@ class PersistentDenseGemmKernel:
             (self.mma_warp_id, self.tma_warp_id, *self.epilog_warp_id)
         )
         self.epilog_threads = 32 * len(self.epilog_warp_id)
-        # Barrier IDs: 0 reserved for sync_threads (pipeline internal), 1=epilog sync,
+        # Barrier IDs: 0 reserved for sync_threads, 1=epilog sync,
         # 2=tmem alloc/retrieve (mma+epilog warps), 3=tmem dealloc (epilog warps only)
         self.epilog_sync_bar_id = 1
         self.tmem_alloc_sync_bar_id = 2
