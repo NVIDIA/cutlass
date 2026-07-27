@@ -57,6 +57,7 @@ namespace cutlass {
  * Utility for parsing command line arguments
  */
 struct CommandLine {
+  std::string program_path;
   std::vector<std::string> keys;
   std::vector<std::string> values;
   std::vector<std::string> args;
@@ -64,7 +65,7 @@ struct CommandLine {
   /**
    * Constructor
    */
-  CommandLine(int argc, const char** argv) {
+  CommandLine(int argc, const char** argv) : program_path(argc > 0 ? argv[0] : "") {
     using namespace std;
 
     for (int i = 1; i < argc; i++) {

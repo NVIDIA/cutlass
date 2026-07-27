@@ -7,7 +7,7 @@
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
-# is strictly prohibited
+# is strictly prohibited.
 
 """
 GEMM Tensor Utilities for CuTe DSL
@@ -139,6 +139,7 @@ def get_gemm_tensor(
     :rtype: cutlass.cute.Tensor
     """
 
+    # Use uint8 view for conversion, then restore element_type after from_dlpack().
     _TYPES_NOT_SUPPORTED_BY_DLPACK = {
         torch.float8_e4m3fn: cute.Float8E4M3FN,
         torch.float8_e5m2: cute.Float8E5M2,
@@ -212,9 +213,71 @@ def get_gemm_tensors(
     return A, B, D, A_cute, B_cute, D_cute
 
 
+def unpack_scale_factors(
+    sf: torch.Tensor, sf_vec_size: int, MN: int, K: int, L: int
+) -> torch.Tensor:
+    """Unpack a scale-factor tensor from BlockScaledBasicChunk layout to a
+    dense ``(MN, K, L)`` tensor.
+
+    The on-device SF layout packs scale factors into 512-byte atoms with
+    a specific index mapping: 128-row MN tiles, 4-element K groups, and
+    an interleaved ``(mn0, mn1, k1)`` addressing within each atom.  This
+    function inverts that mapping so that the output element at position
+    ``(m, k, l)`` holds the scale factor that applies to element
+    ``(m, k, l)`` in A/B, ready for direct element-wise multiplication.
+
+    :param sf: Scale-factor tensor in packed layout, shape
+        ``(L, m_padded, k_padded)``.
+    :type sf: torch.Tensor
+    :param sf_vec_size: Number of K-elements per scale-factor block.
+    :type sf_vec_size: int
+    :param MN: Logical (unpadded) MN dimension.
+    :type MN: int
+    :param K: Logical (unpadded) K dimension.
+    :type K: int
+    :param L: Batch dimension.
+    :type L: int
+    :return: Dense FP32 tensor of shape ``(MN, K, L)`` with unpacked
+        scale factors.
+    :rtype: torch.Tensor
+    """  # noqa: D205
+
+    def index_map() -> torch.Tensor:
+        ATOM = 512
+        ATOM_MN = 128
+        ATOM_K = 4
+        # Number of interleaved MN lanes within each 512-byte atom.
+        INTERLEAVE_FACTOR = 32
+        INTERLEAVE_STRIDE = ATOM // INTERLEAVE_FACTOR  # 16
+        K_TILE = ATOM_K * sf_vec_size
+
+        k_tiles = (K + K_TILE - 1) // K_TILE
+        mn_tiles = (MN + ATOM_MN - 1) // ATOM_MN
+        sf_per_l = ATOM * mn_tiles * k_tiles
+
+        m, k = torch.meshgrid(
+            torch.arange(MN, device=sf.device),
+            torch.arange(K, device=sf.device),
+            indexing="ij",
+        )
+
+        base = (
+            (m // ATOM_MN) * (ATOM * k_tiles)
+            + (k // K_TILE) * ATOM
+            + INTERLEAVE_STRIDE * (m % INTERLEAVE_FACTOR)
+            + ATOM_K * ((m % ATOM_MN) // INTERLEAVE_FACTOR)
+            + ((k // sf_vec_size) % ATOM_K)
+        )
+
+        l_offsets = torch.arange(L, device=sf.device)[:, None, None] * sf_per_l
+        return base.unsqueeze(0) + l_offsets
+
+    return sf.flatten()[index_map()].permute(1, 2, 0)
+
+
 def create_scale_factor_tensor(
     MN: int, K: int, L: int, sf_vec_size: int, sf_dtype: Type[Numeric]
-) -> Tuple[torch.Tensor, cute.Tensor]:
+) -> Tuple[torch.Tensor, cute.Tensor, torch.Tensor]:
     """
     Create a random scale-factor tensor in BlockScaledBasicChunk layout.
 
@@ -224,9 +287,10 @@ def create_scale_factor_tensor(
 
     Scale factor values are drawn uniformly from ``{1.0, 2.0, 4.0}``.
 
-    Two tensors are returned: a logical FP32 tensor for host-side reference
-    computation, and a CuTe tensor in the on-device packed layout for passing
-    to the GPU kernel.
+    Three tensors are returned: a logical FP32 tensor for host-side reference
+    computation, a CuTe tensor in the on-device packed layout for passing
+    to the GPU kernel, and the backing PyTorch CUDA tensor whose
+    ``data_ptr()`` can be used for pointer-array construction.
 
     :param MN: Size of the MN dimension of the operand to be scaled.
     :type MN: int
@@ -239,75 +303,14 @@ def create_scale_factor_tensor(
     :type sf_vec_size: int
     :param sf_dtype: CuTe element type for the on-device scale factors
         (e.g. ``cute.Float8E4M3FN``, ``cute.Float8E8M0FNU``).
-    :return: ``(sf_torch, sf_cute)`` where ``sf_torch`` is an FP32 CPU tensor
-        of shape ``(MN, K, L)`` with scale factors unpacked into a dense
-        layout suitable for element-wise multiplication with A or B, and
+    :return: ``(sf_ref, sf_cute, sf_gpu)`` where ``sf_ref`` is an FP32 CPU
+        tensor of shape ``(MN, K, L)`` with scale factors unpacked into a
+        dense layout suitable for element-wise multiplication with A or B,
         ``sf_cute`` is a CuTe CUDA tensor in BlockScaledBasicChunk layout
-        with ``element_type`` set to ``sf_dtype``.
-    :rtype: tuple[torch.Tensor, cutlass.cute.Tensor]
+        with ``element_type`` set to ``sf_dtype``, and ``sf_gpu`` is the
+        backing PyTorch CUDA tensor for pointer-array construction.
+    :rtype: tuple[torch.Tensor, cutlass.cute.Tensor, torch.Tensor]
     """
-
-    def unpack_scale_factors(
-        sf: torch.Tensor, sf_vec_size: int, MN: int, K: int, L: int
-    ) -> torch.Tensor:
-        """
-        Unpack a scale-factor tensor from BlockScaledBasicChunk layout to a
-        dense ``(MN, K, L)`` tensor.
-
-        The on-device SF layout packs scale factors into 512-byte atoms with
-        a specific index mapping: 128-row MN tiles, 4-element K groups, and
-        an interleaved ``(mn0, mn1, k1)`` addressing within each atom.  This
-        function inverts that mapping so that the output element at position
-        ``(m, k, l)`` holds the scale factor that applies to element
-        ``(m, k, l)`` in A/B, ready for direct element-wise multiplication.
-
-        :param sf: Scale-factor tensor in packed layout, shape
-            ``(L, m_padded, k_padded)``.
-        :type sf: torch.Tensor
-        :param sf_vec_size: Number of K-elements per scale-factor block.
-        :type sf_vec_size: int
-        :param MN: Logical (unpadded) MN dimension.
-        :type MN: int
-        :param K: Logical (unpadded) K dimension.
-        :type K: int
-        :param L: Batch dimension.
-        :type L: int
-        :return: Dense FP32 tensor of shape ``(MN, K, L)`` with unpacked
-            scale factors.
-        :rtype: torch.Tensor
-        """
-
-        def index_map() -> torch.Tensor:
-            ATOM = 512
-            ATOM_MN = 128
-            ATOM_K = 4
-            DATA_PATHS = 32
-            DATA_PATH_STRIDE = ATOM // DATA_PATHS  # 16
-            K_TILE = ATOM_K * sf_vec_size
-
-            k_tiles = (K + K_TILE - 1) // K_TILE
-            mn_tiles = (MN + ATOM_MN - 1) // ATOM_MN
-            sf_per_l = ATOM * mn_tiles * k_tiles
-
-            m, k = torch.meshgrid(
-                torch.arange(MN, device=sf.device),
-                torch.arange(K, device=sf.device),
-                indexing="ij",
-            )
-
-            base = (
-                (m // ATOM_MN) * (ATOM * k_tiles)
-                + (k // K_TILE) * ATOM
-                + DATA_PATH_STRIDE * (m % DATA_PATHS)
-                + ATOM_K * ((m % ATOM_MN) // DATA_PATHS)
-                + ((k // sf_vec_size) % ATOM_K)
-            )
-
-            l_offsets = torch.arange(L, device=sf.device)[:, None, None] * sf_per_l
-            return base.unsqueeze(0) + l_offsets
-
-        return sf.flatten()[index_map()].permute(1, 2, 0)
-
     ATOM_MN = 128
     ATOM_K = 4
 
@@ -319,11 +322,12 @@ def create_scale_factor_tensor(
         cutlass_torch.dtype(sf_dtype)
     )
 
-    sf_cute = from_dlpack(sf_torch.cuda().view(dtype=torch.uint8), assumed_align=16)
+    sf_gpu = sf_torch.cuda()
+    sf_cute = from_dlpack(sf_gpu.view(dtype=torch.uint8), assumed_align=16)
     sf_cute.element_type = sf_dtype
     sf_torch = unpack_scale_factors(sf_torch.to(torch.float32), sf_vec_size, MN, K, L)
 
-    return sf_torch, sf_cute
+    return sf_torch, sf_cute, sf_gpu
 
 
 def decode_float4e2m1fn(u8: torch.Tensor) -> torch.Tensor:
@@ -365,11 +369,12 @@ def decode_float4e2m1fn(u8: torch.Tensor) -> torch.Tensor:
             -6.0,
         ],
         dtype=torch.float32,
+        device=u8.device,
     )
 
     MN, K, L = u8.shape
     flat = u8.permute(2, 0, 1).flatten()
-    idx = torch.arange(u8.numel())
+    idx = torch.arange(u8.numel(), device=u8.device)
     byte_idx = idx // 2
     shift = (idx % 2) * 4
     return lut[(flat[byte_idx] >> shift) & 0xF].view(L, MN, K).permute(1, 2, 0)

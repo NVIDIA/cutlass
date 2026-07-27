@@ -359,6 +359,7 @@ class ScaledGroupedGemmKernel:
         )
 
         self.num_sched_stages = 2
+        self.sched_work_tile_bytes_per_stage = 16  # 4 fields * sizeof(Int32)
 
         # ── SMEM layouts ──
         self.a_smem_layout_staged = sm100_utils.make_smem_layout_a(
@@ -1371,7 +1372,11 @@ class ScaledGroupedGemmKernel:
             acc_full_mbar_ptr: cute.struct.MemRange[
                 cutlass.Int64, self.num_acc_pipeline_stages * 2
             ]
-            sched_buf: cute.struct.MemRange[cutlass.Int32, self.num_sched_stages * 4]
+            sched_buf_align_bytes = self.sched_work_tile_bytes_per_stage
+            sched_buf: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Int32, self.num_sched_stages * 4],
+                sched_buf_align_bytes,
+            ]
             sched_mbar_ptr: cute.struct.MemRange[
                 cutlass.Int64, self.num_sched_stages * 2
             ]

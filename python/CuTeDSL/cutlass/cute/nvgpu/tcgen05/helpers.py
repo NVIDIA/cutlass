@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, overload, Type, Tuple, Union, Optional
+from typing import Any, Optional, Tuple, Type, Union, cast, overload
 
 from cutlass.cutlass_dsl import dsl_user_op
 
@@ -220,12 +220,12 @@ def commit(
        - :func:`cute.arch.mbarrier_arrive` - General barrier arrive operation
     """
     if cta_group == CtaGroup.ONE:
-        group = nvvm.Tcgen05GroupKind.CTA_1
+        group = nvvm.CTAGroupKind.CTA_1
     else:
         assert cta_group == CtaGroup.TWO
-        group = nvvm.Tcgen05GroupKind.CTA_2
+        group = nvvm.CTAGroupKind.CTA_2
 
-    mbar_ptr = mbar_ptr.llvm_ptr
+    mbar_ptr = cast(Any, mbar_ptr).llvm_ptr
     if mask is not None:
         mask = Int16(mask).ir_value(loc=loc, ip=ip)
         nvvm.tcgen05_commit(mbar_ptr, multicast_mask=mask, group=group, loc=loc, ip=ip)
@@ -314,11 +314,12 @@ def get_tmem_copy_properties(
         num_dp, num_bits = 32, 32
     else:
         raise ValueError(f"expects 'atom' to be a TMEM copy, but got {atom}")
+    op_raw: Any = atom.op
     if is_tmem_load(atom):
-        return num_dp, num_bits, atom.op.repeat.value, atom.op.pack  # type: ignore[union-attr]
+        return num_dp, num_bits, op_raw.repeat.value, op_raw.pack
     else:
         assert is_tmem_store(atom), "atom must be a TMEM store"
-        return num_dp, num_bits, atom.op.repeat.value, atom.op.unpack  # type: ignore[union-attr]
+        return num_dp, num_bits, op_raw.repeat.value, op_raw.unpack
 
 
 @dsl_user_op
@@ -360,7 +361,7 @@ def make_tmem_copy(
     Makes a Tiled Copy instance from a TMEM Copy Atom and a TMEM tensor.
     """
     tiled_copy_val = _cute_nvgpu_ir.atom_make_tmem_copy(
-        atom._trait.value, tmem_tensor.value, loc=loc, ip=ip
+        atom._trait.value, cast(Any, tmem_tensor).value, loc=loc, ip=ip
     )
     new_trait = type(atom._trait)(tiled_copy_val)
     return TiledCopy(atom.op, new_trait)
@@ -379,7 +380,7 @@ def make_s2t_copy(
     """
     tmem_tensor = core.filter_zeros(tmem_tensor, loc=loc, ip=ip)
     tiled_copy_val = _cute_nvgpu_ir.atom_make_s2t_copy(
-        atom._trait.value, tmem_tensor.value, loc=loc, ip=ip
+        atom._trait.value, cast(Any, tmem_tensor).value, loc=loc, ip=ip
     )
     new_trait = type(atom._trait)(tiled_copy_val)
     return TiledCopy(atom.op, new_trait)
@@ -397,7 +398,7 @@ def get_s2t_smem_desc_tensor(
     Returns the SMEM descriptor tensor from a S2T copy atom and a SMEM tensor.
     """
     smem_desc_tensor = _cute_nvgpu_ir.atom_get_copy_s2t_smem_desc_view(
-        atom._trait.value, smem_tensor.value, loc=loc, ip=ip
+        atom._trait.value, cast(Any, smem_tensor).value, loc=loc, ip=ip
     )
     return smem_desc_tensor
 
@@ -440,9 +441,9 @@ def make_umma_smem_desc(
     :return: The shared memory descriptor
     :rtype: SmemDescType
     """
-    src = src.value
+    src = cast(Any, src).value
     if next_src is not None:
-        next_src = next_src.value
+        next_src = cast(Any, next_src).value
 
     return _cute_nvgpu_ir.make_umma_smem_desc(
         src=src,

@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from .constants import *
 from .elect import *
 from .mbar import *
 from .nvvm_wrappers import *
@@ -18,13 +19,6 @@ from .numeric_conversion import *
 from .clc import *
 
 import cutlass.cutlass_dsl as cutlass_dsl
-
-# Forward from auto-generated nvvm python: only export on 12.9 wheel
-_nvvm_forward_exports_12_9 = (
-    ["ProxyKind", "SharedSpace", "RoundingModeKind", "ReduxKind", "AtomicOpKind"]
-    if cutlass_dsl.target_version(exact_version="12.9")
-    else []
-)
 
 # __all__ is required here for documentation generation
 __all__ = [
@@ -44,6 +38,7 @@ __all__ = [
     "mbarrier_try_wait",
     "mbarrier_conditional_try_wait",
     "mbarrier_arrive",
+    "mbarrier_test_wait",
     #
     # nvvm_wrappers.py
     #
@@ -86,6 +81,8 @@ __all__ = [
     "vote_uni_sync",
     "warp_redux_sync",
     "atomic_max_float32",  # Deprecated: use atomic_fmax
+    "atomic_fmax",
+    "atomic_fmin",
     "atomic_add",
     "atomic_and",
     "atomic_or",
@@ -106,6 +103,12 @@ __all__ = [
     "setmaxregister_increase",
     "setmaxregister_decrease",
     "fma_packed_f32x2",
+    "fma_f16",
+    "fma_bf16",
+    "fma_packed_f16x2",
+    "fma_packed_bf16x2",
+    "fma_packed_f32x2_f16x2_f32x2_f32x2",
+    "fma_packed_f32x2_bf16x2_f32x2_f32x2",
     "mul_packed_f32x2",
     "add_packed_f32x2",
     "sub_packed_f32x2",
@@ -118,9 +121,18 @@ __all__ = [
     "cvt_i8_bf16",
     "cvt_i8x2_to_bf16x2",
     "cvt_i8x4_to_bf16x4",
+    "cvt_f32_tf32",
     "cvt_f32x2_bf16x2",
+    "warp_redux_sync",
     "smid",
     "nsmid",
+    "total_smem_size",
+    "aggr_smem_size",
+    "gridid",
+    "nwarpid",
+    "warpsize",
+    "globaltimer",
+    "globaltimer_lo",
     "clock",
     "clock64",
     "match_sync",
@@ -149,15 +161,19 @@ __all__ = [
     "sub_sat_int",
     "lop3",
     "shf",
-    # Constants
+    #
+    # constants.py
+    #
     "WARP_SIZE",
-    *_nvvm_forward_exports_12_9,
+    "WARPS_PER_WARPGROUP",
+    "THREADS_PER_WARPGROUP",
     #
     # smem.py
     #
     "alloc_smem",
     "get_dyn_smem",
     "get_dyn_smem_size",
+    "store_async_dsmem",
     #
     # tmem.py
     #

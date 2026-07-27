@@ -15,7 +15,7 @@ from typing import Literal, Optional, Tuple, Type, Union
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.typing import Pointer, Int32
-from cutlass.cutlass_dsl import Numeric, T, dsl_user_op
+from cutlass.cutlass_dsl import T, Numeric, dsl_user_op
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
 from typing_extensions import deprecated

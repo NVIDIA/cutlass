@@ -94,7 +94,7 @@ void launch_dependent_grids() {
 CUTLASS_DEVICE
 void wait_on_dependent_grids() {
 #if (defined(CUTLASS_GDC_ENABLED))
-  asm volatile("griddepcontrol.wait;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
 #endif
 }
 

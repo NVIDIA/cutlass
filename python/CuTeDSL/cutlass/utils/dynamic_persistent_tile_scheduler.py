@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 import inspect
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import cutlass
 from cutlass.cutlass_dsl import (
@@ -26,9 +26,16 @@ from cutlass._mlir import ir
 from cutlass.utils.static_persistent_tile_scheduler import (
     WorkTileInfo,
 )
+from typing_extensions import deprecated
 import cutlass.cute as cute
 
+_DEPRECATION_MSG = (
+    "Migrated to examples/CuTeDSL/helpers/dynamic_persistent_tile_scheduler.py "
+    "(BSD-3). The wheel copy will be removed in a future release."
+)
 
+
+@deprecated(_DEPRECATION_MSG)
 class ClcDynamicPersistentTileSchedulerParams:
     """A class to represent parameters for a dynamic persistent tile scheduler.
 
@@ -67,15 +74,16 @@ class ClcDynamicPersistentTileSchedulerParams:
         :raises ValueError: If cluster_shape_k is not 1.
         """
 
-        if cluster_shape_mnk[2] != 1:  # type: ignore[index]
-            raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")  # type: ignore[index]
+        assert isinstance(cluster_shape_mnk, tuple)
+        if cluster_shape_mnk[2] != 1:
+            raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")
         if swizzle_size < 1:
             raise ValueError(f"expect swizzle_size >= 1, but get {swizzle_size}")
 
         self.problem_shape_ntile_mnl = problem_shape_ntile_mnl
         # cluster_shape_mnk is kept for reconstruction
         self._cluster_shape_mnk = cluster_shape_mnk
-        self.cluster_shape_mn = cluster_shape_mnk[:2]  # type: ignore[index]
+        self.cluster_shape_mn = cluster_shape_mnk[:2]
         self.swizzle_size = swizzle_size
         self._raster_along_m = raster_along_m
         self.cluster_shape_major_fdd = None
@@ -86,7 +94,7 @@ class ClcDynamicPersistentTileSchedulerParams:
         self.problem_layout_ncluster_mnl = cute.make_layout(
             cute.ceil_div(
                 self.problem_shape_ntile_mnl,
-                cluster_shape_mnk[:2],  # type: ignore[index]
+                cluster_shape_mnk[:2],
                 loc=loc,
                 ip=ip,
             ),
@@ -100,18 +108,19 @@ class ClcDynamicPersistentTileSchedulerParams:
                 self.problem_layout_ncluster_mnl.shape,
                 (1, swizzle_size, 1) if raster_along_m else (swizzle_size, 1, 1),
             )
+            assert isinstance(problem_shape_ncluster_mnl, tuple)
 
             if raster_along_m:
                 self.problem_layout_ncluster_mnl = cute.make_layout(
                     (
-                        problem_shape_ncluster_mnl[0],  # type: ignore[index]
-                        (swizzle_size, problem_shape_ncluster_mnl[1] // swizzle_size),  # type: ignore[index, operator]
-                        problem_shape_ncluster_mnl[2],  # type: ignore[index]
+                        problem_shape_ncluster_mnl[0],
+                        (swizzle_size, problem_shape_ncluster_mnl[1] // swizzle_size),  # type: ignore[operator]
+                        problem_shape_ncluster_mnl[2],
                     ),
                     stride=(
                         swizzle_size,
-                        (1, swizzle_size * problem_shape_ncluster_mnl[0]),  # type: ignore[index]
-                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[index, operator]
+                        (1, swizzle_size * problem_shape_ncluster_mnl[0]),
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[operator]
                     ),
                     loc=loc,
                     ip=ip,
@@ -119,14 +128,14 @@ class ClcDynamicPersistentTileSchedulerParams:
             else:
                 self.problem_layout_ncluster_mnl = cute.make_layout(
                     (
-                        (swizzle_size, problem_shape_ncluster_mnl[0] // swizzle_size),  # type: ignore[index, operator]
-                        problem_shape_ncluster_mnl[1],  # type: ignore[index]
-                        problem_shape_ncluster_mnl[2],  # type: ignore[index]
+                        (swizzle_size, problem_shape_ncluster_mnl[0] // swizzle_size),  # type: ignore[operator]
+                        problem_shape_ncluster_mnl[1],
+                        problem_shape_ncluster_mnl[2],
                     ),
                     stride=(
-                        (1, swizzle_size * problem_shape_ncluster_mnl[1]),  # type: ignore[index]
+                        (1, swizzle_size * problem_shape_ncluster_mnl[1]),
                         swizzle_size,
-                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[index, operator]
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[operator]
                     ),
                     loc=loc,
                     ip=ip,
@@ -260,6 +269,7 @@ ClcDynamicPersistentTileSchedulerParams.__init__.__signature__ = inspect.Signatu
 )
 
 
+@deprecated(_DEPRECATION_MSG)
 class ClcDynamicPersistentTileScheduler:
     """A scheduler for dynamic persistent tile execution in CUTLASS/CuTe kernels.
 
@@ -278,6 +288,7 @@ class ClcDynamicPersistentTileScheduler:
         num_tiles_executed: Int32,
         clc_response_ptr: cute.Pointer,
         block_idx: Tuple[Integer, Integer, Integer],
+        insert_fence: bool = True,
     ):
         """
         Initializes the ClcDynamicPersistentTileScheduler with the given parameters.
@@ -292,12 +303,21 @@ class ClcDynamicPersistentTileScheduler:
         :type clc_response_ptr: cute.Pointer
         :param block_idx: The block index.
         :type block_idx: Tuple[Integer, Integer, Integer]
+        :param insert_fence: Whether to insert a fence to ensure generic-async proxy order.
+            CLC issue is in async proxy while loading the response from shared memory is in
+            generic proxy. A cross-proxy fence is needed to ensure producer's next issue
+            won't race with consumer's current loading. Therefore the scheduler inserts a
+            fence by default after loading the response.
+            Developers may insert the fence in pipeline acquire/release functions. In that case,
+            the fence here can be omitted.
+        :type insert_fence: bool
         """
         self.params = params
         self.cta_id_in_cluster = cta_id_in_cluster
         self._num_tiles_executed = num_tiles_executed
         self._clc_response_ptr = clc_response_ptr
         self._block_idx = block_idx
+        self.insert_fence = insert_fence
 
     def __extract_mlir_values__(self) -> list[ir.Value]:
         values = extract_mlir_values(self.cta_id_in_cluster)
@@ -333,6 +353,7 @@ class ClcDynamicPersistentTileScheduler:
         block_idx: Tuple[Integer, Integer, Integer],
         grid_dim: Tuple[Integer, Integer, Integer],
         clc_response_ptr: cute.Pointer,
+        insert_fence: bool = True,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -374,6 +395,7 @@ class ClcDynamicPersistentTileScheduler:
             num_tiles_executed,
             clc_response_ptr,
             block_idx,
+            insert_fence,
         )
 
     # called by host
@@ -454,10 +476,12 @@ class ClcDynamicPersistentTileScheduler:
         result_addr: 16-byte response data (simulating shared memory access)
         """
         m_idx, n_idx, l_idx, vld = cute.arch.clc_response(result_addr, loc=loc, ip=ip)
-        cute.arch.fence_proxy(
-            "async.shared",
-            space="cta",
-        )
+
+        # Cross-proxy fence to ensure generic proxy access are seen by later
+        # async proxy operations.
+        if self.insert_fence:
+            cute.arch.fence_proxy("async.shared", space="cta", loc=loc, ip=ip)
+
         m_idx, n_idx, l_idx = self._swizzle_and_rasterize(
             m_idx, n_idx, l_idx, loc=loc, ip=ip
         )
@@ -467,6 +491,7 @@ class ClcDynamicPersistentTileScheduler:
         return WorkTileInfo(cur_tile_coord, vld)
 
     @dsl_user_op
+    @cute.jit
     def get_current_work(
         self,
         *,
@@ -474,15 +499,13 @@ class ClcDynamicPersistentTileScheduler:
         ip: Optional[ir.InsertionPoint] = None,
     ) -> WorkTileInfo:
         smem_addr = self._clc_response_ptr
-        work_tile = self.work_tile_info_from_clc_response(smem_addr)
+        work_tile = self.work_tile_info_from_clc_response(smem_addr, loc=loc, ip=ip)
         return work_tile
 
     @dsl_user_op
+    @cute.jit
     def initial_work_tile_info(
-        self,
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
+        self, *, loc: Any = None, ip: Any = None
     ) -> WorkTileInfo:
         bidx, bidy, bidz = self._block_idx
         # Subtract cta_id_in_cluster from block_idx because swizzle_and_rasterize expects coordinates to be
@@ -498,6 +521,7 @@ class ClcDynamicPersistentTileScheduler:
         return WorkTileInfo(cur_tile_coord, Boolean(True))
 
     @dsl_user_op
+    @cute.jit
     def advance_to_next_work(
         self,
         mbarrier_addr: cute.Pointer,
@@ -513,5 +537,6 @@ class ClcDynamicPersistentTileScheduler:
         self._num_tiles_executed += Int32(1)
 
     @property
+    @cute.jit
     def num_tiles_executed(self) -> Int32:
         return self._num_tiles_executed

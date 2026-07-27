@@ -117,6 +117,18 @@ is_k_major_B() {
   return is_k_major<TagToStrideB_t<LayoutB>>();
 }
 
+template<class LayoutC>
+constexpr bool
+is_m_major_C() {
+  return is_major<0,TagToStrideC_t<LayoutC>>();
+}
+
+template<class LayoutC>
+constexpr bool
+is_n_major_C() {
+  return is_major<1,TagToStrideC_t<LayoutC>>();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 // The following two metafunctions are used to detect whether a `kernel::Gemm` or `kernel::GemmUniversal`

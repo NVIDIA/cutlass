@@ -182,6 +182,26 @@ for_each(T&& t, F&& f)
   CUTE_GCC_UNREACHABLE;
 }
 
+template <class T0, class T1, class F>
+CUTE_HOST_DEVICE constexpr
+void
+for_each(T0&& t0, T1&& t1, F&& f)
+{
+  if constexpr (is_tuple<remove_cvref_t<T0>>::value) {
+    static_assert(tuple_size<remove_cvref_t<T0>>::value == tuple_size<remove_cvref_t<T1>>::value, "Mismatched tuple_size");
+    return transform_apply(static_cast<T0&&>(t0), static_cast<T1&&>(t1), 
+      [&](auto&&... a){
+        f(static_cast<decltype(a)&&>(a)...);
+        return tuple<>{}; // dummy return value
+      },
+      [](auto...){});
+  } else {
+    return f(static_cast<T0&&>(t0), static_cast<T1&&>(t1));
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
 template <class T, class F>
 CUTE_HOST_DEVICE constexpr
 auto

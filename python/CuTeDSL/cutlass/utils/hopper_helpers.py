@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Type, Union, Tuple, Optional
+from typing import Any, Type, Union, Tuple, Optional
 
 from cutlass._mlir import ir
 from cutlass.utils.layout import LayoutEnum
@@ -126,6 +126,7 @@ def make_trivial_tiled_mma(
     :raises TypeError: If the data type is not supported.
     """
 
+    mma_op: Any
     if a_dtype in {Float16, BFloat16}:
         if a_dtype != b_dtype:
             raise TypeError(f"Type mismatch: {a_dtype} != {b_dtype}")
@@ -144,7 +145,7 @@ def make_trivial_tiled_mma(
         Float8E4M3FN,
         Float8E5M2,
     }:
-        mma_op = MmaF8Op(  # type: ignore[assignment]
+        mma_op = MmaF8Op(
             a_dtype,
             b_dtype,
             acc_dtype,
@@ -154,7 +155,7 @@ def make_trivial_tiled_mma(
             b_leading_mode,
         )
     elif a_dtype in {Int8, Uint8} and b_dtype in {Int8, Uint8}:
-        mma_op = MmaI8Op(  # type: ignore[assignment]
+        mma_op = MmaI8Op(
             a_dtype,
             b_dtype,
             acc_dtype,
@@ -177,7 +178,7 @@ def get_smem_layout_atom(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> "cute.nvgpu.warpgroup.SmemLayoutAtomKind":
+) -> Any:
     """Select the optimal shared memory layout atom based on parameters.
 
     :param layout: Layout enum of the tensor
@@ -242,12 +243,15 @@ def make_smem_layout_a(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
     # Extract A tensor shape from the MMA tiler (M dimension)
+    assert isinstance(mma_tiler_mnk, tuple)
     a_tile_shape_mnk = mma_tiler_mnk
     a_smem_shape = cute.slice_(a_tile_shape_mnk, (None, 0, None), loc=loc, ip=ip)
 
     # Determine if K is the major mode and get the major mode size
     is_k_major = a_layout.is_k_major_a()
-    a_major_mode_size = a_tile_shape_mnk[2] if is_k_major else a_tile_shape_mnk[0]  # type: ignore[index]
+    a_major_mode_size = cute.size(
+        a_tile_shape_mnk[2] if is_k_major else a_tile_shape_mnk[0]
+    )
 
     # Create SMEM layout atom for A tensor based on major mode and data type
     a_smem_layout_atom = make_smem_layout_atom(
@@ -299,11 +303,12 @@ def make_smem_layout_b(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
     # Extract B tensor shape from the MMA tiler (N and K dimensions)
+    assert isinstance(mma_tiler_mnk, tuple)
     b_smem_shape = cute.slice_(mma_tiler_mnk, (0, None, None), loc=loc, ip=ip)
 
     # Determine if K is the major mode and get the major mode size
     is_k_major = b_layout.is_k_major_b()
-    b_major_mode_size = mma_tiler_mnk[2] if is_k_major else mma_tiler_mnk[1]  # type: ignore[index]
+    b_major_mode_size = cute.size(mma_tiler_mnk[2] if is_k_major else mma_tiler_mnk[1])
 
     # Create SMEM layout atom for B tensor based on major mode and data type
     b_smem_layout_atom = make_smem_layout_atom(
@@ -361,10 +366,11 @@ def make_smem_layout_epi(
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
     # Extract output tensor shape from epilog tile
+    assert isinstance(epi_tile, tuple)
     o_smem_shape = epi_tile
 
     # Determine major mode size based on layout (M or N major)
-    o_major_mode_size = epi_tile[1] if epi_layout.is_n_major_c() else epi_tile[0]  # type: ignore[index]
+    o_major_mode_size = epi_tile[1] if epi_layout.is_n_major_c() else epi_tile[0]
 
     # Create SMEM layout atom for output tensor based on layout and data type
     o_smem_layout_atom = make_smem_layout_atom(

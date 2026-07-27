@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any, Type
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir

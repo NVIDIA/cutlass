@@ -14,7 +14,11 @@
 from abc import ABC
 
 from collections.abc import Sequence
-from typing import Optional, Union
+from typing import Callable, Optional, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .mlir_builder import MLIRBuilder
+    from cutlass._mlir import ir
 
 try:
     import tvm_ffi
@@ -83,6 +87,9 @@ class Param(ABC):
     """Base class for all parameters."""
 
 
+NATIVE_STRUCT_TYPE_ATTR = "_native_struct_type"
+
+
 class Var(Param):
     """variables: pointer, integer, floating-point, boolean, etc.
 
@@ -94,12 +101,15 @@ class Var(Param):
         The data type of the parameter.
     divisibility: Optional[int]
         The divisibility of the parameter, by default None.
-
+    alternate_ir_type_fetch_func: Optional[Callable[["MLIRBuilder"], "ir.Type"]]
+        A function to fetch the alternate IR type of the parameter. This is
+        used for cases where there is no native IR type for the parameter.
     """
 
     name: str
     dtype: "tvm_ffi.dtype"
     divisibility: Optional[int]
+    alternate_ir_type_fetch_func: Optional[Callable[["MLIRBuilder"], "ir.Type"]] = None
 
     def __init__(
         self,
@@ -107,6 +117,9 @@ class Var(Param):
         dtype: Union[str, "tvm_ffi.dtype"],
         *,
         divisibility: Optional[int] = None,
+        alternate_ir_type_fetch_func: Optional[
+            Callable[["MLIRBuilder"], "ir.Type"]
+        ] = None,
     ) -> None:
         """Initialize a Var parameter.
 
@@ -121,6 +134,7 @@ class Var(Param):
         self.name = name
         self.dtype = tvm_ffi.dtype(dtype)
         self.divisibility = divisibility
+        self.alternate_ir_type_fetch_func = alternate_ir_type_fetch_func
 
 
 class Shape(Param):
@@ -338,6 +352,39 @@ class ConstNone(Param):
         self.name = name
 
 
+class ConstInt(Param):
+    """Constexpr int parameter: runtime-asserted to equal ``value``."""
+
+    name: str
+    value: int
+
+    def __init__(self, name: str, value: int) -> None:
+        self.name = name
+        self.value = int(value)
+
+
+class ConstBool(Param):
+    """Constexpr bool parameter: runtime-asserted to equal ``value``."""
+
+    name: str
+    value: bool
+
+    def __init__(self, name: str, value: bool) -> None:
+        self.name = name
+        self.value = bool(value)
+
+
+class ConstFloat(Param):
+    """Constexpr float parameter: runtime-asserted to bit-equal ``value``."""
+
+    name: str
+    value: float
+
+    def __init__(self, name: str, value: float) -> None:
+        self.name = name
+        self.value = float(value)
+
+
 class TupleParam(Param):
     """Tuple parameter.
 
@@ -410,6 +457,12 @@ def format_param_type(param: Param) -> str:
         return "DataPointer"
     elif isinstance(param, ConstNone):
         return "None"
+    elif isinstance(param, ConstInt):
+        return f"Int({param.value})"
+    elif isinstance(param, ConstBool):
+        return f"Bool({param.value})"
+    elif isinstance(param, ConstFloat):
+        return f"Float({param.value})"
     elif isinstance(param, TupleParam):
         # Recursively format tuple elements
         element_types = [format_param_type(p) for p in param.params]

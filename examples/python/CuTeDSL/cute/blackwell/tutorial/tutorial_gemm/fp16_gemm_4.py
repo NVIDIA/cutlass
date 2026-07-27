@@ -1,12 +1,30 @@
-# SPDX-FileCopyrightText: Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
-#
-# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
-# property and proprietary rights in and to this material, related
-# documentation and any modifications thereto. Any use, reproduction,
-# disclosure or distribution of this material and related documentation
-# without an express license agreement from NVIDIA CORPORATION or
-# its affiliates is strictly prohibited.
+# Copyright (c) 2024 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # This is the fourth tutorial GEMM (4). It extends fp16_gemm_3_1.py by adding TMA prefetch.
 # TMA prefetch uses cute.prefetch() to bring data into L2 cache before TMA copy needs it,
@@ -55,7 +73,7 @@ CuTe DSL Blackwell SM100 kernels. Users can specify preferred and fallback clust
 
 To run this example:
 .. code-block:: bash
-    python examples/blackwell/tutorial_gemm/fp16_gemm_4.py  \
+    python examples/cute/blackwell/tutorial/tutorial_gemm/fp16_gemm_4.py  \
       --mnk 8192,8192,8192
 
 Constraints for this example:
@@ -96,22 +114,20 @@ class SharedStorage:
     tmem_holding_buffer: cutlass.Int32
     # Only for CLC Dynamic Scheduler
     clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
-    clc_response: cute.struct.MemRange[cutlass.Int32, 4]
+    clc_response_align_bytes = num_clc_response_bytes
+    clc_response: cute.struct.Align[
+        cute.struct.MemRange[cutlass.Int32, 4],
+        clc_response_align_bytes,
+    ]
 
 
 @cute.jit
 def cluster_specific_kernel(
     tiled_mma: cute.TiledMma,
-    tma_atom_a: cute.CopyAtom,
-    mA_mkl: cute.Tensor,
-    tma_atom_b: cute.CopyAtom,
-    mB_nkl: cute.Tensor,
-    tma_atom_c: cute.CopyAtom,
-    mC_mnl: cute.Tensor,
-    a_smem_layout: cute.ComposedLayout,
-    b_smem_layout: cute.ComposedLayout,
+    tma_a: cpasync.TmaInfo,
+    tma_b: cpasync.TmaInfo,
+    tma_c: cpasync.TmaInfo,
     c_smem_layout_kind: cutlass.Constexpr,
-    epi_smem_layout_staged: cute.ComposedLayout,
     epi_tile: cute.Tile,
     cta_layout_vmnk: cute.Layout,
     cluster_shape_mnk: Tuple[int, int, int],
@@ -120,6 +136,11 @@ def cluster_specific_kernel(
         utils.PersistentTileSchedulerParams,
     ],
 ):
+    # Extract tma_tensor from TmaInfo
+    mA_mkl = tma_a.tma_tensor
+    mB_nkl = tma_b.tma_tensor
+    mC_mnl = tma_c.tma_tensor
+
     warp_idx = cute.arch.warp_idx()
     warp_idx = cute.arch.make_warp_uniform(warp_idx)
 
@@ -148,9 +169,9 @@ def cluster_specific_kernel(
 
     # Prefetch tma descriptor
     if warp_idx == tma_warp_id:
-        cpasync.prefetch_descriptor(tma_atom_a)
-        cpasync.prefetch_descriptor(tma_atom_b)
-        cpasync.prefetch_descriptor(tma_atom_c)
+        cpasync.prefetch_descriptor(tma_a.atom)
+        cpasync.prefetch_descriptor(tma_b.atom)
+        cpasync.prefetch_descriptor(tma_c.atom)
 
     # As many participants as the number of threads issuing the MMA in the same row and column
     # Substract one to not count twice the same thread
@@ -192,8 +213,8 @@ def cluster_specific_kernel(
     )
 
     num_tma_copy_bytes = (
-        cute.size_in_bytes(io_dtype, cute.select(a_smem_layout, mode=[0, 1, 2]))
-        + cute.size_in_bytes(io_dtype, cute.select(b_smem_layout, mode=[0, 1, 2]))
+        cute.size_in_bytes(io_dtype, cute.select(tma_a.smem_layout, mode=[0, 1, 2]))
+        + cute.size_in_bytes(io_dtype, cute.select(tma_b.smem_layout, mode=[0, 1, 2]))
     ) * cute.size(cta_layout_vmnk, mode=[0])
 
     # Threads/warps participating in the mainloop pipeline
@@ -273,21 +294,21 @@ def cluster_specific_kernel(
     # Allocate SMEM
     sA = smem.allocate_tensor(
         element_type=io_dtype,
-        layout=a_smem_layout.outer,
+        layout=tma_a.smem_layout.outer,
         byte_alignment=128,
-        swizzle=a_smem_layout.inner,
+        swizzle=tma_a.smem_layout.inner,
     )
     sB = smem.allocate_tensor(
         element_type=io_dtype,
-        layout=b_smem_layout.outer,
+        layout=tma_b.smem_layout.outer,
         byte_alignment=128,
-        swizzle=b_smem_layout.inner,
+        swizzle=tma_b.smem_layout.inner,
     )
     sC = smem.allocate_tensor(
         element_type=io_dtype,
-        layout=epi_smem_layout_staged.outer,
+        layout=tma_c.smem_layout.outer,
         byte_alignment=128,
-        swizzle=epi_smem_layout_staged.inner,
+        swizzle=tma_c.smem_layout.inner,
     )
 
     # Partition tensors for MMA and make fragments
@@ -326,7 +347,7 @@ def cluster_specific_kernel(
     # ((atom_v, rest_v), STAGE)
     # ((atom_v, rest_v), RestM, RestK)
     tAsA, tAgA = cute.nvgpu.cpasync.tma_partition(
-        tma_atom_a,
+        tma_a.atom,
         cta_in_cluster_coord_vmnk[2],
         cute.make_layout(cute.size(cta_layout_vmnk, mode=[2])),
         cute.group_modes(sA, 0, 3),
@@ -336,7 +357,7 @@ def cluster_specific_kernel(
     # ((atom_v, rest_v), STAGE)
     # ((atom_v, rest_v), RestN, RestK)
     tBsB, tBgB = cute.nvgpu.cpasync.tma_partition(
-        tma_atom_b,
+        tma_b.atom,
         cta_in_cluster_coord_vmnk[1],
         cute.make_layout(cute.size(cta_layout_vmnk, mode=[1])),
         cute.group_modes(sB, 0, 3),
@@ -346,7 +367,7 @@ def cluster_specific_kernel(
     gC_epi = cute.flat_divide(tCgC[((None, None), 0, 0, None, None)], epi_tile)
 
     tCsC, tCgC_tma = cute.nvgpu.cpasync.tma_partition(
-        tma_atom_c,
+        tma_c.atom,
         0,
         cute.make_layout(1),
         cute.group_modes(sC, 0, 2),
@@ -403,14 +424,14 @@ def cluster_specific_kernel(
 
                 # Issue TMA loads
                 cute.copy(
-                    tma_atom_a,
+                    tma_a.atom,
                     tAgA_slice[(None, k_tile_idx)],
                     tAsA[(None, handle.index)],
                     tma_bar_ptr=handle.barrier,
                     mcast_mask=tma_mcast_mask_a,
                 )
                 cute.copy(
-                    tma_atom_b,
+                    tma_b.atom,
                     tBgB_slice[(None, k_tile_idx)],
                     tBsB[(None, handle.index)],
                     tma_bar_ptr=handle.barrier,
@@ -471,23 +492,14 @@ def cluster_specific_kernel(
                 # (MMA, MMA_M, MMA_N)
                 tCtAcc = tCtAcc_base[(None, None, None, acc_empty.index)]
 
-                tiled_mma.set(tcgen05.Field.ACCUMULATE, False)
                 for k_tile_idx in range(num_k_tiles):
                     # Wait for TMA copies to complete
                     handle = ab_consumer.wait_and_advance()
 
                     # Execute one K-block worth of MMA instructions
-                    num_k_blocks = cute.size(tCrA, mode=[2])
-                    for k_block_idx in cutlass.range_constexpr(num_k_blocks):
-                        k_block_coord = (None, None, k_block_idx, handle.index)
-                        cute.gemm(
-                            tiled_mma,
-                            tCtAcc,
-                            tCrA[k_block_coord],
-                            tCrB[k_block_coord],
-                            tCtAcc,
-                        )
-                        tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
+                    tiled_mma.set(tcgen05.Field.ACCUMULATE, k_tile_idx != 0)
+                    tile_crd = (None, None, None, handle.index)
+                    cute.gemm(tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc)
 
                     # Signal that the A/B buffers have been consumed and are ready for the next load
                     handle.release()
@@ -520,10 +532,10 @@ def cluster_specific_kernel(
         # (MMA, MMA_M, MMA_N, STAGE)
         tCtAcc_base = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
 
-        # Initialize TMA store pipeline for epilogue
+        # Initialize TMA store pipeline for epilogue with 4 warps
         epilogue_pipeline_producer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread,
-            size=128,
+            pipeline.Agent.Warp,
+            size=4,
         )
         epilogue_pipeline = pipeline.PipelineTmaStore.create(
             num_stages=epi_stages,
@@ -618,7 +630,7 @@ def cluster_specific_kernel(
                 # SMEM -> GMEM
                 if warp_idx == epilogue_warp_ids[0]:
                     cute.copy(
-                        tma_atom_c,
+                        tma_c.atom,
                         tCsC[(None, c_buffer)],
                         tCgC_grouped[(None, subtile_idx)],
                     )
@@ -652,20 +664,12 @@ def cluster_specific_kernel(
 @cute.kernel
 def kernel(
     tiled_mma: cute.TiledMma,
-    tma_atom_a_preferred: cute.CopyAtom,
-    mA_mkl_preferred: cute.Tensor,
-    tma_atom_b_preferred: cute.CopyAtom,
-    mB_nkl_preferred: cute.Tensor,
-    tma_atom_a_fallback: cute.CopyAtom,
-    mA_mkl_fallback: cute.Tensor,
-    tma_atom_b_fallback: cute.CopyAtom,
-    mB_nkl_fallback: cute.Tensor,
-    tma_atom_c: cute.CopyAtom,
-    mC_mnl: cute.Tensor,
-    a_smem_layout: cute.ComposedLayout,
-    b_smem_layout: cute.ComposedLayout,
+    tma_a_preferred: cpasync.TmaInfo,
+    tma_b_preferred: cpasync.TmaInfo,
+    tma_a_fallback: cpasync.TmaInfo,
+    tma_b_fallback: cpasync.TmaInfo,
+    tma_c: cpasync.TmaInfo,
     c_smem_layout_kind: cutlass.Constexpr,
-    epi_smem_layout_staged: cute.ComposedLayout,
     epi_tile: cute.Tile,
     preferred_cta_layout_vmnk: cute.Layout,
     fallback_cta_layout_vmnk: cute.Layout,
@@ -687,19 +691,15 @@ def kernel(
     )
 
     # As for now, only support preferred cluster kernel via the mega-kernel approach
+    # mega-kernel approach has 2 mutually exclusive code branches, only one path runs per launch,
+    # specify `smem_merge_branch_allocs=True` at launch to enables shared memory reuse between two paths
     if is_preferred_cluster:
         cluster_specific_kernel(
             tiled_mma,
-            tma_atom_a_preferred,
-            mA_mkl_preferred,
-            tma_atom_b_preferred,
-            mB_nkl_preferred,
-            tma_atom_c,
-            mC_mnl,
-            a_smem_layout,
-            b_smem_layout,
+            tma_a_preferred,
+            tma_b_preferred,
+            tma_c,
             c_smem_layout_kind,
-            epi_smem_layout_staged,
             epi_tile,
             preferred_cta_layout_vmnk,
             preferred_cluster_shape_mnk,
@@ -708,16 +708,10 @@ def kernel(
     else:
         cluster_specific_kernel(
             tiled_mma,
-            tma_atom_a_fallback,
-            mA_mkl_fallback,
-            tma_atom_b_fallback,
-            mB_nkl_fallback,
-            tma_atom_c,
-            mC_mnl,
-            a_smem_layout,
-            b_smem_layout,
+            tma_a_fallback,
+            tma_b_fallback,
+            tma_c,
             c_smem_layout_kind,
-            epi_smem_layout_staged,
             epi_tile,
             fallback_cta_layout_vmnk,
             fallback_cluster_shape_mnk,
@@ -814,8 +808,8 @@ def host_function(
         mma_inst_shape_mnk,
         tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE,
         tcgen05.OperandSource.SMEM,
-        tcgen05.OperandMajorMode.K,
-        tcgen05.OperandMajorMode.K,
+        cute.nvgpu.OperandMajorMode.K,
+        cute.nvgpu.OperandMajorMode.K,
     )
     tiled_mma = cute.make_tiled_mma(op)
 
@@ -860,37 +854,35 @@ def host_function(
     op = cute.nvgpu.cpasync.CopyBulkTensorTileG2SMulticastOp(
         tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
     )
-    a_smem_layout_slice = cute.slice_(a_smem_layout, (None, None, None, 0))
-    tma_atom_a_fallback, a_tma_tensor_fallback = cute.nvgpu.make_tiled_tma_atom_A(
+    tma_a_fallback = cute.nvgpu.make_tiled_tma_atom_A(
         op,
         a,
-        a_smem_layout_slice,
+        a_smem_layout,
         mma_tiler_mnk,
         tiled_mma,
         fallback_cta_layout_vmnk.shape,
     )
-    b_smem_layout_slice = cute.slice_(b_smem_layout, (None, None, None, 0))
-    tma_atom_b_fallback, b_tma_tensor_fallback = cute.nvgpu.make_tiled_tma_atom_B(
+    tma_b_fallback = cute.nvgpu.make_tiled_tma_atom_B(
         op,
         b,
-        b_smem_layout_slice,
+        b_smem_layout,
         mma_tiler_mnk,
         tiled_mma,
         fallback_cta_layout_vmnk.shape,
     )
 
-    tma_atom_a_preferred, a_tma_tensor_preferred = cute.nvgpu.make_tiled_tma_atom_A(
+    tma_a_preferred = cute.nvgpu.make_tiled_tma_atom_A(
         op,
         a,
-        a_smem_layout_slice,
+        a_smem_layout,
         mma_tiler_mnk,
         tiled_mma,
         preferred_cta_layout_vmnk.shape,
     )
-    tma_atom_b_preferred, b_tma_tensor_preferred = cute.nvgpu.make_tiled_tma_atom_B(
+    tma_b_preferred = cute.nvgpu.make_tiled_tma_atom_B(
         op,
         b,
-        b_smem_layout_slice,
+        b_smem_layout,
         mma_tiler_mnk,
         tiled_mma,
         preferred_cta_layout_vmnk.shape,
@@ -915,12 +907,11 @@ def host_function(
         epi_tile,
         epi_stages,
     )
-    epi_smem_layout = cute.slice_(epi_smem_layout_staged, (None, None, 0))
 
-    tma_atom_c, c_tma_tensor = cute.nvgpu.cpasync.make_tiled_tma_atom(
+    tma_c = cute.nvgpu.cpasync.make_tiled_tma_atom(
         cute.nvgpu.cpasync.CopyBulkTensorTileS2GOp(),
         c,
-        epi_smem_layout,
+        epi_smem_layout_staged,
         epi_tile,
     )
 
@@ -945,20 +936,12 @@ def host_function(
 
     kernel(
         tiled_mma,
-        tma_atom_a_preferred,
-        a_tma_tensor_preferred,
-        tma_atom_b_preferred,
-        b_tma_tensor_preferred,
-        tma_atom_a_fallback,
-        a_tma_tensor_fallback,
-        tma_atom_b_fallback,
-        b_tma_tensor_fallback,
-        tma_atom_c,
-        c_tma_tensor,
-        a_smem_layout,
-        b_smem_layout,
+        tma_a_preferred,
+        tma_b_preferred,
+        tma_a_fallback,
+        tma_b_fallback,
+        tma_c,
         c_smem_layout_kind,
-        epi_smem_layout_staged,
         epi_tile,
         preferred_cta_layout_vmnk,
         fallback_cta_layout_vmnk,
@@ -969,6 +952,7 @@ def host_function(
         block=[224, 1, 1] if use_clc_dynamic_scheduler else [192, 1, 1],
         cluster=preferred_cluster_shape_mnk,
         fallback_cluster=fallback_cluster_shape_mnk,
+        smem_merge_branch_allocs=True,
     )
 
 
@@ -981,7 +965,7 @@ def run_dense_gemm(
     import cutlass.torch as cutlass_torch
 
     print("===================================================================")
-    print("Running Blackwell fp16 GEMM example 4 (with MIX cluster size support):")
+    print("Running Blackwell fp16 GEMM example 4 (with MIX cluster support):")
     print(f"  mnk:                        {mnk}")
     print(f"  tolerance:                  {tolerance}")
     print(f"  Preferred cluster shape:    {preferred_cluster_shape_mnk}")

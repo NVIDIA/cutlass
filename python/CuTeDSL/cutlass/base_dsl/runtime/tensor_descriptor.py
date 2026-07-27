@@ -74,7 +74,7 @@ class TensorDescriptor:
                 f"DLPack device type is not supported {self.dl_tensor.device.device_type}"  # type: ignore[attr-defined]
             )
 
-        log().info("TensorDescriptor is created = [%s]", self)  # type: ignore[union-attr]
+        log().info("TensorDescriptor is created = [%s]", self)
 
     @staticmethod
     def can_transformed_to_dlpack(dl_tensor: object) -> bool:

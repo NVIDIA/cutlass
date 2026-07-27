@@ -38,7 +38,24 @@ if [[ -z "$WHEEL_PATH" ]]; then
 else
     echo "nvidia-cutlass-dsl wheel path found at: $WHEEL_PATH"
 fi
-CUTE_DSL_LIB_PATH="${WHEEL_PATH}/lib/"
+# The wheel hierarchy ships the runtime under ${WHEEL_PATH}/cuN/{lib,include}.
+# Pick the highest cuN flavor not newer than the system CUDA major version.
+# nvidia-smi reports either "CUDA Version" or "CUDA UMD Version" (casing/spacing varies).
+CUDA_MAJOR_VERSION=$(nvidia-smi --version | grep -oP 'CUDA(?: UMD)? (V|v)ersion\s*:\s*\K[0-9]+' | head -1)
+TARGET_CU=""
+for CU_VERSION in $(ls "$WHEEL_PATH" | grep -oP 'cu\K[0-9]+' | sort -nr); do
+    if [ "$CU_VERSION" -le "$CUDA_MAJOR_VERSION" ]; then
+        TARGET_CU="cu${CU_VERSION}"
+        break
+    fi
+done
+if [ -z "$TARGET_CU" ]; then
+    echo "No compatible cuN runtime found in $WHEEL_PATH for CUDA major version ${CUDA_MAJOR_VERSION}"
+    exit 1
+fi
+echo "Using DSL runtime flavor: $TARGET_CU"
+
+CUTE_DSL_LIB_PATH="${WHEEL_PATH}/${TARGET_CU}/lib"
 export LD_LIBRARY_PATH=${CUTE_DSL_LIB_PATH}
 
 if [ -z "$CUDA_HOME" ]; then

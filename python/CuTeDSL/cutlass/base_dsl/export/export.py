@@ -13,7 +13,8 @@ import inspect
 import io
 import os
 
-from ..common import DSLRuntimeError
+from ..common import DSLRuntimeError, DSLUserCodeError
+from ..diagnostics import DiagId
 from ..._mlir import ir
 from ..._mlir.dialects import llvm
 
@@ -151,9 +152,7 @@ def encode_metadata_into_ir_module(
     @param object_file_version: The version of the object file.
     """
     if not signature:
-        raise DSLRuntimeError(
-            "signature is empty, please set the signature for the python jit function."
-        )
+        raise DSLUserCodeError(DiagId.CONFIG_EXPORT_NO_RUNTIME_ARGS)
     version = object_file_version + c_string_suffix
 
     signature_bytes = signature_processor.dumps(signature)

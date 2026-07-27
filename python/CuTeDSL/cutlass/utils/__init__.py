@@ -74,7 +74,12 @@ from .tensormap_manager import (
     TensorMapManager,
 )
 
-from .smem_allocator import SmemAllocator, get_smem_capacity_in_bytes
+from .smem_allocator import (
+    SmemAllocator,
+    SmemPartition,
+    get_smem_capacity_in_bytes,
+    get_kernel_smem_size,
+)
 from .tmem_allocator import (
     TmemAllocator,
     TmemBufferPool,
@@ -83,7 +88,6 @@ from .tmem_allocator import (
 )
 
 from .layout import LayoutEnum
-
 from .block import block_copy
 
 from .mixed_input_helpers import (
@@ -109,6 +113,7 @@ from .mixed_input_helpers import (
     contiguous_group_search,
     make_contiguous_group_work_tile_info,
     cvt_tensor_a,
+    cvt_tensor_a_mxf8,
     store_transformed_a,
 )
 
@@ -117,7 +122,12 @@ from . import distributed
 
 from . import hopper_helpers as sm90
 from . import blackwell_helpers as sm100
-from .print_latex import print_latex, print_latex_tv
+from .print_latex import (
+    print_latex,
+    print_latex_tv,
+    PALETTES,
+    Band,
+)
 
 from .tensor_helpers import (
     is_fp8_dtype,
@@ -126,6 +136,7 @@ from .tensor_helpers import (
 
 __all__ = [
     "get_smem_capacity_in_bytes",
+    "get_kernel_smem_size",
     "SmemAllocator",
     "TmemAllocator",
     "TmemBufferPool",
@@ -183,6 +194,8 @@ __all__ = [
     "ClcDynamicPersistentTileScheduler",
     "print_latex",
     "print_latex_tv",
+    "PALETTES",
+    "Band",
     "is_fp8_dtype",
     "create_cute_tensor_for_fp8",
     "distributed",

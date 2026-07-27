@@ -121,9 +121,9 @@ def CpAsyncBulkTensorGlobalToSharedClusterOpWrapper(
     loc = None,
     ip = None,
 ) -> None:
-    if cutlass.__version__[0:3] == "4.6":
+    if hasattr(_nvvm_d, "TMALoadMode"):
         from cutlass._mlir.dialects import llvm as _llvm_d
-        # Handle new nvvm API in 4.6+
+        # Handle the current NVVM API when available.
         tmaDescriptor = _llvm_d.addrspacecast(
             _llvm_d.PointerType.get(_CuteAddressSpace.generic), tmaDescriptor, loc=loc, ip=ip
         )

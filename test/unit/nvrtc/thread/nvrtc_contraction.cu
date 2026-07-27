@@ -52,7 +52,7 @@ TEST(SM90_nvrtc_kernel, Contraction) {
     "-arch=sm_90",
     "-I" CUDA_INCLUDE_DIR,
 #if (__CUDACC_VER_MAJOR__ >= 13)
-    "-I" CUDA_INCLUDE_DIR "/cccl",
+    "-I" CUDA_CCCL_INCLUDE_DIR,
 #endif // __CUDACC_VER_MAJOR__ >= 13
   };
 

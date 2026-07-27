@@ -9,11 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Optional
+from typing import Optional, Type
 
 from cutlass.base_dsl.arch import Arch
 from cutlass.base_dsl.common import DSLRuntimeError
-from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
+from cutlass.cutlass_dsl import BaseDSL, dsl_user_op, target_version
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, vector
@@ -30,9 +30,10 @@ from .nvvm_wrappers import (
     cvt_i4x2_to_bf16x2,
     cvt_i4_bf16,
     cvt_f32_bf16,
+    cvt_i4x8_to_mxf8x8,
     sext_unpacked_i4x4_to_i8x4,
 )
-from ..typing import Int4, Int8, Float32, BFloat16, Int32
+from ..typing import Int4, Int8, Float32, BFloat16, Int32, Numeric
 
 
 @dsl_user_op
@@ -69,6 +70,7 @@ def cvt_i8_bf16_intrinsic(
         ip=ip,
     ).result
     arch = BaseDSL._get_dsl().get_arch_enum()
+    is_ptx9_or_higher = target_version(min_version="13.1")
     # try to use vectorized version
     if length >= 4:
         num_vec4 = length // 4
@@ -76,7 +78,10 @@ def cvt_i8_bf16_intrinsic(
             vec_i8x4 = vector.extract_strided_slice(
                 vec_i8x4_type, vec_i8, [src_pos], [4], [1], loc=loc, ip=ip
             )
-            if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
+            if (
+                is_ptx9_or_higher
+                and arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs  # type: ignore[attr-defined]
+            ):
                 vec_bf16x4 = cvt_i8x4_to_bf16x4(vec_i8x4, loc=loc, ip=ip)
                 vec_dst = vector.insert_strided_slice(
                     vec_bf16x4, vec_dst, [src_pos], [1], loc=loc, ip=ip
@@ -104,7 +109,7 @@ def cvt_i8_bf16_intrinsic(
         vec_i8x2 = vector.extract_strided_slice(
             vec_i8x2_type, vec_i8, [src_pos], [2], [1], loc=loc, ip=ip
         )
-        if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
+        if is_ptx9_or_higher and arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
             vec_bf16x2 = cvt_i8x2_to_bf16x2(vec_i8x2, loc=loc, ip=ip)
         else:
             vec_f32x2 = cvt_i8x2_to_f32x2(vec_i8x2, loc=loc, ip=ip)
@@ -117,9 +122,10 @@ def cvt_i8_bf16_intrinsic(
     if length >= 1:
         if arch in cvt_i8_bf16_intrinsic.s26_bf16_supported_archs:  # type: ignore[attr-defined]
             val_bf16 = cvt_i8_bf16(
-                vector.extractelement(
+                vector.extract(
                     vec_i8,
-                    position=arith.constant(Int32.mlir_type, src_pos),
+                    [],
+                    [src_pos],
                     loc=loc,
                     ip=ip,
                 ),
@@ -127,19 +133,21 @@ def cvt_i8_bf16_intrinsic(
                 ip=ip,
             )
         else:
-            src_i8 = vector.extractelement(
+            src_i8 = vector.extract(
                 vec_i8,
-                position=arith.constant(Int32.mlir_type, src_pos),
+                [],
+                [src_pos],
                 loc=loc,
                 ip=ip,
             )
             src_i32 = arith.ExtSIOp(Int32.mlir_type, src_i8, loc=loc, ip=ip)
             src_f32 = arith.SIToFPOp(Float32.mlir_type, src_i32, loc=loc, ip=ip)
             val_bf16 = cvt_f32_bf16(src_f32, loc=loc, ip=ip)
-        vec_dst = vector.insertelement(
+        vec_dst = vector.insert(
             val_bf16,
             vec_dst,
-            position=arith.constant(Int32.mlir_type, src_pos),
+            [],
+            [src_pos],
             loc=loc,
             ip=ip,
         )
@@ -229,22 +237,87 @@ def cvt_i4_bf16_intrinsic(
         length -= 2
     if length >= 1:
         val_bf16 = cvt_i4_bf16(
-            vector.extractelement(
+            vector.extract(
                 vec_i4,
-                position=arith.constant(Int32.mlir_type, src_pos),
+                [],
+                [src_pos],
                 loc=loc,
                 ip=ip,
             ),
             loc=loc,
             ip=ip,
         )
-        vec_dst = vector.insertelement(
+        vec_dst = vector.insert(
             val_bf16,
             vec_dst,
-            position=arith.constant(Int32.mlir_type, src_pos),
+            [],
+            [src_pos],
             loc=loc,
             ip=ip,
         )
+    return vec_dst
+
+
+@dsl_user_op
+def cvt_i4_mxf8_intrinsic(
+    vec_i4: ir.Value,
+    length: int,
+    dst_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert an int4 vector to FP8 operand bytes for MXF8 MMA.
+
+    This helper is used by mixed-input kernels that stage int4 weights as FP8
+    values before issuing ``tcgen05.mma``. It processes the input in 8-element
+    chunks via :func:`cvt_i4x8_to_mxf8x8` and returns a vector with the same
+    logical length as ``vec_i4``.
+
+    :param vec_i4: Input 1D vector of int4 values.
+    :type vec_i4: vector of int4
+    :param length: Number of int4 elements in ``vec_i4``. Must be a multiple of 8.
+    :type length: int
+    :param dst_type: FP8 destination numeric type, typically ``cutlass.Float8E4M3FN``.
+    :type dst_type: type
+    :return: Output 1D vector with ``length`` FP8 elements.
+    :rtype: vector
+    """
+    # n.b. Build the intermediate vector as int8 bytes because LLVM conversion
+    # can fail when materializing MXFP8 vector constants directly.
+    assert length % 8 == 0, f"Invalid {length=}"
+    dst_mlir_type = dst_type.mlir_type
+    src_pos = 0
+    vec_i4x8_type = ir.VectorType.get([8], Int4.mlir_type, loc=loc)
+    vec_dst_type = ir.VectorType.get([length], dst_mlir_type, loc=loc)
+    vec_dst_type_i8 = ir.VectorType.get([length], Int8.mlir_type, loc=loc)
+    zero_attr = ir.IntegerAttr.get(Int8.mlir_type, 0)
+
+    vec_dst = arith.ConstantOp(
+        vec_dst_type_i8,
+        ir.DenseElementsAttr.get_splat(vec_dst_type_i8, zero_attr),
+        loc=loc,
+        ip=ip,
+    ).result
+
+    # try to use vectorized version
+    if length >= 8:
+        num_vec8 = length // 8
+        for _ in range(num_vec8):
+            vec_i4x8 = vector.extract_strided_slice(
+                vec_i4x8_type, vec_i4, [src_pos], [8], [1], loc=loc, ip=ip
+            )
+            vec_mxf8x8 = cvt_i4x8_to_mxf8x8(
+                vec_i4x8, dst_type=Int8.mlir_type, loc=loc, ip=ip
+            )
+            vec_dst = vector.insert_strided_slice(
+                vec_mxf8x8, vec_dst, [src_pos], [1], loc=loc, ip=ip
+            )
+            src_pos += 8
+            length -= 8
+
+    if dst_mlir_type != Int8.mlir_type:
+        vec_dst = vector.bitcast(vec_dst_type, vec_dst, loc=loc, ip=ip)
     return vec_dst
 
 

@@ -175,6 +175,7 @@ foreach(EXAMPLE
   95_blackwell_gemm_green_context
   111_hopper_ssd
   112_blackwell_ssd
+  113_hopper_gemm_activation_fusion
   )
 
   add_subdirectory(${EXAMPLE})

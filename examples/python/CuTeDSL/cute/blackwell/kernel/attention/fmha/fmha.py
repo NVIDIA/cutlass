@@ -3255,7 +3255,7 @@ class BlackwellFusedMultiHeadAttentionForward:
 
         if cutlass.const_expr(mLSE is not None):
             scaled_tmp = scale_softmax * tTMEM_LOAD_VECrS[1]
-            # Convert LSE from natural log to log2 space, consistent with flashinfer trtllm-gen backend
+            # Convert LSE from natural log to log2 space, consistent with flashinfer backend
             lse = (cute.math.log(row_sum, fastmath=True) + scaled_tmp) * Float32(
                 1.4426950408889634
             )
@@ -3795,6 +3795,10 @@ def run(
     )
 
     print("Compiling kernel with cute.compile ...")
+    cutlass_major_minor = tuple(
+        map(int, cutlass.__version__.split(".")[:2])
+    )
+    compile_options = "--opt-level=2" if cutlass_major_minor >= (4, 6) else ""
     start_time = time.time()
     # compile fmha kernel
     compiled_fmha = cute.compile(
@@ -3818,7 +3822,7 @@ def run(
         total_softmax_count,
         current_stream,
         use_pdl,
-        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
+        options=compile_options,
     )
     compilation_time = time.time() - start_time
     print(f"Compilation time: {compilation_time:.4f} seconds")
@@ -3968,7 +3972,7 @@ def run(
                 cur_p = torch.softmax(cur_s_with_sink, dim=1)[:, :cur_s_k, :, :]
             else:
                 if lse_calculation:
-                    # Use log2 space for LSE, consistent with flashinfer trtllm-gen backend
+                    # Use log2 space for LSE, consistent with flashinfer backend
                     cur_lse = (
                         torch.logsumexp(cur_s, dim=1) * 1.4426950408889634
                     )  # reduce over s_k

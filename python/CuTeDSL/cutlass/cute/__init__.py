@@ -12,8 +12,14 @@
 from collections.abc import Callable
 from typing import Any
 
-# Use the auto-generated enum AddressSpace
-from cutlass._mlir.dialects.cute import AddressSpace, CacheEvictionPriority
+# Keep AddressSpace aligned with the public cutlass namespace.
+from cutlass.address_space import AddressSpace as _AddressSpace
+from cutlass._mlir.dialects.cute_nvgpu import CacheEvictionPriority
+
+# Keep ``cute.AddressSpace`` as a quiet compatibility alias. Documentation marks
+# this spelling as scheduled for deprecation; runtime warnings will be enabled in
+# a later release.
+AddressSpace = _AddressSpace
 
 # Explicitly import types that might be directly used by other modules.
 # This is a fix for using Sphinx to generate documentation
@@ -33,6 +39,9 @@ from .typing import (
     Pointer,
     Tensor,
     SymInt,
+    Numeric,
+    Int32,
+    Int16,
 )
 
 # Import everything else
@@ -123,7 +132,9 @@ from .core import (
     Ratio,
     # FastDivmod operations
     FastDivmodDivisor,
+    FastDivmodDivisorV2,
     fast_divmod_create_divisor,
+    fast_divmod_create_divisor_v2,
     basis_value,
     basis_get,
     nullspace,
@@ -151,7 +162,6 @@ from .tensor import (
     ReductionOp,
     make_tensor,
     make_identity_tensor,
-    make_fragment,
     make_fragment_like,
     make_rmem_tensor_like,
     make_rmem_tensor,
@@ -205,10 +215,12 @@ from . import testing
 from . import runtime
 from . import math
 
+from . import experimental
+
 # Export all math ops without "math."
 from .math import *
 
-# Used as internal symbol
+# Package-private symbol used by exported aliases below.
 from .. import cutlass_dsl as _dsl
 
 from .ffi import ffi, extern, BitCode, ConstValue, mangle
@@ -218,16 +230,21 @@ jit: Callable[..., Any] = _dsl.CuTeDSL.jit
 kernel: Callable[..., Any] = _dsl.CuTeDSL.kernel
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 compile = _dsl.CompileCallable()
+compile_to = compile.compile_to
 OptLevel = _dsl.OptLevel
+
 PtxasOptions = _dsl.PtxasOptions
 EnableAssertions = _dsl.EnableAssertions
 GenerateLineInfo = _dsl.GenerateLineInfo
 KeepCUBIN = _dsl.KeepCUBIN
 KeepPTX = _dsl.KeepPTX
+KeepSASS = _dsl.KeepSASS
+NvdisasmOptions = _dsl.NvdisasmOptions
 GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
-
+DeviceTarget = _dsl.DeviceTarget
+RDC = _dsl.RDC
 native_struct = _dsl.native_struct
 make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 
@@ -235,6 +252,9 @@ make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 from . import _tvm_ffi_args_spec_converter
 
 _tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
+_tvm_ffi_args_spec_converter.attach_args_spec_converter(
+    _dsl.CuteExperimentalDSL._get_dsl()
+)
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
@@ -244,6 +264,7 @@ __all__ = [
     "CacheEvictionPriority",
     "Tensor",
     "Layout",
+    "Numeric",
     "ComposedLayout",
     "Swizzle",
     "E",
@@ -263,6 +284,7 @@ __all__ = [
     "assume",
     "is_integer",
     "is_int_tuple",
+    "is_int_tuple_type",
     "is_static",
     "size",
     "has_underscore",
@@ -289,7 +311,6 @@ __all__ = [
     "make_ptr",
     "make_tensor",
     "make_identity_tensor",
-    "make_fragment",
     "make_fragment_like",
     "make_rmem_tensor",
     "make_rmem_tensor_like",
@@ -403,7 +424,9 @@ __all__ = [
     "union",
     # FastDivmod operations
     "FastDivmodDivisor",
+    "FastDivmodDivisorV2",
     "fast_divmod_create_divisor",
+    "fast_divmod_create_divisor_v2",
     # Modules
     "arch",
     "export",
@@ -417,6 +440,9 @@ __all__ = [
     "kernel",
     "register_jit_arg_adapter",
     "compile",
+    "compile_to",
+    "ArtifactType",
+    "PreCompiledMlirArtifact",
     # Foreign function interface
     "ffi",
     "extern",

@@ -11,7 +11,6 @@
 import enum
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Type, Union
-import warnings
 
 from cutlass.cutlass_dsl import DSLBaseError, DSLRuntimeError
 
@@ -169,6 +168,8 @@ class MmaUniversalOp(atom.MmaOp):
 
     This Operation currently expects the A/B operands as well as the accumulator to share the same
     data types.
+
+    **Supported architectures:** all (universal FMA)
 
     :param abacc_dtype: The data type for the A/B operands and the accumulator
     :type abacc_dtype:  Type[Numeric]
@@ -377,12 +378,7 @@ class CopyUniversalOp(atom.CopyOp):
     .. code-block:: python
 
         op = cute.nvgpu.CopyUniversalOp()
-        atom = cute.make_copy_atom(
-            op, 
-            tensor_dtype, 
-            num_bits_per_copy=64,
-            l1c_evict_priority=cute.nvgpu.CacheEvictionPriority.EVICT_NORMAL
-        )
+        atom = cute.make_copy_atom(op, tensor_dtype, num_bits_per_copy=64)
 
     - ``tensor_dtype`` is the data type used to build the reference TV Layout (either the source \
         or the destination TV Layout) in unit of tensor elements and is used for partitioning by \
@@ -390,11 +386,6 @@ class CopyUniversalOp(atom.CopyOp):
     - ``num_bits_per_copy`` is a kw argument specifying the number of bits to copy per Atom \
         execution. This can be larger than the width of the above data type. When not provided, \
         the compiler will do a best effort at auto-vectorizing.
-    - ``l1c_evict_priority`` is a kw argument specifying the L1 cache eviction priority hint for \
-        the copy operation. Defaults to ``EVICT_NORMAL`` if not provided.
-    - ``invariant`` is a kw argument specifying whether the load is invariant (read-only data \
-        that never changes). This enables compiler optimizations like instruction reordering. \
-        Defaults to ``False`` if not provided.
     """
 
     def __str__(self) -> str:
@@ -405,10 +396,6 @@ class CopyUniversalOp(atom.CopyOp):
         copy_internal_type: Type[Numeric],
         *,
         num_bits_per_copy: int = 0,
-        memory_order: MemoryOrder = MemoryOrder.WEAK,
-        memory_scope: MemoryScope = MemoryScope.CTA,
-        l1c_evict_priority: CacheEvictionPriority = CacheEvictionPriority.EVICT_NORMAL,
-        invariant: bool = False,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         **kwargs: Any,
@@ -418,29 +405,9 @@ class CopyUniversalOp(atom.CopyOp):
                 f"'num_bits_per_copy' must be a non-negative int when creating a copy Atom for {self.__class__.__name__!r}"
             )
 
-        # CopyUniversalOp is designed to be a universal copy operation that is
-        # equivalent to the "a = b" assignment without any extra attributes.
-        # For advanced memory features, such as memory order, please use the
-        # specialized copy operations (e.g., CopyG2ROp) or their combinations instead.
-        if (
-            memory_order != MemoryOrder.WEAK
-            or memory_scope != MemoryScope.CTA
-            or l1c_evict_priority != CacheEvictionPriority.EVICT_NORMAL
-            or invariant
-        ):
-            warnings.warn(
-                "Using CopyUniversalOp with extra attributes is deprecated. Please use specialized copy ops "
-                "(e.g., CopyG2ROp) for advanced memory features.",
-                DeprecationWarning,
-            )
-
         atom_type = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
             copy_internal_type.mlir_type,
             num_bits_per_copy,
-            memory_order._to_ir(),
-            memory_scope._to_ir(),
-            l1c_evict_priority._to_ir(),
-            invariant,
         )
         return CopyUniversalTrait(atom.make_atom(atom_type, loc=loc, ip=ip))
 

@@ -19,7 +19,7 @@ from .typing import DslType
 from .._mlir import ir
 from .._mlir.dialects import llvm
 
-from ._mlir_helpers import dsl_user_op
+from .._mlir_helpers import dsl_user_op
 
 
 def _is_constexpr_annotation(ann: type) -> bool:
@@ -303,9 +303,7 @@ def native_struct(
                         f"Expected single value for field {name!r}, got {len(elem)}"
                     )
                 elem = elem[0]
-                new_value = llvm.insertvalue(
-                    self._value, elem, position=[idx], loc=loc, ip=ip
-                )
+                new_value = llvm.insertvalue(self._value, elem, position=[idx], loc=loc, ip=ip)
                 self._value = new_value
 
             setter.__name__ = f"set_{name}"

@@ -30,7 +30,13 @@ from cutlass.utils import (
     WorkTileInfo,
 )
 
+_DEPRECATION_MSG = (
+    "Migrated to examples/CuTeDSL/helpers/grouped_gemm_persistent_tile_scheduler.py "
+    "(BSD-3). The wheel copy will be removed in a future release."
+)
 
+
+@deprecated(_DEPRECATION_MSG)
 class GroupSearchResult:
     """
     The result of the group search for grouped gemm.
@@ -84,6 +90,7 @@ class GroupSearchResult:
         return GroupSearchResult(*tuple(values))
 
 
+@deprecated(_DEPRECATION_MSG)
 class GroupedGemmGroupSearchState:
     """
     The state of group index search for grouped gemm.
@@ -94,8 +101,9 @@ class GroupedGemmGroupSearchState:
     :type start_group_idx: Int32
     :param tile_count_prev_group: Number of tiles before the matched group
     :type tile_count_prev_group: Int32
-    :param tile_count_searched: Number of tiles we have searched. When the matched group is found,
-                               it records the number of tiles including the matched group
+    :param tile_count_searched: Number of tiles we have searched. When the matched group
+                                is found, it records the number of tiles including the
+                                matched group
     :type tile_count_searched: Int32
     """
 
@@ -135,6 +143,7 @@ class GroupedGemmGroupSearchState:
         )
 
 
+@deprecated(_DEPRECATION_MSG)
 def create_initial_search_state() -> GroupedGemmGroupSearchState:
     """
     Create an initial search state for grouped gemm.
@@ -151,6 +160,7 @@ def create_initial_search_state() -> GroupedGemmGroupSearchState:
 
 
 # Grouped Work Tile Information
+@deprecated(_DEPRECATION_MSG)
 class GroupedWorkTileInfo(WorkTileInfo):
     """A class to represent information about a work tile.
 
@@ -180,7 +190,9 @@ class GroupedWorkTileInfo(WorkTileInfo):
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> "GroupedWorkTileInfo":
         if len(values) != 11:
             raise ValueError("Length of mlir values extracted is incorrect.")
-        new_tile_idx = new_from_mlir_values(self._tile_idx, values[:3])
+        # Reconstruct tile_idx as a tuple -- WorkTileInfo.__init__ unpacks it
+        # into _tile_m, _tile_n, _tile_l.
+        new_tile_idx = (Int32(values[0]), Int32(values[1]), Int32(values[2]))
         new_is_valid_tile = new_from_mlir_values(self._is_valid_tile, [values[3]])
         new_group_search_result = new_from_mlir_values(
             self.group_search_result, values[4:11]
@@ -191,10 +203,13 @@ class GroupedWorkTileInfo(WorkTileInfo):
 
 
 # Static Persistent Grouped GEMM
+@deprecated(_DEPRECATION_MSG)
 class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
-    """A scheduler for static persistent group-based tile execution in CUTLASS/CuTe kernels.
+    """A scheduler for static persistent group-based tile execution in CUTLASS/CuTe
+    kernels.
 
-    :ivar params: Tile schedule related params, including cluster shape and problem_layout_ncluster_mnl
+    :ivar params: Tile schedule related params, including cluster shape and
+                  problem_layout_ncluster_mnl
     :type params: PersistentTileSchedulerParams
     :ivar num_persistent_clusters: Number of persistent clusters that can be launched
     :type num_persistent_clusters: Int32
@@ -225,8 +240,9 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         search_state: GroupedGemmGroupSearchState,
         group_count: int,
         problem_shape_mnkl: cute.Tensor,
-        cached_problem_shape_0: cute.Tensor,
-        cached_problem_shape_1: cute.Tensor,
+        cached_problem_shape_0: Tuple[Int32, Int32, Int32, Int32],
+        cached_problem_shape_1: Tuple[Int32, Int32, Int32, Int32],
+        use_cached_problem_shapes: bool = False,
     ):
         StaticPersistentTileScheduler.__init__(
             self,
@@ -241,6 +257,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         self.cluster_tile_shape_mnk = cluster_tile_shape_mnk
         self.search_state = search_state
         self.problem_shape_mnkl = problem_shape_mnkl
+        self.use_cached_problem_shapes = use_cached_problem_shapes
 
         self.cached_problem_shape_0 = cached_problem_shape_0
         self.cached_problem_shape_1 = cached_problem_shape_1
@@ -260,7 +277,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
     def __new_from_mlir_values__(
         self, values: list[ir.Value]
     ) -> "StaticPersistentGroupTileScheduler":
-        if len(values) < 13:
+        if len(values) < 19:
             raise ValueError("Length of mlir values extracted is incorrect.")
         new_num_persistent_clusters = new_from_mlir_values(
             self.num_persistent_clusters, [values[0]]
@@ -276,13 +293,20 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         )
         search_state = new_from_mlir_values(self.search_state, values[6:10])
         problem_shape_mnkl = new_from_mlir_values(self.problem_shape_mnkl, [values[10]])
-        cached_problem_shape_0 = new_from_mlir_values(
-            self.cached_problem_shape_0, [values[11]]
+
+        cached_problem_shape_0 = (
+            Int32(values[11]),
+            Int32(values[12]),
+            Int32(values[13]),
+            Int32(values[14]),
         )
-        cached_problem_shape_1 = new_from_mlir_values(
-            self.cached_problem_shape_1, [values[12]]
+        cached_problem_shape_1 = (
+            Int32(values[15]),
+            Int32(values[16]),
+            Int32(values[17]),
+            Int32(values[18]),
         )
-        params = new_from_mlir_values(self.params, values[13:])
+        params = new_from_mlir_values(self.params, values[19:])
 
         return StaticPersistentGroupTileScheduler(
             params,
@@ -308,6 +332,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         initial_search_state: GroupedGemmGroupSearchState,
         group_count: int,
         problem_shape_mnkl: cute.Tensor,
+        use_cached_problem_shapes: bool = False,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -329,6 +354,11 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         :type group_count: int
         :param problem_shape_mnkl: Problem shape tensor for groups
         :type problem_shape_mnkl: cute.Tensor
+        :param use_cached_problem_shapes: Enable double-buffered caching of problem
+            shapes. When False, loads problem shapes on-demand. Evaluated at
+            compile-time via const_expr(). (default: False) When set to True, always
+            couple with prefetch_problem_shapes() function.
+        :type use_cached_problem_shapes: bool
 
         :return: A StaticPersistentGroupTileScheduler object.
         :rtype: StaticPersistentGroupTileScheduler
@@ -352,11 +382,17 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             Int32(0),
         )
 
-        cached_problem_shape_0 = cute.make_rmem_tensor(
-            cute.make_layout(4), problem_shape_mnkl.element_type
+        cached_problem_shape_0 = (
+            Int32(-1),
+            Int32(-1),
+            Int32(-1),
+            Int32(-1),
         )
-        cached_problem_shape_1 = cute.make_rmem_tensor(
-            cute.make_layout(4), problem_shape_mnkl.element_type
+        cached_problem_shape_1 = (
+            Int32(-1),
+            Int32(-1),
+            Int32(-1),
+            Int32(-1),
         )
 
         # Initialize number of tiles executed to zero
@@ -373,13 +409,13 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             problem_shape_mnkl,
             cached_problem_shape_0,
             cached_problem_shape_1,
+            use_cached_problem_shapes,
         )
 
     @property
     def num_tiles_executed(self) -> Int32:
         return self._num_tiles_executed
 
-    # This setter is the main way to prevent the Attribute error right now
     @num_tiles_executed.setter
     def num_tiles_executed(self, value: Int32) -> None:
         self._num_tiles_executed = value
@@ -396,7 +432,8 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         """
         Perform prefix sum within a full warp.
 
-        :param value_per_thread: The value for this thread to contribute to the prefix sum
+        :param value_per_thread: The value for this thread to contribute to the prefix
+                                 sum
         :type value_per_thread: Int32
         :return: The prefix sum result for this thread
         :rtype: Int32
@@ -421,16 +458,14 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> cute.Tensor:
+    ) -> Tuple[Int32, Int32, Int32, Int32]:
         """
-        Load gemm problem (m,n,k,l) for the specified group from global memory to register.
+        Load gemm problem (m,n,k,l) for the specified group from global memory to
+        register.
 
-        :param problem_shape_mnkl: Tensor in global memory with layout (group_count, 4):(4, 1)
-        :type problem_shape_mnkl: cute.Tensor
-        :param group_idx: The index of the group to load
-        :type group_idx: Int32
+        :param problem_shape_mnkl: Tensor in global memory with layout
         :return: The problem shape tensor for the specified group
-        :rtype: cute.Tensor
+        :rtype: Tuple[Int32, Int32, Int32, Int32]
         """
         cur_problem_mnkl = cute.make_rmem_tensor(
             cute.make_layout(4), problem_shape_mnkl.element_type, loc=loc, ip=ip
@@ -438,7 +473,12 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         cute.autovec_copy(
             problem_shape_mnkl[(group_idx, None)], cur_problem_mnkl, loc=loc, ip=ip
         )
-        return cur_problem_mnkl
+        return (
+            cur_problem_mnkl[0],
+            cur_problem_mnkl[1],
+            cur_problem_mnkl[2],
+            cur_problem_mnkl[3],
+        )
 
     @dsl_user_op
     @cute.jit
@@ -448,16 +488,17 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        if self.lane_idx < self.group_count:
-            cur_problem_mnkl = self._get_problem_for_group(
-                self.problem_shape_mnkl, self.lane_idx
-            )
-            self.cached_problem_shape_1 = cur_problem_mnkl
+        if const_expr(self.use_cached_problem_shapes):
+            if self.lane_idx < self.group_count:
+                cur_problem_mnkl = self._get_problem_for_group(
+                    self.problem_shape_mnkl, self.lane_idx, loc=loc, ip=ip
+                )
+                self.cached_problem_shape_1 = cur_problem_mnkl
 
     @dsl_user_op
     def _get_cluster_tile_count_mn(
         self,
-        problem_shape: cute.Tensor,
+        problem_shape: Tuple[Int32, Int32, Int32, Int32],
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -466,18 +507,18 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         Compute total cluster count.
 
         :param problem_shape: Tensor containing problem shape (m, n, k, l)
-        :type problem_shape: cute.Tensor
+        :type problem_shape: Tuple[Int32, Int32, Int32, Int32]
         :return: The total cluster tile count for M and N dimensions
         :rtype: Int32
         """
         cur_ntile_m = (
-            problem_shape[0] + self.cluster_tile_shape_mnk[0] - 1  # type: ignore[operator]
+            problem_shape[0] + self.cluster_tile_shape_mnk[0] - 1
         ) // self.cluster_tile_shape_mnk[0]
         cur_ntile_n = (
-            problem_shape[1] + self.cluster_tile_shape_mnk[1] - 1  # type: ignore[operator]
+            problem_shape[1] + self.cluster_tile_shape_mnk[1] - 1
         ) // self.cluster_tile_shape_mnk[1]
         cur_ntile_mn = cur_ntile_m * cur_ntile_n
-        return cur_ntile_mn  # type: ignore[return-value]
+        return cur_ntile_mn
 
     @dsl_user_op
     def _compute_cta_tile_coord(
@@ -491,17 +532,21 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> tuple:
         """
-        Compute CTA tile indices along M and N dimensions based on the linear index within a group.
+        Compute CTA tile indices along M and N dimensions based on the linear index
+        within a group.
 
         It uses the AlongM mode to decompose the linear index onto M and N dimensions.
 
         :param cluster_tile_idx: The linear index within a group
         :type cluster_tile_idx: Int32
-        :param cta_tile_coord_in_cluster: CTA indices along M and N dimensions within a cluster
+        :param cta_tile_coord_in_cluster: CTA indices along M and N dimensions within a
+                                          cluster
         :type cta_tile_coord_in_cluster: tuple of Int32
-        :param cluster_tile_count_m: The number of clusters along M dimension of the matched group
+        :param cluster_tile_count_m: The number of clusters along M dimension of the
+                                     matched group
         :type cluster_tile_count_m: Int32
-        :param cluster_tile_count_n: The number of clusters along N dimension of the matched group
+        :param cluster_tile_count_n: The number of clusters along N dimension of the
+                                     matched group
         :type cluster_tile_count_n: Int32
         :return: A tuple containing CTA tile indices along M and N dimensions
         :rtype: tuple of (Int32, Int32)
@@ -535,7 +580,8 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
 
         :param linear_idx: The linear index to be decomposed
         :type linear_idx: Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for all groups
+        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for
+                                   all groups
         :type problem_shape_mnkl: cute.Tensor
         :param init_group_idx: The group idx to start the search with
         :type init_group_idx: Int32
@@ -552,7 +598,6 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         not_found = linear_idx >= tile_count_searched
         start_not_found = not_found
         tile_count_prev_group = self.search_state.tile_count_prev_group
-        tidx, _, _ = cute.arch.thread_idx()
 
         while not_found and start_group_idx < self.group_count:
             # get group to search for current lane
@@ -560,27 +605,37 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             # check if the group to be checked is out of range
             inside_group_bound = cur_group_idx < self.group_count
 
-            # Rotate cache
-            self.cached_problem_shape_0 = self.cached_problem_shape_1
+            if const_expr(self.use_cached_problem_shapes):
+                # Cached path: rotate cache and prefetch
+                self.cached_problem_shape_0 = self.cached_problem_shape_1
 
-            # Prefetch problem shape for next while iteration
-            next_prefetch_group_idx = (
-                start_group_idx + cute.arch.WARP_SIZE + self.lane_idx
-            )
-            if next_prefetch_group_idx < self.group_count:
-                self.cached_problem_shape_1 = self._get_problem_for_group(
-                    problem_shape_mnkl, next_prefetch_group_idx
+                # Prefetch problem shape for next while iteration
+                next_prefetch_group_idx = (
+                    start_group_idx + cute.arch.WARP_SIZE + self.lane_idx
                 )
+                if next_prefetch_group_idx < self.group_count:
+                    self.cached_problem_shape_1 = self._get_problem_for_group(
+                        problem_shape_mnkl, next_prefetch_group_idx, loc=loc, ip=ip
+                    )
 
-            cur_ntile_mn = c_0
-            if inside_group_bound:
-                # get problem size of current group
-                cur_problem_mnkl = self._get_problem_for_group(
-                    problem_shape_mnkl, cur_group_idx, loc=loc, ip=ip
-                )
-                cur_ntile_mn = self._get_cluster_tile_count_mn(
-                    cur_problem_mnkl, loc=loc, ip=ip
-                )
+                cur_ntile_mn = c_0
+                if inside_group_bound:
+                    # get problem size of current group from cache
+                    cur_problem_mnkl = self.cached_problem_shape_0
+                    cur_ntile_mn = self._get_cluster_tile_count_mn(
+                        cur_problem_mnkl, loc=loc, ip=ip
+                    )
+            else:
+                # On-demand path: load problem shape directly
+                cur_ntile_mn = c_0
+                if inside_group_bound:
+                    # Load problem shape directly without caching
+                    cur_problem_mnkl = self._get_problem_for_group(
+                        problem_shape_mnkl, cur_group_idx, loc=loc, ip=ip
+                    )
+                    cur_ntile_mn = self._get_cluster_tile_count_mn(
+                        cur_problem_mnkl, loc=loc, ip=ip
+                    )
 
             # compute tile count from beginning to current group(included)
             total_cluster_tile_count_ps_per_thread = self._prefix_sum(
@@ -591,27 +646,25 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             )
 
             group_not_in_window = linear_idx >= cluster_tile_count_end_per_thread
-            hitted_group_idx_in_search_window = cute.arch.popc(
+            hit_group_idx_in_search_window = cute.arch.popc(
                 cute.arch.vote_ballot_sync(group_not_in_window, loc=loc, ip=ip),
                 loc=loc,
                 ip=ip,
             )
-            not_found = hitted_group_idx_in_search_window == cute.arch.WARP_SIZE
-            start_group_idx = hitted_group_idx_in_search_window + start_group_idx
+            not_found = hit_group_idx_in_search_window == cute.arch.WARP_SIZE
+            start_group_idx = hit_group_idx_in_search_window + start_group_idx
 
-            hit_the_1st_problem_in_search_window = (
-                hitted_group_idx_in_search_window == c_0
-            )
+            hit_the_1st_problem_in_search_window = hit_group_idx_in_search_window == c_0
             tile_count_prev_group = tile_count_searched
-            if hit_the_1st_problem_in_search_window == False:
+            if not hit_the_1st_problem_in_search_window:
                 tile_count_prev_group = cute.arch.shuffle_sync(
                     cluster_tile_count_end_per_thread,
-                    hitted_group_idx_in_search_window - 1,
+                    hit_group_idx_in_search_window - 1,
                 )
 
             # If no matched group, then get new_cluster_tile_count_end from last lane
-            # Otherwise, get new_cluster_tile_count_end from the hitted group
-            lane_idx_for_cluster_tile_count_end = hitted_group_idx_in_search_window
+            # Otherwise, get new_cluster_tile_count_end from the hit group
+            lane_idx_for_cluster_tile_count_end = hit_group_idx_in_search_window
 
             if not_found:
                 lane_idx_for_cluster_tile_count_end = last_lane_idx
@@ -620,14 +673,16 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
                 lane_idx_for_cluster_tile_count_end,
             )
 
-            # Prefetch problem shape for next wave
-            if not not_found:
-                if start_group_idx + self.lane_idx < self.group_count:
-                    self.cached_problem_shape_1 = self._get_problem_for_group(
-                        problem_shape_mnkl, start_group_idx + self.lane_idx
-                    )
+            # Prefetch problem shape for next wave (only when caching enabled)
+            if const_expr(self.use_cached_problem_shapes):
+                if not not_found:  # noqa: SIM102
+                    if start_group_idx + self.lane_idx < self.group_count:
+                        self.cached_problem_shape_1 = self._get_problem_for_group(
+                            problem_shape_mnkl, start_group_idx + self.lane_idx
+                        )
 
-        # The tile is invalid if not_found doesn't change before and after the while loop.
+        # The tile is invalid if not_found doesn't change before and after the while
+        # loop.
         end_not_found = not_found
         is_valid = start_not_found != end_not_found
 
@@ -649,20 +704,21 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Tuple[Boolean, Union[Int32, int], cute.Tensor]:
+    ) -> Tuple[Int32, Int32, Tuple[Int32, Int32, Int32, Int32]]:
         """
         Perform group search and load problem shape for the matched group.
 
         :param linear_idx: The linear index to be decomposed
         :type linear_idx: Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for all groups
+        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for
+                                   all groups
         :type problem_shape_mnkl: cute.Tensor
         :param start_group_idx: The group idx to start the search with
         :type start_group_idx: Int32
         :param tile_count_searched: The number of tiles we have searched
         :type tile_count_searched: Int32
         :return: A tuple containing the final group index and the problem shape tensor
-        :rtype: Tuple[Int32, cute.Tensor]
+        :rtype: Tuple[Int32, Int32, Tuple[Int32, Int32, Int32, Int32]]
         """
         self.search_state = self._group_search(
             linear_idx,
@@ -672,20 +728,17 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             loc=loc,
             ip=ip,
         )
-        tidx, _, _ = cute.arch.thread_idx()
         # get final group search state
         found = self.search_state.found
 
         final_group_idx: Union[Int32, int] = -1
-        problem_mnkl = cute.make_rmem_tensor(
-            cute.make_layout(4), problem_shape_mnkl.element_type, loc=loc, ip=ip
-        )
+        problem_mnkl = (Int32(-1), Int32(-1), Int32(-1), Int32(-1))
         if found:
             final_group_idx = self.search_state.start_group_idx
             problem_mnkl = self._get_problem_for_group(
                 problem_shape_mnkl, final_group_idx, loc=loc, ip=ip
             )
-        return found, final_group_idx, problem_mnkl
+        return Int32(found), Int32(final_group_idx), problem_mnkl
 
     @dsl_user_op
     def delinearize_z(
@@ -694,20 +747,19 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> "GroupedWorkTileInfo":
+    ) -> GroupSearchResult:
         """
         Delinearize the linear z index and return GroupSearchResult.
 
-        This function should be used by warps that need to know the CTA tile index on M and N dimensions.
+        This function should be used by warps that need to know the CTA tile index on M
+        and N dimensions.
 
         :param cta_tile_coord: The raw CTA coordinate from tile scheduler
         :type cta_tile_coord: tuple of Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for each group
-        :type problem_shape_mnkl: cute.Tensor
         :return: The search result containing group index and tile coordinates
         :rtype: GroupSearchResult
         """
-        # delinear the z coord
+        # delinearize the z coord
 
         linear_idx = self._current_work_linear_idx
 
@@ -720,7 +772,8 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             ip=ip,
         )
 
-        # The work_tile is valid if its linear index could be mapped to a group in the problem shapes
+        # The work_tile is valid if its linear index could be mapped to a group in the
+        # problem shapes
         is_valid = found
 
         # linear index local to current group
@@ -759,7 +812,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             cluster_count_k,
         )
 
-        return GroupedWorkTileInfo(cta_tile_coord, is_valid, group_search_result)
+        return GroupedWorkTileInfo(cta_tile_coord, is_valid, group_search_result)  # type: ignore[return-value]
 
     @dsl_user_op
     def get_current_work(
@@ -775,16 +828,16 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         return grouped_work_tile
 
 
-@deprecated(
-    "API is deprecated, use cutlass.utils.StaticPersistentGroupTileScheduler instead"
-)
+@deprecated("API is deprecated, use StaticPersistentGroupTileScheduler instead.")
 class GroupedGemmTileSchedulerHelper:
     """
-    A helper to translate the raw block index (x, y, z) from tile scheduler to real CTA tile index for grouped gemm.
+    A helper to translate the raw block index (x, y, z) from tile scheduler to real CTA
+    tile index for grouped gemm.
 
     :param group_count: Number of groups in current grouped gemm problem
     :type group_count: int
-    :param tile_sched_params: Parameter used to create the tile scheduler this helper works with
+    :param tile_sched_params: Parameter used to create the tile scheduler this helper
+                              works with
     :type tile_sched_params: PersistentTileSchedulerParams
     :param cluster_tile_shape_mnk: The shape of cluster tile as (m, n, k)
     :type cluster_tile_shape_mnk: tuple[int, int, int]
@@ -814,7 +867,8 @@ class GroupedGemmTileSchedulerHelper:
         self, values: List[ir.Value]
     ) -> "GroupedGemmTileSchedulerHelper":
         # Reconstruct tile_sched_params and determine how many values it consumed.
-        # NOTE: tile_sched_params may contain FastDivmod divisors (when swizzle_size == 1),
+        # NOTE: tile_sched_params may contain FastDivmod divisors
+        # (when swizzle_size == 1),
         # which adds extra MLIR values.
         params_values = extract_mlir_values(self.tile_sched_params)
         n_params_values = len(params_values)
@@ -840,16 +894,18 @@ class GroupedGemmTileSchedulerHelper:
         """
         Delinearize the linear z index and return GroupSearchResult.
 
-        This function should be used by warps that need to know the CTA tile index on M and N dimensions.
+        This function should be used by warps that need to know the CTA tile index on M
+        and N dimensions.
 
         :param cta_tile_coord: The raw CTA coordinate from tile scheduler
         :type cta_tile_coord: tuple of Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for each group
+        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for
+                                   each group
         :type problem_shape_mnkl: cute.Tensor
         :return: The search result containing group index and tile coordinates
         :rtype: GroupSearchResult
         """
-        # delinear the z coord
+        # delinearize the z coord
         linear_idx = cta_tile_coord[2]
         group_idx, problem_mnkl = self._group_search_and_load_problem_shape(
             linear_idx,
@@ -892,13 +948,16 @@ class GroupedGemmTileSchedulerHelper:
         problem_shape_mnkl: cute.Tensor,
     ) -> Tuple[Int32, Int32]:
         """
-        Search the matched group for given linear index and compute the number of tiles along K dimension for the matched group.
+        Search the matched group for given linear index and compute the number of tiles
+        along K dimension for the matched group.
 
-        This function should be used by warps that are only interested in the number of tiles along K dimension.
+        This function should be used by warps that are only interested in the number of
+        tiles along K dimension.
 
         :param cta_tile_coord: The raw CTA coordinate from tile scheduler
         :type cta_tile_coord: tuple of Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for all groups
+        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for
+                                   all groups
         :type problem_shape_mnkl: cute.Tensor
         :return: A tuple containing cluster count along K dimension and the group index
         :rtype: Tuple[Int32, Int32]
@@ -919,7 +978,8 @@ class GroupedGemmTileSchedulerHelper:
         """
         Perform prefix sum within a full warp.
 
-        :param value_per_thread: The value for this thread to contribute to the prefix sum
+        :param value_per_thread: The value for this thread to contribute to the prefix
+                                 sum
         :type value_per_thread: Int32
         :return: The prefix sum result for this thread
         :rtype: Int32
@@ -940,9 +1000,11 @@ class GroupedGemmTileSchedulerHelper:
         self, problem_shape_mnkl: cute.Tensor, group_idx: Int32
     ) -> cute.Tensor:
         """
-        Load gemm problem (m,n,k,l) for the specified group from global memory to register.
+        Load gemm problem (m,n,k,l) for the specified group from global memory to
+        register.
 
-        :param problem_shape_mnkl: Tensor in global memory with layout (group_count, 4):(4, 1)
+        :param problem_shape_mnkl: Tensor in global memory with layout
+                                   (group_count, 4):(4, 1)
         :type problem_shape_mnkl: cute.Tensor
         :param group_idx: The index of the group to load
         :type group_idx: Int32
@@ -981,17 +1043,21 @@ class GroupedGemmTileSchedulerHelper:
         cluster_tile_count_n: Int32,
     ) -> tuple:
         """
-        Compute CTA tile indices along M and N dimensions based on the linear index within a group.
+        Compute CTA tile indices along M and N dimensions based on the linear index
+        within a group.
 
         It uses the AlongM mode to decompose the linear index onto M and N dimensions.
 
         :param cluster_tile_idx: The linear index within a group
         :type cluster_tile_idx: Int32
-        :param cta_tile_coord_in_cluster: CTA indices along M and N dimensions within a cluster
+        :param cta_tile_coord_in_cluster: CTA indices along M and N dimensions within a
+                                          cluster
         :type cta_tile_coord_in_cluster: tuple of Int32
-        :param cluster_tile_count_m: The number of clusters along M dimension of the matched group
+        :param cluster_tile_count_m: The number of clusters along M dimension of the
+                                     matched group
         :type cluster_tile_count_m: Int32
-        :param cluster_tile_count_n: The number of clusters along N dimension of the matched group
+        :param cluster_tile_count_n: The number of clusters along N dimension of the
+                                     matched group
         :type cluster_tile_count_n: Int32
         :return: A tuple containing CTA tile indices along M and N dimensions
         :rtype: tuple of (Int32, Int32)
@@ -1023,7 +1089,8 @@ class GroupedGemmTileSchedulerHelper:
 
         :param linear_idx: The linear index to be decomposed
         :type linear_idx: Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for all groups
+        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for
+                                   all groups
         :type problem_shape_mnkl: cute.Tensor
         :param init_group_idx: The group idx to start the search with
         :type init_group_idx: Int32
@@ -1058,24 +1125,22 @@ class GroupedGemmTileSchedulerHelper:
             )
 
             group_not_in_window = linear_idx >= cluster_tile_count_end_per_thread
-            hitted_group_idx_in_search_window = cute.arch.popc(
+            hit_group_idx_in_search_window = cute.arch.popc(
                 cute.arch.vote_ballot_sync(group_not_in_window)
             )
-            not_found = hitted_group_idx_in_search_window == cute.arch.WARP_SIZE
-            start_group_idx = hitted_group_idx_in_search_window + start_group_idx
-            hit_the_1st_problem_in_search_window = (
-                hitted_group_idx_in_search_window == c_0
-            )
+            not_found = hit_group_idx_in_search_window == cute.arch.WARP_SIZE
+            start_group_idx = hit_group_idx_in_search_window + start_group_idx
+            hit_the_1st_problem_in_search_window = hit_group_idx_in_search_window == c_0
             tile_count_prev_group = tile_count_searched
-            if hit_the_1st_problem_in_search_window == False:
+            if not hit_the_1st_problem_in_search_window:
                 tile_count_prev_group = cute.arch.shuffle_sync(
                     cluster_tile_count_end_per_thread,
-                    hitted_group_idx_in_search_window - 1,
+                    hit_group_idx_in_search_window - 1,
                 )
 
             # If no matched group, then get new_cluster_tile_count_end from last lane
-            # Otherwise, get new_cluster_tile_count_end from the hitted group
-            lane_idx_for_cluster_tile_count_end = hitted_group_idx_in_search_window
+            # Otherwise, get new_cluster_tile_count_end from the hit group
+            lane_idx_for_cluster_tile_count_end = hit_group_idx_in_search_window
             if not_found:
                 lane_idx_for_cluster_tile_count_end = last_lane_idx
             tile_count_searched = cute.arch.shuffle_sync(
@@ -1102,7 +1167,8 @@ class GroupedGemmTileSchedulerHelper:
 
         :param linear_idx: The linear index to be decomposed
         :type linear_idx: Int32
-        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for all groups
+        :param problem_shape_mnkl: Tensor containing gemm problem size (M, N, K, L) for
+                                   all groups
         :type problem_shape_mnkl: cute.Tensor
         :param start_group_idx: The group idx to start the search with
         :type start_group_idx: Int32

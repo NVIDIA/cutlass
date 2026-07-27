@@ -11,9 +11,7 @@
 
 
 import ctypes
-import sys
 import math
-from pathlib import Path
 from functools import lru_cache
 import itertools
 import operator
@@ -21,13 +19,18 @@ from typing import Any, Union, Optional, Type, List, NoReturn
 
 # MLIR modules imports
 from cutlass._mlir import ir
-from cutlass.base_dsl.env_manager import get_prefix_dsl_libs
 import cutlass._mlir.dialects.cute as _cute_ir
-import cutlass._mlir.dialects.cuda as _cuda_dialect
 
 from cutlass.cutlass_dsl import JitArgAdapterRegistry, CuTeDSL as _CuTeDSL
 from cutlass.base_dsl.common import DSLRuntimeError
-from cutlass.base_dsl.export import ExternalBinaryModule
+
+# Compatibility re-exports for existing `cutlass.cute.runtime.*` users.
+from cutlass.runtime import (
+    _FakeStream as _FakeStream,
+    find_runtime_libraries as find_runtime_libraries,
+    load_module as load_module,
+    make_fake_stream as make_fake_stream,
+)
 
 # Local modules imports
 from .typing import (
@@ -41,6 +44,8 @@ from .typing import (
     TFloat32,
     Shape,
     Stride,
+    _as_address_space,
+    _to_mlir_address_space,
 )
 from . import core
 from .tensor import _Tensor as CoreTensor
@@ -55,7 +60,7 @@ class _Pointer(Pointer):
     :param dtype: Data type of the elements pointed to
     :type dtype: Type
     :param mem_space: Memory space where the pointer resides, defaults to generic
-    :type mem_space: _cute_ir.AddressSpace, optional
+    :type mem_space: AddressSpace, optional
     :param assumed_align: Assumed alignment of input pointer in bytes, defaults to None
     :type assumed_align: int, optional
 
@@ -71,12 +76,12 @@ class _Pointer(Pointer):
         self,
         pointer: int,
         dtype: Type[Numeric],
-        mem_space: _cute_ir.AddressSpace = _cute_ir.AddressSpace.generic,
+        mem_space: AddressSpace = AddressSpace.generic,
         assumed_align: Optional[int] = None,
     ) -> None:
         self._pointer = pointer
         self._dtype = dtype
-        self._addr_space = mem_space
+        self._addr_space = _as_address_space(mem_space)
 
         if assumed_align is None:
             self._assumed_align = dtype.width // 8
@@ -112,7 +117,9 @@ class _Pointer(Pointer):
     @property
     def mlir_type(self) -> ir.Type:
         return _cute_ir.PtrType.get(
-            self._dtype.mlir_type, self._addr_space, self._assumed_align
+            self._dtype.mlir_type,
+            _to_mlir_address_space(self._addr_space),
+            self._assumed_align,
         )
 
     @property
@@ -310,9 +317,13 @@ class _Tensor(Tensor):
         self._dtype = new_type
 
     @property
+    def dtype(self) -> Type[Numeric]:
+        return self.element_type
+
+    @property
     def memspace(self) -> AddressSpace:
         self.load_dltensor()
-        return self._dltensor_wrapper.address_space
+        return _as_address_space(self._dltensor_wrapper.address_space)
 
     @property
     def size_in_bytes(self) -> int:
@@ -542,9 +553,17 @@ class _FakeTensor(Tensor):
     def __getitem__(self, crd: object) -> NoReturn:
         raise DSLRuntimeError("runtime._FakeTensor is not indexable")
 
-    @property  # type: ignore[misc]
+    @property
     def element_type(self) -> Type[Numeric]:
         return self._typed_tensor.element_type
+
+    @element_type.setter
+    def element_type(self, new_type: Type[Numeric]) -> None:
+        self._typed_tensor.element_type = new_type
+
+    @property
+    def dtype(self) -> Type[Numeric]:
+        return self.element_type
 
     @property
     def memspace(self) -> AddressSpace:
@@ -594,27 +613,40 @@ def make_fake_compact_tensor(
     use_32bit_stride: bool = False,
 ) -> _FakeTensor:
     """
-    Create a fake tensor with the specified shape, element type, and a compact memory layout.
+    Create a fake tensor descriptor with a compact layout derived from shape.
+
+    This is the usual builder for ``cute.compile(...)`` when the logical
+    tensor is compact and you want the runtime stride tuple to be derived
+    automatically from ``shape`` and ``stride_order``.  Each entry in
+    ``shape`` may be a static Python ``int`` or a dynamic
+    :class:`~cutlass.cute.typing.SymInt`.  Dynamic dimensions become
+    runtime-bound scalar parameters on the compiled callable.
 
     :param dtype: Data type of the tensor elements.
     :type dtype: Type[Numeric]
-    :param shape: Shape of the tensor, consisting of static (int) or dynamic (SymInt) dimensions.
+    :param shape: Tensor extents in elements, one per mode. Each entry may be
+        static (``int``) or dynamic (``SymInt``).
     :type shape: tuple[int | SymInt, ...]
-    :param stride_order: Order in which strides (memory layout) are assigned to the tensor dimensions.
-        If None, the default layout is left-to-right order (known as column-major order for flatten layout).
-        Otherwise, it should be a permutation order of the dimension indices.
-        The mode with stride_order 0 is the fastest changing (leading) dimension, and N-1 is the slowest changing.
+    :param stride_order: Permutation describing which mode is fastest-changing.
+        ``0`` means the innermost / stride-1 mode, ``len(shape)-1`` the
+        slowest-changing mode. If omitted, the default is left-to-right
+        order ``(0, 1, ..., n-1)``.
     :type stride_order: tuple[int, ...], optional
     :param memspace: Memory space where the fake tensor resides. Defaults to AddressSpace.gmem.
     :type memspace: AddressSpace, optional
-    :param assumed_align: Assumed byte alignment for the tensor data. If None, the default alignment is the dtype width, & at least 1 byte.
+    :param assumed_align: Assumed byte alignment of the base pointer. If
+        ``None``, defaults to one element width in bytes (and at least 1).
     :type assumed_align: int, optional
-    :param use_32bit_stride: Whether to use 32-bit stride for dynamic dimensions. If True and the total size of the
-        layout (cosize(layout)) fits within int32, then dynamic strides will use 32-bit integers for improved performance.
-        Only applies when dimensions are dynamic. Defaults to False.
+    :param use_32bit_stride: Use 32-bit symbolic strides instead of 64-bit
+        ones for dynamic layouts. This only affects dynamically-derived
+        stride entries and is useful when the compact layout provably fits
+        in int32.
     :type use_32bit_stride: bool, optional
     :return: An instance of a fake tensor with the given properties and compact layout.
     :rtype: _FakeTensor
+
+    Use :func:`make_fake_tensor` instead when the logical layout is
+    non-compact or when you need to spell the stride tuple explicitly.
 
     **Examples:**
 
@@ -633,7 +665,8 @@ def make_fake_compact_tensor(
         compiled_foo = cute.compile(foo, x)
 
         # Default stride order is left-to-right order (0, 1, ..., n-1)
-        y = make_fake_compact_tensor(cutlass.Float32, (8, 3, 2)) # y.stride == (1, 8, 24)
+        y = make_fake_compact_tensor(cutlass.Float32, (8, 3, 2))
+        assert y.stride == (1, 8, 24)
     """
 
     if stride_order is not None:
@@ -680,70 +713,65 @@ def make_fake_tensor(
     assumed_align: int | None = None,
 ) -> _FakeTensor:
     """
-    Create a fake tensor with the specified element type, shape, and stride.
+    Create a fake tensor descriptor with an explicit layout.
+
+    Use this builder for ``cute.compile(...)`` when the logical tensor
+    layout is not compact, when you already know the exact stride tuple,
+    or when you want fake-tensor layout to match an external contract
+    exactly. ``shape`` and ``stride`` are both expressed in elements, not
+    bytes.
 
     :param dtype: Data type of the tensor elements.
     :type dtype: Type[Numeric]
-    :param shape: Shape of the tensor, consisting of static (int) or dynamic (SymInt) dimensions.
+    :param shape: Tensor extents in elements, one per mode. Each entry may be
+        static (``int``) or dynamic (:class:`~cutlass.cute.typing.SymInt`).
+        Dynamic dimensions become runtime-bound scalar parameters on the
+        compiled callable.
     :type shape: tuple[int | SymInt, ...]
-    :param stride: Stride of the tensor, consisting of static (int) or dynamic (SymInt) values.
+    :param stride: Explicit stride tuple in elements. Must have the same rank
+        as ``shape``. Each entry may be static (``int``) or dynamic
+        (``SymInt``).
     :type stride: tuple[int | SymInt, ...]
     :param memspace: Memory space where the fake tensor resides. Defaults to AddressSpace.gmem.
     :type memspace: AddressSpace, optional
-    :param assumed_align: Assumed byte alignment for the tensor data. If None, the default alignment is the dtype width, & at least 1 byte.
+    :param assumed_align: Assumed byte alignment of the base pointer. If
+        ``None``, defaults to one element width in bytes (and at least 1).
     :type assumed_align: int, optional
     :return: An instance of a fake tensor with the given properties.
     :rtype: _FakeTensor
+
+    If the same runtime symbolic quantity appears in multiple positions,
+    reuse the same :class:`~cutlass.cute.typing.SymInt` object at every
+    occurrence. Different ``SymInt`` objects are treated as distinct
+    runtime parameters even if they share the same ``symbol`` string.
+
+    Use :func:`make_fake_compact_tensor` instead when the layout is
+    compact and you want the stride tuple inferred from ``shape`` and a
+    mode order.
+
+    **Examples:**
+
+    .. code-block:: python
+
+        @cute.jit
+        def foo(x: cute.Tensor):
+            ...
+
+        sym_m = cute.sym_int64(symbol="M")
+        sym_ld = cute.sym_int64(divisibility=16, symbol="LD")
+
+        # Row-major logical layout: contiguous K dimension, explicit leading dim.
+        x = make_fake_tensor(
+            cutlass.Float16,
+            shape=(sym_m, 128),
+            stride=(sym_ld, 1),
+        )
+
+        compiled_foo = cute.compile(foo, x)
     """
     return _FakeTensor(
         dtype, shape, stride=stride, memspace=memspace, assumed_align=assumed_align
     )
-
-
-class _FakeStream:
-    """A fake stream that can be used as a placeholder for a stream in compilation.
-
-    When use_tvm_ffi_env_stream is True and the function is compiled with TVM-FFI,
-    the argument will be skipped from the function signature and we pass in
-    this value through the environment stream obtained from caller context
-    (e.g. torch.cuda.current_stream()).
-    """
-
-    use_tvm_ffi_env_stream: bool
-
-    def __init__(self, *, use_tvm_ffi_env_stream: bool = False) -> None:
-        self.use_tvm_ffi_env_stream = use_tvm_ffi_env_stream
-
-    def __str__(self) -> str:
-        return "FakeStream"
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def __new_from_mlir_values__(self, values: List[object]) -> object:
-        assert len(values) == 1
-        return values[0]
-
-    def __c_pointers__(self) -> List[int]:
-        return [0]
-
-    def __get_mlir_types__(self) -> List[ir.Type]:
-        return [_cuda_dialect.StreamType.get()]
-
-
-def make_fake_stream(*, use_tvm_ffi_env_stream: bool = False) -> _FakeStream:
-    """Create a fake stream that can be used as a placeholder for a stream in compilation.
-
-    When use_tvm_ffi_env_stream is True and the function is compiled with TVM-FFI,
-    the argument will be skipped from the function signature and we pass in
-    this value through the environment stream obtained from caller context
-    (e.g. torch.cuda.current_stream()). This can speedup the calling process
-    since we no longer need to do stream query in python.
-
-    :param use_tvm_ffi_env_stream: Whether to skip this parameter use environment stream instead.
-    :type use_tvm_ffi_env_stream: bool
-    """
-    return _FakeStream(use_tvm_ffi_env_stream=use_tvm_ffi_env_stream)
 
 
 def from_dlpack(
@@ -901,70 +929,6 @@ class TensorAdapter:
             self._mlir_types_cache = self._arg.__get_mlir_types__()  # type: ignore[attr-defined]
         return self._mlir_types_cache
 
-
-def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> List[str]:
-    """
-    Find the runtime libraries that needs to be available for loading modules.
-
-    :param enable_tvm_ffi: Whether to enable TVM-FFI.
-    :type enable_tvm_ffi: bool, optional
-    :return: A list of runtime libraries that needs to be available for loading modules.
-    :rtype: list
-    """
-
-    def _get_cute_dsl_runtime_path() -> Optional[str]:
-        libs = get_prefix_dsl_libs("CUTE_DSL")
-        if libs is None:
-            return None
-
-        # check if the separator is ; for windows
-        if sys.platform.startswith("win32") and ";" in libs:
-            libs = libs.split(";")  # type: ignore[assignment]
-        else:
-            libs = libs.split(":")  # type: ignore[assignment]
-
-        for path in libs:
-            if path.endswith("libcute_dsl_runtime.so"):
-                return path
-
-        return None
-
-    libs = []
-    cute_dsl_runtime_path = _get_cute_dsl_runtime_path()
-    if cute_dsl_runtime_path:
-        libs.append(cute_dsl_runtime_path)
-
-    if enable_tvm_ffi:
-        import tvm_ffi
-
-        libs.append(tvm_ffi.libinfo.find_libtvm_ffi())
-
-    return libs
-
-# cache to load runtime libraries so they can be found by the DSO loader
-_LOAD_MODULE_LIBS_CACHE: list[Any] = []
-
-
-def load_module(
-    file_path: str, *, enable_tvm_ffi: bool = False
-) -> ExternalBinaryModule:
-    """Load a module from a file path.
-
-    :param file_path: The path to the module file
-    :type file_path: str
-    :param enable_tvm_ffi: Whether to enable TVM-FFI, defaults to True. When True, the module will be loaded as a TVM-FFI module.
-    :type enable_tvm_ffi: bool, optional
-    :return: A module object
-    :rtype: module
-    """
-    if len(_LOAD_MODULE_LIBS_CACHE) == 0:
-        # ensure the runtime libraries are loaded so they can be found by the DSO loader
-        # no need to load tvm_ffi library here since it will be loaded by tvm_ffi package.
-        for path in find_runtime_libraries(enable_tvm_ffi=False):
-            if Path(path).exists():
-                _LOAD_MODULE_LIBS_CACHE.append(ctypes.CDLL(path))
-
-    return ExternalBinaryModule(file_path, enable_tvm_ffi=enable_tvm_ffi)
 
 # -------------------------------------------------------------------------
 # Try to register_jit_arg_adapter for TensorAdapter

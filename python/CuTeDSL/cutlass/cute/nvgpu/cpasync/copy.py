@@ -12,8 +12,9 @@
 import enum
 import warnings
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, cast
 from typing_extensions import deprecated
+from abc import ABCMeta, abstractmethod
 
 from cutlass.base_dsl.arch import Arch
 from cutlass.cutlass_dsl import BaseDSL
@@ -26,7 +27,7 @@ from cutlass._mlir import ir
 
 ReductionOp = ReductionKind
 
-from ...atom import CopyOp, Trait, make_atom
+from ...atom import CopyOp, Trait, TmaTrait, make_atom
 from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric
 from ..common import OpError, LoadCacheMode as LoadCacheMode_
 
@@ -152,7 +153,142 @@ class TmaCopyOp(CopyOp):
 
 
 @dataclass
-class CopyBulkTensorTileG2SOp(TmaCopyOp):
+class CopyG2STileBaseOp(TmaCopyOp, metaclass=ABCMeta):
+    """
+    Base class for bulk tensor asynchronous GMEM to SMEM Copy Operations using the TMA unit in tiled mode.
+    """
+
+    cta_group: CtaGroup = CtaGroup.ONE
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cta_group, CtaGroup):
+            raise OpError(
+                self, "expects the 'cta_group' parameter to be a CtaGroup instance"
+            )
+        # Arch verification
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= Arch.sm_90:
+            raise OpError(
+                self,
+                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
+            raise OpError(
+                self,
+                f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    @abstractmethod
+    def _get_description(self) -> str:
+        """
+        Get the description of the operation. This should be overridden by the subclass.
+        """
+        return ""
+
+    def __str__(self) -> str:
+        res = self._get_description()
+        if self.cta_group == CtaGroup.TWO:
+            res += "\n  CTA group = 2"
+        return res
+
+    @abstractmethod
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "TmaTrait":
+        pass
+
+    @abstractmethod
+    def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
+        if self.cta_group == CtaGroup.ONE:
+            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_90
+        elif self.cta_group == CtaGroup.TWO:
+            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_100_2sm
+        else:
+            assert False, "unrecognized self.cta_group"
+
+
+class CopyG2STileNonExecBaseTrait(TmaTrait):
+    """
+    Base trait for non-executable bulk tensor asynchronous GMEM to SMEM Copy Operations using the TMA unit in tiled mode.
+    """
+
+    # We allow kw args to be dropped so that the user can write common code for non-multicast
+    # and multicast loads.
+
+    @abstractmethod
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "Trait":
+        pass
+
+    def unpack(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        tma_bar_ptr: Optional[Pointer] = None,
+        tma_desc_ptr: Optional[Pointer] = None,
+        cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
+    ) -> ir.Value:
+        """
+        Custom implementation of unpack for non-executable TMAs.
+
+        The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
+        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        Any other kw arguments will be ignored instead of triggering an error.
+        """
+        if not isinstance(tma_bar_ptr, Pointer):
+            raise ValueError(
+                "expects a pointer to an mbarrier to be provided via the tma_bar_ptr kw argument"
+            )
+
+        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
+            self.value,
+            loc=loc,
+            ip=ip,
+        )
+
+        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MBAR_PTR_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        exec_value = _cute_nvgpu_ir.atom_set_value(
+            exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
+        )
+        if isinstance(tma_desc_ptr, Pointer):
+            attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
+            )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
+            )
+        return exec_value
+
+
+@dataclass
+class CopyBulkTensorTileG2SOp(CopyG2STileBaseOp):
     """
     Bulk tensor asynchronous GMEM to SMEM Copy Operation using the TMA unit.
 
@@ -198,33 +334,8 @@ class CopyBulkTensorTileG2SOp(TmaCopyOp):
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
 
-    cta_group: CtaGroup = CtaGroup.ONE
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self, "expects the 'cta_group' parameter to be a CtaGroup instance"
-            )
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
-            )
-        if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
-            raise OpError(
-                self,
-                f"CTA group of 2 is tcgen05-specific and is not and is not compatible with {arch}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
-            )
-
-    def __str__(self) -> str:
-        res = "cp.async GMEM -> SMEM bulk tensor copy Operation"
-        if self.cta_group == CtaGroup.TWO:
-            res += "\n  CTA group = 2"
-        return res
+    def _get_description(self) -> str:
+        return "cp.async GMEM -> SMEM bulk tensor copy Operation"
 
     def _make_trait(
         self,
@@ -239,18 +350,10 @@ class CopyBulkTensorTileG2SOp(TmaCopyOp):
         )
 
     def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
-        if self.cta_group == CtaGroup.ONE:
-            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_90
-        elif self.cta_group == CtaGroup.TWO:
-            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_100_2sm
-        else:
-            assert False, "unrecognized self.cta_group"
+        return super()._to_ir()
 
 
-class CopyBulkTensorTileG2SNonExecTrait(Trait):
-    # We allow kw args to be dropped so that the user can write common code for non-multicast
-    # and multicast loads.
-
+class CopyBulkTensorTileG2SNonExecTrait(CopyG2STileNonExecBaseTrait):
     def with_(
         self,
         *,
@@ -260,32 +363,70 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
     ) -> "CopyBulkTensorTileG2STrait":
         return CopyBulkTensorTileG2STrait(self.unpack(loc=loc, ip=ip, **kwargs))
 
+
+class CopyBulkTensorTileG2STrait(Trait):
+    pass
+
+
+
+
+
+#
+# TMA GMEM -> SMEM multicast copies
+#
+
+
+class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
+    """
+    Base trait for non-executable bulk tensor asynchronous multicast GMEM to SMEM Copy Operations using the TMA unit in tiled mode.
+    """
+
+    @abstractmethod
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "Trait":
+        pass
+
     def unpack(
         self,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         tma_bar_ptr: Optional[Pointer] = None,
-        tma_desc_ptr: Optional[Pointer] = None,
+        mcast_mask: Any = None,
+        tma_desc_ptr: Any = None,
         cache_policy: Optional[Int64] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
 
-        The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
-        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
-        Any other kw arguments will be ignored instead of triggering an error.
+        The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
+        provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
+        l2 cache eviction priority.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
                 "expects a pointer to an mbarrier to be provided via the tma_bar_ptr kw argument"
             )
-        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MBAR_PTR_FIELD_NAME}>"
+        if not isinstance(mcast_mask, Integer):
+            raise ValueError(
+                "expects a multicast mask to be provided via the mcast_mask kw argument"
+            )
+
+        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
+            self.value,
+            loc=loc,
+            ip=ip,
+        )
+        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MCAST_MASK_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         exec_value = _cute_nvgpu_ir.atom_set_value(
-            exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
+            exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
         if isinstance(tma_desc_ptr, Pointer):
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
@@ -306,17 +447,95 @@ class CopyBulkTensorTileG2SNonExecTrait(Trait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
             )
+        # Set the tma_bar_ptr at last to ensure that the atom creation and setting
+        # operations above can be moved outside the loop
+        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MBAR_PTR_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        exec_value = _cute_nvgpu_ir.atom_set_value(
+            exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
+        )
         return exec_value
 
 
-class CopyBulkTensorTileG2STrait(Trait):
+@dataclass
+class CopyBulkTensorTileG2SMulticastOp(CopyG2STileBaseOp):
+    """
+    Bulk tensor asynchronous multicast GMEM to SMEM Copy Operation using the TMA unit.
+
+    TMA multicast operations are issued by a single thread within a warp, but the DSL **automatically handles this** by
+    implicitly adding ``elect_one()`` around the copy operation.
+
+    .. code-block:: python
+
+        # CORRECT: TMA multicast without elect_one
+        cute.copy(
+            tma_atom.with_(mcast_mask=cluster_mask),
+            gmem_tensor,
+            smem_tensor,
+            tma_bar_ptr=barrier_ptr
+        )
+
+        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
+        with cute.arch.elect_one():  # INCORRECT
+            cute.copy(tma_atom.with_(mcast_mask=mask), gmem_tensor, smem_tensor)
+
+    **PTX Programming Model**: In PTX, TMA multicast operations (``cp.async.bulk.tensor.multicast``)
+    must be issued by a single thread.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
+    This Operation uses TMA in the ``.tile`` mode.
+
+    .. seealso::
+       - :func:`cute.arch.elect_one` - **NOT** needed for TMA copy
+       - :class:`CopyBulkTensorTileG2SOp` - Non-multicast TMA load
+    """
+
+    def _get_description(self) -> str:
+        return "cp.async GMEM -> SMEM bulk tensor multicast copy Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensorTileG2SMulticastNonExecTrait":
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
+        )
+
+    def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
+        if self.cta_group == CtaGroup.ONE:
+            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_90_multicast
+        elif self.cta_group == CtaGroup.TWO:
+            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_100_2sm_multicast
+        else:
+            assert False, "unrecognized self.cta_group"
+
+
+class CopyBulkTensorTileG2SMulticastNonExecTrait(CopyG2STileMulticastNonExecBaseTrait):
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensorTileG2SMulticastTrait":
+        return CopyBulkTensorTileG2SMulticastTrait(
+            self.unpack(loc=loc, ip=ip, **kwargs)
+        )
+
+
+class CopyBulkTensorTileG2SMulticastTrait(Trait):
     pass
+
 
 
 @dataclass
 class CopyBulkTensorIm2ColG2SOp(TmaCopyOp):
     """
-    Bulk tensor asynchrnous GMEM to SMEM Copy Operation using the TMA unit in im2col mode.
+    Bulk tensor asynchronous GMEM to SMEM Copy Operation using the TMA unit in im2col mode.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
     This Operation uses TMA in the ``.im2col`` mode.
@@ -340,7 +559,7 @@ class CopyBulkTensorIm2ColG2SOp(TmaCopyOp):
         if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
             raise OpError(
                 self,
-                f"CTA group of 2 is tcgen05-specific and is not and is not compatible with {arch}",
+                f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -371,7 +590,7 @@ class CopyBulkTensorIm2ColG2SOp(TmaCopyOp):
             assert False, "unrecognized self.cta_group"
 
 
-class CopyBulkTensorIm2ColG2SNonExecTrait(Trait):
+class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
     # We allow kw args to be dropped so that the user can write common code for non-multicast
     # and multicast loads.
 
@@ -414,13 +633,13 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(Trait):
         attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MBAR_PTR_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         exec_value = _cute_nvgpu_ir.atom_set_value(
-            exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
+            exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
         if isinstance(tma_desc_ptr, Pointer):
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
         if cache_policy is not None:
             if not isinstance(cache_policy, Int64):
@@ -450,7 +669,7 @@ class CopyBulkTensorIm2ColG2STrait(Trait):
 @dataclass
 class CopyBulkTensorIm2ColG2SMulticastOp(TmaCopyOp):
     """
-    Bulk tensor asynchrnous multicast GMEM to SMEM Copy Operation using the TMA unit.
+    Bulk tensor asynchronous multicast GMEM to SMEM Copy Operation using the TMA unit.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
     This Operation uses TMA in the ``.im2col`` mode.
@@ -474,7 +693,7 @@ class CopyBulkTensorIm2ColG2SMulticastOp(TmaCopyOp):
         if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
             raise OpError(
                 self,
-                f"CTA group of 2 is tcgen05-specific and is not and is not compatible with {arch}",
+                f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -505,7 +724,7 @@ class CopyBulkTensorIm2ColG2SMulticastOp(TmaCopyOp):
             assert False, "unrecognized self.cta_group"
 
 
-class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
+class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
     def with_(
         self,
         *,
@@ -517,7 +736,7 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
             self.unpack(loc=loc, ip=ip, **kwargs)
         )
 
-    def unpack(  # type: ignore[override]
+    def unpack(
         self,
         *,
         loc: Optional[ir.Location] = None,
@@ -526,6 +745,7 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
         mcast_mask: Any = None,
         tma_desc_ptr: Any = None,
         cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
@@ -548,7 +768,7 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
             loc=loc,
             ip=ip,
         )
-        attr_str = "#cute_nvgpu.atom_copy_field_tmaload<mcast_mask>"
+        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MCAST_MASK_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
@@ -557,7 +777,7 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
         if cache_policy is not None:
             if not isinstance(cache_policy, Int64):
@@ -574,263 +794,15 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(Trait):
             )
         # Set the tma_bar_ptr at last to ensure that the atom creation and setting
         # operations above can be moved outside the loop
-        attr_str = "#cute_nvgpu.atom_copy_field_tmaload<tma_bar>"
+        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MBAR_PTR_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         exec_value = _cute_nvgpu_ir.atom_set_value(
-            exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
+            exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
         return exec_value
 
 
 class CopyBulkTensorIm2ColG2SMulticastTrait(Trait):
-    pass
-
-
-@dataclass
-class CopyBulkTensorIm2ColS2GOp(TmaCopyOp):
-    """
-    Bulk tensor asynchrnous SMEM to GMEM Copy Operation using the TMA unit in im2col mode.
-
-    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
-    This Operation uses TMA in the ``.im2col`` mode.
-    """
-
-    def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
-            )
-
-    def __str__(self) -> str:
-        return "cp.async SMEM -> GMEM bulk tensor copy Operation"
-
-    def _make_trait(
-        self,
-        copy_internal_type: Type[Numeric],
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-        **kwargs: Any,
-    ) -> "CopyBulkTensorIm2ColS2GNonExecTrait":
-        raise NotImplementedError(
-            "Use cpasync.make_im2col_tma_atom to obtain a copy Atom for TMA"
-        )
-
-
-class CopyBulkTensorIm2ColS2GNonExecTrait(Trait):
-    def with_(
-        self,
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-        **kwargs: Any,
-    ) -> "CopyBulkTensorIm2ColS2GTrait":
-        return CopyBulkTensorIm2ColS2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
-
-    def unpack(  # type: ignore[override]
-        self,
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-        tma_desc_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
-    ) -> ir.Value:
-        """
-        Custom implementation of unpack for non-executable TMAs.
-        """
-        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
-            attr_str = (
-                f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_DESC_PTR_FIELD_NAME}>"
-            )
-            attr = ir.Attribute.parse(attr_str)
-            exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
-            )
-        if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
-            attr_str = (
-                f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
-            )
-            attr = ir.Attribute.parse(attr_str)
-            exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
-            )
-        return exec_value
-
-
-class CopyBulkTensorIm2ColS2GTrait(Trait):
-    pass
-
-
-#
-# TMA GMEM -> SMEM multicast copies
-#
-
-
-@dataclass
-class CopyBulkTensorTileG2SMulticastOp(TmaCopyOp):
-    """
-    Bulk tensor asynchronous multicast GMEM to SMEM Copy Operation using the TMA unit.
-
-    TMA multicast operations are issued by a single thread within a warp, but the DSL **automatically handles this** by
-    implicitly adding ``elect_one()`` around the copy operation.
-
-    .. code-block:: python
-
-        # CORRECT: TMA multicast without elect_one
-        cute.copy(
-            tma_atom.with_(mcast_mask=cluster_mask),
-            gmem_tensor,
-            smem_tensor,
-            tma_bar_ptr=barrier_ptr
-        )
-
-        # WRONG: Do NOT wrap in elect_one (can cause deadlock)
-        with cute.arch.elect_one():  # INCORRECT
-            cute.copy(tma_atom.with_(mcast_mask=mask), gmem_tensor, smem_tensor)
-
-    **PTX Programming Model**: In PTX, TMA multicast operations (``cp.async.bulk.tensor.multicast``)
-    must be issued by a single thread.
-
-    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
-    This Operation uses TMA in the ``.tile`` mode.
-
-    .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA copy
-       - :class:`CopyBulkTensorTileG2SOp` - Non-multicast TMA load
-    """
-
-    cta_group: CtaGroup = CtaGroup.ONE
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self, "expects the 'cta_group' parameter to be a CtaGroup instance"
-            )
-        # Arch verification
-        arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
-            )
-        if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
-            raise OpError(
-                self,
-                f"CTA group of 2 is tcgen05-specific and is not and is not compatible with {arch}",
-                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
-            )
-
-    def __str__(self) -> str:
-        res = "cp.async GMEM -> SMEM bulk tensor multicast copy Operation"
-        if self.cta_group == CtaGroup.TWO:
-            res += "\n  CTA group = 2"
-        return res
-
-    def _make_trait(
-        self,
-        copy_internal_type: Type[Numeric],
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-        **kwargs: Any,
-    ) -> "CopyBulkTensorTileG2SMulticastNonExecTrait":
-        raise NotImplementedError(
-            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA"
-        )
-
-    def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
-        if self.cta_group == CtaGroup.ONE:
-            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_90_multicast
-        elif self.cta_group == CtaGroup.TWO:
-            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_100_2sm_multicast
-        else:
-            assert False, "unrecognized self.cta_group"
-
-
-class CopyBulkTensorTileG2SMulticastNonExecTrait(Trait):
-    def with_(
-        self,
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-        **kwargs: Any,
-    ) -> "CopyBulkTensorTileG2SMulticastTrait":
-        return CopyBulkTensorTileG2SMulticastTrait(
-            self.unpack(loc=loc, ip=ip, **kwargs)
-        )
-
-    def unpack(  # type: ignore[override]
-        self,
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-        tma_bar_ptr: Optional[Pointer] = None,
-        mcast_mask: Any = None,
-        tma_desc_ptr: Any = None,
-        cache_policy: Optional[Int64] = None,
-    ) -> ir.Value:
-        """
-        Custom implementation of unpack for non-executable TMAs.
-
-        The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
-        provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
-        l2 cache eviction priority.
-        """
-        if not isinstance(tma_bar_ptr, Pointer):
-            raise ValueError(
-                "expects a pointer to an mbarrier to be provided via the tma_bar_ptr kw argument"
-            )
-        if not isinstance(mcast_mask, Integer):
-            raise ValueError(
-                "expects a multicast mask to be provided via the mcast_mask kw argument"
-            )
-        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        attr_str = "#cute_nvgpu.atom_copy_field_tmaload<mcast_mask>"
-        attr = ir.Attribute.parse(attr_str)
-        exec_value = _cute_nvgpu_ir.atom_set_value(
-            exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
-        )
-        if isinstance(tma_desc_ptr, Pointer):
-            attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
-            attr = ir.Attribute.parse(attr_str)
-            exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
-            )
-        if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
-            attr_str = (
-                f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
-            )
-            attr = ir.Attribute.parse(attr_str)
-            exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
-            )
-        # Set the tma_bar_ptr at last to ensure that the atom creation and setting
-        # operations above can be moved outside the loop
-        attr_str = "#cute_nvgpu.atom_copy_field_tmaload<tma_bar>"
-        attr = ir.Attribute.parse(attr_str)
-        exec_value = _cute_nvgpu_ir.atom_set_value(
-            exec_value, attr, tma_bar_ptr.value, loc=loc, ip=ip
-        )
-        return exec_value
-
-
-class CopyBulkTensorTileG2SMulticastTrait(Trait):
     pass
 
 
@@ -898,7 +870,7 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
         )
 
 
-class CopyBulkTensorTileS2GNonExecTrait(Trait):
+class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
     def with_(
         self,
         *,
@@ -908,13 +880,14 @@ class CopyBulkTensorTileS2GNonExecTrait(Trait):
     ) -> "CopyBulkTensorTileS2GTrait":
         return CopyBulkTensorTileS2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
 
-    def unpack(  # type: ignore[override]
+    def unpack(
         self,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         tma_desc_ptr: Optional[Pointer] = None,
         cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
@@ -926,7 +899,7 @@ class CopyBulkTensorTileS2GNonExecTrait(Trait):
             )
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
         if cache_policy is not None:
             if not isinstance(cache_policy, Int64):
@@ -971,17 +944,6 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
             # Hardware-correct upstream enum; convert silently by name.
             self.reduction_kind = ReductionKind[kind.name]
         elif isinstance(kind, _CuteReductionOp):
-            # Validate the name first so an unknown member (e.g. MUL) raises
-            # a clean TypeError. Doing it before warnings.warn guarantees the
-            # invalid-name case isn't masked by the DeprecationWarning being
-            # escalated to an exception under -W error / warnings-as-errors.
-            if kind.name not in ReductionKind.__members__:
-                raise TypeError(
-                    f"cute.ReductionOp.{kind.name} is not a valid TMA "
-                    f"reduction kind. Valid kinds: "
-                    f"{[m.name for m in ReductionKind]}."
-                )
-            self.reduction_kind = ReductionKind[kind.name]
             warnings.warn(
                 "Passing cute.ReductionOp to CopyReduceBulkTensorTileS2GOp "
                 "is deprecated: cute.ReductionOp models compute reductions "
@@ -990,6 +952,14 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
                 DeprecationWarning,
                 stacklevel=3,
             )
+            try:
+                self.reduction_kind = ReductionKind[kind.name]
+            except KeyError:
+                raise TypeError(
+                    f"cute.ReductionOp.{kind.name} is not a valid TMA "
+                    f"reduction kind. Valid kinds: "
+                    f"{[m.name for m in ReductionKind]}."
+                )
         # else: leave as-is; _to_ir raises TypeError on unknown types.
 
         # Arch verification
@@ -1030,7 +1000,7 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
         )
 
 
-class CopyReduceBulkTensorTileS2GNonExecTrait(Trait):
+class CopyReduceBulkTensorTileS2GNonExecTrait(TmaTrait):
     def with_(
         self,
         *,
@@ -1040,13 +1010,14 @@ class CopyReduceBulkTensorTileS2GNonExecTrait(Trait):
     ) -> "CopyReduceBulkTensorTileS2GTrait":
         return CopyReduceBulkTensorTileS2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
 
-    def unpack(  # type: ignore[override]
+    def unpack(
         self,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         tma_desc_ptr: Optional[Pointer] = None,
         cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
@@ -1058,7 +1029,7 @@ class CopyReduceBulkTensorTileS2GNonExecTrait(Trait):
             )
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
         if cache_policy is not None:
             if not isinstance(cache_policy, Int64):
@@ -1079,6 +1050,93 @@ class CopyReduceBulkTensorTileS2GTrait(Trait):
     pass
 
 
+
+@dataclass
+class CopyBulkTensorIm2ColS2GOp(TmaCopyOp):
+    """
+    Bulk tensor asynchronous SMEM to GMEM Copy Operation using the TMA unit in im2col mode.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
+    This Operation uses TMA in the ``.im2col`` mode.
+    """
+
+    def __post_init__(self) -> None:
+        # Arch verification
+        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= Arch.sm_90:
+            raise OpError(
+                self,
+                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        return "cp.async SMEM -> GMEM bulk tensor copy Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensorIm2ColS2GNonExecTrait":
+        raise NotImplementedError(
+            "Use cpasync.make_im2col_tma_atom to obtain a copy Atom for TMA"
+        )
+
+
+class CopyBulkTensorIm2ColS2GNonExecTrait(TmaTrait):
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensorIm2ColS2GTrait":
+        return CopyBulkTensorIm2ColS2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+    def unpack(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        tma_desc_ptr: Optional[Pointer] = None,
+        cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
+    ) -> ir.Value:
+        """
+        Custom implementation of unpack for non-executable TMAs.
+        """
+        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
+        if isinstance(tma_desc_ptr, Pointer):
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_DESC_PTR_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+            )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
+            )
+        return exec_value
+
+
+class CopyBulkTensorIm2ColS2GTrait(Trait):
+    pass
+
+
 #
 # Bulk GMEM -> SMEM copies
 #
@@ -1087,7 +1145,7 @@ class CopyReduceBulkTensorTileS2GTrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkG2SOp(CopyOp):
     """
-    Bulk copy asynchrnous GMEM to SMEM Copy Operation.
+    Bulk copy asynchronous GMEM to SMEM Copy Operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1152,7 +1210,7 @@ class CopyBulkG2STrait(Trait):
         attr_str = f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_MBAR_PTR_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         val = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, mbar_ptr.value, loc=loc, ip=ip
+            self.value, attr, cast(Any, mbar_ptr).value, loc=loc, ip=ip
         )
         if cache_policy is not None:
             if not isinstance(cache_policy, Int64):
@@ -1177,7 +1235,7 @@ class CopyBulkG2STrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkG2SMulticastOp(CopyOp):
     """
-    Bulk multicast copy asynchrnous GMEM to SMEM Copy Operation.
+    Bulk multicast copy asynchronous GMEM to SMEM Copy Operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1246,7 +1304,7 @@ class CopyBulkG2SMulticastTrait(Trait):
         attr_str = f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_MBAR_PTR_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         val = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, mbar_ptr.value, loc=loc, ip=ip
+            self.value, attr, cast(Any, mbar_ptr).value, loc=loc, ip=ip
         )
         attr_str = f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_MCAST_MASK_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
@@ -1276,7 +1334,7 @@ class CopyBulkG2SMulticastTrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkS2GOp(CopyOp):
     """
-    Bulk copy asynchrnous SMEM to GMEM Copy Operation.
+    Bulk copy asynchronous SMEM to GMEM Copy Operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1327,7 +1385,7 @@ class CopyBulkS2GTrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkS2GByteMaskOp(CopyOp):
     """
-    Bulk copy asynchrnous SMEM to GMEM Copy Operation with mask.
+    Bulk copy asynchronous SMEM to GMEM Copy Operation with mask.
     The i-th bit in the 16-bit wide byteMask operand specifies whether
     the i-th byte of each 16-byte wide chunk of source data is copied to the destination.
 
@@ -1408,7 +1466,7 @@ class CopyBulkS2GByteMaskTrait(Trait):
 @dataclass(frozen=True)
 class CopyBulkS2SOp(CopyOp):
     """
-    Bulk copy asynchrnous SMEM CTA to Cluster Copy Operation.
+    Bulk copy asynchronous SMEM CTA to Cluster Copy Operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1475,7 +1533,7 @@ class CopyBulkS2STrait(Trait):
         attr_str = f"#cute_nvgpu.atom_copy_field_bulks2s<{TMA_MBAR_PTR_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
         val = _cute_nvgpu_ir.atom_set_value(
-            self.value, attr, mbar_ptr.value, loc=loc, ip=ip
+            self.value, attr, cast(Any, mbar_ptr).value, loc=loc, ip=ip
         )
         attr_str = f"#cute_nvgpu.atom_copy_field_bulks2s<{TMA_CTA_RANK_FIELD_NAME}>"
         attr = ir.Attribute.parse(attr_str)
@@ -1565,7 +1623,7 @@ class CopyDsmemStoreTrait(Trait):
         val = _cute_nvgpu_ir.atom_set_value(
             self.value,
             attr,
-            mbar_ptr.value,
+            cast(Any, mbar_ptr).value,
             loc=loc,
             ip=ip,
         )

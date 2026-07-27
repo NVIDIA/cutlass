@@ -28,8 +28,8 @@ import builtins
 
 from .utils.logger import log
 from .common import *
-
-from ._mlir_helpers.arith import ArithValue
+from .diagnostics import DiagId
+from .env_manager import get_str_env_var
 
 
 class Executor:
@@ -226,7 +226,7 @@ def loop_selector(
         vectorize,
         at_least_once,
     )
-    from .typing import Integer, Numeric
+    from .typing import Integer
 
     def _maybe_upcast(value: Any) -> Any:
         if isinstance(value, Integer):
@@ -389,7 +389,7 @@ def range_dynamic(*args: Any, **kwargs: Any) -> None:
     raise DSLRuntimeError("range_dynamic should be always preprocessed to IR")
 
 
-def range_constexpr(*args: Any) -> None:
+def range_constexpr(*args: Any) -> range:
     raise DSLRuntimeError("range_constexpr should be preprocessed by preprocessor.")
 
 
@@ -417,11 +417,9 @@ def const_expr(expression: Any) -> Any:
         failed = True
 
     if failed:
-        raise DSLRuntimeError(
-            f"The function `const_expr({expression})` received a dynamic expression (non compile-time constant).",
-            context={
-                "If your expression depends on dynamic values": "Remove `const_expr()`",
-            },
+        raise DSLUserCodeError(
+            DiagId.PHASE_REQUIRES_CONSTANT,
+            what="`const_expr()`",
         )
     return expression
 
@@ -456,17 +454,17 @@ def assert_executor(test: Any, msg: str | None = None) -> None:
     if not fail:
         assert test, msg
     else:
-        raise DSLRuntimeError(
-            "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion="Please replace with runtime assert.",
+        raise DSLUserCodeError(
+            DiagId.PHASE_REQUIRES_CONSTANT,
+            what="`assert`",
         )
 
 
 def bool_cast(value: Any) -> bool:
     if executor._is_dynamic_expression(value):  # type: ignore[misc]
-        raise DSLRuntimeError(
-            "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion="Please explicitly convert to boolean with expressions like comparison.",
+        raise DSLUserCodeError(
+            DiagId.PHASE_REQUIRES_CONSTANT,
+            what="Explicit boolean conversion",
         )
     return bool(value)
 
@@ -539,9 +537,8 @@ def range_value_check(*args: Any) -> tuple[int, int, int]:
 
         return (start, end, step)
     except:
-        raise DSLRuntimeError(
-            "`range_constexpr` requires constexpr (compile-time constant) for all arguments.",
-            suggestion="Use `range` instead of `range_constexpr`.",
+        raise DSLUserCodeError(
+            DiagId.ARG_NON_CONSTANT,
         )
 
 
@@ -573,9 +570,9 @@ def cf_symbol_check(symbol: Any) -> None:
             failed = True
 
     if failed:
-        raise DSLRuntimeError(
-            f"Incorrect `{name}` is used.",
-            suggestion=f"Please avoid overriding `{name}` from DSL package.",
+        raise DSLUserCodeError(
+            DiagId.CALL_WRONG_IMPORT,
+            name=name,
         )
 
 
@@ -590,8 +587,9 @@ def redirect_builtin_function(fcn: Any) -> Any:
 
     if isinstance(fcn, BuiltinFunctionType):
         if fcn in [builtins.exec, builtins.eval]:
-            raise DSLRuntimeError(
-                f"Built-in function `{fcn.__name__}` is not supported in DSL.",
+            raise DSLUserCodeError(
+                DiagId.UNSUP_BUILTIN,
+                name=fcn.__name__,
             )
         if executor._builtin_redirector:
             return executor._builtin_redirector(fcn)
@@ -640,8 +638,9 @@ def closure_check(
     closures: list[Any], _visited: set[tuple[str, int]] | None = None
 ) -> None:
     """
-    Check if the closures have any unsupported capture
+    Check if the closures have any unsupported capture.
     """
+
     if _visited is None:
         _visited = set()
 
@@ -660,9 +659,10 @@ def closure_check(
             if inspect.isfunction(value) or inspect.ismethod(value):
                 closure_check([value], _visited)
                 continue
-            raise DSLRuntimeError(
-                f"Function `{closure.__name__}` is a closure that captures variable `{name}` and is not supported in dynamic control flow",
-                suggestion="Please explicitly pass in captured variables as arguments",
+            raise DSLUserCodeError(
+                DiagId.SCOPE_CLOSURE_CAPTURE,
+                func_name=closure.__name__,
+                var_name=name,
             )
 
 
@@ -710,13 +710,13 @@ class FormattedValue:
                     stacklevel=3,
                 )
             if self.format_spec is not None and len(self.format_spec) > 1:
-                raise DSLRuntimeError(
-                    "At most one format specifier is supported for dynamic expressions",
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_FSTRING_FORMAT,
                 )
             if self.format_spec is not None:
                 if self.format_spec[0].startswith(("<", ">", "^")):
-                    raise DSLRuntimeError(
-                        "Alignment specifier is not supported for dynamic expressions",
+                    raise DSLUserCodeError(
+                        DiagId.UNSUP_FSTRING_ALIGN,
                     )
                 return f"%{self.format_spec[0]}", self.value
             return "{}", self.value
@@ -754,7 +754,7 @@ def fstring_decompose(
                          followed by all dynamic argument values.
 
     Raises:
-        DSLAstPreprocessorError: If an unsupported component type is encountered.
+        DSLUserCodeError: If an unsupported component type is encountered.
     """
     format_string = ""
     dynamic_args = []
@@ -768,7 +768,7 @@ def fstring_decompose(
         elif isinstance(component, str):
             format_string += component
         else:
-            raise DSLAstPreprocessorError(
-                f"Unsupported component type in f-string: {type(component)}",
-            )
+            raise DSLUserCodeError(DiagId.UNSUP_FSTRING)
     return (format_string, *dynamic_args)
+
+

@@ -156,14 +156,14 @@ struct CollectiveMma<
   using TMA_A = decltype(make_tma_copy(
       GmemTiledCopyA{},
       make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(InternalStrideA{}, int32_t(0)), InternalStrideA{}),
-      SmemLayoutA{}(_,_,cute::Int<0>{}),
+      SmemLayoutA{}(_,_,Int<0>{}),
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
       size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
   // Assumption: StrideB is congruent with Problem_NK
   using TMA_B = decltype(make_tma_copy(
       GmemTiledCopyB{},
       make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(InternalStrideB{}, int32_t(0)), InternalStrideB{}),
-      SmemLayoutB{}(_,_,cute::Int<0>{}),
+      SmemLayoutB{}(_,_,Int<0>{}),
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
       size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
 
@@ -251,13 +251,13 @@ struct CollectiveMma<
     TMA_A tma_load_a = make_tma_copy(
         GmemTiledCopyA{},
         tensor_a,
-        SmemLayoutA{}(_,_,cute::Int<0>{}),
+        SmemLayoutA{}(_,_,Int<0>{}),
         make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
         size<1>(ClusterShape{})); // mcast along N mode for this M load, if any
     TMA_B tma_load_b = make_tma_copy(
         GmemTiledCopyB{},
         tensor_b,
-        SmemLayoutB{}(_,_,cute::Int<0>{}),
+        SmemLayoutB{}(_,_,Int<0>{}),
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         size<0>(ClusterShape{})); // mcast along M mode for this N load, if any
 
@@ -673,9 +673,9 @@ struct CollectiveMma<
       Params const& mainloop_params,
       int32_t next_group,
       ProblemShape_MNKL problem_shape_mnkl) {
-    const uint32_t M = get<0>(problem_shape_mnkl);
-    const uint32_t N = get<1>(problem_shape_mnkl);
-    const uint32_t K = get<2>(problem_shape_mnkl);
+    const auto M = get<0>(problem_shape_mnkl);
+    const auto N = get<1>(problem_shape_mnkl);
+    const auto K = get<2>(problem_shape_mnkl);
     // Replace all dims for consistency
     constexpr int MaxTensorRank = 5;
     cute::array<uint32_t, MaxTensorRank> prob_shape_A  = {1,1,1,1,1};

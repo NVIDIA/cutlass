@@ -1921,7 +1921,8 @@ void BlockFillSequential(
   Element *ptr,
   int64_t capacity,
   Element v = Element(1),
-  Element s = Element(0)) {
+  Element s = Element(0),
+  cudaStream_t stream = nullptr) {
 
   using Layout = layout::PackedVectorLayout;
   Layout::TensorCoord size(static_cast<Layout::Index>(capacity)); // -Wconversion
@@ -1931,7 +1932,7 @@ void BlockFillSequential(
   Array<Element, Layout::kRank> c{};
   c[0] = v;
 
-  TensorFillLinear(view, c, s);
+  TensorFillLinear(view, c, s, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1970,6 +1971,14 @@ void BlockFillRandom(
       static_cast<UniformReal>(dist.uniform.min),
       dist.int_scale,
       dist.uniform.pnan,
+      stream);
+  }
+  else if (dist.kind == Distribution::Sequential) {
+    BlockFillSequential<Element>(
+      ptr,
+      capacity,
+      static_cast<Real>(dist.sequential.delta),
+      static_cast<Real>(dist.sequential.start),
       stream);
   }
 }

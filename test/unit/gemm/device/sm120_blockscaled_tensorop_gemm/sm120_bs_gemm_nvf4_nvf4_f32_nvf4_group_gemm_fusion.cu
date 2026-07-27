@@ -204,7 +204,6 @@ TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_pingpo
   EXPECT_TRUE(pass);
 }
 
-
 TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_pingpong, silu_row_sf) {
   using ElementInput = float_e2m1_t;
   using ElementA = cutlass::nv_float4_t<ElementInput>;
@@ -351,8 +350,6 @@ TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_cooper
   auto pass = test::gemm::device::TestSmallFusion<Gemm>(1.0, 0.5);
   EXPECT_TRUE(pass);
 }
-
-
 
 TEST(SM120_Device_Gemm_e2m1t_e2m1n_e2m1t_tensorop_f32_epilogue_VS16_group_cooperative, silu_row_sf) {
   using ElementInput = float_e2m1_t;

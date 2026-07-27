@@ -29,10 +29,6 @@
  *
  **************************************************************************************************/
 
-// CollectiveMma specialization for MainloopSm120ArrayTmaWarpSpecialized.
-// Implements ptr-array (grouped GEMM) without blockwise scaling, targeting SM120 (GB10/DGX Spark).
-// Fills the gap identified in https://github.com/NVIDIA/cutlass/issues/3263.
-
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -437,6 +433,7 @@ struct CollectiveMma<
         ++smem_pipe_write;
       }
     }
+    __syncwarp();
   }
 
   CUTLASS_DEVICE void
@@ -664,6 +661,11 @@ struct CollectiveMma<
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormaps,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) {
+    if (cute::elect_one_sync()) {
+      cute::tma_desc_commit_group();
+      cute::tma_desc_wait_group();
+    }
+    // Entire warp must do this (i.e. it's aligned)
     tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
     tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);
   }

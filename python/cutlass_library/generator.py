@@ -11214,9 +11214,21 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     [16, 8, 32]
   ]
 
-  tile_sizes = [
-    [128, 32, 128],
-    [128, 64, 128],
+  # Cooperative supports TileN >= 8 (see sm120_blockscaled_mma_builder.inl AtomLayoutMNK).
+  # Pingpong uses AtomLayout Shape<_2,_2,_1>, giving a natural TiledMma N of 16,
+  # so pingpong tiles start at N = 16.
+  tile_sizes_cooperative = [
+    [128,   8, 128],
+    [128,  16, 128],
+    [128,  32, 128],
+    [128,  64, 128],
+    [128, 128, 128]
+  ]
+
+  tile_sizes_pingpong = [
+    [128,  16, 128],
+    [128,  32, 128],
+    [128,  64, 128],
     [128, 128, 128]
   ]
 
@@ -11273,11 +11285,6 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     )
 
   for math_inst in math_instructions:
-    tile_descriptions = []
-    for tile_size in tile_sizes:
-      tile_descriptions.append(
-        TileDescription(tile_size, 0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
-
     data_types = [
       {
         "a_type"   : math_inst.element_a,
@@ -11325,12 +11332,19 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     for layout in layouts:
       layout[2][1] = 128 // DataTypeSize[data_types[0]["d_type"]]
 
-    for data_type, kernel_schedule in product(data_types, kernel_schedules):
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-        [[kernel_schedule, EpilogueScheduleType.ScheduleAuto]],
-        tile_schedulers = tile_schedulers(data_type["sfd_type"], kernel_schedule),
-        gemm_kind = gemm_kind
-        )
+    for kernel_schedule in kernel_schedules:
+      tile_sizes = tile_sizes_pingpong if is_pingpong(kernel_schedule) else tile_sizes_cooperative
+      tile_descriptions = []
+      for tile_size in tile_sizes:
+        tile_descriptions.append(
+          TileDescription(tile_size, 0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
+
+      for data_type in data_types:
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+          [[kernel_schedule, EpilogueScheduleType.ScheduleAuto]],
+          tile_schedulers = tile_schedulers(data_type["sfd_type"], kernel_schedule),
+          gemm_kind = gemm_kind
+          )
 
 def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.BlockScaledUniversal3x):
   # SM120 MMA with with F4 + block scale
@@ -11348,21 +11362,30 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
     [16, 8, 64]
   ]
 
+  # Cooperative supports TileN >= 8 (see sm120_blockscaled_mma_builder.inl AtomLayoutMNK).
+  # Pingpong uses AtomLayout Shape<_2,_2,_1>, giving a natural TiledMma N of 16,
+  # so pingpong tiles start at N = 16.
   tile_sizes_cooperative = [
-    [128, 32, 128],
-    [128, 32, 256],
-    [128, 64, 128],
-    [128, 64, 256],
+    [128,   8, 128],
+    [128,   8, 256],
+    [128,  16, 128],
+    [128,  16, 256],
+    [128,  32, 128],
+    [128,  32, 256],
+    [128,  64, 128],
+    [128,  64, 256],
     [128, 128, 128],
     [128, 128, 256],
     [256, 128, 128]
   ]
 
   tile_sizes_pingpong = [
-    [128, 32, 128],
-    [128, 32, 256],
-    [128, 64, 128],
-    [128, 64, 256],
+    [128,  16, 128],
+    [128,  16, 256],
+    [128,  32, 128],
+    [128,  32, 256],
+    [128,  64, 128],
+    [128,  64, 256],
     [128, 128, 128],
     [128, 128, 256]
   ]

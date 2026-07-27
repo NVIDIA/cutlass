@@ -269,8 +269,8 @@ class GroupedGemmKernel:
         c_bytes = c_bytes_per_stage * self.num_c_stage
 
         self.num_sched_stages = 2
-        sched_work_tile_bytes_per_stage = 16  # 4 fields * sizeof(Int32)
-        sched_bytes = sched_work_tile_bytes_per_stage * self.num_sched_stages
+        self.sched_work_tile_bytes_per_stage = 16  # 4 fields * sizeof(Int32)
+        sched_bytes = self.sched_work_tile_bytes_per_stage * self.num_sched_stages
 
         fixed_overhead = mbar_helpers_bytes + c_bytes + sched_bytes
 
@@ -774,7 +774,11 @@ class GroupedGemmKernel:
             acc_full_mbar_ptr: cute.struct.MemRange[
                 cutlass.Int64, self.num_acc_stage * 2
             ]
-            sched_buf: cute.struct.MemRange[cutlass.Int32, self.num_sched_stages * 4]
+            sched_buf_align_bytes = self.sched_work_tile_bytes_per_stage
+            sched_buf: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Int32, self.num_sched_stages * 4],
+                sched_buf_align_bytes,
+            ]
             sched_mbar_ptr: cute.struct.MemRange[
                 cutlass.Int64, self.num_sched_stages * 2
             ]
@@ -2010,9 +2014,6 @@ if __name__ == "__main__":
         compare_with_bmm=args.compare_with_bmm,
         compare_with_sol=args.compare_with_sol,
     )
-    if misc.no_torch_210:
-        misc.compare_with_bmm = True
-        print("Override to set --compare_with_bmm to avoid possible torch crash.")
 
     tester = GroupedGemmTester(problem, impl, misc)
     tester.run()

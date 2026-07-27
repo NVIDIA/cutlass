@@ -110,6 +110,20 @@
 #  define CUTE_STL_NAMESPACE std
 #endif
 
+#if !defined(CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE)
+#  if defined(__has_include)
+#    if __has_include(<cuda/std/__tuple_dir/structured_bindings.h>)
+#      define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 1
+#    else
+#      define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 0
+#    endif
+#  elif (__CUDACC_VER_MAJOR__ >= 13)
+#    define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 1
+#  else
+#    define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 0
+#  endif
+#endif
+
 //
 // Assertion helpers
 //

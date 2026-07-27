@@ -51,6 +51,54 @@ import cutlass
 pytestmark = [pytest.mark.arch(["100a"])]
 
 
+@pytest.mark.L0
+@pytest.mark.arch(["110a"])
+def test_dense_blockscaled_gemm_prefetch_sm110a_compile():
+    mnkl = (128, 128, 64, 1)
+    ab_dtype = cutlass.Float4E2M1FN
+    sf_dtype = cutlass.Float8E8M0FNU
+    sf_vec_size = 16
+    c_dtype = cutlass.Float16
+    a_major = "k"
+    b_major = "k"
+    c_major = "n"
+    mma_tiler_mn = (128, 128)
+    cluster_shape_mn = (1, 1)
+
+    if not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(
+        ab_dtype,
+        sf_dtype,
+        sf_vec_size,
+        c_dtype,
+        mma_tiler_mn,
+        cluster_shape_mn,
+        mnkl[0],
+        mnkl[1],
+        mnkl[2],
+        mnkl[3],
+        a_major,
+        b_major,
+        c_major,
+    ):
+        pytest.skip("Configuration not supported on SM110a")
+
+    run(
+        mnkl,
+        ab_dtype,
+        sf_dtype,
+        sf_vec_size,
+        c_dtype,
+        a_major,
+        b_major,
+        c_major,
+        mma_tiler_mn,
+        cluster_shape_mn,
+        warmup_iterations=0,
+        iterations=0,
+        skip_ref_check=True,
+    )
+
+
 @pytest.mark.invalid_case(
     lambda: (
         not Sm100BlockScaledPersistentDenseGemmKernel.can_implement(

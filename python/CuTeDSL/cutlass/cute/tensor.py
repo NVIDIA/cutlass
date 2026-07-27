@@ -11,7 +11,6 @@
 
 
 from typing import Any, Callable, Optional, Union, Type, Tuple, overload, List
-from typing_extensions import deprecated
 from inspect import isclass
 import operator
 
@@ -29,6 +28,12 @@ import cutlass._mlir.dialects.cute as _cute_ir
 from cutlass._mlir.dialects.cute import ReductionOp as ReductionOp
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import vector, arith, llvm
+from cutlass._mlir.dialects.cute import (
+    SparseElemType as _SparseElemType,
+)
+from cutlass._mlir_helpers.vector import Vector
+from cutlass.base_dsl.typing import Pointer as _BasePointer
+
 from .typing import (
     Numeric,
     Integer,
@@ -48,8 +53,10 @@ from .typing import (
     ComposedLayout,
     Tensor,
     AddressSpace,
+    _element_precision_width,
     is_integer,
     is_int_tuple,
+    is_int_tuple_type,
     as_numeric,
 )
 
@@ -70,6 +77,7 @@ from .core import (
     flatten,
     has_underscore,
     make_layout,
+    make_ptr,
     select,
     slice_,
     crd2idx,
@@ -91,7 +99,6 @@ __all__ = [
     "ReductionOp",
     "make_tensor",
     "make_identity_tensor",
-    "make_fragment",
     "make_fragment_like",
     "make_rmem_tensor_like",
     "make_rmem_tensor",
@@ -140,6 +147,8 @@ class _Tensor(Tensor):
         # Slice operation - get first column
         subtensor = tensor[None, 0]  # or subtensor = tensor[(None, 0)]
     """
+
+    _dtype: Union[Type[Numeric], Type[IntTuple], None]
 
     @dsl_user_op
     def __init__(
@@ -319,17 +328,16 @@ class _Tensor(Tensor):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> ir.Value:
         orig_dtype = data.dtype
+        elem_type = self.element_type
+        assert not is_int_tuple_type(elem_type)
         # Implicit upcast to wider type
-        if (
-            data.dtype.is_same_kind(self.element_type)
-            and self.element_type.width >= data.dtype.width  # type: ignore[union-attr]
-        ):
-            data = data.to(self.element_type, loc=loc, ip=ip)  # type: ignore[assignment]
+        if data.dtype.is_same_kind(elem_type) and elem_type.width >= data.dtype.width:
+            data = data.to(elem_type, loc=loc, ip=ip)
 
-        if data.dtype.width != self.element_type.width:  # type: ignore[union-attr]
+        if data.dtype.width != elem_type.width:
             raise ValueError(
                 f"Type mismatch, store {orig_dtype} (-> {data.dtype}) "
-                f"to Tensor with element type {self.element_type}"
+                f"to Tensor with element type {elem_type}"
             )
 
         if data.dtype is Boolean and self.element_type is Boolean:
@@ -461,28 +469,39 @@ class _Tensor(Tensor):
         return self.layout.stride
 
     @property
-    def leading_dim(self) -> Union[int, Tuple[int], None]:
+    def leading_dim(self) -> Union[int, Tuple[int, ...], None]:
         """Get the leading dimension of this Tensor.
 
         :return: The index or indices of the first mode (from left to right) with stride 1
-        :rtype: Union[int, Tuple[int], None]
+        :rtype: Union[int, Tuple[int, ...], None]
         :returns:
             - int: Single leading dimension index if found
-            - Tuple[int]: Tuple of indices for nested leading dimensions
+            - Tuple[int, ...]: Tuple of indices for nested leading dimensions
             - None: If no leading dimension is found
 
         :postcondition: ``get(self.stride(), mode=self.leading_dim()) == 1 if self.leading_dim() != None else True``
         """
-        return leading_dim(self.shape, self.stride)  # type: ignore[return-value]
+        return leading_dim(self.shape, self.stride)
 
     @property
-    def dtype(self) -> Type[Numeric]:
-        return self._dtype  # type: ignore[return-value]
+    def dtype(self) -> Union[Type[Numeric], Type[IntTuple], None]:  # type: ignore[override]
+        return self._dtype
 
-    @property  # type: ignore[misc]
+    @property
     @lru_cache_ir()
-    def element_type(self) -> Union[Type[Numeric], Type[IntTuple]]:
-        return self._dtype  # type: ignore[return-value]
+    def element_type(self) -> Union[Type[Numeric], Type[IntTuple], None]:
+        return self._dtype
+
+    @element_type.setter
+    def element_type(
+        self, new_type: Union[Type[Numeric], Type[IntTuple], None]
+    ) -> None:
+        # Compile-time _Tensor's dtype is bound to the underlying MLIR ir.Value;
+        # mutating _dtype here would desync from self.value.type, and the
+        # @lru_cache_ir() on the getter would serve stale values.
+        raise NotImplementedError(
+            "Compile-time _Tensor does not support setting element_type"
+        )
 
     @property
     @lru_cache_ir()
@@ -526,6 +545,16 @@ class _Tensor(Tensor):
             raise ValueError("dynamic layout doesn't support load")
 
         self._check_can_load_store(vectorized=True)
+
+        # For non-rmem unmasked loads, copy to an intermediate rmem tensor so
+        # that autovec_copy vectorises the gmem/smem transfer regardless of
+        # stride order.
+        if self.memspace != AddressSpace.rmem and mask is None:
+            from .algorithm import autovec_copy  # avoid circular import
+
+            rmem = make_rmem_tensor_like(self, dtype=self.element_type, loc=loc, ip=ip)
+            autovec_copy(self, rmem, loc=loc, ip=ip)
+            return rmem.load(loc=loc, ip=ip)
 
         mask_val = None if mask is None else mask.ir_value(loc=loc, ip=ip)
         pass_thru_val = (
@@ -584,6 +613,20 @@ class _Tensor(Tensor):
             raise ValueError(
                 f"lhs and rhs must have the same shape, but got {self.shape} and {data.shape}"
             )
+
+        # For non-rmem unmasked stores, route through an intermediate rmem
+        # tensor so autovec_copy vectorises the gmem/smem write regardless of
+        # stride order.
+        element_precision_width = _element_precision_width(self.element_type)
+        is_sub_byte = self.element_type is not Boolean and element_precision_width < 8
+        if self.memspace != AddressSpace.rmem and mask is None and not is_sub_byte:
+            from .algorithm import autovec_copy  # avoid circular import
+
+            rmem = make_rmem_tensor_like(self, dtype=self.element_type, loc=loc, ip=ip)
+            for i in range(size(rmem)):
+                rmem[i] = data[i]
+            autovec_copy(rmem, self, loc=loc, ip=ip)
+            return
 
         elem_mlir_type = cutlass_arith.element_type(data.dtype.mlir_type)
         if (
@@ -769,6 +812,15 @@ def make_tensor(
     elif isinstance(iterator, Pointer):
         iterator = iterator.value
         res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
+    elif isinstance(iterator, _BasePointer):
+        iterator = make_ptr(
+            iterator.dtype,
+            iterator.to_llvm_ptr(loc=loc, ip=ip),
+            assumed_align=iterator.max_alignment,
+            loc=loc,
+            ip=ip,
+        ).value
+        res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
     elif isinstance(iterator, ir.Value) and isinstance(
         iterator.type,
         _cute_nvgpu_ir.SmemDescType,
@@ -896,18 +948,6 @@ def make_rmem_tensor(
 
 
 @dsl_user_op
-@deprecated("`make_fragment` is deprecated, use `make_rmem_tensor` instead")
-def make_fragment(
-    layout_or_shape: Union[Layout, Shape],
-    dtype: Type[Numeric],
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Tensor:
-    return make_rmem_tensor(layout_or_shape, dtype, loc=loc, ip=ip)
-
-
-@dsl_user_op
 def make_rmem_tensor_like(
     src: Union[Layout, ComposedLayout, Tensor, "TensorSSA"],
     dtype: Optional[Type[Numeric]] = None,
@@ -978,7 +1018,7 @@ def make_rmem_tensor_like(
             compact_layout = make_layout(src.shape, loc=loc, ip=ip)
             src_layout = _cute_ir.make_layout_like(compact_layout, loc=loc, ip=ip)
         else:
-            res_dtype = dtype or src.element_type  # type: ignore[assignment]
+            res_dtype = dtype or src.element_type
             src_layout = src.layout
     elif isinstance(src, TensorSSA):
         res_dtype = dtype or src.element_type
@@ -1093,7 +1133,7 @@ def recast_tensor(
     if src.element_type is Boolean:
         src_width = 8
     else:
-        src_width = src.element_type.width  # type: ignore[union-attr]
+        src_width = src.element_type.width
 
     src_iter = recast_ptr(src.iterator, dtype=dtype, loc=loc, ip=ip)
     src_layout = recast_layout(dst_width, src_width, src.layout, loc=loc, ip=ip)
@@ -1209,8 +1249,9 @@ def print_tensor(
         tensor = tmp
 
     if isinstance(tensor.type, _cute_ir.MemRefType):  # type: ignore[union-attr]
-        if tensor.element_type.is_integer:  # type: ignore[union-attr]
-            signed = tensor.element_type.signed  # type: ignore[union-attr]
+        elem_type = tensor.element_type
+        if issubclass(elem_type, Integer):
+            signed = elem_type.signed
         else:
             signed = False
     elif isinstance(tensor.type, _cute_ir.CoordTensorType):  # type: ignore[union-attr]
@@ -1355,7 +1396,7 @@ def _infer_broadcast_shape(*shapes: Shape) -> Shape:
     return res_shape
 
 
-class TensorSSA(cutlass_arith.ArithValue):
+class TensorSSA(Vector):
     """A class representing thread local data from CuTe Tensor in value semantic and immutable.
 
     :param value: Flatten vector as ir.Value holding logic data of SSA Tensor
@@ -1386,9 +1427,8 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         :param value: A :class:`ir.Value` holding the flattened MLIR vector value of the tensor.
         :type value: :class:`ir.Value`
-        :param shape: The logical (possibly nested) shape of the tensor. If None,
-            this is inferred from ``value.type.shape``.
-        :type shape: Shape, optional
+        :param shape: The logical (possibly nested) shape of the tensor.
+        :type shape: Shape
         :param dtype: The data type of the tensor elements. If None,
             this is inferred from the MLIR element type.
         :type dtype: Type[Numeric], optional
@@ -1401,9 +1441,6 @@ class TensorSSA(cutlass_arith.ArithValue):
 
         .. note::
             - Instances are immutable and represent per-thread local SSA values using value semantics.
-            - If ``shape`` is inferred and is multi-dimensional, the provided ``value``
-              will be shape-cast to a 1D vector with the same logical product, aligning the
-              physical and logical shape representations.
             - The tensor's broadcast shape and static element type are registered; dynamic shapes are not supported.
         """
         if not isinstance(value, ir.Value):
@@ -1420,11 +1457,11 @@ class TensorSSA(cutlass_arith.ArithValue):
         if dtype is None:
             dtype = Numeric.from_mlir_type(value.type.element_type)
 
-        signed = dtype.signed if issubclass(dtype, Integer) else False
-        super().__init__(value, signed)
+        # Vector.__init__ infers flat _shape from value.type; we override
+        # with CuTe nested shape below.
+        Vector.__init__(self, value, dtype=dtype, loc=loc, ip=ip)
 
-        self._shape = shape
-        self._dtype = dtype
+        self._shape = shape  # type: ignore[assignment]  # CuTe Shape (possibly nested)
         self._layout = None
 
     @staticmethod
@@ -1480,10 +1517,15 @@ class TensorSSA(cutlass_arith.ArithValue):
         force_flatten: bool = False,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> ir.Value:
+    ) -> Vector:
         """
-        Convert the tensor to a MLIR vector value.
+        Convert the tensor to :class:`Vector` carrying the tensor's dtype.
+
+        Returns a :class:`Vector` wrapping the underlying MLIR vector value;
+        the DSL dtype is propagated so callers can use :meth:`Vector.reduce`,
+        :meth:`Vector.to`, and element-wise arithmetic.
         """
+
         if depth(self.shape) > 1:
             if not force_flatten:
                 raise ValueError(
@@ -1493,9 +1535,11 @@ class TensorSSA(cutlass_arith.ArithValue):
         else:
             shape = self.shape  # type: ignore[assignment]
 
-        res_ty = ir.VectorType.get(list(shape), self.dtype.mlir_type)
+        shape_list = [shape] if isinstance(shape, int) else list(shape)
+        res_ty = ir.VectorType.get(shape_list, self.dtype.mlir_type)
         val = _col2row(self, shape=shape, loc=loc, ip=ip)
-        return vector.shape_cast(res_ty, val, loc=loc, ip=ip)
+        vec_ir = vector.shape_cast(res_ty, val, loc=loc, ip=ip)
+        return Vector(vec_ir, dtype=self.dtype, loc=loc, ip=ip)
 
     @property
     def dtype(self) -> Type[Numeric]:
@@ -1511,11 +1555,31 @@ class TensorSSA(cutlass_arith.ArithValue):
     def __new_from_mlir_values__(self, values: list) -> "TensorSSA":
         return TensorSSA(values[0], self.shape, self.dtype)
 
+    def _wrap_like(self, result_ir: "ir.Value") -> "TensorSSA":
+        """Preserve CuTe nested shape when the math foundation wraps a
+        per-element op's result back into a TensorSSA."""
+        return TensorSSA(result_ir, shape=self._shape, dtype=self._dtype)
+
+    @property
+    def _count(self) -> int:
+        """Total element count — flatten CuTe nested shape before multiplying.
+
+        Overrides :attr:`Vector._count`, which assumes a flat MLIR shape tuple.
+        TensorSSA carries a possibly-nested CuTe shape (e.g. ``((4, 2), 8)``),
+        so the base implementation's ``result *= dim`` produces garbage for
+        nested shapes (tuple-repetition instead of arithmetic). ``numel``
+        picks up this override automatically.
+        """
+        result = 1
+        for dim in flatten_to_tuple(self._shape):
+            result *= dim
+        return result
+
     def __str__(self) -> str:
         return f"tensor_value<{self.type} o {self.shape}>"
 
     @property
-    def shape(self) -> Shape:
+    def shape(self) -> Shape:  # type: ignore[override]
         return self._shape
 
     def _apply_op(
@@ -2288,7 +2352,7 @@ class TensorSSA(cutlass_arith.ArithValue):
         return TensorSSA(self, shape, self.dtype)
 
     @dsl_user_op
-    def __getitem__(
+    def __getitem__(  # type: ignore[override]
         self,
         crd: Coord,
         *,
@@ -2470,6 +2534,7 @@ class TensorSSA(cutlass_arith.ArithValue):
         if dtype is self._dtype:
             return self
         old_count = size(self._shape)
+        assert isclass(self._dtype) and issubclass(self._dtype, Numeric)
         new_count = old_count * self._dtype.width // dtype.width
         target_vec_ty = ir.VectorType.get([new_count], dtype.mlir_type)
         res_vec = vector.bitcast(target_vec_ty, self, loc=loc, ip=ip)
@@ -2646,7 +2711,9 @@ def full(
         raise ValueError(f"Expected fill_value be numeric type, but got {fill_value}")
 
     res_ty = T.vector(size, dtype.mlir_type)
-    res_val = vector.splat(res_ty, fill_value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+    res_val = vector.broadcast(
+        res_ty, fill_value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+    )
     return TensorSSA(res_val, shape, dtype)
 
 
@@ -2905,6 +2972,8 @@ def gather(
 
     _check_can_gather_scatter(input, mode, index)
 
+    input_elem_type = input.element_type
+    assert not is_int_tuple_type(input_elem_type)
     idx_layout = make_layout(index.shape)
     src_layout = make_layout(index.shape, stride=input.stride)
 
@@ -2922,17 +2991,19 @@ def gather(
     src_layout_rest = select(src_layout, rest_modes)
 
     res_elems = [None] * size(index.shape)
-    res_vect_ty = T.vector(size(index.shape), input.element_type.mlir_type)  # type: ignore[union-attr]
+    res_vect_ty = T.vector(size(index.shape), input_elem_type.mlir_type)
 
     # Optimized path: lower to vector.gather when the tensor is col-major
     # and gathering along the left-most mode
+    input_iter = input.iterator
     if (
         mode == 0
         and is_major(mode, input.stride)
-        and not input.iterator.value.type.is_swizzled  # type: ignore[union-attr]
+        and isinstance(input_iter, Pointer)
+        and not input_iter.value.type.is_swizzled
     ):
         vect_sz = size(idx_layout_gather)
-        vect_ty = T.vector(vect_sz, input.element_type.mlir_type)  # type: ignore[union-attr]
+        vect_ty = T.vector(vect_sz, input_elem_type.mlir_type)
         idx_vect_ty = T.vector(vect_sz, index.element_type.mlir_type)
         mask_all_ones = vector.constant_mask(
             T.vector(vect_sz, T.bool()), [vect_sz], loc=loc, ip=ip
@@ -2956,7 +3027,7 @@ def gather(
                 indices=idx_vect,
                 mask=mask_all_ones,
                 pass_thru=pass_thru_poison,
-                alignment=input.iterator.alignment,  # type: ignore[union-attr]
+                alignment=input_iter.alignment,
                 loc=loc,
                 ip=ip,
             )
@@ -2975,7 +3046,7 @@ def gather(
             index_crd = idx_layout_gather(gather_crd) + idx_layout_rest(rest_crd)
             src_crd_gather = index[index_crd]
             src_crd = src_layout_gather(src_crd_gather) + src_layout_rest(rest_crd)
-            src_crd_hier = input.layout.get_hier_coord(src_crd, loc=loc, ip=ip)  # type: ignore[call-arg, union-attr]
+            src_crd_hier = input.layout.get_hier_coord(src_crd, loc=loc, ip=ip)  # type: ignore[union-attr]
             res_elems[index_crd] = input[src_crd_hier].ir_value(loc=loc, ip=ip)  # type: ignore[union-attr]
     res_vect = vector.from_elements(res_vect_ty, res_elems)
     return TensorSSA(res_vect, index.shape, input.element_type)
@@ -3029,6 +3100,8 @@ def scatter(
 
     _check_can_gather_scatter(output, mode, index, data)
 
+    output_elem_type = output.element_type
+    assert not is_int_tuple_type(output_elem_type)
     idx_layout = make_layout(index.shape)
     dst_layout = make_layout(index.shape, stride=output.stride)
 
@@ -3047,13 +3120,15 @@ def scatter(
 
     # Optimized path: lower to vector.scatter when tensor is col-major and
     # scattering along the left-most mode
+    output_iter = output.iterator
     if (
         mode == 0
         and is_major(mode, output.stride)
-        and not output.iterator.value.type.is_swizzled  # type: ignore[union-attr]
+        and isinstance(output_iter, Pointer)
+        and not output_iter.value.type.is_swizzled
     ):
         vect_sz = size(idx_layout_scatter)
-        vect_ty = T.vector(vect_sz, output.element_type.mlir_type)  # type: ignore[union-attr]
+        vect_ty = T.vector(vect_sz, output_elem_type.mlir_type)
         idx_vect_ty = T.vector(vect_sz, index.element_type.mlir_type)
         mask_all_ones = vector.constant_mask(
             T.vector(vect_sz, T.bool()), [vect_sz], loc=loc, ip=ip
@@ -3085,7 +3160,7 @@ def scatter(
                 indices=idx_vect,
                 mask=mask_all_ones,
                 value_to_store=data_vect,
-                alignment=output.iterator.alignment,  # type: ignore[union-attr]
+                alignment=output_iter.alignment,
                 loc=loc,
                 ip=ip,
             )
@@ -3097,7 +3172,7 @@ def scatter(
             index_crd = idx_layout_scatter(scatter_crd) + idx_layout_rest(rest_crd)
             dst_crd_scatter = index[index_crd]
             dst_crd = dst_layout_scatter(dst_crd_scatter) + dst_layout_rest(rest_crd)
-            dst_crd_hier = output.layout.get_hier_coord(dst_crd, loc=loc, ip=ip)  # type: ignore[call-arg, union-attr]
+            dst_crd_hier = output.layout.get_hier_coord(dst_crd, loc=loc, ip=ip)  # type: ignore[union-attr]
             output[dst_crd_hier] = data[index_crd]
 
 
@@ -3128,11 +3203,15 @@ def _check_can_gather_scatter(
         raise NotImplementedError(
             f"gather/scatter on tensor with nested layout is not supported, got: {tensor.layout} and {index.shape}"
         )
+    index_shape = index.shape
+    tensor_shape = tensor.shape
+    assert isinstance(index_shape, tuple)
+    assert isinstance(tensor_shape, tuple)
     for m in range(n_modes):
-        if m != mode and size(index.shape[m]) > size(tensor.shape[m]):  # type: ignore[index]
+        if m != mode and size(index_shape[m]) > size(tensor_shape[m]):
             raise ValueError(
                 f"index dimension {m} must be less than or equal to the corresponding source dimension,"
-                f"got: {size(index.shape[m])} and {size(tensor.shape[m])}"  # type: ignore[index]
+                f"got: {size(index_shape[m])} and {size(tensor_shape[m])}"
             )
     if data is not None and index.shape != data.shape:
         raise ValueError(
@@ -3142,7 +3221,9 @@ def _check_can_gather_scatter(
     # Check data type
     if not issubclass(index.dtype, Integer):
         raise TypeError(f"index must be integer TensorSSA, got {index.dtype}")
-    if tensor.element_type.width % 8 != 0:  # type: ignore[union-attr]
+    elem_type = tensor.element_type
+    assert not is_int_tuple_type(elem_type)
+    if elem_type.width % 8 != 0:
         raise TypeError(
             f"gather/scatter for sub-byte element type is not supported, got: {tensor.element_type}"
         )
