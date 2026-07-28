@@ -319,14 +319,6 @@ public:
 
 private:
   //
-  // Methods
-  //
-  [[nodiscard]] CUTLASS_DEVICE
-  static auto
-  load_query_response(uint32_t smem_ptr) {
-    return UnderlyingScheduler::load_query_response(smem_ptr);
-  }
-  //
   // Storage
   //
   Params scheduler_params;
