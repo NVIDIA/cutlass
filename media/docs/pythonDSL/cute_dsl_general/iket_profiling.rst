@@ -1,7 +1,7 @@
 .. _iket_profiling:
 
-IKET Profiling
-==============
+IKET Profiling (In-Kernel Event Tracing)
+========================================
 
 .. warning::
 
@@ -93,7 +93,7 @@ run.
 .. code-block:: bash
 
    run-iket profile --postprocess perfetto -- \
-     python fp16_gemm_4_iket.py \
+     python examples/python/CuTeDSL/dsl_tutorials/fp16_gemm_4_iket.py \
      --mnk 512,1024,64
 
 **Step 3: Open the trace.** Open the generated ``*.pftrace`` file in the
@@ -556,85 +556,125 @@ JSON Trace Shape
 ~~~~~~~~~~~~~~~~
 
 The JSON output is intended for script-based analysis. Its schema is also
-experimental and may change in future releases. A trace is organized around
-profiled kernel launches, with ranges, markers, warp locations, payload fields,
-and warp lifetimes. A simplified trace looks like this:
+experimental and may change in future releases. The final postprocessed JSON
+trace, usually named ``iket_pid_<pid>.trace.json``, is organized around
+profiled kernel launches. To reduce file size, repeated strings and warp
+locations are stored in lookup tables and referenced by index from ranges,
+markers, and warp lifetimes.
+
+A simplified trace looks like this:
 
 .. code-block:: json
 
    {
+     "stringTable": ["mainloop", "checkpoint"],
+     "locationTable": [
+       {
+         "smId": 0,
+         "tpcId": 0,
+         "gpcId": 0,
+         "ctaId": [0, 0, 0],
+         "warpId": 0
+       }
+     ],
      "launches": [
        {
+         "contextId": 12345,
          "gridId": 0,
          "kernelName": "my_kernel",
+         "gridDimX": 4,
+         "gridDimY": 2,
+         "gridDimZ": 1,
+         "blockDimX": 128,
+         "blockDimY": 1,
+         "blockDimZ": 1,
          "ranges": [
            {
-             "rangeName": "mainloop",
+             "rangeId": 0,
+             "rangeNameIdx": 0,
+             "rangeColor": 0,
              "rangeScope": 0,
+             "rangeType": 0,
              "startTs": 1000,
              "endTs": 2500,
-             "warpLocs": [
+             "internalEvents": [
                {
-                 "smId": 0,
-                 "tpcId": 0,
-                 "gpcId": 0,
-                 "ctaId": [0, 0, 0],
-                 "warpId": 0
+                 "timestamp": 1500,
+                 "eventId": 3
                }
              ],
-             "internalEvents": []
+             "warpLocIdxs": [0]
            }
          ],
          "markers": [
            {
-             "markerName": "checkpoint",
+             "markerNameIdx": 1,
              "timestamp": 1500,
-             "location": {
-               "smId": 0,
-               "tpcId": 0,
-               "gpcId": 0,
-               "ctaId": [0, 0, 0],
-               "warpId": 0
-             },
-             "payloadType": 0,
-             "payloadVal": 0
+             "color": 0,
+             "locIdx": 0,
+             "payloadType": 1,
+             "payloadVal": 7
            }
          ],
          "warpLifetimes": [
            {
              "startTs": 900,
              "endTs": 3800,
-             "warpLocation": {
-               "smId": 0,
-               "tpcId": 0,
-               "gpcId": 0,
-               "ctaId": [0, 0, 0],
-               "warpId": 0
-             }
+             "locIdx": 0
            }
          ]
        }
-     ]
+     ],
+     "graphLaunches": {
+       "graph_exec_1:0": [
+         {
+           "contextId": 12345,
+           "gridId": 1,
+           "kernelName": "my_kernel",
+           "gridDimX": 4,
+           "gridDimY": 2,
+           "gridDimZ": 1,
+           "blockDimX": 128,
+           "blockDimY": 1,
+           "blockDimZ": 1,
+           "ranges": [],
+           "markers": [],
+           "warpLifetimes": []
+         }
+       ]
+     }
    }
 
 Important fields include:
 
+* ``stringTable``: deduplicated event-name strings. Ranges use
+  ``rangeNameIdx`` and markers use ``markerNameIdx`` as indices into this
+  table.
+* ``locationTable``: deduplicated warp locations. Each entry identifies a GPU
+  location with ``smId``, ``tpcId``, ``gpcId``, ``ctaId``, and ``warpId``.
 * ``launches[]``: profiled kernel launches.
-* ``gridId`` and ``kernelName``: launch identity and kernel name.
-* ``ranges[]``: duration ranges with ``rangeName``, ``startTs``, ``endTs``,
-  ``rangeScope``, and one or more ``warpLocs``. Use ``endTs - startTs`` as the
-  range duration.
-* ``markers[]``: point events with ``markerName``, ``timestamp``,
-  ``location``, and optional payload fields such as ``payloadType`` and
-  ``payloadVal``.
+* ``contextId``, ``gridId``, ``kernelName``, ``gridDim*``, and ``blockDim*``:
+  launch identity, kernel name, grid dimensions, and block dimensions.
+* ``ranges[]``: duration ranges. Use ``stringTable[rangeNameIdx]`` to recover
+  the range name, ``endTs - startTs`` to compute duration, and
+  ``locationTable[idx]`` for each entry in ``warpLocIdxs`` to recover the warp
+  locations that emitted or participated in the range.
+* ``markers[]``: point events. Use ``stringTable[markerNameIdx]`` to recover
+  the marker name, ``timestamp`` for the event time, and
+  ``locationTable[locIdx]`` for the warp location.
 * ``warpLifetimes[]``: active spans for warps observed during the profiled
-  launch.
+  launch. Use ``locationTable[locIdx]`` to recover the warp location.
+* ``graphLaunches``: CUDA Graph launches, when present. It is an object keyed
+  by strings such as ``graph_exec_1:0``. Each value is an array of launch
+  objects with the same shape as entries in ``launches[]``.
+* ``payloadType`` and ``payloadVal``: optional payload fields on markers and
+  payload-bearing range events. They are omitted when the event has no payload.
 
 Timestamp values are in a trace-local timebase. Compare timestamp differences
 within one trace, but do not compare absolute timestamp values across separate
-traces. ``rangeScope`` and ``payloadType`` are profiler metadata fields whose
-exact numeric values are experimental. A ``warpLocs`` entry identifies the GPU
-location for a warp that emitted or participated in the range.
+traces. ``rangeScope``, ``rangeType``, ``rangeColor``, ``color``, and
+``payloadType`` are profiler metadata fields whose exact numeric values are
+experimental.
 
 Viewing a Trace in Perfetto
 ---------------------------
