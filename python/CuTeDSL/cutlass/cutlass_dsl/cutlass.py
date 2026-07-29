@@ -92,7 +92,12 @@ from ..base_dsl.utils.tree_utils import (
 )
 from ..base_dsl.leaf_utils import is_frozen_dataclass
 from ..base_dsl.runtime.jit_arg_adapters import is_arg_annotation_constexpr
-from ..base_dsl.jit_executor import ExecutionArgs, _is_pointer_annotation  # noqa: F401
+from ..base_dsl.jit_executor import (
+    ExecutionArgs,  # noqa: F401
+    PreparedLaunch,  # noqa: F401
+    PreparedLaunchError,  # noqa: F401
+    _is_pointer_annotation,
+)
 from ..base_dsl.runtime import cuda as cuda_helpers
 from .cuda_stream_adapter import CudaDriverStreamAdapter, CudaRuntimeStreamAdapter  # noqa: F401
 from .cuda_library_adapter import CudaDialectLibraryAdapter  # noqa: F401

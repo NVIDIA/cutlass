@@ -353,6 +353,262 @@ def _convert_python_pointer_arg(
     return arg, False
 
 
+class PreparedLaunchError(DSLUserCodeError):
+    """Raised when a compiled function cannot be prepared for in-place launch.
+
+    :meth:`JitCompiledFunction.prepare` validates every runtime argument up
+    front; an argument mix it cannot re-bind in place raises this error at
+    prepare time instead of failing (or silently mis-launching) later.
+    ``compiled(*args)`` remains available for any argument mix.
+    """
+
+
+# Numeric scalar types a prepared launch can update in place, mapped to the
+# ctypes storage their ``__c_pointers__`` marshalling produces (see
+# ``NumericMeta`` and the ``Float32``/``Float64`` implementations in
+# ``typing``). Types whose marshalling is not a plain ctypes scalar store
+# (Float16/BFloat16 bit conversions, Int4/Int128) are intentionally absent
+# and rejected at prepare time.
+_PREPARED_NUMERIC_CTYPES: dict[Any, Any] = {
+    t.Boolean: ctypes.c_bool,
+    t.Int8: ctypes.c_int8,
+    t.Int16: ctypes.c_int16,
+    t.Int32: ctypes.c_int32,
+    t.Int64: ctypes.c_int64,
+    t.Uint8: ctypes.c_uint8,
+    t.Uint16: ctypes.c_uint16,
+    t.Uint32: ctypes.c_uint32,
+    t.Uint64: ctypes.c_uint64,
+    t.Float32: ctypes.c_float,
+    t.Float64: ctypes.c_double,
+    t.TFloat32: ctypes.c_float,
+}
+
+# Plain Python scalars marshal through the registered JIT argument adapter
+# (``_convert_python_scalar``), which fixes their DSL type as follows.
+_PREPARED_PYTHON_SCALAR_TYPES: dict[type, Any] = {
+    bool: t.Boolean,
+    int: t.Int32,
+    float: t.Float32,
+}
+
+
+class _PreparedArgSlot:
+    """Stable storage backing one packed argument slot of a prepared launch.
+
+    ``prepare()`` snapshots the bytes the normal marshalling produced into
+    ``storage`` once; later launches only rewrite ``storage`` in place via
+    :meth:`write`, so the packed argument array never has to be rebuilt.
+    """
+
+    def __init__(self, name: str, ctype: Any) -> None:
+        self.name = name
+        self.storage = ctype()
+
+    @property
+    def address(self) -> int:
+        return ctypes.addressof(self.storage)
+
+    def snapshot(self, exe_arg: Any) -> None:
+        """Copy the marshalled bytes referenced by ``exe_arg`` into this slot."""
+        source = exe_arg.value if type(exe_arg) is ctypes.c_void_p else exe_arg
+        ctypes.memmove(self.address, source, ctypes.sizeof(self.storage))
+
+    def write(self, value: Any) -> None:
+        """Rewrite the slot from ``value``; raises TypeError on a bad value."""
+        raise NotImplementedError
+
+
+class _PreparedPointerSlot(_PreparedArgSlot):
+    """Pointer-sized slot for runtime pointers and pointer-address arguments."""
+
+    def __init__(self, name: str, desc_owner: Any = None) -> None:
+        super().__init__(name, ctypes.c_void_p)
+        # Runtime pointer objects marshal the address of their c_void_p
+        # ``_desc`` cell; remember the prepare-time argument so snapshot()
+        # can verify the marshalling actually followed that contract.
+        self._desc_owner = desc_owner
+
+    def snapshot(self, exe_arg: Any) -> None:
+        owner = self._desc_owner
+        if owner is not None:
+            self._desc_owner = None  # never outlive prepare()
+            source = exe_arg.value if type(exe_arg) is ctypes.c_void_p else exe_arg
+            if source != ctypes.addressof(owner._desc):
+                # An object that looks like a runtime pointer (c_void_p
+                # ``_desc`` plus ``__c_pointers__``) but marshals something
+                # other than its ``_desc`` cannot be re-bound in place.
+                raise PreparedLaunchError(
+                    DiagId.LAUNCH_PREPARE_UNSUPPORTED_ARG,
+                    arg_name=self.name,
+                    arg_type=type(owner).__name__,
+                )
+            self.storage.value = owner._desc.value
+            return
+        super().snapshot(exe_arg)
+
+    def write(self, value: Any) -> None:
+        if type(value) is int:
+            self.storage.value = value
+            return
+        # Runtime pointer storage contract: cute runtime Pointer objects and
+        # _RuntimePointerArg both keep their address in a c_void_p ``_desc``.
+        desc = getattr(value, "_desc", None)
+        if type(desc) is ctypes.c_void_p:
+            self.storage.value = desc.value
+            return
+        address = _python_pointer_address(value)
+        if address is None:
+            raise TypeError(f"expected a pointer-like value, got {type(value)!r}")
+        self.storage.value = address
+
+
+class _PreparedScalarSlot(_PreparedArgSlot):
+    """Fixed-width numeric slot; accepts Python scalars and Numeric instances.
+
+    Values are stored through plain ctypes assignment: the same bytes the
+    normal marshalling would produce for values of the prepared kind, with
+    ctypes conversion semantics (out-of-range integers truncate; a value the
+    storage rejects, such as a float for an integer slot, raises instead of
+    applying the DSL cast a direct call would).
+    """
+
+    def write(self, value: Any) -> None:
+        self.storage.value = value.value if isinstance(value, t.Numeric) else value
+
+
+class _PreparedBooleanSlot(_PreparedArgSlot):
+    """Boolean slot; accepts bool/int values only (no truthiness coercion)."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name, ctypes.c_bool)
+
+    def write(self, value: Any) -> None:
+        if isinstance(value, t.Numeric):
+            value = value.value
+        if type(value) is not bool and type(value) is not int:
+            raise TypeError(f"expected a bool, got {type(value)!r}")
+        self.storage.value = value
+
+
+def _make_scalar_slot(name: str, ctype: Any) -> _PreparedArgSlot:
+    if ctype is ctypes.c_bool:
+        return _PreparedBooleanSlot(name)
+    return _PreparedScalarSlot(name, ctype)
+
+
+class _PreparedStreamSlot(_PreparedArgSlot):
+    """Pointer-sized slot holding a raw CUDA stream handle."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name, ctypes.c_void_p)
+
+    def write(self, value: Any) -> None:
+        if type(value) is int:
+            self.storage.value = value
+            return
+        if isinstance(
+            value, (cuda_helpers.cuda.CUstream, cuda_helpers.cudart.cudaStream_t)
+        ):
+            self.storage.value = int(value)
+            return
+        # Framework stream objects (e.g. torch.cuda.Stream) expose the raw
+        # driver handle as an integer ``cuda_stream`` attribute.
+        try:
+            handle = value.cuda_stream
+        except AttributeError:
+            handle = None
+        except Exception as e:
+            raise TypeError(f"reading cuda_stream from {type(value)!r} failed") from e
+        if type(handle) is int:
+            self.storage.value = handle
+            return
+        raise TypeError(
+            "expected a CUDA stream, a framework stream with an integer "
+            f"cuda_stream attribute, or a raw integer handle, got {type(value)!r}"
+        )
+
+
+def _is_stream_annotation(annotation: Any) -> bool:
+    return getattr(annotation, "__name__", None) in ("CUstream", "cudaStream_t")
+
+
+def _is_stream_instance(arg: Any) -> bool:
+    return isinstance(
+        arg, (cuda_helpers.cuda.CUstream, cuda_helpers.cudart.cudaStream_t)
+    )
+
+
+def _prepared_slot_for_arg(
+    name: str,
+    arg: Any,
+    annotation: Any,
+    is_numeric: bool,
+    spec: PointerAddressArgSpec,
+) -> _PreparedArgSlot:
+    """Classify one runtime argument into an in-place-updatable slot.
+
+    Mirrors the marshalling decisions of ``generate_execution_args`` for the
+    closed set of argument kinds whose storage a prepared launch can rewrite:
+    pointer-address slots, numeric scalars with plain ctypes storage, CUDA
+    streams, and runtime pointer objects. Classification is driven by the
+    declared annotation where it is informative (numeric, pointer, stream),
+    so a value of the wrong kind for a declared slot is rejected here rather
+    than mis-marshalled; unannotated slots classify by value. Anything else —
+    dlpack tensors, structs, sequences, custom JIT arguments — raises
+    :class:`PreparedLaunchError`.
+    """
+    if spec is True and _python_pointer_address(arg) is not None:
+        return _PreparedPointerSlot(name)
+    if is_numeric:
+        ctype = _PREPARED_NUMERIC_CTYPES.get(annotation)
+        if ctype is not None:
+            return _make_scalar_slot(name, ctype)
+        raise PreparedLaunchError(
+            DiagId.LAUNCH_PREPARE_UNSUPPORTED_ARG,
+            arg_name=name,
+            arg_type=getattr(annotation, "__name__", str(annotation)),
+        )
+    if _is_pointer_annotation(annotation):
+        # A declared pointer slot must be prepared with a runtime pointer
+        # (storage contract: address held in a c_void_p ``_desc``).
+        desc = getattr(arg, "_desc", None)
+        if type(desc) is ctypes.c_void_p and hasattr(arg, "__c_pointers__"):
+            return _PreparedPointerSlot(name, desc_owner=arg)
+        raise PreparedLaunchError(
+            DiagId.LAUNCH_PREPARE_UNSUPPORTED_ARG,
+            arg_name=name,
+            arg_type=type(arg).__name__,
+        )
+    if _is_stream_annotation(annotation):
+        # A declared stream slot must be prepared with a real CUDA stream
+        # object (raw integer handles are accepted at launch time only).
+        if _is_stream_instance(arg):
+            return _PreparedStreamSlot(name)
+        raise PreparedLaunchError(
+            DiagId.LAUNCH_PREPARE_UNSUPPORTED_ARG,
+            arg_name=name,
+            arg_type=type(arg).__name__,
+        )
+    if isinstance(arg, t.Numeric):
+        ctype = _PREPARED_NUMERIC_CTYPES.get(type(arg))
+        if ctype is not None:
+            return _make_scalar_slot(name, ctype)
+    dsl_scalar_type = _PREPARED_PYTHON_SCALAR_TYPES.get(type(arg))
+    if dsl_scalar_type is not None:
+        return _make_scalar_slot(name, _PREPARED_NUMERIC_CTYPES[dsl_scalar_type])
+    if _is_stream_instance(arg):
+        return _PreparedStreamSlot(name)
+    desc = getattr(arg, "_desc", None)
+    if type(desc) is ctypes.c_void_p and hasattr(arg, "__c_pointers__"):
+        return _PreparedPointerSlot(name, desc_owner=arg)
+    raise PreparedLaunchError(
+        DiagId.LAUNCH_PREPARE_UNSUPPORTED_ARG,
+        arg_name=name,
+        arg_type=type(arg).__name__,
+    )
+
+
 class ExecutionArgs:
     """Runtime argument binder for compiled JIT functions.
 
@@ -679,6 +935,63 @@ class ExecutionArgs:
                     exe_args.extend(pointer_arg.__c_pointers__())
 
         return exe_args, adapted_args
+
+    def generate_prepared_slots(
+        self, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> list[_PreparedArgSlot]:
+        """Validate and marshal arguments once for a prepared launch.
+
+        Classifies every runtime argument into a stable, in-place-updatable
+        slot (pointer / numeric scalar / CUDA stream), then runs the normal
+        ``generate_execution_args`` marshalling once and snapshots the
+        resulting bytes into private per-argument storage. Later launches only
+        rewrite those bytes, so the initial slot contents — and therefore the
+        launch itself — are bit-identical to a direct call with the same
+        argument values.
+
+        :raises PreparedLaunchError: If any argument cannot be re-bound in
+            place (dlpack tensors, structs, sequences, custom JIT arguments,
+            numeric types without plain ctypes storage such as Float16), or if
+            extra arguments beyond the runtime signature are passed.
+        """
+        meta = self._meta
+        n = meta.arg_count
+        if len(args) > n:
+            raise PreparedLaunchError(
+                DiagId.LAUNCH_PREPARE_EXTRA_ARGS,
+                expected=n,
+                provided=len(args),
+            )
+
+        input_args: Sequence[Any]
+        if not kwargs and len(args) == n:
+            input_args = args
+        else:
+            input_args = self.get_rectified_args(args, kwargs)
+
+        slots = [
+            _prepared_slot_for_arg(
+                meta.all_names[index],
+                arg,
+                meta.annotated_types[index],
+                meta.numeric_flags[index],
+                self._pointer_address_arg_specs[index],
+            )
+            for index, arg in enumerate(input_args)
+        ]
+
+        # Every eligible argument kind marshals to exactly one execution
+        # argument, so the flat list maps 1:1 onto the slots.
+        exe_args, _adapted_args = self.generate_execution_args(tuple(input_args), {})
+        if len(exe_args) != len(slots):
+            raise DSLRuntimeError(
+                "prepared-launch classification disagrees with "
+                f"generate_execution_args ({len(slots)} slots for "
+                f"{len(exe_args)} execution arguments)"
+            )
+        for slot, exe_arg in zip(slots, exe_args):
+            slot.snapshot(exe_arg)
+        return slots
 
     def _arg_marshals_to_pointers(self, arg: Any, spec: PointerAddressArgSpec) -> bool:
         """Whether ``arg`` will contribute at least one C pointer at launch.
@@ -1089,6 +1402,147 @@ class JitExecutor:
         exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
         return self.run_compiled_program(exe_args)
 
+    def prepare(self, *args: Any, **kwargs: Any) -> "PreparedLaunch":
+        """Bind arguments once and return a replayable :class:`PreparedLaunch`.
+
+        Mirrors the :meth:`JitCompiledFunction.to` / ``__call__`` split: the
+        prepared launch is tied to this executor's device context. See
+        :meth:`JitCompiledFunction.prepare` for the full contract.
+        """
+        slots = self.jit_module.execution_args.generate_prepared_slots(args, kwargs)
+        return PreparedLaunch(self, slots)
+
+
+class PreparedLaunch:
+    """A compiled function with its launch arguments bound to stable storage.
+
+    Created by :meth:`JitCompiledFunction.prepare` (or
+    :meth:`JitExecutor.prepare` for a device-bound executor). ``prepare()``
+    runs the normal argument marshalling once and snapshots the marshalled
+    bytes into private per-argument storage referenced by a private packed
+    argument array; :meth:`launch` then only rewrites those bytes in place and
+    invokes the compiled entry point directly. No Python objects are allocated
+    per launch and no packing is repeated, which removes nearly all of the
+    per-call host overhead of ``compiled(*args)``.
+
+    A launch is bitwise-identical to calling the compiled function with the
+    same argument values of the prepared kinds: the compiled entry point reads
+    the same packed bytes either way. (A direct call additionally applies DSL
+    numeric casts to scalar values of a mismatched kind; a prepared launch
+    rejects such values with :class:`PreparedLaunchError` instead of silently
+    converting.)
+
+    **Lifecycle.** The instance keeps its executor — and therefore the JIT
+    engine, loaded CUDA modules, and device context — alive. Launching after
+    the owning module has been explicitly unloaded raises
+    :class:`PreparedLaunchError`.
+
+    **Threads.** Instances are not thread-safe: two threads launching through
+    one instance would interleave writes to the same argument storage. Create
+    one prepared launch per thread; instances never share mutable argument or
+    result storage (each owns its slots, packed array, and CUDA result slot),
+    so different instances of the same compiled function may launch
+    concurrently. The compiled module and entry point are shared and
+    read-only in normal operation; ``jit_module.unload()`` affects every
+    instance of that module.
+
+    **CUDA graphs.** :meth:`launch` issues the same driver launch as the
+    normal call path, so it can be captured into a CUDA graph via a capturing
+    stream. Standard capture semantics apply: the driver copies the argument
+    bytes at capture time, so later ``launch`` argument updates do not change
+    what a captured graph replays. A launch that is illegal during capture
+    (e.g. onto the legacy default stream) raises the same CUDA error the
+    normal call path would.
+    """
+
+    def __init__(self, executor: JitExecutor, slots: list[_PreparedArgSlot]) -> None:
+        packed_args = (ctypes.c_void_p * (len(slots) + executor._num_extra_args))()
+        for index, slot in enumerate(slots):
+            packed_args[index] = slot.address
+
+        # Private CUDA result storage: launches from this instance never race
+        # the executor's shared result slot (or another instance's).
+        index = len(slots)
+        cuda_result = (
+            type(executor.cuda_result)() if executor._has_cuda_result else None
+        )
+        if cuda_result is not None:
+            packed_args[index] = ctypes.addressof(cuda_result)
+            index += 1
+        if executor._kernel_ptrs is not None:
+            for ptr in executor._kernel_ptrs:
+                packed_args[index] = ptr
+                index += 1
+
+        self._executor = executor
+        self._jit_module = executor.jit_module
+        self._slots = slots
+        self._writers = [slot.write for slot in slots]
+        self._packed_args = packed_args
+        self._cuda_result = cuda_result
+        self._capi_func = executor.capi_func
+
+    def launch(self, *args: Any, **kwargs: Any) -> int | None:
+        """Rewrite the bound argument storage in place and launch.
+
+        Takes the same runtime arguments as calling the compiled function
+        (keyword arguments and omitted defaulted parameters rectify through
+        the signature; full positional calls are the fast path). Pointer
+        arguments accept a runtime pointer object or a raw integer address;
+        numeric arguments accept a Python scalar or a ``Numeric`` instance;
+        stream arguments accept a CUDA stream object, a framework stream
+        exposing an integer ``cuda_stream`` attribute (e.g.
+        ``torch.cuda.Stream``), or a raw integer handle. Scalar values are
+        written through the prepared ctypes storage with plain ctypes
+        assignment semantics: out-of-range integers truncate to the declared
+        width (the same trust-the-caller posture as the normal launch path),
+        and a value the storage rejects — e.g. a float for an integer slot —
+        raises :class:`PreparedLaunchError` instead of applying the implicit
+        DSL cast a direct call would perform.
+
+        :return: The CUDA result code (0) when the compiled function reports
+            one, otherwise None — the same contract as calling the compiled
+            function.
+        :raises PreparedLaunchError: If the argument count does not match the
+            prepared signature, a value's type cannot update its slot, or the
+            compiled module has been unloaded.
+        :raises DSLCudaRuntimeError: If the launch reports a CUDA error.
+        """
+        writers = self._writers
+        if kwargs or len(args) != len(writers):
+            # Same binding contract as a direct call: keyword arguments and
+            # omitted defaulted parameters rectify through the signature,
+            # raising the shared too-many/missing-argument diagnostics.
+            args = tuple(
+                self._jit_module.execution_args.get_rectified_args(args, kwargs)
+            )
+            if len(args) != len(writers):
+                raise PreparedLaunchError(
+                    DiagId.LAUNCH_PREPARED_ARG_COUNT,
+                    expected=len(writers),
+                    provided=len(args),
+                )
+        if self._jit_module._unloaded:
+            raise PreparedLaunchError(DiagId.LAUNCH_PREPARED_MODULE_UNLOADED)
+        index = 0
+        try:
+            for index, value in enumerate(args):
+                writers[index](value)
+        except (TypeError, ValueError) as e:
+            raise PreparedLaunchError(
+                DiagId.LAUNCH_PREPARED_BAD_VALUE,
+                arg_name=self._slots[index].name,
+                value_type=type(args[index]).__name__,
+                cause=e,
+            )
+        self._capi_func(self._packed_args)
+        if self._cuda_result is None:
+            return None
+        error_code = self._cuda_result.value
+        if error_code == 0:
+            return error_code
+        raise cuda_helpers.create_cuda_runtime_error(error_code)
+
 
 @dataclass
 class JitFunctionArtifacts:
@@ -1400,13 +1854,60 @@ class JitCompiledFunction:
             return executor.run_compiled_program(exe_args)
         return self.run_compiled_program(exe_args)
 
-    def run_compiled_program(self, exe_args: list[Any]) -> int | None:
-        """Executes the jit-compiled function under the currently active CUDA context.
+    def prepare(self, *args: Any, **kwargs: Any) -> "PreparedLaunch":
+        """Bind arguments once and return a replayable :class:`PreparedLaunch`.
 
-        Calling this method multiple devices is not allowed and will result in unexpected
-        CUDA errors. If you need to call the kernel on multiple devices use `to`
-        to return a per-device function.
+        Calling a compiled function re-marshals every argument: argument
+        objects are rebuilt, scalars are cast into fresh ctypes storage, and
+        the packed argument array is regenerated, even when only pointer
+        addresses and scalar values change between calls. For launch-bound
+        callers this method performs that work exactly once:
+        ``prepare(*args)`` validates and marshals the arguments like a normal
+        call, then snapshots the marshalled bytes into storage owned by the
+        returned :class:`PreparedLaunch`, whose :meth:`PreparedLaunch.launch`
+        rewrites the bytes in place and invokes the compiled entry point
+        directly.
+
+        .. code-block:: python
+
+            compiled = cute.compile(fn, out_ptr, in_ptr, alpha, n, stream)
+            prepared = compiled.prepare(out_ptr, in_ptr, alpha, n, stream)
+            for step in range(steps):
+                ...
+                prepared.launch(out_ptr, in_ptr, alpha, n, stream)
+
+        Eligibility is validated here, not at launch: every runtime argument
+        must be a runtime pointer (``make_ptr``/pointer-address slot), a
+        numeric scalar with plain ctypes storage (Boolean, Int8-Int64,
+        Uint8-Uint64, Float32, Float64, TFloat32, or a plain Python
+        bool/int/float), or a CUDA stream. Anything else — dlpack tensors,
+        structs, sequences, custom JIT arguments — raises
+        :class:`PreparedLaunchError`, and ``compiled(*args)`` remains the
+        general path.
+
+        Like ``__call__``, the prepared launch is bound to the default
+        executor's device context; use ``to(device).prepare(...)`` for
+        per-device prepared launches. See :class:`PreparedLaunch` for the
+        lifecycle, threading, and CUDA-graph-capture contract.
+
+        :param args: Runtime arguments, as passed to a normal call.
+        :param kwargs: Runtime keyword arguments, as passed to a normal call.
+        :return: A prepared launch bound to this function and device context.
+        :rtype: PreparedLaunch
+        :raises PreparedLaunchError: If any runtime argument is not eligible
+            for in-place re-binding.
         """
+        executor = self._ensure_default_executor()
+        if not isinstance(executor, JitExecutor):
+            # e.g. TVM-FFI compiled functions: their to() returns the compiled
+            # function itself, which dispatches through its own entry point.
+            raise PreparedLaunchError(
+                DiagId.LAUNCH_PREPARE_UNSUPPORTED_EXECUTOR,
+                function_kind=type(self).__name__,
+            )
+        return executor.prepare(*args, **kwargs)
+
+    def _ensure_default_executor(self) -> JitExecutor:
         with self._executor_lock:
             if self._default_executor is None:
                 log().debug("Creating default executor.")
@@ -1415,7 +1916,16 @@ class JitCompiledFunction:
                 proxy_self = weakref.proxy(self)
                 self._default_executor = proxy_self.to(None)
         assert self._default_executor is not None
-        return self._default_executor.run_compiled_program(exe_args)
+        return self._default_executor
+
+    def run_compiled_program(self, exe_args: list[Any]) -> int | None:
+        """Executes the jit-compiled function under the currently active CUDA context.
+
+        Calling this method multiple devices is not allowed and will result in unexpected
+        CUDA errors. If you need to call the kernel on multiple devices use `to`
+        to return a per-device function.
+        """
+        return self._ensure_default_executor().run_compiled_program(exe_args)
 
     def _generate_c_header_arguments(
         self,
