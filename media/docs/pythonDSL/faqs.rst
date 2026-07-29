@@ -102,7 +102,7 @@ Technical
     Since CuTe DSL is not native python and an embedded DSL instead, tools like `pdb`
     cannot be used.  However, if you have experience with GPU kernel programming, the debugging
     techniques will be nearly identical. Typically, compile time and runtime printing
-    of types and values are the most expedient. Please see `documentation on printing <https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/notebooks/print.ipynb>`__
+    of types and values are the most expedient. Please see `documentation on printing <https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/notebooks/print.ipynb>`__
     to learn how to print types and values at both compile time and runtime.
     You can also use ``cuda-gdb`` to set breakpoints in the program and step through the execution
     or use tools such as ``compute-sanitizer`` to detect and triage bugs in your program. As the DSL
