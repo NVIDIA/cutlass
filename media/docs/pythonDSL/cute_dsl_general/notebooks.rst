@@ -18,5 +18,3 @@ A list with handful links is given below:
 - `Async Pipelines <https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/notebooks/async_pipeline.ipynb>`__
 - `Benchmarking and Autotuning <https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/notebooks/benchmark_autotune.ipynb>`__
 - `A Tour to Speed-of-Light GEMM <https://github.com/NVIDIA/cutlass/blob/main/examples/python/CuTeDSL/cute/notebooks/tour_to_sol_gemm.ipynb>`__
-diff --git a/media/docs/pythonDSL/faqs.rst b/media/docs/pythonDSL/faqs.rst
-index 0ec1a2e..90485b8 100644
