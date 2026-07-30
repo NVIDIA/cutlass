@@ -622,6 +622,7 @@ class DSLOperationBuildError(DSLBaseError):
         if frameInfo is None:
             current_frame = inspect.currentframe()
             frame = current_frame.f_back if current_frame else None
+            del current_frame
             frameInfo = inspect.getframeinfo(frame) if frame else None
 
         # Try to translate MLIR/nanobind errors if no custom message provided
