@@ -785,7 +785,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                         _node.col_offset += _col_shift  # type: ignore[attr-defined]
                     if getattr(_node, "end_col_offset", None) is not None:
                         _node.end_col_offset += _col_shift  # type: ignore[attr-defined]
-        except OSError as e:
+        except (OSError, TypeError) as e:
             # No retrievable source (REPL / exec())
             raise DSLUserCodeError(DiagId.UNSUP_NO_SOURCE, func=func_name, cause=e)
         except Exception as e:
