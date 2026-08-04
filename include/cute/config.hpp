@@ -110,17 +110,28 @@
 #  define CUTE_STL_NAMESPACE std
 #endif
 
-#if !defined(CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE)
+#if defined(__CUDACC_RTC__)
+// Load the tuple protocol from the layout provided by the active CCCL version.
+// Older CUDA toolkits may not provide the public <cuda/std/tuple> entry point,
+// while newer releases may remove the legacy detail/libcxx include path.
 #  if defined(__has_include)
-#    if __has_include(<cuda/std/__tuple_dir/structured_bindings.h>)
-#      define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 1
+#    if __has_include(<cuda/std/tuple>)
+#      include <cuda/std/tuple>
+#    elif __has_include(<cuda/std/__tuple_dir/structured_bindings.h>)
+#      include <cuda/std/__tuple_dir/structured_bindings.h>
+#    elif __has_include(<cuda/std/detail/libcxx/include/__tuple_dir/structured_bindings.h>)
+#      include <cuda/std/detail/libcxx/include/__tuple_dir/structured_bindings.h>
+#    elif __has_include(<cuda/std/__tuple_dir/tuple_size.h>) && \
+          __has_include(<cuda/std/__tuple_dir/tuple_element.h>)
+#      include <cuda/std/__tuple_dir/tuple_size.h>
+#      include <cuda/std/__tuple_dir/tuple_element.h>
 #    else
-#      define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 0
+#      define CUTE_CUDA_STD_NEEDS_TUPLE_PRIMARY_DECLARATIONS
 #    endif
 #  elif (__CUDACC_VER_MAJOR__ >= 13)
-#    define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 1
+#    include <cuda/std/tuple>
 #  else
-#    define CUTE_CUDA_STD_STRUCTURED_BINDINGS_HEADER_AVAILABLE 0
+#    define CUTE_CUDA_STD_NEEDS_TUPLE_PRIMARY_DECLARATIONS
 #  endif
 #endif
 
