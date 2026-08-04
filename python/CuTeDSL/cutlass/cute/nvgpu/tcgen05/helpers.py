@@ -196,7 +196,7 @@ def commit(
     Perform an arrive operation on a mbarrier upon completion of previous MMA operations.
 
     **Single-Thread Execution Required - DSL Does NOT Handle Automatically**: This operation
-    **must** be wrapped in :func:`cute.arch.elect_one`. Without ``elect_one()``, all 32
+    **must** be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`. Without ``elect_one()``, all 32
     threads in the warp will execute the commit, causing 32x redundant ``tcgen05.commit`` PTX instructions.
 
     .. code-block:: python
@@ -216,8 +216,8 @@ def commit(
     :type cta_group: CtaGroup
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **REQUIRED** wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_arrive` - General barrier arrive operation
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **REQUIRED** wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_arrive <cutlass.cute.arch.mbarrier_arrive>` - General barrier arrive operation
     """
     if cta_group == CtaGroup.ONE:
         group = nvvm.CTAGroupKind.CTA_1

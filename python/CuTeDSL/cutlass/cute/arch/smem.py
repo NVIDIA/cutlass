@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from typing import Optional, Type
 
 from cutlass.cutlass_dsl import T, dsl_user_op

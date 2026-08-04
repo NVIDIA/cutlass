@@ -92,7 +92,6 @@ void __global__ fmha_bwd_reference_dQ_kernel(
           acc_dov += mDO(idx_Q, idx_D1, idx_L) * mV(idx_K, idx_D1, idx_L);
           acc_doo += mDO(idx_Q, idx_D1, idx_L) * mO(idx_Q, idx_D1, idx_L);
         }
-
         auto id = make_identity_tensor(make_shape(1, 1));
         auto frag = make_tensor<ElementAcc>(Shape<_1, _1>{});
         frag(0) = acc_qk;

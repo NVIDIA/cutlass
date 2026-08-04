@@ -1004,7 +1004,7 @@ def cvt_tensor_a(
     for int4-to-bf16 conversion.
     """
 
-    # shuffle is supported since CTK 13.1
+    # shuffle is supported since CUDA 13.1
     shuffle_supported = cutlass.target_version(min_version="13.1")
     shuffle = shuffle and shuffle_supported
     rst = src.load()
@@ -1025,7 +1025,7 @@ def cvt_tensor_a(
 
 
 def cvt_tensor_a_mxf8(src: cute.Tensor, dtype: type[cutlass.Numeric]) -> cute.TensorSSA:
-    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic`."""
+    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic <cutlass.cute.arch.cvt_i4_mxf8_intrinsic>`."""
     rst = src.load()
     return cute.TensorSSA.from_vector(
         cute.arch.cvt_i4_mxf8_intrinsic(rst, cute.size(rst.shape), dtype),
@@ -1038,7 +1038,7 @@ def store_transformed_a(
     src_a: cute.Tensor, dst_a: cute.Tensor, copy_atom_a: Optional[cute.CopyAtom]
 ) -> None:
     """
-    Store transformed A tensor to the given destination tensor. If copy_atom_a is not None, use autovec_copy.
+    Store transformed A tensor to the given destination tensor. If copy_atom_a is None, use autovec_copy.
     """
     if cutlass.const_expr(copy_atom_a is not None):
         cute.copy(copy_atom_a, src_a, dst_a)

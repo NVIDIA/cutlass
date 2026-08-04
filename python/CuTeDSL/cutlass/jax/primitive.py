@@ -22,8 +22,11 @@ from jax._src.interpreters import batching
 
 from .compile import get_or_compile_kernel, build_function_spec
 from .types import (
+    _normalize_divisibility,
+    _validate_permutation,
     cutlass_to_jax_layout_order,
     default_tensor_spec,
+    row_major_layout,
     TensorSpec,
 )
 from .ffi import (
@@ -220,23 +223,28 @@ def _resolve_spec_flat(spec: Any, tensors: list) -> tuple[TensorSpec, ...]:
 def _validate_specs(label: str, tensors: list, specs: tuple[TensorSpec, ...]) -> None:
     """Validate that each spec's rank-dependent fields match the corresponding tensor shape."""
     for idx, (tensor, spec) in enumerate(zip(tensors, specs)):
-        ndim = len(tensor.shape)
-        if spec.layout is not None and len(spec.layout) != ndim:
-            raise ValueError(
-                f"{label} #{idx} has invalid layout {spec.layout} for shape {tensor.shape}."
-            )
-        if spec.mode is not None and len(spec.mode) != ndim:
-            raise ValueError(
-                f"{label} #{idx} has invalid mode {spec.mode} for shape {tensor.shape}."
-            )
-        if (
-            spec.divisibility is not None
-            and not isinstance(spec.divisibility, int)
-            and len(spec.divisibility) != ndim
-        ):
+        if spec.layout is not None:
+            try:
+                _validate_permutation("layout", spec.layout, tensor.shape)
+            except ValueError as e:
+                raise ValueError(
+                    f"{label} #{idx} has invalid layout {spec.layout} for shape {tensor.shape}."
+                ) from e
+        if spec.mode is not None:
+            try:
+                _validate_permutation("mode", spec.mode, tensor.shape)
+            except ValueError as e:
+                raise ValueError(
+                    f"{label} #{idx} has invalid mode {spec.mode} for shape {tensor.shape}."
+                ) from e
+
+        order = spec.layout if spec.layout is not None else row_major_layout(tensor)
+        try:
+            _normalize_divisibility(spec.divisibility, order, tensor.shape)
+        except ValueError as e:
             raise ValueError(
                 f"{label} #{idx} has invalid divisibility {spec.divisibility} for shape {tensor.shape}."
-            )
+            ) from e
 
 
 def _cutlass_call_impl(

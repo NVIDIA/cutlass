@@ -189,6 +189,12 @@ class MixedInputGemmOperator(CuteDslOperator):
 
         shuffle_a = self._compute_shuffle_a(metadata, scale_granularity_k)
 
+        # Resolve A's narrow dtype from metadata so signedness survives the JIT
+        # boundary: `a.element_type` reconstructs a signless `i8` memref as signed
+        # Int8, which would silently mis-convert Uint8 (e.g. 200 -> -56). The kernel
+        # uses this dtype for the int->float convert path.
+        a_dtype = self._resolve_a_dtype(metadata.operands)
+
         self.impl = MixedInputGemmKernel(
             scale_granularity_m=scale_granularity_m,
             scale_granularity_k=scale_granularity_k,
@@ -198,6 +204,7 @@ class MixedInputGemmOperator(CuteDslOperator):
             cluster_shape_mn=cluster_shape_mn,
             use_tma_store=metadata.design.use_tma_store,
             shuffle_a=shuffle_a,
+            a_dtype=a_dtype,
         )
 
         self._shuffle_a = shuffle_a
@@ -218,60 +225,39 @@ class MixedInputGemmOperator(CuteDslOperator):
         return (0, 0)
 
     @staticmethod
+    def _resolve_a_dtype(operands: GemmOperandsMetadata) -> type[cutlass.Numeric]:
+        """Look up operand A's data type from metadata (signedness preserved).
+
+        This is a pure getter; it does not change the type. The two operand layouts
+        store the dtype in different places:
+
+        - ``ScaledOperand`` (the Int4 convert-scale path) wraps the input values in a
+          ``.quantized`` sub-tensor, so its dtype lives at ``A.quantized.dtype``.
+        - ``DenseTensor`` (the Int8/Uint8 convert-only path) carries the dtype
+          directly at ``A.dtype``.
+
+        This metadata dtype is the only signedness-bearing source of A's type: the
+        kernel's ``a.element_type`` is rebuilt from a signless ``i8`` memref and would
+        report ``Int8`` for a ``Uint8`` input.
+        """
+        if isinstance(operands.A, ScaledOperandConstraints):
+            return operands.A.quantized.dtype
+        return operands.A.dtype
+
+    @staticmethod
     def _compute_shuffle_a(
         metadata: OperatorMetadata, scale_granularity_k: int
     ) -> bool:
-        """Determine if shuffle should be used for A tensor transformation.
+        """Whether to use the Int4->BFloat16 shuffle fast path.
 
-        Shuffle optimization enables a fast Int4→BFloat16 conversion path using the
-        hardware intrinsic `cvt_i4_bf16_intrinsic` (see: cutlass.cute.arch.numeric_conversion).
-
-        This intrinsic processes 8 Int4 elements at a time. When shuffle is enabled,
-        the input elements are expected in a specific pattern: indices (0,1,2,3,4,5,6,7)
-        are reordered to (0,2,1,3,4,6,5,7). This pre-shuffled layout allows the intrinsic
-        to produce BFloat16 output in natural order without extra permutation (prmt)
-        instructions, improving performance.
-
-        Shuffle optimization requires:
-        1. A tensor is K-major (row-major for M×K) - data layout matches shuffle pattern
-        2. A dtype is Int4 - intrinsic is specific to Int4
-        3. B dtype is BFloat16 - intrinsic only outputs BFloat16 (no Float16 equivalent)
-        4. scale_granularity_k >= 8 - sufficient granularity for shuffle pattern
-
-        The intrinsic operates on 8-element groups, but the TMA 16-byte alignment
-        for Int4 already guarantees K % 32 == 0, which subsumes K % 8.
-
-        See: cutlass.utils.mixed_input_helpers.is_shuffle_a()
-             cutlass.cute.arch.numeric_conversion.cvt_i4_bf16_intrinsic()
+        Disabled for now: the pre-shuffled fast path is not exposed at the
+        operator API level, so this always returns ``False``. The kernel still
+        supports ``shuffle_a=True`` for when it is re-introduced.
 
         :param metadata: Operator metadata containing operand information
         :param scale_granularity_k: Scale granularity along K dimension
-        :return: True if shuffle should be used, False otherwise
+        :return: Always ``False`` (shuffle path disabled)
         """
-        # Get A dtype and stride from metadata
-        if isinstance(metadata.operands.A, ScaledOperandConstraints):
-            a_dtype = metadata.operands.A.quantized.dtype
-            a_stride = metadata.operands.A.quantized.stride
-        else:
-            a_dtype = metadata.operands.A.dtype
-            a_stride = metadata.operands.A.stride
-
-        b_dtype = metadata.operands.B.dtype
-
-        # Check conditions that can be verified at Operator generation time:
-        # 1. A dtype is Int4
-        # 2. B dtype is BFloat16 (shuffle only supported for BFloat16, not Float16)
-        # 3. A is K-major
-        # 4. scale_granularity_k >= 8
-        if a_dtype == cutlass.Int4 and b_dtype == cutlass.BFloat16:
-            # Check if A is K-major (last dimension contiguous)
-            # For 3D stride (batch, row, col):
-            # (0, 0, 1) means K dimension is contiguous = K-major
-            # (0, 1, 0) means M dimension is contiguous = M-major
-            is_k_major = a_stride == (0, 0, 1)
-
-            if is_k_major and scale_granularity_k >= 8:
-                return True
         return False
 
     def _supports(
@@ -588,6 +574,19 @@ class MixedInputGemmOperator(CuteDslOperator):
         tile_k = metadata.design.tile_shape[2]
         if scale_k > 0 and scale_k % tile_k != 0:
             return False
+
+        # The scale factor is TMA-loaded one (cta_m / cluster_n / scale_m)-row
+        # tile per CTA, and TMA requires that tile to be at least 128B. The
+        # kernel does not support smaller scale tiles, so reject those configs
+        # here (mirrors cutlass.utils.mixed_input_helpers.is_valid_tensor_alignment).
+        if scale_m > 0 and isinstance(metadata.operands.A, ScaledOperandConstraints):
+            cta_m = metadata.design.tile_shape[0] // (
+                2 if metadata.design.use_2cta_mma else 1
+            )
+            cluster_n = metadata.design.cluster_shape[1]
+            scale_bytes = metadata.operands.A.scale.dtype.width // 8
+            if (cta_m // cluster_n // scale_m) * scale_bytes < 128:
+                return False
 
         if not MixedInputGemmOperator._check_capacity(metadata):
             return False

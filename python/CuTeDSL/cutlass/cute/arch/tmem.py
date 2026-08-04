@@ -9,11 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from typing import Optional, Type
 
 from cutlass.cutlass_dsl import dsl_user_op
-from cutlass.base_dsl.arch import Arch
+from cutlass import base_dsl
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir

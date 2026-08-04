@@ -315,6 +315,7 @@ class SessionData:
     region_stack: list[Region] = field(default_factory=list)
     generator_targets: list[str] = field(default_factory=list)
     lambda_args: list[str] = field(default_factory=list)
+
     @contextlib.contextmanager
     def set_current_class_name(self, class_name: str) -> Generator[None, None, None]:
         old_class_name = self.class_name
@@ -407,6 +408,10 @@ class DSLPreprocessor(ast.NodeTransformer):
     CONST_EXPR_NAME = {"const_expr", "target_version"}
     COMPARE_EXECUTOR = "compare_executor"
     BUILTIN_REDIRECTOR = "redirect_builtin_function"
+    IMPORT_EXCEPTION_LIST = {"ImportError", "ModuleNotFoundError", "Exception"}
+
+    def _has_pyir_support(self) -> bool:
+        return False
 
     def generic_visit(self, node: ast.AST) -> ast.AST:
         """
@@ -462,6 +467,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         # previously used preprocessor object, and stale entries here would make
         # later sessions skip transforming a function entirely.
         self.processed_functions = set()
+
     def _end_session(self) -> None:
         """End the current preprocessing session and clear session data."""
         self._session_data = None
@@ -480,6 +486,21 @@ class DSLPreprocessor(ast.NodeTransformer):
             "Please start a session before accessing session data"
         )
         return self._session_data
+
+    def _can_catch_import_error(self, handler: ast.ExceptHandler) -> bool:
+        """Return whether an except handler can catch import errors."""
+        handler_type = handler.type
+        if handler_type is None:
+            return True
+        if isinstance(handler_type, ast.Name):
+            return handler_type.id in self.IMPORT_EXCEPTION_LIST
+        if isinstance(handler_type, ast.Tuple):
+            return any(
+                isinstance(element, ast.Name)
+                and element.id in self.IMPORT_EXCEPTION_LIST
+                for element in handler_type.elts
+            )
+        return False
 
     def _get_imports_from_ast(
         self, node: ast.AST, module: ModuleType
@@ -549,11 +570,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                 # search handler for ImportError or ModuleNotFoundError
                 except_imports: list[ImportInfo | TryImportInfo] = []
                 for handler in child_node.handlers:  # type: ignore[attr-defined]
-                    if handler.type == None or handler.type.id in [
-                        "ImportError",
-                        "ModuleNotFoundError",
-                        "Exception",
-                    ]:
+                    if self._can_catch_import_error(handler):
                         except_imports = self._get_imports_from_ast(
                             ast.Module(body=handler.body, type_ignores=[]), module
                         )
@@ -1038,6 +1055,8 @@ class DSLPreprocessor(ast.NodeTransformer):
         invoked_args = OrderedSet()
         called_functions = OrderedSet()
 
+        support_pyir = self._has_pyir_support()
+
         class RegionAnalyzer(ast.NodeVisitor):
             force_store = False
 
@@ -1101,8 +1120,12 @@ class DSLPreprocessor(ast.NodeTransformer):
 
                 # Classes are mutable by default. Mark them as write. If they are
                 # dataclass(frozen=True), treat them as read in runtime.
-                if base_name is not None and base_name not in ("self",):
-                    invoked_args.add(base_name)
+                if base_name is not None:
+                    if base_name == "self" and support_pyir:
+                        # pyir can handle self as a write argument
+                        pass
+                    else:
+                        invoked_args.add(base_name)
 
                 self.generic_visit(node)
 
@@ -1220,7 +1243,13 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Create the loop body
         transformed_body: list[ast.stmt] = []
+        # Template-method hook: capture the pyir_promote_loop_body_arg
+        # prologue against the ORIGINAL node.body BEFORE the body visit
+        # mutates it (e.g. _insert_pyir_attr_reads replaces bare
+        # ``Name(scale_d, Load)`` with ``Name(_pyir_name_N, Load)``).
+        # The captured stmts are prepended after the body visit completes.
         body_prep_stmts = self._prepare_loop_body_vars(node, write_args)
+
         with Region(self.session_data, new_value=transformed_body):
             for stmt in node.body:
                 transformed_stmt = self.visit(
@@ -1625,6 +1654,10 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Add this to beginning of loop body
         # for i in range(start, stop, step):
         #     i = offset - i if isNegative else i
+        # Mark the induction variable in skip_pyir_reference_taking so PyIR does NOT
+        # instrument this assignment with pyir_read/pyir_assign.
+        # Creating a pyir.ref for the scf.for block argument crashes
+        # the convert-pyir-to-scf pass (circular use-def chain).
         assert isinstance(node.target, ast.Name)
 
         target_name = node.target.id
@@ -1905,6 +1938,23 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
         return ast.copy_location(call, node)
 
+    def _try_rewrite_printf_fstring(self, node: ast.Call, name: str) -> bool:
+        """Rewrite a printf/print_runtime f-string call in place; return whether done.
+
+        When ``name`` (the callee's ``id`` for a Name callee or ``attr`` for an
+        Attribute callee) is printf/print_runtime and the first arg is an f-string,
+        replace the args with a single starred processFString expansion. Shared by
+        the Name and Attribute branches of visit_Call.
+        """
+        if (
+            name in ("printf", "print_runtime")
+            and len(node.args) > 0
+            and isinstance(node.args[0], ast.JoinedStr)
+        ):
+            node.args = [ast.Starred(value=self.processFString(node), ctx=ast.Load())]
+            return True
+        return False
+
     def visit_Call(self, node: ast.Call) -> ast.Call:
         func = self.visit(node.func)
         # Visit args and kwargs
@@ -2088,7 +2138,6 @@ class DSLPreprocessor(ast.NodeTransformer):
     def get_dsl_decorator_index(self, decorator_list: list[ast.expr]) -> Any:
         # Known decorator kwargs that should not prevent decorator recognition.
         # "preprocess" controls whether AST preprocessing is enabled.
-        # "callee_rewrite" enables runtime callee wrapping via _dsl_callee_.
         # "attributes" passes kernel function attributes (e.g. launch bounds)
         # to the compiler — its presence shouldn't prevent the preprocessor
         # from recognizing @cute.kernel(attributes=...) as a DSL decorator.
@@ -2096,7 +2145,6 @@ class DSLPreprocessor(ast.NodeTransformer):
         # CuTe DSL (see ``CuTeDSL.jit`` / ``CuTeDSL.kernel``).
         _known_dsl_kwargs = {
             "preprocess",
-            "callee_rewrite",
             "attributes",
             "is_experimental",
         }
@@ -2563,10 +2611,43 @@ class DSLPreprocessor(ast.NodeTransformer):
 
     def _handle_constexpr_if(self, node: ast.If) -> list[ast.stmt]:
         """Handle const_expr if statements. Override for custom behavior."""
-        self.generic_visit(node)
+        self._visit_constexpr_if_branches(node)
         assert isinstance(node.test, ast.Call)
         check = self._insert_cf_symbol_check(node.test.func)
         return [check, node]
+
+    def _visit_constexpr_branch(
+        self, stmts: list[ast.stmt]
+    ) -> tuple[list[ast.stmt], set[str]]:
+        """Visit one constexpr branch without leaking its local definitions."""
+        result: list[ast.stmt] = []
+        with (
+            Region(self.session_data, new_value=result),
+            self.session_data.scope_manager.enter_control_flow_scope(),
+        ):
+            for stmt in stmts:
+                transformed_stmt = self.visit(stmt)
+                if isinstance(transformed_stmt, list):
+                    result.extend(transformed_stmt)
+                else:
+                    result.append(transformed_stmt)
+            definitions = set(self.session_data.scope_manager.scopes[-1])
+        return result, definitions
+
+    def _visit_constexpr_if_branches(self, node: ast.If) -> None:
+        """Visit constexpr arms without exposing definitions to sibling arms."""
+        visited_test = self.visit(node.test)
+        assert isinstance(visited_test, ast.expr)
+        node.test = visited_test
+
+        node.body, body_definitions = self._visit_constexpr_branch(node.body)
+        node.orelse, else_definitions = self._visit_constexpr_branch(node.orelse)
+        # Publish branch definitions only after both arms have been visited. This
+        # preserves Python's function-local name tracking (including possibly
+        # unbound names handled by get_locals_or_none) without making a name from
+        # one compile-time arm appear initialized while visiting its sibling.
+        for name in body_definitions | else_definitions:
+            self.session_data.scope_manager.add_to_scope(name)
 
     def visit_If(self, node: ast.If) -> ast.If | list[ast.stmt]:
         # const_expr doesn't get preprocessed
@@ -2618,7 +2699,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         Returns the check statement for the const_expr call.
         """
-        self.generic_visit(elif_node)
+        self._visit_constexpr_if_branches(elif_node)
         assert isinstance(elif_node.test, ast.Call)
         return self._insert_cf_symbol_check(elif_node.test.func)
 
@@ -2872,6 +2953,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         write_args: list[str],
     ) -> list[ast.stmt]:
         """Prepend statements at the top of a for/while body.
+
+        Override hook: a Python-primitive write_arg whose first
+        reference in the body is a Load before any Store needs explicit
+        promotion via ``pyir_promote_loop_body_arg`` so the read site
+        loads from the loop-carried ref instead of the trace-time
+        constant.  Base class is a no-op.
         """
         return []
 
@@ -2982,6 +3069,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             test_expr,
         )
 
+        # Mirror of for-loop body-prep hook: capture the
+        # pyir_promote_loop_body_arg prologue against the original body
+        # before the visit mutates Name nodes.
         body_prep_stmts = self._prepare_loop_body_vars(node, write_args)
 
         # Section: while_after_block FunctionDef, which contains loop body

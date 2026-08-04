@@ -28,10 +28,14 @@
 
 from __future__ import annotations
 
+import enum
+import typing
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cutlass.operators.fusion import EmptyTensor, trace, trace_in_out
+from cutlass.operators.fusion.ir.store_nodes import ScalarReductionImpl
 from cutlass.operators.utils.layout import LayoutType
 from cutlass.operators.utils.tensor import TensorWrapper, is_torch_tensor
 
@@ -136,12 +140,23 @@ class EpilogueArguments:
         # Deduplicate because a name can appear as both an input parameter
         # and an output (e.g. ``def epi(accum, D): ... return D``).
         self.tensors = OrderedDict()
+        # Per-parameter data-transport overrides, keyed by parameter name.
+        # A name is present only when the user wrapped its tensor in a
+        # ``Load``/``Store`` descriptor; bare tensors default to TMA downstream.
+        self.transports: dict[str, Load | Store] = {}
         for kw in dict.fromkeys(epilogue_inputs + epilogue_outputs):
             if kw not in kwargs:
                 raise ValueError(
                     f"Argument {kw} is not provided in the kwargs of the EpilogueArguments constructor"
                 )
-            self.tensors[kw] = kwargs[kw]
+            value = kwargs[kw]
+            if isinstance(value, (Load, Store)):
+                # Record how this tensor is moved, then unwrap to the bare
+                # tensor so tracing, broadcasting and TensorWrapper all keep
+                # seeing a plain tensor regardless of the chosen transport.
+                self.transports[kw] = value
+                value = value.tensor
+            self.tensors[kw] = value
             del kwargs[kw]
 
         if len(kwargs) > 0:
@@ -161,14 +176,52 @@ class EpilogueArguments:
         """Returns the list of names of the input and output parameters of the epilogue."""
         return list(self.tensors.keys())
 
+    def _scalar_reduction_destinations(self) -> set[str]:
+        """Return the names of outputs that back an all-MNL (scalar) reduction.
+
+        These are the ``StoreNode``s whose ``underlying_impl`` is a
+        ``ScalarReductionImpl`` (e.g. ``total`` in ``total = sum(accum)``). The
+        EFC kernel folds into them with a cross-CTA atomic and requires a static
+        single-element layout, so they must be wrapped with ``static_layout``.
+
+        Returns:
+            set[str]: Reduction-destination names (empty if there are none).
+
+        Raises:
+            RuntimeError: If the epilogue has not been traced yet.  The only
+                caller (``to_tensor_wrappers``) runs right after ``trace``
+                (see ``GemmArguments``), so an untraced epilogue here is a
+                programming error -- returning an empty set instead would
+                silently leave a reduction destination on the default dynamic
+                layout, which the atomic fold only rejects much later, inside
+                the kernel.
+        """
+        traced = getattr(self, "traced_epilogue", None)
+        if traced is None:
+            raise RuntimeError(
+                "EpilogueArguments.to_tensor_wrappers() requires the epilogue "
+                "to be traced first via EpilogueArguments.trace()."
+            )
+        return {
+            meta.name
+            for meta in traced.dag_ir.node_metas_topological_order()
+            if isinstance(getattr(meta, "underlying_impl", None), ScalarReductionImpl)
+        }
+
     def to_tensor_wrappers(self, permute: list[int] | None = None):
         """Converts the input and output parameters of the epilogue to TensorWrappers."""
+        # Scalar-reduction destinations must reach the kernel as *static*
+        # single-element tensors; the default dynamic-layout marking would give
+        # them a ``?`` extent that the atomic-fold path rejects.  Only those
+        # outputs are forced static -- every other tensor keeps the dynamic
+        # layout used for problem-size reuse.
+        static_names = self._scalar_reduction_destinations()
         for k, v in self.tensors.items():
             if is_torch_tensor(v):
                 if permute is not None:
                     v = v.permute(permute)
 
-                self.tensors[k] = TensorWrapper(v)
+                self.tensors[k] = TensorWrapper(v, static_layout=k in static_names)
 
     def trace(self, accumulator_shape: tuple[int, ...], accumulator_type: Numeric):
         """Traces the epilogue function and generates an internal representation of the epilogue.
@@ -194,3 +247,122 @@ class EpilogueArguments:
         self.traced_epilogue = trace(
             self.epilogue_fn, tensors_for_tracing, requires_conversion_to_tree=False
         )
+
+
+# Per-tensor transport descriptors, kept after ``EpilogueArguments`` so the
+# top-level concept reads first (they are referenced only at call time).
+class Transport(enum.Enum):
+    """How a supplemental epilogue tensor moves between GMEM and registers.
+
+    Mirrors the EFC kernel's transport catalog. ``TMA`` stages through shared
+    memory; the ``*_GMEM_*`` variants use direct GMEM addressing, either
+    synchronous to the issuing thread (``SYNC_GMEM_LOAD`` / ``SYNC_GMEM_STORE``)
+    or asynchronous through shared memory via ``cp.async`` (``ASYNC_GMEM_LOAD``).
+    """
+
+    TMA = "tma"
+    SYNC_GMEM_LOAD = "sync_gmem_load"
+    SYNC_GMEM_STORE = "sync_gmem_store"
+    ASYNC_GMEM_LOAD = "async_gmem_load"
+
+
+# Which transports are valid for a read vs. a write, mirroring the EFC kernel.
+_LOAD_TRANSPORTS = (Transport.TMA, Transport.SYNC_GMEM_LOAD, Transport.ASYNC_GMEM_LOAD)
+_STORE_TRANSPORTS = (Transport.TMA, Transport.SYNC_GMEM_STORE)
+
+
+@dataclass
+class Load:
+    """Describe how an epilogue input tensor is read.
+
+    Wrap an :class:`EpilogueArguments` tensor kwarg to override the default
+    (TMA) read transport, e.g.
+    ``C=ops.Load(C, via=ops.Transport.ASYNC_GMEM_LOAD)``. Passing a bare tensor
+    is equivalent to ``Load(tensor)`` (a TMA read).
+
+    Args:
+        tensor (TensorLike): The tensor to read.
+        via (Transport | str): Read transport; one of ``TMA``,
+            ``SYNC_GMEM_LOAD`` or ``ASYNC_GMEM_LOAD``. Strings are accepted.
+        num_bits_per_copy (int | None): Transaction width for non-TMA
+            transports; ``None`` auto-derives it.
+    """
+
+    tensor: typing.Any
+    via: Transport | str = Transport.TMA
+    num_bits_per_copy: int | None = None
+
+    def __post_init__(self) -> None:
+        self.via = Transport(self.via)
+        if self.via not in _LOAD_TRANSPORTS:
+            raise ValueError(
+                f"Load transport must be one of "
+                f"{[t.value for t in _LOAD_TRANSPORTS]}, got {self.via.value!r}."
+            )
+        # ``num_bits_per_copy`` is a transaction width in bits, so it must be an
+        # int when set.  ``bool`` is an ``int`` subclass but never a valid width,
+        # so reject it too -- otherwise ``num_bits_per_copy=True`` would silently
+        # be taken as 1 bit downstream.
+        if self.num_bits_per_copy is not None and (
+            isinstance(self.num_bits_per_copy, bool)
+            or not isinstance(self.num_bits_per_copy, int)
+        ):
+            raise TypeError(
+                "Load num_bits_per_copy must be an int, got "
+                f"{type(self.num_bits_per_copy).__name__}."
+            )
+        # ``num_bits_per_copy`` sizes a direct copy's transaction; TMA derives
+        # its own descriptor, so the argument is meaningless there. Reject the
+        # combination early rather than silently dropping it downstream.
+        if self.via is Transport.TMA and self.num_bits_per_copy is not None:
+            raise ValueError(
+                "Load num_bits_per_copy is only valid for non-TMA transports, "
+                f"not via={self.via.value!r}."
+            )
+
+
+@dataclass
+class Store:
+    """Describe how an epilogue output tensor is written.
+
+    Wrap an :class:`EpilogueArguments` tensor kwarg to override the default
+    (TMA) write transport, e.g.
+    ``D=ops.Store(D, via=ops.Transport.SYNC_GMEM_STORE)``. Passing a bare
+    tensor is equivalent to ``Store(tensor)`` (a TMA write).
+
+    Args:
+        tensor (TensorLike): The tensor to write.
+        via (Transport | str): Write transport; one of ``TMA`` or
+            ``SYNC_GMEM_STORE``. Strings are accepted.
+        num_bits_per_copy (int | None): Transaction width for the direct
+            store; ``None`` auto-derives it.
+    """
+
+    tensor: typing.Any
+    via: Transport | str = Transport.TMA
+    num_bits_per_copy: int | None = None
+
+    def __post_init__(self) -> None:
+        self.via = Transport(self.via)
+        if self.via not in _STORE_TRANSPORTS:
+            raise ValueError(
+                f"Store transport must be one of "
+                f"{[t.value for t in _STORE_TRANSPORTS]}, got {self.via.value!r}."
+            )
+        # See ``Load.__post_init__``: a bit count must be an int (and not a
+        # ``bool``) when set.
+        if self.num_bits_per_copy is not None and (
+            isinstance(self.num_bits_per_copy, bool)
+            or not isinstance(self.num_bits_per_copy, int)
+        ):
+            raise TypeError(
+                "Store num_bits_per_copy must be an int, got "
+                f"{type(self.num_bits_per_copy).__name__}."
+            )
+        # See ``Load.__post_init__``: a TMA store has no caller-set transaction
+        # width, so ``num_bits_per_copy`` only makes sense for the direct store.
+        if self.via is Transport.TMA and self.num_bits_per_copy is not None:
+            raise ValueError(
+                "Store num_bits_per_copy is only valid for non-TMA transports, "
+                f"not via={self.via.value!r}."
+            )

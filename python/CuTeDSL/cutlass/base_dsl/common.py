@@ -38,6 +38,11 @@ _active_env_manager: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "active_env_manager", default=None
 )
 
+_CUDA_INVALID_LAUNCH_VALUE_ERRORS = {
+    "CUDA_ERROR_INVALID_VALUE",
+    "cudaErrorInvalidValue",
+}
+
 
 def get_current_env_manager() -> Any:
     """Return the env manager for the active DSL context, if any.
@@ -66,6 +71,25 @@ def active_env_manager(env_manager: Any) -> Generator[None, None, None]:
         _active_env_manager.reset(token)
 
 
+def is_pyir_enabled() -> bool:
+    """Return True when the user has set ``ENABLE_PYIR=True``."""
+    env_manager = get_current_env_manager()
+    if env_manager is not None:
+        return getattr(env_manager, "enable_pyir", False)
+    return False
+
+
+def is_auto_m2s_enabled() -> bool:
+    """Return True when ``CUTE_DSL_AUTO_M2S=True``.
+
+    Controls auto-promotion of meta-primitives (``int``/``float``/``bool``)
+    to staged DSL types inside staged control flow.
+    """
+    env_manager = get_current_env_manager()
+    if env_manager is not None:
+        return getattr(env_manager, "auto_m2s", False)
+    return False
+
 
 def _dsl_excepthook(
     exc_type: type,
@@ -92,6 +116,7 @@ def _dsl_excepthook(
         "DSLUserCodeError",
         "CompilerDiagnosticError",
         "DSLRuntimeError",
+        "DSLCudaRuntimeError",
     ):
         if show_stacktrace:
             # Show full traceback in verbose mode
@@ -214,6 +239,18 @@ _ARCH_RELATED_CUDA_ERRORS = frozenset(
 )
 
 
+def _normalize_cuda_error_name(error_name: Union[str, bytes]) -> str:
+    if isinstance(error_name, bytes):
+        return error_name.decode("utf-8")
+    if (
+        isinstance(error_name, str)
+        and error_name.startswith("b'")
+        and error_name.endswith("'")
+    ):
+        return error_name[2:-1]
+    return str(error_name)
+
+
 def _get_friendly_cuda_error_message(
     error_code: int, error_name: Union[str, bytes]
 ) -> tuple[str, str, Union[str, tuple[str, ...]]]:
@@ -221,19 +258,20 @@ def _get_friendly_cuda_error_message(
     from .runtime.cuda import get_device_info
 
     """Get a user-friendly error message for common CUDA errors."""
-    # Strip the byte string markers if present
-    if isinstance(error_name, bytes):
-        error_name = error_name.decode("utf-8")
-    elif (
-        isinstance(error_name, str)
-        and error_name.startswith("b'")
-        and error_name.endswith("'")
-    ):
-        error_name = error_name[2:-1]
+    error_name = _normalize_cuda_error_name(error_name)
 
     env_manager = get_current_env_manager()
     target_arch = env_manager.arch if env_manager is not None else "unknown"
     arch_is_relevant = error_name in _ARCH_RELATED_CUDA_ERRORS
+    invalid_launch_value_suggestion = (
+        "Check `.launch(...)`: grid, block, dynamic shared memory, stream, "
+        "and attributes. Keep block.x * block.y * block.z <= "
+        "maxThreadsPerBlock. If only threadIdx.x is used, launch with "
+        "block=(threads, 1, 1)."
+    )
+    if error_name in _CUDA_INVALID_LAUNCH_VALUE_ERRORS:
+        message = f"CUDA launch failed: {error_name} ({error_code})"
+        return message, "", invalid_launch_value_suggestion
 
     additional_info = {
         "CUDA_ERROR_INVALID_SOURCE": (
@@ -254,10 +292,6 @@ def _get_friendly_cuda_error_message(
         "CUDA_ERROR_INVALID_CONTEXT": (
             f"{Colors.RED}❌ CUDA context not initialized.{Colors.RESET}\n\n"
         ),
-        "CUDA_ERROR_INVALID_VALUE": (
-            f"{Colors.RED}⚠️ Invalid parameter passed to CUDA operation.{Colors.RESET}\n\n"
-            f"{Colors.YELLOW}This is likely a bug - please report it with:{Colors.RESET}"
-        ),
         "CUDA_ERROR_ILLEGAL_INSTRUCTION": (
             f"{Colors.RED}❌ A running kernel executed an illegal instruction.{Colors.RESET}\n\n"
             f"{Colors.YELLOW}This is a fault inside the kernel, not an architecture mismatch.{Colors.RESET}\n\n"
@@ -267,7 +301,7 @@ def _get_friendly_cuda_error_message(
         ),
     }
 
-    error_suggestions = {
+    error_suggestions: Dict[str, Union[str, tuple[str, ...]]] = {
         "CUDA_ERROR_INVALID_CONTEXT": (
             "1. Check if CUDA context is properly initialized under your environment",
             "2. Initialize CUDA context with `cuda.cuInit(0)` or `cutlass.cuda.initialize_cuda_context()`",
@@ -299,11 +333,6 @@ def _get_friendly_cuda_error_message(
             "1. Check CUDA driver installation",
             "2. call `cuda.cuInit(0)` before any other CUDA operation",
             "3. Run nvidia-smi to confirm GPU status",
-        ),
-        "CUDA_ERROR_INVALID_VALUE": (
-            "1. Your GPU model",
-            "2. SM ARCH setting",
-            "3. Steps to reproduce",
         ),
         "cudaErrorInsufficientDriver": (
             "1. Run nvidia-smi to confirm CUDA driver version",
@@ -373,15 +402,46 @@ class DSLCudaRuntimeError(DSLBaseError):
 
     # Inherits all logic from DSLRuntimeError; override methods if you need
     # specialized behavior or formatting for runtime errors.
-    def __init__(self, error_code: int, error_name: Union[str, bytes]) -> None:
+    def __init__(
+        self,
+        error_code: int,
+        error_name: Union[str, bytes],
+        runtime_detail: Optional[str] = None,
+        suggestion: Union[str, list[str], tuple[str, ...], None] = None,
+    ) -> None:
         self._error_code = error_code
         self._error_name = error_name
-        message, debug_info, suggestion = _get_friendly_cuda_error_message(
+        normalized_error_name = _normalize_cuda_error_name(error_name)
+        concise_launch_error = (
+            normalized_error_name in _CUDA_INVALID_LAUNCH_VALUE_ERRORS
+        )
+        if concise_launch_error:
+            self.code = "CUDA_LAUNCH_INVALID_CONFIG"
+        message, debug_info, default_suggestion = _get_friendly_cuda_error_message(
             error_code, error_name
         )
+        selected_suggestion = default_suggestion if suggestion is None else suggestion
+        if runtime_detail:
+            if concise_launch_error:
+                message = f"{message.rstrip()}\n\n{runtime_detail.strip()}"
+                if selected_suggestion:
+                    message += "\n"
+            else:
+                debug_info = (
+                    f"\n- {Colors.BOLD}CUDA runtime detail:{Colors.RESET} "
+                    f"{runtime_detail.strip()}\n{debug_info.lstrip()}"
+                )
+        elif concise_launch_error:
+            message = (
+                f"{message.rstrip()}\n\n"
+                "CUDA rejected the launch configuration before running the kernel."
+            )
 
         super().__init__(
-            message, error_code=error_code, context=debug_info, suggestion=suggestion
+            message,
+            error_code=None if concise_launch_error else error_code,
+            context=debug_info,
+            suggestion=selected_suggestion,
         )
 
 
@@ -592,6 +652,25 @@ class DSLUserCodeError(DSLBaseError):
             suggestion=suggestion,
             context=context,
         )
+
+
+class DSLUserCodeRuntimeError(DSLUserCodeError, RuntimeError):
+    """``DSLUserCodeError`` that is also catchable as ``RuntimeError``.
+
+    Raise this (instead of plain ``DSLUserCodeError``) when replacing a raw
+    ``RuntimeError`` that user code may already catch — e.g. the MLIR
+    bindings' "requires a Context" error, which trace-time helpers probe
+    with ``except RuntimeError:`` to detect that no context is active.
+    """
+
+
+class DSLUserCodeTypeError(DSLUserCodeError, TypeError):
+    """``DSLUserCodeError`` that is also catchable as ``TypeError``.
+
+    Raise this when replacing a raw ``TypeError`` that user code may already
+    catch — e.g. nanobind overload-resolution failures caused by a missing
+    default MLIR context.
+    """
 
 
 class DSLOperationBuildError(DSLBaseError):

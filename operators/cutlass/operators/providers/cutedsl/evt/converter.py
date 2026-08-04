@@ -27,18 +27,40 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+"""Translate a traced epilogue (DAGIR) into a CuTe DSL EFC epilogue function.
+
+``EFCConverter.convert`` walks the DAGIR produced by tracing the user's plain
+Python epilogue and emits an EFC epilogue function (whose first parameter is
+``efc_config``) that the SM100 ``DenseGemmEFC`` kernel can run.  It uses a
+stack-based interpreter rather than building and ``exec``-ing source code.
+
+Each DAGIR load/store is emitted through the ``make_load`` / ``make_store`` /
+``remap_and_load`` factory helpers, which bake in the per-tensor data
+transport.  The user selects that transport with the public
+``arguments.epilogue.Transport`` / ``Load`` / ``Store`` surface; the
+``_load_via`` / ``_store_via`` helpers bridge it to the EFC framework's own
+``efc.Transport`` enum (same string values).  Names with no descriptor default
+to ``Transport.TMA``.
+
+The EFC framework is imported as ``from ...evt import efc`` -- a verbatim copy
+of the upstream example package (see ``evt/efc/``); do not edit it here.
+"""
 
 from collections.abc import Callable
 
+from cutlass.operators.arguments.epilogue import Load, Store
 from cutlass.operators.fusion.ir import DAGIR, LoadNode, StoreNode, TopoVisitorNode
 from cutlass.operators.fusion.ir.load_nodes import (
     ColumnBroadcastImpl,
     RowBroadcastImpl,
     ScalarBroadcastImpl,
 )
-from cutlass.operators.fusion.ir.store_nodes import ReductionImplBase
+from cutlass.operators.fusion.ir.store_nodes import (
+    ReductionImplBase,
+    ScalarReductionImpl,
+)
 from cutlass.operators.fusion.library import ActivationOp, FunctionalOp
-from cutlass.operators.providers.cutedsl.evt import common_efc
+from cutlass.operators.providers.cutedsl.evt import efc
 from cutlass.operators.status import Status
 
 OpToCuteImplStr = {
@@ -71,26 +93,68 @@ OpToCuteImpl = {
 }
 
 
-def store(efc_config, x, y):
-    x.store(y)
+def make_store(via=efc.Transport.TMA, num_bits_per_copy=None):
+    """Return a store op that writes ``y`` into ``x`` via the given transport."""
+
+    def _op(efc_config, x, y):
+        x.store(y, via=via, num_bits_per_copy=num_bits_per_copy)
+
+    return _op
 
 
-def load(efc_config, x):
-    return x.load()
+# Maps the DAGIR register-side reduction FunctionalOp to the string name of the
+# matching ``efc_config`` attribute (e.g. ``efc_config.ADD``).  We store the
+# attribute name rather than the value itself so that EFC analysis passes, which
+# inspect ``efc_config`` attributes symbolically before an MLIR context is
+# available, see the same token the kernel body uses.
+_DAGIR_REG_REDUCE_TO_EFC_OP: dict[FunctionalOp, str] = {
+    FunctionalOp.Plus: "ADD",
+    FunctionalOp.Maximum: "MAX",
+    FunctionalOp.Minimum: "MIN",
+}
 
 
-def remap_and_load(source_mode_map):
+def make_scalar_reduce(efc_op_name: str):
+    """Return a reduce op that atomically folds tile ``y`` into scalar ``x``.
+
+    ``x.remap_modes[:, :, :]`` expands the scalar destination to the full
+    (M, N, L) tile shape so that the EFC warpgroup reduction pipeline can
+    accumulate every element of ``y`` into it.  The ``[:, :, :]`` subscript
+    sets ``source_mode_map = (True, True, True)``, which is the EFC convention
+    for an all-broadcast (scalar) destination.
+    """
+
+    def _op(efc_config, x, y):
+        op = getattr(efc_config, efc_op_name)
+        x.remap_modes[:, :, :].reduce(y, op=op)
+
+    return _op
+
+
+def make_load(via=efc.Transport.TMA, num_bits_per_copy=None):
+    """Return a load op that reads ``x`` via the given transport."""
+
+    def _op(efc_config, x):
+        return x.load(via=via, num_bits_per_copy=num_bits_per_copy)
+
+    return _op
+
+
+def remap_and_load(source_mode_map, via=efc.Transport.TMA, num_bits_per_copy=None):
     """Return a closure that applies remap_modes with the given source_mode_map, then loads.
 
     Calls ``Configuration.remap_modes()`` directly with a ``source_mode_map``
     tuple containing ``True`` for broadcast dimensions and integer indices for
     real source dimensions.  This bypasses the ``_RemapModesAccessor``
     subscript helper (which converts ``slice(None)`` → ``True``) since we
-    already have the canonical ``source_mode_map`` form.
+    already have the canonical ``source_mode_map`` form.  ``via`` /
+    ``num_bits_per_copy`` select the read transport for the broadcast load.
     """
 
     def _op(efc_config, x):
-        return efc_config.remap_modes(source=x, source_mode_map=source_mode_map).load()
+        return efc_config.remap_modes(source=x, source_mode_map=source_mode_map).load(
+            via=via, num_bits_per_copy=num_bits_per_copy
+        )
 
     return _op
 
@@ -186,9 +250,13 @@ def _build_source_mode_map(broadcast_stride, original_rank: int) -> tuple:
 
 
 class EFCConverter:
-    """Helper class to translate from DAGIR to the CuTe DSL epilogue visitor tree (EVT) structure
+    """Translate a traced epilogue (DAGIR) into an EFC epilogue function.
 
-    The CuTe DSL EVT structure is as follows for a (alpha * accum + beta * C) epilogue:
+    The emitted function takes ``efc_config`` first, then the epilogue's
+    supplemental parameters in ``parameter_names`` order.  For an
+    ``alpha * accum + beta * C`` epilogue with ``parameter_names =
+    ["C", "alpha", "beta", "D"]`` the function is equivalent to::
+
         def epi(efc_config, C, alpha, beta, D):
             C_val = C.load()
             alpha_val = alpha.load()
@@ -197,6 +265,11 @@ class EFCConverter:
             compute_1_val = beta_val * C_val
             compute_2_val = compute_0_val + compute_1_val
             D.store(compute_2_val)
+
+    In practice ``convert`` does not emit Python source; it builds a list of
+    operation tuples and replays them over a stack inside a generic ``epi``
+    interpreter, then names that interpreter with ``create_named_epilogue``.
+    See ``convert`` for the full encoding.
     """
 
     @staticmethod
@@ -204,12 +277,16 @@ class EFCConverter:
         dag_ir: DAGIR,
         parameter_names: list[str],
         parameter_tensors: dict | None = None,
+        transports: dict | None = None,
     ) -> Callable:
         """Converts the DAGIR to a callable epilogue function supported by CuTe DSL EFC.
 
         :param parameter_tensors: Optional dict mapping parameter names to
             their original user-provided tensor/scalar values.  Used to
             determine the original rank of broadcast tensors.
+        :param transports: Optional dict mapping parameter names to their
+            ``Load``/``Store`` transport descriptors.  Names absent from the
+            dict default to ``Transport.TMA``.
 
         The simplest way to do this would be to convert the DAGIR into the equivalent
         string representation of the EFC function and call `exec` on it to get the callable.
@@ -331,12 +408,33 @@ class EFCConverter:
         # Track which parameters are broadcast sources.
         broadcast_source_names = set()
 
+        # Per-tensor transport lookup from the user's Load/Store descriptors.
+        # A name absent from the map (or wrapped with the opposite direction)
+        # falls back to the default TMA transport.
+        transports = transports or {}
+
+        # Bridge the public ``arguments.Transport`` to the EFC framework's own
+        # ``Transport`` enum (same string values) -- the framework stores ``via``
+        # without coercing, so it must receive its own enum member.
+        def _load_via(name):
+            descriptor = transports.get(name)
+            if isinstance(descriptor, Load):
+                return efc.Transport(descriptor.via.value), descriptor.num_bits_per_copy
+            return efc.Transport.TMA, None
+
+        def _store_via(name):
+            descriptor = transports.get(name)
+            if isinstance(descriptor, Store):
+                return efc.Transport(descriptor.via.value), descriptor.num_bits_per_copy
+            return efc.Transport.TMA, None
+
         for meta in dag_ir.node_metas_topological_order():
             if isinstance(meta, LoadNode) and getattr(meta, "is_output", False):
                 assert meta.name == "accum"
                 # Handle the special case where the accumulator is also being written out
                 # This occurs in DAG IR as a load node with is_output = True
-                ops.append((store, idx(accum_out_name), idx("accum")))
+                via, nbits = _store_via("accum")
+                ops.append((make_store(via, nbits), idx(accum_out_name), idx("accum")))
                 debug_string_ops.append("accum_out_name.store(accum)")
                 cur_idx += 1
             if isinstance(meta, LoadNode):
@@ -374,14 +472,21 @@ class EFCConverter:
                                 orig_rank = len(t.shape)
                         source_mode_map = _build_source_mode_map(stride, orig_rank)
                         broadcast_source_names.add(meta.name)
-                        ops.append((remap_and_load(source_mode_map), idx(meta.name)))
+                        via, nbits = _load_via(meta.name)
+                        ops.append(
+                            (
+                                remap_and_load(source_mode_map, via, nbits),
+                                idx(meta.name),
+                            )
+                        )
                         debug_string_ops.append(
                             f"{meta.name} = {meta.name}"
                             f".remap_modes[{source_mode_map}].load()"
                         )
                         add_name(meta.name)
                     else:
-                        ops.append((load, idx(meta.name)))
+                        via, nbits = _load_via(meta.name)
+                        ops.append((make_load(via, nbits), idx(meta.name)))
                         debug_string_ops.append(f"{meta.name} = {meta.name}.load()")
 
                         # Update the entry in name_to_idx to the index of the loaded value
@@ -393,8 +498,18 @@ class EFCConverter:
                         f"Store node {meta.name} has {len(children)} children, but only one is supported"
                     )
                 child = children[0]
-                ops.append((store, idx(meta.name), idx(child)))
-                debug_string_ops.append(f"{meta.name}.store({child})")
+                if isinstance(meta.underlying_impl, ScalarReductionImpl):
+                    efc_op_name = _DAGIR_REG_REDUCE_TO_EFC_OP[meta.reg_reduce_fn]
+                    ops.append(
+                        (make_scalar_reduce(efc_op_name), idx(meta.name), idx(child))
+                    )
+                    debug_string_ops.append(
+                        f"{meta.name}.remap_modes[:,:,:].reduce({child}, op=efc_config.{efc_op_name})"
+                    )
+                else:
+                    via, nbits = _store_via(meta.name)
+                    ops.append((make_store(via, nbits), idx(meta.name), idx(child)))
+                    debug_string_ops.append(f"{meta.name}.store({child})")
 
                 # We want to map the following sequence:
                 #   def epi(accum, x, y):
@@ -445,9 +560,7 @@ class EFCConverter:
             # Restore the original name of the accumulator
             parameter_names[accum_out_loc] = "accum"
 
-        named_epi = common_efc.create_named_epilogue(
-            ["efc_config", *parameter_names], epi
-        )
+        named_epi = efc.create_named_epilogue(["efc_config", *parameter_names], epi)
         # Attach metadata about which parameters are broadcast sources so the
         # kernel can squeeze them before entering the JIT context.
         named_epi._broadcast_source_names = broadcast_source_names
@@ -455,14 +568,23 @@ class EFCConverter:
 
     @staticmethod
     def supports(dag_ir: DAGIR) -> Status:
-        """Checks if the DAGIR is supported by CuTe DSL EFC.
-        """
-        # Currently do not support TopVisitorNode and reductions.
+        """Checks if the DAGIR is supported by CuTe DSL EFC."""
         for meta in dag_ir.node_metas_topological_order():
             if isinstance(meta, TopoVisitorNode):
                 return Status.fail("TopoVisitorNode is not supported")
-            if isinstance(meta.underlying_impl, ReductionImplBase):
-                return Status.fail("ReductionImplBase is not supported")
+            if isinstance(meta.underlying_impl, ReductionImplBase) and not isinstance(
+                meta.underlying_impl, ScalarReductionImpl
+            ):
+                return Status.fail(
+                    f"{type(meta.underlying_impl).__name__} is not supported; "
+                    "only ScalarReductionImpl (all-MNL reduction) is"
+                )
+            if isinstance(meta.underlying_impl, ScalarReductionImpl):
+                if meta.reg_reduce_fn not in _DAGIR_REG_REDUCE_TO_EFC_OP:
+                    return Status.fail(
+                        f"Scalar reduction operator {meta.reg_reduce_fn!r} is not supported; "
+                        "use sum(), max(), or min()"
+                    )
         return Status.success()
 
     @staticmethod

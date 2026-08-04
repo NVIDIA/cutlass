@@ -21,6 +21,8 @@ Notable unsupported features
 - preferred clusters
 - Windows support
 
+- Task Scheduling support for existing CuTe DSL and extension (``cute_ext``) kernels
+
 Programming Model
 ---------------------
 
@@ -240,6 +242,18 @@ Programming Model
       supported. Other ``TiledCopy`` ops will raise ``NotImplementedError``. Support
       for additional copy ops may be added in future releases.
 
+
+**Task Scheduling (TS) and FrontendNext**
+    Task Scheduling uses the FrontendNext compile selector
+    (``cute.compile[FrontendNext]``), which traces kernels with the staged
+    Python frontend. This frontend is required for TS examples and is still
+    being expanded to cover the wider CuTe DSL ecosystem.
+
+    Task Scheduling support with FrontendNext is currently validated for newly
+    written Primitives-only kernels.
+
+    Existing CuTe DSL and extension (``cute_ext``) kernels are not supported with
+    FrontendNext compile flow in this release.
 
 **Global variables**
     CuTe DSL does not support global variables.

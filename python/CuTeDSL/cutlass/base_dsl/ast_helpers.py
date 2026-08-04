@@ -31,6 +31,21 @@ from .common import *
 from .diagnostics import DiagId
 from .env_manager import get_str_env_var
 
+from .pyir_runtime import (  # noqa: F401 (re-exported via wildcard)
+    pyir_assign,
+    pyir_read,
+    pyir_function_scope,
+    pyir_promote_loop_body_arg,
+    _PYIR_SKIP,
+    _pyir_pre_subscript_assign,
+    _pyir_post_subscript_read,
+    _pyir_check_no_complex_m2m_call,
+)
+from .multi_stage_manager import (  # noqa: F401 (re-exported via wildcard)
+    enter_constexpr_loop,
+    exit_constexpr_loop,
+)
+
 
 class Executor:
     """
@@ -770,5 +785,3 @@ def fstring_decompose(
         else:
             raise DSLUserCodeError(DiagId.UNSUP_FSTRING)
     return (format_string, *dynamic_args)
-
-

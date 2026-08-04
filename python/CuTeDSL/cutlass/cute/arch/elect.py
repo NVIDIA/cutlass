@@ -135,15 +135,15 @@ def elect_one(
     :rtype: IfOpRegion
 
     .. seealso::
-       - :func:`cute.arch.mbarrier_init` - Requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx` - Requires elect_one
-       - :func:`cute.arch.mbarrier_arrive_and_expect_tx` - Requires elect_one
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_arrive_and_expect_tx <cutlass.cute.arch.mbarrier_arrive_and_expect_tx>` - Requires elect_one
        - PTX ISA documentation on ``elect.sync``
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
-    from cutlass.base_dsl.arch import Arch
+    from cutlass import base_dsl
 
-    BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
+    BaseDSL._get_dsl().check_arch(lambda arch: arch >= base_dsl.Arch.sm_90)
     is_thread_leader = _nvvm.elect_sync()
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
     return IfOpRegion(if_op.then_block, loc=loc, ip=ip)

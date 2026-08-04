@@ -14,8 +14,8 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple, Type, Union, cast
 
-from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL, T, DSLRuntimeError
+from cutlass import base_dsl
+from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL, T, DSLRuntimeError
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
@@ -23,7 +23,7 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 import cutlass._mlir.dialects.vector as vector_d
 from typing_extensions import deprecated
 
-from ..common import OpError, normalize_field_to_ir_name
+from ..common import normalize_field_to_ir_name
 from ..common import OperandMajorMode as _OperandMajorMode
 from ... import core, atom
 from ...core import _pack_shape, rank, depth
@@ -67,11 +67,11 @@ _F8F6F4_TYPES = [
 ####################################################################################################
 
 
-def _tcgen05_arch_suggestion(arch: Arch, warp_op_hint: str) -> str:
+def _tcgen05_arch_suggestion(arch: base_dsl.Arch, warp_op_hint: str) -> str:
     """tcgen05 (TMEM / UMMA / tcgen05.alloc) is datacenter-Blackwell-only hardware;
     consumer Blackwell (sm_120 / sm_121) lacks it, so redirect those users to the
     warp-level mma.sync equivalents instead of the generic CUTE_DSL_ARCH hint."""
-    if arch.is_family_of(Arch.sm_120f) or arch.is_family_of(Arch.sm_121f):
+    if arch.is_family_of(base_dsl.Arch.sm_120f) or arch.is_family_of(base_dsl.Arch.sm_121f):
         return (
             f"tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consumer "
             f"Blackwell (sm_120 / sm_121) use the warp-level {warp_op_hint}; see the "
@@ -297,42 +297,37 @@ class MmaOp(Tcgen05MmaOp):
     a_major_mode: Union[_OperandMajorMode, OperandMajorMode]
     b_major_mode: Union[_OperandMajorMode, OperandMajorMode]
 
-    admissible_archs = Arch.filter(
-        lambda arch: arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)
+    admissible_archs = base_dsl.Arch.filter(
+        lambda arch: arch.is_family_of(base_dsl.Arch.sm_100f) or arch.is_family_of(base_dsl.Arch.sm_110f)
     )
 
     def __post_init__(self) -> None:
         # Verify arch
         arch = BaseDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
                 suggestion=_tcgen05_arch_suggestion(arch, "cute.nvgpu.warp.MmaF16BF16Op"),
             )
         # Verify that the user provided enum values
         if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'cta_group' Op parameter to be a tcgen05.CtaGroup instance",
             )
         if not isinstance(self.a_src, OperandSource):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_src' Op parameter to be a tcgen05.OperandSource instance",
             )
         if not isinstance(self.a_major_mode, _OperandMajorMode) and not isinstance(
             self.a_major_mode, OperandMajorMode
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
             )
         if not isinstance(self.b_major_mode, _OperandMajorMode) and not isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
             )
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
@@ -354,40 +349,35 @@ class MmaOp(Tcgen05MmaOp):
         # Verify the instruction shape
         shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
         if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expected a flat rank 2 or 3 tuple for the 'shape_mnk' Op parameter, "
                 f"but got {self.shape_mnk}",
             )
         m, n = shape_mnk_tuple[0], shape_mnk_tuple[1]
         if self.cta_group == CtaGroup.ONE:
             if m not in [64, 128]:
-                raise OpError(self, f"expects the M-mode to be 64 or 128, but got {m}")
+                raise DSLUserCodeError(f"expects the M-mode to be 64 or 128, but got {m}")
             if self.b_dtype.width == 8 and (self.b_major_mode == _OperandMajorMode.MN):
                 if (n < 16) or (n > 256) or (n % 16 != 0):
-                    raise OpError(
-                        self,
+                    raise DSLUserCodeError(
                         f"expects the N-mode to satisfy 16 <= N <= 256 and N % 16 == 0, but got {n}",
                     )
             else:
                 if (n < 8) or (n > 256) or (n % 8 != 0):
-                    raise OpError(
-                        self,
+                    raise DSLUserCodeError(
                         f"expects the N-mode to satisfy 8 <= N <= 256 and N % 8 == 0, but got {n}",
                     )
         else:
             if m not in [128, 256]:
-                raise OpError(self, f"expects the M-mode to be 128 or 256, but got {m}")
+                raise DSLUserCodeError(f"expects the M-mode to be 128 or 256, but got {m}")
             if self.b_dtype.width == 8 and (self.b_major_mode == _OperandMajorMode.MN):
                 if (n < 32) or (n > 256) or (n % 32 != 0):
-                    raise OpError(
-                        self,
+                    raise DSLUserCodeError(
                         f"expects the N-mode to satisfy 32 <= N <= 256 and N % 32 == 0, but got {n}",
                     )
             else:
                 if (n < 16) or (n > 256) or (n % 16 != 0):
-                    raise OpError(
-                        self,
+                    raise DSLUserCodeError(
                         f"expects the N-mode to satisfy 16 <= N <= 256 and N % 16 == 0, but got {n}",
                     )
 
@@ -414,8 +404,7 @@ class MmaOp(Tcgen05MmaOp):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"Expected affine layout for {self._make_trait()}'s operand A, "
                 f"but got composed layout instead: {input.layout}"
                 f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
@@ -432,8 +421,7 @@ class MmaOp(Tcgen05MmaOp):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"Expected affine layout for {self._make_trait()}'s operand B, "
                 f"but got composed layout instead: {input.layout}"
                 f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
@@ -526,18 +514,17 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
     b_major_mode: Union[_OperandMajorMode, OperandMajorMode]
 
     admissible_archs = [
-        Arch.sm_100a,
-        Arch.sm_100f,
-        Arch.sm_103a,
-        Arch.sm_110a,
+        base_dsl.Arch.sm_100a,
+        base_dsl.Arch.sm_100f,
+        base_dsl.Arch.sm_103a,
+        base_dsl.Arch.sm_110a,
     ]
 
     def __post_init__(self) -> None:
         # Verify arch
         arch = BaseDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
                 suggestion=_tcgen05_arch_suggestion(
                     arch, "cute.nvgpu.warp.MmaMXF4Op / MmaMXF4NVF4Op / MmaMXF8Op"
@@ -545,27 +532,23 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
             )
         # Verify that the user provided enum values
         if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'cta_group' Op parameter to be a tcgen05.CtaGroup instance",
             )
         if not isinstance(self.a_src, OperandSource):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_src' Op parameter to be a tcgen05.OperandSource instance",
             )
         if not isinstance(self.a_major_mode, _OperandMajorMode) and not isinstance(
             self.a_major_mode, OperandMajorMode
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
             )
         if not isinstance(self.b_major_mode, _OperandMajorMode) and not isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or tcgen05.OperandMajorMode (deprecated) instance",
             )
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
@@ -579,32 +562,28 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
         # Verify the instruction shape
         shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
         if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expected a flat rank 2 or 3 tuple for the 'shape_mnk' Op parameter, "
                 f"but got {self.shape_mnk}",
             )
         m, n = shape_mnk_tuple[0], shape_mnk_tuple[1]
         if self.cta_group == CtaGroup.ONE:
             if m != 128:
-                raise OpError(self, f"expects the M-mode to be 128, but got {m}")
+                raise DSLUserCodeError(f"expects the M-mode to be 128, but got {m}")
 
             if (n < 8) or (n > 256) or (n % 8 != 0):
-                raise OpError(
-                    self,
+                raise DSLUserCodeError(
                     f"expects the N-mode to satisfy 8 <= N <= 256 and N % 8 == 0, but got {n}",
                 )
         else:
             if m not in [128, 256]:
-                raise OpError(self, f"expects the M-mode to be 128 or 256, but got {m}")
+                raise DSLUserCodeError(f"expects the M-mode to be 128 or 256, but got {m}")
             if (n < 16) or (n > 256) or (n % 16 != 0):
-                raise OpError(
-                    self,
+                raise DSLUserCodeError(
                     f"expects the N-mode to satisfy 16 <= N <= 256 and N % 16 == 0, but got {n}",
                 )
         if self.sf_vec_size not in [16, 32]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the scale factor vector size to be 16 or 32, but got {self.sf_vec_size}",
             )
 
@@ -633,8 +612,7 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"Expected affine layout for {self._make_trait()}'s operand A, "
                 f"but got composed layout instead: {input.layout}"
                 f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
@@ -651,8 +629,7 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"Expected affine layout for {self._make_trait()}'s operand B, "
                 f"but got composed layout instead: {input.layout}"
                 f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
@@ -823,8 +800,7 @@ class MmaTF32Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -949,15 +925,13 @@ class MmaF16BF16Op(MmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Float16, BFloat16]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'ab_dtype' Op parameter to be one of Float16 or BFloat16",
             )
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
         # Accumulator data type verification
         if self.acc_dtype not in [Float16, Float32]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         # Instruction shape verification
@@ -967,8 +941,7 @@ class MmaF16BF16Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1098,8 +1071,7 @@ class MmaI8Op(MmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Int8, Uint8]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'ab_dtype' Op parameter to be one of Int8 or Uint8",
             )
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
@@ -1110,8 +1082,7 @@ class MmaI8Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1245,15 +1216,13 @@ class MmaFP8Op(MmaOp):
             Float8E5M2,
             Float8E4M3FN,
         ]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'ab_dtype' Op parameter to be one of Float8E5M2, Float8E4M3FN"
             )
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
         # Accumulator data type verification
         if self.acc_dtype not in [Float16, Float32]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         # Instruction shape verification
@@ -1263,8 +1232,7 @@ class MmaFP8Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1386,21 +1354,18 @@ class MmaF8F6F4Op(MmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in _F8F6F4_TYPES:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_dtype' Op parameter to be one of "
                 "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
             )
         if self.b_dtype not in _F8F6F4_TYPES:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_dtype' Op parameter to be one of "
                 "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
             )
         # Accumulator data type verification
         if self.acc_dtype not in [Float16, Float32]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         # Instruction shape verification
@@ -1410,8 +1375,7 @@ class MmaF8F6F4Op(MmaOp):
             shape_mnk_tuple = (*shape_mnk_tuple, instruction_k)
             object.__setattr__(self, "shape_mnk", shape_mnk_tuple)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1545,8 +1509,7 @@ class MmaMXF8Op(BlockScaledMmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Float8E5M2, Float8E4M3FN]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'ab_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
             )
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
@@ -1557,8 +1520,7 @@ class MmaMXF8Op(BlockScaledMmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1688,14 +1650,12 @@ class MmaMXF8F6F4Op(BlockScaledMmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in _F8F6F4_TYPES:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_dtype' Op parameter to be one of "
                 "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
             )
         if self.b_dtype not in _F8F6F4_TYPES:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_dtype' Op parameter to be one of "
                 "Float8E5M2, Float8E4M3FN, Float6E3M2FN, Float6E2M3FN, or Float4E2M1FN",
             )
@@ -1707,8 +1667,7 @@ class MmaMXF8F6F4Op(BlockScaledMmaOp):
             shape_mnk_tuple = (*shape_mnk_tuple, instruction_k)
             object.__setattr__(self, "shape_mnk", shape_mnk_tuple)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1840,8 +1799,7 @@ class MmaMXF4Op(BlockScaledMmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -1969,8 +1927,7 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
     def _verify(self) -> None:
         # Scale Factor data type verification
         if self.sf_dtype not in [Float8E8M0FNU, Float8E4M3FN]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'sf_dtype' Op parameter to be one of Float8E8M0FNU",
             )
         # Instruction shape verification
@@ -1980,8 +1937,7 @@ class MmaMXF4NVF4Op(BlockScaledMmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -2114,8 +2070,7 @@ class SM103MmaMXF4Op(BlockScaledMmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -2241,8 +2196,7 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
     def _verify(self) -> None:
         # Scale Factor data type verification
         if self.sf_dtype not in [Float8E8M0FNU, Float8E4M3FN]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'sf_dtype' Op parameter to be one of Float8E8M0FNU",
             )
         # Instruction shape verification
@@ -2252,8 +2206,7 @@ class SM103MmaMXF4NVF4Op(BlockScaledMmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )

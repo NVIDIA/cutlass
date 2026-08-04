@@ -9,7 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import TYPE_CHECKING
+
 # Local module imports
+from .enums import AddressSpace, Arch
 from . import vector as vector
 from .dsl import *
 from .pointer import *

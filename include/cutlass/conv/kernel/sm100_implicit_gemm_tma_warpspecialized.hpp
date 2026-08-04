@@ -412,7 +412,7 @@ public:
 
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
-    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
+    static_assert(SharedStorageSize <= ArchTag::kSharedMemoryCapacityBytes, "SMEM usage exceeded capacity.");
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop(params.mainloop, cluster_shape, cta_rank_in_cluster);
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);

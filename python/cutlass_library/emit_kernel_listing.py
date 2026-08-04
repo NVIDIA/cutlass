@@ -395,7 +395,8 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                       f"({block_scaled_filter_regex_2sm})|" \
                       f"({sm103_block_scaled_filter_regex_1sm})|" \
                       f"({sm103_block_scaled_filter_regex_2sm})"
-    elif arch in ["120a", "120f", "121a", "121f"]:
+    elif arch in ["120a", "120f", "121a", "121f",
+                 ]:
 
       # blockscaled sm120_mma kernels
       blockscaled_sm120_mma_kernel_cta_tiles = [
@@ -522,7 +523,8 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
     problem_waves = [0.5, 2.5]
 
-    if arch in ["120a", "120f", "121a", "121f"]:
+    if arch in ["120a", "120f", "121a", "121f",
+               ]:
       kernel_filter = f"({filter_regex_sm120_mma})"
     else:
       kernel_filter = f"({filter_regex_sm100_mma})"
@@ -865,6 +867,13 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                   if hashed_kernel_name not in auditlist_csv_map:
                     audit_row = get_kernel_features(operation, hashed_kernel_name, dynamic_datatype, runtime_input_datatype)
                     auditlist_csv_map[hashed_kernel_name] = audit_row
+
+  if kernels_emitted == 0 or testcase_counter == 0:
+    raise RuntimeError(
+      f"Generated an empty SM{arch} {mode} testlist: "
+      f"{kernels_emitted} kernels matched out of {kernels_total}, "
+      f"producing {testcase_counter} test cases."
+    )
 
   with open(outfile_name, 'w') as testlist_csv:
     csv_writer = csv.writer(testlist_csv, delimiter=',')

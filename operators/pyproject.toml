@@ -48,9 +48,6 @@ torch = [
     "torch-c-dlpack-ext",
 ]
 jax = [
-    # jax[cuda13] first appears in jax>=0.7.0, which dropped Python 3.10
-    # (min is 3.11). So 3.10 gets the CUDA 12 wheels, 3.11+ gets CUDA 13.
-    "jax[cuda12]; python_version < '3.11'",
     "jax[cuda13]; python_version >= '3.11'",
 ]
 test = [

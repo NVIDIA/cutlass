@@ -10,9 +10,9 @@
 # is strictly prohibited.
 import enum
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Type, Union
+from typing import Any, Mapping, Optional, Type
 
-from cutlass.cutlass_dsl import DSLBaseError, DSLRuntimeError
+from cutlass.cutlass_dsl import DSLUserCodeError, DSLRuntimeError
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
@@ -25,7 +25,6 @@ from abc import ABC, abstractmethod
 __all__ = [
     "OperandMajorMode",
     "OutputMajorMode",
-    "OpError",
     "normalize_field_to_ir_name",
     "MmaUniversalOp",
     "MmaUniversalTrait",
@@ -133,27 +132,6 @@ def normalize_field_to_ir_name(field: Any, admissible_fields: Any) -> str:
     )
 
 
-class OpError(DSLBaseError):
-    """
-    An exception class for Op construction errors.
-    """
-
-    def __init__(
-        self,
-        op: Union[atom.Op, atom.Trait],
-        message: str,
-        suggestion: Optional[str] = None,
-    ) -> None:
-        if suggestion is None:
-            # Default suggestion
-            suggestion = "Check your Op construction code"
-        super().__init__(
-            message,
-            error_code=f"{op.__class__.__name__} error",
-            suggestion=suggestion,
-        )
-
-
 ####################################################################################################
 #
 # MMA Ops and Traits
@@ -179,8 +157,7 @@ class MmaUniversalOp(atom.MmaOp):
 
     def __post_init__(self) -> None:
         if self.abacc_dtype not in [Float16, Float32, Float64]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'abacc_dtype' Op parameter to be one of Float16, Float32, or Float64",
             )
 

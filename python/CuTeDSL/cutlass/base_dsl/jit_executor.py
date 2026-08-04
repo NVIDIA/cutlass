@@ -228,6 +228,9 @@ def _is_pointer_annotation(annotation: object) -> bool:
     if annotation is None:
         return False
 
+    if isinstance(annotation, t.PointerMeta):
+        return True
+
     if type(annotation).__name__ == "TypedPointer":
         return True
 

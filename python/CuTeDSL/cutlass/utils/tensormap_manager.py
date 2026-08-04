@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from cutlass.cutlass_dsl import dsl_user_op
 
 import cutlass.cute as cute

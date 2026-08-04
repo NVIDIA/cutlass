@@ -430,16 +430,17 @@ def make_tiled_tma_atom(
     """
     Makes a TMA Copy Atom to copy tiles of a GMEM tensor to/from SMEM buffer with the given Layout.
 
-    Supports ``.tile`` mode (default) and ``.tile::gather4`` mode (when ``gmem_coord_tensor`` is
-    provided with a gather4 op). For the gather4 programming model — coord-tensor layout
-    conventions, examples, and restrictions — see :func:`tma_partition`.
+    Supports ``.tile`` mode (default), ``.tile::gather4`` mode, and
+    ``.tile::scatter4`` mode. Gather4 and scatter4 require ``gmem_coord_tensor``
+    so their index tensor layout can drive the returned TMA tensor shape. For
+    layout conventions, examples, and restrictions, see :func:`tma_partition`.
 
     Given
 
     - a GMEM tensor
     - a SMEM layout
     - a CTA-level Tiler
-    - (optional) a GMEM index tensor for gather4 mode
+    - (optional) a GMEM index tensor for gather4/scatter4 mode
 
     this function figures out the bulk tensor asynchronous copy instruction to use with the maximum
     "TMA vector length" to copy tiles of the GMEM tensor to/from an SMEM buffer with the provided
@@ -610,9 +611,20 @@ def tma_partition(
 
         tAsA, tAgA = tma_partition(atom, cta_coord, cta_layout, sA, gA)
 
-    For gather4 mode, pass a list of ``[gmem_tensor, gmem_coord_tensor]``:
+    For gather4 mode, pass a list of ``[data_coord_tensor, index_tensor]``:
 
         tAsA, tAgA, tAgI = tma_partition(atom, cta_coord, cta_layout, sA, [gA, gI])
+
+    For scatter4 mode, pass the destination coordinate tensor and index tensor
+    as ``[dst_coord_tensor, index_tensor]`` and then pass the returned pair as
+    the destination of :func:`cute.copy`. The same index tensor must be passed
+    to :func:`make_tiled_tma_atom` as ``gmem_coord_tensor`` so the returned TMA
+    tensor shape follows the index tensor shape rather than the destination
+    data tensor shape:
+
+        atom, gB = make_tiled_tma_atom(op, dst, smem_layout, cta_tiler, gmem_coord_tensor=gI)
+        tBsB, tBgB, tBgI = tma_partition(atom, cta_coord, cta_layout, sB, [gB, gI])
+        cute.copy(atom, tBsB, [tBgB[crd], tBgI[crd]])
 
     The 2D gather4 TMA atom (``CopyBulkTensor2DGather4G2SOp``) issues
     ``cp.async.bulk.tensor.2d.tile::gather4``, which loads four rows from a
@@ -668,9 +680,11 @@ def tma_partition(
     :param cta_coord:    CTA coordinate within the cluster
     :param cta_layout:   Layout of CTAs in the cluster
     :param smem_tensor:  The SMEM tensor to partition
-    :param gmem_tensor:  A single GMEM tensor, or a list ``[data_tensor, index_tensor]`` for gather4
+    :param gmem_tensor:  A single GMEM tensor, ``[data_coord_tensor, index_tensor]``
+                          for gather4, or ``[dst_coord_tensor, index_tensor]``
+                          for scatter4
     :return: ``(smem_tensor, gmem_tensor)`` for standard TMA, or
-             ``(smem_tensor, gmem_tensor, gmem_coord_tensor)`` for gather4
+             ``(smem_tensor, coord_tensor, index_tensor)`` for gather4/scatter4
     """
 
     # Normalize src/dst to lists for variadic IR operands

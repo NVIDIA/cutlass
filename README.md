@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.6.1
+# CUTLASS 4.7.0
 
-_CUTLASS 4.6.1 - July 2026_
+_CUTLASS 4.7.0 - Aug 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -43,83 +43,41 @@ To get started quickly - please refer :
   - [CUTLASS C++ Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html).
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html).
 
-# What's New in CUTLASS 4.6
-
-* Release [documentation](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/gemm_performance_measurement_methodology_guidelines.html) that explains how to accurately profiling GEMM performance.
+# What's New in CUTLASS 4.7
 
 ## CuTe DSL
-* New features
-  - New fine-grained compilation API: cute.compile_to that gives control over the what stage the compiler outputs. This feature allows customization of the path from compilation to runtime execution. cute.compile_to is considered experimental in 4.6.
-  - Experimental Feature: Added the IKET (In-Kernel-Event-Tracing) profiler for instrumentation-based intra-kernel activities tracing.  This enables fine-grained profiling and makes it easier to understand persistent, warp-specialized kernels' performance.  This is a beta feature provided by CUTLASS Python until a NVIDIA DevTools product is released, there is no guarantee that this interface will remain stable!
-  - Distribute compiler binaries to accompany cute.compile_to allowing users to build customized compile-execute pipelines outside of Python. Both static and shared compiler and executor/runtime libraries will be provided. Compiler binaries will be uploaded to GitHub with each release.
-  - Supported AoT cross-compilation for aarch64-linux-gnu
-  - Support for two launch attributes: launch completion events (cudaLaunchAttributeLaunchCompletionEvent), for recording an event once all thread blocks have begun executing, and launch programmatic events (cudaLaunchAttributeProgrammaticEvent), for PDL event-based synchronization
-  - Supported auto calculating per-kernel shared memory carveout preference, or use new launch option `preferred_smem_carveout` to set manually.
-  - Auto-deduced smem size for launching kernels
-    - Launch config `smem` now defaults to `None` for auto-calculating kernel shared memory usage, which is recommended unless manual control is required.
-    - Warnings will be raised when the manually set shared memory size is insufficient or exceeds the GPU maximum.
-    - The default shared memory usage calculation aligns with CUDA C++ static shared memory behavior, i.e. summing all allocations additively.
-    - An additional launch option `smem_merge_branch_allocs` is provided to merge shared memory allocations across mutually exclusive code branches, which is recommended for inlined mega-kernels to reduce total footprint.
-  - SASS dumping in DSL is now supported in a self-contained manner - no CUDA toolkit installation required to get nvdisasm
+* New features:
+  - Introduced the Primitives API which provides a lower-level abstraction beneath CuTe enabling Tensor Core programming through SIMT.  This provides a stable, thin wrapper over NVVM operations to use where CuTe abstractions reduce development velocity. Primitives are released as experimental and will evolve based on user feedback.
 
-* Bug fixing and improvements
-  - Add the missing elect_one in cute.copy for bulk copy.
-    - The elect_one required for async bulk copy was missing in cute.copy. It's now generated in cute.copy automatically.
-    - Nesting elect_one will cause functionality issues. Please remove elect_one around cute.copy with async bulk copy.
-    - Elect_one around direct async bulk copy instruction should be kept as it bypasses the cute.copy layer and will not be affected by this fix.
-    - Affected copy atoms are CopyBulkG2SOp, CopyBulkG2SMulticastOp, CopyBulkS2GOp, CopyBulkS2GByteMaskOp, and CopyBulkS2SOp.
-    - An Example showing changes to avoid nesting `elect_one` could be found in this [PR](https://github.com/Dao-AILab/quack/pull/164)
-  - Improvements on linter support with more type ignores cleaned up
-  - Improvements on tvm-ffi CUDA runtime error diagnostics
-  - Improvements on dataclass support for TVM-FFI
-  - Fixed a regression on compilation time
-  - Enhancement on compile time checks to reject mis-aligned smem operand for TMA
-  - Long-deprecated API clean-up, including:
-    - cute.core.ThrMma, please use cute.ThrMma instead
-    - cute.core.ThrCopy, please use cute.ThrCopy instead
-    - cute.make_fragment, please use cute.make_rmem_tensor instead
-  - Fixed a compilation failure on Thor with 12.9 wheel
-  - Fixed a per regression of flash attention v2 on Ampere
-  - Allow custom and multiple FFI call registration for Jax
-  - Fixed following issues
-    - https://github.com/NVIDIA/cutlass/issues/3132
-    - https://github.com/NVIDIA/cutlass/issues/3170
-    - https://github.com/NVIDIA/cutlass/issues/3259
-    - https://github.com/NVIDIA/cutlass/issues/3290
-    - https://github.com/NVIDIA/cutlass/issues/3298
-    - https://github.com/NVIDIA/cutlass/issues/3312
-    - https://github.com/NVIDIA/cutlass/issues/3327
-    - https://github.com/NVIDIA/cutlass/issues/3329
-    - https://github.com/NVIDIA/cutlass/issues/3342
-    - https://github.com/NVIDIA/cutlass/issues/3348
-    - https://github.com/NVIDIA/cutlass/issues/3243
-    - https://github.com/NVIDIA/cutlass/issues/3359
-    - https://github.com/NVIDIA/cutlass/issues/3365
-    - https://github.com/NVIDIA/cutlass/issues/3312
+    NOTE: Primitives is a transitional API until a CUDA Python-like solution is available.
+  - Introduced the Task Scheduling framework.  This provides static analysis of execution schedules for warp-specialized kernels.  Compilation stops when known concurrency issues are detected.  Also provides tools for visualizing resource/task dependencies and analyzing a kernel's schedule.
+  - Improved compiler diagnostics.  Register spills and use of local memory can now be reported at compile time with source line numbers. Preliminary support for detecting classes of NVVM synchronization and execution hazards at compile-time when using the Primitives API.  Better reporting of compiler errors that previously did not include source line numbers.
 
-### CUTLASS Operator API
-* CUTLASS Operator API is a new addition to the CUTLASS Python stack, providing easy interfaces
-to discover CUTLASS Python DSL kernels & integrate them in your code.
-  - `pip install nvidia-cutlass-operators` to get started
-* [Operator API Overview](https://docs.nvidia.com/cutlass/latest/media/docs/operators/overview.html)
-  - See [currently supported kernels](https://docs.nvidia.com/cutlass/latest/media/docs/operators/overview.html#supported-and-upcoming-features)
-* [Basic GEMM tutorial](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/000_gemm.html)
-  - More tutorials [here](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/index.html)
-* [GitHub source](https://github.com/NVIDIA/cutlass/tree/main/operators)
-* [API Reference](https://docs.nvidia.com/cutlass/latest/media/docs/operators/api_reference/index.html)
+This release has been tested against the following packages:
+  - FlashAttention: [main (c75d019)](https://github.com/Dao-AILab/flash-attention/commit/c75d019dea9d910312974417bc28f190dfdda6d9)
+  - Quack: [main (79517ae)](https://github.com/Dao-AILab/quack/commit/79517ae3063946fc2bb26a41bd45ee550e85cb26)
+  - FlashInfer: [main (4b964ec)](https://github.com/flashinfer-ai/flashinfer/commit/4b964ec4e147cf06a39e08b08c43188859df2652)
+  - cuDNN-Frontend:[deveop(5235c2b)](https://github.com/NVIDIA/cudnn-frontend/commit/5235c2bcaa7df095627cf51dcbe53a503d372855)
+  - Pytorch: [main(cf30153)](https://github.com/pytorch/pytorch/commit/cf30153c4c131c8164ee7798e5022d810682e2cb)
 
-## CUTLASS C++
-* Add [example 113](https://github.com/NVIDIA/cutlass/tree/main/examples/113_hopper_gemm_activation_fusion) for Hopper GEMM with activation fusion.
-  - Supports standard and gated activations (e.g., SiLu) with fp8 and fp16 inputs.
-  - Covers both regular GEMM and grouped GEMM variants.
-* Improve SM90 grouped/ptr-array GEMM with EVT support.
-  - Adds the EVT (Epilogue Visitor Tree) plumbing required to do activation, bias, and auxiliary-tensor fusion inside SM90 grouped and ptr-array GEMM kernels.
-* Add ptr-array TMA collective for tensor/token-scaled FP8 grouped GEMM Blackwell SM120/SM121 kernels.
-  - Implement `CollectiveMma` and `CollectiveBuilder` specializations for `MainloopSm120ArrayTmaWarpSpecialized`, enabling ptr-array grouped GEMM (MoE expert dispatch) with tensor- and token-level FP8 scaling.
-  - Corresponding [unit test](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm120_tensorop_gemm/sm120_gemm_f8_f8_f32_tensor_op_group_gemm.cu)
-* Add tileN = 8,16 for Blackwell SM120 blockscale GEMM kernels.
-* Fix `DescriptorIterator::operator+` in `mma_traits_sm100.hpp` to use 32-bit arithmetic on CUDA toolkit version <= 13.3, preserving the high half of the smem descriptor.
-* Fix a CUDA structured bindings header issue.
+## CUTLASS Operator API
+* Custom epilogue fusions enhancements:
+  - Add support for scalar reductions.
+  - Add support to specify data movement strategy for each operand being loaded/stored.
+
+## C++
+* Add implementation of 2-kernel backward targeting at FP8 in [FMHA example](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+  - Added a backward fused multi-head attention benchmark with multi-precision (FP16/FP8), configurable batch/sequence/head sizes, variable-length and masking options, plus built-in correctness checks and runtime/throughput reporting.
+  - The 2-kernel backward has approximately 25% improvement compared to 1-kernel implementation at FP8 without mask on Blackwell SM103 chip.
+* Support CUDA 12.6 and newer structured bindings headers in NVRTC.
+* Add fp32/fp16/bf16/e4m3/e5m2 -> e2m1 (FP4) in NumericArrayConverter.
+* Optimize the E2M1 -> FP16 LUT decode helpers `_e2m1_to_half_x2` and `_e2m1_to_half_x4` by merging mask before prmt.
+* Fix some issues:
+  - Update streamk heuristic algorithm to optimize some kernels with mix cluster sizes.
+  - Avoid integer-sequence get ambiguity in CuTe tuple algorithms.
+  - Fix a TMA creation driver bug: detect if the first 128KiB is mapped in conservatively by checking if the tensor is compact, if so it is valid to flip the bit otherwise zero it.
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.3.
 
 Note: CUTLASS 4.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.

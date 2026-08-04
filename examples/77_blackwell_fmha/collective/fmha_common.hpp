@@ -96,6 +96,27 @@ CUTE_HOST_DEVICE constexpr
 auto
 to_tiled_mma_sm100_ts(
     TiledMMA<MMA_Atom<
+      SM100_MMA_F8F6F4_2x1SM_SS<a_type, b_type, c_type,
+                                      M, N,
+                                      a_major, b_major,
+                                      a_neg, b_neg>,
+      TAs...>, TMs...>) {
+
+  return TiledMMA<MMA_Atom<
+    SM100_MMA_F8F6F4_2x1SM_TS<a_type, b_type, c_type,
+                                M, N,
+                                a_major, b_major,
+                                a_neg, b_neg, UMMA::Saturate::False>,
+    TAs...>, TMs...>{};
+}
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg, class... TAs, class... TMs>
+CUTE_HOST_DEVICE constexpr
+auto
+to_tiled_mma_sm100_ts(
+    TiledMMA<MMA_Atom<
       SM100_MMA_F16BF16_SS<a_type, b_type, c_type,
                     M, N,
                     a_major,
@@ -105,6 +126,28 @@ to_tiled_mma_sm100_ts(
       TAs...>, TMs...>) {
   return TiledMMA<MMA_Atom<
     SM100_MMA_F16BF16_TS<a_type, b_type, c_type,
+                                M, N,
+                                a_major, b_major,
+                                a_neg, b_neg, UMMA::Saturate::False>,
+    TAs...>, TMs...>{};
+}
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg, class... TAs, class... TMs>
+CUTE_HOST_DEVICE constexpr
+auto
+to_tiled_mma_sm100_ts(
+    TiledMMA<MMA_Atom<
+      SM100_MMA_F16BF16_2x1SM_SS<a_type, b_type, c_type,
+                    M, N,
+                    a_major,
+                    b_major,
+                    a_neg,
+                    b_neg>,
+      TAs...>, TMs...>) {
+  return TiledMMA<MMA_Atom<
+    SM100_MMA_F16BF16_2x1SM_TS<a_type, b_type, c_type,
                                 M, N,
                                 a_major, b_major,
                                 a_neg, b_neg, UMMA::Saturate::False>,

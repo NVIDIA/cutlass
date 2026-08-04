@@ -33,6 +33,7 @@
 
 #include <cute/config.hpp>
 #include <cute/tensor_impl.hpp>
+#include <cute/util/print.hpp>                  // cute::print
 #include <cute/arch/mma_sm100_desc.hpp>         // UMMA::Major, SmemDescriptor, DescriptorIterator
 #include <cute/arch/tmem_allocator_sm100.hpp>   // cute::TMEM::, make_tmem_ptr
 #include <cute/numeric/numeric_types.hpp>       // sizeof_bits_v
@@ -472,7 +473,7 @@ struct tmem_sf_frg: tmem_frg_base
       // SFA, 2x2 and 4x1 data path
       // SFB,         4x1 data path
       auto tmem_atom = Layout < Shape< Shape< Shape<Int<SUBPART_DPs>, Int<MMA_MN/SUBPART_DPs>>, REP>,  Shape<Int<MMA_VS>, Int<MMA_NSF>>>,
-                              Stride<Stride<Stride<              _1,                    _512>, _32>, Stride<         _0,         _128>>>{};
+                               Stride<Stride<Stride<              _1,                    _512>, _32>, Stride<         _0,         _128>>>{};
 
       Layout tmem_logical_layout = tiled_product(tmem_atom, make_layout(take<1,R>(tmem_shape)));
       auto final_tmem_layout = composition(tmem_restride, tmem_logical_layout);

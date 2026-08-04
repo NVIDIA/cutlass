@@ -38,12 +38,15 @@ from cutlass.operators.arguments import (
     EpilogueArguments,
     GemmArguments,
     GroupedGemmArguments,
+    Load,
     Operand,
     PerformanceControls,
     RuntimeArguments,
     ScaledOperand,
     ScaleMode,
     ScaleSwizzleMode,
+    Store,
+    Transport,
 )
 from cutlass.operators.artifact import CompiledArtifact
 from cutlass.operators.base import Operator
@@ -63,7 +66,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def get_operators(
@@ -104,6 +107,9 @@ __all__ = [
     "EpilogueArguments",
     "GemmArguments",
     "GroupedGemmArguments",
+    "Load",
+    "Store",
+    "Transport",
     # Operands
     "Operand",
     "DenseTensor",

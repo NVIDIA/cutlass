@@ -30,7 +30,8 @@
 Unit tests for assert_close_with_reference_conversion function. Does not require GPU.
 """
 
-import jax.numpy as jnp
+import sys
+
 import numpy as np
 import pytest
 import torch
@@ -39,8 +40,17 @@ import cutlass
 
 from test_utils.reference_check import ClampMode, assert_close_with_reference_conversion
 
+# Several tests here use jax.numpy and jax is unavailable on Python < 3.11
+if sys.version_info < (3, 11):
+    pytest.skip(
+        "JAX is unavailable on Python < 3.11",
+        allow_module_level=True,
+    )
 
-class TestAssertCloseWithReferenceConversionTorch:
+import jax.numpy as jnp  # noqa: E402
+
+
+class TestTorchAssertCloseWithReferenceConversion:
     def test_basic_float32_match(self):
         """Test basic comparison with matching float32 tensors."""
         reference = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
@@ -222,7 +232,7 @@ class TestAssertCloseWithReferenceConversionTorch:
             )
 
 
-class TestAssertCloseWithReferenceConversionNumpy:
+class TestNumpyAssertCloseWithReferenceConversion:
     def test_np_array_basic(self):
         """Test basic comparison with numpy arrays."""
         reference = np.array([1.0, 2.0, 3.0], dtype=np.float32)
@@ -278,7 +288,7 @@ class TestAssertCloseWithReferenceConversionNumpy:
             )
 
 
-class TestAssertCloseWithReferenceConversionJax:
+class TestJaxAssertCloseWithReferenceConversion:
     def test_jax_array_float8_e4m3fn_with_cutlass_dtype(self):
         """Test jax float8_e4m3fn arrays with cutlass.Float8E4M3FN output dtype."""
         reference = jnp.array([1.0, -1.0, 0.5], dtype=jnp.float32)
@@ -304,7 +314,7 @@ class TestAssertCloseWithReferenceConversionJax:
         )
 
 
-class TestAssertCloseWithReferenceConversionEdgeCases:
+class TestEdgeCasesAssertCloseWithReferenceConversion:
     def test_none_rtols_atols_defaults(self):
         """Test that None rtols/atols default to 0.0."""
         reference = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)

@@ -16,7 +16,7 @@ import inspect
 
 import cutlass.cute as cute
 from cutlass.cute.tensor import _Tensor
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from cutlass.cutlass_dsl import (
     SMEM_CAPACITY_MAP,
     CuTeDSL,
@@ -278,7 +278,7 @@ class SmemAllocator:
     ) -> cute.Pointer: ...
 
     @overload
-    def allocate(  # type: ignore[overload-cannot-match]
+    def allocate(
         self,
         size_or_type: cute.struct,
         byte_alignment: int = 1,
