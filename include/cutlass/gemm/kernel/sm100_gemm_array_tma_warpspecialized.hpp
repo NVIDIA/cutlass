@@ -901,7 +901,7 @@ public:
       // unflushed global memory prior to this instruction
       cutlass::arch::wait_on_dependent_grids();
 
-      auto load_inputs = collective_mainloop.load_init<IsTensorMapUpdateAsync>(
+      auto load_inputs = collective_mainloop.template load_init<IsTensorMapUpdateAsync>(
         problem_shape_MNKL, params.mainloop,
         shared_storage.tensors.mainloop,
         shared_storage.tensormaps[0].mainloop,
@@ -1130,7 +1130,7 @@ public:
         clc_pipe_consumer_state += updater_id;
         tensor_map_ready_pipe_producer_state += updater_id;
 
-        auto tensormaps_mainloop = collective_mainloop.tensormaps_init<IsTensorMapUpdateAsync>(
+        auto tensormaps_mainloop = collective_mainloop.template tensormaps_init<IsTensorMapUpdateAsync>(
           params.mainloop,shared_storage.tensormaps[updater_id+1].mainloop, params.hw_info.sm_count, sm_id);
         auto tensormaps_epilogue_load = collective_epilogue.template tensormaps_init<true /*IsLoad*/, IsTensorMapUpdateAsync /*IsTmaAsyncUpdate*/>(
           params.epilogue, shared_storage.tensormaps[updater_id+1].epilogue, params.hw_info.sm_count, sm_id);
