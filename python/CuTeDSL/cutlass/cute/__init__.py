@@ -248,13 +248,11 @@ RDC = _dsl.RDC
 native_struct = _dsl.native_struct
 make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 
-# attach the TVM FFI ABI interface postprocessor to the DSL
-from . import _tvm_ffi_args_spec_converter
-
-_tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
-_tvm_ffi_args_spec_converter.attach_args_spec_converter(
-    _dsl.CuteExperimentalDSL._get_dsl()
-)
+# Environment options are snapshotted when a DSL singleton is constructed;
+# build both singletons at import so os.environ mutations after import
+# cannot change DSL behavior. GPU-arch detection stays deferred to first use.
+_dsl.CuTeDSL._get_dsl()
+_dsl.CuteExperimentalDSL._get_dsl()
 
 # Explicitly export all symbols for documentation generation
 __all__ = [

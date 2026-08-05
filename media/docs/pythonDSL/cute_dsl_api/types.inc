@@ -1,13 +1,7 @@
-.. _types:
-.. |DSL| replace:: CuTe DSL
-
-Types
-=====
-
 Overview
 --------
 
-|DSL| provides a set of core types that form the foundation of tensor layout algebra and GPU programming. These types enable precise control over memory layout, data representation, and tensor operations. This document covers the key types available in ``cutlass.cute.core``.
+CuTe DSL provides a set of core types that form the foundation of tensor layout algebra and GPU programming. These types enable precise control over memory layout, data representation, and tensor operations. This document covers CuTe layout-algebra and structured-memory helper types available through ``cutlass.cute``.
 
 
 Core Numeric Types
@@ -302,67 +296,6 @@ A ComposedLayout consists of three components:
     print(composed)  # Prints "inner o offset o outer" format
 
 
-Memory and Pointer Types
--------------------------
-
-Pointer
-~~~~~~~
-
-``Pointer`` represents a memory address with specific properties. Pointers are a fundamental type of iterator/engine that support random-access operations. They can be offset by elements of a layout's codomain and dereferenced to produce values.
-
-**Properties:**
-
-- ``dtype`` - The type of value this pointer points to
-- ``type`` - The MLIR type of the pointer
-- ``memspace`` - The memory space where the pointer data resides (e.g., ``gmem``, ``smem``, ``rmem``)
-- ``alignment`` - The alignment of the pointer in bytes
-- ``max_alignment`` - The maximum alignment of the pointer in bytes
-
-**Operations:**
-
-.. code-block:: python
-
-    # Pointer arithmetic
-    ptr2 = ptr + offset     # Offset pointer forward
-    ptr3 = offset + ptr     # Offset pointer forward (commutative)
-    ptr4 = ptr - offset     # Offset pointer backward
-
-    # Convert pointer to integer
-    int_addr = ptr.toint()
-
-    # Align pointer to specified byte boundary
-    aligned_ptr = ptr.align(16)  # Align to 16-byte boundary
-
-**Tensor Composition:**
-
-When composed with a layout, a pointer forms a tensor: ``T = E ∘ L``, where ``E`` is the pointer (engine) and ``L`` is the layout. The tensor evaluates the layout by mapping a coordinate ``c`` to the codomain, offsets the pointer accordingly, and dereferences the result:
-
-.. code-block:: text
-
-    T(c) = (E ∘ L)(c) = *(E + L(c))
-
-**Methods:**
-
-- ``llvm_ptr`` - Get the LLVM pointer representation (low-level use only)
-- ``align(min_align)`` - Align pointer to specified byte alignment (must be power of 2)
-- ``toint()`` - Convert pointer to integer address (Int64 for gmem/generic, Int32 otherwise)
-
-**Examples:**
-
-.. code-block:: python
-
-    # Create a pointer from a tensor's data
-    ptr = tensor.data()
-
-    # Offset the pointer
-    offset_ptr = ptr + 16
-
-    # Check pointer properties
-    print(f"Memory space: {ptr.memspace}")
-    print(f"Alignment: {ptr.alignment}")
-    print(f"Data type: {ptr.dtype}")
-
-
 Structured Data Types
 ---------------------
 
@@ -575,23 +508,17 @@ Many CuTe types implement standard Python protocols for integration:
 
 **MLIR Integration:**
 
-Internal types like ``IntValue``, ``Layout``, ``Pointer``, and ``ComposedLayout`` are registered as MLIR value casters, enabling seamless integration with the underlying compiler infrastructure.
+Internal types like ``IntValue``, ``Layout``, and ``ComposedLayout`` are registered as MLIR value casters, enabling seamless integration with the underlying compiler infrastructure.
 
 
 Best Practices
 --------------
 
-**Choosing Between Static and Dynamic:**
-
-- Use static values (Python ``int``) when dimensions are known at compile time for maximum optimization
-- Use dynamic values (``IntValue``) when dimensions must be determined at runtime
-- Refer to :doc:`dsl_dynamic_layout` for detailed guidance on static vs dynamic layouts
-
 **Memory Alignment:**
 
 - Always specify alignment requirements for shared memory structures to avoid bank conflicts
 - Use ``struct.Align`` to enforce alignment constraints
-- Check ``max_alignment`` properties to verify pointer and layout alignment
+- Check ``max_alignment`` properties to verify layout and structured-storage alignment
 
 **Layout Operations:**
 
@@ -599,18 +526,13 @@ Best Practices
 - Use ``ScaledBasis`` for explicit control over stride modes in multi-modal layouts
 - Leverage ``ComposedLayout`` for complex transformations like swizzling
 
-**Type Safety:**
-
-- Use type annotations in ``@jit`` and ``@kernel`` functions
-- Let the DSL infer types when possible for cleaner code
-- Check ``dtype`` and ``memspace`` properties when working with pointers
-
-
 See Also
 --------
 
-- :doc:`dsl_introduction` - Introduction to CuTe DSL decorators and calling conventions
-- :doc:`dsl_control_flow` - Control flow with static and dynamic values
-- :doc:`dsl_dynamic_layout` - Working with static and dynamic layouts
-- :doc:`framework_integration` - Integration with deep learning frameworks
-- :doc:`debugging` - Debugging techniques for CuTe DSL programs
+- :doc:`/media/docs/pythonDSL/cute_dsl_general/dsl_introduction` - Introduction to CuTe DSL decorators and calling conventions
+- :doc:`/media/docs/pythonDSL/basic_data_types` - Numeric, pointer, vector, and array API reference
+- :doc:`/media/docs/pythonDSL/cute_dsl_general/dsl_control_flow` - Control flow with static and dynamic values
+- :doc:`/media/docs/pythonDSL/cute_dsl_general/dsl_dynamic_layout` - Working with static and dynamic layouts
+- :doc:`/media/docs/pythonDSL/cute_dsl_general/dsl_jit_arg_generation` - Type annotations for JIT and kernel arguments
+- :doc:`/media/docs/pythonDSL/guides/framework_integration` - Integration with deep learning frameworks
+- :doc:`/media/docs/pythonDSL/guides/debugging` - Debugging techniques for CuTe DSL programs

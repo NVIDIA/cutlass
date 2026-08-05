@@ -443,7 +443,7 @@ and other machine learning frameworks. Using TVM FFI provides the following feat
 - Enhanced error handling and kernel validation.
 - Seamless integration with multiple programming languages.
 
-For more details, see :doc:`compile_with_tvm_ffi`.
+For more details, see :doc:`tvm_ffi_compilation`.
 
 Bypass the DLPack Protocol
 --------------------------
@@ -524,4 +524,3 @@ issues with shape-1 dimension handling.
         cutlass.Float16, c.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=32
     )
     tensor_op_gemm_wrapper(a_ptr, b_ptr, c_ptr, m, n, k, l)
-

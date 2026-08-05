@@ -106,6 +106,19 @@ from .._mlir.dialects import func
 
 MLIR_DYNAMIC = -9223372036854775808
 
+
+@dataclass(frozen=True)
+class _NameOptions:
+    """Immutable naming configuration attached to a decorated function."""
+
+    name_prefix: str = ""
+    remove_cutlass_symbol: bool = False
+    keep_mangled_name: bool = True
+
+
+_DEFAULT_NAME_OPTIONS = _NameOptions()
+
+
 # =============================================================================
 # Main DSL Class
 # =============================================================================
@@ -645,6 +658,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     gpu_module: Any = None
     _env_class: type[EnvironmentVarManager] = EnvironmentVarManager
     _is_experimental_dsl: bool = False
+    # Optional compiler-recognized component inserted by a DSL's name mangler.
+    _name_mangling_prefix: ClassVar[str] = ""
 
     def __init__(
         self,
@@ -865,19 +880,66 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             def jit_wrapper(*args: Any, **kwargs: Any) -> Any:
                 BaseDSL._preprocess_and_replace_code(func)
 
-                custom_name = getattr(jit_wrapper, "_name_prefix", None)
                 with active_env_manager(func._dsl_object.envar):
-                    if custom_name:
-                        return getattr(func._dsl_object, executor_name)(
-                            func, *args, **kwargs, _name_prefix=custom_name
-                        )
-                    else:
-                        return getattr(func._dsl_object, executor_name)(
-                            func, *args, **kwargs
-                        )
+                    return getattr(func._dsl_object, executor_name)(
+                        func, *args, **kwargs
+                    )
 
-            def set_name_prefix(name: str) -> None:
-                jit_wrapper._name_prefix = name  # type: ignore[attr-defined]
+            def set_name_prefix(
+                name: str,
+                *,
+                remove_cutlass_symbol: bool = False,
+                keep_mangled_name: bool = True,
+            ) -> None:
+                """Configure the generated function-name prefix and components.
+
+                Parameters
+                ----------
+                name : str
+                    Prefix prepended to the generated name. This may be empty
+                    when only the component options are needed. An empty prefix
+                    with the other arguments at their defaults restores the
+                    default naming behavior. A non-empty prefix is required if
+                    both generated components are removed.
+                remove_cutlass_symbol : bool
+                    Omit the ``cutlass`` component inserted by CuTe DSL. Text
+                    in the user prefix or mangled name is not modified.
+                keep_mangled_name : bool
+                    Retain the framework-generated ``kernel_``/function/argument
+                    name. For kernels, the per-trace uniqueness suffix is retained.
+                    Host JIT function names do not append that suffix.
+                    When this is ``False``, callers must choose prefixes that
+                    remain unique wherever separately compiled modules are
+                    combined.
+                """
+                if not isinstance(name, str):
+                    raise TypeError(
+                        "set_name_prefix name must be a string, but got "
+                        f"{type(name).__name__}"
+                    )
+                for option_name, option_value in (
+                    ("remove_cutlass_symbol", remove_cutlass_symbol),
+                    ("keep_mangled_name", keep_mangled_name),
+                ):
+                    if not isinstance(option_value, bool):
+                        raise TypeError(
+                            f"{option_name} must be a bool, but got "
+                            f"{type(option_value).__name__}"
+                        )
+                if not name and remove_cutlass_symbol and not keep_mangled_name:
+                    raise ValueError(
+                        "set_name_prefix requires a non-empty name when "
+                        "remove_cutlass_symbol is True and keep_mangled_name "
+                        "is False"
+                    )
+
+                # Store all fields with one assignment so a caller can never
+                # observe a combination that was not configured together.
+                func._cute_dsl_name_options = _NameOptions(  # type: ignore[attr-defined]
+                    name_prefix=name,
+                    remove_cutlass_symbol=remove_cutlass_symbol,
+                    keep_mangled_name=keep_mangled_name,
+                )
 
             jit_wrapper.set_name_prefix = set_name_prefix  # type: ignore[attr-defined]
 
@@ -981,6 +1043,38 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         function_name = function_name[:180]
         log().info(f"Final mangled function name: {function_name}")
         return function_name
+
+    @staticmethod
+    def _get_name_options(func: Callable[..., Any]) -> _NameOptions:
+        """Return one immutable snapshot of a callable's naming options."""
+        return getattr(func, "_cute_dsl_name_options", _DEFAULT_NAME_OPTIONS)
+
+    def _customize_generated_name(
+        self,
+        default_name: str,
+        name_options: _NameOptions,
+        unique_suffix: int | None = None,
+    ) -> str:
+        """Apply user-controlled components to a generated function name."""
+        components: list[str] = []
+        if name_options.name_prefix:
+            components.append(name_options.name_prefix)
+
+        if name_options.keep_mangled_name:
+            if name_options.remove_cutlass_symbol and self._name_mangling_prefix:
+                # The DSL's mangler inserts this component before any text from
+                # the Python function or its arguments, so remove only the
+                # first occurrence and leave user-controlled text unchanged.
+                default_name = default_name.replace(
+                    f"{self._name_mangling_prefix}_", "", 1
+                )
+            components.append(default_name)
+        elif not name_options.remove_cutlass_symbol and self._name_mangling_prefix:
+            components.append(self._name_mangling_prefix)
+        if not name_options.keep_mangled_name and unique_suffix is not None:
+            components.append(str(unique_suffix))
+
+        return "_".join(components)
 
     def _generate_execution_arguments_for_known_types(
         self,
@@ -1632,10 +1726,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     f"{self.name}_LIBS environment variable is not set and "
                     "CuTe-family auto-discovery failed. Set "
                     f"{self.name}_LIBS to the path of libcute_dsl_runtime.so "
-                    "(e.g. <build_dir>/lib/libcute_dsl_runtime.so). For pip "
-                    "editable installs, setting CUTE_DSL_LIBS or ensuring "
-                    "PYTHONPATH includes <build_dir>/cutlass_ir/python_packages "
-                    "also works."
+                    "(e.g. <build_dir>/lib/libcute_dsl_runtime.so)."
                 )
             else:
                 self.print_warning(
@@ -1828,7 +1919,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         kwonlyargs: dict[str, Any],
         sig: inspect.Signature,
         location: DSLLocation | None = None,
-    ) -> tuple[ir.Module, str, Any]:
+        *,
+        no_cache: bool = False,
+    ) -> tuple[ir.Module, str | None, Any]:
         def build_ir_module() -> tuple[ir.Module, Any]:
             loc = self.get_ir_location(location)
             module = ir.Module.create(loc=loc)
@@ -1893,7 +1986,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         else:
             module, result = build_ir_module()
         self._run_trace_finalize_hooks(module, function_name)
-        module_hash = self.get_module_hash(module, function_name)
+        module_hash = None if no_cache else self.get_module_hash(module, function_name)
 
         module = self.build_module(module, function_name)
 
@@ -1964,13 +2057,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     def compile_and_cache(
         self,
         module: ir.Module,
-        module_hash: str,
+        module_hash: str | None,
         function_name: str,
         pipeline: str | None,
         sig: inspect.Signature,
         no_cache: bool,
         no_jit_engine: bool,
-        func_type: type[JitCompiledFunction] = JitCompiledFunction,
+        func_type: Callable[..., JitCompiledFunction] = JitCompiledFunction,
         *,
         full_args: Any = None,
         full_kwargs: Any = None,
@@ -2002,6 +2095,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # try load the file cache
         load_from_file_cache = False
         if not no_cache:
+            assert module_hash is not None
             fn = load_cache_from_path(
                 self.name, module_hash, bytecode_reader=read_bytecode_and_check_crc32
             )
@@ -2103,6 +2197,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         )
 
         if not no_cache:
+            assert module_hash is not None
             # module stored in cache is compiled.
             self.jit_cache.set(module_hash, fn, funcBody=funcBody)
             # write through the file cache if enabled.
@@ -2231,6 +2326,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     kwonlyargs,
                     sig,
                     location=location,
+                    no_cache=no_cache,
                 )
 
                 # add ffi bitcode sources to link options
@@ -2597,7 +2693,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         compile_to_precompiled_mlir = kwargs.pop("compile_to_precompiled_mlir", False)
 
-        func_name_prefix = kwargs.pop("_name_prefix", None)
+        name_options = self._get_name_options(funcBody)
         export_name = kwargs.pop("export_name", None)
 
         if not no_cache and (
@@ -2632,9 +2728,15 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if export_name is not None:
             function_name = export_name
         else:
-            function_name = self.mangle_name(function_name, canonicalized_args, sig)
-            if func_name_prefix:
-                function_name = f"{func_name_prefix}_{function_name}"
+            default_name = (
+                self.mangle_name(function_name, canonicalized_args, sig)
+                if name_options.keep_mangled_name
+                else ""
+            )
+            function_name = self._customize_generated_name(
+                default_name,
+                name_options,
+            )
 
         self.compile_options.apply_envar_settings(self.envar, function_name)
         track_source_locations = (
@@ -2915,6 +3017,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 unitAttrNames = dkwargs.get("unitAttrNames", [])
                 valueAttrDict = dkwargs.get("valueAttrDict", {})
                 kernelGenHelper = dkwargs.get("kernelGenHelper", None)
+                name_options = dkwargs.get("_name_options") or self._get_name_options(
+                    funcBody
+                )
 
                 kernel_name = funcBody.__name__
                 signature = self._get_signature(funcBody)
@@ -2924,9 +3029,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 # called multiple times, resulting in multiple kernel traces.)
                 # The mangled name of Python function is part of the name to
                 # improve readability.
-                kernel_name = f"kernel_{self.mangle_name(kernel_name, args, signature)}_{self.num_kernels}"
-                if hasattr(self, "_name_prefix") and self._name_prefix:
-                    kernel_name = f"{self._name_prefix}_{kernel_name}"
+                default_name = (
+                    f"kernel_{self.mangle_name(kernel_name, args, signature)}_{self.num_kernels}"
+                    if name_options.keep_mangled_name
+                    else ""
+                )
+                kernel_name = self._customize_generated_name(
+                    default_name,
+                    name_options,
+                    unique_suffix=self.num_kernels,
+                )
                 self.num_kernels += 1
 
                 # Step 0. Preprocess the arguments

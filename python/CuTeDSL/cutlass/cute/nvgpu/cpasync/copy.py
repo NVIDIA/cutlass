@@ -328,9 +328,9 @@ class CopyBulkTensorTileG2SOp(CopyG2STileBaseOp):
     This Operation uses TMA in the ``.tile`` mode.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA copy, but needed for barrier setup
-       - :func:`cute.arch.mbarrier_init` - Requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx` - Requires elect_one
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **NOT** needed for TMA copy, but needed for barrier setup
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Requires elect_one
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
 
@@ -486,7 +486,7 @@ class CopyBulkTensorTileG2SMulticastOp(CopyG2STileBaseOp):
     This Operation uses TMA in the ``.tile`` mode.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA copy
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **NOT** needed for TMA copy
        - :class:`CopyBulkTensorTileG2SOp` - Non-multicast TMA load
     """
 
@@ -839,7 +839,7 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
     This Operation uses TMA in the ``.tile`` mode.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA store
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **NOT** needed for TMA store
        - :class:`CopyBulkTensorTileG2SOp` - TMA load operation
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """

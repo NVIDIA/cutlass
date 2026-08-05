@@ -1331,16 +1331,6 @@ def print_nd_vector(
         column-major internally, then printed via ``cute.print_tensor``.
     :type src: Vector
 
-    :sync-class: Per-thread debug printf. Every thread that reaches
-        this call emits one line. Output from different threads
-        interleaves non-deterministically.
-    :elect-safe: **Yes**. Wrap in ``if nvvm.elect_sync():`` to get one
-        line per warp instead of 32; wrap in ``if tid == 0:`` for one
-        line per CTA.
-    :device: All CUDA architectures.
-    :side-effects: writes to stdout via device ``printf``. Per-call
-        latency is large and serialises the warp; remove before
-        benchmarking or shipping.
     """
     from .. import cute
     from ..cute import tensor

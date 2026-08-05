@@ -244,6 +244,21 @@ def get_c_pointers(obj: Any) -> list[ctypes.c_void_p]:
     return []
 
 
+def _make_owning_c_pointer(c_value: Any) -> ctypes.c_void_p:
+    """Return a pointer that keeps its backing ctypes value alive.
+
+    ``ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)`` makes the
+    intermediate pointer reference itself through its ``_objects`` dictionary.
+    Those cycles accumulate when cyclic garbage collection is disabled.  A
+    direct address does not create that cycle, while the private keepalive
+    attribute preserves the backing value for the lifetime of the returned
+    pointer.
+    """
+    c_pointer = ctypes.c_void_p(ctypes.addressof(c_value))
+    c_pointer._cutlass_keepalive = c_value  # type: ignore[attr-defined]
+    return c_pointer
+
+
 def get_mlir_types(obj: Any) -> list[ir.Type]:
     """
     Given the `obj`, recursively go through it to extract all contained MLIR types
@@ -564,7 +579,7 @@ class IntegerMeta(NumericMeta):
             else:
                 c_value = getattr(ctypes, f"c_uint{width}")(self.value)
 
-            return [ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)]
+            return [_make_owning_c_pointer(c_value)]
 
         new_attrs = {
             "__c_pointers__": _c_pointers,
@@ -2084,15 +2099,13 @@ class Float64(Float, metaclass=FloatMeta, width=64, mlir_type=T.f64):
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
 
-        return [
-            ctypes.cast(ctypes.pointer(ctypes.c_double(self.value)), ctypes.c_void_p)
-        ]
+        return [_make_owning_c_pointer(ctypes.c_double(self.value))]
 
 
 class Float32(Float, metaclass=FloatMeta, width=32, mlir_type=T.f32):
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
-        return ctypes.cast(ctypes.pointer(ctypes.c_float(value)), ctypes.c_void_p)
+        return _make_owning_c_pointer(ctypes.c_float(value))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2118,7 +2131,7 @@ class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
         bits: int = int(f16_val.view(np.uint16))
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(int(bits))
-        return ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        return _make_owning_c_pointer(c_val)
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2139,7 +2152,7 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
         bf16_bits = np.uint16(bits >> 16)
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(bf16_bits)  # type: ignore[arg-type]
-        c_pointer = ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        c_pointer = _make_owning_c_pointer(c_val)
         return [c_pointer]
 
 

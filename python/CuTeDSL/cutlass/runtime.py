@@ -105,8 +105,8 @@ def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> list[str]:
 
     return libs
 
-# cache to load runtime libraries so they can be found by the DSO loader
-_LOAD_MODULE_LIBS_CACHE: list[Any] = []
+# Keep runtime library handles alive so they remain visible to the DSO loader.
+_LOAD_MODULE_LIBS_CACHE: dict[str, ctypes.CDLL] = {}
 
 
 def load_module(
@@ -121,11 +121,10 @@ def load_module(
     :return: A module object
     :rtype: module
     """
-    if len(_LOAD_MODULE_LIBS_CACHE) == 0:
-        # ensure the runtime libraries are loaded so they can be found by the DSO loader
-        # no need to load tvm_ffi library here since it will be loaded by tvm_ffi package.
-        for path in find_runtime_libraries(enable_tvm_ffi=False):
-            if Path(path).exists():
-                _LOAD_MODULE_LIBS_CACHE.append(ctypes.CDLL(path))
+    # A TVM-FFI module may be loaded after a non-TVM module has already
+    # populated the cache, so load every dependency missing for this call.
+    for path in find_runtime_libraries(enable_tvm_ffi=enable_tvm_ffi):
+        if path not in _LOAD_MODULE_LIBS_CACHE and Path(path).exists():
+            _LOAD_MODULE_LIBS_CACHE[path] = ctypes.CDLL(path)
 
     return ExternalBinaryModule(file_path, enable_tvm_ffi=enable_tvm_ffi)

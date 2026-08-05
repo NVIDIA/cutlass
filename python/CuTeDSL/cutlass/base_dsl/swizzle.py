@@ -223,21 +223,6 @@ def load_swizzled(
         sw  = cutlass.Swizzle.from_name("s128b")
         vec = (smem_ptr + offset).load_swizzled(sw, count=64)  # one period, fp16
 
-    :sync-class: Per-thread — single-thread SMEM load; not a collective.
-    :elect-safe: N/A — no divergent hardware side effect.
-    :device: SM80+ (swizzle kinds depend on what downstream op consumes
-        them; for ``tcgen05.mma kind::f16`` on SM100 the swizzle must be
-        ``SWIZZLE_128B``, i.e. ``Swizzle.from_name("s128b")``).
-    :side-effects: issues a swizzle-aware CuTe load; writes into the
-        register file (as scalar or 1-D Vector).
-    :peer: Pairs with :func:`store_swizzled` for an SMEM round-trip; the
-        vector returned here can be fed back verbatim.  Swizzle must
-        match the writer's (TMA ``TensorMapSwizzle.sXb`` or a prior
-        :func:`store_swizzled` with the same ``Swizzle``). Keep the same
-        logical swizzle name across the TMA descriptor,
-        ``load_swizzled`` / ``store_swizzled``, and tcgen05 descriptor;
-        note that those APIs use different integer encodings for the
-        same logical swizzle.
     """
     from .typing import Pointer  # noqa: PLC0415
     import cutlass.cute as cute  # noqa: PLC0415
@@ -312,18 +297,6 @@ def store_swizzled(
         vec = (vec.to(cutlass.Float32) * 2.0).to(cutlass.Float16)
         (smem_ptr + offset).store_swizzled(vec, sw)
 
-    :sync-class: Per-thread — single-thread SMEM store; not a collective.
-    :elect-safe: N/A — no divergent hardware side effect.
-    :device: SM80+ (swizzle kinds depend on what downstream op consumes
-        them; for ``tcgen05.mma kind::f16`` on SM100 the swizzle must be
-        ``SWIZZLE_128B``, i.e. ``Swizzle.from_name("s128b")``).
-    :side-effects: issues a swizzle-aware CuTe store; writes into SMEM
-        at the XOR'd physical address.  The ``Swizzle`` passed here
-        defines the physical layout any subsequent reader must assume.
-    :peer: Pairs with :func:`load_swizzled` — use the same ``Swizzle``
-        on both ends of a register-residency round-trip.  A TMA reader
-        consuming the tile must be built with a matching
-        ``TensorMapSwizzle``.
     """
     from .typing import Pointer  # noqa: PLC0415
     import cutlass.cute as cute  # noqa: PLC0415

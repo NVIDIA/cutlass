@@ -87,9 +87,6 @@ def get_default_generated_ir_path(dsl_name: str = "CUTE_DSL") -> str:
         return fallback
 
 
-# TODO: Remove after updating imports in:
-#   cutlass_ir/compiler/test/python/dsl/cute/test_cache_helpers.py
-#   cutlass_ir/compiler/test/python/not_pytest/runtime/test_cache.py
 default_generated_ir_path = get_default_generated_ir_path()
 
 

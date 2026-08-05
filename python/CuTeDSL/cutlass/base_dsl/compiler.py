@@ -1337,10 +1337,6 @@ class CompileCallable:
         else:
             raise DSLUserCodeError(_diagnostics.DiagId.CALL_UNSUPPORTED_CALLABLE_TYPE)
 
-        func_name_prefix = getattr(func, "_name_prefix", None)
-        if func_name_prefix:
-            kwargs["_name_prefix"] = func_name_prefix
-
         # If it's a wrapped function created by decorators, get the original function
         while hasattr(func, "__wrapped__"):
             func = func.__wrapped__

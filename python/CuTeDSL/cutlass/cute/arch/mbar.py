@@ -43,7 +43,7 @@ def mbarrier_init(
     Initializes a mbarrier with the specified thread arrival count.
 
     **Single-Thread Execution Required**: This operation **must** be executed by only one thread
-    per CTA. Use :func:`cute.arch.elect_one` to ensure proper synchronization:
+    per CTA. Use :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` to ensure proper synchronization:
 
     .. code-block:: python
 
@@ -60,8 +60,8 @@ def mbarrier_init(
     :type cnt:       Int
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - Required wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_expect_tx` - Also requires elect_one
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - Required wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Also requires elect_one
        - PTX ISA documentation on ``mbarrier.init``
     """
 
@@ -103,7 +103,7 @@ def mbarrier_arrive_and_expect_tx(
     Each thread that executes this operation will increment the arrival count by 1 and
     increment the expected transaction bytes by the specified number.
 
-    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one`.
+    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`.
 
     .. code-block:: python
 
@@ -128,9 +128,9 @@ def mbarrier_arrive_and_expect_tx(
     :param scope:                    Scope of threads participating in the arrive/wait operations.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - Required wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_init` - Also requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx` - Expect_tx without arrive
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - Required wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Also requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Expect_tx without arrive
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 
@@ -170,7 +170,7 @@ def mbarrier_expect_tx(
 
     Each thread that executes this operation will increment the expected transaction bytes by the specified number.
 
-    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one`.
+    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`.
 
     .. code-block:: python
 
@@ -191,9 +191,9 @@ def mbarrier_expect_tx(
                                      SMEM.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - Recommended wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_init` - initialize mbarrier
-       - :func:`cute.arch.mbarrier_arrive_and_expect_tx` - Combined arrive and expect_tx
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - Recommended wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - initialize mbarrier
+       - :func:`cute.arch.mbarrier_arrive_and_expect_tx <cutlass.cute.arch.mbarrier_arrive_and_expect_tx>` - Combined arrive and expect_tx
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
 

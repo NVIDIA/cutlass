@@ -2563,10 +2563,43 @@ class DSLPreprocessor(ast.NodeTransformer):
 
     def _handle_constexpr_if(self, node: ast.If) -> list[ast.stmt]:
         """Handle const_expr if statements. Override for custom behavior."""
-        self.generic_visit(node)
+        self._visit_constexpr_if_branches(node)
         assert isinstance(node.test, ast.Call)
         check = self._insert_cf_symbol_check(node.test.func)
         return [check, node]
+
+    def _visit_constexpr_branch(
+        self, stmts: list[ast.stmt]
+    ) -> tuple[list[ast.stmt], set[str]]:
+        """Visit one constexpr branch without leaking its local definitions."""
+        result: list[ast.stmt] = []
+        with (
+            Region(self.session_data, new_value=result),
+            self.session_data.scope_manager.enter_control_flow_scope(),
+        ):
+            for stmt in stmts:
+                transformed_stmt = self.visit(stmt)
+                if isinstance(transformed_stmt, list):
+                    result.extend(transformed_stmt)
+                else:
+                    result.append(transformed_stmt)
+            definitions = set(self.session_data.scope_manager.scopes[-1])
+        return result, definitions
+
+    def _visit_constexpr_if_branches(self, node: ast.If) -> None:
+        """Visit constexpr arms without exposing definitions to sibling arms."""
+        visited_test = self.visit(node.test)
+        assert isinstance(visited_test, ast.expr)
+        node.test = visited_test
+
+        node.body, body_definitions = self._visit_constexpr_branch(node.body)
+        node.orelse, else_definitions = self._visit_constexpr_branch(node.orelse)
+        # Publish branch definitions only after both arms have been visited. This
+        # preserves Python's function-local name tracking (including possibly
+        # unbound names handled by get_locals_or_none) without making a name from
+        # one compile-time arm appear initialized while visiting its sibling.
+        for name in body_definitions | else_definitions:
+            self.session_data.scope_manager.add_to_scope(name)
 
     def visit_If(self, node: ast.If) -> ast.If | list[ast.stmt]:
         # const_expr doesn't get preprocessed
@@ -2618,7 +2651,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         Returns the check statement for the const_expr call.
         """
-        self.generic_visit(elif_node)
+        self._visit_constexpr_if_branches(elif_node)
         assert isinstance(elif_node.test, ast.Call)
         return self._insert_cf_symbol_check(elif_node.test.func)
 

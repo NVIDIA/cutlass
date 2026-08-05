@@ -264,7 +264,7 @@ Instead, they must be specialized for each algorithm and GPU architecture.
 Users can dispatch to a `CollectiveMma` specialization
 by picking template arguments matching that specialization.
 CUTLASS 3.0 adopts a tag-based dispatch policy type to specialize
-mainloop implementations and add tuning knobs to them.
+mainloop implementations and add tuning options to them.
 
 Below is an example of one of the dispatch policies that is used to dispatch to a Hopper TMA
 warp-specialized mainloop implementation:

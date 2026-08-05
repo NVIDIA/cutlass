@@ -1337,12 +1337,6 @@ class DiagId(_DiagMixin, enum.Enum):
         "Pointer address must be non-negative (got {address})",
         ("Pass a non-negative address, or use nullptr() for null pointers",),
     )
-    ARG_SPLIT_MODE_INVALID = (
-        "The split_mode must be one of the valid CudaDlcSplitMode enum values.",
-        (
-            "Use cuda_helpers.CudaDlcSplitMode enum: NONE, ANY, SINGLE_DLCC, or DUAL_DLCC.",
-        ),
-    )
     ARG_TENSOR_NOT_ON_DEVICE = (
         "The tensor `{arg_name}` must be in GPU memory, but it is currently on the host. Move it to the GPU before passing it to the kernel.",
         (

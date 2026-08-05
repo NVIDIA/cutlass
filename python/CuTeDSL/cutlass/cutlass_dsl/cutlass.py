@@ -34,7 +34,7 @@ from typing import (
 )
 import functools
 import inspect
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from math import ceil
 from numbers import Integral
@@ -167,6 +167,27 @@ def _get_max_cpu_threads() -> int:
     return max(1, min(16, (os.cpu_count() or 8) // 2))
 
 
+def _get_baked_dso_digest(so_name: str) -> bytes:
+    """Look up the build-time SHA-256 of the loaded compiler DSO."""
+    from importlib import import_module
+
+    name_parts = so_name.split(".")
+    ctk_tag = name_parts[1] if len(name_parts) > 1 else ""
+    if not (ctk_tag.startswith("cu") and ctk_tag[2:].isdigit()):
+        raise DSLRuntimeError(
+            f"Unexpected shared library name {so_name}. Please re-install the package."
+        )
+    version_module_name = f"cutlass._mlir._mlir_libs._cutlass_ir_version_{ctk_tag}"
+    try:
+        version_module = import_module(version_module_name)
+        return bytes.fromhex(version_module.DSO_SHA256[so_name])
+    except (ImportError, AttributeError, KeyError, ValueError) as e:
+        raise DSLRuntimeError(
+            f"Missing or stale DSO version module {version_module_name} "
+            f"for {so_name}. Please rebuild or re-install the package."
+        ) from e
+
+
 # Return a ctype class that represents the in-memory layout expected
 # for a CuTe hierarchical tuple type.
 def get_sparse_tuple_ctype(dyn: Union[int, Sequence[object]]) -> type:
@@ -265,6 +286,7 @@ def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
 class CutlassBaseDSL(BaseDSL):
     """This abstract class provides a DSL for Cutlass."""
 
+    _name_mangling_prefix = "cutlass"
     _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset()
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = None
 
@@ -324,7 +346,7 @@ class CutlassBaseDSL(BaseDSL):
         # extra function to convert cute arguments to tvm ffi spec params
         # this needs to be reverse registered because the arg convention
         # depends on the runtime type of the DSL arguments
-        self._tvm_ffi_args_spec_converter = None
+        self._tvm_ffi_args_spec_converter: Optional[Callable[..., Any]] = None
 
     def _set_smem_tracking(
         self, allocator: object, callback: Callable[[object], int]
@@ -594,58 +616,13 @@ class CutlassBaseDSL(BaseDSL):
         Get the version of cutlass dsl, used for computing the hash key of the cache.
         Including source python files and the shared library.
         """
-
-        def _hash_chunk(
-            key: str, path: str, idx: int, start: int, size: int
-        ) -> tuple[str, int, bytes]:
-            """Hash one chunk of a file with SHA-256."""
-            h = hashlib.sha256()
-            if size > 0:
-                try:
-                    with open(path, "rb") as f:
-                        f.seek(start)
-                        h.update(f.read(size))
-                except Exception as e:
-                    raise DSLRuntimeError(
-                        f"Failed to read module file {key}."
-                        "The file may not exist or may not be readable."
-                        "Please re-install the package."
-                    ) from e
-            return key, idx, h.digest()
-
-        def _iter_jobs() -> Generator:
-            """Chunk jobs generator to hash files in parallel"""
-            for key, path, size in files:
-                # empty files still get a deterministic hash from SHA-256 of zero bytes
-                for i in range(max(1, -(-size // chunk_size))):  # ceil division
-                    start = i * chunk_size
-                    computed_size = min(chunk_size, max(size - start, 0))
-                    yield (key, path, i, start, computed_size)
-
         dsl_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        files = []
 
-        mlir_libs_candidates = [
-            Path(dsl_path) / "_mlir" / "_mlir_libs",
-        ]
-        mlir_libs_path = None
-        for candidate in mlir_libs_candidates:
-            if candidate.exists():
-                mlir_libs_path = candidate
-                break
-        if mlir_libs_path is None:
-            raise DSLRuntimeError(
-                "Could not find _mlir/_mlir_libs directory. "
-                "Please re-install the package."
-            )
         # The pybind module file may be CTK-tagged (`_cutlass_ir.cu12.cpython-…so`
         # or `_cutlass_ir.cu13.cpython-…so`) when multiple CTK flavors coexist in
         # the same `_mlir_libs/` directory. The CTK-aware loader has already
         # picked one and bound it as `cutlass._mlir._mlir_libs._cutlass_ir`, so
-        # the loaded module's path is authoritative — use it unconditionally
-        # rather than re-scanning the candidate dirs (which can resolve to a
-        # different `_mlir_libs/` than the loader actually consulted, e.g. when
-        # `cutlass._mlir.__path__` is a CI/PYTHONPATH overlay).
+        # the loaded module's path is authoritative.
         loaded = sys.modules.get("cutlass._mlir._mlir_libs._cutlass_ir")
         loaded_file = getattr(loaded, "__file__", None) if loaded is not None else None
         if not loaded_file:
@@ -653,11 +630,10 @@ class CutlassBaseDSL(BaseDSL):
             # the sys.modules entry). Force it to run via import_module —
             # this is idempotent if the module is already loaded, and
             # otherwise routes through the CTK-aware loader in
-            # _mlir_libs/__init__.py so we hash exactly the binary the
-            # runtime would. Avoids a non-deterministic glob fallback
-            # (which could pick the wrong flavor when both cu12 and cu13
-            # .so files coexist) and a bare StopIteration when no match
-            # is found.
+            # _mlir_libs/__init__.py so we fingerprint exactly the binary
+            # the runtime would use. Avoids a non-deterministic glob
+            # fallback (which could pick the wrong flavor when both cu12
+            # and cu13 .so files coexist).
             from importlib import import_module
 
             try:
@@ -673,21 +649,9 @@ class CutlassBaseDSL(BaseDSL):
                     "Loaded cutlass._mlir._mlir_libs._cutlass_ir has no "
                     "__file__ attribute. Please re-install the package."
                 )
-        so_path = loaded_file
         giant_dso_name = Path(loaded_file).name
-        # Re-anchor `mlir_libs_path` to where the loaded binary actually
-        # lives so any subsequent path-derived state stays consistent.
-        mlir_libs_path = Path(loaded_file).parent
-        try:
-            # update the version hash of the cutlass shared library
-            so_size = os.path.getsize(so_path)
-        except Exception as e:
-            raise DSLRuntimeError(
-                f"Failed to read the shared library file {giant_dso_name}."
-                "The file may not exist or may not be readable."
-                "Please re-install the package."
-            ) from e
-        files.append((giant_dso_name, so_path, so_size))
+        digests = [(giant_dso_name, _get_baked_dso_digest(giant_dso_name))]
+        py_files = []
 
         # Walk the filesystem to collect .py files for hashing. We deliberately
         # avoid pkgutil.walk_packages here because it imports every module it
@@ -725,42 +689,31 @@ class CutlassBaseDSL(BaseDSL):
                     if no_ext.endswith(init_suffix):
                         no_ext = no_ext[: -len(init_suffix)]
                     key = "cutlass." + no_ext.replace(os.sep, ".")
-                    try:
-                        size = os.path.getsize(path)
-                    except OSError as e:
-                        raise DSLRuntimeError(
-                            f"Failed to read module file {key}. "
-                            "The file may not exist or may not be readable. "
-                            "Please re-install the package."
-                        ) from e
-                    files.append((key, path, size))
+                    py_files.append((key, path))
 
-        # Submit chunks to a job queue
-        chunk_size = 1 << 24  # 16 MB (tuned)
-        per_file_chunks: dict[str, list] = {}
-        max_workers = _get_max_cpu_threads()
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [ex.submit(_hash_chunk, *job) for job in _iter_jobs()]
-            for fut in as_completed(futures):
-                key, idx, digest = fut.result()
-                per_file_chunks.setdefault(key, []).append((idx, digest))
+        def _hash_py_file(item: tuple[str, str]) -> tuple[str, bytes]:
+            key, path = item
+            try:
+                with open(path, "rb") as f:
+                    content = f.read()
+            except OSError as e:
+                raise DSLRuntimeError(
+                    f"Failed to read module file {key}. "
+                    "The file may not exist or may not be readable. "
+                    "Please re-install the package."
+                ) from e
+            return key, hashlib.sha256(content).digest()
 
-        # update the version hash of the cutlass shared library using tree-hash
+        # Reading a few thousand source files is I/O-latency bound (network
+        # filesystems especially), so hash them in a thread pool.
+        with ThreadPoolExecutor(max_workers=_get_max_cpu_threads()) as ex:
+            digests.extend(ex.map(_hash_py_file, py_files))
+
         version_hash = hashlib.sha256()
-        # Since files list is in arbitrary order, we sort by key to get deterministic order
-        for key, path, size in sorted(files, key=lambda t: t[0]):
-            chunks = per_file_chunks.get(key)
-            assert chunks is not None
-            file_hash = hashlib.sha256(
-                b"".join(
-                    digest
-                    for _, digest in sorted(
-                        chunks
-                    )  # Similarily, sort chunks by index to get deterministic order
-                )
-            )
-            file_hash.update(key.encode("utf-8"))
-            version_hash.update(file_hash.digest())
+        # Since digests list is in arbitrary order, sort by key for determinism
+        for key, digest in sorted(digests):
+            version_hash.update(key.encode("utf-8"))
+            version_hash.update(digest)
 
         return version_hash
 
@@ -812,13 +765,13 @@ class CutlassBaseDSL(BaseDSL):
     def compile_and_cache(
         self,
         module: ir.Module,
-        module_hash: str,
+        module_hash: "str | None",
         function_name: str,
         pipeline: Optional[str],
         signature: inspect.Signature,
         no_cache: bool,
         no_jit_engine: bool,
-        func_type: type = CudaDialectJitCompiledFunction,
+        func_type: Callable[..., Any] = CudaDialectJitCompiledFunction,
         *,
         full_args: Optional[tuple] = None,
         full_kwargs: Optional[dict] = None,
@@ -854,6 +807,12 @@ class CutlassBaseDSL(BaseDSL):
             )
             from cutlass.base_dsl.tvm_ffi_builder import attach_ffi_func
 
+            if self._tvm_ffi_args_spec_converter is None:
+                from cutlass.cute._tvm_ffi_args_spec_converter import (
+                    attach_args_spec_converter,
+                )
+
+                attach_args_spec_converter(self)
             assert self._tvm_ffi_args_spec_converter is not None
             (
                 tvm_ffi_spec_params,
@@ -906,7 +865,7 @@ class CutlassBaseDSL(BaseDSL):
             with compiler.PostCompileHookContext(
                 self.compiler_provider, post_compile_hook
             ):
-                return super().compile_and_cache(
+                return super().compile_and_cache(  # type: ignore[return-value]
                     module,
                     module_hash,
                     function_name,
@@ -1275,24 +1234,13 @@ class CutlassBaseDSL(BaseDSL):
                 )
                 return None
 
-        custom_name = kwargs.pop("_name_prefix", None)
-        if custom_name:
-            return KernelLauncher(
-                self,
-                lambda: _CutlassIrKernelGenHelper(self),  # type: ignore[arg-type]
-                funcBody,
-                *args,
-                **kwargs,
-                _name_prefix=custom_name,
-            )
-        else:
-            return KernelLauncher(
-                self,
-                lambda: _CutlassIrKernelGenHelper(self),  # type: ignore[arg-type]
-                funcBody,
-                *args,
-                **kwargs,
-            )
+        return KernelLauncher(
+            self,
+            lambda: _CutlassIrKernelGenHelper(self),  # type: ignore[arg-type]
+            funcBody,
+            *args,
+            **kwargs,
+        )
 
     def _preprocess_launch_config_args(self, args: tuple, kwargs: dict) -> None:
         """Helper to preprocess args and kwargs for LaunchConfig"""
@@ -1303,7 +1251,7 @@ class CutlassBaseDSL(BaseDSL):
         self, function_name: str, args: tuple[Any, ...], signature: inspect.Signature
     ) -> str:
         """Mangle the name of the function to avoid conflicts with other functions"""
-        function_name = "cutlass_" + function_name
+        function_name = f"{self._name_mangling_prefix}_{function_name}"
         return super().mangle_name(function_name, args, signature)
 
     def _validate_arg(
@@ -2026,13 +1974,13 @@ class CuteExperimentalDSL(CutlassBaseDSL):
     def compile_and_cache(
         self,
         module: ir.Module,
-        module_hash: str,
+        module_hash: "str | None",
         function_name: str,
         pipeline: Optional[str],
         signature: inspect.Signature,
         no_cache: bool,
         no_jit_engine: bool,
-        func_type: type = CudaDialectJitCompiledFunction,
+        func_type: Callable[..., Any] = CudaDialectJitCompiledFunction,
         *,
         full_args: Optional[tuple] = None,
         full_kwargs: Optional[dict] = None,
@@ -2104,6 +2052,7 @@ class KernelLauncher:
         dsl: "CutlassBaseDSL",
         kernelGenHelper: BaseDSL._KernelGenHelper,
         funcBody: Callable[..., None],
+        /,
         *func_args: Any,
         **func_kwargs: Any,
     ) -> None:
@@ -2113,7 +2062,7 @@ class KernelLauncher:
         self.func_args = func_args
         self.func_kwargs = func_kwargs
 
-        self._name_prefix = func_kwargs.pop("_name_prefix", None)
+        self._name_options = dsl._get_name_options(funcBody)
         self._launch_name = None
 
         self._check_func_args(funcBody, *func_args, **func_kwargs)
@@ -2158,14 +2107,12 @@ class KernelLauncher:
                 collector(self.funcBody, self.func_args, self.func_kwargs)
             )
 
-        if hasattr(self, "_name_prefix") and self._name_prefix:
-            self.dsl._name_prefix = self._name_prefix  # type: ignore[attr-defined]
-
         kernel_generator = self.dsl.kernel_launcher(
             requiredArgs=["config"],
             unitAttrNames=["gpu.kernel", "cute.kernel"],
             valueAttrDict=value_attrs,
             kernelGenHelper=self.kernelGenHelper,
+            _name_options=self._name_options,
         )(self.funcBody)
 
         ret, name = kernel_generator(*self.func_args, **self.func_kwargs, config=config)

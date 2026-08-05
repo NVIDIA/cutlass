@@ -18,9 +18,13 @@ Please refer to :doc:`../limitations` for more details.
 Source Code Correlation
 -----------------------
 
-CuTe DSL provides Python code to PTX/SASS correlation to enable the profiling/debugging of generated kernels with debug symbols by generating line info when compiling the kernel.
+CuTe DSL can emit line information so NVIDIA developer tools can correlate
+generated PTX/SASS back to the Python source that produced it. This is useful
+when profiling generated kernels or debugging them with CUDA tools.
 
-You can enable that globally via the environment variable CUTE_DSL_LINEINFO=1. Alternative, you can use compilation options to enable that per kernel. Please refer to :doc:`./dsl_jit_compilation_options` for more details.
+You can enable line information globally with ``CUTE_DSL_LINEINFO=1``.
+Alternatively, use compilation options to enable it per kernel. Refer to
+:doc:`../cute_dsl_general/dsl_jit_compilation_options` for more details.
 
 
 Debug Mode
@@ -77,8 +81,9 @@ info off:
     the one produced for a normal (debug-off) run. Validate performance and
     generated-code conclusions with debug mode disabled. Because these settings
     are part of the cache key, a debug-built kernel is never silently reused for
-    a production run. See :doc:`JIT caching <./dsl_jit_caching>` for how the
-    cache key is formed.
+    a production run. See :doc:`JIT caching <../cute_dsl_general/dsl_jit_caching>`
+    for how the cache key is formed.
+
 
 
 DSL Debugging
@@ -108,30 +113,37 @@ CuTe DSL provides environment variables to control logging level:
 Log Categories and Levels
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Similar to standard Python logging, different log levels provide varying degrees of detail:
+Similar to standard Python logging, different log levels provide varying
+degrees of detail:
 
-+--------+-------------+
-| Level  | Description |
-+========+=============+
-| 0      | Disabled    |
-+--------+-------------+
-| 10     | Debug       |
-+--------+-------------+
-| 20     | Info        |
-+--------+-------------+
-| 30     | Warning     |
-+--------+-------------+
-| 40     | Error       |
-+--------+-------------+
-| 50     | Critical    |
-+--------+-------------+
+.. list-table::
+   :header-rows: 1
+
+   * - Level
+     - Description
+   * - 0
+     - Disabled
+   * - 1
+     - All messages
+   * - 10
+     - Debug
+   * - 20
+     - Info
+   * - 30
+     - Warning
+   * - 40
+     - Error
+   * - 50
+     - Critical
 
 
 Save generated artifacts to files
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 CuTe DSL can save generated artifacts (IR, PTX, CUBIN, …) to files for offline inspection.
-Use ``CUTE_DSL_KEEP`` with a comma-separated list of artifact tokens:
+Use ``CUTE_DSL_KEEP`` with a comma-separated list of artifact tokens. Prefer
+this consolidated option over deprecated per-artifact variables such as
+``CUTE_DSL_KEEP_PTX=1``.
 
 .. code:: bash
 
@@ -147,25 +159,24 @@ Use ``CUTE_DSL_KEEP`` with a comma-separated list of artifact tokens:
     # Save CUBIN binary to a .cubin file
     export CUTE_DSL_KEEP=cubin
 
-    # Save SASS disassembly to a file (requires nvdisasm in PATH)
+    # Save SASS disassembly to a .sass file
     export CUTE_DSL_KEEP=sass
 
-    # Save LLVM IR to a file
-    export CUTE_DSL_KEEP=llvm
-
     # Save multiple artifacts at once
-    export CUTE_DSL_KEEP=ir,ptx,cubin
+    export CUTE_DSL_KEEP=ir,ptx,cubin,sass
 
     # Save all supported artifacts
     export CUTE_DSL_KEEP=all
 
-Files are written to the current working directory by default. Use ``CUTE_DSL_DUMP_DIR``
-to redirect them (see `Change the dump directory`_ below).
+Files are written to the current working directory by default. Use
+``CUTE_DSL_DUMP_DIR`` to redirect them (see `Change the dump directory`_
+below).
 
 .. note::
 
-    The ``sass`` token requires ``nvdisasm`` (or ``nvdisasm_internal``) to be available
-    in your ``PATH``. It is usually installed with the CUDA toolkit.
+    The ``sass`` token disassembles the CUBIN with ``nvdisasm``. SASS dumping
+    can also be controlled per compilation with ``KeepSASS`` and
+    ``NvdisasmOptions``; see :ref:`JIT_Compilation_Options`.
 
 Print the generated IR to the console
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -181,14 +192,17 @@ To print the IR directly to the console (without writing a file):
 Access the dumped contents programmatically
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For compiled kernels, the generated PTX/CUBIN/IR can be accessed programmatically as well through following attributes:
+For compiled kernels, the generated PTX/CUBIN/IR can also be accessed
+programmatically through the following attributes:
 
 - ``__ptx__``: The generated PTX code of the compiled kernel.
 - ``__cubin__``: The generated CUBIN data of the compiled kernel.
+- ``__sass__``: The generated SASS disassembly of the compiled kernel, when
+  SASS was requested.
 - ``__mlir__``: The generated IR code of the compiled kernel.
 
 .. code:: python
-    
+
     compiled_foo = cute.compile(foo, ...)
     print(f"PTX: {compiled_foo.__ptx__}")
     with open("foo.cubin", "wb") as f:
@@ -207,11 +221,11 @@ Kernel Functional Debugging
 Using Python's ``print`` and CuTe's ``cute.printf``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-CuTe DSL programs can use both Python's native ``print()`` as well as our own ``cute.printf()``  to
+CuTe DSL programs can use both Python's native ``print()`` and ``cute.printf()`` to
 print debug information during kernel generation and execution. They differ in a few key ways:
 
 - Python's ``print()`` executes during compile-time only (no effect on the generated kernel) and is
-  typically used for printing static values (e.g. a fully static layouts).
+  typically used for printing static values, such as fully static layouts.
 - ``cute.printf()`` executes at runtime on the GPU itself and changes the PTX being generated. This
   can be used for printing values of tensors at runtime for diagnostics, but comes at a performance
   overhead similar to that of `printf()` in CUDA C.
@@ -239,36 +253,98 @@ CuTe DSL can also be debugged using standard NVIDIA CUDA tools.
 Using Compute-Sanitizer
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-For detecting memory errors and race conditions:
+For detecting memory errors:
 
 .. code:: bash
 
-    compute-sanitizer --some_options python your_dsl_code.py
+    compute-sanitizer --tool memcheck python your_dsl_code.py
+
+For detecting race conditions:
+
+.. code:: bash
+
+    compute-sanitizer --tool racecheck python your_dsl_code.py
 
 Please refer to the `compute-sanitizer documentation <https://developer.nvidia.com/compute-sanitizer>`_ for more details.
 
 Set function name prefix
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-By default, the function name (host function or kernel function) is automatically generated based on the function name and its parameters.
-Sometimes you may want to attach some runtime information to the function name to make performance profiling and debugging easier,
-e.g., the kernel configs or the rank ids. You can assign a name prefix to the name by calling the ``set_name_prefix`` 
-method on the  host function or kernel function.
+By default, the generated IR name of a host or kernel function is based on the
+Python function name and its parameters. Call ``set_name_prefix`` on a JIT or
+kernel function before invoking it to add runtime context or customize that IR
+name.
+
+``set_name_prefix`` also accepts two optional keyword-only parameters:
+
+* ``remove_cutlass_symbol=False`` removes the ``cutlass`` component that CuTe
+  DSL automatically inserts. It does not modify the user-provided prefix, the
+  Python function name, or text derived from mangled arguments.
+* ``keep_mangled_name=True`` retains the framework-generated function and
+  argument components. When set to ``False``, those components are omitted,
+  while the ``cutlass`` marker remains unless ``remove_cutlass_symbol=True``.
+  The per-kernel numeric uniqueness suffix is always retained.
+
+Calling ``set_name_prefix("")`` with the optional arguments left at their
+defaults restores all default naming behavior. An empty prefix can also be
+combined with non-default component options; for example,
+``set_name_prefix("", remove_cutlass_symbol=True)`` removes the CuTe DSL marker
+without adding a user prefix. A non-empty prefix is required when
+``remove_cutlass_symbol=True`` and ``keep_mangled_name=False`` so that at least
+one textual name component remains.
 
 .. code:: python
 
     @cute.kernel
     def kernel(arg1, arg2, ...):
         ...
+
     @cute.jit
     def launch_kernel():
-        kernel.set_name_prefix("your_custom_name_prefix")
-        kernel(arg1, arg2, ...).launch(grid=[1, 1, 1], block=[1, 1, 1], ...)
+        kernel.set_name_prefix(
+            "my_op",
+            remove_cutlass_symbol=True,
+            keep_mangled_name=False,
+        )
+        kernel(arg1, arg2, ...).launch(
+            grid=[1, 1, 1], block=[1, 1, 1], ...
+        )
 
-For above example, the generated kernel name will be "your_custom_name_prefix_xxx".
+For a first kernel trace whose default name resembles
+``kernel_cutlass_kernel_<arguments>_0``, representative results are:
+
+* ``set_name_prefix("my_op")``:
+  ``my_op_kernel_cutlass_kernel_<arguments>_0``
+* ``set_name_prefix("my_op", remove_cutlass_symbol=True)``:
+  ``my_op_kernel_kernel_<arguments>_0``
+* ``set_name_prefix("my_op", keep_mangled_name=False)``:
+  ``my_op_cutlass_0``
+* Enabling both options, as above: ``my_op_0``
+
+The numeric suffix can differ when the same kernel is traced more than once.
+Host JIT function names do not have the per-kernel numeric suffix.
+
+To produce a generated IR name without ``cutlass``, use a prefix that does not
+contain it. If ``keep_mangled_name=True``, also ensure that the Python function
+name and mangled argument text do not contain it; setting
+``keep_mangled_name=False`` omits those components.
+
+The kernel suffix prevents collisions between traces in one generated module.
+It does not make names unique across separately compiled modules, and host JIT
+names have no such suffix. When ``keep_mangled_name=False``, use a prefix that
+is unique in every final link or load scope where modules can be combined.
+
+``set_name_prefix`` does not truncate the user prefix, so do not rely on
+truncation to remove text from it. Keep the resulting name within the limits of
+the tools that consume the generated artifact.
+
+This API controls traced MLIR function names, not ABI wrappers added by later
+export stages such as ``cutlass_call_<function-name>``.
 
 Conclusion
 ----------
 
-This page covered several key methods for debugging CuTe DSL programs. Effective debugging typically requires a combination of these approaches.
-If you encounter issues with DSL, you can enable logging and share the logs with the CUTLASS team as a GitHub issue to report a bug.
+Effective CuTe DSL debugging typically combines source correlation, artifact
+dumps, runtime prints, and CUDA tooling. When reporting an issue, include the
+minimal reproducer, relevant generated artifacts, and logs collected with the
+debugging options above, and share it with the CUTLASS team as a GitHub issue.

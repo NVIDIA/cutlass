@@ -32,13 +32,6 @@ SM80+), ``MmaFP8Op`` (FP8 E4M3/E5M2, SM89+), and ``MmaMXF4Op`` /
 TiledMMA, MMA Ops`_ for their full constructor parameters, instruction
 shapes, and architecture requirements.
 
-.. {$nv-internal-release begin}
-
-Internal builds additionally expose ``MmaF16BF16SparseOp`` (2:4 structured
-sparsity, SM80+).
-
-.. {$nv-internal-release end}
-
 This guide outlines the CuTe Python DSL programming model for warp-level
 MMA kernels: stage operands in SMEM, load register fragments with
 ``ldmatrix`` or regular shared-memory loads, launch warp-synchronous MMAs, and stage the RMEM accumulator
@@ -278,25 +271,6 @@ CuTe DSL provides implementation of many warp-level MMA ops:
      - ``ab_dtype, acc_dtype, sf_type``
      - ``sm_120a+``
 
-.. {$nv-internal-release begin}
-
-Internal builds additionally provide:
-
-.. list-table:: Internal warp-level MMA ops
-   :header-rows: 1
-   :widths: 34 22 34 10
-
-   * - PTX name
-     - Python class
-     - Constructor parameters
-     - SM Arch
-   * - ``mma.sp.sync.aligned.m16n8k{K}.row.col.{acc}.f16.f16`` / ``.bf16.bf16``
-     - ``warp.MmaF16BF16SparseOp``
-     - ``ab_dtype, acc_dtype, shape_mnk, sparse_metadata_format``
-     - ``sm_80+``
-
-.. {$nv-internal-release end}
-
 Creating a Tiled MMA
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -459,7 +433,7 @@ gives the parameter its name; the integer-only cases used earlier are
 just the identity permutation.
 
 The canonical illustration is the SM70 example from
-`0t_mma_atom.md <../../cpp/cute/0t_mma_atom.md>`_. Take a 2x2 tiled MMA
+`0t_mma_atom.md <../../../cpp/cute/0t_mma_atom.md>`_. Take a 2x2 tiled MMA
 of ``SM70_8x8x4_F32F16F16F32_NT`` atoms with a ``32x32x4`` footprint.
 Without any M-mode permutation, thread ``T0``'s 8 A-values land at the
 following ``(m, k)`` coordinates::
@@ -1064,145 +1038,6 @@ Beyond Simple Dense MMAs
 The warp MMA DSL supports more complex MMA operations beyond simple dense MMA:
 
 - Block-scaled MMA
-
-.. {$nv-internal-release begin}
-
-Internal builds additionally provide:
-
-- Sparse MMA
-
-.. {$nv-internal-release end}
-
-.. {$nv-internal-release begin}
-
-Sparse MMA
-~~~~~~~~~~
-
-Sparse MMA exploits **2:4 structured sparsity** in operand A: out of every
-4 consecutive K-elements, exactly 2 are non-zero. The hardware consumes a
-compressed A operand together with a compact **metadata** tensor ``E`` that
-encodes which 2 of 4 positions are non-zero.
-
-Compared to dense MMA, the MMA API differences are:
-
-**1. MMA op creation** — use ``MmaF16BF16SparseOp`` with an extra
-``sparse_metadata_format`` parameter. The sparse instruction K is doubled
-relative to dense (dense ``m16n8k8`` → sparse ``m16n8k16``, dense
-``m16n8k16`` → sparse ``m16n8k32``) because operand A is 2:4 compressed:
-
-.. code-block:: python
-
-  from cutlass.cute.nvgpu.warp.mma import SparseMetadataFormat
-
-  # Dense F16 (for comparison): inst_K = 16
-  dense_op = cute.nvgpu.warp.MmaF16BF16Op(
-      cutlass.Float16, cutlass.Float32, (16, 8, 16),
-  )
-
-  # Sparse F16: inst_K = 32 (2× dense, since A is 2:4 compressed)
-  sparse_op = cute.nvgpu.warp.MmaF16BF16SparseOp(
-      cutlass.Float16,                         # A/B element type
-      cutlass.Float32,                         # accumulator type
-      (16, 8, 32),                             # instruction shape (M, N, K)
-      SparseMetadataFormat.TID,                # metadata format
-  )
-  tiled_mma = cute.make_tiled_mma(sparse_op, cute.make_layout((1, 1, 1)))
-
-.. code-block:: text
-
-  Supported instruction shapes for MmaF16BF16SparseOp:
-
-  | A/B Type | Acc Type  | Inst Shape     |
-  |----------|-----------|----------------|
-  | F16      | F16, F32  | (16,8,16), (16,8,32) |
-  | BF16     | F32       | (16,8,16), (16,8,32) |
-
-**2. Compressed A tensor and metadata E** — operand A stores only the
-two non-zero values per group of 4 K-elements (half the storage). The
-metadata tensor ``E`` records which 2 of 4 positions are non-zero. The
-exact bit encoding depends on ``SparseMetadataFormat`` and on how the
-implementation packs metadata. In this repository, helper code that
-generates 2:4 test inputs packs two 4-bit metadata entries into each
-``uint8`` value:
-
-.. code-block:: python
-
-  # Example metadata values used by examples/CuTeDSL/helpers/sparse_utils.py
-  # Each nibble selects which 2 of 4 positions are non-zero.
-  metadata_values = [0x4, 0x8, 0x9, 0xC, 0xD, 0xE]
-
-.. code-block:: text
-
-  Dense A: (M, K)                    Sparse operands:
-  +--+--+--+--+--+--+--+--+         +--+--+--+--+
-  | a| 0| b| 0| c| 0| d| 0|   →     | a| b| c| d|   (compressed A values)
-  +--+--+--+--+--+--+--+--+         +--+--+--+--+
-
-                                    E stores the non-zero positions
-                                    for each 2:4 group.
-
-**3. Fragments** — the dense-style fragment APIs for A, B, and C still
-apply to the sparse atom:
-
-.. code-block:: python
-
-  # A/B/C fragments — same public API shape as dense
-  tCsA = thr_mma.partition_A(sA)
-  tCsB = thr_mma.partition_B(sB)
-  tCgC = thr_mma.partition_C(gC)
-
-  tCrA = tiled_mma.make_fragment_A(tCsA[None, None, None, 0])
-  tCrB = tiled_mma.make_fragment_B(tCsB[None, None, None, 0])
-  tCrC = tiled_mma.make_fragment_C(tCgC)
-  tCrC.fill(0.0)
-
-Sparse metadata ``E`` is an auxiliary operand associated with A. The
-public warp API and tests in this repository verify op construction and
-the ``cute.gemm(..., [A, E], B, ...)`` calling convention, but they do
-not provide an end-to-end warp sparse kernel showing the exact
-``partition`` / ``copy`` / ``make_fragment`` sequence for ``E``. For
-that reason, this document intentionally does not spell out an ``E``
-fragment construction sequence that has no example backing it.
-
-**4. Modified gemm call** — the metadata E is passed alongside operand A
-as a list. This part of the API is verified by ``cutlass.cute.algorithm.gemm``:
-
-.. code-block:: python
-
-  # Schematic only: E_k is the metadata operand for the same k-slice as A_k.
-  A_k = tCrA[None, None, k_block]
-  E_k = metadata_k
-  B_k = tCrB[None, None, k_block]
-
-  cute.gemm(
-      tiled_mma,
-      tCrC,
-      [A_k, E_k],   # [A, E]
-      B_k,
-      tCrC,
-  )
-
-.. code-block:: text
-
-  Dense gemm call:
-    cute.gemm(tiled_mma, tCrC, A_k, B_k, tCrC)
-
-  Sparse gemm call:
-    cute.gemm(tiled_mma, tCrC, [A_k, E_k], B_k, tCrC)
-                              ^^^^  ^^^
-                              A     metadata
-
-The epilogue (RMEM → SMEM → GMEM) is identical to a dense kernel.
-
-.. note:: An end-to-end warp sparse GEMM example is not yet available in the
-  examples directory. The closest verified references in this repository are
-  ``cutlass_ir/compiler/test/python/not_pytest/sm_80/test_mma_atom.py`` for
-  op construction, ``cutlass_ir/compiler/test/python/api/sm_120a/test_nvgpu_warp_mma.py``
-  for tiled sparse MMA construction, and
-  ``examples/CuTeDSL/helpers/sparse_utils.py`` for
-  2:4 metadata packing.
-
-.. {$nv-internal-release end}
 
 
 Block-scaled MMA

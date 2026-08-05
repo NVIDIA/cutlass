@@ -1037,13 +1037,13 @@ class TgvGemmKernel:
             )
         ]
         # Construct predicate tensor: compare each coordinate with problem shape (M, N, L)
-        # tDpC(t) = true if coordinate is in-bounds, false if out-of-bounds
-        # C++: tDpC(t) = elem_less(tDcC(t), shape(mC))
-        tDpC = cute.make_rmem_tensor(
+        # tDpredC(t) = true if coordinate is in-bounds, false if out-of-bounds
+        # C++: tDpredC(t) = elem_less(tDcC(t), shape(mC))
+        tDpredC = cute.make_rmem_tensor(
             tDcC.shape, cutlass.Boolean
         )  # (CpyD, NumCpy_M, NumCpy_N)
-        for i in range(cute.size(tDpC)):
-            tDpC[i] = cute.elem_less(tDcC[i], mC_mnl.shape)
+        for i in range(cute.size(tDpredC)):
+            tDpredC[i] = cute.elem_less(tDcC[i], mC_mnl.shape)
 
         # ---- Wait for TMA_B to finish ----
         # Initial phase=0, it flips to 1 when TMA_B warp is done
@@ -1080,6 +1080,6 @@ class TgvGemmKernel:
         # Predicated store: rmem -> gmem
         # The store is unfortunately uncoalesced because gmem addresses across threads
         # are not contiguous, but this is acceptable for small batch sizes.
-        # C++: copy_if(tDpC, tDrC, tDgC)
-        # For each element: if tDpC[i] is true, store tDrC[i] to tDgC[i] via stg
-        cute.basic_copy_if(tDpC, tDrC, tDgC)
+        # C++: copy_if(tDpredC, tDrC, tDgC)
+        # For each element: if tDpredC[i] is true, store tDrC[i] to tDgC[i] via stg
+        cute.basic_copy_if(tDpredC, tDrC, tDgC)
