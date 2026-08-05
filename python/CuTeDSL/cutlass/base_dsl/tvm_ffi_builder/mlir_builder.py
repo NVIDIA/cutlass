@@ -139,7 +139,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Initialize the MLIR builder."""
         super().__init__()
         self.module: Optional[ir.Module] = None
-        self.const_str_table: dict[str, ir.Value] = {}
+        self.const_str_table: dict[str, str] = {}
 
         self.get_element_extra_kwargs: dict[str, Any] = {}
 
@@ -383,7 +383,13 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Define a global string symbol with the given content using standard MLIR APIs."""
         if content in self.const_str_table:
             return self.const_str_table[content]
-        symbol = f"__tvm_ffi__str_{len(self.const_str_table)}"
+        symbol_index = len(self.const_str_table)
+        symbol = f"__tvm_ffi__str_{symbol_index}"
+        module = self.module
+        if module is not None:
+            while self._module_symbol_exists(module, symbol):
+                symbol_index += 1
+                symbol = f"__tvm_ffi__str_{symbol_index}"
 
         # The string_attr.value gives us the original string, but we need to escape it for
         # MLIR parsing. Let's use a simple approach: escape quotes and backslashes
@@ -398,6 +404,15 @@ class MLIRBuilder(MLIRTypeBuilder):
             module_body.append(parsed_op)
             self.const_str_table[content] = symbol
         return symbol
+
+    def _module_symbol_exists(self, module: ir.Module, symbol: str) -> bool:
+        """Return whether a top-level module symbol already exists."""
+        for op in module.body:
+            if "sym_name" not in op.attributes:
+                continue
+            if str(op.attributes["sym_name"]).strip('"') == symbol:
+                return True
+        return False
 
     # function
     def function(

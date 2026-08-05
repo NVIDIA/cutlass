@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from dataclasses import is_dataclass, fields as dataclass_fields
 from cutlass.base_dsl.tvm_ffi_builder import spec
 from cutlass.base_dsl.jit_executor import ExecutionArgs

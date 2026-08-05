@@ -440,7 +440,7 @@ class Sm100PersistentDenseGemmAllReduceLDMCxSTMCKernel:
         self.mma_tiler = (*mma_tiler_mn, 1)
         self.use_tma_store = use_tma_store
         # Capture the JIT target arch so SMEM/TMEM sizing tracks the actual
-        # hardware (sm_100 / sm_103 / sm_107 / ...). Matches the FMHA pattern.
+        # hardware (sm_100 / sm_103 / ...). Matches the FMHA pattern.
         arch_enum = BaseDSL._get_dsl().get_arch_enum()
         self.arch = f"sm_{arch_enum.major}{arch_enum.minor}"
 

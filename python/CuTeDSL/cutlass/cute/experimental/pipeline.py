@@ -14,7 +14,7 @@ Convenience pipeline classes that hide elect_one synchronization complexity
 """
 
 from dataclasses import dataclass
-from typing import NoReturn, Optional
+from typing import NoReturn, Optional, cast
 
 import cutlass
 
@@ -343,6 +343,11 @@ def _is_2sm_tma_operation_type(operation_type: OperationTypeEnum) -> bool:
     ]
 
 
+def _is_2sm_tma_pipeline_value(raw_pipeline: ir.Value) -> bool:
+    """Return whether a reconstructed pipeline value has a 2SM TMA producer."""
+    return "SM100_TMA_LOAD_2SM" in str(raw_pipeline.type)
+
+
 class TMAToUMMAPipeline(GenericPipelineBase):
     """
     Pipeline for TMA to UMMA.
@@ -358,6 +363,12 @@ class TMAToUMMAPipeline(GenericPipelineBase):
     ) -> None:
         super().__init__(raw_pipeline, num_stages, producer_state, consumer_state)
         self.is_2sm = is_2sm
+
+    @classmethod
+    def __new_from_mlir_values__(cls, values: list) -> "TMAToUMMAPipeline":
+        obj = cast("TMAToUMMAPipeline", super().__new_from_mlir_values__(values))
+        obj.is_2sm = _is_2sm_tma_pipeline_value(obj.raw_pipeline)
+        return obj
 
     @staticmethod
     def create(
@@ -1076,7 +1087,7 @@ class GroupedGemmSchedulerPipeline(GenericPipelineBase):
         """
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
-            OperationTypeEnum.SW_STATIC_PERSISTENT_TILE_SCHEDULER,
+            OperationTypeEnum.SREG_CTAID,
             OperationTypeEnum.LD_SHARED,
             producer_arv_count=producer_arv_count,
             consumer_arv_count=consumer_arv_count,

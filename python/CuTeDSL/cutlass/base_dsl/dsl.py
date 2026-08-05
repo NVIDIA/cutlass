@@ -49,7 +49,7 @@ from types import SimpleNamespace, UnionType
 
 if TYPE_CHECKING:
     import hashlib
-    from .arch import Arch
+    from . import Arch
 import warnings
 import threading
 
@@ -76,6 +76,8 @@ from .runtime.jit_arg_adapters import (
 )
 
 from .ast_preprocessor import DSLPreprocessor
+from .pyir_preprocessor import PyIRDSLPreprocessor
+from .preprocess_mode import _PreprocessModeState
 from .common import *
 from .diagnostics import DiagId
 from .typing import (
@@ -105,6 +107,28 @@ from .._mlir.dialects import func
 # =============================================================================
 
 MLIR_DYNAMIC = -9223372036854775808
+
+# Keyword parameter a compiler provider declares to receive the compiled module
+# back. Keep this in sync with the keyword-only parameter named return_module on
+# BaseDSL.compile_and_jit and Compiler.compile_and_jit.
+_RETURN_MODULE_PARAM = "return_module"
+
+# Attribute a **kwargs-forwarding provider sets on its instance to opt into
+# return_module forwarding when the parameter is not visible via signature.
+_SUPPORTS_RETURN_MODULE_ATTR = "supports_return_module"
+
+
+@dataclass(frozen=True)
+class _NameOptions:
+    """Immutable naming configuration attached to a decorated function."""
+
+    name_prefix: str = ""
+    remove_cutlass_symbol: bool = False
+    keep_mangled_name: bool = True
+
+
+_DEFAULT_NAME_OPTIONS = _NameOptions()
+
 
 # =============================================================================
 # Main DSL Class
@@ -645,6 +669,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     gpu_module: Any = None
     _env_class: type[EnvironmentVarManager] = EnvironmentVarManager
     _is_experimental_dsl: bool = False
+    # Optional compiler-recognized component inserted by a DSL's name mangler.
+    _name_mangling_prefix: ClassVar[str] = ""
 
     def __init__(
         self,
@@ -698,12 +724,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.device_jit_decorator_name: str = f"@{BaseDSL.kernel.__name__}"
 
         # set warning
-        #
-        # Multiple DSL singletons may be initialized with different env var
-        # prefixes.  The optimization-warning filter is global, so a later
-        # DSL instance must not blindly add an "ignore" filter when an
-        # earlier instance already opted *in* via its own env var (e.g.
-        # CUTE_DSL_ENABLE_OPTIMIZATION_WARNINGS=1).
         if self.envar.enable_optimization_warnings:
             if not DSLSingletonMeta._optimization_warnings_enabled:
                 DSLSingletonMeta._optimization_warnings_enabled = True
@@ -738,7 +758,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if preprocess:
             preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
             self.package_name = dsl_package_name
+            # Use PyIRDSLPreprocessor when PyIR is enabled for SSA form and scope isolation
+            if self.envar.enable_pyir:
+                preprocessor = PyIRDSLPreprocessor(dsl_package_name)
             self.preprocessor: DSLPreprocessor = preprocessor
+
+        self._preprocess_mode = _PreprocessModeState(self)
+        if preprocess:
+            self._preprocess_mode.stamp(self.preprocessor)
 
         log().info(f"Initializing {name} DSL")
         log().debug(f"Logger initialized for {self.name}")
@@ -798,6 +825,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         main_dsl = cls()  # type: ignore[call-arg]
         return main_dsl
 
+    @classmethod
+    @contextmanager
+    def enable_pyir(cls) -> Generator[None, Any, None]:
+        dsl = cls._get_dsl()
+        dsl._preprocess_mode.push_pyir()
+        try:
+            yield
+        finally:
+            dsl._preprocess_mode.pop()
+
     @staticmethod
     def _can_preprocess(**dkwargs: Any) -> bool:
         """
@@ -824,15 +861,30 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Update the decorator location to the new function
         func._dsl_object.decorator_location = func._decorator_location
 
+        # Keep "already preprocessed" separate from "preprocessing is disabled".
+        # The latter is a hard opt-out and must not be re-enabled by mode changes.
+        if getattr(func, "_preprocess_enabled", True) is False:
+            func._preprocessed = True
+            return
+
+        if not hasattr(func, "_original_code"):
+            func._original_code = func.__code__
+
         if getattr(func, "_preprocessed", False) is True:
+            if not func._dsl_object.enable_preprocessor:
                 return
+            prev = getattr(func, "_preprocessed_signature", None)
+            current = func._dsl_object._preprocess_mode.current_signature()
+            if prev == current:
+                return
+            func.__code__ = func._original_code
+
         if not func._dsl_object.enable_preprocessor:
             func._preprocessed = True
             return
 
-        fcn_ptr = func._dsl_object.run_preprocessor(
-            func,
-        )
+        # Pass trace-time rewrite flags if present
+        fcn_ptr = func._dsl_object.run_preprocessor(func)
         if fcn_ptr:
             func.__code__ = (
                 fcn_ptr.__code__
@@ -858,6 +910,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             preprocess_enabled = BaseDSL._can_preprocess(**dkwargs)
             func._dsl_cls = cls
             func._decorator_location = BaseDSL.get_location_from_frame(frame)
+            func._preprocess_enabled = preprocess_enabled
             if not hasattr(func, "_preprocessed") and not preprocess_enabled:
                 func._preprocessed = True
 
@@ -865,19 +918,66 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             def jit_wrapper(*args: Any, **kwargs: Any) -> Any:
                 BaseDSL._preprocess_and_replace_code(func)
 
-                custom_name = getattr(jit_wrapper, "_name_prefix", None)
                 with active_env_manager(func._dsl_object.envar):
-                    if custom_name:
-                        return getattr(func._dsl_object, executor_name)(
-                            func, *args, **kwargs, _name_prefix=custom_name
-                        )
-                    else:
-                        return getattr(func._dsl_object, executor_name)(
-                            func, *args, **kwargs
-                        )
+                    return getattr(func._dsl_object, executor_name)(
+                        func, *args, **kwargs
+                    )
 
-            def set_name_prefix(name: str) -> None:
-                jit_wrapper._name_prefix = name  # type: ignore[attr-defined]
+            def set_name_prefix(
+                name: str,
+                *,
+                remove_cutlass_symbol: bool = False,
+                keep_mangled_name: bool = True,
+            ) -> None:
+                """Configure the generated function-name prefix and components.
+
+                Parameters
+                ----------
+                name : str
+                    Prefix prepended to the generated name. This may be empty
+                    when only the component options are needed. An empty prefix
+                    with the other arguments at their defaults restores the
+                    default naming behavior. A non-empty prefix is required if
+                    both generated components are removed.
+                remove_cutlass_symbol : bool
+                    Omit the ``cutlass`` component inserted by CuTe DSL. Text
+                    in the user prefix or mangled name is not modified.
+                keep_mangled_name : bool
+                    Retain the framework-generated ``kernel_``/function/argument
+                    name. For kernels, the per-trace uniqueness suffix is retained.
+                    Host JIT function names do not append that suffix.
+                    When this is ``False``, callers must choose prefixes that
+                    remain unique wherever separately compiled modules are
+                    combined.
+                """
+                if not isinstance(name, str):
+                    raise TypeError(
+                        "set_name_prefix name must be a string, but got "
+                        f"{type(name).__name__}"
+                    )
+                for option_name, option_value in (
+                    ("remove_cutlass_symbol", remove_cutlass_symbol),
+                    ("keep_mangled_name", keep_mangled_name),
+                ):
+                    if not isinstance(option_value, bool):
+                        raise TypeError(
+                            f"{option_name} must be a bool, but got "
+                            f"{type(option_value).__name__}"
+                        )
+                if not name and remove_cutlass_symbol and not keep_mangled_name:
+                    raise ValueError(
+                        "set_name_prefix requires a non-empty name when "
+                        "remove_cutlass_symbol is True and keep_mangled_name "
+                        "is False"
+                    )
+
+                # Store all fields with one assignment so a caller can never
+                # observe a combination that was not configured together.
+                func._cute_dsl_name_options = _NameOptions(  # type: ignore[attr-defined]
+                    name_prefix=name,
+                    remove_cutlass_symbol=remove_cutlass_symbol,
+                    keep_mangled_name=keep_mangled_name,
+                )
 
             jit_wrapper.set_name_prefix = set_name_prefix  # type: ignore[attr-defined]
 
@@ -981,6 +1081,38 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         function_name = function_name[:180]
         log().info(f"Final mangled function name: {function_name}")
         return function_name
+
+    @staticmethod
+    def _get_name_options(func: Callable[..., Any]) -> _NameOptions:
+        """Return one immutable snapshot of a callable's naming options."""
+        return getattr(func, "_cute_dsl_name_options", _DEFAULT_NAME_OPTIONS)
+
+    def _customize_generated_name(
+        self,
+        default_name: str,
+        name_options: _NameOptions,
+        unique_suffix: int | None = None,
+    ) -> str:
+        """Apply user-controlled components to a generated function name."""
+        components: list[str] = []
+        if name_options.name_prefix:
+            components.append(name_options.name_prefix)
+
+        if name_options.keep_mangled_name:
+            if name_options.remove_cutlass_symbol and self._name_mangling_prefix:
+                # The DSL's mangler inserts this component before any text from
+                # the Python function or its arguments, so remove only the
+                # first occurrence and leave user-controlled text unchanged.
+                default_name = default_name.replace(
+                    f"{self._name_mangling_prefix}_", "", 1
+                )
+            components.append(default_name)
+        elif not name_options.remove_cutlass_symbol and self._name_mangling_prefix:
+            components.append(self._name_mangling_prefix)
+        if not name_options.keep_mangled_name and unique_suffix is not None:
+            components.append(str(unique_suffix))
+
+        return "_".join(components)
 
     def _generate_execution_arguments_for_known_types(
         self,
@@ -1396,6 +1528,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         smem_merge_branch_allocs: bool = False
         preferred_smem_carveout: int | None = None
+        hint_smem_base_uniform: bool | None = True
 
         @staticmethod
         def _check_and_canonicalize_dim(dim: Any, name: str) -> list[Any]:
@@ -1529,15 +1662,68 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         return loc
 
+    @staticmethod
+    def _callable_accepts_return_module(callable_obj: Any) -> bool:
+        """
+        Return whether a compiler callable accepts return_module.
+
+        Signature inspection handles explicit parameters. The provider instance
+        opt-in attribute is a fallback for bound methods that accept forwarded
+        keyword arguments.
+        """
+        try:
+            sig = inspect.signature(callable_obj)
+        except (TypeError, ValueError):
+            sig = None
+        if sig is not None and _RETURN_MODULE_PARAM in sig.parameters:
+            return True
+        bound_owner = getattr(callable_obj, "__self__", None)
+        return bool(getattr(bound_owner, _SUPPORTS_RETURN_MODULE_ATTR, False))
+
+    @staticmethod
+    def _split_compile_and_jit_result(
+        compile_result: Any, original_module: ir.Module
+    ) -> tuple[Any, ir.Module]:
+        """
+        Split a compile_and_jit result into a kernel and compiled module.
+
+        A two-item result with an ir.Module second item is treated as
+        (kernel, compiled_module). Other tuple shapes, wrong module types, and
+        non-tuple results fall back to the original module.
+        """
+        if isinstance(compile_result, tuple) and len(compile_result) == 2:
+            kernel, compiled_module = compile_result
+            if isinstance(compiled_module, ir.Module):
+                return kernel, compiled_module
+            return kernel, original_module
+        return compile_result, original_module
+
     def compile_and_jit(
         self,
         module: ir.Module,
         pipeline: str,
         shared_libs: list[str],
         function_name: str = "",
+        *,
+        return_module: bool = False,
     ) -> Any:
         """
         Compile and JIT an MLIR module.
+
+        Args:
+            module: The MLIR module to compile.
+            pipeline: The pass pipeline string.
+            shared_libs: Shared library paths for the execution engine.
+            function_name: Optional function name for lookup and profiling.
+            return_module: When false, return the usual JIT result. When true,
+                return a (JIT result, compiled module) pair when the compiler
+                provider supports it. If the provider does not support this
+                opt-in, the compiled module in the returned pair is the
+                original input module.
+
+        Returns:
+            The JIT result, or a (JIT result, compiled module) pair when
+            return_module is true.
         """
 
         try:
@@ -1550,19 +1736,35 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
             try:
                 enable_debug_info = self.envar.lineinfo
-                kernel = self.compiler_provider.compile_and_jit(
-                    module,
-                    pipeline,
-                    shared_libs=shared_libs,
-                    arch=self.envar.arch,
-                    remark_filter=self.compile_options.remark_filter,
-                    warnings_filter=self.compile_options.warnings_filter,
-                    remark_output=self.compile_options.remark_output,
-                    collect_compiler_diagnostics=(
+                compile_and_jit_kwargs = {
+                    "shared_libs": shared_libs,
+                    "arch": self.envar.arch,
+                    "remark_filter": self.compile_options.remark_filter,
+                    "warnings_filter": self.compile_options.warnings_filter,
+                    "remark_output": self.compile_options.remark_output,
+                    "collect_compiler_diagnostics": (
                         self.compile_options.collect_compiler_diagnostics
                     ),
-                    enable_debug_info=enable_debug_info,
+                    "enable_debug_info": enable_debug_info,
+                }
+                supports_return_module = self._callable_accepts_return_module(
+                    self.compiler_provider.compile_and_jit
                 )
+                if supports_return_module and return_module:
+                    compile_and_jit_kwargs[_RETURN_MODULE_PARAM] = True
+                    compile_result = self.compiler_provider.compile_and_jit(
+                        module,
+                        pipeline,
+                        **compile_and_jit_kwargs,
+                    )
+                    kernel, compiled_module = self._split_compile_and_jit_result(
+                        compile_result, module
+                    )
+                else:
+                    kernel = self.compiler_provider.compile_and_jit(
+                        module, pipeline, **compile_and_jit_kwargs
+                    )
+                    compiled_module = module
 
             finally:
                 sys.stdout = orig_stdout
@@ -1577,6 +1779,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             if sass_path:
                 self._dump_sass_artifact(sass_path)
 
+            if return_module:
+                return kernel, compiled_module
             return kernel
 
         except CompilerDiagnosticError:
@@ -1632,10 +1836,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     f"{self.name}_LIBS environment variable is not set and "
                     "CuTe-family auto-discovery failed. Set "
                     f"{self.name}_LIBS to the path of libcute_dsl_runtime.so "
-                    "(e.g. <build_dir>/lib/libcute_dsl_runtime.so). For pip "
-                    "editable installs, setting CUTE_DSL_LIBS or ensuring "
-                    "PYTHONPATH includes <build_dir>/cutlass_ir/python_packages "
-                    "also works."
+                    "(e.g. <build_dir>/lib/libcute_dsl_runtime.so)."
                 )
             else:
                 self.print_warning(
@@ -1796,6 +1997,15 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             module.operation.print(enable_debug_info=enable_debug_info)
             print("\n//===--- --- End of Generated IR -- ---====\n")
 
+        # Poison-read check: any used ub.poison value is a definite bug
+        # (a value was read in code that does not dominate the write).
+        try:
+            from .pyir_runtime import _verify_no_used_poison
+
+            _verify_no_used_poison(module)
+        except ImportError:
+            pass
+
         # Verify the module
         try:
             module.operation.verify()
@@ -1828,7 +2038,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         kwonlyargs: dict[str, Any],
         sig: inspect.Signature,
         location: DSLLocation | None = None,
-    ) -> tuple[ir.Module, str, Any]:
+        *,
+        no_cache: bool = False,
+    ) -> tuple[ir.Module, str | None, Any]:
         def build_ir_module() -> tuple[ir.Module, Any]:
             loc = self.get_ir_location(location)
             module = ir.Module.create(loc=loc)
@@ -1852,7 +2064,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     )
                     # Call user function body
                     try:
-                        result = funcBody(*ir_args, **ir_kwargs)
+                        from .multi_stage_manager import _jit_scope
+
+                        with (
+                            _jit_scope(),
+                        ):
+                            result = funcBody(*ir_args, **ir_kwargs)
                         default_ret_values = self.generate_default_return_values(
                             ir.InsertionPoint.current
                         )
@@ -1893,7 +2110,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         else:
             module, result = build_ir_module()
         self._run_trace_finalize_hooks(module, function_name)
-        module_hash = self.get_module_hash(module, function_name)
+        module_hash = None if no_cache else self.get_module_hash(module, function_name)
 
         module = self.build_module(module, function_name)
 
@@ -1964,13 +2181,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     def compile_and_cache(
         self,
         module: ir.Module,
-        module_hash: str,
+        module_hash: str | None,
         function_name: str,
         pipeline: str | None,
         sig: inspect.Signature,
         no_cache: bool,
         no_jit_engine: bool,
-        func_type: type[JitCompiledFunction] = JitCompiledFunction,
+        func_type: Callable[..., JitCompiledFunction] = JitCompiledFunction,
         *,
         full_args: Any = None,
         full_kwargs: Any = None,
@@ -2002,6 +2219,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # try load the file cache
         load_from_file_cache = False
         if not no_cache:
+            assert module_hash is not None
             fn = load_cache_from_path(
                 self.name, module_hash, bytecode_reader=read_bytecode_and_check_crc32
             )
@@ -2025,17 +2243,37 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
             # Compile and JIT MLIR module
             if gen_jit_engine:
+                compile_and_jit_kwargs: dict[str, Any] = {
+                    "function_name": function_name
+                }
+                supports_return_module = self._callable_accepts_return_module(
+                    self.compile_and_jit
+                )
+                if supports_return_module:
+                    compile_and_jit_kwargs[_RETURN_MODULE_PARAM] = True
                 if self.envar.jit_time_profiling:
-                    engine = self.profiler(self.compile_and_jit)(
-                        module, pipeline, shared_libs, function_name=function_name
+                    compile_result = self.profiler(self.compile_and_jit)(
+                        module,
+                        pipeline,
+                        shared_libs,
+                        **compile_and_jit_kwargs,
                     )
                 else:
-                    engine = self.compile_and_jit(
-                        module, pipeline, shared_libs, function_name=function_name
+                    compile_result = self.compile_and_jit(
+                        module,
+                        pipeline,
+                        shared_libs,
+                        **compile_and_jit_kwargs,
                     )
+                if supports_return_module:
+                    engine, module = self._split_compile_and_jit_result(
+                        compile_result, module
+                    )
+                else:
+                    engine = compile_result
             else:
                 if self.envar.jit_time_profiling:
-                    self.profiler(self.compiler_provider.compile)(
+                    compiled_module = self.profiler(self.compiler_provider.compile)(
                         module,
                         pipeline,
                         remark_filter=self.compile_options.remark_filter,
@@ -2045,8 +2283,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             self.compile_options.collect_compiler_diagnostics
                         ),
                     )
+                    if isinstance(compiled_module, ir.Module):
+                        module = compiled_module
                 else:
-                    self.compiler_provider.compile(
+                    compiled_module = self.compiler_provider.compile(
                         module,
                         pipeline,
                         remark_filter=self.compile_options.remark_filter,
@@ -2056,6 +2296,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             self.compile_options.collect_compiler_diagnostics
                         ),
                     )
+                    if isinstance(compiled_module, ir.Module):
+                        module = compiled_module
                 engine = None
         else:
             log().info(
@@ -2103,6 +2345,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         )
 
         if not no_cache:
+            assert module_hash is not None
             # module stored in cache is compiled.
             self.jit_cache.set(module_hash, fn, funcBody=funcBody)
             # write through the file cache if enabled.
@@ -2231,6 +2474,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     kwonlyargs,
                     sig,
                     location=location,
+                    no_cache=no_cache,
                 )
 
                 # add ffi bitcode sources to link options
@@ -2349,7 +2593,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         those names are absent from ``__globals__``.  The AST preprocessor
         re-parses the source and ``exec()``s it, which requires those names
         to be resolvable in *exec_globals*.
-
         """
         if original_function.__closure__:
             for name, cell in zip(
@@ -2369,9 +2612,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     ) -> Any:
         # Preprocessing runs before jit_wrapper enters its call-time context.
         with active_env_manager(self.envar):
-            return self._run_preprocessor_impl(
-                original_function,
-            )
+            return self._run_preprocessor_impl(original_function)
 
     def _run_preprocessor_impl(
         self,
@@ -2402,6 +2643,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
 
             original_function._preprocessed = True
+            original_function._preprocessed_signature = (
+                self._preprocess_mode.current_signature()
+            )
+
             return preprocessor_session.exec(
                 original_function.__name__,
                 original_function,
@@ -2597,7 +2842,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         compile_to_precompiled_mlir = kwargs.pop("compile_to_precompiled_mlir", False)
 
-        func_name_prefix = kwargs.pop("_name_prefix", None)
+        name_options = self._get_name_options(funcBody)
         export_name = kwargs.pop("export_name", None)
 
         if not no_cache and (
@@ -2632,13 +2877,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if export_name is not None:
             function_name = export_name
         else:
-            function_name = self.mangle_name(function_name, canonicalized_args, sig)
-            if func_name_prefix:
-                function_name = f"{func_name_prefix}_{function_name}"
+            default_name = (
+                self.mangle_name(function_name, canonicalized_args, sig)
+                if name_options.keep_mangled_name
+                else ""
+            )
+            function_name = self._customize_generated_name(
+                default_name,
+                name_options,
+            )
 
         self.compile_options.apply_envar_settings(self.envar, function_name)
         track_source_locations = (
             self.compile_options.generate_line_info
+            or self.compile_options.collect_compiler_diagnostics
         )
         if not track_source_locations:
             self.decorator_location = None
@@ -2685,7 +2937,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if ir.Context.current is None:
             pass
         elif ir.InsertionPoint.current is not None:
-            return funcBody(*args, **kwargs)
+            # Avoid an inline import statement here: the AST preprocessor
+            # scans function bodies for imports when reconstructing exec
+            # globals, and a relative import in this hot path leaks a
+            # source-tree-only module path into lit tests.
+            with __import__(
+                f"{__package__}.multi_stage_manager", fromlist=["_jit_scope"]
+            )._jit_scope():
+                return funcBody(*args, **kwargs)
 
         setup = self._prepare_compilation(funcBody, *args, **kwargs)
 
@@ -2915,6 +3174,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 unitAttrNames = dkwargs.get("unitAttrNames", [])
                 valueAttrDict = dkwargs.get("valueAttrDict", {})
                 kernelGenHelper = dkwargs.get("kernelGenHelper", None)
+                launch_loc = kwargs.pop("_launch_loc", None)
+                name_options = dkwargs.get("_name_options") or self._get_name_options(
+                    funcBody
+                )
 
                 kernel_name = funcBody.__name__
                 signature = self._get_signature(funcBody)
@@ -2924,9 +3187,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 # called multiple times, resulting in multiple kernel traces.)
                 # The mangled name of Python function is part of the name to
                 # improve readability.
-                kernel_name = f"kernel_{self.mangle_name(kernel_name, args, signature)}_{self.num_kernels}"
-                if hasattr(self, "_name_prefix") and self._name_prefix:
-                    kernel_name = f"{self._name_prefix}_{kernel_name}"
+                default_name = (
+                    f"kernel_{self.mangle_name(kernel_name, args, signature)}_{self.num_kernels}"
+                    if name_options.keep_mangled_name
+                    else ""
+                )
+                kernel_name = self._customize_generated_name(
+                    default_name,
+                    name_options,
+                    unique_suffix=self.num_kernels,
+                )
                 self.num_kernels += 1
 
                 # Step 0. Preprocess the arguments
@@ -3019,11 +3289,17 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         log().debug(
                             f"IR arguments - args: {ir_args} ; kwargs: {ir_kwargs}"
                         )
-
-                        kernel_ret = funcBody(*ir_args, **ir_kwargs)
-                        if hasattr(helper, "set_kernel_ret"):
-                            helper.set_kernel_ret(kernel_ret)
-                        helper.generate_func_ret_op()
+                        # Kernel body is IsolatedFromAbove -- reset
+                        # staged-CF depth so host-level CF does not
+                        # leak into the kernel scope.
+                        with __import__(
+                            f"{__package__}.multi_stage_manager",
+                            fromlist=["isolated_region"],
+                        ).isolated_region():
+                            kernel_ret = funcBody(*ir_args, **ir_kwargs)
+                            if hasattr(helper, "set_kernel_ret"):
+                                helper.set_kernel_ret(kernel_ret)
+                            helper.generate_func_ret_op()
 
                 # Step 3. Generate call site `launch_func`
                 kernel_sym = ir.SymbolRefAttr.get(["kernels", kernel_name])
@@ -3035,6 +3311,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     requiredArgs=req_args,
                     optionalArgs=opt_args,
                     loc=loc,
+                    launch_loc=launch_loc or loc,
                 )
 
                 KernelReturns = namedtuple(
@@ -3057,7 +3334,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
         Get the arch enum from the environment variable
         """
-        from .arch import Arch
+        from . import Arch
 
         arch_option: str | None = self.compile_options.gpu_arch
         return Arch.from_string(arch_option if arch_option else self.envar.arch)  # type: ignore[arg-type]
@@ -3067,7 +3344,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         Check the arch enum by criterion, raise DSLRuntimeError if the arch enum does not satisfy the criterion
         """
         # Avoid circular dependency
-        from .arch import Arch
+        from . import Arch
 
         arch = self.get_arch_enum()
         if not criterion(arch):

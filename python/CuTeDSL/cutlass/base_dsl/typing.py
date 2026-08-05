@@ -44,7 +44,9 @@ from .._mlir import ir
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith, llvm, nvvm, vector
 
-from .address_space import AddressSpace
+from . import AddressSpace
+
+from .pyir_runtime import _WatchedM
 
 # =============================================================================
 # Dynamic Expression Protocol
@@ -242,6 +244,21 @@ def get_c_pointers(obj: Any) -> list[ctypes.c_void_p]:
             DiagId.ARG_UNORDERED_CONTAINER,
         )
     return []
+
+
+def _make_owning_c_pointer(c_value: Any) -> ctypes.c_void_p:
+    """Return a pointer that keeps its backing ctypes value alive.
+
+    ``ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)`` makes the
+    intermediate pointer reference itself through its ``_objects`` dictionary.
+    Those cycles accumulate when cyclic garbage collection is disabled.  A
+    direct address does not create that cycle, while the private keepalive
+    attribute preserves the backing value for the lifetime of the returned
+    pointer.
+    """
+    c_pointer = ctypes.c_void_p(ctypes.addressof(c_value))
+    c_pointer._cutlass_keepalive = c_value  # type: ignore[attr-defined]
+    return c_pointer
 
 
 def get_mlir_types(obj: Any) -> list[ir.Type]:
@@ -564,7 +581,7 @@ class IntegerMeta(NumericMeta):
             else:
                 c_value = getattr(ctypes, f"c_uint{width}")(self.value)
 
-            return [ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)]
+            return [_make_owning_c_pointer(c_value)]
 
         new_attrs = {
             "__c_pointers__": _c_pointers,
@@ -976,6 +993,12 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     bytes: ClassVar[int]
     _np_dtype: ClassVar[Optional[type]]
 
+    # TODO: Consider implementing MLIR style interface for PyIR mutable values.
+    # Marker: MutableValue can track this type via pyir.ref/load/store.
+    # Type(ir_value) must be a valid single-arg constructor.
+    # Non-scalar DSL types (Array, Tensor) do NOT set this.
+    _pyir_ref_supported = True
+
     def __init__(
         self,
         value: Union[bool, int, float, Value],
@@ -1065,7 +1088,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         :type dtype: Union[Type["Numeric"], Type[int], Type[float], Type[bool]]
         :return: A new instance of the target type, or self if types match
         :rtype: Numeric
-        :raises TypeError: If trying to convert an MLIR value to a static Python type
+        :raises ValueError: If trying to convert an MLIR value to a static Python type
         :raises TypeError: If trying to convert to unsupported float types like Float8E4M3,
                           Float8E4M3B11FNUZ, Float4E2M1FN, Float6E3M2FN, or Float6E2M3FN
 
@@ -1078,23 +1101,23 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
                 - Float6E3M2FN
                 - Float6E2M3FN
 
-        Example::
+        Example:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                # Convert between DSL numeric types
-                x = Int32(5)
-                y = x.to(Float32)  # Converts to Float32(5.0)
+            # Convert between DSL numeric types.
+            x = Int32(5)
+            y = x.to(Float32)  # Converts to Float32(5.0)
 
-                # Convert to Python primitive types
-                # They are considered as static values at JIT time
-                z = x.to(int)      # Returns Python int 5
-                w = y.to(float)    # Returns Python float 5.0
+            # Convert to Python primitive types.
+            # They are considered static values at JIT time.
+            z = x.to(int)      # Returns Python int 5.
+            w = y.to(float)    # Returns Python float 5.0.
 
-                # This will raise a ValueError
-                mlir_val = arith.constant(T.i32(), 42)
-                num = Int32(mlir_val)
-                num.to(int)        # ValueError: unable to convert MLIR value to static type: <class 'int'>
+            # This raises ValueError because MLIR values are not static.
+            mlir_val = arith.constant(T.i32(), 42)
+            num = Int32(mlir_val)
+            num.to(int)
         """
         if dtype in _unsupported_dst_float_types:
             raise TypeError(f"Unsupported destination float type: {dtype}")
@@ -1630,6 +1653,10 @@ def as_numeric(obj: Union[bool, int, float, ir.Value, Numeric]) -> Numeric:
             y = as_numeric(3.14)  # Converts to Float32
             z = as_numeric(True)  # Converts to Boolean
     """
+    if isinstance(obj, _WatchedM):
+        obj = (
+            obj.ir_value()
+        )  # bake arith.constant + record leaf for D1 retroactive rewrite
     if isinstance(obj, Numeric):
         return obj
     return Numeric._from_python_value(obj)
@@ -1700,6 +1727,12 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
+        # D1: if x is a _WatchedM, ir_value() emits arith.constant AND records
+        # the leaf under its slot so a later mutation can rewrite the use via
+        # replaceAllUsesWith.
+        if isinstance(x, _WatchedM):
+            x = x.ir_value()
+
         if isinstance(x, (bool, int, float)):
             # Add check for NaN before numpy conversion
             if isinstance(x, float):
@@ -1905,6 +1938,12 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
+        # D1: if x is a _WatchedM, ir_value() emits arith.constant AND records
+        # the leaf under its slot so a later mutation can rewrite the use via
+        # replaceAllUsesWith.
+        if isinstance(x, _WatchedM):
+            x = x.ir_value()
+
         if isinstance(x, (bool, int, float)):
             # Why we need to convert x to with numpy?
             # np_dtype = ty.numpy_dtype
@@ -1974,6 +2013,11 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
+        # D1: if a is a _WatchedM, ir_value() emits arith.constant AND records
+        # the leaf under its slot so a later mutation can rewrite the use via
+        # replaceAllUsesWith.
+        if isinstance(a, _WatchedM):
+            a = a.ir_value()
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
@@ -2084,15 +2128,13 @@ class Float64(Float, metaclass=FloatMeta, width=64, mlir_type=T.f64):
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
 
-        return [
-            ctypes.cast(ctypes.pointer(ctypes.c_double(self.value)), ctypes.c_void_p)
-        ]
+        return [_make_owning_c_pointer(ctypes.c_double(self.value))]
 
 
 class Float32(Float, metaclass=FloatMeta, width=32, mlir_type=T.f32):
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
-        return ctypes.cast(ctypes.pointer(ctypes.c_float(value)), ctypes.c_void_p)
+        return _make_owning_c_pointer(ctypes.c_float(value))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2118,7 +2160,7 @@ class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
         bits: int = int(f16_val.view(np.uint16))
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(int(bits))
-        return ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        return _make_owning_c_pointer(c_val)
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2139,7 +2181,7 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
         bf16_bits = np.uint16(bits >> 16)
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(bf16_bits)  # type: ignore[arg-type]
-        c_pointer = ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        c_pointer = _make_owning_c_pointer(c_val)
         return [c_pointer]
 
 
@@ -2186,7 +2228,7 @@ class Float4E2M1FNx2(
 
     Shape and strides on any layout carrying this dtype are interpreted
     in **fp4x2 tensor-element units**. One tensor element is already one
-    packed storage unit, so ``create_tensor_map_tiled_from_tensor`` uses
+    packed storage unit, so ``create_tensor_map_tiled_from_view`` uses
     ``width == 8`` directly when converting stride units for TMA.
 
     ``width`` is the packed 8-bit tensor-element width and ``mlir_type`` is
@@ -2201,12 +2243,47 @@ class Float4E2M1FNx2(
     """
 
 
+# FP6x4 still carries the unpacked scalar FP6 MLIR element type for now; its
+# packed storage handling remains in specialized helpers.
+class Float6E3M2FNx4(
+    Float,
+    metaclass=FloatMeta,
+    width=24,
+    mlir_type=T.f6E3M2FN,
+):
+    """Packed FP6 E3M2 — 4 elements per 3 bytes.
+
+    See :class:`Float4E2M1FNx2` for the shape / stride invariant; one
+    tensor element is one packed fp6x4 storage unit.
+
+    ``width`` is the 24-bit packed tensor-element width.
+
+    """
+
+
+class Float6E2M3FNx4(
+    Float,
+    metaclass=FloatMeta,
+    width=24,
+    mlir_type=T.f6E2M3FN,
+):
+    """Packed FP6 E2M3 — 4 elements per 3 bytes.
+
+    See :class:`Float4E2M1FNx2` for the shape / stride invariant; one
+    tensor element is one packed fp6x4 storage unit.
+
+    ``width`` is the 24-bit packed tensor-element width.
+
+    """
+
 
 def _element_precision_width(dtype: Type["Numeric"]) -> int:
     """Return scalar lane precision for packed narrow-float view dtypes."""
 
     if dtype is Float4E2M1FNx2:
         return 4
+    if dtype in {Float6E3M2FNx4, Float6E2M3FNx4}:
+        return 6
     return dtype.width
 
 
@@ -2217,6 +2294,8 @@ _unsupported_dst_float_types = [
     Float6E3M2FN,
     Float6E2M3FN,
     Float4E2M1FNx2,
+    Float6E3M2FNx4,
+    Float6E2M3FNx4,
 ]
 
 
@@ -2246,6 +2325,8 @@ ALL_DTYPES = {
     Float6E2M3FN,
     Float6E3M2FN,
     Float4E2M1FNx2,
+    Float6E2M3FNx4,
+    Float6E3M2FNx4,
 }
 __STR_TO_DTYPE__ = {dt.__name__: dt for dt in ALL_DTYPES}
 
@@ -2329,6 +2410,62 @@ class align(int):
     def __str__(self) -> str:
         return f"align({super().__str__()})"
 
+
+class PointerMeta(DslType):
+    """Legacy subscriptable annotation metaclass."""
+
+    _value_type: Any
+    _align: Any
+
+    def __new__(
+        cls,
+        name: str,
+        bases: tuple,
+        attrs: dict,
+        value_type: Any = Int32,
+        align_: Any = align(1),
+    ) -> Any:
+        new_cls = super().__new__(
+            cls,
+            name,
+            bases,
+            attrs,
+            mlir_type=lambda: getattr(ir, "UnrankedMemRefType").get(
+                value_type.mlir_type, getattr(ir, "Attribute").parse("0")
+            ),
+        )
+        new_cls._value_type = value_type
+        new_cls._align = align_
+        return new_cls
+
+    def __eq__(cls, other: Any) -> bool:
+        if not isinstance(other, PointerMeta):
+            return False
+        return cls._value_type == other._value_type and int(cls._align) == int(
+            other._align
+        )  # Compare alignment values
+
+    def __hash__(cls) -> int:
+        return hash((cls._value_type, int(cls._align)))  # Hash alignment value
+
+    def __getitem__(cls, params: Any) -> Type[Any]:
+        value_type, align_ = params
+
+        if not isinstance(align_, align):
+            raise DSLUserCodeError(DiagId.ARG_TYPE_MISMATCH)
+
+        # Create new class with proper name and parameters
+        new_cls = type(
+            f"{cls.__name__}[{value_type.__name__}, {align_}]",
+            (cls,),
+            {},
+            value_type=value_type,
+            align_=align_,  # Pass alignment to __new__
+        )
+        return new_cls
+
+    def __str__(cls) -> str:
+        return f"ptr<{cls._value_type}, {cls._align}>"
 
 
 class TypedPointer:
@@ -2703,6 +2840,46 @@ class Pointer(ir.Value):
         if addrspace == 6:
             return dtype(llvm.ptrtoint(Int32.mlir_type, self._base, loc=loc, ip=ip))
         return dtype(llvm.ptrtoint(dtype.mlir_type, self._base, loc=loc, ip=ip))
+
+    @dsl_user_op
+    def load_swizzled(
+        self,
+        swizzle: Any,
+        alignment: Optional[int] = None,
+        *,
+        count: Optional[int] = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        from .swizzle import load_swizzled  # noqa: PLC0415
+
+        return load_swizzled(self, swizzle, alignment, count=count, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def store_swizzled(
+        self,
+        value: Any,
+        swizzle: Any,
+        alignment: Optional[int] = None,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        from .swizzle import store_swizzled  # noqa: PLC0415
+
+        return store_swizzled(self, value, swizzle, alignment, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def apply_swizzle(
+        self,
+        swizzle: Any,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        from .swizzle import apply_swizzle  # noqa: PLC0415
+
+        return apply_swizzle(self, swizzle, loc=loc, ip=ip)
 
     @dsl_user_op
     def load(
@@ -3195,6 +3372,16 @@ def implicitDowncastNumericType(
 ) -> Union[bool, int, float, ir.Value]:
     if isinstance(value, Numeric):
         return value.ir_value()
+    # D1: ``_WatchedM`` is a meta-promotion wrapper used by PyIR to track
+    # primitive reads inside staged CF.  When passed to a constant-emitting
+    # callsite, bake its IR (which records the leaf under the slot so a
+    # later mutation can rewrite it via pyir.load %ref).
+    try:
+        from .pyir_runtime import _WatchedM as _PyIRWatchedM
+    except ImportError:
+        _PyIRWatchedM = None  # type: ignore[misc,assignment]
+    if _PyIRWatchedM is not None and isinstance(value, _PyIRWatchedM):
+        return value.ir_value()
     return value
 
 
@@ -3233,6 +3420,8 @@ __all__ = [
     "Float6E2M3FN",
     "Float6E3M2FN",
     "Float4E2M1FNx2",
+    "Float6E2M3FNx4",
+    "Float6E3M2FNx4",
     "as_numeric",
     "align",
     "AddressSpace",
@@ -3255,3 +3444,14 @@ __all__ = [
 ]
 
 
+# =============================================================================
+# Relocated aggregate types
+# =============================================================================
+# ``Array`` lives in base_dsl so it surfaces as ``cutlass.Array`` the same way
+# the numeric types do. Address-space and pointer infrastructure are defined
+# above in this module. This import MUST stay at the bottom: ``array.py`` does
+# ``from .typing import Int32, ...`` at load, so importing it before the classes
+# above are defined would form an intra-base_dsl import cycle.
+from .array import Array as Array
+
+__all__ += ["Array"]

@@ -36,7 +36,7 @@ from ..base_dsl.ast_helpers import (
 )
 
 from ..base_dsl import *
-from ..base_dsl.arch import Arch
+from ..base_dsl import Arch as Arch
 from ..base_dsl.dsl import extract_mlir_values, new_from_mlir_values
 from ..base_dsl.typing import _binary_op_type_promote
 from .._mlir_helpers.gpu import *
@@ -57,7 +57,10 @@ from ..base_dsl.compiler import (
     LinkLibraries,
     EnableTVMFFI,
     DeviceTarget,
+    FrontendNext,
     RDC,
+    RemarkFilter,
+    RemarkOutput,
 )
 from ..base_dsl.runtime.jit_arg_adapters import *
 from ..base_dsl.native_struct import make_native_struct, native_struct

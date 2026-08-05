@@ -204,6 +204,18 @@ def is_constexpr_field(field: dataclasses.Field, owner: Any = None) -> bool:
     return annotation is Constexpr or get_origin(annotation) is Constexpr
 
 
+def _is_static_dynamic_constexpr(v: Any) -> bool:
+    """Return whether ``v`` is dynamic-expression-shaped but statically typed."""
+    if not implements_dynamic_expression(v) or not hasattr(v, "type"):
+        return False
+    try:
+        from ..._mlir.dialects import cute as _cute_ir
+
+        return bool(_cute_ir.is_static(v.type))
+    except Exception:
+        return False
+
+
 # =============================================================================
 # PyTreeDef
 # =============================================================================
@@ -293,7 +305,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[str]]:
             constexpr_fields.append(field.name)
             fields.remove(field.name)
             v = getattr(x, field.name)
-            if implements_dynamic_expression(v):
+            if implements_dynamic_expression(v) and not _is_static_dynamic_constexpr(v):
                 raise DSLTreeFlattenError(
                     f"`{x}` has dynamic expression field `{field.name}` with a Constexpr type annotation `{field.type}`",
                     type_str=get_fully_qualified_class_name(x),

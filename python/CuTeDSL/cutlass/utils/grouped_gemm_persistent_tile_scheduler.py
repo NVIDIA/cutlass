@@ -364,23 +364,36 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         :rtype: StaticPersistentGroupTileScheduler
         """
 
-        # Calculate the number of persistent clusters by dividing the total grid size
-        # by the number of CTAs per cluster
-        num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // cute.size(
-            params.cluster_shape_mn, loc=loc, ip=ip
-        )
+        if const_expr(params._has_distinct_fallback):
+            active = params._select_active_params(params)
+        else:
+            active = params
 
         bidx, bidy, bidz = block_idx
 
+        # Mixed-cluster: read cluster dims at runtime so the fallback clone's
+        # persistent-loop stride is correct after the mixed-cluster expansion pass.
+        # See ``MixedClusterParamsMixin`` for why the Python tuple can't be used.
+        if const_expr(params._has_distinct_fallback):
+            cdx, cdy, _ = params.runtime_cluster_dims()
+            num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // (cdx * cdy)
+            cta_id_in_cluster = (
+                Int32(bidx % cdx),
+                Int32(bidy % cdy),
+                Int32(0),
+            )
+        else:
+            num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // cute.size(
+                active.cluster_shape_mn, loc=loc, ip=ip
+            )
+            cta_id_in_cluster = (
+                Int32(bidx % active.cluster_shape_mn[0]),
+                Int32(bidy % active.cluster_shape_mn[1]),
+                Int32(0),
+            )
+
         # Initialize workload index equals to the cluster index in the grid
         current_work_linear_idx = Int32(bidz)
-
-        # CTA id in the cluster
-        cta_id_in_cluster = (
-            Int32(bidx % params.cluster_shape_mn[0]),
-            Int32(bidy % params.cluster_shape_mn[1]),
-            Int32(0),
-        )
 
         cached_problem_shape_0 = (
             Int32(-1),
@@ -398,7 +411,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         # Initialize number of tiles executed to zero
         num_tiles_executed = Int32(0)
         return StaticPersistentGroupTileScheduler(
-            params,
+            active,
             num_persistent_clusters,
             current_work_linear_idx,
             cta_id_in_cluster,
@@ -555,12 +568,16 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             (cluster_tile_count_m, cluster_tile_count_n), loc=loc, ip=ip
         )
         (mi, ni) = cluster_layout_mn.get_hier_coord(cluster_tile_idx)
-        cta_tile_idx_m = (
-            mi * self.params.cluster_shape_mn[0] + cta_tile_coord_in_cluster[0]
-        )
-        cta_tile_idx_n = (
-            ni * self.params.cluster_shape_mn[1] + cta_tile_coord_in_cluster[1]
-        )
+        # Mixed-cluster: use runtime cluster dims (see ``MixedClusterParamsMixin``).
+        if const_expr(self.params._has_distinct_fallback):
+            cdx, cdy, _ = self.params.runtime_cluster_dims()
+            cluster_shape_m = cdx
+            cluster_shape_n = cdy
+        else:
+            cluster_shape_m = Int32(self.params.cluster_shape_mn[0])
+            cluster_shape_n = Int32(self.params.cluster_shape_mn[1])
+        cta_tile_idx_m = mi * cluster_shape_m + cta_tile_coord_in_cluster[0]
+        cta_tile_idx_n = ni * cluster_shape_n + cta_tile_coord_in_cluster[1]
         return (cta_tile_idx_m, cta_tile_idx_n)
 
     @dsl_user_op
@@ -1066,14 +1083,16 @@ class GroupedGemmTileSchedulerHelper:
             (cluster_tile_count_m, cluster_tile_count_n)
         )
         (mi, ni) = cluster_layout_mn.get_hier_coord(cluster_tile_idx)
-        cta_tile_idx_m = (
-            mi * self.tile_sched_params.cluster_shape_mn[0]
-            + cta_tile_coord_in_cluster[0]
-        )
-        cta_tile_idx_n = (
-            ni * self.tile_sched_params.cluster_shape_mn[1]
-            + cta_tile_coord_in_cluster[1]
-        )
+        # Mixed-cluster: use runtime cluster dims (see ``MixedClusterParamsMixin``).
+        if const_expr(self.tile_sched_params._has_distinct_fallback):
+            cdx, cdy, _ = self.tile_sched_params.runtime_cluster_dims()
+            cluster_shape_m = cdx
+            cluster_shape_n = cdy
+        else:
+            cluster_shape_m = Int32(self.tile_sched_params.cluster_shape_mn[0])
+            cluster_shape_n = Int32(self.tile_sched_params.cluster_shape_mn[1])
+        cta_tile_idx_m = mi * cluster_shape_m + cta_tile_coord_in_cluster[0]
+        cta_tile_idx_n = ni * cluster_shape_n + cta_tile_coord_in_cluster[1]
         return (cta_tile_idx_m, cta_tile_idx_n)
 
     @cute.jit

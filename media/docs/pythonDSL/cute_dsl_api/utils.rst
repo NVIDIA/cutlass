@@ -1,7 +1,8 @@
-cutlass.utils
-=============
+Utilities
+=========
 
-The ``cutlass.utils`` module contains utilities for developing kernels with CuTe DSL.
+The ``cutlass.utils`` package contains utilities for developing kernels with
+CuTe DSL.
 
 .. automodule:: cutlass.utils
    :members:
@@ -15,5 +16,5 @@ The ``cutlass.utils`` module contains utilities for developing kernels with CuTe
   :maxdepth: 2
   :hidden:
 
-  utils_sm90
-  utils_sm100
+  Hopper (SM90) <utils_sm90>
+  Blackwell (SM100) <utils_sm100>

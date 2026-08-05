@@ -39,7 +39,7 @@ import re
 import sys
 import textwrap
 import types
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -105,6 +105,13 @@ _PTX_DOC_BASE = "https://docs.nvidia.com/cuda/parallel-thread-execution/index.ht
 _COMPILER_DIAG_TEXT_WIDTH = 100
 _COMPILER_CONTEXT_LINES = 2
 _DEVICE_BINARY_SERIALIZATION_DIAGNOSTIC = "DeviceBinarySerializationFailed"
+_PTXAS_LOG_REMARK = "RemarkPTXAS"
+_PTXAS_LOG_PREFIX = "ptxas output:"
+_PTXAS_PERF_REMARKS = {
+    "RemarkPerfRegisterSpill",
+    "RemarkPerfLocalMemoryUsage",
+}
+_PTXAS_KERNEL_RE = re.compile(r"kernel `([^`]+)`")
 
 
 def _nvvm_info(code: str, ptx_ref: str, ptx_anchor: str) -> _CompilerDiagnosticInfo:
@@ -163,8 +170,19 @@ _COMPILER_DIAGNOSTICS: dict[str, _CompilerDiagnosticInfo] = {
         "tcgen05 commit",
         "#tcgen-async-sync-operations-commit",
     ),
+    "NvvmDiagPreSignalParityConflict": _nvvm_info(
+        "C12",
+        "mbarrier phase-parity protocol",
+        "#parallel-synchronization-and-communication-instructions-"
+        "mbarrier-test-wait-try-wait",
+    ),
     "NvvmDiagPartialWarpElectSync": _nvvm_info(
         "C13",
+        "elect.sync",
+        "#parallel-synchronization-and-communication-instructions-elect-sync",
+    ),
+    "NvvmDiagNestedMultiLaneElectSync": _nvvm_info(
+        "C16",
         "elect.sync",
         "#parallel-synchronization-and-communication-instructions-elect-sync",
     ),
@@ -262,9 +280,20 @@ class CompilerDiagnosticSession:
     def format_failure(self, raw_error: str) -> str:
         if not self.collect_diagnostics:
             return ""
-        return format_compiler_failure_diagnostics(
-            self._collected_diagnostics(), raw_error
-        )
+        diagnostics = self._collected_diagnostics()
+        # Only a typed error emitted through the structured remark path proves
+        # that this failure is a known user-code diagnostic. A generic MLIR
+        # error may instead be the symptom of a genuine compiler failure, and
+        # warnings/remarks collected before that failure do not change its
+        # classification. Returning an empty string skips the structured
+        # diagnostic path; Compiler.compile() may still render a generic pass
+        # failure, but it must not assign a typed diagnostic identity.
+        if not any(
+            diag.severity == "error" and diag.name != _GENERIC_MLIR_DIAGNOSTIC
+            for diag in diagnostics
+        ):
+            return ""
+        return format_compiler_failure_diagnostics(diagnostics, raw_error)
 
     def format_backend_failure(
         self,
@@ -299,6 +328,8 @@ def _warning_domain(name: str) -> str:
     """Map a warning's name to its checker domain, for --warnings{} gating."""
     if name.startswith("NvvmDiag"):
         return "nvvm"
+    if name.startswith("Ptxas"):
+        return "ptx"
     return ""
 
 
@@ -385,6 +416,8 @@ def enable_compiler_diagnostics(
         return
 
     filter_str = remark_filter or ".*"
+    if filter_str == "ptxas":
+        filter_str = "ptxas.*"
     if collect_diagnostics:
         # Collecting path (a checker is enabled via warnings{}/remarks{}):
         # errors/warnings are always-on and collected regardless of any filter
@@ -440,6 +473,95 @@ def _dedupe_compiler_diagnostics(
     return deduped
 
 
+def _ptxas_log_from_diagnostic(diag: CompilerDiagnostic) -> str:
+    if diag.name != _PTXAS_LOG_REMARK:
+        return ""
+    message = diag.message.strip()
+    if message.startswith(_PTXAS_LOG_PREFIX):
+        return message[len(_PTXAS_LOG_PREFIX) :].strip()
+    return message
+
+
+def _ptxas_kernel_name(diag: CompilerDiagnostic) -> str:
+    match = _PTXAS_KERNEL_RE.search(diag.reason)
+    return match.group(1) if match else ""
+
+
+def _select_ptxas_log(diag: CompilerDiagnostic, logs: Sequence[str]) -> str:
+    if not logs:
+        return ""
+    kernel_name = _ptxas_kernel_name(diag)
+    if kernel_name:
+        for log in logs:
+            if kernel_name in log:
+                return log
+    return "\n\n".join(logs)
+
+
+def _append_ptxas_output(reason: str, log: str) -> str:
+    log = log.strip()
+    if not log:
+        return reason
+    return f"{reason}\n\nptxas output:\n{log}"
+
+
+def _normalize_ptxas_perf_remark(
+    diag: CompilerDiagnostic, ptxas_logs: Sequence[str]
+) -> CompilerDiagnostic:
+    log = _select_ptxas_log(diag, ptxas_logs)
+    if diag.name == "RemarkPerfRegisterSpill":
+        return replace(
+            diag,
+            reason=_append_ptxas_output(
+                "Spilled values are placed in local memory and can add memory "
+                "traffic and latency. ptxas reports spill usage at kernel "
+                "granularity; the source frame marks a likely pressure region, "
+                "not an exact spill instruction.",
+                log,
+            ),
+            suggestion=(
+                "reduce live ranges in the reported kernel / likely pressure "
+                "region, split large expressions or fragments, or inspect the "
+                "generated PTX/SASS to identify values kept live across long "
+                "regions"
+            ),
+        )
+    if diag.name == "RemarkPerfLocalMemoryUsage":
+        return replace(
+            diag,
+            reason=_append_ptxas_output(
+                "Runtime-indexed per-thread arrays often require addressable "
+                "PTX local memory instead of scalar registers; this can add "
+                "memory traffic and latency.",
+                log,
+            ),
+        )
+    return diag
+
+
+def _normalize_ptxas_diagnostics(
+    diagnostics: Sequence[CompilerDiagnostic],
+) -> list[CompilerDiagnostic]:
+    ptxas_logs = [
+        log for diag in diagnostics if (log := _ptxas_log_from_diagnostic(diag))
+    ]
+    has_structured_ptxas_remark = any(
+        diag.name in _PTXAS_PERF_REMARKS for diag in diagnostics
+    )
+    if not has_structured_ptxas_remark:
+        return list(diagnostics)
+
+    normalized: list[CompilerDiagnostic] = []
+    for diag in diagnostics:
+        if diag.name == _PTXAS_LOG_REMARK:
+            continue
+        if diag.name in _PTXAS_PERF_REMARKS:
+            normalized.append(_normalize_ptxas_perf_remark(diag, ptxas_logs))
+        else:
+            normalized.append(diag)
+    return normalized
+
+
 def collect_compiler_diagnostics(
     context: Any, extra_diagnostics: Sequence[CompilerDiagnostic] = ()
 ) -> list[CompilerDiagnostic]:
@@ -453,7 +575,7 @@ def collect_compiler_diagnostics(
             if diagnostic is not None:
                 diagnostics.append(diagnostic)
     diagnostics.extend(extra_diagnostics)
-    return _dedupe_compiler_diagnostics(diagnostics)
+    return _normalize_ptxas_diagnostics(_dedupe_compiler_diagnostics(diagnostics))
 
 
 def finalize_compiler_diagnostics(context: Any) -> None:
@@ -519,6 +641,8 @@ def render_code_frame(
     line: int | None,
     col: int | None = None,
     end_col: int | None = None,
+    *,
+    display_filename: str | None = None,
 ) -> str | None:
     """Code frame: ``--> file:line:col`` + gutter + source lines + caret.
 
@@ -530,7 +654,9 @@ def render_code_frame(
     """
     if not filename or not line:
         return None
-    frame = _format_user_source_frame(filename, line, col, end_col)
+    frame = _format_user_source_frame(
+        filename, line, col, end_col, display_filename=display_filename
+    )
     return "\n".join(frame) if frame else None
 
 
@@ -593,33 +719,130 @@ def _format_internal_error_diagnostic(
     """Format internal compiler errors with a user-facing bug-report envelope."""
     # Internal errors (compiler bugs) get a "please report" envelope instead of
     # a "here's your mistake + fix" block -- they are not the author's fault.
-    parts = [
-        f"\n{_Colors.RED}{_Colors.BOLD}[Internal Error] The compiler hit a "
-        f"problem it could not trace back to your code.{_Colors.RESET}",
-        "This is a bug in the DSL, not a mistake in your kernel.\n",
-    ]
-    if frame:
-        parts.append(f"{_Colors.BLUE}Closest point in your code:{_Colors.RESET}")
-        parts.append(frame)
-        parts.append("")
-    if err.message:
-        parts.append(f"{_Colors.BLUE}Detail:{_Colors.RESET} {err.message}")
-        parts.append("")
-    if cause_text:
-        parts.append(f"{_Colors.BLUE}Cause:{_Colors.RESET} {cause_text}")
-        parts.append("")
-    parts.append(f"{_Colors.GREEN}What to do:{_Colors.RESET}")
-    parts.append(
-        f"  {_Colors.GREEN}Please report this with the snippet above and your "
-        f"kernel.{_Colors.RESET}"
+    # Keep the same headline/source-frame/reason/suggestion grammar as compiler
+    # diagnostics so backend failures and internal DSL failures are scannable in
+    # the same way.
+    is_verifier_error = _is_internal_verifier_error(err.message, cause_text)
+    headline = (
+        "The compiler could not build valid IR for this code."
+        if is_verifier_error
+        else "The compiler hit an internal DSL problem while compiling your code."
     )
-    parts.append(
-        f"  {_Colors.GREEN}Re-run with CUTE_DSL_SHOW_STACKTRACE=1 to include the "
-        f"full technical detail.{_Colors.RESET}"
+    parts = [
+        _format_diagnostic_headline(
+            "error",
+            headline,
+            code="INTERNAL",
+            bold=True,
+            leading_newline=True,
+        )
+    ]
+    frame = frame or _internal_error_source_frame_from_cause(cause_text)
+    if frame:
+        parts.append(frame)
+
+    if is_verifier_error:
+        summary = _brief_internal_error(err.message)
+        verifier_detail = _brief_verifier_cause(cause_text)
+        if verifier_detail:
+            summary = f"{summary}: {verifier_detail}"
+        parts.extend(_format_labeled_text("error", summary))
+    else:
+        parts.extend(
+            _format_labeled_text(
+                "note", "This is a bug in the DSL, not a mistake in your kernel."
+            )
+        )
+        if err.message:
+            parts.extend(
+                _format_labeled_text("error", _brief_internal_error(err.message))
+            )
+        if cause_text:
+            parts.extend(_format_internal_cause(cause_text))
+
+    if is_verifier_error:
+        parts.extend(
+            _format_labeled_text(
+                "suggestion",
+                "Check the source location above for invalid primitive arguments, "
+                "types, or address spaces. If the code looks valid, report this "
+                "with the snippet above and your kernel.",
+            )
+        )
+    else:
+        parts.extend(
+            _format_labeled_text(
+                "suggestion",
+                "Please report this with the snippet above and your kernel.",
+            )
+        )
+    parts.extend(
+        _format_labeled_text(
+            "suggestion",
+            "Re-run with CUTE_DSL_SHOW_STACKTRACE=1 to include the full technical detail.",
+        )
     )
     parts.append("")
-    parts.append("=" * 100)
     return "\n".join(parts)
+
+
+def _is_internal_verifier_error(message: str, cause_text: str) -> bool:
+    return (
+        "ICE IR Verification Failed" in message or "Verification failed:" in cause_text
+    )
+
+
+def _brief_internal_error(message: str) -> str:
+    if "ICE IR Verification Failed" in message:
+        return "IR verification failed"
+    return message.strip()
+
+
+def _internal_error_source_frame_from_cause(cause_text: str) -> str | None:
+    loc_match = _PY_LOC_RE.search(cause_text)
+    if not loc_match:
+        return None
+    frame = _format_compiler_source_frame(
+        loc_match.group("file"),
+        int(loc_match.group("line")),
+        int(loc_match.group("col")),
+    )
+    return "\n".join(frame) if frame else None
+
+
+def _clean_internal_cause_line(line: str) -> str:
+    line = line.strip()
+    if not line or line in {"error:", "note:"}:
+        return ""
+    if line.startswith("Caused exception: "):
+        line = line.removeprefix("Caused exception: ").strip()
+    if line == "Verification failed:":
+        return ""
+
+    loc_match = _PY_LOC_RE.search(line)
+    if loc_match:
+        line = line[loc_match.end() :].lstrip("): ")
+    return line.strip()
+
+
+def _brief_verifier_cause(cause_text: str) -> str:
+    details: list[str] = []
+    for line in cause_text.splitlines():
+        cleaned = _clean_internal_cause_line(line)
+        if not cleaned:
+            continue
+        if cleaned.startswith("see current operation"):
+            continue
+        if cleaned.startswith(": ("):
+            continue
+        if cleaned not in details:
+            details.append(cleaned)
+
+    return details[0] if details else ""
+
+
+def _format_internal_cause(cause_text: str) -> list[str]:
+    return _format_labeled_multiline_text("error", cause_text)
 
 
 def _nearest_function_name(lines: list[str], line_no: int) -> str | None:
@@ -691,11 +914,20 @@ def _format_source_location(
 
 
 def _format_user_source_frame(
-    filename: str, line: int, col: int | None, end_col: int | None
+    filename: str,
+    line: int,
+    col: int | None,
+    end_col: int | None,
+    *,
+    display_filename: str | None = None,
 ) -> list[str]:
     source_lines = _read_source_lines(filename)
     loc = _format_source_location(
-        filename, line, col, absolute_path=False, col_zero_based=True
+        display_filename or filename,
+        line,
+        col,
+        absolute_path=False,
+        col_zero_based=True,
     )
     width = len(str(line))
     pad = " " * width
@@ -816,6 +1048,14 @@ def _format_labeled_block(label: str, heading: str, body: str) -> list[str]:
         )
         lines.extend(indent + line for line in wrapped)
     return lines
+
+
+def _format_labeled_multiline_text(label: str, text: str) -> list[str]:
+    text = text.strip()
+    if "\n" not in text:
+        return _format_labeled_text(label, text)
+    heading, body = text.split("\n", 1)
+    return _format_labeled_block(label, heading, body)
 
 
 def _diagnostic_marker(severity: str, code: str = "", namespace: str = "") -> str:
@@ -1024,12 +1264,53 @@ def format_compiler_diagnostics(diagnostics: Sequence[CompilerDiagnostic]) -> st
     return "\n\n".join(blocks)
 
 
+def _clean_raw_compiler_message(text: str) -> str:
+    text = text.strip()
+    loc_match = _PY_LOC_RE.search(text)
+    if loc_match:
+        text = text[loc_match.end() :].lstrip("): ")
+    return text.strip()
+
+
+def _raw_pass_failure_diagnostic(raw_error: str) -> CompilerDiagnostic | None:
+    if "Failure while executing pass pipeline" not in raw_error:
+        return None
+
+    location = extract_compiler_location(raw_error)
+    reason = ""
+    notes: list[str] = []
+    for raw_line in raw_error.splitlines():
+        line = raw_line.strip()
+        if line.startswith("error:"):
+            candidate = _clean_raw_compiler_message(line.removeprefix("error:"))
+            if candidate and not reason:
+                reason = candidate
+        elif line.startswith("note:"):
+            candidate = _clean_raw_compiler_message(line.removeprefix("note:"))
+            if candidate and not candidate.startswith("see current operation"):
+                notes.append(candidate)
+
+    if not reason:
+        reason = raw_error.strip()
+    return CompilerDiagnostic(
+        severity="error",
+        message="compiler pass failed",
+        name=_GENERIC_MLIR_DIAGNOSTIC,
+        location=location,
+        reason=reason,
+        notes=tuple(notes),
+    )
+
+
 def format_compiler_failure_diagnostics(
     diagnostics: Sequence[CompilerDiagnostic], raw_error: str
 ) -> str:
     diagnostics = _dedupe_compiler_diagnostics(diagnostics)
     formatted = format_compiler_diagnostics(diagnostics)
     if not formatted:
+        raw_diagnostic = _raw_pass_failure_diagnostic(raw_error)
+        if raw_diagnostic is not None:
+            return format_compiler_diagnostics([raw_diagnostic])
         return ""
     if raw_error and any(
         diag.name == _DEVICE_BINARY_SERIALIZATION_DIAGNOSTIC for diag in diagnostics
@@ -1116,6 +1397,10 @@ class _DiagMixin:
         :class:`_SafeFields`)."""
         fields.setdefault("meta", META_VALUE)
         fields.setdefault("staged", STAGED_VALUE)
+        # Optional enrichment field: templates may reference ``{detail}`` to show
+        # what concretely changed (e.g. old vs new structure/type); default empty
+        # so call sites that omit it render cleanly.
+        fields.setdefault("detail", "")
         safe = _SafeFields(fields)
         message = self.message.format_map(safe)
         fixes = tuple(f.format_map(safe) for f in self.fix)
@@ -1184,8 +1469,8 @@ class DiagId(_DiagMixin, enum.Enum):
     )
     CONTAINER_STRUCTURE_CHANGED = (
         "`{var}` has a different structure at the end of this `{op_type}` than at "
-        "the start. A value carried through a `{op_type}` must keep the same shape "
-        "(same fields and the same number of parts) on every pass.",
+        "the start{detail}. A value carried through a `{op_type}` must keep the same "
+        "shape (same fields and the same number of parts) on every pass.",
         (
             "Give `{var}` the same structure on every branch and every pass of the "
             "`{op_type}`.",
@@ -1288,6 +1573,17 @@ class DiagId(_DiagMixin, enum.Enum):
         ),
     )
     # --- ARG ---
+    ARG_ANNOTATION_MISMATCH = (
+        "expects argument #{num} ({arg_name}) to be {expected}, but got {got}",
+        (
+            "Pass a value whose type matches `{arg_name}`'s annotation, or change "
+            "the parameter's annotation to match the value you pass.",
+            "If `{arg_name}` should be a tensor/array, make sure the host "
+            "(`@cute.jit`) and kernel (`@cute.kernel`) parameters use the same "
+            "type -- mixing `cute.Tensor` and `cutlass.Array` across the host->kernel "
+            "boundary triggers this.",
+        ),
+    )
     ARG_BIND_FAILED = (
         "The arguments do not match the function signature.",
         ("Check that you are passing the correct number and types of arguments.",),
@@ -1336,12 +1632,6 @@ class DiagId(_DiagMixin, enum.Enum):
     ARG_POINTER_NEGATIVE = (
         "Pointer address must be non-negative (got {address})",
         ("Pass a non-negative address, or use nullptr() for null pointers",),
-    )
-    ARG_SPLIT_MODE_INVALID = (
-        "The split_mode must be one of the valid CudaDlcSplitMode enum values.",
-        (
-            "Use cuda_helpers.CudaDlcSplitMode enum: NONE, ANY, SINGLE_DLCC, or DUAL_DLCC.",
-        ),
     )
     ARG_TENSOR_NOT_ON_DEVICE = (
         "The tensor `{arg_name}` must be in GPU memory, but it is currently on the host. Move it to the GPU before passing it to the kernel.",
@@ -1439,6 +1729,12 @@ class DiagId(_DiagMixin, enum.Enum):
         "The provided object is not callable. Pass a function or method decorated with @cute.jit.",
         (
             "Ensure the first argument to cute.compile() is a callable (function, method, or callable object).",
+        ),
+    )
+    CALL_OUTSIDE_JIT = (
+        "`{api}` builds GPU kernel IR and can only be called while a @cute.jit or @cute.kernel function is being compiled, but it was called from plain Python.",
+        (
+            "Move this call into a function decorated with @cute.jit or @cute.kernel and call that function.",
         ),
     )
     CALL_SIGNATURE_MISMATCH = (
@@ -1631,6 +1927,12 @@ class DiagId(_DiagMixin, enum.Enum):
     LAUNCH_MISSING_ARG = (
         "Required argument `{name}` is missing when launching kernel `{kernel_name}`.",
         ("Pass a value for `{name}` to the kernel launch.",),
+    )
+    LAUNCH_OUTSIDE_JIT = (
+        "Kernel `{kernel_name}` is being launched from plain Python, but kernels can only be launched while a @cute.jit function is being compiled.",
+        (
+            "Wrap the launch in a host function decorated with @cute.jit and call that host function.",
+        ),
     )
     # --- PHASE ---
     PHASE_CONDITIONAL_NOT_DYNAMIC = (

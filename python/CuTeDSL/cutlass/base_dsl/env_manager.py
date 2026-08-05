@@ -549,6 +549,7 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_LIBS: Path to dependent shared libraries (default: None)
     - [DSL_NAME]_ENABLE_TVM_FFI: Enable TVM-FFI or not (default: False)
     - [DSL_NAME]_LOC_TRACEBACKS: Maximum depth of location tracebacks (default: 0)
+    - [DSL_NAME]_ENABLE_PYIR: Enable PYIR to SCF conversion pass (default: False)
     - [DSL_NAME]_COMPILER_OPT: Compact compiler option string (default: "").
       Errors always show and fail compilation (no flag needed); warnings and
       remarks are opt-in and non-fatal. A {<cat>} selector shows only that
@@ -557,9 +558,11 @@ class EnvironmentVarManager(LogEnvironmentManager):
         warnings{nvvm}              — show only nvvm-category warnings
         remarks                     — show all remarks
         remarks{nvvm}               — show only nvvm (sync) remarks
+        remarks{ptx}                — show ptxas perf remarks (spills, local mem)
         iket                        — enable IKET (In-Kernel Event Tracing) instrumentation
       Examples:
         CUTE_DSL_COMPILER_OPT="warnings{nvvm}"
+        CUTE_DSL_COMPILER_OPT="remarks{ptx}"
         CUTE_DSL_COMPILER_OPT="iket"
       The same option strings are accepted by cute.compile(..., options=...).
 
@@ -586,6 +589,10 @@ class EnvironmentVarManager(LogEnvironmentManager):
         self.filter_stacktrace = get_bool_env_var(
             f"{prefix}_FILTER_STACKTRACE", not (self.debug or self.show_stacktrace)
         )
+        self.enable_pyir = get_bool_env_var(f"{prefix}_ENABLE_PYIR", False)
+        self.auto_m2s = get_bool_env_var(f"{prefix}_AUTO_M2S", False)
+        self.tolerate_m2m = get_bool_env_var(f"{prefix}_TOLERATE_M2M", True)
+
         self.lineinfo = get_bool_env_var(f"{prefix}_LINEINFO", self.debug)
         self.no_cache = get_bool_env_var(f"{prefix}_NO_CACHE", False)
         self.jit_cache_max_elems = get_int_or_none_env_var(
@@ -659,7 +666,7 @@ class EnvironmentVarManager(LogEnvironmentManager):
 
         # Other options
         self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
-        self.arch = get_str_env_var(f"{prefix}_ARCH", detect_gpu_arch(prefix))
+        self._arch: str | None = get_str_env_var(f"{prefix}_ARCH")
         self.warnings_as_errors = get_bool_env_var(
             f"{prefix}_WARNINGS_AS_ERRORS", False
         )
@@ -681,3 +688,25 @@ class EnvironmentVarManager(LogEnvironmentManager):
         self.enable_tvm_ffi = get_bool_env_var(f"{prefix}_ENABLE_TVM_FFI", False)
 
         self.loc_tracebacks = get_int_env_var(f"{prefix}_LOC_TRACEBACKS", 0)
+
+    @property
+    def arch(self) -> str:
+        """GPU architecture, from ``{prefix}_ARCH`` or detected on first access.
+
+        Detection probes the CUDA driver, so it is deferred out of
+        construction (and thus out of importing the DSL, which builds the
+        singletons eagerly) to the first read that actually needs an arch.
+        """
+        if self._arch is None:
+            self._arch = detect_gpu_arch(self.prefix)
+        return self._arch
+
+    @arch.setter
+    def arch(self, value: str) -> None:
+        self._arch = value
+
+    @arch.deleter
+    def arch(self) -> None:
+        """Reset to the construction-time state (``{prefix}_ARCH`` or lazy
+        detection), so ``mock.patch.object`` teardown restores the default."""
+        self._arch = get_str_env_var(f"{self.prefix}_ARCH")

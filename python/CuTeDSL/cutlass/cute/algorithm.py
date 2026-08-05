@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any, List, Tuple, Type, Union
 
 from cutlass._mlir import ir
 from cutlass.cutlass_dsl import (
-    BaseDSL,
+    DSLUserCodeError, BaseDSL,
     for_generate,
     yield_out,
     if_generate,
@@ -60,9 +60,7 @@ from .nvgpu.common import (
     CopyG2ROp,
     CopyR2GOp,
     CopyS2ROp,
-    CopyR2SOp,
-    OpError,
-)
+    CopyR2SOp)
 
 
 @dsl_user_op

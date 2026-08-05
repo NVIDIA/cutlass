@@ -18,7 +18,7 @@ import warnings
 
 import cutlass.cute as cute
 from cutlass._mlir import ir
-from cutlass.base_dsl.arch import Arch
+from cutlass import base_dsl
 from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cutlass_dsl import CuTeDSL, Boolean, Int32, Int64, if_generate, dsl_user_op
 from cutlass.utils import SmemAllocator, SmemPartition

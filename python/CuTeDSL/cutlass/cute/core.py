@@ -1718,6 +1718,21 @@ class _Pointer(Pointer):
         )
 
     @dsl_user_op
+    def raw_ptr(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> _BasePointer:
+        """Return this CuTe pointer as the base-DSL ``Pointer`` bridge type."""
+        dtype = (
+            cast(Type[Numeric], self.dtype)
+            if isinstance(self.dtype, NumericMeta)
+            else _BaseInt8
+        )
+        return _BasePointer(self.to_llvm_ptr(loc=loc, ip=ip), dtype=dtype)
+
+    @dsl_user_op
     @lru_cache_ir()
     def _to_builtin_memref(
         self,

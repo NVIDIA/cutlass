@@ -1723,12 +1723,7 @@ def compute_epilogue_tile_size(
     """Compute epilogue subtile dimensions ``(tile_m, tile_n)`` (pure Python, no MLIR).
 
     Used by :func:`compute_epilogue_tile_shape` and at kernel-discovery time
-    for SMEM capacity estimation.  Must match the C++ logic in
-    ``cutlass/include/cutlass/epilogue/collective/builders/sm100_builder.inl``
-    (the ``EpilogueTileAuto`` branch) and
-    ``cutlass_ir/compiler/lib/Collective/SM100.cpp``
-    (``sm100_compute_tile_shape_or_override``).
-
+    for SMEM capacity estimation.
     Background – SM100 epilogue flow
     ---------------------------------
     After the MMA, the accumulator lives in **TMEM** (Tensor Memory, 128

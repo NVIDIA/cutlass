@@ -11,6 +11,8 @@
 
 """TVM-FFI builder for MLIR code generation."""
 
+import hashlib
+import re
 from collections.abc import Sequence
 from enum import IntEnum
 from typing import Callable, Literal, Optional, Union
@@ -25,6 +27,57 @@ from ..._mlir import ir
 from ..._mlir.dialects import llvm
 from .mlir_builder import MLIRBuilder
 from dataclasses import dataclass
+
+
+_CUDA_LAUNCH_PREFLIGHT_VIOLATIONS = (
+    "zero_launch_dimension",
+    "block_threads_exceeds_max_threads_per_block",
+    "block_dim_x_exceeds_limit",
+    "block_dim_y_exceeds_limit",
+    "block_dim_z_exceeds_limit",
+    "grid_dim_x_exceeds_limit",
+    "grid_dim_y_exceeds_limit",
+    "grid_dim_z_exceeds_limit",
+    "dynamic_smem_exceeds_limit",
+)
+
+
+_CUDA_LAUNCH_CONFIG_GRID_DIM = 0
+_CUDA_LAUNCH_CONFIG_BLOCK_DIM = 1
+_CUDA_LAUNCH_CONFIG_DYNAMIC_SMEM_BYTES = 2
+_CUDA_LAUNCH_CONFIG_STREAM = 3
+_CUDA_LAUNCH_CONFIG_ATTRS = 4
+_CUDA_LAUNCH_CONFIG_NUM_ATTRS = 5
+
+
+# cudaDeviceAttr values used by the generated launch preflight helper.
+_CUDA_DEV_ATTR_MAX_THREADS_PER_BLOCK = 1
+_CUDA_DEV_ATTR_MAX_BLOCK_DIM_X = 2
+_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Y = 3
+_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Z = 4
+_CUDA_DEV_ATTR_MAX_GRID_DIM_X = 5
+_CUDA_DEV_ATTR_MAX_GRID_DIM_Y = 6
+_CUDA_DEV_ATTR_MAX_GRID_DIM_Z = 7
+_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK = 8
+_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK_OPTIN = 97
+
+
+@dataclass(frozen=True)
+class _CudaLaunchConfigValues:
+    grid: tuple[ir.Value, ir.Value, ir.Value]
+    block: tuple[ir.Value, ir.Value, ir.Value]
+    dynamic_smem: ir.Value
+
+
+@dataclass(frozen=True)
+class _CudaDeviceLaunchLimits:
+    query_failed: ir.Value
+    device: ir.Value
+    max_threads_per_block: ir.Value
+    max_block: tuple[ir.Value, ir.Value, ir.Value]
+    max_grid: tuple[ir.Value, ir.Value, ir.Value]
+    max_shared_mem_per_block: ir.Value
+    max_shared_mem_per_block_optin: ir.Value
 
 
 @dataclass
@@ -272,6 +325,22 @@ class TVMFFIBuilder(MLIRBuilder):
             ret=self.i32_type,
             params=[self.ptr_type, self.ptr_type, self.i32_type, self.ptr_type],
         )
+        self.cuda_launch_dim3_type = ir.Type.parse("!llvm.array<3 x i32>")
+        self._cuda_launch_config_type: ir.Type | None = None
+
+    def _get_cuda_launch_config_type(self) -> ir.Type:
+        if self._cuda_launch_config_type is None:
+            self._cuda_launch_config_type = self.struct_type(
+                fields=[
+                    self.cuda_launch_dim3_type,  # gridDim
+                    self.cuda_launch_dim3_type,  # blockDim
+                    self.i64_type,  # dynamicSmemBytes
+                    self.ptr_type,  # stream
+                    self.ptr_type,  # attrs
+                    self.i32_type,  # numAttrs
+                ]
+            )
+        return self._cuda_launch_config_type
 
     def get_object_cell_ptr(self, obj: ir.Value) -> ir.Value:
         """Get the cell from the tvm_ffi_object struct.
@@ -616,78 +685,486 @@ class TVMFFIBuilder(MLIRBuilder):
                         expected_stride = self.mul(loaded_shape[index], expected_stride)
         return cond
 
-    def get_or_create_set_raised_cuda_error_helper(self, error_code_prefix: str) -> str:
-        """Get or create a helper that raises CUDADialectError from an i32 code."""
-        helper_name = "__tvm_ffi_set_raised_cuda_error"
+    def _load_cuda_launch_config_values(
+        self, launch_config: ir.Value
+    ) -> _CudaLaunchConfigValues:
+        """Load named values from the lowered CUDA launch config struct."""
+        launch_config_type = self._get_cuda_launch_config_type()
+
+        def load_dim(field: int, index: int) -> ir.Value:
+            return llvm.load(
+                self.i32_type,
+                self.getelementptr(
+                    launch_config, [0, field, index], launch_config_type
+                ),
+            )
+
+        dynamic_smem = llvm.load(
+            self.i64_type,
+            self.getelementptr(
+                launch_config,
+                [0, _CUDA_LAUNCH_CONFIG_DYNAMIC_SMEM_BYTES],
+                launch_config_type,
+            ),
+        )
+        return _CudaLaunchConfigValues(
+            grid=(
+                load_dim(_CUDA_LAUNCH_CONFIG_GRID_DIM, 0),
+                load_dim(_CUDA_LAUNCH_CONFIG_GRID_DIM, 1),
+                load_dim(_CUDA_LAUNCH_CONFIG_GRID_DIM, 2),
+            ),
+            block=(
+                load_dim(_CUDA_LAUNCH_CONFIG_BLOCK_DIM, 0),
+                load_dim(_CUDA_LAUNCH_CONFIG_BLOCK_DIM, 1),
+                load_dim(_CUDA_LAUNCH_CONFIG_BLOCK_DIM, 2),
+            ),
+            dynamic_smem=dynamic_smem,
+        )
+
+    def _query_cuda_launch_limits(self) -> _CudaDeviceLaunchLimits:
+        """Emit CUDA device-attribute queries needed by launch preflight checks."""
+
+        def alloca_i32() -> ir.Value:
+            return llvm.alloca(
+                res=self.ptr_type,
+                elem_type=self.i32_type,
+                array_size=self.i32(1),
+                alignment=4,
+            )
+
+        device_alloca = alloca_i32()
+        max_threads_alloca = alloca_i32()
+        max_block_x_alloca = alloca_i32()
+        max_block_y_alloca = alloca_i32()
+        max_block_z_alloca = alloca_i32()
+        max_grid_x_alloca = alloca_i32()
+        max_grid_y_alloca = alloca_i32()
+        max_grid_z_alloca = alloca_i32()
+        max_smem_alloca = alloca_i32()
+        max_smem_optin_alloca = alloca_i32()
+
+        device_attrs = [
+            (_CUDA_DEV_ATTR_MAX_THREADS_PER_BLOCK, max_threads_alloca),
+            (_CUDA_DEV_ATTR_MAX_BLOCK_DIM_X, max_block_x_alloca),
+            (_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Y, max_block_y_alloca),
+            (_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Z, max_block_z_alloca),
+            (_CUDA_DEV_ATTR_MAX_GRID_DIM_X, max_grid_x_alloca),
+            (_CUDA_DEV_ATTR_MAX_GRID_DIM_Y, max_grid_y_alloca),
+            (_CUDA_DEV_ATTR_MAX_GRID_DIM_Z, max_grid_z_alloca),
+            (_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK, max_smem_alloca),
+            (_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK_OPTIN, max_smem_optin_alloca),
+        ]
+        llvm.store(value=self.i32(0), addr=device_alloca)
+        for _, alloca in device_attrs:
+            llvm.store(value=self.i32(0), addr=alloca)
+
+        get_device_status = llvm.call(
+            result=self.i32_type,
+            callee="_cudaGetDevice",
+            callee_operands=[device_alloca],
+            op_bundle_sizes=[],
+            op_bundle_operands=[],
+        )
+        device = llvm.load(self.i32_type, device_alloca)
+
+        attr_statuses: list[ir.Value] = []
+        for attr, alloca in device_attrs:
+            attr_statuses.append(
+                llvm.call(
+                    result=self.i32_type,
+                    callee="_cudaDeviceGetAttribute",
+                    callee_operands=[alloca, self.i32(attr), device],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+            )
+
+        query_failed = self.not_equal(get_device_status, self.i32(0))
+        for status in attr_statuses:
+            query_failed = self.or_(query_failed, self.not_equal(status, self.i32(0)))
+
+        return _CudaDeviceLaunchLimits(
+            query_failed=query_failed,
+            device=device,
+            max_threads_per_block=llvm.load(self.i32_type, max_threads_alloca),
+            max_block=(
+                llvm.load(self.i32_type, max_block_x_alloca),
+                llvm.load(self.i32_type, max_block_y_alloca),
+                llvm.load(self.i32_type, max_block_z_alloca),
+            ),
+            max_grid=(
+                llvm.load(self.i32_type, max_grid_x_alloca),
+                llvm.load(self.i32_type, max_grid_y_alloca),
+                llvm.load(self.i32_type, max_grid_z_alloca),
+            ),
+            max_shared_mem_per_block=llvm.load(self.i32_type, max_smem_alloca),
+            max_shared_mem_per_block_optin=llvm.load(
+                self.i32_type, max_smem_optin_alloca
+            ),
+        )
+
+    def _cuda_launch_error_runtime_param_types(self) -> list[ir.Type]:
+        """Return the runtime helper parameter types for CUDA launch diagnostics."""
+        launch_dim_types = [self.i32_type] * 7
+        launch_limit_types = [self.i32_type] * 10
+        source_location_types = [self.ptr_type, self.i32_type, self.i32_type, self.i32_type]
+        return (
+            [self.ptr_type]
+            + launch_dim_types
+            + [self.i64_type]
+            + launch_limit_types
+            + [self.ptr_type]
+            + source_location_types
+        )
+
+    def find_or_declare_extern_func(
+        self, name: str, params: Sequence[ir.Type], ret: ir.Type
+    ) -> None:
+        """Find an existing extern function or declare it if it doesn't exist."""
+        existing_func = self.find_func_in_module(self.module, name)
+        if existing_func is not None:
+            return
+
+        # Function declarations are module-level symbols. Avoid relying on
+        # whichever insertion point is active at the call site.
+        with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+            self.declare_extern_func(name, params, ret)
+
+    def get_or_create_cuda_launch_preflight_check_helper(self) -> str:
+        """Get or create the debug-only helper that validates CUDA launch args."""
+        helper_name = "__tvm_ffi_cuda_launch_preflight_check"
         if self.find_func_in_module(self.module, helper_name):
             return helper_name
 
-        sprintf_type = ir.Type.parse("!llvm.func<i32 (!llvm.ptr, !llvm.ptr, ...)>")
-        if not self.find_func_in_module(self.module, "sprintf"):
-            with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
-                func_op = llvm.func(
-                    "sprintf",
-                    function_type=ir.TypeAttr.get(sprintf_type),
-                )
-                func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
-        format_symbol = self.define_global_string(content="%d")
-        error_kind_symbol = self.define_global_string(content="CUDADialectError")
-        error_prefix_symbol = self.define_global_string(content=error_code_prefix)
-        set_error_from_parts_helper = self.get_or_create_set_raised_from_cstr_parts(2)
+        self.find_or_declare_extern_func(
+            "_cudaGetDevice", [self.ptr_type], self.i32_type
+        )
+        self.find_or_declare_extern_func(
+            "_cudaDeviceGetAttribute",
+            [self.ptr_type, self.i32_type, self.i32_type],
+            self.i32_type,
+        )
+        self.find_or_declare_extern_func(
+            "TVMFFIErrorSetRaisedFromCStrParts",
+            [self.ptr_type, self.ptr_type, self.i32_type],
+            self.void_type,
+        )
+        self.find_or_declare_extern_func(
+            "CuteDSLRT_TVMFFISetRaisedCudaLaunchError",
+            self._cuda_launch_error_runtime_param_types(),
+            self.void_type,
+        )
+        violation_symbols = {
+            violation: self.define_global_string(content=violation)
+            for violation in _CUDA_LAUNCH_PREFLIGHT_VIOLATIONS
+        }
+
+        def gt(lhs: ir.Value, rhs: ir.Value) -> ir.Value:
+            return llvm.icmp(llvm.ICmpPredicate.sgt, lhs, rhs)
+
+        def le(lhs: ir.Value, rhs: ir.Value) -> ir.Value:
+            return llvm.icmp(llvm.ICmpPredicate.sle, lhs, rhs)
+
+        def positive_and_gt(value: ir.Value, limit: ir.Value) -> ir.Value:
+            return self.and_(gt(limit, self.i32(0)), gt(value, limit))
+
+        def positive_i64_and_gt_i32_limit(
+            value: ir.Value, limit: ir.Value
+        ) -> ir.Value:
+            limit_i64 = llvm.zext(self.i64_type, limit)
+            return self.and_(
+                gt(limit, self.i32(0)),
+                llvm.icmp(llvm.ICmpPredicate.sgt, value, limit_i64),
+            )
+
+        def any_of(values: Sequence[ir.Value]) -> ir.Value:
+            result = values[0]
+            for value in values[1:]:
+                result = self.or_(result, value)
+            return result
 
         with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
             params, entry_block = self.function(
                 name=helper_name,
-                params_type=[self.i32_type],
-                ret_type=self.void_type,
+                params_type=[
+                    self.ptr_type,
+                    self.ptr_type,
+                    self.i32_type,
+                    self.i32_type,
+                    self.i32_type,
+                ],
+                ret_type=self.i32_type,
                 internal=True,
                 llvm_func_attrs=["noinline"],
             )
-            (value,) = params
+            (
+                launch_config,
+                source_file,
+                source_line,
+                source_col,
+                source_end_col,
+            ) = params
+
             with ir.InsertionPoint(entry_block):
-                buffer = llvm.alloca(
-                    res=self.ptr_type,
-                    elem_type=self.i8_type,
-                    array_size=self.i32(12),
-                    alignment=1,
-                )
-                llvm.call(
-                    result=self.i32_type,
-                    callee="sprintf",
-                    callee_operands=[
-                        buffer,
-                        self.address_of(format_symbol, self.ptr_type),
-                        value,
-                    ],
-                    var_callee_type=ir.TypeAttr.get(sprintf_type),
-                    op_bundle_sizes=[],
-                    op_bundle_operands=[],
+                launch_values = self._load_cuda_launch_config_values(launch_config)
+                grid_x, grid_y, grid_z = launch_values.grid
+                block_x, block_y, block_z = launch_values.block
+                dynamic_smem = launch_values.dynamic_smem
+                limits = self._query_cuda_launch_limits()
+
+                skip_block = entry_block.create_after()
+                checks_block = skip_block.create_after()
+                self.cond_br(
+                    cond=limits.query_failed,
+                    true_block=skip_block,
+                    false_block=checks_block,
+                    branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
                 )
 
+            with ir.InsertionPoint(skip_block):
+                self.return_(self.i32(0))
+
+            with ir.InsertionPoint(checks_block):
+                block_threads = self.mul(self.mul(block_x, block_y), block_z)
+                zero_dim = any_of(
+                    [
+                        le(grid_x, self.i32(0)),
+                        le(grid_y, self.i32(0)),
+                        le(grid_z, self.i32(0)),
+                        le(block_x, self.i32(0)),
+                        le(block_y, self.i32(0)),
+                        le(block_z, self.i32(0)),
+                    ]
+                )
+                block_threads_exceeds = positive_and_gt(
+                    block_threads, limits.max_threads_per_block
+                )
+                block_x_exceeds = positive_and_gt(block_x, limits.max_block[0])
+                block_y_exceeds = positive_and_gt(block_y, limits.max_block[1])
+                block_z_exceeds = positive_and_gt(block_z, limits.max_block[2])
+                grid_x_exceeds = positive_and_gt(grid_x, limits.max_grid[0])
+                grid_y_exceeds = positive_and_gt(grid_y, limits.max_grid[1])
+                grid_z_exceeds = positive_and_gt(grid_z, limits.max_grid[2])
+                dynamic_smem_exceeds = positive_i64_and_gt_i32_limit(
+                    dynamic_smem, limits.max_shared_mem_per_block_optin
+                )
+
+            error_block = checks_block.create_after()
+            violation_arg = error_block.add_argument(
+                self.ptr_type, ir.Location.unknown()
+            )
+            ok_block = error_block.create_after()
+
+            def emit_check(
+                current_block: ir.Block, cond: ir.Value, violation: str
+            ) -> ir.Block:
+                next_block = current_block.create_after()
+                with ir.InsertionPoint(current_block):
+                    self.cond_br(
+                        cond=cond,
+                        true_block=error_block,
+                        false_block=next_block,
+                        true_dest_operands=[
+                            self.address_of(
+                                violation_symbols[violation], self.ptr_type
+                            )
+                        ],
+                        branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
+                    )
+                return next_block
+
+            current_block = checks_block
+            checks = [
+                (zero_dim, "zero_launch_dimension"),
+                (
+                    block_threads_exceeds,
+                    "block_threads_exceeds_max_threads_per_block",
+                ),
+                (block_x_exceeds, "block_dim_x_exceeds_limit"),
+                (block_y_exceeds, "block_dim_y_exceeds_limit"),
+                (block_z_exceeds, "block_dim_z_exceeds_limit"),
+                (grid_x_exceeds, "grid_dim_x_exceeds_limit"),
+                (grid_y_exceeds, "grid_dim_y_exceeds_limit"),
+                (grid_z_exceeds, "grid_dim_z_exceeds_limit"),
+                (dynamic_smem_exceeds, "dynamic_smem_exceeds_limit"),
+            ]
+            for cond, violation in checks:
+                current_block = emit_check(current_block, cond, violation)
+
+            with ir.InsertionPoint(current_block):
+                self.br(ok_block)
+
+            with ir.InsertionPoint(error_block):
                 llvm.call(
                     result=None,
-                    callee=set_error_from_parts_helper,
+                    callee="CuteDSLRT_TVMFFISetRaisedCudaLaunchError",
                     callee_operands=[
-                        self.address_of(error_kind_symbol, self.ptr_type),
-                        self.i32(2),
-                        self.address_of(error_prefix_symbol, self.ptr_type),
-                        buffer,
+                        self.address_of(
+                            "TVMFFIErrorSetRaisedFromCStrParts", self.ptr_type
+                        ),
+                        grid_x,
+                        grid_y,
+                        grid_z,
+                        block_x,
+                        block_y,
+                        block_z,
+                        block_threads,
+                        dynamic_smem,
+                        limits.device,
+                        limits.max_threads_per_block,
+                        limits.max_block[0],
+                        limits.max_block[1],
+                        limits.max_block[2],
+                        limits.max_grid[0],
+                        limits.max_grid[1],
+                        limits.max_grid[2],
+                        limits.max_shared_mem_per_block,
+                        limits.max_shared_mem_per_block_optin,
+                        violation_arg,
+                        source_file,
+                        source_line,
+                        source_col,
+                        source_end_col,
                     ],
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
-                self.return_()
+                self.return_(self.i32(-1))
+
+            with ir.InsertionPoint(ok_block):
+                self.return_(self.i32(0))
 
         return helper_name
 
-    def raise_cuda_error_and_return(
-        self, code: ir.Value, error_code_prefix: str
-    ) -> None:
+    def get_or_create_cuda_checked_launch_helper(
+        self,
+        *,
+        source_file: str = "",
+        source_line: int = 0,
+        source_col: int = 0,
+        source_end_col: int = 0,
+    ) -> str:
+        """Get or create a cudaLaunchKernelEx wrapper with debug preflight checks."""
+        helper_name = "__tvm_ffi_cuda_launch_preflight_or_launch"
+        if source_file or source_line or source_col or source_end_col:
+            source_key = f"{source_file}:{source_line}:{source_col}:{source_end_col}"
+            digest = hashlib.sha1(source_key.encode("utf-8")).hexdigest()[:12]
+            helper_name = f"{helper_name}_{digest}"
+        if self.find_func_in_module(self.module, helper_name):
+            return helper_name
+
+        self.find_or_declare_extern_func(
+            "_cudaLaunchKernelEx",
+            [self.ptr_type, self.ptr_type, self.ptr_type],
+            self.i32_type,
+        )
+        preflight_helper = self.get_or_create_cuda_launch_preflight_check_helper()
+        source_file_symbol = self.define_global_string(content=source_file)
+
+        with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+            params, entry_block = self.function(
+                name=helper_name,
+                params_type=[self.ptr_type, self.ptr_type, self.ptr_type],
+                ret_type=self.i32_type,
+                internal=True,
+                llvm_func_attrs=["noinline"],
+            )
+            launch_config, kernel, kernel_args = params
+
+            with ir.InsertionPoint(entry_block):
+                preflight_status = llvm.call(
+                    result=self.i32_type,
+                    callee=preflight_helper,
+                    callee_operands=[
+                        launch_config,
+                        self.address_of(source_file_symbol, self.ptr_type),
+                        self.i32(source_line),
+                        self.i32(source_col),
+                        self.i32(source_end_col),
+                    ],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+                error_block = entry_block.create_after()
+                launch_block = error_block.create_after()
+                self.cond_br(
+                    cond=self.not_equal(preflight_status, self.i32(0)),
+                    true_block=error_block,
+                    false_block=launch_block,
+                    branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
+                )
+
+            with ir.InsertionPoint(error_block):
+                self.return_(preflight_status)
+
+            with ir.InsertionPoint(launch_block):
+                status = llvm.call(
+                    result=self.i32_type,
+                    callee="_cudaLaunchKernelEx",
+                    callee_operands=[launch_config, kernel, kernel_args],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+                self.return_(status)
+
+        return helper_name
+
+    _PY_SOURCE_LOC_RE = re.compile(
+        r'"(?P<file>[^"]+?\.py)":(?P<line>\d+):(?P<col>\d+)'
+    )
+
+    @staticmethod
+    def _extract_python_source_location(op: ir.Operation) -> tuple[str, int, int, int]:
+        location = str(op.location)
+        match = TVMFFIBuilder._PY_SOURCE_LOC_RE.search(location)
+        if match is None:
+            return "", 0, 0, 0
+
+        source_col = int(match.group("col"))
+        return match.group("file"), int(match.group("line")), source_col, source_col
+
+    def instrument_cuda_launch_preflight_checks(self, function_name: str) -> int:
+        """Wrap cudaLaunchKernelEx calls in ``function_name`` with debug preflight."""
+        module = self.module
+        assert module is not None
+        target = self.find_func_in_module(module, function_name)
+        if target is None:
+            return 0
+
+        num_rewritten = 0
+
+        def rewrite_launch_call(op: ir.Operation) -> ir.WalkResult:
+            nonlocal num_rewritten
+            if op.name != "llvm.call" or "callee" not in op.attributes:
+                return ir.WalkResult.ADVANCE
+
+            callee_name = str(op.attributes["callee"]).lstrip("@").strip('"')
+            if callee_name == "_cudaLaunchKernelEx":
+                source_file, source_line, source_col, source_end_col = (
+                    self._extract_python_source_location(op)
+                )
+                helper_name = self.get_or_create_cuda_checked_launch_helper(
+                    source_file=source_file,
+                    source_line=source_line,
+                    source_col=source_col,
+                    source_end_col=source_end_col,
+                )
+                op.attributes["callee"] = ir.FlatSymbolRefAttr.get(helper_name)
+                num_rewritten += 1
+            return ir.WalkResult.ADVANCE
+
+        target.walk(rewrite_launch_call)
+        return num_rewritten
+
+    def raise_cuda_error_and_return(self, code: ir.Value) -> None:
         """Raise CUDADialectError and return -1 from the current TVM-FFI wrapper."""
         llvm.call(
             result=None,
-            callee=self.get_or_create_set_raised_cuda_error_helper(error_code_prefix),
-            callee_operands=[code],
+            callee="CuteDSLRT_TVMFFISetRaisedCudaError",
+            callee_operands=[
+                self.address_of("TVMFFIErrorSetRaisedFromCStrParts", self.ptr_type),
+                code,
+            ],
             op_bundle_sizes=[],
             op_bundle_operands=[],
         )
@@ -907,33 +1384,6 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         self.matched_var_binding = {}
         self.matched_var_source = {}
         self.matched_var_arg_field_name = {}
-
-    def find_or_declare_extern_func(
-        self, name: str, params: Sequence[ir.Type], ret: ir.Type
-    ) -> None:
-        """Find an existing extern function or declare it if it doesn't exist.
-
-        This method checks if a function with the given name already exists in the module.
-        If it does, the method returns without doing anything. Otherwise, it declares
-        the function as an external function.
-
-        Parameters
-        ----------
-        name : str
-            The name of the extern function.
-        params : Sequence[ir.Type]
-            The parameter types of the function.
-        ret : ir.Type
-            The return type of the function.
-        """
-        # Check if the function already exists
-        existing_func = self.find_func_in_module(self.module, name)
-        if existing_func is not None:
-            # Function already declared, nothing to do
-            return
-
-        # Function doesn't exist, declare it
-        self.declare_extern_func(name, params, ret)
 
     def decode_param_int(
         self,

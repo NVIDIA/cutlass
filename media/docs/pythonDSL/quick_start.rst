@@ -11,7 +11,7 @@ The CUTLASS DSL 4.4 release currently supports **Linux** and **Python 3.10 - 3.1
 Only Linux x86_64 and aarch64 are supported. Additional platform support will be added in future releases.
 
 CUTLASS DSL supports the same NVIDIA driver version as the corresponding `CUDA Toolkit <https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html>`_ 
-(CUDA Toolkit 12.9 or CUDA Toolkit 13.1). Specifically, for 12.9, the driver version must be 575.51.03 or later.
+(CUDA Toolkit 12.9 or CUDA Toolkit 13.3). Specifically, for 12.9, the driver version must be 575.51.03 or later.
 
 Installation
 -----------------------
@@ -26,7 +26,7 @@ use the `setup.sh <https://github.com/NVIDIA/cutlass/blob/main/python/CuTeDSL/se
    # For CUDA Toolkit 12.9:
    ./cutlass/python/CuTeDSL/setup.sh --cu12
 
-   # For CUDA Toolkit 13.1:
+   # For CUDA Toolkit 13.3:
    ./cutlass/python/CuTeDSL/setup.sh --cu13
 
 If you just want to try out the last known stable release of the CUTLASS DSL (may not be compatible with the latest examples and code), run:
@@ -37,11 +37,21 @@ If you just want to try out the last known stable release of the CUTLASS DSL (ma
    # For CUDA Toolkit 12.9:
    pip install nvidia-cutlass-dsl
 
-   # For CUDA Toolkit 13.1:
+   # For CUDA Toolkit 13.3:
    pip install "nvidia-cutlass-dsl[cu13]"
 
 
 The ``nvidia-cutlass-dsl`` wheel includes everything needed to generate GPU kernels.
+
+To install a preview release, install from `pypi.nvidia.com <https://pypi.nvidia.com>`_:
+
+.. code-block:: bash
+
+   # For CUDA Toolkit 12.9:
+   pip install --pre nvidia-cutlass-dsl --extra-index-url https://pypi.nvidia.com
+
+   # For CUDA Toolkit 13.3:
+   pip install --pre "nvidia-cutlass-dsl[cu13]" --extra-index-url https://pypi.nvidia.com
 
 Recommended Dependencies
 ---------------------------------

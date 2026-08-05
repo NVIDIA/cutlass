@@ -1,7 +1,11 @@
 .. _cute:
+.. _cute_core:
+
+Core
+====
 
 cutlass.cute
-============
+------------
 
 .. automodule:: cutlass.cute
    :members:
@@ -10,9 +14,6 @@ cutlass.cute
    :special-members: __init__
    :private-members:
 
-.. toctree::
-  :maxdepth: 2
-  :hidden:
+.. _types:
 
-  cute_arch
-  cute_runtime
+.. include:: types.inc

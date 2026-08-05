@@ -99,18 +99,22 @@ struct Sm90 {
 
 struct Sm100 {
   static int const kMinComputeCapability = 100; 
+  static int const kSharedMemoryCapacityBytes = sm100_smem_capacity_bytes;
 };
 
 struct Sm101 {
   static int const kMinComputeCapability = 101; 
+  static int const kSharedMemoryCapacityBytes = sm100_smem_capacity_bytes;
 };
 
 struct Sm120 {
   static int const kMinComputeCapability = 120;
+  static int const kSharedMemoryCapacityBytes = sm120_smem_capacity_bytes;
 };
 
 struct Sm103 {
   static int const kMinComputeCapability = 103; 
+  static int const kSharedMemoryCapacityBytes = sm100_smem_capacity_bytes;
 };
 
 /// Triggers a breakpoint on the device

@@ -2,8 +2,45 @@
 
 # CUTLASS 4.x
 
+## [4.7.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.7.0) (2026-08-04)
+
+### CuTe DSL
+* New features:
+  - Introduced the Primitives API which provides a lower-level abstraction beneath CuTe enabling Tensor Core programming through SIMT.  This provides a stable, thin wrapper over NVVM operations to use where CuTe abstractions reduce development velocity. Primitives are released as experimental and will evolve based on user feedback.
+
+    NOTE: Primitives is a transitional API until a CUDA Python-like solution is available.
+  - Introduced the Task Scheduling framework.  This provides static analysis of execution schedules for warp-specialized kernels.  Compilation stops when known concurrency issues are detected.  Also provides tools for visualizing resource/task dependencies and analyzing a kernel's schedule.
+  - Improved compiler diagnostics.  Register spills and use of local memory can now be reported at compile time with source line numbers. Preliminary support for detecting classes of NVVM synchronization and execution hazards at compile-time when using the Primitives API.  Better reporting of compiler errors that previously did not include source line numbers.
+
+This release has been tested against the following packages:
+  - FlashAttention: [main (c75d019)](https://github.com/Dao-AILab/flash-attention/commit/c75d019dea9d910312974417bc28f190dfdda6d9)
+  - Quack: [main (79517ae)](https://github.com/Dao-AILab/quack/commit/79517ae3063946fc2bb26a41bd45ee550e85cb26)
+  - FlashInfer: [main (4b964ec)](https://github.com/flashinfer-ai/flashinfer/commit/4b964ec4e147cf06a39e08b08c43188859df2652)
+  - cuDNN-Frontend:[deveop(5235c2b)](https://github.com/NVIDIA/cudnn-frontend/commit/5235c2bcaa7df095627cf51dcbe53a503d372855)
+  - Pytorch: [main(cf30153)](https://github.com/pytorch/pytorch/commit/cf30153c4c131c8164ee7798e5022d810682e2cb)
+
+### CUTLASS Operator API
+* Custom epilogue fusions enhancements:
+  - Add support for scalar reductions.
+  - Add support to specify data movement strategy for each operand being loaded/stored.
+
+### C++
+* Add implementation of 2-kernel backward targeting at FP8 in [FMHA example](https://github.com/NVIDIA/cutlass/tree/main/examples/77_blackwell_fmha/).
+  - Added a backward fused multi-head attention benchmark with multi-precision (FP16/FP8), configurable batch/sequence/head sizes, variable-length and masking options, plus built-in correctness checks and runtime/throughput reporting.
+  - The 2-kernel backward has approximately 25% improvement compared to 1-kernel implementation at FP8 without mask on Blackwell SM103 chip.
+* Support CUDA 12.6 and newer structured bindings headers in NVRTC.
+* Add fp32/fp16/bf16/e4m3/e5m2 -> e2m1 (FP4) in NumericArrayConverter.
+* Optimize the E2M1 -> FP16 LUT decode helpers `_e2m1_to_half_x2` and `_e2m1_to_half_x4` by merging mask before prmt.
+* Fix some issues:
+  - Update streamk heuristic algorithm to optimize some kernels with mix cluster sizes.
+  - Avoid integer-sequence get ambiguity in CuTe tuple algorithms.
+  - Fix a TMA creation driver bug: detect if the first 128KiB is mapped in conservatively by checking if the tensor is compact, if so it is valid to flip the bit otherwise zero it.
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.3.
+
 ## [4.6.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.1) (2026-07-13)
 
+### CuTe DSL
 * Bug fixing and improvements
   - Fixed following issues:
     - https://github.com/NVIDIA/cutlass/issues/3243

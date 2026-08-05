@@ -19,6 +19,7 @@ from .numeric_conversion import *
 from .clc import *
 
 import cutlass.cutlass_dsl as cutlass_dsl
+from cutlass.base_dsl import Arch
 
 # __all__ is required here for documentation generation
 __all__ = [
@@ -70,6 +71,7 @@ __all__ = [
     "fence_acq_rel_sys",
     "cp_async_commit_group",
     "cp_async_wait_group",
+    "cp_async_shared_global",
     "cp_async_bulk_commit_group",
     "cp_async_bulk_wait_group",
     "cluster_wait",

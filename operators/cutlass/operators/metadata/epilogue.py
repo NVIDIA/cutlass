@@ -49,6 +49,9 @@ class EpilogueMetadata:
         self.traced_epilogue = epilogue_args.traced_epilogue
         self.tensors = epilogue_args.tensors
         self.epilogue_fn = epilogue_args.epilogue_fn
+        # Per-parameter Load/Store transport descriptors (empty when the user
+        # passed only bare tensors).
+        self.transports = getattr(epilogue_args, "transports", {})
 
     @classmethod
     def from_args(cls, args: EpilogueArguments) -> EpilogueMetadata:

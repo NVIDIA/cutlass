@@ -26,6 +26,21 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+"""Operator-API wrapper for the SM100 persistent dense GEMM with EFC epilogues.
+
+``PersistentDenseGemmEFCOperator`` is the discovery / compile / run entry point
+that the manifest offers for ``GemmArguments``.  It owns the user-facing
+plumbing -- enumerating kernel configurations, validating operands and design
+parameters, converting the traced epilogue into an EFC epilogue function via
+``EFCConverter``, and packing/unpacking arguments around ``cute_compile`` /
+``cute_run``.
+
+The actual GPU kernel is ``PersistentDenseGemmEFCKernel`` (a thin batch-layout
+adapter over the verbatim example ``DenseGemmEFC``); this wrapper never touches
+GPU details, and the kernel never touches user-facing types such as
+``GemmArguments`` or ``TensorWrapper``.
+"""
+
 from __future__ import annotations
 
 import itertools
@@ -75,57 +90,35 @@ if TYPE_CHECKING:
 
 @CuTeDSLProvider.register
 class PersistentDenseGemmEFCOperator(CuteDslOperator):
-    """Base class for batched GEMM with custom epilogue fusion using EFC.
+    """SM100 persistent dense GEMM with custom epilogue fusion via EFC.
 
-    This class provides the core infrastructure for persistent batched GEMM operations
-    with customizable epilogue fusion. Subclasses define specific epilogue behaviors
-    by providing an epilogue configuration function that describes operations on the
-    accumulator and supplemental tensors.
+    Discovery / compile / run wrapper registered with the CuTe DSL provider for
+    ``GemmArguments``.  Each instance is built from an ``OperatorMetadata``
+    describing one kernel configuration; ``__init__`` converts the traced
+    epilogue (if any) into an EFC epilogue function via ``EFCConverter`` and
+    instantiates a ``PersistentDenseGemmEFCKernel`` to run it.  The kernel
+    provides the GEMM mainloop, TMA memory operations, warp specialization, and
+    persistent tile scheduling; this class adds operator discovery, metadata
+    validation, and argument packing around ``cute_compile`` / ``cute_run``.
 
-    The class handles:
-    - GEMM mainloop (A * B computation)
-    - TMA-based memory operations
-    - Warp specialization
-    - Persistent tile scheduling
-    - EFC (Epilogue Fusion Configuration) integration
-    - Tensor creation and validation
+    Args:
+        metadata (OperatorMetadata): One validated kernel configuration
+            (operands, design, and optional epilogue) to instantiate.
 
-    :param acc_dtype: Data type for accumulation during MMA computation
-    :type acc_dtype: type[cutlass.Numeric]
-    :param epi_dtype: Data type for epilogue operation
-    :type epi_dtype: type[cutlass.Numeric]
-    :param use_2cta_instrs: Whether to use CTA group 2 for 2CTA MMA instructions
-    :type use_2cta_instrs: bool
-    :param mma_tiler_mn: Shape of the Matrix Multiply-Accumulate (MMA) tile (M,N)
-    :type mma_tiler_mn: tuple[int, int]
-    :param cluster_shape_mn: Cluster dimensions (M,N) for parallel processing
-    :type cluster_shape_mn: tuple[int, int]
-    :param epilogue_configuration_function: Function defining the epilogue behavior via EFC
-    :type epilogue_configuration_function: Callable
+    Note:
+        Supported A/B data types (A and B must share a dtype): Float16,
+        BFloat16, Int8, Uint8, Float8E4M3FN, Float8E5M2.
 
-    :note: Supported A/B data types:
-        - Float16/BFloat16
-        - Int8/Uint8
-        - Float8E4M3FN/Float8E5M2
-        (A and B must have the same data type)
+    Note:
+        Supported accumulator data types: Float32 (all floating-point A/B
+        types), Float16 (fp16 and fp8 A/B only), Int32 (uint8/int8 A/B only).
+        See ``_valid_ab_acc_combinations`` for the exact mapping.
 
-    :note: Supported accumulator data types:
-        - Float32 (for all floating point A/B data types)
-        - Float16 (only for fp16 and fp8 A/B data types)
-        - Int32 (only for uint8/int8 A/B data types)
-
-    :note: Supported supplemental tensor data types (epilogue-dependent):
-        - Float32 (for float32 and int32 accumulator data types)
-        - Int32 (for float32 and int32 accumulator data types)
-        - Float16/BFloat16 (for fp16 and fp8 accumulator data types)
-        - Int8/Uint8 (for uint8/int8 accumulator data types)
-        - Float8E4M3FN/Float8E5M2 (for float32 accumulator data types)
-
-    :note: Constraints:
-        - MMA tiler M must be 64/128 (use_2cta_instrs=False) or 128/256 (use_2cta_instrs=True)
-        - MMA tiler N must be 32-256, step 32
-        - Cluster shape M must be multiple of 2 if use_2cta_instrs=True
-        - Cluster shape M/N must be positive and power of 2, total cluster size <= 16
+    Note:
+        Design constraints (see ``_valid_design``): MMA tiler M is 64/128
+        (1-CTA) or 128/256 (2-CTA); MMA tiler N is 32-256 in steps of 32;
+        cluster M is a multiple of 2 when ``use_2cta_mma``; cluster M/N are
+        positive powers of 2 with product <= 16.
     """
 
     supported_args_type = GemmArguments
@@ -148,6 +141,7 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
                 metadata.epilogue.traced_epilogue.dag_ir,
                 metadata.epilogue.parameter_names,
                 parameter_tensors=metadata.epilogue.tensors,
+                transports=metadata.epilogue.transports,
             )
         else:
             epilogue_op = EFCConverter.identity_efc

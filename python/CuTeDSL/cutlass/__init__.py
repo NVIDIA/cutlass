@@ -46,7 +46,7 @@ _common._get_cuda_version = _get_cuda_version
 
 # Import CUDA version from base_dsl
 from .base_dsl.version_info import CUDA_VERSION
-from .address_space import AddressSpace
+from .base_dsl import AddressSpace, Arch
 
 from .cutlass_dsl import (
     Constexpr,
@@ -87,13 +87,17 @@ from .cutlass_dsl import (
 from .cute.typing import *
 from .base_dsl.typing import Pointer as Pointer  # type: ignore[assignment]
 from .base_dsl.typing import (
+    Array,
     TypedPointer,
     Uint128,
     align,
+    GridConstant,
+    grid_constant,
 )
+from .base_dsl.array import make_array_view
 from .base_dsl.pointer import inttoptr
 from .base_dsl.swizzle import Swizzle, apply_swizzle, load_swizzled, store_swizzled
-from ._mlir_helpers.vector import Vector
+from ._mlir_helpers.vector import Vector, full, full_like, print_nd_vector
 
 # Utilities not belonging to CuTe
 from .base_dsl import vector as vector
@@ -102,6 +106,8 @@ from . import runtime as runtime
 from . import utils as utils
 from . import pipeline as pipeline
 from . import testing as testing
+from . import experimental as experimental
+
 # Package-private symbol used by exported aliases below.
 from . import cutlass_dsl as _dsl
 

@@ -9,7 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import importlib.util
+import linecache
 import re
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, List, Optional, cast
 
 from cutlass.base_dsl.tvm_ffi_builder import (
@@ -26,12 +30,226 @@ from cutlass.cutlass_dsl.cuda_jit_executor import CudaDialectJitCompiledFunction
 from cutlass.base_dsl.jit_executor import JitExecutor
 from cutlass.base_dsl.common import (
     DSLRuntimeError,
-    DSLCudaRuntimeError,
     DSLUserCodeError,
+    DSLCudaRuntimeError,
 )
-from cutlass.base_dsl.diagnostics import DiagId
+from cutlass.base_dsl.diagnostics import DiagId, render_code_frame
 from cutlass.base_dsl.runtime import cuda as cuda_helpers
+
 import tvm_ffi
+
+
+_CudaLaunchFields = dict[str, str]
+
+
+@dataclass(frozen=True)
+class _CudaLaunchViolationRule:
+    reason: Callable[[_CudaLaunchFields], str]
+    suggestion: Callable[[_CudaLaunchFields], str | None]
+
+
+def _format_tuple3(value: str) -> str:
+    parts = [part.strip() for part in value.split(",")]
+    if len(parts) == 3 and all(parts):
+        return f"({parts[0]}, {parts[1]}, {parts[2]})"
+    return value
+
+
+def _tuple3_part(value: str, index: int) -> str:
+    parts = [part.strip() for part in value.split(",")]
+    if 0 <= index < len(parts) and parts[index]:
+        return parts[index]
+    return "unknown"
+
+
+def _parse_int(value: str, *, min_value: int) -> int | None:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed >= min_value else None
+
+
+def _zero_launch_dimension_reason(_fields: _CudaLaunchFields) -> str:
+    return "grid and block dimensions must be non-zero."
+
+
+def _zero_launch_dimension_suggestion(_fields: _CudaLaunchFields) -> str:
+    return "Use non-zero grid and block dimensions in `.launch(...)`."
+
+
+def _block_threads_reason(fields: _CudaLaunchFields) -> str:
+    block_threads = fields.get("block_threads", "unknown")
+    max_threads = fields.get("max_threads_per_block", "unknown")
+    return (
+        f"block.x * block.y * block.z = {block_threads} exceeds "
+        f"max threads per block = {max_threads}."
+    )
+
+
+def _block_threads_suggestion(fields: _CudaLaunchFields) -> str:
+    block = _format_tuple3(fields.get("block", "unknown"))
+    max_threads = fields.get("max_threads_per_block", "unknown")
+    return (
+        f"Change `.launch(..., block={block})` to use at most "
+        f"{max_threads} threads per block. If the kernel only uses "
+        "threadIdx.x, launch with block=(threads, 1, 1)."
+    )
+
+
+def _dimension_limit_reason(
+    fields: _CudaLaunchFields,
+    *,
+    value_key: str,
+    limit_key: str,
+    axis: int,
+    value_label: str,
+    limit_label: str,
+) -> str:
+    return (
+        f"{value_label} = {_tuple3_part(fields.get(value_key, ''), axis)} "
+        f"exceeds {limit_label} = {_tuple3_part(fields.get(limit_key, ''), axis)}."
+    )
+
+
+def _block_dimension_suggestion(fields: _CudaLaunchFields) -> str:
+    block = _format_tuple3(fields.get("block", "unknown"))
+    max_block = _format_tuple3(fields.get("max_block_dim", "unknown"))
+    return (
+        f"Keep each block dimension within max block dim {max_block}; "
+        f"current block is {block}."
+    )
+
+
+def _grid_dimension_suggestion(fields: _CudaLaunchFields) -> str:
+    grid = _format_tuple3(fields.get("grid", "unknown"))
+    max_grid = _format_tuple3(fields.get("max_grid_dim", "unknown"))
+    return (
+        f"Keep each grid dimension within max grid dim {max_grid}; "
+        f"current grid is {grid}."
+    )
+
+
+def _dynamic_smem_reason(fields: _CudaLaunchFields) -> str:
+    max_smem = fields.get(
+        "max_shared_mem_per_block_optin_bytes",
+        fields.get("max_shared_mem_per_block_bytes", "unknown"),
+    )
+    return (
+        "dynamic shared memory = "
+        f"{fields.get('dynamic_smem_bytes', 'unknown')} bytes exceeds "
+        f"max opt-in shared memory per block = {max_smem} bytes."
+    )
+
+
+def _dynamic_smem_suggestion(fields: _CudaLaunchFields) -> str:
+    max_smem = fields.get(
+        "max_shared_mem_per_block_optin_bytes",
+        fields.get("max_shared_mem_per_block_bytes", "unknown"),
+    )
+    return (
+        "Reduce dynamic shared memory in `.launch(...)` to at most "
+        f"{max_smem} bytes, or use a smaller launch configuration."
+    )
+
+
+def _invalid_launch_configuration_reason(_fields: _CudaLaunchFields) -> str:
+    return (
+        "check grid/block dimensions, dynamic shared memory, stream, "
+        "and launch attributes."
+    )
+
+
+def _no_suggestion(_fields: _CudaLaunchFields) -> str | None:
+    return None
+
+
+# Each preflight violation id maps to both the detail reason and the shared
+# diagnostic suggestion. Adding a launch check should only require another rule.
+_CUDA_LAUNCH_VIOLATION_RULES: dict[str, _CudaLaunchViolationRule] = {
+    "zero_launch_dimension": _CudaLaunchViolationRule(
+        reason=_zero_launch_dimension_reason,
+        suggestion=_zero_launch_dimension_suggestion,
+    ),
+    "block_threads_exceeds_max_threads_per_block": _CudaLaunchViolationRule(
+        reason=_block_threads_reason,
+        suggestion=_block_threads_suggestion,
+    ),
+    "block_dim_x_exceeds_limit": _CudaLaunchViolationRule(
+        reason=lambda fields: _dimension_limit_reason(
+            fields,
+            value_key="block",
+            limit_key="max_block_dim",
+            axis=0,
+            value_label="blockDim.x",
+            limit_label="max block dim x",
+        ),
+        suggestion=_block_dimension_suggestion,
+    ),
+    "block_dim_y_exceeds_limit": _CudaLaunchViolationRule(
+        reason=lambda fields: _dimension_limit_reason(
+            fields,
+            value_key="block",
+            limit_key="max_block_dim",
+            axis=1,
+            value_label="blockDim.y",
+            limit_label="max block dim y",
+        ),
+        suggestion=_block_dimension_suggestion,
+    ),
+    "block_dim_z_exceeds_limit": _CudaLaunchViolationRule(
+        reason=lambda fields: _dimension_limit_reason(
+            fields,
+            value_key="block",
+            limit_key="max_block_dim",
+            axis=2,
+            value_label="blockDim.z",
+            limit_label="max block dim z",
+        ),
+        suggestion=_block_dimension_suggestion,
+    ),
+    "grid_dim_x_exceeds_limit": _CudaLaunchViolationRule(
+        reason=lambda fields: _dimension_limit_reason(
+            fields,
+            value_key="grid",
+            limit_key="max_grid_dim",
+            axis=0,
+            value_label="gridDim.x",
+            limit_label="max grid dim x",
+        ),
+        suggestion=_grid_dimension_suggestion,
+    ),
+    "grid_dim_y_exceeds_limit": _CudaLaunchViolationRule(
+        reason=lambda fields: _dimension_limit_reason(
+            fields,
+            value_key="grid",
+            limit_key="max_grid_dim",
+            axis=1,
+            value_label="gridDim.y",
+            limit_label="max grid dim y",
+        ),
+        suggestion=_grid_dimension_suggestion,
+    ),
+    "grid_dim_z_exceeds_limit": _CudaLaunchViolationRule(
+        reason=lambda fields: _dimension_limit_reason(
+            fields,
+            value_key="grid",
+            limit_key="max_grid_dim",
+            axis=2,
+            value_label="gridDim.z",
+            limit_label="max grid dim z",
+        ),
+        suggestion=_grid_dimension_suggestion,
+    ),
+    "dynamic_smem_exceeds_limit": _CudaLaunchViolationRule(
+        reason=_dynamic_smem_reason,
+        suggestion=_dynamic_smem_suggestion,
+    ),
+    "invalid_launch_configuration": _CudaLaunchViolationRule(
+        reason=_invalid_launch_configuration_reason,
+        suggestion=_no_suggestion,
+    ),
+}
 
 
 @tvm_ffi.register_error
@@ -42,26 +260,35 @@ class CUDADialectError(DSLCudaRuntimeError):
 
     def __init__(self, message: str) -> None:
         self.raw_tvm_ffi_message = message
-        error_code = CUDADialectError._parse_cuda_dialect_error_code(message)
+        error_code, raw_runtime_detail = CUDADialectError._parse_cuda_dialect_message(
+            message
+        )
+        runtime_detail, runtime_suggestion = CUDADialectError._format_cuda_runtime(
+            raw_runtime_detail
+        )
         super().__init__(
             error_code,
             cuda_helpers.get_cuda_error_name_from_code(
                 error_code, cuda_helpers.cudart.cudaError_t
             ),
+            runtime_detail=runtime_detail,
+            suggestion=runtime_suggestion,
         )
-
-    def _format_message(self) -> str:
-        message = super()._format_message()
-        return message.replace(f"{self.__class__.__name__}:", "DSLCudaRuntimeError:", 1)
 
     @staticmethod
     def _parse_cuda_dialect_error_code(message: str) -> int:
+        error_code, _ = CUDADialectError._parse_cuda_dialect_message(message)
+        return error_code
+
+    @staticmethod
+    def _parse_cuda_dialect_message(message: str) -> tuple[int, str]:
         match = re.fullmatch(
-            rf"{re.escape(CUDADialectError.PREFIX)}(?P<code>\d+)\s*",
+            rf"{re.escape(CUDADialectError.PREFIX)}(?P<code>\d+)(?P<detail>.*)",
             message,
+            flags=re.DOTALL,
         )
         if match is not None:
-            return int(match.group("code"))
+            return int(match.group("code")), match.group("detail").strip()
 
         if not message.startswith(CUDADialectError.PREFIX):
             raise ValueError(
@@ -71,10 +298,143 @@ class CUDADialectError(DSLCudaRuntimeError):
         if not message[len(CUDADialectError.PREFIX) :].strip():
             raise ValueError(
                 f"CUDADialectError message has no numeric code: {message!r}"
-            )
+        )
         raise ValueError(
             f"CUDADialectError message has unexpected payload: {message!r}"
         )
+
+    @staticmethod
+    def _format_cuda_runtime(detail: str) -> tuple[str, str | None]:
+        fields = CUDADialectError._parse_cuda_runtime_detail_fields(detail)
+        if fields.get("kind") != "cuda_launch":
+            return detail, None
+        return (
+            CUDADialectError._format_cuda_launch_detail(fields),
+            CUDADialectError._format_cuda_launch_suggestion(fields),
+        )
+
+    @staticmethod
+    def _parse_cuda_runtime_detail_fields(detail: str) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        for item in re.split(r"[\n;]+", detail):
+            item = item.strip()
+            if not item or "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            fields[key.strip()] = value.strip()
+        return fields
+
+    @staticmethod
+    def _format_cuda_launch_source_frame(fields: dict[str, str]) -> list[str]:
+        source_file = fields.get("source_file", "")
+        source_line = _parse_int(fields.get("source_line", ""), min_value=1)
+        if not source_file or source_line is None:
+            return []
+
+        source_text = linecache.getline(source_file, source_line).rstrip("\n")
+        source_col = _parse_int(fields.get("source_col", ""), min_value=0)
+        source_end_col = _parse_int(fields.get("source_end_col", ""), min_value=0)
+
+        launch_token_index = source_text.find(".launch")
+        if launch_token_index >= 0:
+            source_col = launch_token_index + 1
+            source_end_col = source_col + len("launch")
+
+        try:
+            display_filename = str(Path(source_file).resolve())
+        except OSError:
+            display_filename = source_file
+
+        frame = render_code_frame(
+            source_file,
+            source_line,
+            source_col,
+            source_end_col,
+            display_filename=display_filename,
+        )
+        return [] if frame is None else frame.splitlines()
+
+    @staticmethod
+    def _format_cuda_launch_detail(fields: dict[str, str]) -> str:
+        api = fields.get("api", "cudaLaunchKernelExC")
+        error_name = fields.get("error_name", "unknown")
+        error_string = fields.get("error_string", "unknown")
+        grid = _format_tuple3(fields.get("grid", "unknown"))
+        block = _format_tuple3(fields.get("block", "unknown"))
+        block_threads = fields.get("block_threads", "unknown")
+        dynamic_smem = fields.get("dynamic_smem_bytes", "unknown")
+        stream = fields.get("stream", "unknown")
+        device = fields.get("device", "unknown")
+        lines = CUDADialectError._format_cuda_launch_source_frame(fields)
+        if lines:
+            lines.append("")
+
+        lines.extend(
+            [
+                "CUDA rejected the launch configuration before running the kernel.",
+                "",
+            ]
+        )
+
+        lines.extend(
+            [
+                "launch:",
+                f"  API: {api}",
+                f"  CUDA result: {error_name} ({error_string})",
+                f"  grid: {grid}",
+                f"  block: {block}",
+                f"  threads per block: {block_threads}",
+                f"  dynamic shared memory: {dynamic_smem} bytes",
+                f"  stream: {stream}",
+            ]
+        )
+
+        limits = CUDADialectError._format_cuda_launch_limit_lines(fields)
+        if limits:
+            lines.append("")
+            if device == "unknown":
+                lines.append("device limits:")
+            else:
+                lines.append(f"device {device} limits:")
+            lines.extend(limits)
+
+        reason = CUDADialectError._format_cuda_launch_violation(fields)
+        if reason:
+            lines.extend(["", f"  reason: {reason}"])
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_cuda_launch_limit_lines(fields: dict[str, str]) -> list[str]:
+        limits = []
+        max_threads = fields.get("max_threads_per_block")
+        if max_threads and max_threads != "0":
+            limits.append(f"  max threads per block: {max_threads}")
+        max_block = fields.get("max_block_dim")
+        if max_block and max_block != "0,0,0":
+            limits.append(f"  max block dim: {_format_tuple3(max_block)}")
+        max_grid = fields.get("max_grid_dim")
+        if max_grid and max_grid != "0,0,0":
+            limits.append(f"  max grid dim: {_format_tuple3(max_grid)}")
+        max_smem = fields.get("max_shared_mem_per_block_bytes")
+        if max_smem and max_smem != "0":
+            limits.append(f"  max shared memory per block: {max_smem} bytes")
+        max_smem_optin = fields.get("max_shared_mem_per_block_optin_bytes")
+        if max_smem_optin and max_smem_optin != "0":
+            limits.append(
+                f"  max opt-in shared memory per block: {max_smem_optin} bytes"
+            )
+        return limits
+
+    @staticmethod
+    def _format_cuda_launch_violation(fields: dict[str, str]) -> str:
+        rule = _CUDA_LAUNCH_VIOLATION_RULES.get(fields.get("violation", ""))
+        return "" if rule is None else rule.reason(fields)
+
+    @staticmethod
+    def _format_cuda_launch_suggestion(fields: dict[str, str]) -> str | None:
+        rule = _CUDA_LAUNCH_VIOLATION_RULES.get(fields.get("violation", ""))
+        return None if rule is None else rule.suggestion(fields)
 
 
 class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
@@ -168,6 +528,16 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             context.builder.find_or_declare_extern_func(
                 "cuda_dialect_unload_library_once",
                 [self.ptr_type],
+                self.void_type,
+            )
+            context.builder.find_or_declare_extern_func(
+                "TVMFFIErrorSetRaisedFromCStrParts",
+                [self.ptr_type, self.ptr_type, self.i32_type],
+                self.void_type,
+            )
+            context.builder.find_or_declare_extern_func(
+                "CuteDSLRT_TVMFFISetRaisedCudaError",
+                [self.ptr_type, self.i32_type],
                 self.void_type,
             )
         return current_block
@@ -297,16 +667,28 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         """
         assert self.cuda_error_handle_block is not None
         with ir.InsertionPoint(current_block):
-            # check if the call is successful
             success_block = current_block.create_after()
-            # Check if call is successful (zero return code means success)
+            nonzero_block = success_block.create_after()
             self.cond_br(
                 cond=self.equal(code, self.i32(0)),
                 true_block=success_block,
-                false_block=self.cuda_error_handle_block,
+                false_block=nonzero_block,
                 branch_weights=self.BRANCH_WEIGHTS_LIKELY,
+            )
+
+        with ir.InsertionPoint(nonzero_block):
+            already_raised_block = nonzero_block.create_after()
+            self.cond_br(
+                cond=self.equal(code, self.i32(-1)),
+                true_block=already_raised_block,
+                false_block=self.cuda_error_handle_block,
+                branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
                 false_dest_operands=[code],  # Pass error code to shared error block
             )
+
+        with ir.InsertionPoint(already_raised_block):
+            llvm.return_(arg=self.i32(-1))
+
         return success_block
 
     def set_cuda_device_if_mismatch(
@@ -442,9 +824,7 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         # Populate the error block
         with ir.InsertionPoint(error_block):
             # Raise error and return -1
-            context.builder.raise_cuda_error_and_return(
-                error_code, CUDADialectError.PREFIX
-            )
+            context.builder.raise_cuda_error_and_return(error_code)
 
         return error_block
 
@@ -690,9 +1070,4 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
 
 def supports_kwargs_wrapper() -> bool:
     """Check if the kwargs wrapper is supported."""
-    try:
-        from tvm_ffi.utils import kwargs_wrapper
-
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("tvm_ffi.utils.kwargs_wrapper") is not None

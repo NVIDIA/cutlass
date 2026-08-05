@@ -3,7 +3,10 @@
 Runtime
 =======
 
-Description
+.. note::
+
+   ``cutlass.cute.runtime`` is kept for compatibility. Runtime APIs are being
+   moved to ``cutlass.runtime``; prefer the new namespace when it is available.
 
 API documentation
 -----------------

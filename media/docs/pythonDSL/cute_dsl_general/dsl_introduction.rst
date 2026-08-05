@@ -82,7 +82,7 @@ Defines GPU kernel functions, compiled as specialized GPU symbols through |DC|.
 - ``smem``
   Specifies the size of shared memory in bytes (integer).
 
-  - ``None`` (default) — Automatically calculates the kernel's shared memory usage via **utils.SmemAllocator**. Recommended unless manual control is required.
+  - ``None`` (default) — Automatically calculates the kernel's shared memory usage via **cutlass.memory.SmemAllocator**. Recommended unless manual control is required.
   - ``int`` — Manually specifies the size of shared memory in bytes.
 
 **Additional Kernel Launch Parameters**:
@@ -128,6 +128,12 @@ Defines GPU kernel functions, compiled as specialized GPU symbols through |DC|.
 
   - ``None`` (default) — Auto calculate the percentage using formula ``ceil_div(min_blocks_per_mp * smem * 100, max_smem_per_mp)`` when **min_blocks_per_mp** is greater than 1
   - ``int`` — Override the auto-calculated percentage and manually set hint.
+
+- ``hint_smem_base_uniform``
+  (Experimental feature) Set per-kernel hint for compiler to keep the dynamic-SMEM base ptr in a warp-uniform register.
+
+  - ``True`` (default) — Hint compiler to keep the dynamic-SMEM base ptr in a warp-uniform register.
+  - ``False`` — No hint for the dynamic-SMEM base ptr in kernel launch.
 
 Calling Conventions
 -------------------

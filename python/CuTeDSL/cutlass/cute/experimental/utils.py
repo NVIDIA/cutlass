@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
 
 import cutlass
@@ -25,6 +25,26 @@ from .pipeline import TMAStorePipeline, TMAToUMMAPipeline
 
 if TYPE_CHECKING:
     from cutlass.utils.layout import LayoutEnum
+
+
+def is_preferred_cluster(
+    preferred_shape: Tuple[int, int, int],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> "cutlass.Boolean":
+    """Boolean SSA value: runtime cluster_nctaid matches ``preferred_shape``.
+
+    Use this in mixed-cluster kernels to select per-cluster values (e.g. scheduler
+    params built for different cluster shapes).
+    """
+    from cutlass.cutlass_dsl import Boolean
+
+    cdx, cdy, cdz = cute.arch.block_in_cluster_dim(loc=loc, ip=ip)
+    eq_x = cdx == preferred_shape[0]
+    eq_y = cdy == preferred_shape[1]
+    eq_z = cdz == preferred_shape[2]
+    return Boolean(eq_x & eq_y & eq_z)
 
 
 def get_cta_v_map_ab(
@@ -455,8 +475,7 @@ def mainloop_mma_sm120(
     The caller is responsible for:
     - pipeline synchronization (consumer_wait/release),
     - SMEM->RMEM ldmatrix copies into tCrA/tCrB/tCrSFA/tCrSFB,
-    - any per-architecture register-layout fixups; see
-      ``cutlass.utils.blackwell_helpers``.
+    - any per-architecture register-layout fixups, see cutlass.utils.blackwell_helpers).
 
     Args:
         tiled_mma: SM120 block-scaled tiled MMA descriptor.

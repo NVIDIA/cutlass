@@ -897,7 +897,6 @@ def default_stream() -> Any:
     return cuda.CUstream(0)
 
 
-
 @lru_cache(maxsize=1)
 def get_driver_version() -> Any:
     """

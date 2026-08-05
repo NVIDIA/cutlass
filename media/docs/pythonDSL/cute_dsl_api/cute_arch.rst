@@ -3,6 +3,12 @@
 arch
 ====
 
+.. note::
+
+   ``cutlass.cute.arch`` contains low-level CUDA primitive wrappers. These APIs
+   are being moved into :doc:`../primitives`; prefer the Primitives page for new
+   primitive-level documentation as the migration lands.
+
 The ``cute.arch`` module provides lightweight wrappers for NVVM Operation builders which implement CUDA built-in 
 device functions such as ``thread_idx``. It integrates seamlessly with CuTe DSL types.
 

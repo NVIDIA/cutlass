@@ -56,6 +56,8 @@ from cutlass.base_dsl.typing import (
     Float6E2M3FN,
     Float6E3M2FN,
     Float4E2M1FNx2,
+    Float6E2M3FNx4,
+    Float6E3M2FNx4,
     as_numeric,
 )
 
@@ -64,7 +66,7 @@ _element_precision_width = _base_typing._element_precision_width
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 from cutlass._mlir.dialects.cute import ConstrainedIntType
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 
 if TYPE_CHECKING:
     from cutlass.cute.core import ScaledBasis, Swizzle
@@ -997,6 +999,8 @@ __all__ = [
     "Float6E2M3FN",
     "Float6E3M2FN",
     "Float4E2M1FNx2",
+    "Float6E2M3FNx4",
+    "Float6E3M2FNx4",
     "IntTuple",
     "ScaledBasis",
     "Coord",

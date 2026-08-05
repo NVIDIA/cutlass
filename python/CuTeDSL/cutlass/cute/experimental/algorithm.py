@@ -9,13 +9,14 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.address_space import AddressSpace
-from typing import Optional
+from cutlass import AddressSpace
+from typing import Callable, Optional
 
 from cutlass import cute
 from cutlass.cutlass_dsl import dsl_user_op
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir
+from cutlass._mlir.dialects.core import OperationTypeEnum
 
 from .memory import copy
 
@@ -153,3 +154,87 @@ def predicated_tensor_origin(
     constructing predicate tensors for OOB masking.
     """
     return cutlass_lir.PredicatedTensorOriginOp(tensor.value, loc=loc, ip=ip).result
+
+
+@dsl_user_op
+def warp_reduce(
+    input: cute.Tensor,
+    output: cute.Tensor,
+    reduction_t_map: cute.Layout,
+    intra_warp_reduce_type: OperationTypeEnum,
+    body: Callable,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Performs warp-level reduction with custom binary operation specified by the body.
+
+    :param input: The input tensor
+    :type input: cute.Tensor
+
+    :param output: The output tensor reduction result is stored at
+    :type output: cute.Tensor
+
+    :param reduction_t_map: Maps the physical lane index in warp to the logical lane index within each reduction. Domain size must be 32.
+    For instance, 32:1 means all threads participate in the same reduction, (8,4):(1,0) represents 4 independent reductions between threads 0-7, 8-15, 16-23, and 24-31.
+    :type reduction_t_map: cute.Layout
+
+    :param intra_warp_reduce_type: Specifies the warp-level reduction type. The following values are supported:
+    - `REDUCE_DOWN_SHUFFLE`: shuffle down based reduction. It reduces the data from numThr x fragSize
+      to frgSize, all threads hold a replica of the result.
+    - `REDUCE_SWAP_SHUFFLE`: swap shuffle based reduction. It reduces the data from numThr x (numThr x fragSize)
+      to numThr x fragSize, where each thread holds fragSize data.
+    :type intra_warp_reduce_type: OperationTypeEnum
+
+    :param body: The binary operation to perform on the input and output tensors
+    :type body: Callable
+    """
+    intra_warp_reduce_type_attr = ir.Attribute.parse(
+        f"#core.operation_type<value={intra_warp_reduce_type}>"
+    )
+    warp_reduce_op = cutlass_lir.WarpReduceOp(
+        input.value,
+        output.value,
+        reduction_t_map=reduction_t_map.type.attribute,
+        intra_warp_reduce_type=intra_warp_reduce_type_attr,
+        loc=loc,
+        ip=ip,
+    )
+
+    # Create the block in the warp_reduce_op
+    block_arg_types = [input.type.value_type, output.type.value_type]  # type: ignore[attr-defined]
+    entry = ir.Block.create_at_start(warp_reduce_op.regions[0], block_arg_types)
+    with ir.InsertionPoint(entry):
+        args = entry.arguments
+        output = body(args[0], args[1])
+        yield_op = cutlass_lir.YieldOp([output], loc=loc, ip=ip)
+
+
+@dsl_user_op
+def elementwise(
+    inputs: list[cute.Tensor],
+    outputs: list[cute.Tensor],
+    body: Callable,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Performs element-wise operation between tensors.
+    """
+    elementwise_op = cutlass_lir.ElementwiseOp(
+        inputs=[input.value for input in inputs],
+        outputs=[output.value for output in outputs],
+        loc=loc,
+        ip=ip,
+    )
+
+    # Create the block in the elementwise_op
+    block_arg_types = [input.type.value_type for input in inputs] + [  # type: ignore[attr-defined]
+        output.type.value_type  # type: ignore[attr-defined]
+        for output in outputs
+    ]
+    entry = ir.Block.create_at_start(elementwise_op.regions[0], block_arg_types)
+    with ir.InsertionPoint(entry):
+        args = entry.arguments
+        output = body(args)
+        yield_op = cutlass_lir.YieldOp([output], loc=loc, ip=ip)

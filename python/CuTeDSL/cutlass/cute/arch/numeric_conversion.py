@@ -11,7 +11,7 @@
 
 from typing import Optional, Type
 
-from cutlass.base_dsl.arch import Arch
+from cutlass import base_dsl
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.cutlass_dsl import BaseDSL, dsl_user_op, target_version
 
@@ -365,20 +365,22 @@ def sext_unpacked_i4_i8_intrinsic(
 
 # Expose supported architectures via the intrinsic symbol
 cvt_i8_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
-    *Arch.AmpereArchs(),
-    *Arch.AdaArchs(),
-    *Arch.HopperArchs(),
-    *Arch.BlackwellArchs(),
+    *base_dsl.Arch.AmpereArchs(),
+    *base_dsl.Arch.AdaArchs(),
+    *base_dsl.Arch.HopperArchs(),
+    *base_dsl.Arch.BlackwellArchs(),
 )
 cvt_i8_bf16_intrinsic.s26_bf16_supported_archs = (  # type: ignore[attr-defined]
-    Arch.sm_100a,
-    Arch.sm_110a,
-    Arch.sm_120a,
-    Arch.sm_121a,
+    base_dsl.Arch.sm_100a,
+    base_dsl.Arch.sm_103a,
+    base_dsl.Arch.sm_110a,
+    base_dsl.Arch.sm_120a,
+    base_dsl.Arch.sm_121a,
 )
 cvt_i4_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
-    Arch.sm_100a,
-    Arch.sm_110a,
-    Arch.sm_120a,
-    Arch.sm_121a,
+    base_dsl.Arch.sm_100a,
+    base_dsl.Arch.sm_103a,
+    base_dsl.Arch.sm_110a,
+    base_dsl.Arch.sm_120a,
+    base_dsl.Arch.sm_121a,
 )

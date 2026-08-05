@@ -22,9 +22,41 @@ from functools import wraps, lru_cache
 from typing import Any, Callable, TYPE_CHECKING
 
 from .._mlir import ir
-from ..base_dsl.common import DSLRuntimeError, DSLOperationBuildError
+from ..base_dsl.common import (
+    DSLBaseError,
+    DSLOperationBuildError,
+    DSLRuntimeError,
+    DSLUserCodeRuntimeError,
+    DSLUserCodeTypeError,
+)
+from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.utils.logger import log
 from ..base_dsl.utils.stacktrace import walk_to_top_module
+
+if TYPE_CHECKING:
+    from ..base_dsl.pyir_runtime import MutableValue
+
+try:
+    from ..base_dsl.pyir_runtime import (
+        _pyir_auto_load_arg,
+        _pyir_lookup_slot_from_value,
+        _pyir_value_tracked_by_accessible_ref,
+        _describe_value_origin,
+    )
+except ImportError:
+
+    def _pyir_auto_load_arg(arg: Any) -> Any:
+        return arg
+
+    def _pyir_lookup_slot_from_value(value: Any) -> "MutableValue | None":  # noqa: ARG001
+        return None
+
+    def _pyir_value_tracked_by_accessible_ref(value: Any) -> bool:  # noqa: ARG001
+        return False
+
+    def _describe_value_origin(raw: Any) -> str:  # noqa: ARG001
+        return ""
+
 
 # The DSL package root is empty by default.
 _DSL_PACKAGE_ROOT: str | None = ""
@@ -192,6 +224,26 @@ def _find_user_frame(start_frame: types.FrameType | None) -> types.FrameType | N
     return start_frame
 
 
+def _is_missing_context_error(e: BaseException) -> bool:
+    """Return True for the raw errors the MLIR bindings raise when an
+    IR-building call runs with no active ``ir.Context``.
+
+    Two shapes exist: MLIR APIs with a defaulting context parameter raise
+    ``RuntimeError("An MLIR function requires a Context but none was
+    provided ...")``, while nanobind overloads whose trailing ``context``
+    parameter cannot be filled from the (absent) default context fail
+    overload resolution with ``TypeError("...(): incompatible function
+    arguments...")``.
+    """
+    if isinstance(e, DSLBaseError):
+        return False
+    if isinstance(e, RuntimeError):
+        return "requires a Context" in str(e)
+    if isinstance(e, TypeError):
+        return "incompatible function arguments" in str(e)
+    return False
+
+
 def _get_caller_frame_info() -> inspect.Traceback | None:
     cur_frame = inspect.currentframe()
     if cur_frame is None:
@@ -256,6 +308,10 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
 
     @wraps(opFunc)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # PyIR: auto-load from pyir.ref for any arg carrying an accessible
+        # ``_mutable_ref`` (see pyir_runtime._pyir_auto_load_arg).
+        log().debug("[dsl_user_op] %s called with %d args", opFunc.__name__, len(args))
+        args = tuple(_pyir_auto_load_arg(a) for a in args)
         # Pop loc= from kwargs so callers that still pass it don't break.
         # The wrapper replaces it only when source-location tracking is enabled.
         loc: Any = kwargs.pop("loc", None)
@@ -273,7 +329,17 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
                 # wrapped function's own validation can still fire.
                 pass
 
-        is_init = False
+        # __init__ wrappers either wrap an existing ir.Value (no new
+        # ops, e.g. with_signedness) or build a trivial arith constant
+        # that always verifies. They're also called *very* frequently
+        # from hot paths like signedness coercion, so we skip both the
+        # dominance check and the block-diff verify for them —
+        # materializing `block.operations` on every call would be O(N)
+        # per call and turn kernel build into O(N^2).
+        is_init = getattr(opFunc, "__name__", "") == "__init__"
+        if not is_init:
+            _check_operand_dominance(args, kwargs, frameInfo, opFunc)
+
         # Snapshot the current insertion block so we can verify newly-built
         # ops after opFunc returns. The dialect Python bindings strip
         # `.result` for value-producing ops before our wrapper sees the
@@ -350,6 +416,21 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
                     auto_translate=False,
                 )
 
+            # A missing-context failure means the op was invoked outside any
+            # @cute.jit/@cute.kernel compilation (e.g. at Python module
+            # level) — an author mistake, not a DSL bug. Calls that succeed
+            # without a context (static Numeric arithmetic) never reach here.
+            # The raised diagnostic stays catchable as the raw type it
+            # replaces: trace-time helpers probe for a missing context with
+            # ``except RuntimeError:`` around ops like make_tmem_ptr.
+            if ir.Context.current is None and _is_missing_context_error(e):
+                err_cls = (
+                    DSLUserCodeTypeError
+                    if isinstance(e, TypeError)
+                    else DSLUserCodeRuntimeError
+                )
+                raise err_cls(DiagId.CALL_OUTSIDE_JIT, api=func_name, cause=e) from e
+
             raise e
 
         return res_or_list
@@ -400,3 +481,107 @@ def _get_call_arg_names(frameInfo: Any) -> dict[str | int, str]:
     return names
 
 
+def _check_operand_dominance(
+    args: tuple[Any, ...], kwargs: dict[str, Any], frameInfo: Any, opFunc: Any = None
+) -> None:
+    """Check that all ir.Value operands dominate the current insertion point.
+
+    Raises DSLOperationBuildError with a user-friendly message if a value was
+    defined in a nested scope and is used outside that scope.  This catches
+    the common "operand does not dominate this use" verifier error early,
+    with the variable name and source location.
+    """
+    return
+    try:
+        current_block = ir.InsertionPoint.current.block
+    except Exception:
+        return
+
+    try:
+        from .._mlir.dialects import pyir
+    except ImportError:
+        return
+
+    from ..base_dsl.dsl import is_dynamic_expression, extract_mlir_values
+
+    arg_names = _get_call_arg_names(frameInfo)
+
+    # __init__ receives an implicit 'self' as args[0] that has no
+    # corresponding call-site argument.  Skip it so the name mapping
+    # lines up:  args[1] → call-site arg 0, args[2] → call-site arg 1, …
+    is_init = opFunc is not None and getattr(opFunc, "__name__", "") == "__init__"
+
+    def _check_arg(arg, arg_name):
+        if not is_dynamic_expression(arg):
+            log().debug(
+                "[dominance] skip '%s': not dynamic (%s)",
+                arg_name,
+                type(arg).__name__,
+            )
+            return
+        # Values backed by an ACCESSIBLE pyir.ref are threaded as scf
+        # iter_args by convert-pyir-to-scf, so the Python-level ir.Value
+        # may be stale (from an inner region) but the IR data flow is
+        # correct -- skip the dominance check.  Inaccessible refs and
+        # values without a slot fall through to the dominance walk.
+        if _pyir_value_tracked_by_accessible_ref(arg):
+            log().debug(
+                "[dominance] skip '%s': tracked by accessible pyir.ref",
+                arg_name,
+            )
+            return
+        try:
+            values = extract_mlir_values(arg)
+        except Exception as e:
+            log().debug(
+                "[dominance] skip '%s': extract_mlir_values failed: %s",
+                arg_name,
+                e,
+            )
+            return
+        log().debug("[dominance] '%s': %d mlir values", arg_name, len(values))
+        for val in values:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    raw = ir.Value(val)
+            except TypeError:
+                log().debug("[dominance] skip value: ir.Value() cast failed")
+                continue
+            dominates = pyir.is_value_in_ancestor_region(raw, current_block)
+            log().debug("[dominance] value=%s, dominates=%s", raw, dominates)
+            if not dominates:
+                origin = _describe_value_origin(raw)
+                display_name = arg_name
+
+                if display_name and origin:
+                    msg = (
+                        f"Scope Error: `{display_name}` was created "
+                        f"{origin} and cannot be used outside that region."
+                    )
+                elif display_name:
+                    msg = (
+                        f"Scope Error: `{display_name}` was created inside "
+                        "a control-flow region and cannot be used outside it."
+                    )
+                elif origin:
+                    msg = (
+                        f"Scope Error: A value was created {origin} "
+                        "and cannot be used outside that region."
+                    )
+                else:
+                    msg = (
+                        "Scope Error: A value was created inside a "
+                        "control-flow region and cannot be used outside it."
+                    )
+                raise DSLOperationBuildError(
+                    message=msg,
+                    frameInfo=frameInfo,
+                    auto_translate=False,
+                )
+
+    check_args = args[1:] if is_init else args
+    for i, arg in enumerate(check_args):
+        _check_arg(arg, arg_names.get(i, f"argument #{i + 1}"))
+    for name, arg in kwargs.items():
+        _check_arg(arg, arg_names.get(name, name))

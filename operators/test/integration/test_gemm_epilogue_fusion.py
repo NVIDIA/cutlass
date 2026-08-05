@@ -698,6 +698,44 @@ def test_gemm_alpha_beta(
         assert_close_with_reference_conversion(D, reference, D.dtype)
 
 
+@pytest.mark.parametrize("read_via", ["tma", "sync_gmem_load", "async_gmem_load"])
+@pytest.mark.parametrize("write_via", ["tma", "sync_gmem_store"])
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_alpha_beta_transports(read_via, write_via, fixture_toggle_tvm_ffi):
+    M, N, K, L = 256, 512, 128, 1
+    ab_dtype = c_dtype = d_dtype = torch.float16
+    accumulator_type = torch.float32
+    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
+    C = torch.randint(-1, 2, (L, M, N), device="cuda", dtype=c_dtype)
+    D = torch.empty((L, M, N), device="cuda", dtype=d_dtype)
+
+    def epi(accum, C, alpha, beta):
+        D = alpha * accum + beta * C
+        return D
+
+    alpha = beta = 0.5
+    epi_args = ops.EpilogueArguments(
+        epi,
+        C=ops.Load(C, via=read_via),
+        alpha=alpha,
+        beta=beta,
+        D=ops.Store(D, via=write_via),
+    )
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+    reference = epi(A @ B, C, alpha, beta)
+    torch.testing.assert_close(D, reference.to(D.dtype))
+
+
 @pytest.mark.skipif(
     not device_or_env_supports("100f"),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
@@ -752,6 +790,62 @@ def test_gemm_alpha_beta_fake_tensor(fixture_toggle_tvm_ffi):
         operator.run(args)
         reference = epi(A_real @ B_real, C_real, a, b)
         assert_close_with_reference_conversion(D_real, reference, D_real.dtype)
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_scalar_reduction_fake_tensor(fixture_toggle_tvm_ffi):
+    """A scalar reduction must compile from fake tensors (the torch-inductor path).
+
+    The reduction destination is a single-element tensor forced to a *static*
+    layout; this exercises the fake-tensor branch of that handling.  Operator
+    discovery must succeed against fake metadata, then run on real tensors.
+    """
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K = 256, 512, 128
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+        B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+        D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+        # Single-element reduction destination -- the static_layout case.
+        total = torch.zeros(1, device="cuda", dtype=torch.float32)
+
+    epi_str = "def epi(accum): D = accum; total = sum(accum); return D, total"
+
+    epi_args = ops.EpilogueArguments(epi_str, total=total, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+    operator = operators[0]
+
+    # Re-run on real tensors and verify both the GEMM output and the fold.
+    A_real = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B_real = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D_real = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    total_real = torch.zeros(1, device="cuda", dtype=torch.float32)
+    epi_args = ops.EpilogueArguments(epi_str, total=total_real, D=D_real)
+    args = ops.GemmArguments(
+        A=A_real,
+        B=B_real,
+        out=D_real,
+        accumulator_type=torch.float32,
+        epilogue=epi_args,
+    )
+    operator.run(args)
+
+    ref_accum = A_real.float() @ B_real.float()
+    torch.testing.assert_close(D_real, ref_accum)
+    # Non-associative float atomic adds may reorder partial sums across tiles.
+    torch.testing.assert_close(
+        total_real, ref_accum.sum().unsqueeze(0), rtol=1e-2, atol=1.0
+    )
 
 
 @pytest.mark.skipif(
@@ -888,7 +982,7 @@ def test_gemm_big_epi(fixture_toggle_tvm_ffi):
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
 def test_gemm_fusion_reduction_not_available(fixture_toggle_tvm_ffi):
-    """Reductions are not yet supported by the EFC converter."""
+    """Row/column reductions are not supported by the EFC converter (only scalar reductions are)."""
     M = 256
     N = 512
     K = 1024
@@ -908,6 +1002,79 @@ def test_gemm_fusion_reduction_not_available(fixture_toggle_tvm_ffi):
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
 
     assert len(operators) == 0
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_scalar_sum_reduction(fixture_toggle_tvm_ffi):
+    """Scalar sum reduction: a single float32 scalar accumulates the sum of all GEMM output elements.
+
+    Uses atomic float32 additions across warpgroups.  The sum result may differ
+    slightly from a sequential reference due to non-associativity of floating-point
+    addition, so a loose tolerance is applied to the scalar output only.
+    """
+    M = 256
+    N = 512
+    K = 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Sum identity: start at 0 so atomic additions accumulate correctly.
+    total = torch.zeros(1, device="cuda", dtype=torch.float32)
+
+    epi_str = "def epi(accum): D = accum; total = sum(accum); return D, total"
+
+    epi_args = ops.EpilogueArguments(epi_str, total=total, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    # Non-associative float32 atomic adds may reorder partial sums across tiles.
+    torch.testing.assert_close(total, ref_accum.sum().unsqueeze(0), rtol=1e-2, atol=1.0)
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_scalar_max_reduction(fixture_toggle_tvm_ffi):
+    """Scalar max reduction: a single float32 scalar holds the maximum GEMM output element.
+
+    Floating-point max is order-independent, so the result is bit-exact with
+    the CPU reference.
+    """
+    M = 256
+    N = 512
+    K = 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Max identity: start at -inf so atomic max operations find the true maximum.
+    max_val = torch.full((1,), float("-inf"), device="cuda", dtype=torch.float32)
+
+    epi_str = "def epi(accum): D = accum; max_val = max(accum); return D, max_val"
+
+    epi_args = ops.EpilogueArguments(epi_str, max_val=max_val, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    # Floating-point max is commutative and associative, so this is bit-exact.
+    torch.testing.assert_close(max_val, ref_accum.max().unsqueeze(0))
 
 
 @pytest.mark.parametrize("M, N, K, L", problem_sizes())

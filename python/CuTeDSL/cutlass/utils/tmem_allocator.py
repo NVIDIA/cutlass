@@ -14,7 +14,7 @@ from typing import Optional, Type, Union, List
 import inspect
 
 from cutlass import const_expr
-from cutlass.base_dsl.arch import Arch
+from cutlass import base_dsl
 from cutlass.cutlass_dsl import (
     Numeric,
     Float32,

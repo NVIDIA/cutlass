@@ -91,6 +91,59 @@ def major_mode_from_tensor(tensor: TensorWrapper) -> int | None:
     return major_mode(tensor.shape, tensor.stride)
 
 
+def pre_shuffle_int4_a(tensor: TensorLike) -> TensorLike:
+    """Return ``tensor`` with each contiguous 8-element K group pre-shuffled.
+
+    This prepares an Int4 A payload for the mixed-input GEMM BF16 fast path
+    that uses ``cvt_i4_bf16_intrinsic(..., with_shuffle=True)``. The operator
+    API uses batch-first A tensors, so the K dimension is the last dimension.
+    The intrinsic consumes 8 Int4 elements at a time and expects positions
+    ``(0,1,2,3,4,5,6,7)`` reordered to ``(0,2,1,3,4,6,5,7)``; this helper
+    applies exactly that reordering so the kernel emits BFloat16 in natural
+    order without extra permutation instructions.
+
+    Framework-agnostic: the work is a ``reshape`` + last-axis gather + ``reshape``
+    expressed purely through the tensor's own methods, so it dispatches to
+    whichever framework ``tensor`` belongs to (torch / jax / numpy) and keeps this
+    shared module free of any torch dependency.
+
+    .. note::
+        The operator API does not currently consume a pre-shuffled payload -- the
+        ``ScaledOperand`` opt-in for the shuffle fast path was deferred, so
+        ``MixedInputGemmOperator`` always runs the natural-order path. This helper
+        is retained for when that opt-in is re-introduced.
+
+    Args:
+        tensor (TensorLike): Batch-first Int4 A payload (a torch/jax/numpy
+            tensor) whose last (K) dimension is divisible by 8.
+
+    Returns:
+        TensorLike: A contiguous tensor of the same framework and shape as
+        ``tensor``, shuffled within each 8-element K group.
+
+    Raises:
+        ValueError: If ``tensor`` is rank 0, or its last dimension is not
+            divisible by 8.
+    """
+    if len(tensor.shape) == 0:
+        raise ValueError(
+            "Expected a tensor with at least one dimension for Int4 pre-shuffle."
+        )
+    if tensor.shape[-1] % 8 != 0:
+        raise ValueError(
+            f"Last dimension must be divisible by 8 for Int4 pre-shuffle, "
+            f"got shape {tuple(tensor.shape)}"
+        )
+
+    # Plain Python list index + the tensor's own reshape/getitem keep this
+    # framework-neutral (no torch import); each framework lowers `[..., perm]` to
+    # its native last-axis gather.
+    perm = [0, 2, 1, 3, 4, 6, 5, 7]
+    return tensor.reshape(*tensor.shape[:-1], tensor.shape[-1] // 8, 8)[
+        ..., perm
+    ].reshape(tensor.shape)
+
+
 def normalized_major_stride(
     shape: tuple[int, ...], stride: tuple[int, ...], prepend_zeros_to_rank: int = None
 ) -> tuple[int, ...] | None:
@@ -290,7 +343,18 @@ class TensorWrapper:
     _stride: tuple[int, ...]
     _data_ptr: int
 
-    def __init__(self, tensor: Any, alignment_bytes: int = 16):
+    def __init__(
+        self, tensor: Any, alignment_bytes: int = 16, static_layout: bool = False
+    ):
+        # ``static_layout=True`` keeps the tensor's shape fully static instead of
+        # marking its major mode dynamic.  It is required for an EFC
+        # scalar-reduction destination -- a single-element tensor whose lone
+        # extent cannot satisfy the dynamic layout's divisibility constraint --
+        # and is set *only* for those destinations (see
+        # ``EpilogueArguments.to_tensor_wrappers``).  Every other tensor keeps
+        # the default dynamic layout so one compiled kernel serves many problem
+        # sizes (e.g. a variable-length ``offset_mapping`` that happens to be
+        # length 1 at compile time must stay dynamic).
         self._alignment_bytes = alignment_bytes
         if isinstance(tensor, TensorWrapper):
             # Instead of double-nested TensorWrapper, we grab runtime tensor and flatten
@@ -340,11 +404,18 @@ class TensorWrapper:
                 self._shape = tuple(tensor.shape)
                 self._stride = tensor.stride()
             stride_order = get_stride_rank(tensor.stride())
-            major_mode_idx = stride_order.index(0)
-            shape = [cute.SymInt() for _ in range(tensor.dim())]
-            shape[major_mode_idx] = cute.SymInt(
-                divisibility=alignment_bytes * 8 // dtype.width
-            )
+            if static_layout:
+                # Keep the concrete shape so the fake tensor's size is static
+                # (e.g. 1 for a scalar reduction destination).  A dynamic
+                # ``SymInt(div=...)`` extent would be rejected by the FFI
+                # run-time shape check for a single-element tensor.
+                shape = list(self._shape)
+            else:
+                major_mode_idx = stride_order.index(0)
+                shape = [cute.SymInt() for _ in range(tensor.dim())]
+                shape[major_mode_idx] = cute.SymInt(
+                    divisibility=alignment_bytes * 8 // dtype.width
+                )
 
             self.compile_time_tensor = cute.runtime.make_fake_compact_tensor(
                 dtype,
@@ -394,22 +465,27 @@ class TensorWrapper:
             else:
                 raise ValueError(f"Unsupported tensor type: {type(tensor)}")
 
-            major_mode_idx = major_mode(shape, stride)
-            if major_mode_idx is None:
-                raise ValueError(f"Tensor has no major mode: {tensor}")
-            stride_order = get_stride_order(stride)
-            self._runtime_tensor = (
-                from_dlpack(
-                    tensor,
-                    assumed_align=alignment_bytes,
-                )
-                .mark_layout_dynamic(major_mode_idx)
-                .mark_compact_shape_dynamic(
+            self._runtime_tensor = from_dlpack(
+                tensor,
+                assumed_align=alignment_bytes,
+            )
+            if not static_layout:
+                # Default path: mark the major (contiguous) mode dynamic so one
+                # compiled kernel serves many problem sizes.  Skipped for a
+                # scalar reduction destination, which must stay static and
+                # single-element (``mark_compact_shape_dynamic`` would reject a
+                # size-1 mode as not divisible by the alignment factor).
+                major_mode_idx = major_mode(shape, stride)
+                if major_mode_idx is None:
+                    raise ValueError(f"Tensor has no major mode: {tensor}")
+                stride_order = get_stride_order(stride)
+                self._runtime_tensor = self._runtime_tensor.mark_layout_dynamic(
+                    major_mode_idx
+                ).mark_compact_shape_dynamic(
                     mode=major_mode_idx,
                     divisibility=alignment_bytes * 8 // dtype.width,
                     stride_order=stride_order,
                 )
-            )
 
             self._shape = self._runtime_tensor.shape
             self._stride = self._runtime_tensor.stride
@@ -421,6 +497,7 @@ class TensorWrapper:
 
     @property
     def runtime_tensor(self):
+        """Return the runtime tensor, or raise if built from a fake tensor."""
         if self._runtime_tensor is None:
             raise ValueError(
                 "Attempting to access runtime tensor from argument constructed with a fake tensor."
@@ -434,14 +511,17 @@ class TensorWrapper:
 
     @property
     def shape(self) -> tuple[int, ...]:
+        """Return the shape of the tensor."""
         return self._shape
 
     @property
     def stride(self) -> tuple[int, ...]:
+        """Return the stride of the tensor."""
         return self._stride
 
     @property
     def data_ptr(self) -> int:
+        """Return the address of the tensor's first element."""
         return self._data_ptr
 
     def to(
@@ -486,9 +566,11 @@ class TensorWrapper:
         return None
 
     def cuda(self) -> TensorLike | None:
+        """Return a copy of the tensor on the CUDA device."""
         return self.to(device="cuda")
 
     def cpu(self) -> TensorLike | None:
+        """Return a copy of the tensor on the host (CPU)."""
         return self.to(device="cpu")
 
     def _copy_cute_tensor_to_torch(
@@ -527,6 +609,7 @@ class TensorWrapper:
         return dest
 
     def numel(self) -> int:
+        """Return the total number of elements in the tensor."""
         num = self._shape[0]
         for i in range(1, len(self._shape)):
             num *= self._shape[i]

@@ -16,6 +16,7 @@ from cutlass._mlir import ir
 from cutlass._mlir.dialects import scf
 from collections.abc import Sequence
 
+from ..base_dsl.common import is_pyir_enabled
 from ..base_dsl.common import (
     DSLRuntimeError,
     DSLUserCodeError,
@@ -42,6 +43,10 @@ def _create_control_flow_generator() -> "ScfGenerator":
     """
     Create appropriate control flow generator based on runtime configuration.
     """
+    if is_pyir_enabled():
+        from .cutlass_ast_decorators_pyir import PyIRScfGenerator
+
+        return PyIRScfGenerator()
     return ScfGenerator()
 
 
@@ -153,12 +158,15 @@ class ScfGenerator:
             region_value, (Numeric, ArithValue, ir.Value, int, float, bool)
         ):
             try:
-                original_numeric = as_numeric(original_value)
-                region_numeric = as_numeric(region_value)
-                if original_numeric.dtype != region_numeric.dtype:
+                original_numeric_type = as_numeric(original_value).dtype
+                region_numeric_type = as_numeric(region_value).dtype
+                if original_numeric_type != region_numeric_type and not (
+                    issubclass(original_numeric_type, region_numeric_type)
+                    or issubclass(region_numeric_type, original_numeric_type)
+                ):
                     type_mismatch = True
-                    old_type_name = original_numeric.dtype.__name__
-                    new_type_name = region_numeric.dtype.__name__
+                    old_type_name = original_numeric_type.__name__
+                    new_type_name = region_numeric_type.__name__
             except Exception:
                 pass
         # Handle general type changes (relaxed for inheritance)
@@ -191,7 +199,7 @@ class ScfGenerator:
     ) -> Any:
         # 1) Unpack
         ir_values, pytree_def = cutlass_dsl.unpack_to_irvalue(
-            mix_iter_args, op_type_name, full_write_args_count
+            mix_iter_args, op_type_name, full_write_args_count, mix_iter_arg_names
         )
 
         # 2) Create the SCF op
@@ -234,7 +242,10 @@ class ScfGenerator:
 
                     # Default behavior - generate YieldOp
                     region_values, yield_pytree_def = cutlass_dsl.unpack_to_irvalue(
-                        region_result_list, op_type_name, full_write_args_count
+                        region_result_list,
+                        op_type_name,
+                        full_write_args_count,
+                        mix_iter_arg_names,
                     )
 
                     assert isinstance(pytree_def, PyTreeDef)
@@ -242,10 +253,11 @@ class ScfGenerator:
                     mismatch = check_tree_equal(pytree_def, yield_pytree_def)
                     if mismatch != -1:
                         # Get arg name
-                        filterd_arg_names = (
-                            cutlass_dsl.filter_readonly_frozen_dataclass_names(
-                                mix_iter_args, mix_iter_arg_names, full_write_args_count
-                            )
+                        filterd_arg_names = cutlass_dsl.filter_readonly_objects_names(
+                            mix_iter_args,
+                            mix_iter_arg_names,
+                            full_write_args_count,
+                            mix_iter_arg_names,
                         )
 
                         raise DSLUserCodeError(
@@ -261,7 +273,11 @@ class ScfGenerator:
         # 4) Pack final results
         assert isinstance(pytree_def, PyTreeDef)
         final_results = cutlass_dsl.pack_from_irvalue(
-            op.results, pytree_def, mix_iter_args, full_write_args_count
+            op.results,
+            pytree_def,
+            mix_iter_args,
+            full_write_args_count,
+            mix_iter_arg_names,
         )
 
         # 5) Return in a nice pattern
@@ -273,7 +289,12 @@ class ScfGenerator:
 
 
 def _attr_const_check(attr: object, expected_type: type, attr_name: str) -> None:
-    raw = attr
+    # Use strict type equality to prevent `bool` being accepted where `int` is required.
+    # PyIR's ``_WatchedM`` wraps Python primitives as ``int``/``float`` subclasses for
+    # transparent ``isinstance`` propagation; unwrap to the underlying primitive so a
+    # ``_WatchedInt`` is accepted where ``int`` is expected.  Bool-vs-int separation is
+    # preserved because ``_WatchedBool.python_value`` still returns a real ``bool``.
+    raw = getattr(attr, "python_value", attr) if hasattr(attr, "_slot_key") else attr
     if is_dynamic_expression(attr) or type(raw) is not expected_type:
         raise DSLUserCodeError(
             DiagId.PHASE_ASSIGN_PYTHON_TO_TRACKED,
@@ -355,7 +376,7 @@ def _loop_execute_range_dynamic(
 
         vectorize_attr = None
         if vectorize:
-            from ..base_dsl.arch import Arch
+            from ..base_dsl import Arch
 
             arch = cutlass_dsl.CuTeDSL._get_dsl().get_arch_enum()
             if arch < Arch.sm_100:
@@ -435,11 +456,17 @@ def _loop_execute_range_dynamic(
             full_write_args_count,
         )
         if pytree_def is None:
+            # PyIR mode: no iter_arg block_args.  Pass original objects.
             func_args = list(mix_iter_args)
         else:
+            # Non-pyir: reconstruct from block_args
             func_args = list(
                 cutlass_dsl.pack_from_irvalue(
-                    block_args[1:], pytree_def, mix_iter_args, full_write_args_count
+                    block_args[1:],
+                    pytree_def,
+                    mix_iter_args,
+                    full_write_args_count,
+                    write_args_names,
                 )
             )
         if not func_args:
@@ -501,10 +528,15 @@ def _if_execute_dynamic(
         full_write_args_count: int,
     ) -> object:
         if pytree_def is None:
+            # PyIR mode: pass original objects directly
             return then_block(*mix_iter_args)
         flat_args = list(
             cutlass_dsl.pack_from_irvalue(
-                dyn_yield_ops, pytree_def, mix_iter_args, full_write_args_count
+                dyn_yield_ops,
+                pytree_def,
+                mix_iter_args,
+                full_write_args_count,
+                mix_yield_arg_names,
             )
         )
         return then_block(*flat_args)
@@ -522,10 +554,15 @@ def _if_execute_dynamic(
             full_write_args_count: int,
         ) -> object:
             if pytree_def is None:
+                # PyIR mode: pass original objects directly
                 return else_block(*mix_iter_args)
             flat_args = list(
                 cutlass_dsl.pack_from_irvalue(
-                    dyn_yield_ops, pytree_def, mix_iter_args, full_write_args_count
+                    dyn_yield_ops,
+                    pytree_def,
+                    mix_iter_args,
+                    full_write_args_count,
+                    mix_yield_arg_names,
                 )
             )
             return else_block(*flat_args)
@@ -564,6 +601,20 @@ def _while_execute_dynamic(
     while_op_type_name = "while"
     scf_gen = _create_control_flow_generator()
 
+    # PyIR-specific path for while loops
+    if is_pyir_enabled():
+        from .cutlass_ast_decorators_pyir import PyIRScfGenerator
+
+        assert isinstance(scf_gen, PyIRScfGenerator)
+        return scf_gen.create_while_op_pyir(
+            while_before_block,
+            while_after_block,
+            write_args,
+            full_write_args_count,
+            write_args_names,
+        )
+
+    # Non-PyIR path
     def create_while_op(dyn_yield_ops: List[ir.Value]) -> ir.Operation:
         # Create the while operation with the types from yield_args
         result_types = [arg.type for arg in dyn_yield_ops]
@@ -593,11 +644,16 @@ def _while_execute_dynamic(
     ) -> Any:
         # Build the before (condition) block
         if pytree_def is None:
+            # PyIR mode: pass original objects directly
             flat_args = list(mix_iter_args)
         else:
             flat_args = list(
                 cutlass_dsl.pack_from_irvalue(
-                    block_args, pytree_def, mix_iter_args, full_write_args_count
+                    block_args,
+                    pytree_def,
+                    mix_iter_args,
+                    full_write_args_count,
+                    write_args_names,
                 )
             )
 
@@ -626,7 +682,10 @@ def _while_execute_dynamic(
             cond_and_results[1]
         )
         ir_results_list, pytree_def = cutlass_dsl.unpack_to_irvalue(
-            before_result_list, while_op_type_name, full_write_args_count
+            before_result_list,
+            while_op_type_name,
+            full_write_args_count,
+            write_args_names,
         )
         log().debug(
             "creating scf.ConditionOp with [%s], [%s]",
@@ -645,11 +704,16 @@ def _while_execute_dynamic(
     ) -> object:
         # Build the after (body) block
         if pytree_def is None:
+            # PyIR mode: pass original objects directly
             flat_args = list(mix_iter_args)
         else:
             flat_args = list(
                 cutlass_dsl.pack_from_irvalue(
-                    block_args, pytree_def, mix_iter_args, full_write_args_count
+                    block_args,
+                    pytree_def,
+                    mix_iter_args,
+                    full_write_args_count,
+                    write_args_names,
                 )
             )
 

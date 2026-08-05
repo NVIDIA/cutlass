@@ -34,7 +34,7 @@ from typing import (
 )
 import functools
 import inspect
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from math import ceil
 from numbers import Integral
@@ -53,6 +53,7 @@ from ..base_dsl.dsl import (
     is_dynamic_expression,
     extract_mlir_values,
     BaseDSL,
+    DSLLocation,
     new_from_mlir_values,
     implements_dynamic_expression,
 )
@@ -75,10 +76,11 @@ from ..base_dsl.typing import (
 from ..base_dsl.common import (
     DSLRuntimeError,
     DSLUserCodeError,
+    DSLUserCodeRuntimeError,
     DSLNotImplemented,
     active_env_manager,
 )
-from ..base_dsl.diagnostics import DiagId
+from ..base_dsl.diagnostics import DiagId, find_user_source_location
 from ..base_dsl.utils.logger import log
 from ..base_dsl.utils.tree_utils import (
     Leaf,
@@ -167,6 +169,27 @@ def _get_max_cpu_threads() -> int:
     return max(1, min(16, (os.cpu_count() or 8) // 2))
 
 
+def _get_baked_dso_digest(so_name: str) -> bytes:
+    """Look up the build-time SHA-256 of the loaded compiler DSO."""
+    from importlib import import_module
+
+    name_parts = so_name.split(".")
+    ctk_tag = name_parts[1] if len(name_parts) > 1 else ""
+    if not (ctk_tag.startswith("cu") and ctk_tag[2:].isdigit()):
+        raise DSLRuntimeError(
+            f"Unexpected shared library name {so_name}. Please re-install the package."
+        )
+    version_module_name = f"cutlass._mlir._mlir_libs._cutlass_ir_version_{ctk_tag}"
+    try:
+        version_module = import_module(version_module_name)
+        return bytes.fromhex(version_module.DSO_SHA256[so_name])
+    except (ImportError, AttributeError, KeyError, ValueError) as e:
+        raise DSLRuntimeError(
+            f"Missing or stale DSO version module {version_module_name} "
+            f"for {so_name}. Please rebuild or re-install the package."
+        ) from e
+
+
 # Return a ctype class that represents the in-memory layout expected
 # for a CuTe hierarchical tuple type.
 def get_sparse_tuple_ctype(dyn: Union[int, Sequence[object]]) -> type:
@@ -237,6 +260,74 @@ def _is_cute_pointer_like(arg: object) -> bool:
     )
 
 
+def _is_cutlass_array_annotation(annotation: object) -> bool:
+    """True iff the parameter is annotated with the bare ``cutlass.Array`` type.
+
+    (The canonical bare array type is ``cutlass.Array`` =
+    ``cutlass.base_dsl.array.Array``; this matches it.)
+    Only a *bare* ``cutlass.Array`` is matched, never a subscripted
+    ``cutlass.Array[Float32]`` (a ``typing`` ``GenericAlias``): the subscripted
+    form historically skipped validation and silently handed the kernel a
+    ``cute.Tensor`` instead of an Array, so it must NOT be treated as an
+    Array-entry annotation here. The import is deferred to avoid import cycles.
+    """
+    if not isinstance(annotation, type):
+        return False
+    try:
+        from cutlass.base_dsl.array import Array as _CutlassArray  # type: ignore
+    except Exception:  # noqa: BLE001 - array module may be unavailable in some builds
+        return False
+    return annotation is _CutlassArray
+
+
+def _is_cutlass_array_subscripted_annotation(annotation: object) -> bool:
+    """True iff ``annotation`` is a subscripted ``cutlass.Array[...]`` alias.
+
+    Only the *bare* ``cutlass.Array`` is a valid host-entry annotation. The subscripted
+    form (e.g. ``cutlass.Array[Float32]``, a ``typing`` generic alias) is matched by none
+    of the bare-type branches, so without an explicit guard it silently passes validation
+    and the kernel body is handed a ``cute.Tensor`` instead of an Array. Detecting it lets
+    the validator reject it with a clear author-facing error.
+    """
+    try:
+        from typing import get_origin
+        from cutlass.base_dsl.array import Array as _CutlassArray  # type: ignore
+    except Exception:  # noqa: BLE001 - array module may be unavailable in some builds
+        return False
+    return get_origin(annotation) is _CutlassArray
+
+
+def _is_cutlass_array(arg: object) -> bool:
+    """True iff ``arg`` is already a real in-kernel ``cutlass.Array`` instance.
+
+    Note: ``_FakeArray`` lies about ``__class__`` (it reports ``cutlass.Array``)
+    so ``isinstance(_fake_array, cutlass.Array)`` is also True here. That is
+    intentional — both should be reconstructed via the Array path.
+    """
+    try:
+        from cutlass.base_dsl.array import Array as _CutlassArray  # type: ignore
+    except Exception:  # noqa: BLE001
+        return False
+    return isinstance(arg, _CutlassArray)
+
+
+def _is_cute_tensor_like(arg: object) -> bool:
+    """True iff ``arg`` is a cute tensor / fake tensor host-entry argument.
+
+    Covers the eager dlpack path (``cute.runtime._Tensor`` and the in-kernel
+    ``CoreTensor`` reconstruction) as well as any future ``Tensor`` subclass
+    that carries the JitArgument protocol. ``_FakeArray`` descends from
+    ``_FakeTensor`` so it also satisfies ``isinstance(arg, CuteTensor)``;
+    callers that need to distinguish a real Array first should check
+    :func:`_is_cutlass_array` before this.
+    """
+    from cutlass.cute.typing import Tensor as CuteTensor
+
+    return isinstance(arg, CuteTensor) and (
+        hasattr(arg, "__get_mlir_types__") or hasattr(arg, "__extract_mlir_values__")
+    )
+
+
 def _cutlass_pointer_dtype_addrspace(
     annotation: object,
     arg: object,
@@ -265,6 +356,7 @@ def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
 class CutlassBaseDSL(BaseDSL):
     """This abstract class provides a DSL for Cutlass."""
 
+    _name_mangling_prefix = "cutlass"
     _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset()
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = None
 
@@ -324,7 +416,7 @@ class CutlassBaseDSL(BaseDSL):
         # extra function to convert cute arguments to tvm ffi spec params
         # this needs to be reverse registered because the arg convention
         # depends on the runtime type of the DSL arguments
-        self._tvm_ffi_args_spec_converter = None
+        self._tvm_ffi_args_spec_converter: Optional[Callable[..., Any]] = None
 
     def _set_smem_tracking(
         self, allocator: object, callback: Callable[[object], int]
@@ -519,6 +611,10 @@ class CutlassBaseDSL(BaseDSL):
         if config.smem_merge_branch_allocs:
             ret["smem.merge_branch_allocs"] = ir.UnitAttr.get()
 
+        # Hint compiler to keep the dynamic-SMEM base ptr in a warp-uniform register
+        if config.hint_smem_base_uniform:
+            ret["smem.hint_smem_base_uniform"] = ir.UnitAttr.get()
+
         # Set smem partition num
         if self._smem_partition_num is not None:
             ret["smem.partition_num"] = ir.IntegerAttr.get(
@@ -566,9 +662,12 @@ class CutlassBaseDSL(BaseDSL):
         if config.has_fallback_cluster:
             assert config.cluster is not None
             assert config.fallback_cluster is not None
-            # Mirror the existing runtime launch convention for mixed cluster:
-            # LaunchConfig.cluster is the preferred shape, while
-            # LaunchConfig.fallback_cluster becomes the IR's cluster_shape attr.
+            if tuple(config.cluster) == tuple(config.fallback_cluster):
+                return {
+                    "cluster_shape": cls._materialize_cluster_shape_attr(
+                        config.cluster, "cluster"
+                    )
+                }
             return {
                 "preferred_cluster_shape": cls._materialize_cluster_shape_attr(
                     config.cluster, "cluster"
@@ -594,58 +693,13 @@ class CutlassBaseDSL(BaseDSL):
         Get the version of cutlass dsl, used for computing the hash key of the cache.
         Including source python files and the shared library.
         """
-
-        def _hash_chunk(
-            key: str, path: str, idx: int, start: int, size: int
-        ) -> tuple[str, int, bytes]:
-            """Hash one chunk of a file with SHA-256."""
-            h = hashlib.sha256()
-            if size > 0:
-                try:
-                    with open(path, "rb") as f:
-                        f.seek(start)
-                        h.update(f.read(size))
-                except Exception as e:
-                    raise DSLRuntimeError(
-                        f"Failed to read module file {key}."
-                        "The file may not exist or may not be readable."
-                        "Please re-install the package."
-                    ) from e
-            return key, idx, h.digest()
-
-        def _iter_jobs() -> Generator:
-            """Chunk jobs generator to hash files in parallel"""
-            for key, path, size in files:
-                # empty files still get a deterministic hash from SHA-256 of zero bytes
-                for i in range(max(1, -(-size // chunk_size))):  # ceil division
-                    start = i * chunk_size
-                    computed_size = min(chunk_size, max(size - start, 0))
-                    yield (key, path, i, start, computed_size)
-
         dsl_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        files = []
 
-        mlir_libs_candidates = [
-            Path(dsl_path) / "_mlir" / "_mlir_libs",
-        ]
-        mlir_libs_path = None
-        for candidate in mlir_libs_candidates:
-            if candidate.exists():
-                mlir_libs_path = candidate
-                break
-        if mlir_libs_path is None:
-            raise DSLRuntimeError(
-                "Could not find _mlir/_mlir_libs directory. "
-                "Please re-install the package."
-            )
         # The pybind module file may be CTK-tagged (`_cutlass_ir.cu12.cpython-…so`
         # or `_cutlass_ir.cu13.cpython-…so`) when multiple CTK flavors coexist in
         # the same `_mlir_libs/` directory. The CTK-aware loader has already
         # picked one and bound it as `cutlass._mlir._mlir_libs._cutlass_ir`, so
-        # the loaded module's path is authoritative — use it unconditionally
-        # rather than re-scanning the candidate dirs (which can resolve to a
-        # different `_mlir_libs/` than the loader actually consulted, e.g. when
-        # `cutlass._mlir.__path__` is a CI/PYTHONPATH overlay).
+        # the loaded module's path is authoritative.
         loaded = sys.modules.get("cutlass._mlir._mlir_libs._cutlass_ir")
         loaded_file = getattr(loaded, "__file__", None) if loaded is not None else None
         if not loaded_file:
@@ -653,11 +707,10 @@ class CutlassBaseDSL(BaseDSL):
             # the sys.modules entry). Force it to run via import_module —
             # this is idempotent if the module is already loaded, and
             # otherwise routes through the CTK-aware loader in
-            # _mlir_libs/__init__.py so we hash exactly the binary the
-            # runtime would. Avoids a non-deterministic glob fallback
-            # (which could pick the wrong flavor when both cu12 and cu13
-            # .so files coexist) and a bare StopIteration when no match
-            # is found.
+            # _mlir_libs/__init__.py so we fingerprint exactly the binary
+            # the runtime would use. Avoids a non-deterministic glob
+            # fallback (which could pick the wrong flavor when both cu12
+            # and cu13 .so files coexist).
             from importlib import import_module
 
             try:
@@ -673,21 +726,9 @@ class CutlassBaseDSL(BaseDSL):
                     "Loaded cutlass._mlir._mlir_libs._cutlass_ir has no "
                     "__file__ attribute. Please re-install the package."
                 )
-        so_path = loaded_file
         giant_dso_name = Path(loaded_file).name
-        # Re-anchor `mlir_libs_path` to where the loaded binary actually
-        # lives so any subsequent path-derived state stays consistent.
-        mlir_libs_path = Path(loaded_file).parent
-        try:
-            # update the version hash of the cutlass shared library
-            so_size = os.path.getsize(so_path)
-        except Exception as e:
-            raise DSLRuntimeError(
-                f"Failed to read the shared library file {giant_dso_name}."
-                "The file may not exist or may not be readable."
-                "Please re-install the package."
-            ) from e
-        files.append((giant_dso_name, so_path, so_size))
+        digests = [(giant_dso_name, _get_baked_dso_digest(giant_dso_name))]
+        py_files = []
 
         # Walk the filesystem to collect .py files for hashing. We deliberately
         # avoid pkgutil.walk_packages here because it imports every module it
@@ -725,42 +766,31 @@ class CutlassBaseDSL(BaseDSL):
                     if no_ext.endswith(init_suffix):
                         no_ext = no_ext[: -len(init_suffix)]
                     key = "cutlass." + no_ext.replace(os.sep, ".")
-                    try:
-                        size = os.path.getsize(path)
-                    except OSError as e:
-                        raise DSLRuntimeError(
-                            f"Failed to read module file {key}. "
-                            "The file may not exist or may not be readable. "
-                            "Please re-install the package."
-                        ) from e
-                    files.append((key, path, size))
+                    py_files.append((key, path))
 
-        # Submit chunks to a job queue
-        chunk_size = 1 << 24  # 16 MB (tuned)
-        per_file_chunks: dict[str, list] = {}
-        max_workers = _get_max_cpu_threads()
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [ex.submit(_hash_chunk, *job) for job in _iter_jobs()]
-            for fut in as_completed(futures):
-                key, idx, digest = fut.result()
-                per_file_chunks.setdefault(key, []).append((idx, digest))
+        def _hash_py_file(item: tuple[str, str]) -> tuple[str, bytes]:
+            key, path = item
+            try:
+                with open(path, "rb") as f:
+                    content = f.read()
+            except OSError as e:
+                raise DSLRuntimeError(
+                    f"Failed to read module file {key}. "
+                    "The file may not exist or may not be readable. "
+                    "Please re-install the package."
+                ) from e
+            return key, hashlib.sha256(content).digest()
 
-        # update the version hash of the cutlass shared library using tree-hash
+        # Reading a few thousand source files is I/O-latency bound (network
+        # filesystems especially), so hash them in a thread pool.
+        with ThreadPoolExecutor(max_workers=_get_max_cpu_threads()) as ex:
+            digests.extend(ex.map(_hash_py_file, py_files))
+
         version_hash = hashlib.sha256()
-        # Since files list is in arbitrary order, we sort by key to get deterministic order
-        for key, path, size in sorted(files, key=lambda t: t[0]):
-            chunks = per_file_chunks.get(key)
-            assert chunks is not None
-            file_hash = hashlib.sha256(
-                b"".join(
-                    digest
-                    for _, digest in sorted(
-                        chunks
-                    )  # Similarily, sort chunks by index to get deterministic order
-                )
-            )
-            file_hash.update(key.encode("utf-8"))
-            version_hash.update(file_hash.digest())
+        # Since digests list is in arbitrary order, sort by key for determinism
+        for key, digest in sorted(digests):
+            version_hash.update(key.encode("utf-8"))
+            version_hash.update(digest)
 
         return version_hash
 
@@ -800,7 +830,7 @@ class CutlassBaseDSL(BaseDSL):
             return True
         if runtime_arch is None or compiled_arch is None:
             return False
-        from ..base_dsl.arch import Arch
+        from ..base_dsl import Arch
 
         try:
             return Arch.from_string(runtime_arch).can_run_binary_built_for(
@@ -812,13 +842,13 @@ class CutlassBaseDSL(BaseDSL):
     def compile_and_cache(
         self,
         module: ir.Module,
-        module_hash: str,
+        module_hash: "str | None",
         function_name: str,
         pipeline: Optional[str],
         signature: inspect.Signature,
         no_cache: bool,
         no_jit_engine: bool,
-        func_type: type = CudaDialectJitCompiledFunction,
+        func_type: Callable[..., Any] = CudaDialectJitCompiledFunction,
         *,
         full_args: Optional[tuple] = None,
         full_kwargs: Optional[dict] = None,
@@ -854,6 +884,12 @@ class CutlassBaseDSL(BaseDSL):
             )
             from cutlass.base_dsl.tvm_ffi_builder import attach_ffi_func
 
+            if self._tvm_ffi_args_spec_converter is None:
+                from cutlass.cute._tvm_ffi_args_spec_converter import (
+                    attach_args_spec_converter,
+                )
+
+                attach_args_spec_converter(self)
             assert self._tvm_ffi_args_spec_converter is not None
             (
                 tvm_ffi_spec_params,
@@ -869,6 +905,16 @@ class CutlassBaseDSL(BaseDSL):
             # ensure we run the postprocessor hook after the compiler has run its passes
             def post_compile_hook(module: ir.Module) -> None:
                 with module.context, module.operation.location:
+                    if self.compile_options.debug_launch_check:
+                        from cutlass.base_dsl.tvm_ffi_builder.tvm_ffi_builder import (
+                            TVMFFIFunctionBuilder,
+                        )
+
+                        # debug{launch-check} changes the module bytecode here,
+                        # so it is naturally represented in the JIT cache key.
+                        TVMFFIFunctionBuilder(
+                            module
+                        ).instrument_cuda_launch_preflight_checks(function_name)
                     # attach the tvm ffi function to the mlir module
                     attach_ffi_func(
                         module,
@@ -906,7 +952,7 @@ class CutlassBaseDSL(BaseDSL):
             with compiler.PostCompileHookContext(
                 self.compiler_provider, post_compile_hook
             ):
-                return super().compile_and_cache(
+                return super().compile_and_cache(  # type: ignore[return-value]
                     module,
                     module_hash,
                     function_name,
@@ -1164,6 +1210,7 @@ class CutlassBaseDSL(BaseDSL):
                 kernelOperands = kwargs.get("kernelOperands", None)
                 requiredArgs = kwargs.get("requiredArgs", None)
                 loc = kwargs.get("loc", None)
+                launch_loc = kwargs.get("launch_loc", loc)
                 assert kernelSym is not None, "kernelSym being None is not expected!"
                 assert requiredArgs is not None, (
                     "requiredArgs being None is not expected!"
@@ -1271,28 +1318,17 @@ class CutlassBaseDSL(BaseDSL):
                     programmatic_event=cfg.programmatic_event,
                     programmatic_event_flags=cfg.programmatic_event_flags,
                     programmatic_event_trigger_at_block_start=cfg.programmatic_event_trigger_at_block_start,
-                    loc=loc,
+                    loc=launch_loc,
                 )
                 return None
 
-        custom_name = kwargs.pop("_name_prefix", None)
-        if custom_name:
-            return KernelLauncher(
-                self,
-                lambda: _CutlassIrKernelGenHelper(self),  # type: ignore[arg-type]
-                funcBody,
-                *args,
-                **kwargs,
-                _name_prefix=custom_name,
-            )
-        else:
-            return KernelLauncher(
-                self,
-                lambda: _CutlassIrKernelGenHelper(self),  # type: ignore[arg-type]
-                funcBody,
-                *args,
-                **kwargs,
-            )
+        return KernelLauncher(
+            self,
+            lambda: _CutlassIrKernelGenHelper(self),  # type: ignore[arg-type]
+            funcBody,
+            *args,
+            **kwargs,
+        )
 
     def _preprocess_launch_config_args(self, args: tuple, kwargs: dict) -> None:
         """Helper to preprocess args and kwargs for LaunchConfig"""
@@ -1303,7 +1339,7 @@ class CutlassBaseDSL(BaseDSL):
         self, function_name: str, args: tuple[Any, ...], signature: inspect.Signature
     ) -> str:
         """Mangle the name of the function to avoid conflicts with other functions"""
-        function_name = "cutlass_" + function_name
+        function_name = f"{self._name_mangling_prefix}_{function_name}"
         return super().mangle_name(function_name, args, signature)
 
     def _validate_arg(
@@ -1312,9 +1348,15 @@ class CutlassBaseDSL(BaseDSL):
         arg_index: int,
         arg_name: str,
         arg_annotation: object,
-    ) -> Optional[DSLRuntimeError]:
+    ) -> Optional[DSLUserCodeError]:
         """
         Validates if the arg is really of the annotated type.
+
+        A type mismatch is an author mistake (the wrong value was passed for a
+        parameter), so it is reported as a ``DSLUserCodeError`` carrying
+        ``DiagId.ARG_ANNOTATION_MISMATCH`` -- the author gets a "here is your
+        mistake + how to fix it" message pointing at their call site, not the
+        "internal compiler bug, please report" envelope of ``DSLRuntimeError``.
         """
 
         if (
@@ -1333,8 +1375,12 @@ class CutlassBaseDSL(BaseDSL):
                 # Get the expected base type from Type[X]
                 expected_base = get_args(arg_annotation)[0]
                 if not issubclass(arg, expected_base):
-                    return DSLRuntimeError(
-                        f"expects argument #{arg_index + 1} ({arg_name}) to be Type[{expected_base}], but got {arg}"
+                    return DSLUserCodeError(
+                        DiagId.ARG_ANNOTATION_MISMATCH,
+                        num=arg_index + 1,
+                        arg_name=arg_name,
+                        expected=f"Type[{expected_base}]",
+                        got=f"{arg}",
                     )
             # Handle Union types and generic types
             elif origin is Union or isinstance(arg_annotation, UnionType):
@@ -1353,9 +1399,27 @@ class CutlassBaseDSL(BaseDSL):
                     )
                     for ty in allowed_types
                 ):
-                    return DSLRuntimeError(
-                        f"expects argument #{arg_index + 1} ({arg_name}) to be one of {allowed_types}, but got {type(arg)}"
+                    return DSLUserCodeError(
+                        DiagId.ARG_ANNOTATION_MISMATCH,
+                        num=arg_index + 1,
+                        arg_name=arg_name,
+                        expected=f"one of {allowed_types}",
+                        got=f"{type(arg)}",
                     )
+            elif _is_cutlass_array_subscripted_annotation(arg_annotation):
+                # A subscripted ``cutlass.Array[...]`` (e.g. ``cutlass.Array[Float32]``) is NOT a
+                # valid host-entry annotation -- only the *bare* ``cutlass.Array`` is. Without this
+                # guard the subscripted alias matches none of the branches below, validation
+                # silently passes, and the kernel body is handed a ``cute.Tensor`` instead of an
+                # Array. Reject it with a clear author-facing error pointing at the fix.
+                return DSLUserCodeError(
+                    DiagId.ARG_ANNOTATION_MISMATCH,
+                    num=arg_index + 1,
+                    arg_name=arg_name,
+                    expected="a bare `cutlass.Array` (drop the `[...]` subscript)",
+                    got=f"{arg_annotation}",
+                )
+
             elif isinstance(arg_annotation, GenericAlias):
                 # skip generic types such as List[int], Tuple[int, int], etc. for performance consideration?
                 pass
@@ -1377,11 +1441,28 @@ class CutlassBaseDSL(BaseDSL):
             ) and _is_cute_pointer_like(arg):
                 pass
 
+            elif _is_cutlass_array_annotation(arg_annotation) and (
+                _is_cutlass_array(arg) or _is_cute_tensor_like(arg)
+            ):
+                # A ``cutlass.Array`` host parameter accepts, in addition to a real
+                # ``cutlass.Array``/``_FakeArray`` (which lies that its ``__class__``
+                # is ``cutlass.Array``), a live cute tensor produced by
+                # ``cute.runtime.from_dlpack`` (the eager dlpack path). The
+                # tensor's pointer + real layout are reconstructed into an
+                # in-kernel ``cutlass.Array`` later in
+                # ``_generate_execution_arguments_for_known_types``. This keeps
+                # user code free of any explicit ``make_array_view`` call.
+                pass
+
             elif isinstance(arg_annotation, type):
                 # Handle simple type annotations
                 if not isinstance(arg, arg_annotation) and arg is not None:
-                    return DSLRuntimeError(
-                        f"expects argument #{arg_index + 1} ({arg_name}) to be {arg_annotation}, but got {type(arg)}"
+                    return DSLUserCodeError(
+                        DiagId.ARG_ANNOTATION_MISMATCH,
+                        num=arg_index + 1,
+                        arg_name=arg_name,
+                        expected=f"{arg_annotation}",
+                        got=f"{type(arg)}",
                     )
         # Everything looks good if we are here
         return None
@@ -1482,7 +1563,34 @@ class CutlassBaseDSL(BaseDSL):
         )
         if not ir_arg:
             # Handling DSL specific types
-            if _is_cutlass_pointer_annotation(arg_spec) and _is_cute_pointer_like(arg):
+            if _is_cutlass_array_annotation(arg_spec) and (
+                _is_cutlass_array(arg) or _is_cute_tensor_like(arg)
+            ):
+                # Reconstruct the in-kernel value as a ``cutlass.Array`` carrying
+                # the REAL layout of the passed tensor. ``new_from_mlir_values``
+                # rebuilds the cute-side object from the function's block args:
+                #   * For ``_FakeArray`` it already returns a ``cutlass.Array`` (its
+                #     ``__new_from_mlir_values__`` wraps via ``make_array_view``).
+                #   * For a live ``cute.runtime._Tensor`` (eager dlpack) it
+                #     returns a ``CoreTensor`` carrying the tensor's static
+                #     layout/strides — we wrap it with ``make_array_view`` so the
+                #     body sees a ``cutlass.Array``. ``make_array_view`` copies
+                #     ``base.shape``/``base.stride`` verbatim, so a row-major
+                #     (contiguous) torch tensor stays row-major: ``a[i, k]``
+                #     reads element ``(i, k)`` with no transpose.
+                n_args = len(get_mlir_types(arg))
+                blk_args = fop_args[iv_block_args : iv_block_args + n_args]
+                rebuilt = new_from_mlir_values(arg, blk_args)
+                iv_block_args += n_args
+                if _is_cutlass_array(rebuilt):
+                    ir_arg.append(rebuilt)
+                else:
+                    from cutlass.base_dsl.array import make_array_view
+
+                    ir_arg.append(make_array_view(rebuilt))
+            elif _is_cutlass_pointer_annotation(arg_spec) and _is_cute_pointer_like(
+                arg
+            ):
                 dtype, addrspace = _cutlass_pointer_dtype_addrspace(arg_spec, arg)
                 blk_args = fop_args[iv_block_args : iv_block_args + 1]
                 ir_arg.append(Pointer(blk_args[0], dtype=dtype, space=addrspace))
@@ -1799,7 +1907,10 @@ class CuTeDSL(CutlassBaseDSL):
                                 setup.sig,
                             )
 
-                            result = funcBody(*ir_args, **ir_kwargs)
+                            from ..base_dsl.multi_stage_manager import isolated_region
+
+                            with isolated_region():
+                                result = funcBody(*ir_args, **ir_kwargs)
 
                             # Generate return op
                             if ret_types:
@@ -1977,7 +2088,7 @@ class CuteExperimentalDSL(CutlassBaseDSL):
             return (
                 "builtin.module(gpu.module(lir-to-cute{"
                 + lir_to_cute_opts
-                + "}), lir-func-finalization{enable-cuda-dialect=true require-configure-launch=false}, cute-to-nvvm{cubin-format=bin enable-cuda-dialect "
+                + "}), lir-func-finalization{enable-cuda-dialect=true require-configure-launch=false}, cute-to-nvvm{check-inline-asm=false cubin-format=bin enable-cuda-dialect "
                 + self.compile_options.to_str()
                 + "})"
             )
@@ -2026,13 +2137,13 @@ class CuteExperimentalDSL(CutlassBaseDSL):
     def compile_and_cache(
         self,
         module: ir.Module,
-        module_hash: str,
+        module_hash: "str | None",
         function_name: str,
         pipeline: Optional[str],
         signature: inspect.Signature,
         no_cache: bool,
         no_jit_engine: bool,
-        func_type: type = CudaDialectJitCompiledFunction,
+        func_type: Callable[..., Any] = CudaDialectJitCompiledFunction,
         *,
         full_args: Optional[tuple] = None,
         full_kwargs: Optional[dict] = None,
@@ -2104,6 +2215,7 @@ class KernelLauncher:
         dsl: "CutlassBaseDSL",
         kernelGenHelper: BaseDSL._KernelGenHelper,
         funcBody: Callable[..., None],
+        /,
         *func_args: Any,
         **func_kwargs: Any,
     ) -> None:
@@ -2113,7 +2225,7 @@ class KernelLauncher:
         self.func_args = func_args
         self.func_kwargs = func_kwargs
 
-        self._name_prefix = func_kwargs.pop("_name_prefix", None)
+        self._name_options = dsl._get_name_options(funcBody)
         self._launch_name = None
 
         self._check_func_args(funcBody, *func_args, **func_kwargs)
@@ -2148,6 +2260,28 @@ class KernelLauncher:
         return Int32(smem_usage)
 
     def launch(self, *args: Any, **kwargs: Any) -> Any:
+        # No active MLIR context means there is no @cute.jit compilation in
+        # progress to emit the launch into — fail before the first MLIR call
+        # below surfaces a raw binding error. The RuntimeError flavor keeps
+        # the error catchable as before (the raw error was a RuntimeError).
+        if ir.Context.current is None:
+            raise DSLUserCodeRuntimeError(
+                DiagId.LAUNCH_OUTSIDE_JIT,
+                kernel_name=getattr(self.funcBody, "__name__", "<kernel>"),
+            )
+        launch_location = None
+        if self.dsl.compile_options.debug_launch_check:
+            launch_filename, launch_lineno, launch_col, _ = find_user_source_location()
+            if launch_filename is not None and launch_lineno is not None:
+                launch_location = self.dsl.get_ir_location(
+                    DSLLocation(
+                        filename=launch_filename,
+                        lineno=launch_lineno,
+                        col_offset=launch_col or 0,
+                        function_name="launch",
+                        caller_locs=(),
+                    )
+                )
         self.dsl._preprocess_launch_config_args(args, kwargs)
         config = self.dsl.LaunchConfig(*args, **kwargs)
         kernel_attrs = _build_kernel_attrs(config)
@@ -2158,17 +2292,27 @@ class KernelLauncher:
                 collector(self.funcBody, self.func_args, self.func_kwargs)
             )
 
-        if hasattr(self, "_name_prefix") and self._name_prefix:
-            self.dsl._name_prefix = self._name_prefix  # type: ignore[attr-defined]
-
         kernel_generator = self.dsl.kernel_launcher(
             requiredArgs=["config"],
             unitAttrNames=["gpu.kernel", "cute.kernel"],
             valueAttrDict=value_attrs,
             kernelGenHelper=self.kernelGenHelper,
+            _name_options=self._name_options,
         )(self.funcBody)
 
-        ret, name = kernel_generator(*self.func_args, **self.func_kwargs, config=config)
+        if launch_location is not None:
+            ret, name = kernel_generator(
+                *self.func_args,
+                **self.func_kwargs,
+                config=config,
+                _launch_loc=launch_location,
+            )
+        else:
+            ret, name = kernel_generator(
+                *self.func_args,
+                **self.func_kwargs,
+                config=config,
+            )
         self.dsl.kernel_info[name] = kernel_attrs
         self._launch_name = name
         return ret.launch_op_ret
@@ -2180,18 +2324,42 @@ class KernelLauncher:
 # =============================================================================
 # Utils
 # =============================================================================
-def _filter_readonly_frozen_dataclass(
-    iter_args: List[Any], items_to_filter: List[Any], full_write_args_count: int
+def is_read_only_object(item: Any, arg_name: Optional[str] = None) -> bool:
+    """
+    Check if an item is a read-only object.
+
+    A read-only object is either a frozen dataclass or a method receiver
+    (``self``) whose class does not opt in to ``self`` threading via the
+    ``_dsl_thread_self_in_staged_cf`` class attribute.
+    """
+    if is_frozen_dataclass(item):
+        return True
+    if arg_name is not None and arg_name == "self":
+        # Threading `self` is opt-in: carrying every receiver through staged
+        # control flow rebinds the shared Python object to region-internal
+        # SSA values, which sibling regions then read ("operand does not
+        # dominate this use"). Classes that mutate state reachable through
+        # `self` inside dynamic regions set the flag (e.g. task_scheduling's
+        # Task).
+        return not getattr(type(item), "_dsl_thread_self_in_staged_cf", False)
+    return False
+
+
+def _filter_readonly_objects(
+    iter_args: List[Any],
+    items_to_filter: List[Any],
+    full_write_args_count: int,
+    arg_names: Optional[List[str]] = None,
 ) -> List[Any]:
     """
-    Filter items based on whether corresponding iter_args are frozen dataclasses.
+    Filter items based on whether corresponding iter_args are read-only objects.
 
     This function filters items (which can be values or names) based on the same
     logic: keep items if they correspond to full-write arguments (index < full_write_args_count)
-    or if the corresponding iter_arg is not a frozen dataclass.
+    or if the corresponding iter_arg is not a read-only object.
 
     Args:
-        iter_args: List of arguments to check for frozen dataclass status
+        iter_args: List of arguments to check for read-only object status
         items_to_filter: List of items to filter (values or names)
         full_write_args_count: Number of arguments that are always written (not read-only)
 
@@ -2199,79 +2367,103 @@ def _filter_readonly_frozen_dataclass(
         Filtered list of items
 
     Examples:
-        # Filter values (original remove_read_only_frozen_dataclass behavior)
-        filtered_values = _filter_readonly_frozen_dataclass(iter_args, iter_args, full_write_args_count)
+        # Filter values (original remove_read_only_objects behavior)
+        filtered_values = _filter_readonly_objects(iter_args, iter_args, full_write_args_count)
 
-        # Filter names (original filter_readonly_frozen_dataclass_names behavior)
-        filtered_names = _filter_readonly_frozen_dataclass(iter_args, iter_args_names, full_write_args_count)
+        # Filter names (original filter_readonly_objects_names behavior)
+        filtered_names = _filter_readonly_objects(iter_args, iter_args_names, full_write_args_count)
     """
+
+    # Callers may have no (or fewer) names than values -- hand-written
+    # selector calls pass write_args without write_args_names. No name
+    # information means no receiver to gate: keep the pre-existing behavior.
     return [
         item
         for i, item in enumerate(items_to_filter)
-        if i < full_write_args_count or not is_frozen_dataclass(iter_args[i])
+        if i < full_write_args_count
+        or not is_read_only_object(
+            iter_args[i],
+            arg_names[i] if arg_names is not None and i < len(arg_names) else None,
+        )
     ]
 
 
-def remove_read_only_frozen_dataclass(
-    iter_args: List[Any], full_write_args_count: int
+def remove_readonly_objects(
+    iter_args: List[Any],
+    full_write_args_count: int,
+    arg_names: List[str],
 ) -> List[Any]:
-    """Filter out frozen dataclass arguments that are not full-write arguments."""
-    return _filter_readonly_frozen_dataclass(
-        iter_args, iter_args, full_write_args_count
+    """Filter out read-only objects arguments that are not full-write arguments."""
+    return _filter_readonly_objects(
+        iter_args,
+        iter_args,
+        full_write_args_count,
+        arg_names if len(arg_names) > 0 else None,
     )
 
 
-def filter_readonly_frozen_dataclass_names(
-    iter_args: List[Any], iter_args_names: List[str], full_write_args_count: int
+def filter_readonly_objects_names(
+    iter_args: List[Any],
+    iter_args_names: List[str],
+    full_write_args_count: int,
+    arg_names: List[str],
 ) -> List[str]:
-    """Filter names based on whether corresponding iter_args are frozen dataclasses."""
-    return _filter_readonly_frozen_dataclass(
-        iter_args, iter_args_names, full_write_args_count
+    """Filter names based on whether corresponding iter_args are read-only objects."""
+    return _filter_readonly_objects(
+        iter_args,
+        iter_args_names,
+        full_write_args_count,
+        arg_names if len(arg_names) > 0 else None,
     )
 
 
-def insert_read_only_frozen_dataclass(
-    iter_args: List[Any], original_iter_args: List[Any], full_write_args_count: int
+def insert_readonly_objects(
+    iter_args: List[Any],
+    original_iter_args: List[Any],
+    full_write_args_count: int,
+    arg_names: List[str],
 ) -> List[Any]:
     """
-    Insert read-only frozen dataclass arguments back into the iteration arguments.
+    Insert read-only objects arguments back into the iteration arguments.
 
     This function takes the new iteration arguments and the original arguments,
-    and preserves frozen dataclass instances from the original arguments while
-    using the new arguments for non-frozen dataclass instances.
+    and preserves read-only objects instances from the original arguments while
+    using the new arguments for non-read-only objects instances.
 
     Args:
-        iter_args: New iteration arguments to use for non-frozen dataclass instances
+        iter_args: New iteration arguments to use for non-read-only objects instances
         original_iter_args: Original iteration arguments to preserve frozen dataclass instances from
         full_write_args_count: Number of arguments that are always written (not read-only)
 
     Returns:
-        List of arguments with frozen dataclass instances preserved from original
+        List of arguments with read-only objects instances preserved from original
     """
     # Take full-write arguments from new iter_args
     full_write_args = (
         iter_args[:full_write_args_count] if full_write_args_count > 0 else []
     )
 
-    # Process remaining arguments: preserve frozen dataclass from original, use new for others
-    remaining_original = original_iter_args[full_write_args_count:]
-    remaining_new = iter_args[full_write_args_count:]
-
-    def process_remaining_arg(original_arg: object, new_arg_iter: Any) -> object:
-        """Process a single remaining argument, preserving frozen dataclass if present"""
-        return original_arg if is_frozen_dataclass(original_arg) else next(new_arg_iter)
-
-    # Use zip to pair original args with new args, then map the processing function
-    new_arg_iter = iter(remaining_new)
+    # Process remaining arguments: preserve read-only from original, use new
+    # for others. The classification must match the filtering side exactly or
+    # the flattened leaf counts diverge.
+    new_arg_iter = iter(iter_args[full_write_args_count:])
     processed_remaining = [
-        process_remaining_arg(orig_arg, new_arg_iter) for orig_arg in remaining_original
+        orig_arg
+        if is_read_only_object(orig_arg, arg_names[i] if i < len(arg_names) else None)
+        else next(new_arg_iter)
+        for i, orig_arg in enumerate(
+            original_iter_args[full_write_args_count:], start=full_write_args_count
+        )
     ]
 
     return full_write_args + processed_remaining
 
 
 def unpack_to_irvalue(
-    mixed_values: List[Any], body_name: str, full_write_args_count: int
+    mixed_values: List[Any],
+    body_name: str,
+    full_write_args_count: int,
+    arg_names: List[str] = [],
 ) -> Tuple[List[ir.Value], Union[PyTreeDef, Leaf]]:
     log().debug("===--- Values UNPack")
     for idx, packed in enumerate(mixed_values):
@@ -2319,7 +2511,7 @@ def unpack_to_irvalue(
 
     try:
         unpacked_values, _, treedef = tree_flatten(
-            remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
+            remove_readonly_objects(mixed_values, full_write_args_count, arg_names)
         )
     except DSLTreeFlattenError as e:
         # Strip the "builtins." prefix so the author sees a plain type name.
@@ -2355,6 +2547,7 @@ def pack_from_irvalue(
     pytree_def: PyTreeDef,
     mixed_values: List[Any],
     full_write_args_count: int,
+    arg_names: List[str] = [],
 ) -> List[Any]:
     """
     Packs MLIR values into a list of mixed values.
@@ -2366,8 +2559,8 @@ def pack_from_irvalue(
     log().debug("------------------ ")
 
     unflattened = tree_unflatten(pytree_def, ir_values)
-    return insert_read_only_frozen_dataclass(
-        unflattened, mixed_values, full_write_args_count
+    return insert_readonly_objects(
+        unflattened, mixed_values, full_write_args_count, arg_names
     )
 
 

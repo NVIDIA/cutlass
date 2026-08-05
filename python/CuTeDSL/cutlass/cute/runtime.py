@@ -931,18 +931,11 @@ class TensorAdapter:
 
 
 # -------------------------------------------------------------------------
-# Try to register_jit_arg_adapter for TensorAdapter
+# Register TensorAdapter for numpy/torch tensors lazily by type name, so
+# importing this module never pays for importing numpy or torch itself.
 # -------------------------------------------------------------------------
 
-try:  # Register for numpy.ndarray
-    import numpy
-
-    JitArgAdapterRegistry.register_jit_arg_adapter(numpy.ndarray)(TensorAdapter)
-except ImportError:
-    pass  # silent attempt, suppress error
-try:  # Register for torch.Tensor
-    import torch
-
-    JitArgAdapterRegistry.register_jit_arg_adapter(torch.Tensor)(TensorAdapter)
-except ImportError:
-    pass  # silent attempt, suppress error
+JitArgAdapterRegistry.register_jit_arg_adapter("numpy.ndarray", lazy=True)(
+    TensorAdapter
+)
+JitArgAdapterRegistry.register_jit_arg_adapter("torch.Tensor", lazy=True)(TensorAdapter)

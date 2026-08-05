@@ -12,7 +12,16 @@
 import enum
 import types
 from functools import partial
-from typing import Any, Optional, Tuple, Union, Callable, Literal, Type, overload
+from typing import (
+    Any,
+    Optional,
+    Tuple,
+    Union,
+    Callable,
+    Literal,
+    Type,
+    overload,
+)
 from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import T, dsl_user_op
@@ -84,7 +93,11 @@ class _NvvmAutoConvertProxy:
     def _convert_arg(
         arg: Any, loc: Optional[ir.Location], ip: Optional[ir.InsertionPoint]
     ) -> Any:
-        """Recursively convert DSL objects to ir.Value, including inside lists/tuples."""
+        """Convert DSL objects to ir.Value while preserving Python immediates."""
+        # Python primitive subclasses can expose ir_value(), but NVVM attribute
+        # slots must receive them as compile-time immediates.
+        if isinstance(arg, (bool, int, float)):
+            return arg
         # Check for ir_value method (covers Numeric and other DSL types)
         if hasattr(arg, "ir_value") and callable(arg.ir_value):
             return arg.ir_value(loc=loc, ip=ip)
@@ -323,7 +336,8 @@ def warp_idx(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the warp index within a CTA.
+    Returns the logical warp index within a CTA, computed from the CTA thread
+    index registers.
     """
     tid_x = Int32(nvvm.read_ptx_sreg_tid_x(T.i32(), loc=loc, ip=ip))
     tid_y = Int32(nvvm.read_ptx_sreg_tid_y(T.i32(), loc=loc, ip=ip))
@@ -339,7 +353,12 @@ def physical_warp_id(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the warp identifier.
+    Returns the physical warp slot identifier from the PTX ``%warpid`` special
+    register.
+
+    PTX documents ``%warpid`` as a diagnostic register whose value may change
+    during execution, for example after rescheduling. Use :func:`warp_idx` when
+    kernel code needs a stable logical warp index within a CTA.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-warpid>`__.
     """
@@ -483,7 +502,9 @@ def dynamic_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the launch dynamic smem size.
+    Returns the dynamic shared-memory size requested at launch.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-dynamic-smem-size
     """
     return Int32(nvvm.read_ptx_sreg_dynamic_smem_size(T.i32(), loc=loc, ip=ip))
 
@@ -493,13 +514,15 @@ def total_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the total shared memory reserved for the CTA, in bytes.
+    Returns the ``%total_smem_size`` special-register value for the CTA.
 
-    This is the static plus dynamic shared-memory size for the CTA.
+    PTX defines this as the total statically and dynamically allocated CTA
+    shared memory, excluding the reserved system region, reported in multiples
+    of the target architecture's shared-memory allocation unit.
 
     See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-total-smem-size
 
-    :return: Total CTA shared-memory size in bytes
+    :return: Total CTA shared-memory size in target allocation units
     :rtype: Int32
     """
     return Int32(nvvm.read_ptx_sreg_total_smem_size(T.i32(), loc=loc, ip=ip))
@@ -510,11 +533,14 @@ def aggr_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the aggregate shared memory across the CTA's cluster, in bytes (sm_90+).
+    Returns the ``%aggr_smem_size`` special-register value for the CTA (sm_90+).
+
+    PTX defines this as user shared memory plus the reserved system shared-memory
+    region for the CTA.
 
     See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-aggr-smem-size
 
-    :return: Aggregate cluster shared-memory size in bytes
+    :return: Aggregate CTA shared-memory size
     :rtype: Int32
     """
     return Int32(nvvm.read_ptx_sreg_aggr_smem_size(T.i32(), loc=loc, ip=ip))
@@ -744,7 +770,11 @@ def shuffle_sync_op(
 
 
 shuffle_sync = partial(shuffle_sync_op, kind=nvvm.ShflKind.idx)
-shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up)
+# shfl.up clamps at the *lower* segment boundary, so the packed clamp must be 0
+# (not WARP_SIZE-1). With the generic 31 default every lane's source falls below
+# the bound and keeps its own value (identity). Callers can still override
+# mask_and_clamp for segmented shuffles.
+shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up, mask_and_clamp=0)
 shuffle_sync_down = partial(shuffle_sync_op, kind=nvvm.ShflKind.down)
 shuffle_sync_bfly = partial(shuffle_sync_op, kind=nvvm.ShflKind.bfly)
 
@@ -968,6 +998,48 @@ def cp_async_wait_group(
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-wait-group-cp-async-wait-all>`__.
     """
     nvvm.cp_async_wait_group(n, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def cp_async_shared_global(
+    dst: Union[ir.Value, Pointer],
+    src: Union[ir.Value, Pointer],
+    size: int,
+    modifier: str,
+    *,
+    cp_size: Optional[Union[int, Int32, Uint32]] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Issue a per-thread async copy from global to shared memory.
+    """
+    from cutlass._mlir.dialects.nvvm import LoadCacheModifierKind
+
+    if isinstance(size, int) and size not in (4, 8, 16):
+        raise ValueError(f"cp.async.shared.global size must be 4, 8, or 16, got {size}")
+    if modifier == "cg" and isinstance(size, int) and size != 16:
+        raise ValueError(
+            f"cp.async.shared.global .cg modifier requires size 16, got {size}"
+        )
+    if isinstance(cp_size, int) and not 0 <= cp_size <= size:
+        raise ValueError(
+            f"cp.async.shared.global cp_size must be in [0, {size}], got {cp_size}"
+        )
+
+    cache_modifier = _enhance_enum_with_str_mapping(LoadCacheModifierKind).from_str(
+        modifier
+    )
+    cp_size_value = Int32(cp_size) if cp_size is not None else None
+    nvvm.cp_async_shared_global(
+        _normalize_ptr(dst, loc=loc, ip=ip),
+        _normalize_ptr(src, loc=loc, ip=ip),
+        size,
+        cache_modifier,
+        cp_size=cp_size_value,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -3661,6 +3733,12 @@ def inline_ptx(
         """Convert arg to Numeric, or pass through if already an ir.Value."""
         if isinstance(arg, ir.Value):
             return arg
+        to_llvm_ptr = getattr(arg, "to_llvm_ptr", None)
+        if callable(to_llvm_ptr):
+            return to_llvm_ptr(loc=loc, ip=ip)
+        llvm_ptr = getattr(arg, "llvm_ptr", None)
+        if isinstance(llvm_ptr, ir.Value):
+            return llvm_ptr
         return as_numeric(arg)
 
     read_only_ir = [convert_arg(arg) for arg in read_only_args]
@@ -3669,13 +3747,15 @@ def inline_ptx(
     # Build write_only result types
     write_only_mlir_types = [dtype.mlir_type for dtype in write_only_types]
 
-    # Get predicate IR value if provided
-    # The nvvm proxy will convert Numeric objects to ir.Value automatically
-    predicate_ir = None
+    # Keep the predicate as an ordinary read operand.  The raw
+    # nvvm.inline_ptx(predicate=...) path can number the predicate operand
+    # incorrectly, producing guards such as "@512" in the final PTX.
     if predicate is not None:
         predicate_ir = as_numeric(predicate)
         if not isinstance(predicate_ir, Boolean):
             raise ValueError("Predicate must be a Boolean")
+        ptx_code = f"@{{$r{len(read_only_ir)}}} {ptx_code}"
+        read_only_ir.append(predicate_ir)
 
     # Call nvvm.inline_ptx
     results = nvvm.inline_ptx(
@@ -3683,7 +3763,6 @@ def inline_ptx(
         read_only_ir,
         read_write_ir,
         ptx_code,
-        predicate=predicate_ir,
         loc=loc,
         ip=ip,
     )

@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from typing import Type, Optional, Union
 from cutlass._mlir.dialects import cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir

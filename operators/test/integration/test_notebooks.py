@@ -62,7 +62,8 @@ def test_notebooks(notebook_name, operator_targets, monkeypatch):
     # static TLS is allocated before jupyter/jaxlib exhaust the budget.
     # Without this the kernel's `import torch` fails with "cannot allocate
     # memory in static TLS block". libgomp is the heaviest TLS user so it
-    # must come first.
+    # must come before libc10. Any pre-existing LD_PRELOAD entries must stay
+    # ahead of the torch libs.
     from cutlass.operators.utils.common import is_torch_available
 
     if sys.platform.startswith("linux") and is_torch_available():
@@ -74,19 +75,21 @@ def test_notebooks(notebook_name, operator_targets, monkeypatch):
             preload_libs.extend(sorted(str(p) for p in torch_lib.glob(pattern)))
         if preload_libs:
             existing = os.environ.get("LD_PRELOAD", "")
-            value = ":".join(preload_libs + ([existing] if existing else []))
+            value = ":".join(([existing] if existing else []) + preload_libs)
             monkeypatch.setenv("LD_PRELOAD", value)
 
-    # Register the current Python interpreter as the python3 kernel
+    # Register the current Python interpreter with a test-local kernel name so
+    # parallel xdist workers do not race on the shared "python3" kernelspec.
+    kernel_name = f"python3-{os.getpid()}-{full_notebook_path.stem}"
     subprocess.run(
-        [sys.executable, "-m", "ipykernel", "install", "--user", "--name", "python3"],
+        [sys.executable, "-m", "ipykernel", "install", "--user", "--name", kernel_name],
         check=True,
         capture_output=True,
     )
 
     with full_notebook_path.open() as file:
         notebook = nbformat.read(file, as_version=4)
-    ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
+    ep = ExecutePreprocessor(timeout=600, kernel_name=kernel_name)
 
     # Execute the notebook. This call will error out on any assertions or errors in the
     # notebook itself. Allow these to propagate up so the test will fail on notebook failure.

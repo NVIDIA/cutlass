@@ -29,12 +29,6 @@ Per-thread/partitioned views and families
   - ``tCtAcc``: per-thread accumulator fragment/layout in TMEM
   - Additional ``tC*`` tensors follow the same schema for kernels that carry more than the classical A/B/C/Acc operands (see Operands and roles below): e.g. ``tCtState`` / ``tCtQState`` / ``tCtShared`` (gated-delta-net recurrent state in TMEM), ``tCrValpha`` / ``tCrVbeta`` / ``tCrVbias`` (EVT/EFC broadcast vectors in registers), ``tCtAccInter`` / ``tCtAccIntra`` (hierarchical accumulators)
 
-  ..  {$nv-internal-release begin}
-
-  - Sparse GEMM additionally defines ``tCtE`` for the sparsity metadata tensor in TMEM (sm_140 / Feynman sparse GEMM, not yet released)
-
-  ..  {$nv-internal-release end}
-
 - ``tTM…``: Per-thread TMEM tiled-copy partitions used by FMHA/attention kernels (e.g. ``tTMrO`` as the register-side view of a TMEM load partitioned through ``thr_tmem_load``)
 
 - Attention/MLA path families (``tQ…``, ``tK…``, ``tV…``, ``tP…``, ``tO…``): same schema as ``tA…`` / ``tB…`` / ``tC…`` but specialised to the Q/K/V/P/O operands of attention kernels, e.g.:
@@ -78,12 +72,6 @@ Data-movement copy paths
   - ``s2s_atom``: Shared → Shared atom (reshape/remap without register spill)
   - ``s2t``: Shared → Tensor memory atom
 
-  ..  {$nv-internal-release begin}
-
-  - ``sp2t_copy_op_*``: Sparse source → Tensor memory copy op (sm_140 / Feynman sparse GEMM, not yet released: e.g. ``Sp2TAsACopyOp``, ``Sp2TAsECopyOp``)
-
-  ..  {$nv-internal-release end}
-
   - Custom ``autovec_copy`` paths appear where the DSL auto-vectorises a bespoke layout
 
 Operands and roles
@@ -98,19 +86,8 @@ Operands and roles
   - Variants: ``Kt`` / ``Vt`` for the transposed view of K/V, ``Qi`` / ``Ki`` / ``Vi`` for per-iteration slices, ``QK`` / ``PV`` / ``QKV`` where a single fragment spans multiple operands of the two back-to-back matmuls
 - Mamba / recurrent-state letters: ``Delta`` / ``DeltaA`` (time-step and A-decay), ``State`` / ``QState`` / ``Shared`` (gated-delta-net recurrent state tensors), ``Cumsumlog`` / ``Cumprod`` (running reductions), ``Gate``, ``DecayV``
 
-..  {$nv-internal-release begin}
-
-- Sparse-GEMM letters (sm_140 / Feynman, not yet released): ``E`` (sparsity metadata tensor in TMEM; paired with ``sp2t_*`` copy ops)
-
-..  {$nv-internal-release end}
-
 - EVT / EFC broadcast vectors: ``Valpha`` / ``Vbeta`` (alpha/beta scalars broadcast as vectors), ``Vbias`` (bias vector), ``Ainv`` (inverse of A for fused solvers)
 
-..  {$nv-internal-release begin}
-
-- LUT-based block-scaled GEMM letter (Rubin, not yet released): ``LutB`` (look-up-table operand)
-
-..  {$nv-internal-release end}
 - Communication operands (multi-CTA / multicast flows): ``CommInMC`` / ``CommOutMC`` (multicast in/out), ``CommOutUC`` (unicast out)
 - Head-dimension variants: ``Dv`` (value head dimension when distinct from Q/K dim), ``Nv`` (number of value heads)
 
@@ -232,20 +209,6 @@ Open these files in the repository to see each pattern in context:
 
   - ``tCtState``, ``tCtQState``, ``tCtShared``
   - ``CuTeDSL/cute/blackwell/kernel/attention/gated_delta_net/gated_delta_net_chunked.py``
-
-..  {$nv-internal-release begin}
-
-- Sparse-metadata operand ``E`` and ``sp2t_*`` copy ops (sm_140 / Feynman, not yet released):
-
-  - ``tCtE``, ``sp2t_copy_op_A``, ``sp2t_copy_op_E``
-  - ``CuTeDSL/internal/feynman/sm140_sparse_gemm.py`` and ``sm140_sparse_gemm_temporal_split_k.py``
-
-- LUT-based block-scaled GEMM operand ``LutB`` (Rubin, not yet released):
-
-  - ``CuTeDSL/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_gemm_lut.py``
-  - ``CuTeDSL/cute_ext/rubin/dense_gemm_lutb.py``
-
-..  {$nv-internal-release end}
 
 - Richer ``thr_*`` and ``thr_copy_*`` / ``thr_mma_*`` / ``thr_tmem_*`` partitioner taxonomy:
 

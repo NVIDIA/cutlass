@@ -32,7 +32,12 @@ from .base import (
     PerformanceControls,
     RuntimeArguments,
 )
-from .epilogue import EpilogueArguments
+from .epilogue import (
+    EpilogueArguments,
+    Load,
+    Store,
+    Transport,
+)
 from .gemm import GemmArguments, GemmProblemSize
 from .grouped_gemm import GroupedGemmArguments
 from .operand import (
@@ -57,4 +62,7 @@ __all__ = [
     "ScaledOperand",
     "ScaleMode",
     "ScaleSwizzleMode",
+    "Load",
+    "Store",
+    "Transport",
 ]
