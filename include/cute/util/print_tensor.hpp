@@ -33,6 +33,7 @@
 #include <cute/config.hpp>           // CUTE_HOST_DEVICE
 
 #include <cute/layout.hpp>
+#include <cute/pointer_flagged.hpp>
 #include <cute/tensor_impl.hpp>
 
 namespace cute
