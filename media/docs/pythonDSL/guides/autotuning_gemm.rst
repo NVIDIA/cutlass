@@ -351,6 +351,19 @@ You may then pick a configuration that you think is best and compile it ahead of
 
 Note: autotune_suite expects a non-autotuned CuTeDSL function or class that is not decorated by ``@testing.autotune_jit``.
 
+If some argument's size depends on the configuration, such as a reduction workspace, we will pass the values from
+``params_dict`` and ``derived_params`` to ``make_arguments`` as keyword arguments if their parameter names match.
+
+For example, if the workspace size depends on ``mma_tiler_mn``, you can write
+
+.. code-block:: python
+
+    def make_arguments(M, N, K, mma_tiler_mn):
+        ...  # size a workspace from mma_tiler_mn
+
+And we will call this function with the values of ``M``, ``N``, ``K`` from the current case,
+and ``mma_tiler_mn`` from the current configuration being benchmarked.
+
 .. code-block:: python
 
     import torch

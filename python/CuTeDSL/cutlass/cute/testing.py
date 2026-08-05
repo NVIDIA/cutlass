@@ -1114,7 +1114,10 @@ def autotune_suite(
         all dynamic (positional) arguments in the signature.
     :type func_or_cls: Callable
     :param make_arguments: Builds the dynamic positional arguments for one case,
-        i.e. the call arguments minus the tunable/derived params.
+        i.e. the call arguments minus the tunable/derived params, whose values are
+        provided by ``params_dict`` and ``derived_params``.
+        We will pass the current case values plus any config/derived values whose names it declares
+        to ``make_arguments`` as keyword values.
     :type make_arguments: Callable
     :param cases: Input cases; each item is passed to ``make_arguments``.
     :type cases: List
@@ -1167,14 +1170,19 @@ def autotune_suite(
         )
 
     keys = list(params_dict.keys())
+    make_args_params = inspect.signature(make_arguments).parameters
     case_reports = []
     for case in cases:
 
-        def case_arguments(case=case):
+        def case_arguments(overrides, case=case):
+            # Forward any config / derived value whose name make_arguments
+            # declares (e.g. so it can size config-dependent tensors like a
+            # reduction workspace); config keys it does not declare are ignored.
+            extra = {k: v for k, v in overrides.items() if k in make_args_params}
             return (
-                make_arguments(*case)
+                make_arguments(*case, **extra)
                 if isinstance(case, tuple)
-                else make_arguments(case)
+                else make_arguments(case, **extra)
             )
 
         timings = []
@@ -1187,7 +1195,6 @@ def autotune_suite(
             ):
                 continue
             try:
-                args = case_arguments()
                 # Compute configuration-derived compile-time arguments on the
                 # host (e.g. max_active_clusters from cluster_shape_mn), passing
                 # each derive function the config values whose names it declares.
@@ -1197,8 +1204,11 @@ def autotune_suite(
                     derived[name] = fn(
                         **{k: v for k, v in config.items() if k in fn_params}
                     )
+                config_with_derived = {**config, **derived}
+                # Build the dynamic args; make_arguments may size some of them
+                # from the config / derived values whose names it declares.
+                args = case_arguments(config_with_derived)
                 if inspect.isclass(func_or_cls):
-                    config_with_derived = {**config, **derived}
                     init_params = inspect.signature(func_or_cls.__init__).parameters
                     # Attributes to override that are initialized in __init__ method
                     init_configs = {k: v for k, v in config_with_derived.items() if k in init_params}
@@ -1221,8 +1231,8 @@ def autotune_suite(
 
                 time_us = testing.benchmark(
                     compiled,
-                    workspace_generator=lambda: testing.JitArguments(
-                        *case_arguments()
+                    workspace_generator=lambda cad=config_with_derived: testing.JitArguments(
+                        *case_arguments(cad)
                     ),
                     workspace_count=workspace_count,
                     warmup_iterations=warmup_iterations,
