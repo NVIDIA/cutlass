@@ -1,13 +1,14 @@
 .. _cute_dsl_api:
 
-CuTe DSL API
-============
+CuTe
+====
 
 .. toctree::
-  :maxdepth: 1
+  :maxdepth: 2
+  :titlesonly:
 
-  changelog <cute_dsl_api/changelog.rst>
-  cute <cute_dsl_api/cute.rst>
-  cute_nvgpu <cute_dsl_api/cute_nvgpu.rst>
-  pipeline <cute_dsl_api/pipeline.rst>
-  utils <cute_dsl_api/utils.rst>
+  Core <cute_dsl_api/cute.rst>
+  Runtime <cute_dsl_api/cute_runtime.rst>
+  Math <cute_dsl_api/cute_math.rst>
+  GPU Operations <cute_dsl_api/gpu_operations.rst>
+  arch <cute_dsl_api/cute_arch.rst>

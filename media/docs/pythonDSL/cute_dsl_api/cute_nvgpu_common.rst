@@ -1,7 +1,7 @@
 .. _cute_nvgpu_common:
 
-Common
-======
+nvgpu.common
+============
 
 .. automodule:: cutlass.cute.nvgpu
    :members:

@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.6.1
+# CUTLASS 4.6.2
 
-_CUTLASS 4.6.1 - July 2026_
+_CUTLASS 4.6.2 - Aug 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -81,6 +81,15 @@ To get started quickly - please refer :
   - Fixed a compilation failure on Thor with 12.9 wheel
   - Fixed a per regression of flash attention v2 on Ampere
   - Allow custom and multiple FFI call registration for Jax
+  - Reverted the TMA bulk copy elect_one change from 4.6.0 to reset the behavior to align with 4.5.x releases
+  - Fixed a vectorized fp32->f8 conversion issue ([!3382](https://github.com/NVIDIA/cutlass/issues/3382))
+  - Fixed a CuTe DSL fp8 grouped_gemm_dglu kernel compilation issue  ([!397](https://github.com/NVIDIA/cudnn-frontend/issues/397))
+  - Fixed opt-level setting issue for ptxas ([!3389](https://github.com/NVIDIA/cutlass/issues/3389))
+  - set_name_prefix of kernel now supports full customization on compiled kernel name ([!3389](https://github.com/NVIDIA/cutlass/issues/3389))
+  - Fixed issue in ([!3349](https://github.com/NVIDIA/cutlass/issues/3349))
+  - Fixed issue in ([!3351](https://github.com/NVIDIA/cutlass/issues/3351))
+  - Reduced JIT compile overhead by ~50 ms per cute.compile
+  - Speed up importing cutlass.cute by 3.8x with Torch installed, 1.25x without.
   - Fixed following issues
     - https://github.com/NVIDIA/cutlass/issues/3132
     - https://github.com/NVIDIA/cutlass/issues/3170

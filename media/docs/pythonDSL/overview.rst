@@ -55,6 +55,32 @@ The DSLs simplify expressing loop tiling, threading strategies, and data transfo
 Python kernels are compiled at runtime into CUDA device code using MLIR infrastructure and NVIDIA’s ``ptxas`` toolchain, 
 enabling rapid iteration and interactive debugging.
 
+Supported Features
+=================================
+
+For dependency version requirements, refer to the :doc:`quick_start` section.
+
+Supported MMA Operations
+---------------------------------
+
+**NVIDIA Ampere Architecture:**
+
+- FP16 / BF16 tensor core instructions
+
+**NVIDIA Hopper Architecture:**
+
+- FP16 / BF16
+- FP8
+
+**NVIDIA Blackwell Architecture:**
+
+- FP16 / BF16
+- TF32
+- I8
+- F8
+
+For current constraints and unsupported features, refer to the :doc:`limitations` section.
+
 Relationship to CUTLASS C++
 =================================
 
@@ -71,7 +97,7 @@ Getting Started
 
 - :doc:`quick_start` – Initial setup and installation.
 - :doc:`cute_dsl` – Overview of the typical development and workflow using CuTe DSL.
-- :doc:`cute_dsl_api` – Refer to the full API documentation.
+- :doc:`apis` – Refer to the full API documentation.
 - :doc:`limitations` – Understand current CuTe DSL constraints and differences from C++.
 - :doc:`faqs` – Common questions and known issues.
 

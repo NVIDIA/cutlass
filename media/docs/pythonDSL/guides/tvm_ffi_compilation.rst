@@ -1,8 +1,8 @@
 .. _compile_with_tvm_ffi:
 .. |DSL| replace:: CuTe DSL
 
-Compile with TVM FFI
-====================
+TVM FFI Compilation
+===================
 
 Apache TVM FFI is an open ABI and FFI for machine learning systems. More information can be found in
 the `official documentation <https://tvm.apache.org/ffi/>`_.
@@ -594,7 +594,7 @@ You can use ``cute.runtime.find_runtime_libraries(enable_tvm_ffi=True)`` to get 
 ``cute.runtime.load_module(path, enable_tvm_ffi=True)`` will load these libraries automatically before loading
 an exported module. You can also manually load these libraries in advanced use cases.
 
-For low-level cute ABI AOT compilation support without TVM FFI, you can refer to :doc:`dsl_ahead_of_time_compilation`.
+For low-level cute ABI AOT compilation support without TVM FFI, you can refer to :doc:`ahead_of_time_compilation`.
 
 
 Keyword Arguments and Defaults
@@ -718,3 +718,7 @@ tensor converted by ``from_dlpack``.
 In order to avoid such issue, it's recommended to use fake tensor only with TVM FFI backend. Practically speaking,
 as we only want to call ``from_dlpack`` once and reuse for both compilation and runtime, the benefit of
 using fake tensor is limited in this case.
+
+Host cross-compilation is not supported on the TVM FFI path: the ``--host-target`` option cannot be combined with
+``--enable-tvm-ffi`` (doing so raises an error). To cross-compile the host object for another CPU architecture (for example
+AArch64), use the low-level cute ABI AOT path described in :ref:`dsl_aot_host_cross_compilation`.

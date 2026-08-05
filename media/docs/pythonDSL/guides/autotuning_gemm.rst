@@ -1,7 +1,7 @@
 .. _autotuning_gemm:
 
-Guidance for Auto-Tuning
-============================= 
+Autotuning with the DSL
+=======================
 
 Numerous GEMM kernel code examples are offered within our codebase. 
 When integrating these kernels into frameworks, auto-tuning becomes essential 

@@ -11,7 +11,7 @@ Overview
 
 |DSL| Ahead-of-Time (hereinafter referred to as AOT) compilation allows you to:
 
-* **Compile once, enable cross-compilation**: Write kernels in Python and cross-compile them for multiple GPU architectures.
+* **Compile once, enable cross-compilation**: Write kernels in Python and cross-compile them for multiple GPU architectures, and cross-compile the host object for other CPU architectures (see :ref:`dsl_aot_host_cross_compilation`).
 * **Remove JIT overhead**: Eliminate compilation delays in production by pre-compiling kernels.
 * **Flexible integration**: Easily integrate compiled kernels into both Python and C/C++ codebases using flexible deployment options.
 
@@ -20,7 +20,7 @@ We provide 2 levels of AOT ABI:
 1. **Low-Level CuTe ABI**: This ABI is expressed using CuTe DSL types and tensors, mirroring the original Python function.
 2. **High-Level Apache TVM FFI ABI**: For interop with various frameworks (e.g., PyTorch, JAX), and offer high-level stable ABI access.
 
-This guide will focus on the CuTe ABI AOT. For the Apache TVM FFI AOT, please refer to the section "Exporting Compiled Module" in :doc:`compile_with_tvm_ffi`.
+This guide will focus on the CuTe ABI AOT. For the Apache TVM FFI AOT, please refer to the section "Exporting Compiled Module" in :doc:`tvm_ffi_compilation`.
 
 CuTe ABI AOT Workflow
 ---------------------
@@ -200,6 +200,99 @@ The ``CuteDSLRuntime.h`` header file can be found in ``<wheel_install_path>/incl
 
 The compilation of the C++ executable requires the ``libcute_dsl_runtime.so`` library which is involved in ``<wheel_install_path>/lib``, along with the CUDA driver and runtime libraries, to function properly.
 
+.. _dsl_aot_host_cross_compilation:
+
+Host Cross-Compilation for AArch64
+----------------------------------
+
+By default, the object file produced by ``export_to_c`` targets the same machine that runs ``cute.compile`` (the *build host*, typically x86_64). |DSL| can instead emit the **host** portion of the object for a different CPU architecture, so you can build a kernel on an x86_64 machine and deploy it to an AArch64 Linux machine. Only the host code is affected; the GPU device code is still selected by ``--gpu-arch`` as described above.
+
+Build Host vs Target
+~~~~~~~~~~~~~~~~~~~~~~
+
+* **Build host**: the machine where you run Python, ``cute.compile``, and ``export_to_c``.
+* **Target**: the machine where the resulting shared library or executable will run.
+
+When the host target is left empty (the default), the ``.o`` is compiled for the build host. When a target is requested, the ``.o`` is an ELF object for that target's triple, and the accompanying ``.h`` uses only fixed-width and opaque types, so the C ABI is identical regardless of any word-size difference between the build host and the target.
+
+Selecting the Host Target
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The host target is chosen at ``cute.compile`` time through the ``--host-target`` option. Two input formats are accepted:
+
+* A preset tag. ``linux-aarch64`` maps to the triple ``aarch64-unknown-linux-gnu``.
+* A long form for explicit CPU and feature tuning: ``llvm -mtriple=<triple> [-mcpu=<cpu>] [-mattr=<features>]``.
+
+.. code-block:: python
+
+   import cutlass.cute as cute
+
+   # Preset tag
+   compiled = cute.compile(
+       my_function, *args,
+       options="--gpu-arch sm_100a --host-target linux-aarch64")
+
+   # Long form with explicit CPU and features
+   compiled = cute.compile(
+       my_function, *args,
+       options="--gpu-arch sm_100a "
+               "--host-target 'llvm -mtriple=aarch64-unknown-linux-gnu "
+               "-mcpu=neoverse-n1 -mattr=+lse'")
+
+Invalid input, such as an unknown preset tag or a malformed long form, is rejected immediately when ``cute.compile`` is called, rather than later during export.
+
+Exporting the Cross-Compiled Object
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Once the function is compiled with a host target, export it exactly as in the native workflow; no additional arguments are required.
+
+.. code-block:: python
+
+   compiled.export_to_c(file_path="./artifacts", file_name="kernel",
+                        function_prefix="kernel")
+
+The resulting ``kernel.o`` is an AArch64 ELF object, and ``kernel.h`` is portable across the build host and the target.
+
+Resolving Runtime Symbols at Link Time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Linking the cross-compiled ``.o`` into a shared library or executable on the build host requires the |DSL| runtime library, but the real ``libcute_dsl_runtime.so`` only exists on the AArch64 target. To make link-time symbol resolution possible on the build host, the wheel ships a **link-time stub**: an empty-body ``libcute_dsl_runtime.so`` with the same SONAME and exported symbols as the real library, installed under ``lib/stubs/<triple>/``. The linker resolves against the stub on the build host; at runtime on the target the dynamic loader binds against the real library.
+
+Use the ``aot_config`` helper to discover the linker flags for a target triple:
+
+.. code-block:: bash
+
+   python -m cutlass.cute.export.aot_config --libdir  --target aarch64-unknown-linux-gnu
+   python -m cutlass.cute.export.aot_config --ldflags --target aarch64-unknown-linux-gnu
+   python -m cutlass.cute.export.aot_config --libs    --target aarch64-unknown-linux-gnu
+
+* ``--libdir`` prints the resolved runtime library directory for the target (the stub subtree when no cross-built runtime is shipped).
+* ``--ldflags`` prints the ``-L<dir>`` linker search flag.
+* ``--libs`` prints the runtime ``-l`` flag (``-lcute_dsl_runtime``). Pass ``--with-tvm-ffi`` to also include the TVM FFI library.
+
+If no per-triple or stub subtree exists for the requested target, the helper exits with a non-zero status and prints a message to standard error.
+
+Cross-Linking the Shared Library
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Link the object with your AArch64 cross toolchain (for example ``aarch64-linux-gnu-g++``) and a sysroot that provides the CUDA headers and libraries for the target:
+
+.. code-block:: bash
+
+   aarch64-linux-gnu-g++ -shared -o kernel.so kernel.o \
+       $(python -m cutlass.cute.export.aot_config --ldflags --target aarch64-unknown-linux-gnu) \
+       $(python -m cutlass.cute.export.aot_config --libs    --target aarch64-unknown-linux-gnu)
+
+Linking succeeds against the stub on the build host. Deploy ``kernel.so`` to the AArch64 target, where it binds against the real runtime library.
+
+Limitations
+~~~~~~~~~~~
+
+* **AArch64 only.** Only ``aarch64-unknown-linux-gnu`` is currently supported. Other architectures fail with a "target not registered" error during code generation.
+* **Not compatible with TVM FFI.** Combining ``--enable-tvm-ffi`` with ``--host-target`` raises an error; drop ``--enable-tvm-ffi`` and use the plain AOT export path described here.
+* **CUDA runtime version must match.** The exported object depends on the CUDA runtime; the target's CUDA runtime/toolkit version must match the one |DSL| was built against (see :ref:`dsl_aot_object_compat`).
+* **Linking is your responsibility.** You must supply your own cross toolchain and a target sysroot with the CUDA headers and libraries; the stub only resolves the |DSL| runtime symbols.
+
 Supported Argument Types
 ------------------------
 
@@ -218,6 +311,8 @@ Note that:
 2. ``strides`` in ``cute.Tensor`` are determined by the ``use_32bit_strides`` compile argument. When ``use_32bit_strides`` is set to ``True``, the strides are 32-bit; when set to ``False``, they are 64-bit.
 3. Currently, custom types are not supported for AOT compilation.
 
+.. _dsl_aot_object_compat:
+
 Object File Compatibility Issues
 --------------------------------
 
@@ -231,7 +326,7 @@ Relation to Apache TVM FFI AOT
 ------------------------------
 
 Apache TVM FFI AOT offers a comparable capability, enabling TVM functions to be compiled into binary files that can be loaded and executed at runtime.
-For more information, see the section "Exporting Compiled Module" in :doc:`compile_with_tvm_ffi`.
+For more information, see the section "Exporting Compiled Module" in :doc:`tvm_ffi_compilation`.
 
 The primary distinction is that, when TVM FFI is enabled, |DSL| generates a dedicated wrapper function on top of the underlying CuTe ABI. This wrapper adheres to the calling conventions defined by TVM FFI.
 In contrast, the CuTe ABI entry function is specified directly in the generated header file, which affects how arguments must be provided.

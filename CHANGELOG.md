@@ -2,8 +2,28 @@
 
 # CUTLASS 4.x
 
+## [4.6.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.2) (2026-08-03)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Reverted the TMA bulk copy elect_one change from 4.6.0 to reset the behavior to align with 4.5.x releases
+  - Fixed a vectorized fp32->f8 conversion issue ([!3382](https://github.com/NVIDIA/cutlass/issues/3382))
+  - Fixed a CuTe DSL fp8 grouped_gemm_dglu kernel compilation issue  ([!397](https://github.com/NVIDIA/cudnn-frontend/issues/397))
+  - Fixed opt-level setting issue for ptxas ([!3389](https://github.com/NVIDIA/cutlass/issues/3389))
+  - set_name_prefix of kernel now supports full customization on compiled kernel name ([!3389](https://github.com/NVIDIA/cutlass/issues/3389))
+  - Fixed issue in ([!3349](https://github.com/NVIDIA/cutlass/issues/3349))
+  - Fixed issue in ([!3351](https://github.com/NVIDIA/cutlass/issues/3351))
+  - Reduced JIT compile overhead by ~50 ms per cute.compile
+  - Speed up importing cutlass.cute by 3.8x with Torch installed, 1.25x without.
+
+This release has been tested against the following packages:
+  - FlashAttention: [main (00756db)](https://github.com/Dao-AILab/flash-attention/commit/00756db9d921da0846453283ddfbeb7457abd09b)
+  - Quack: [main (79517ae)](https://github.com/Dao-AILab/quack/commit/79517ae3063946fc2bb26a41bd45ee550e85cb26)
+  - FlashInfer: [main (766f94b)](https://github.com/flashinfer-ai/flashinfer/commit/766f94b8cdeefc31ffede247683b2389c2667b3b)
+
 ## [4.6.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.1) (2026-07-13)
 
+### CuTe DSL
 * Bug fixing and improvements
   - Fixed following issues:
     - https://github.com/NVIDIA/cutlass/issues/3243
