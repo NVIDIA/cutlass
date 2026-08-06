@@ -268,6 +268,12 @@ struct CollectiveMma<
   using SmemLayoutAtomE  = ComposedLayout<Swizzle<0,4,3>,
                                           smem_sparse_ptr_flag_bits<TensorEMmaSparsity, sizeof_bits_v<ElementE>>,
                                           SmemLayoutAtomE_>;
+
+  static_assert(rank(SmemLayoutAtomE{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
+  static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomE{})) == 0, "SmemLayoutAtomE must evenly divide tile shape.");
+  static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomE{})) == 0,
+                "TileShape_K must be a multiple of the metadata atom K extent (256 for nvf4 and mxf4, 128 for mxf8f6f4).");
+
   using SmemLayoutE = decltype(tile_to_shape(
                   SmemLayoutAtomE{},
                   make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::StagesE>{}),
@@ -278,9 +284,6 @@ struct CollectiveMma<
   using TensorEAtomM = typename SparseConfig::TensorEAtomM;
   using TensorEAtomK = typename SparseConfig::TensorEAtomK;
   static constexpr bool IsELoadPred = not (TensorEAtomM{} == size<0>(TileShape{}) && TensorEAtomK{} == size<2>(TileShape{}));
-
-  static_assert(rank(SmemLayoutAtomE{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
-  static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomE{})) == 0, "SmemLayoutAtomE must evenly divide tile shape.");
 
   // Set the bytes transferred in this TMA transaction
   static constexpr uint32_t TmaTransactionBytesMK = static_cast<uint32_t>(

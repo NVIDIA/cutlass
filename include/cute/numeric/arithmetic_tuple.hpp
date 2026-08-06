@@ -369,7 +369,13 @@ CUTE_HOST_DEVICE constexpr
 auto
 operator==(ScaledBasis<T,Ns...> const& t, ScaledBasis<U,Ms...> const& u) {
   if constexpr (sizeof...(Ns) == sizeof...(Ms)) {
-    return bool_constant<((Ns == Ms) && ...)>{} && t.value() == u.value();
+    // Values of different bases need not be comparable types, so only form the value
+    // comparison when the bases match.
+    if constexpr (((Ns == Ms) && ...)) {
+      return bool_constant<true>{} && t.value() == u.value();
+    } else {
+      return false_type{};
+    }
   } else {
     return false_type{};
   }
