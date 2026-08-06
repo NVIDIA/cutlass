@@ -406,23 +406,21 @@ public:
       ///< initial value of accumulator
       FragmentC const &src_accum,
       cutlass::TensorRef<ElementScale, LayoutScale> scaleA,
-      cutlass::TensorRef<ElementScale, LayoutScale> scaleB) {
-    // Each scale element corresponds to a 128x128 tile along (M, K) for A and
-    // (N, K) for B. Grid dimension  X enumerates threadblock tiles along M and
-    // grid dimension Y along N when GemmIdentityThreadblockSwizzle is used with
-    // the default N = 1 (tile = 1). Therefore,
-    //   blockIdx.x -> tile index along the M dimension
-    //   blockIdx.y -> tile index along the N dimension.
+      cutlass::TensorRef<ElementScale, LayoutScale> scaleB,
+      ///< logical threadblock tile index along M after swizzling
+      int threadblock_tile_m,
+      ///< logical threadblock tile index along N after swizzling
+      int threadblock_tile_n) {
 
     constexpr int kScaleBlock = 128;
     // Row-wise block index for A (and output C/D) – one per 128 rows.
-    int block_m_idx = (blockIdx.x * Shape::kM) / kScaleBlock;
+    int block_m_idx = (threadblock_tile_m * Shape::kM) / kScaleBlock;
 
     // Column-wise block index for B – one per 128 columns.  Note that each
     // threadblock processes Shape::kN columns, which may be < 128 (64 in this
     // kernel).  We therefore map two consecutive threadblock tiles onto the
     // same 128-wide scale block when Shape::kN < kScaleBlock.
-    int block_n_idx = (blockIdx.y * Shape::kN) / kScaleBlock;
+    int block_n_idx = (threadblock_tile_n * Shape::kN) / kScaleBlock;
 
     // Prologue (start fetching iterations of global fragments into shared
     // memory)
