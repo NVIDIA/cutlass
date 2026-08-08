@@ -815,29 +815,30 @@ public:
     if(high_storage_unit_idx_ != low_storage_unit_idx_){
       /// Only need update 2 storage unit at once.
       /// consider misaligned address issue, we need to do atomicCAS twice 
-      StorageUnit original_low_bits, original_high_bits, update_low_bits, update_high_bits;
+      StorageUnit assumed;
+      StorageUnit original = ((*ptr_)[low_storage_unit_idx_]);
       do {
-        original_low_bits  = ((*ptr_)[low_storage_unit_idx_]);
-        update_low_bits  = (original_low_bits & kLowUpdateMask) | low_new_bits;
-        original_low_bits = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), original_low_bits, update_low_bits);
-      } while (update_low_bits != original_low_bits);
+        assumed = original;
+        StorageUnit updated = StorageUnit((assumed & kLowUpdateMask) | low_new_bits);
+        original = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), assumed, updated);
+      } while (original != assumed);
+
+      original = ((*ptr_)[high_storage_unit_idx_]);
       do {
-        original_high_bits = ((*ptr_)[high_storage_unit_idx_]);
-        update_high_bits  = (original_high_bits & kHighUpdateMask) | high_new_bits;
-        original_high_bits = atomicCAS(&((*ptr_)[high_storage_unit_idx_]), original_high_bits, update_high_bits);
-      } while (update_high_bits != original_high_bits);
+        assumed = original;
+        StorageUnit updated = StorageUnit((assumed & kHighUpdateMask) | high_new_bits);
+        original = atomicCAS(&((*ptr_)[high_storage_unit_idx_]), assumed, updated);
+      } while (original != assumed);
     }
     else {
       /// Only need update 1 storage unit.
-      StorageUnit original, updated;
+      StorageUnit assumed;
+      StorageUnit original = ((*ptr_)[low_storage_unit_idx_]);
       do {
-        original = ((*ptr_)[low_storage_unit_idx_]);
-
-        updated = (original & kLowUpdateMask) | low_new_bits;
-
-        original = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), original, updated);
-
-      } while (updated != original);
+        assumed = original;
+        StorageUnit updated = StorageUnit((assumed & kLowUpdateMask) | low_new_bits);
+        original = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), assumed, updated);
+      } while (original != assumed);
     }
 #else
 
