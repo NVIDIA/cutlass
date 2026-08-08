@@ -333,7 +333,7 @@ int main() {
     &run_fused_gemm_s8_sm80_rf_res_batch
   };
 
-  return testRun(80, funcs, "gemm int8 RF residency");
+  return testRun(getDefaultSmArch(), funcs, "gemm int8 RF residency");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
