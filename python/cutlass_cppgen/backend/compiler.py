@@ -124,12 +124,21 @@ def convertToBinaryData(filename):
 
 
 def CDLLBin(host_binary):
-    tempfile.tempdir = "./"
     temp_so = tempfile.NamedTemporaryFile(prefix="host_func", suffix=".so", delete=True)
     with open(temp_so.name, "wb") as file:
         file.write(host_binary)
     host_lib = ctypes.CDLL(temp_so.name)
     return host_lib
+
+
+def _connect_cache():
+    connection = sqlite3.connect(CACHE_FILE)
+    try:
+        os.chmod(CACHE_FILE, 0o600)
+    except OSError:
+        # Some platforms do not support POSIX permission bits.
+        pass
+    return connection
 
 
 class ArtifactManager:
@@ -138,7 +147,7 @@ class ArtifactManager:
     """
 
     def __init__(self) -> None:
-        connection = sqlite3.connect(CACHE_FILE)
+        connection = _connect_cache()
         cursor = connection.cursor()
         # Create the table if it does not already exist
         sqlite_create_table_query = """
@@ -171,7 +180,7 @@ class ArtifactManager:
         self.default_compile_options = self._nvcc_compile_options
 
     def insert_operation(self, op_key, cubin, hostfile, op_name, op_attrs):
-        connection = sqlite3.connect(CACHE_FILE)
+        connection = _connect_cache()
         cursor = connection.cursor()
         sqlite_insert_blob_query = """ INSERT OR IGNORE INTO compiled_operations (op_key, cubin, hostbin, op_name, op_attrs) VALUES (?, ?, ?, ?, ?)"""
 
@@ -184,7 +193,7 @@ class ArtifactManager:
         cursor.close()
 
     def load_operation(self, op_key, extra_funcs):
-        connection = sqlite3.connect(CACHE_FILE)
+        connection = _connect_cache()
         cursor = connection.cursor()
         sqlite_fetch_blob_query = """SELECT * from compiled_operations where op_key = ?"""
         cursor.execute(sqlite_fetch_blob_query, (op_key,))
@@ -308,7 +317,6 @@ class ArtifactManager:
 
         else:  # with nvcc backend
             # emit code
-            tempfile.tempdir = "./"
             temp_cu = tempfile.NamedTemporaryFile(
                 prefix="kernel", suffix=".cu", delete=True)
             temp_cubin = tempfile.NamedTemporaryFile(
@@ -331,7 +339,6 @@ class ArtifactManager:
             with open(temp_cubin.name, "rb") as file:
                 cubin_image = file.read()
 
-        tempfile.tempdir = "./"
         temp_src = tempfile.NamedTemporaryFile(
             prefix="host_src", suffix=".cu", delete=True)
 
