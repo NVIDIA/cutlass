@@ -124,11 +124,10 @@ def convertToBinaryData(filename):
 
 
 def CDLLBin(host_binary):
-    temp_so = tempfile.NamedTemporaryFile(prefix="host_func", suffix=".so", delete=True)
-    with open(temp_so.name, "wb") as file:
-        file.write(host_binary)
-    host_lib = ctypes.CDLL(temp_so.name)
-    return host_lib
+    with tempfile.NamedTemporaryFile(prefix="host_func", suffix=".so", delete=True) as temp_so:
+        with open(temp_so.name, "wb") as file:
+            file.write(host_binary)
+        return ctypes.CDLL(temp_so.name)
 
 
 def _connect_cache():
@@ -160,6 +159,7 @@ class ArtifactManager:
         cursor.execute(sqlite_create_table_query)
         connection.commit()
         cursor.close()
+        connection.close()
 
         self._nvrtc_compile_options = ["-std=c++17", "-default-device"]
         self._nvcc_compile_options = [
@@ -191,6 +191,7 @@ class ArtifactManager:
         cursor.execute(sqlite_insert_blob_query, data_tuple)
         connection.commit()
         cursor.close()
+        connection.close()
 
     def load_operation(self, op_key, extra_funcs):
         connection = _connect_cache()
@@ -199,6 +200,8 @@ class ArtifactManager:
         cursor.execute(sqlite_fetch_blob_query, (op_key,))
         record = cursor.fetchall()
         if len(record) == 0:
+            cursor.close()
+            connection.close()
             return False
         for row in record:
             key, cubin_image, host_binary, operation_name, op_attr = row
@@ -234,6 +237,8 @@ class ArtifactManager:
                     compiled_host_fns[attr] = func
 
             self.compiled_cache_host[key] = compiled_host_fns
+        cursor.close()
+        connection.close()
         return True
 
     def emit_compile_(self, operation_list, compilation_options, host_compilation_options):
