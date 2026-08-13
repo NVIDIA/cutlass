@@ -445,41 +445,60 @@ class BlackwellFusedMultiHeadAttentionForward:
         d = cute.assume(Int32(d), align)
         dv = cute.assume(Int32(dv), align)
 
-        stride_b_q = h_r * h_k * s_q * d if cum_seqlen_q is None else 0
-        stride_b_o = h_r * h_k * s_q * dv if cum_seqlen_q is None else 0
-        stride_b_k = h_k * s_k * d if cum_seqlen_k is None else 0
-        stride_b_v = h_k * s_v * dv if cum_seqlen_k is None else 0
-        stride_b_lse = h_r * h_k * s_lse if cum_seqlen_q is None else 0
+        stride_b_q = q_tensor.stride[0] if cum_seqlen_q is None else 0
+        stride_b_o = o_tensor.stride[0] if cum_seqlen_q is None else 0
+        stride_b_k = k_tensor.stride[0] if cum_seqlen_k is None else 0
+        stride_b_v = v_tensor.stride[0] if cum_seqlen_k is None else 0
 
         # (b, s_q, h_k, h_r, d) -> (s_q, d, ((h_r, h_k), b))
         q_layout = cute.make_layout(
             (s_q, d, ((h_r, h_k), b)),
-            stride=(d * h_r * h_k, 1, ((d, d * h_r), stride_b_q)),
+            stride=(
+                q_tensor.stride[1],
+                q_tensor.stride[4],
+                ((q_tensor.stride[3], q_tensor.stride[2]), stride_b_q),
+            ),
         )
         q = cute.make_tensor(q_tensor.iterator, q_layout)
         # (b, s_k, h_k, 1, d) -> (s_k, d, ((h_r, h_k), b)), 0-stride for h_r to broadcast
         k_layout = cute.make_layout(
             (s_k, d, ((h_r, h_k), b)),
-            stride=(d * h_k, 1, ((0, d), stride_b_k)),
+            stride=(
+                k_tensor.stride[1],
+                k_tensor.stride[4],
+                ((0, k_tensor.stride[2]), stride_b_k),
+            ),
         )
         k = cute.make_tensor(k_tensor.iterator, k_layout)
         # (b, s_v, h_k, 1, dv) -> (dv, s_v, ((h_r, h_k), b)), 0-stride for h_r to broadcast
         v_layout = cute.make_layout(
             (dv, s_v, ((h_r, h_k), b)),
-            stride=(1, dv * h_k, ((0, dv), stride_b_v)),
+            stride=(
+                v_tensor.stride[4],
+                v_tensor.stride[1],
+                ((0, v_tensor.stride[2]), stride_b_v),
+            ),
         )
         v = cute.make_tensor(v_tensor.iterator, v_layout)
         # (b, s_q, h_k, h_r, dv) -> (s_q, dv, ((h_r, h_k), b))
         o_layout = cute.make_layout(
             (s_q, dv, ((h_r, h_k), b)),
-            stride=(dv * h_r * h_k, 1, ((dv, dv * h_r), stride_b_o)),
+            stride=(
+                o_tensor.stride[1],
+                o_tensor.stride[4],
+                ((o_tensor.stride[3], o_tensor.stride[2]), stride_b_o),
+            ),
         )
         o = cute.make_tensor(o_tensor.iterator, o_layout)
         if cutlass.const_expr(lse_tensor is not None):
             # (s, ((h_r, h_k), b)) - head stride=1 to match FlashInfer (total_q, h_q) convention
+            stride_b_lse = lse_tensor.stride[0] if cum_seqlen_q is None else 0
             lse_layout = cute.make_layout(
                 (s_lse, ((h_r, h_k), b)),
-                stride=(h_r * h_k, ((1, h_r), stride_b_lse)),
+                stride=(
+                    lse_tensor.stride[1],
+                    ((lse_tensor.stride[3], lse_tensor.stride[2]), stride_b_lse),
+                ),
             )
             lse = cute.make_tensor(lse_tensor.iterator, lse_layout)
         else:
@@ -3611,7 +3630,7 @@ def run(
     # Tensor shapes: 5D for q/k/v/o, 4D for lse
     # q/o: (b, s_q, h_k, h_r, d/dv)
     # k/v: (b, s_k, h_k, 1, d/dv)
-    # lse: (b, h_k, h_r, s_q)
+    # lse: (b, s_q, h_k, h_r)
     qo_shape = (b, s_q, h_k, h_r, d)
     o_shape = (b, s_q, h_k, h_r, dv)
     kv_shape = (b, s_k, h_k, 1, d)
