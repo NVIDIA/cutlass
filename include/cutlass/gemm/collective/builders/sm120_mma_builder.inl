@@ -110,6 +110,15 @@ struct CollectiveBuilder<
     Tile<PermTileM, PermTileN, _32>{}
   ));
 
+  // The mainloop steps the TiledMma across the CTA tile with a ceiling division. A mode that
+  // does not divide makes the mainloop read past the shared memory tile.
+  static_assert(size<0>(TileShape_MNK{}) % size<0>(cute::tile_shape(TiledMma{})) == 0,
+                "TileShape M must be a multiple of the TiledMma tile shape along M.");
+  static_assert(size<1>(TileShape_MNK{}) % size<1>(cute::tile_shape(TiledMma{})) == 0,
+                "TileShape N must be a multiple of the TiledMma tile shape along N.");
+  static_assert(size<2>(TileShape_MNK{}) % size<2>(cute::tile_shape(TiledMma{})) == 0,
+                "TileShape K must be a multiple of the TiledMma tile shape along K.");
+
   // DType check
   static constexpr bool UseF8f6f4 = detail::is_sm120_f8f6f4<TiledMma, ElementA, ElementB>();
   static_assert(UseF8f6f4, "Non-blockscaled collective builder only supports F8F6F4 MMA.\n");
