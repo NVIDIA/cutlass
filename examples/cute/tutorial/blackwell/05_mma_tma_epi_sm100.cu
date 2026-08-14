@@ -256,6 +256,9 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   using TmemAllocator = cute::TMEM::Allocator2Sm;
   TmemAllocator tmem_allocator{};
 
+  // Make sure all CTAs in Cluster are alive. 2SM mode TMEM alloc requires the leader and peer CTA have both
+  // been launched. We need this explicit cluster sync here to guarantee that.
+  cute::cluster_sync();
   if (elect_one_warp) {
     tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
   }
