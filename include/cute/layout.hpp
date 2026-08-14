@@ -1070,14 +1070,31 @@ composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_st
                    [[maybe_unused]] auto curr_stride = get<curr_i>(lhs_stride);
 
                    // Strong divisibility condition -- requires composition to be statically verifiable.
-                   //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                   // Composition C = A o B is well defined for the current mode iff B's stride is either
+                   //   (a) a multiple of the mode's shape  ((rest_stride % curr_shape) == 0), so the mode is skipped entirely, or
+                   //   (b) a divisor of the mode's shape   ((curr_shape % rest_stride) == 0), so the mode is partially traversed by an integral number of strides.
+                   //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or ((curr_shape % rest_stride) == Int<0>{}), "Stride Divisibility Condition");
 
-                   // Weak divisibility condition -- verify the divisibility condition whenever possible
-                   if constexpr (is_static<decltype(curr_shape)>::value and is_static<decltype(rest_stride)>::value) {
-                     CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                   // Composition C = A o B is well defined for the current mode iff at least one of:
+                   //   (a) rest_stride is a multiple of curr_shape  ((rest_stride % curr_shape) == 0):
+                   //         the mode is skipped entirely.
+                   //   (b) curr_shape is a multiple of rest_stride  ((curr_shape % rest_stride) == 0):
+                   //         the mode is partially traversed by an integral number of strides.
+                   //   (c) every point in B's image stays inside the current mode:
+                   //         (rest_shape - 1) * rest_stride < curr_shape.
+                   //         Higher modes are unreachable and cannot perturb the result;
+                   //         this is the §3.3.3 "apparent violation" pattern resolved by truncation.
+                   if constexpr (is_static<decltype(curr_shape)>::value and
+                                 is_static<decltype(rest_stride)>::value and
+                                 is_static<decltype(rest_shape)>::value) {
+                     CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or
+                                          ((curr_shape % rest_stride) == Int<0>{}) or
+                                          (((rest_shape - Int<1>{}) * rest_stride) < curr_shape),
+                                          "Stride Divisibility Condition");
                    } else {
                      // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
-                     //assert((((rest_stride % curr_shape) == 0) or (rest_stride < curr_shape)) && "Stride Divisibility Condition");
+                     //assert((((rest_stride % curr_shape) == 0) or ((curr_shape % rest_stride) == 0) or
+                     //       (((rest_shape - 1) * rest_stride) < curr_shape)) and "Stride Divisibility Condition");
                    }
 
                    // next_shape:  ceil(exclusive_prefix_product<r>(lhs_shape) / rhs_stride)
