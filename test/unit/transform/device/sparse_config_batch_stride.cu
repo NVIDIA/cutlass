@@ -59,7 +59,7 @@ TEST(Sparse_Config, sm90_batch_stride_wider_than_32_bits) {
   using Config = cutlass::Sm90GemmSparseConfig<ElementAMma, cute::GMMA::Major::K,
                                                ElementEMma, cute::Int<64>>;
 
-  check_batch_stride<Config>(49152, 65536, 3221225472LL, 3221225472LL);
+  check_batch_stride<Config>(49153, 65537, 3222863904LL, 3228569600LL);
   check_batch_stride<Config>(65536, 65536, 4294967296LL, 4294967296LL);
 }
 
@@ -69,7 +69,7 @@ TEST(Sparse_Config, sm1xx_batch_stride_wider_than_32_bits) {
   using Config = cutlass::Sm1xxGemmSparseConfig<ElementAMma, cutlass::layout::RowMajor,
                                                 ElementEMma>;
 
-  check_batch_stride<Config>(49152, 65536, 3221225472LL, 3221225472LL);
+  check_batch_stride<Config>(49153, 65537, 3222863904LL, 3235921920LL);
   check_batch_stride<Config>(65536, 65536, 4294967296LL, 4294967296LL);
 }
 
