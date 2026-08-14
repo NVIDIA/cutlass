@@ -1704,6 +1704,7 @@ class CuTeDSL(CutlassBaseDSL):
         current_frame = inspect.currentframe()
         assert current_frame is not None
         frame = current_frame.f_back
+        del current_frame
         return CutlassBaseDSL._make_kernel_decorator(
             target_cls, frame, *dargs, **dkwargs
         )
@@ -2057,6 +2058,7 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         current_frame = inspect.currentframe()
         assert current_frame is not None
         frame = current_frame.f_back
+        del current_frame
         return CutlassBaseDSL._make_kernel_decorator(cls, frame, *dargs, **dkwargs)
 
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:

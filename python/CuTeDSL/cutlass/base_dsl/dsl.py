@@ -996,6 +996,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         cur_frame = inspect.currentframe()
         assert cur_frame is not None
         frame = cur_frame.f_back
+        del cur_frame
         return BaseDSL.jit_runner(cls, "_func", frame, *dargs, **dkwargs)
 
     @classmethod
@@ -1006,6 +1007,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         cur_frame = inspect.currentframe()
         assert cur_frame is not None
         frame = cur_frame.f_back
+        del cur_frame
         return BaseDSL.jit_runner(cls, "_kernel_helper", frame, *dargs, **dkwargs)
 
     @abstractmethod
