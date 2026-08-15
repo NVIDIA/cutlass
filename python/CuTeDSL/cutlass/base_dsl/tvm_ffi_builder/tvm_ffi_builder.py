@@ -2440,6 +2440,10 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
+            elif isinstance(param, spec.TupleParam):
+                stream = self.find_env_stream(param.params)
+                if stream is not None:
+                    return stream
         return None
 
     def get_expected_num_args(self, params: list[spec.Param]) -> int:
