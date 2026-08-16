@@ -37,10 +37,7 @@
 #include <cutlass/integer_subbyte.h>
 
 #if defined(__MACACC__) || defined(__MACA_ARCH__)
-#elif defined(CUTE_ENABLE_HIP)
-#elif defined(__HIPCC__)
-#elif defined(__HIP_DEVICE_COMPILE__)
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #else
 #include <cutlass/numeric_types.h>  // cutlass::float_e4m3_t, cutlass::float_e5m2_t, etc
 #endif
@@ -85,10 +82,7 @@ using cutlass::int6b_t;
 using cutlass::uint6b_t;
 
 #if defined(__MACACC__) || defined(__MACA_ARCH__)
-#elif defined(CUTE_ENABLE_HIP)
-#elif defined(__HIPCC__)
-#elif defined(__HIP_DEVICE_COMPILE__)
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #else
 //
 // Floating Point

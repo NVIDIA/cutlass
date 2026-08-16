@@ -112,55 +112,7 @@ cp_async_wait(Int<N>)
 {
   return cp_async_wait<N>();
 }
-#elif defined(CUTE_ENABLE_HIP)
-CUTE_HOST_DEVICE static void
-cp_async_fence()
-{}
-
-template <int N = 0>
-CUTE_HOST_DEVICE static void
-cp_async_wait()
-{}
-
-template <int N>
-CUTE_HOST_DEVICE static void
-cp_async_wait(Int<N>)
-{
-  return cp_async_wait<N>();
-}
-#elif defined(__HIPCC__)
-CUTE_HOST_DEVICE static void
-cp_async_fence()
-{}
-
-template <int N = 0>
-CUTE_HOST_DEVICE static void
-cp_async_wait()
-{}
-
-template <int N>
-CUTE_HOST_DEVICE static void
-cp_async_wait(Int<N>)
-{
-  return cp_async_wait<N>();
-}
-#elif defined(__HIP_DEVICE_COMPILE__)
-CUTE_HOST_DEVICE static void
-cp_async_fence()
-{}
-
-template <int N = 0>
-CUTE_HOST_DEVICE static void
-cp_async_wait()
-{}
-
-template <int N>
-CUTE_HOST_DEVICE static void
-cp_async_wait(Int<N>)
-{
-  return cp_async_wait<N>();
-}
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 CUTE_HOST_DEVICE static void
 cp_async_fence()
 {}

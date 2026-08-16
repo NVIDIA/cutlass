@@ -14,37 +14,7 @@
 #      define CUTE_HAS_MXMACA_RUNTIME 1
 #    endif
 #  endif
-#elif defined(CUTE_ENABLE_HIP)
-#  if defined(__has_include)
-#    if __has_include(<hip/hip_runtime_api.h>)
-#      include <hip/hip_runtime_api.h>
-#      define CUTE_HAS_HIP_RUNTIME 1
-#    elif __has_include(<hip/hip_runtime.h>)
-#      include <hip/hip_runtime.h>
-#      define CUTE_HAS_HIP_RUNTIME 1
-#    endif
-#  endif
-#elif defined(__HIPCC__)
-#  if defined(__has_include)
-#    if __has_include(<hip/hip_runtime_api.h>)
-#      include <hip/hip_runtime_api.h>
-#      define CUTE_HAS_HIP_RUNTIME 1
-#    elif __has_include(<hip/hip_runtime.h>)
-#      include <hip/hip_runtime.h>
-#      define CUTE_HAS_HIP_RUNTIME 1
-#    endif
-#  endif
-#elif defined(__HIP_DEVICE_COMPILE__)
-#  if defined(__has_include)
-#    if __has_include(<hip/hip_runtime_api.h>)
-#      include <hip/hip_runtime_api.h>
-#      define CUTE_HAS_HIP_RUNTIME 1
-#    elif __has_include(<hip/hip_runtime.h>)
-#      include <hip/hip_runtime.h>
-#      define CUTE_HAS_HIP_RUNTIME 1
-#    endif
-#  endif
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #  if defined(__has_include)
 #    if __has_include(<hip/hip_runtime_api.h>)
 #      include <hip/hip_runtime_api.h>

@@ -55,16 +55,7 @@
 #elif defined(__MACACC__) || defined(__MACA_ARCH__)
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
-#elif defined(CUTLASS_ENABLE_HIP)
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#elif defined(CUTE_ENABLE_HIP)
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#elif defined(__HIPCC__)
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
 #elif defined(__CUDACC_RTC__)

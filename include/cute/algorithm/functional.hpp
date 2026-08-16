@@ -34,10 +34,7 @@
 #include <cute/numeric/math.hpp>    // cute::max, cute::min
 
 #if defined(__MACACC__) || defined(__MACA_ARCH__)
-#elif defined(CUTE_ENABLE_HIP)
-#elif defined(__HIPCC__)
-#elif defined(__HIP_DEVICE_COMPILE__)
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #else
 #include <cute/numeric/complex.hpp> // cute::conj
 #endif
@@ -119,31 +116,7 @@ struct conjugate {
     return static_cast<T&&>(arg);
   }
 };
-#elif defined(CUTE_ENABLE_HIP)
-struct conjugate {
-  template <class T>
-  CUTE_HOST_DEVICE constexpr
-  decltype(auto) operator()(T&& arg) const {
-    return static_cast<T&&>(arg);
-  }
-};
-#elif defined(__HIPCC__)
-struct conjugate {
-  template <class T>
-  CUTE_HOST_DEVICE constexpr
-  decltype(auto) operator()(T&& arg) const {
-    return static_cast<T&&>(arg);
-  }
-};
-#elif defined(__HIP_DEVICE_COMPILE__)
-struct conjugate {
-  template <class T>
-  CUTE_HOST_DEVICE constexpr
-  decltype(auto) operator()(T&& arg) const {
-    return static_cast<T&&>(arg);
-  }
-};
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 struct conjugate {
   template <class T>
   CUTE_HOST_DEVICE constexpr

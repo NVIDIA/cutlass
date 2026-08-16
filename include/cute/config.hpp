@@ -38,15 +38,7 @@
 #  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
 #  define CUTE_DEVICE      __forceinline__          __device__
 #  define CUTE_HOST        __forceinline__ __host__
-#elif defined(CUTE_ENABLE_HIP)
-#  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
-#  define CUTE_DEVICE      __forceinline__          __device__
-#  define CUTE_HOST        __forceinline__ __host__
-#elif defined(__HIPCC__)
-#  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
-#  define CUTE_DEVICE      __forceinline__          __device__
-#  define CUTE_HOST        __forceinline__ __host__
-#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
 #  define CUTE_DEVICE      __forceinline__          __device__
 #  define CUTE_HOST        __forceinline__ __host__

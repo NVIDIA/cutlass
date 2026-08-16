@@ -34,13 +34,7 @@
 #include <cute/numeric/integral_constant.hpp>  // cute::integral_constant
 
 #if defined(__MACACC__) || defined(__MACA_ARCH__)
-#elif defined(CUTE_ENABLE_HIP)
-#  include <hip/hip_vector_types.h>
-#elif defined(__HIPCC__)
-#  include <hip/hip_vector_types.h>
-#elif defined(__HIP_DEVICE_COMPILE__)
-#  include <hip/hip_vector_types.h>
-#elif defined(__HIP_PLATFORM_AMD__)
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #  include <hip/hip_vector_types.h>
 #else
 #  if defined(__has_include)
