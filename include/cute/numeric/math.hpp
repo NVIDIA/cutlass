@@ -33,7 +33,14 @@
 #include <cute/config.hpp>            // CUTE_HOST_DEVICE
 #include <cute/util/type_traits.hpp>  // __CUTE_REQUIRES
 
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cutlass/fast_math.h>
+#endif
 
 namespace cute
 {
@@ -341,6 +348,12 @@ divmod(CInt0 const& a, CInt1 const& b) {
 }
 
 // Specialized function with fastDivmod input
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 template <class CInt>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -352,5 +365,6 @@ divmod(CInt const& a, cutlass::FastDivmod const& b) {
   b(div, mod, a);
   return DivModReturnType{div, mod};
 }
+#endif
 
 } // namespace cute

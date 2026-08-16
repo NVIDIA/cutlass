@@ -277,12 +277,26 @@ pretty_print(double v) {
 template <class T>
 CUTE_HOST_DEVICE void
 pretty_print(T t) {
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
   constexpr auto has_print_exmy_base = cute::is_valid([](auto t) -> decltype(pretty_print_float_exmy_base(t)) {}, t);  
   if constexpr (has_print_exmy_base) {   
   pretty_print_float_exmy_base(t);       
   } else {                               
+#endif
   printf("  "); print(t);
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
   }                                      
+#endif
 }
 
 } // end namespace cute

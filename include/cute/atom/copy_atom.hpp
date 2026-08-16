@@ -655,6 +655,12 @@ print(ThrCopy<TiledCopy, ThrIdx> const& thr_copy)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cute/atom/copy_traits_sm50.hpp>
 #include <cute/atom/copy_traits_sm75.hpp>
 #include <cute/atom/copy_traits_sm80.hpp>
@@ -685,6 +691,7 @@ print(ThrCopy<TiledCopy, ThrIdx> const& thr_copy)
 
 #if defined(CUTE_COPY_ATOM_TMA_SM100_ENABLED)
 #include <cute/atom/copy_traits_sm100_tma.hpp>
+#endif
 #endif
 
 

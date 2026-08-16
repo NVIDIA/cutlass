@@ -46,7 +46,25 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
+#if defined(__NVCC__)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(__clang__) && defined(__CUDA__)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(__MACACC__) || defined(__MACA_ARCH__)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(CUTLASS_ENABLE_HIP)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(CUTE_ENABLE_HIP)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(__HIPCC__)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(__HIP_DEVICE_COMPILE__)
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
 #elif defined(__CUDACC_RTC__)
@@ -89,9 +107,15 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
 
 #if defined(__CUDA_ARCH__)
   #if defined(_MSC_VER)
-    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); asm volatile ("brkpt;\n"); }
+    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); __brkpt(); }
   #else
-    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); asm volatile ("brkpt;\n"); }
+    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); __brkpt(); }
+  #endif
+#elif defined(__MACA_ARCH__)
+  #if defined(_MSC_VER)
+    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); __brkpt(); }
+  #else
+    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); __brkpt(); }
   #endif
 #else
   #if defined(_MSC_VER)
@@ -135,6 +159,8 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
 
 #if defined(__CUDA_ARCH__)
 #  define CUTLASS_CMATH_NAMESPACE
+#elif defined(__MACA_ARCH__)
+#  define CUTLASS_CMATH_NAMESPACE
 #else
 #  define CUTLASS_CMATH_NAMESPACE std
 #endif
@@ -162,13 +188,22 @@ namespace cutlass {
 
 // CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
 #if defined(__CUDA_ARCH__) && !defined(__INTELLISENSE__)
-  #if defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
+  #if defined(__CUDACC_RTC__)
+    #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
+    #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
+  #elif defined(__clang__) && defined(__CUDA__)
     #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
     #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
   #else
     #define CUTLASS_PRAGMA_UNROLL #pragma unroll
     #define CUTLASS_PRAGMA_NO_UNROLL #pragma unroll 1
   #endif
+
+  #define CUTLASS_GEMM_LOOP CUTLASS_PRAGMA_NO_UNROLL
+
+#elif defined(__MACA_ARCH__) && !defined(__INTELLISENSE__)
+  #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
+  #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
 
   #define CUTLASS_GEMM_LOOP CUTLASS_PRAGMA_NO_UNROLL
 

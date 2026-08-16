@@ -1,0 +1,509 @@
+/***************************************************************************************************
+ * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ **************************************************************************************************/
+
+#include <cute/platform/runtime.hpp>
+#include <cute/tensor.hpp>
+#include <cute/algorithm/copy.hpp>
+#include <cute/algorithm/gemm.hpp>
+#include <cute/arch/copy.hpp>
+
+#include <algorithm>
+#include <cassert>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+
+namespace {
+
+void
+check_maca(mcError_t error, char const* expr, char const* file, int line)
+{
+  if (error != mcSuccess) {
+    std::fprintf(stderr, "<%s:%d> %s: %s: %s\n",
+                 file, line, expr, mcGetErrorName(error), mcGetErrorString(error));
+    std::exit(1);
+  }
+}
+
+#define CUTE_MACA_CHECK(expr) check_maca((expr), #expr, __FILE__, __LINE__)
+
+template <class T>
+struct device_allocation {
+  T* ptr = nullptr;
+
+  explicit device_allocation(std::size_t count) {
+    CUTE_MACA_CHECK(mcMalloc(reinterpret_cast<void**>(&ptr), count * sizeof(T)));
+  }
+
+  ~device_allocation() {
+    if (ptr != nullptr) {
+      mcFree(ptr);
+    }
+  }
+
+  device_allocation(device_allocation const&) = delete;
+  device_allocation& operator=(device_allocation const&) = delete;
+};
+
+} // namespace
+
+template <class ProblemShape, class CtaTiler,
+          class TA, class AStride, class ASmemLayout, class AThreadLayout,
+          class TB, class BStride, class BSmemLayout, class BThreadLayout,
+          class TC, class CStride, class CSmemLayout, class CThreadLayout,
+          class Alpha, class Beta>
+__global__ static
+__launch_bounds__(decltype(size(CThreadLayout{}))::value)
+void
+gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
+            TA const* A, AStride dA, ASmemLayout sA_layout, AThreadLayout tA,
+            TB const* B, BStride dB, BSmemLayout sB_layout, BThreadLayout tB,
+            TC      * C, CStride dC, CSmemLayout          , CThreadLayout tC,
+            Alpha alpha, Beta beta)
+{
+  using namespace cute;
+
+  // Preconditions
+  CUTE_STATIC_ASSERT_V(rank(shape_MNK) == Int<3>{});                   // (M, N, K)
+  CUTE_STATIC_ASSERT_V(rank(cta_tiler) == Int<3>{});                   // (BLK_M, BLK_N, BLK_K)
+
+  static_assert(is_static<AThreadLayout>::value);
+  static_assert(is_static<BThreadLayout>::value);
+  static_assert(is_static<CThreadLayout>::value);
+
+  CUTE_STATIC_ASSERT_V(size(tA) == size(tB));                          // NumThreads
+  CUTE_STATIC_ASSERT_V(size(tC) == size(tA));                          // NumThreads
+
+  CUTE_STATIC_ASSERT_V(size<0>(cta_tiler) % size<0>(tA) == Int<0>{});  // BLK_M / THR_M
+  CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) % size<1>(tA) == Int<0>{});  // BLK_K / THR_K
+  CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) % size<0>(tB) == Int<0>{});  // BLK_N / THR_N
+  CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) % size<1>(tB) == Int<0>{});  // BLK_K / THR_K
+  CUTE_STATIC_ASSERT_V(size<0>(cta_tiler) % size<0>(tC) == Int<0>{});  // BLK_M / THR_M
+  CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) % size<1>(tC) == Int<0>{});  // BLK_N / THR_N
+
+  static_assert(is_static<ASmemLayout>::value);
+  static_assert(is_static<BSmemLayout>::value);
+  static_assert(is_static<CSmemLayout>::value);
+
+  CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));  // BLK_M
+  CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
+  CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
+  CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
+  CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
+  CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));  // BLK_K
+
+  CUTE_STATIC_ASSERT_V(congruent(select<0,2>(shape_MNK), dA));         // dA strides for shape MK
+  CUTE_STATIC_ASSERT_V(congruent(select<1,2>(shape_MNK), dB));         // dB strides for shape NK
+  CUTE_STATIC_ASSERT_V(congruent(select<0,1>(shape_MNK), dC));         // dC strides for shape MN
+
+  //
+  // Full and Tiled Tensors
+  //
+
+  // Represent the full tensors
+  Tensor mA = make_tensor(make_gmem_ptr(A), select<0,2>(shape_MNK), dA); // (M,K)
+  Tensor mB = make_tensor(make_gmem_ptr(B), select<1,2>(shape_MNK), dB); // (N,K)
+  Tensor mC = make_tensor(make_gmem_ptr(C), select<0,1>(shape_MNK), dC); // (M,N)
+
+  // Get the appropriate blocks for this thread block
+  auto cta_coord = make_coord(blockIdx.x, blockIdx.y, _);
+  Tensor gA = local_tile(mA, cta_tiler, cta_coord, Step<_1, X,_1>{});  // (BLK_M,BLK_K,k)
+  Tensor gB = local_tile(mB, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (BLK_N,BLK_K,k)
+  Tensor gC = local_tile(mC, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (BLK_M,BLK_N)
+
+  // Shared memory buffers
+  __shared__ TA smemA[cosize_v<ASmemLayout>];
+  __shared__ TB smemB[cosize_v<BSmemLayout>];
+  Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);            // (BLK_M,BLK_K)
+  Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);            // (BLK_N,BLK_K)
+
+  //
+  // Partition the copying of A and B tiles across the threads
+  //
+
+  // TUTORIAL: Example of simple raked partitioning of ThreadLayouts tA|tB over data A|B tiles
+
+  Tensor tAgA = local_partition(gA, tA, threadIdx.x);                  // (THR_M,THR_K,k)
+  Tensor tAsA = local_partition(sA, tA, threadIdx.x);                  // (THR_M,THR_K)
+
+  Tensor tBgB = local_partition(gB, tB, threadIdx.x);                  // (THR_N,THR_K,k)
+  Tensor tBsB = local_partition(sB, tB, threadIdx.x);                  // (THR_N,THR_K)
+
+  CUTE_STATIC_ASSERT_V(size<0>(tAgA) == size<0>(tAsA));                // THR_M
+  CUTE_STATIC_ASSERT_V(size<1>(tAgA) == size<1>(tAsA));                // THR_K
+  CUTE_STATIC_ASSERT_V(size<0>(tBgB) == size<0>(tBsB));                // THR_N
+  CUTE_STATIC_ASSERT_V(size<1>(tBgB) == size<1>(tBsB));                // THR_K
+
+  //
+  // Define A/B partitioning and C accumulators
+  //
+
+  // TUTORIAL: Example of partitioning via projections of a ThreadLayout tC
+
+  // Partition sA (BLK_M, BLK_K) by the rows of tC
+  Tensor tCsA = local_partition(sA, tC, threadIdx.x, Step<_1, X>{});   // (THR_M,BLK_K)
+  // Partition sB (BLK_N, BLK_K) by the cols of tC
+  Tensor tCsB = local_partition(sB, tC, threadIdx.x, Step< X,_1>{});   // (THR_N,BLK_K)
+  // Partition gC (M,N) by the tile of tC
+  Tensor tCgC = local_partition(gC, tC, threadIdx.x, Step<_1,_1>{});   // (THR_M,THR_N)
+
+  // Allocate the accumulators -- same shape/layout as the partitioned data
+  Tensor tCrC = make_tensor_like(tCgC);                                // (THR_M,THR_N)
+
+  CUTE_STATIC_ASSERT_V(size<0>(tCrC) == size<0>(tCgC));                // THR_M
+  CUTE_STATIC_ASSERT_V(size<0>(tCrC) == size<0>(tCsA));                // THR_M
+  CUTE_STATIC_ASSERT_V(size<1>(tCrC) == size<1>(tCgC));                // THR_N
+  CUTE_STATIC_ASSERT_V(size<1>(tCrC) == size<0>(tCsB));                // THR_N
+  CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCsB));                // BLK_K
+
+  // Clear the accumulators
+  clear(tCrC);
+
+#if 0
+  if(thread0()) {
+    print("  mA : "); print(  mA); print("\n");
+    print("  gA : "); print(  gA); print("\n");
+    print("  sA : "); print(  sA); print("\n");
+    print("tAgA : "); print(tAgA); print("\n");
+    print("tAsA : "); print(tAsA); print("\n");
+  }
+#endif
+
+#if 0
+  if(thread0()) {
+    print("  mB : "); print(  mB); print("\n");
+    print("  gB : "); print(  gB); print("\n");
+    print("  sB : "); print(  sB); print("\n");
+    print("tBgB : "); print(tBgB); print("\n");
+    print("tBsB : "); print(tBsB); print("\n");
+  }
+#endif
+
+#if 0
+  if(thread0()) {
+    print("  mC : "); print(  mC); print("\n");
+    print("  gC : "); print(  gC); print("\n");
+    print("tCsA : "); print(tCsA); print("\n");
+    print("tCsB : "); print(tCsB); print("\n");
+    print("tCgC : "); print(tCgC); print("\n");
+    print("tCrC : "); print(tCrC); print("\n");
+  }
+#endif
+
+#if 1
+
+  // TUTORIAL: Example of a simple mainloop that read tiles of data into shared memory,
+  //           and then computes on those tiles.
+  //   copy(.) operates on the global and shared memory via the tA|tB partitioning
+  //   gemm(.) operates on the shared and register memory via the tC partitioning
+
+  auto K_TILE_MAX = size<2>(tAgA);
+
+  for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
+  {
+    // Copy gmem to smem with tA|tB thread-partitioned tensors
+    copy(tAgA(_,_,k_tile), tAsA);      // A   (THR_M,THR_K) -> (THR_M,THR_K)
+    copy(tBgB(_,_,k_tile), tBsB);      // B   (THR_N,THR_K) -> (THR_N,THR_K)
+
+    // TUTORIAL: The above call to copy(tAgA(_,_,k_tile), tAsA) is equivalent to
+    //   Tensor tAgAk = tAgA(_,_,k_tile);
+    //   CUTE_UNROLL
+    //   for (int i = 0; i < size(tAsA); ++i) {
+    //     tAsA(i) = tAgAk(i);
+    //   }
+
+    cp_async_fence();        // Label the end of (potential) cp.async instructions
+    cp_async_wait<0>();      // Sync on all (potential) cp.async instructions
+    __syncthreads();         // Wait for all threads to write to smem
+
+    // Compute gemm on tC thread-partitioned smem
+    gemm(tCsA, tCsB, tCrC);            // (THR_M,THR_N) += (THR_M,BLK_K) * (THR_N,BLK_K)
+
+    // TUTORIAL: The above call to gemm(tCsA, tCsB, tCrC) is equivalent to
+    //   CUTE_UNROLL
+    //   for (int k = 0; k < size<1>(tCsA); ++k) {
+    //     CUTE_UNROLL
+    //     for (int m = 0; m < size<0>(tCrC); ++m) {
+    //       CUTE_UNROLL
+    //       for (int n = 0; n < size<1>(tCrC); ++n) {
+    //         tCrC(m,n) += tCsA(m,k) * tCsB(n,k);
+    //       }
+    //     }
+    //   }
+
+    __syncthreads();         // Wait for all threads to read from smem
+  }
+
+#endif
+
+  //
+  // Epilogue
+  //
+
+  axpby(alpha, tCrC, beta, tCgC);
+
+  // TUTORIAL: The above call to axpby(alpha, tCrC, beta, tCgC) is equivalent to
+  //   CUTE_UNROLL
+  //   for (int i = 0; i < size(tCrC); ++i) {
+  //     tCgC(i) = alpha * tCrC(i) + beta * tCgC(i);
+  //   }
+}
+
+// Setup params for an NT GEMM
+// Use m-major smem sA, n-major smem sB, and mn-major threads tA|tB
+template <class TA, class TB, class TC,
+          class Alpha, class Beta>
+void
+gemm_nt(int m, int n, int k,
+        Alpha alpha,
+        TA const* A, int ldA,
+        TB const* B, int ldB,
+        Beta beta,
+        TC      * C, int ldC)
+{
+  using namespace cute;
+
+  auto M = int(m);
+  auto N = int(n);
+  auto K = int(k);
+  auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
+
+  auto dA = make_stride(Int<1>{}, ldA);                      // (dM, dK)
+  auto dB = make_stride(Int<1>{}, ldB);                      // (dN, dK)
+  auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
+
+  auto bM = Int<128>{};
+  auto bN = Int<128>{};
+  auto bK = Int<  8>{};
+  auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+
+  auto sA = make_layout(make_shape(bM, bK));                 // (m,k) -> smem_idx; m-major
+  auto sB = make_layout(make_shape(bN, bK));                 // (n,k) -> smem_idx; n-major
+  auto sC = make_layout(make_shape(bM, bN));                 // (m,n) -> smem_idx; m-major
+
+  auto tA = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (m,k) -> thr_idx
+  auto tB = make_layout(make_shape(Int<32>{}, Int< 8>{}));   // (n,k) -> thr_idx
+  auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));   // (m,n) -> thr_idx
+
+  dim3 dimBlock(size(tC));
+  dim3 dimGrid(size(ceil_div(M, bM)),
+               size(ceil_div(N, bN)));
+  gemm_device<<<dimGrid, dimBlock>>>
+      (prob_shape, cta_tiler,
+       A, dA, sA, tA,
+       B, dB, sB, tB,
+       C, dC, sC, tC,
+       alpha, beta);
+}
+
+template <class TA, class TB, class TC,
+          class Alpha, class Beta>
+void
+gemm(char transA, char transB, int m, int n, int k,
+     Alpha alpha,
+     TA const* A, int ldA,
+     TB const* B, int ldB,
+     Beta beta,
+     TC      * C, int ldC)
+{
+  if (transA == 'N' && transB == 'T') {
+    return gemm_nt(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC);
+  }
+
+  assert(false && "Only NT GEMM is implemented for the MACA sgemm_1 example");
+}
+
+namespace {
+
+float
+init_a(int m, int k)
+{
+  int value = ((m * 13 + k * 7) % 17) - 8;
+  return float(value) * 0.125f;
+}
+
+float
+init_b(int n, int k)
+{
+  int value = ((n * 5 - k * 11) % 19) - 9;
+  return float(value) * 0.0625f;
+}
+
+float
+init_c(int m, int n)
+{
+  int value = ((m * 3 + n * 2) % 11) - 5;
+  return float(value) * 0.03125f;
+}
+
+void
+reference_nt(int m, int n, int k,
+             float alpha,
+             std::vector<float> const& A, int ldA,
+             std::vector<float> const& B, int ldB,
+             float beta,
+             std::vector<float> const& C_in,
+             std::vector<float>& C_ref, int ldC)
+{
+  for (int col = 0; col < n; ++col) {
+    for (int row = 0; row < m; ++row) {
+      float accum = 0.0f;
+      for (int kk = 0; kk < k; ++kk) {
+        accum += A[row + kk * ldA] * B[col + kk * ldB];
+      }
+      C_ref[row + col * ldC] = alpha * accum + beta * C_in[row + col * ldC];
+    }
+  }
+}
+
+} // namespace
+
+int
+main(int argc, char** argv)
+{
+  int m = 128;
+  int n = 128;
+  int k = 8;
+  char transA = 'N';
+  char transB = 'T';
+  int timing_iterations = 100;
+  bool check_result = true;
+
+  if (argc >= 2) { m = std::atoi(argv[1]); }
+  if (argc >= 3) { n = std::atoi(argv[2]); }
+  if (argc >= 4) { k = std::atoi(argv[3]); }
+  if (argc >= 5) { transA = argv[4][0]; }
+  if (argc >= 6) { transB = argv[5][0]; }
+  if (argc >= 7) { timing_iterations = std::max(1, std::atoi(argv[6])); }
+  if (argc >= 8) { check_result = std::atoi(argv[7]) != 0; }
+
+  if (transA != 'N' || transB != 'T') {
+    std::fprintf(stderr, "This MACA sgemm_1 example currently implements only transA=N transB=T.\n");
+    return 2;
+  }
+
+  if ((m % 128) != 0 || (n % 128) != 0 || (k % 8) != 0) {
+    std::fprintf(stderr, "This default sgemm_1 NT check expects M,N multiples of 128 and K multiple of 8.\n");
+    return 2;
+  }
+
+  CUTE_MACA_CHECK(mcSetDevice(0));
+
+  int ldA = m;
+  int ldB = n;
+  int ldC = m;
+  float alpha = 1.25f;
+  float beta = 0.5f;
+
+  std::printf("M = %d\n", m);
+  std::printf("N = %d\n", n);
+  std::printf("K = %d\n", k);
+  std::printf("C = A^%c B^%c\n", transA, transB);
+  std::printf("alpha=%g beta=%g\n", double(alpha), double(beta));
+  std::printf("result_check=%s\n", check_result ? "enabled" : "disabled");
+  std::fflush(stdout);
+
+  std::vector<float> h_A(std::size_t(ldA) * std::size_t(k));
+  std::vector<float> h_B(std::size_t(ldB) * std::size_t(k));
+  std::vector<float> h_C(std::size_t(ldC) * std::size_t(n));
+  std::vector<float> h_C_initial(h_C.size());
+  std::vector<float> h_C_reference(h_C.size());
+
+  for (int kk = 0; kk < k; ++kk) {
+    for (int row = 0; row < m; ++row) {
+      h_A[row + kk * ldA] = init_a(row, kk);
+    }
+    for (int col = 0; col < n; ++col) {
+      h_B[col + kk * ldB] = init_b(col, kk);
+    }
+  }
+
+  for (int col = 0; col < n; ++col) {
+    for (int row = 0; row < m; ++row) {
+      h_C[row + col * ldC] = init_c(row, col);
+    }
+  }
+
+  h_C_initial = h_C;
+  if (check_result) {
+    std::printf("Computing CPU reference...\n");
+    std::fflush(stdout);
+    reference_nt(m, n, k, alpha, h_A, ldA, h_B, ldB, beta, h_C_initial, h_C_reference, ldC);
+  }
+
+  device_allocation<float> d_A(h_A.size());
+  device_allocation<float> d_B(h_B.size());
+  device_allocation<float> d_C(h_C.size());
+
+  CUTE_MACA_CHECK(mcMemcpy(d_A.ptr, h_A.data(), h_A.size() * sizeof(float), mcMemcpyHostToDevice));
+  CUTE_MACA_CHECK(mcMemcpy(d_B.ptr, h_B.data(), h_B.size() * sizeof(float), mcMemcpyHostToDevice));
+  CUTE_MACA_CHECK(mcMemcpy(d_C.ptr, h_C.data(), h_C.size() * sizeof(float), mcMemcpyHostToDevice));
+
+  gemm(transA, transB, m, n, k,
+       alpha, d_A.ptr, ldA,
+       d_B.ptr, ldB,
+       beta, d_C.ptr, ldC);
+
+  CUTE_MACA_CHECK(mcPeekAtLastError());
+  CUTE_MACA_CHECK(mcDeviceSynchronize());
+
+  float max_abs_error = 0.0f;
+  float max_rel_error = 0.0f;
+  int max_index = 0;
+  bool passed = true;
+
+  if (check_result) {
+    CUTE_MACA_CHECK(mcMemcpy(h_C.data(), d_C.ptr, h_C.size() * sizeof(float), mcMemcpyDeviceToHost));
+
+    for (std::size_t i = 0; i < h_C.size(); ++i) {
+      float abs_error = std::abs(h_C[i] - h_C_reference[i]);
+      float rel_error = abs_error / std::max(1.0f, std::abs(h_C_reference[i]));
+      if (abs_error > max_abs_error) {
+        max_abs_error = abs_error;
+        max_index = int(i);
+      }
+      max_rel_error = std::max(max_rel_error, rel_error);
+    }
+
+    float tolerance = 1.0e-4f * std::max(1, k);
+    passed = max_abs_error <= tolerance || max_rel_error <= 1.0e-4f;
+  }
+
+  if (check_result) {
+    int row = max_index % ldC;
+    int col = max_index / ldC;
+    std::printf("max_abs_error=%g max_rel_error=%g at C(%d,%d): got=%g ref=%g\n",
+                double(max_abs_error), double(max_rel_error), row, col,
+                double(h_C[std::size_t(max_index)]), double(h_C_reference[std::size_t(max_index)]));
+  } else {
+    std::printf("max_abs_error=skipped max_rel_error=skipped\n");
+  }
+
+  CUTE_MACA_CHECK(mcMemcpy(d_C.ptr, h_C_initial.data(), h_C_initial.size() * sizeof(float), mcMemcpyHostToDevice));
+  CUTE_MACA_CHECK(mcDeviceSynchronize());
+
+  auto start = std::chrono::steady_clock::now();
+  for (int i = 0; i < timing_iterations; ++i) {
+    gemm(transA, transB, m, n, k,
+         alpha, d_A.ptr, ldA,
+         d_B.ptr, ldB,
+         beta, d_C.ptr, ldC);
+  }
+  CUTE_MACA_CHECK(mcPeekAtLastError());
+  CUTE_MACA_CHECK(mcDeviceSynchronize());
+  auto stop = std::chrono::steady_clock::now();
+
+  double elapsed = std::chrono::duration<double>(stop - start).count();
+  double cute_time = elapsed / double(timing_iterations);
+  double gflops = (2.0 * double(m) * double(n) * double(k)) * 1.0e-9;
+  std::printf("CUTE_GEMM:     [%6.1f]GFlop/s  (%6.4f)ms\n",
+              gflops / cute_time, cute_time * 1000.0);
+  std::printf("%s\n", passed ? "PASS" : "FAIL");
+
+  return passed ? 0 : 1;
+}

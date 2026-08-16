@@ -691,6 +691,12 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cute/atom/mma_traits_sm61.hpp>
 #include <cute/atom/mma_traits_sm70.hpp>
 #include <cute/atom/mma_traits_sm75.hpp>
@@ -701,5 +707,6 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 #include <cute/atom/mma_traits_sm100.hpp>
 #include <cute/atom/mma_traits_sm120.hpp>
 #include <cute/atom/mma_traits_sm120_sparse.hpp>
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

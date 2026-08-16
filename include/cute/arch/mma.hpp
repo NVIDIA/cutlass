@@ -31,8 +31,16 @@
 #pragma once
 
 #include <cute/config.hpp>           // CUTE_HOST_DEVICE
-#include <cute/numeric/complex.hpp>  // cute::fma
 #include <cute/numeric/real.hpp>     // cute::fma
+
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
+#include <cute/numeric/complex.hpp>  // cute::fma
+#endif
 
 namespace cute
 {

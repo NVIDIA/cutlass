@@ -73,12 +73,24 @@ axpby(Alpha                    const& alpha,
       PrdTensor                const& p = {})
 {
   auto isBetaZero = [&] () {
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+    return beta == Int<0>{};
+#elif defined(CUTE_ENABLE_HIP)
+    return beta == Int<0>{};
+#elif defined(__HIPCC__)
+    return beta == Int<0>{};
+#elif defined(__HIP_DEVICE_COMPILE__)
+    return beta == Int<0>{};
+#elif defined(__HIP_PLATFORM_AMD__)
+    return beta == Int<0>{};
+#else
     if constexpr (is_complex<Beta>::value) {
       return beta.real() == Int<0>{} && beta.imag() == Int<0>{};
     }
     else {
       return beta == Int<0>{};
     }
+#endif
 
     CUTE_GCC_UNREACHABLE;
   } ();

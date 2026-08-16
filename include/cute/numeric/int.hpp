@@ -38,7 +38,9 @@
 
 #include <cute/config.hpp>          // CUTE_STL_NAMESPACE
 
-#include <cutlass/numeric_types.h>  // cutlass::int2b_t, cutlass::int4b_t
+#include <cutlass/integer_subbyte.h> // cutlass::int2b_t, cutlass::int4b_t
+#include <cutlass/uint128.h>         // cutlass::uint128_t
+#include <cutlass/uint256.h>         // cutlass::uint256_t
 
 namespace cute
 {

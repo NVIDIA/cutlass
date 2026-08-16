@@ -34,6 +34,22 @@
 #  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
 #  define CUTE_DEVICE      __forceinline__          __device__
 #  define CUTE_HOST        __forceinline__ __host__
+#elif defined(__MACACC__) || defined(__MACA_ARCH__)
+#  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
+#  define CUTE_DEVICE      __forceinline__          __device__
+#  define CUTE_HOST        __forceinline__ __host__
+#elif defined(CUTE_ENABLE_HIP)
+#  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
+#  define CUTE_DEVICE      __forceinline__          __device__
+#  define CUTE_HOST        __forceinline__ __host__
+#elif defined(__HIPCC__)
+#  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
+#  define CUTE_DEVICE      __forceinline__          __device__
+#  define CUTE_HOST        __forceinline__ __host__
+#elif defined(__HIP_DEVICE_COMPILE__)
+#  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
+#  define CUTE_DEVICE      __forceinline__          __device__
+#  define CUTE_HOST        __forceinline__ __host__
 #else
 #  define CUTE_HOST_DEVICE inline
 #  define CUTE_DEVICE      inline
@@ -46,11 +62,24 @@
 #  define CUTE_HOST_RTC CUTE_HOST
 #endif
 
-#if !defined(__CUDACC_RTC__) && !defined(__clang__) && \
-  (defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA))
-#  define CUTE_UNROLL    #pragma unroll
-#  define CUTE_NO_UNROLL #pragma unroll 1
-#elif defined(__CUDACC_RTC__) || defined(__clang__)
+#if !defined(__CUDACC_RTC__) && !defined(__clang__)
+#  if defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
+#    define CUTE_UNROLL    #pragma unroll
+#    define CUTE_NO_UNROLL #pragma unroll 1
+#  elif defined(__MACA_ARCH__)
+#    define CUTE_UNROLL    #pragma unroll
+#    define CUTE_NO_UNROLL #pragma unroll 1
+#  elif defined(__HIP_DEVICE_COMPILE__)
+#    define CUTE_UNROLL    #pragma unroll
+#    define CUTE_NO_UNROLL #pragma unroll 1
+#  else
+#    define CUTE_UNROLL
+#    define CUTE_NO_UNROLL
+#  endif
+#elif defined(__CUDACC_RTC__)
+#  define CUTE_UNROLL    _Pragma("unroll")
+#  define CUTE_NO_UNROLL _Pragma("unroll 1")
+#elif defined(__clang__)
 #  define CUTE_UNROLL    _Pragma("unroll")
 #  define CUTE_NO_UNROLL _Pragma("unroll 1")
 #else
@@ -59,6 +88,8 @@
 #endif // CUTE_UNROLL
 
 #if defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
+#  define CUTE_INLINE_CONSTANT                 static const __device__
+#elif defined(__MACA_ARCH__)
 #  define CUTE_INLINE_CONSTANT                 static const __device__
 #else
 #  define CUTE_INLINE_CONSTANT                 static constexpr
@@ -155,6 +186,8 @@
 
 // Fail and print a message. Typically used for notification of a compiler misconfiguration.
 #if defined(__CUDA_ARCH__)
+#  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x); __brkpt()
+#elif defined(__MACA_ARCH__)
 #  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x); __brkpt()
 #else
 #  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x)

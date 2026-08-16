@@ -35,9 +35,8 @@
  * \brief Debugging and logging functionality
  */
 
-#include <cuda_runtime_api.h>
-
 #include <cute/config.hpp>
+#include <cute/platform/runtime.hpp>
 
 namespace cute
 {
@@ -50,14 +49,20 @@ namespace cute
  * Formats and prints the given message to stdout
  */
 #if !defined(CUTE_LOG)
-#  if !defined(__CUDA_ARCH__)
-#    define CUTE_LOG(format, ...) printf(format, __VA_ARGS__)
-#  else
+#  if defined(__CUDA_ARCH__)
 #    define CUTE_LOG(format, ...)                                \
         printf("[block (%d,%d,%d), thread (%d,%d,%d)]: " format, \
                blockIdx.x,  blockIdx.y,  blockIdx.z,             \
                threadIdx.x, threadIdx.y, threadIdx.z,            \
                __VA_ARGS__);
+#  elif defined(__MACA_ARCH__)
+#    define CUTE_LOG(format, ...)                                \
+        printf("[block (%d,%d,%d), thread (%d,%d,%d)]: " format, \
+               blockIdx.x,  blockIdx.y,  blockIdx.z,             \
+               threadIdx.x, threadIdx.y, threadIdx.z,            \
+               __VA_ARGS__);
+#  else
+#    define CUTE_LOG(format, ...) printf(format, __VA_ARGS__)
 #  endif
 #endif
 
@@ -76,6 +81,7 @@ namespace cute
  * \brief Perror macro with exit
  */
 #if !defined(CUTE_ERROR_EXIT)
+#  if CUTE_HAS_CUDA_RUNTIME
 #  define CUTE_ERROR_EXIT(e)                                         \
       do {                                                           \
         cudaError_t code = (e);                                      \
@@ -87,10 +93,45 @@ namespace cute
           exit(1);                                                   \
         }                                                            \
       } while (0)
+#  elif CUTE_HAS_MXMACA_RUNTIME
+#  define CUTE_ERROR_EXIT(e)                                         \
+      do {                                                           \
+        mcError_t code = (e);                                        \
+        if (code != mcSuccess) {                                     \
+          fprintf(stderr, "<%s:%d> %s:\n    %s: %s\n",               \
+                  __FILE__, __LINE__, #e,                            \
+                  mcGetErrorName(code), mcGetErrorString(code));     \
+          fflush(stderr);                                            \
+          exit(1);                                                   \
+        }                                                            \
+      } while (0)
+#  elif CUTE_HAS_HIP_RUNTIME
+#  define CUTE_ERROR_EXIT(e)                                         \
+      do {                                                           \
+        hipError_t code = (e);                                       \
+        if (code != hipSuccess) {                                    \
+          fprintf(stderr, "<%s:%d> %s:\n    %s: %s\n",               \
+                  __FILE__, __LINE__, #e,                            \
+                  hipGetErrorName(code), hipGetErrorString(code));   \
+          fflush(stderr);                                            \
+          exit(1);                                                   \
+        }                                                            \
+      } while (0)
+#  else
+#  define CUTE_ERROR_EXIT(e) do { (void)(e); } while (0)
+#  endif
 #endif
 
 #if !defined(CUTE_CHECK_LAST)
-#  define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(cudaPeekAtLastError()); CUTE_ERROR_EXIT(cudaDeviceSynchronize())
+#  if CUTE_HAS_CUDA_RUNTIME
+#    define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(cudaPeekAtLastError()); CUTE_ERROR_EXIT(cudaDeviceSynchronize())
+#  elif CUTE_HAS_MXMACA_RUNTIME
+#    define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(mcPeekAtLastError()); CUTE_ERROR_EXIT(mcDeviceSynchronize())
+#  elif CUTE_HAS_HIP_RUNTIME
+#    define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(hipPeekAtLastError()); CUTE_ERROR_EXIT(hipDeviceSynchronize())
+#  else
+#    define CUTE_CHECK_LAST() do {} while (0)
+#  endif
 #endif
 
 #if !defined(CUTE_CHECK_ERROR)
@@ -124,6 +165,8 @@ block([[maybe_unused]] int bid)
 {
 #if defined(__CUDA_ARCH__)
   return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == static_cast<unsigned int>(bid);
+#elif defined(__MACA_ARCH__)
+  return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == static_cast<unsigned int>(bid);
 #else
   return true;
 #endif
@@ -134,6 +177,8 @@ bool
 thread([[maybe_unused]] int tid, [[maybe_unused]] int bid)
 {
 #if defined(__CUDA_ARCH__)
+  return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == static_cast<unsigned int>(tid)) && block(bid);
+#elif defined(__MACA_ARCH__)
   return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == static_cast<unsigned int>(tid)) && block(bid);
 #else
   return true;

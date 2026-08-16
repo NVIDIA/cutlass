@@ -34,7 +34,16 @@
 #include <cute/numeric/int.hpp>     // cute::int2_t, cute::int4_t, etc
 
 #include <cutlass/numeric_size.h>   // cutlass::sizeof_bits
+#include <cutlass/integer_subbyte.h>
+
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cutlass/numeric_types.h>  // cutlass::float_e4m3_t, cutlass::float_e5m2_t, etc
+#endif
 
 namespace cute {
 
@@ -75,6 +84,12 @@ using cutlass::uint4b_t;
 using cutlass::int6b_t;
 using cutlass::uint6b_t;
 
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 //
 // Floating Point
 //
@@ -90,9 +105,6 @@ using cutlass::tfloat32_t;
 using cutlass::type_erased_dynamic_float8_t;
 using cutlass::float_e4m3_t;
 using cutlass::float_e5m2_t;
-
-
-
 
 using cutlass::float_ue4m3_t;
 using cutlass::float_ue8m0_t;
@@ -188,5 +200,6 @@ void
 pretty_print_float_exmy_base(cutlass::float_exmy_base<Encoding, Derived> t) {
   printf("%*.2f", 8, static_cast<float>(t));
 }
+#endif
 
 } // namespace cute

@@ -48,17 +48,43 @@
 #include <cute/algorithm/tensor_algorithms.hpp>
 #include <cute/algorithm/fill.hpp>
 #include <cute/algorithm/clear.hpp>
+
 #include <cute/algorithm/copy.hpp>
+
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cute/algorithm/prefetch.hpp>
+#endif
+
 #include <cute/algorithm/axpby.hpp>
+
 #include <cute/algorithm/gemm.hpp>
 
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cute/algorithm/cooperative_copy.hpp>
 #include <cute/algorithm/cooperative_gemm.hpp>
+#endif
 
 //
 // Utilities
 //
 
 #include <cute/util/print_tensor.hpp>
+
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#elif defined(CUTE_ENABLE_HIP)
+#elif defined(__HIPCC__)
+#elif defined(__HIP_DEVICE_COMPILE__)
+#elif defined(__HIP_PLATFORM_AMD__)
+#else
 #include <cute/util/print_latex.hpp>
+#endif
