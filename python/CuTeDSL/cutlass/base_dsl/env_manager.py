@@ -415,17 +415,12 @@ def dump_sass(
         subprocess.run(tokens, stdout=sys.stderr, check=True)
 
 
-def get_prefix_dsl_libs(prefix: str) -> str | None:
+def discover_dsl_libs(prefix: str) -> str | None:
     """
-    Returns get_str_env_var('{prefix}_LIBS') if set.
-    Otherwise, attempts to discover libs based on heuristics and return
+    Attempts to discover libs based on heuristics, ignoring '{prefix}_LIBS'.
     If not found, return None.
     """
-    # Check if the environment variable is already set, if so, return it immediately.
     try:
-        prefix_libs_existing = get_str_env_var(f"{prefix}_LIBS")
-        if prefix_libs_existing:
-            return prefix_libs_existing
 
         def get_libs_cand(start: str | Path) -> str | None:
             target_dsl_runtime_libs = {
@@ -472,8 +467,22 @@ def get_prefix_dsl_libs(prefix: str) -> str | None:
         return None
 
     except Exception as e:
-        log().info("default_env: exception on get_prefix_dsl_libs", e)
+        log().info("default_env: exception on discover_dsl_libs", e)
     return None
+
+
+def get_prefix_dsl_libs(prefix: str) -> str | None:
+    """
+    Returns get_str_env_var('{prefix}_LIBS') if set.
+    Otherwise, attempts to discover libs based on heuristics and return
+    If not found, return None.
+    """
+    # Check if the environment variable is already set, if so, return it immediately.
+    prefix_libs_existing = get_str_env_var(f"{prefix}_LIBS")
+    if prefix_libs_existing:
+        return prefix_libs_existing
+
+    return discover_dsl_libs(prefix)
 
 
 class LogEnvironmentManager:

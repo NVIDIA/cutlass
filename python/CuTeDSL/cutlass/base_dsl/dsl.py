@@ -54,7 +54,12 @@ import warnings
 import threading
 
 from . import typing as t
-from .env_manager import EnvironmentVarManager, dump_sass, is_cutlass_family_dsl_prefix
+from .env_manager import (
+    EnvironmentVarManager,
+    discover_dsl_libs,
+    dump_sass,
+    is_cutlass_family_dsl_prefix,
+)
 from .compiler import CompileOptions, CompilerDiagnosticError, LinkLibraries
 from .ast_helpers import DSLOptimizationWarning
 from .common import DSLRuntimeError, active_env_manager
@@ -1823,13 +1828,35 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         shared_libs = []
         support_libs = self.envar.shared_libs
         if support_libs is not None:
-            _libs = support_libs.split(":")
-            for lib in _libs:
-                if not os.path.exists(lib):
+            missing = []
+            for lib in support_libs.split(":"):
+                if not lib:
+                    continue
+                if os.path.exists(lib):
+                    shared_libs.append(lib)
+                else:
+                    missing.append(lib)
+
+            if missing and not shared_libs:
+                # Every entry is stale. This happens when {prefix}_LIBS is
+                # inherited from a machine that does not share this
+                # filesystem, e.g. Slurm's default --export=ALL. Retry
+                # auto-discovery so a valid local runtime is still found.
+                discovered = discover_dsl_libs(self.name)
+                if discovered:
+                    shared_libs = [
+                        lib for lib in discovered.split(":") if os.path.exists(lib)
+                    ]
+
+            if missing:
+                if not shared_libs:
                     raise FileNotFoundError(
-                        errno.ENOENT, os.strerror(errno.ENOENT), lib
+                        errno.ENOENT, os.strerror(errno.ENOENT), missing[0]
                     )
-                shared_libs.append(lib)
+                self.print_warning(
+                    f"Ignoring missing {self.name}_LIBS entries: "
+                    f"{', '.join(missing)}. Using {':'.join(shared_libs)}."
+                )
         else:
             if is_cutlass_family_dsl_prefix(self.name):
                 self.print_warning(
