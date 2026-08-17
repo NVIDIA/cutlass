@@ -1,13 +1,12 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  **************************************************************************************************/
 
-#include <cute/platform/runtime.hpp>
 #include <cute/tensor.hpp>
 #include <cute/algorithm/copy.hpp>
 #include <cute/algorithm/gemm.hpp>
 #include <cute/arch/copy.hpp>
+#include <cute/util/debug.hpp>
 
 #include <algorithm>
 #include <cassert>

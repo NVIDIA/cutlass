@@ -36,7 +36,30 @@
  */
 
 #include <cute/config.hpp>
-#include <cute/platform/runtime.hpp>
+
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#  if defined(__has_include)
+#    if __has_include(<maca_runtime_api.h>)
+#      include <maca_runtime_api.h>
+#    elif __has_include(<maca_runtime.h>)
+#      include <maca_runtime.h>
+#    endif
+#  endif
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
+#  if defined(__has_include)
+#    if __has_include(<hip/hip_runtime_api.h>)
+#      include <hip/hip_runtime_api.h>
+#    elif __has_include(<hip/hip_runtime.h>)
+#      include <hip/hip_runtime.h>
+#    endif
+#  endif
+#elif !defined(__CUDACC_RTC__)
+#  if defined(CUTE_ENABLE_CUDA)
+#    include <cuda_runtime_api.h>
+#  elif defined(__CUDACC__) || defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
+#    include <cuda_runtime_api.h>
+#  endif
+#endif
 
 namespace cute
 {
@@ -81,7 +104,7 @@ namespace cute
  * \brief Perror macro with exit
  */
 #if !defined(CUTE_ERROR_EXIT)
-#  if CUTE_HAS_CUDA_RUNTIME
+#  if defined(CUTE_ENABLE_CUDA) || defined(__CUDACC__) || defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
 #  define CUTE_ERROR_EXIT(e)                                         \
       do {                                                           \
         cudaError_t code = (e);                                      \
@@ -93,7 +116,7 @@ namespace cute
           exit(1);                                                   \
         }                                                            \
       } while (0)
-#  elif CUTE_HAS_MXMACA_RUNTIME
+#  elif defined(__MACACC__) || defined(__MACA_ARCH__)
 #  define CUTE_ERROR_EXIT(e)                                         \
       do {                                                           \
         mcError_t code = (e);                                        \
@@ -105,7 +128,7 @@ namespace cute
           exit(1);                                                   \
         }                                                            \
       } while (0)
-#  elif CUTE_HAS_HIP_RUNTIME
+#  elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #  define CUTE_ERROR_EXIT(e)                                         \
       do {                                                           \
         hipError_t code = (e);                                       \
@@ -123,11 +146,11 @@ namespace cute
 #endif
 
 #if !defined(CUTE_CHECK_LAST)
-#  if CUTE_HAS_CUDA_RUNTIME
+#  if defined(CUTE_ENABLE_CUDA) || defined(__CUDACC__) || defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
 #    define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(cudaPeekAtLastError()); CUTE_ERROR_EXIT(cudaDeviceSynchronize())
-#  elif CUTE_HAS_MXMACA_RUNTIME
+#  elif defined(__MACACC__) || defined(__MACA_ARCH__)
 #    define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(mcPeekAtLastError()); CUTE_ERROR_EXIT(mcDeviceSynchronize())
-#  elif CUTE_HAS_HIP_RUNTIME
+#  elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
 #    define CUTE_CHECK_LAST() CUTE_ERROR_EXIT(hipPeekAtLastError()); CUTE_ERROR_EXIT(hipDeviceSynchronize())
 #  else
 #    define CUTE_CHECK_LAST() do {} while (0)
