@@ -123,3 +123,17 @@ func.func @kind_mismatch_composed_to_layout(
        !cute.layout<"(2):(1)">
   return
 }
+
+// -----
+
+// NVIDIA/cutlass#3454: swizzle-projection composition fails for static
+// outer (10,2):(2,1); must diagnose, not abort in cutegen static_size.
+func.func @swizzle_composed_slice_incompatible_outer(
+    %src: !cute.composed_layout<"S<3,4,3> o 0 o (10,2):(2,1)">,
+    %crd: !cute.coord<"(_,0)">) {
+  // expected-error@+1 {{unable to slice '!cute.composed_layout<"S<3,4,3> o 0 o (10,2):(2,1)">' with '!cute.coord<"(_,0)">'}}
+  %r = cute.slice(%src, %crd)
+         : !cute.composed_layout<"S<3,4,3> o 0 o (10,2):(2,1)">,
+           !cute.coord<"(_,0)">
+  return
+}
