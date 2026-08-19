@@ -84,6 +84,16 @@ cutlass_test_unit_gemm_device_add_executable(
 )
 
 cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_bstensorop_sm100_mxf8xmxf8_bf16
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  mxf8_mxf8_void_bf16_tn_layout.cu
+)
+
+
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf6xmxf8
 
   BATCH_SOURCES ON
