@@ -8,4 +8,9 @@ if (CUTLASS_NVCC_ARCHS MATCHES "${_CUTLASS_114_ARCH_REGEX}")
     114_sm120_nvfp4_w4a16_poc
     114_sm120_nvfp4_w4a16_poc.cu
   )
+
+  cutlass_example_add_executable(
+    114b_sm120_nvfp4_w4a16_cute_pipeline
+    114b_sm120_nvfp4_w4a16_cute_pipeline.cu
+  )
 endif()
