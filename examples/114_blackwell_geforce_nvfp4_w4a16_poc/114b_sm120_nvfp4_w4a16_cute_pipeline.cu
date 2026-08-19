@@ -32,6 +32,7 @@
 
 #include <cuda_runtime.h>
 
+#include "cute/arch/copy_sm75.hpp"
 #include "cute/arch/copy_sm80.hpp"
 #include "cute/arch/mma_sm80.hpp"
 #include "cute/tensor.hpp"
@@ -53,9 +54,11 @@
 
 namespace {
 
-constexpr int kTileM = 32;
-constexpr int kTileN = 16;
-constexpr int kTileK = 16;
+constexpr int kTileM = 64;
+constexpr int kTileN = 32;
+constexpr int kTileK = 64;
+constexpr int kScaleBlockK = 16;
+constexpr int kScaleBlocksPerTile = kTileK / kScaleBlockK;
 constexpr int kStages = 2;
 constexpr int kThreads = 128;
 
@@ -70,11 +73,28 @@ using TiledMma = cute::TiledMMA<
   cute::Layout<
     cute::Shape<cute::_2, cute::_2, cute::_1>,
     cute::Stride<cute::_1, cute::_2, cute::_0>>,
-  cute::Tile<cute::_32, cute::_16, cute::_16>>;
+  cute::Tile<cute::_64, cute::_32, cute::_64>>;
+
+// CUTLASS's Ampere K=64 LDSM-compatible XOR swizzle. Each eight-half K vector remains contiguous
+// for 128-bit cp.async while adjacent row groups rotate through shared-memory banks.
+using SmemLayoutAtom = decltype(cute::composition(
+  cute::Swizzle<3, 3, 3>{},
+  cute::Layout<
+    cute::Shape<cute::_8, cute::_64>,
+    cute::Stride<cute::_64, cute::_1>>{}));
+using SmemLayoutA = decltype(cute::tile_to_shape(
+  SmemLayoutAtom{},
+  cute::make_shape(cute::Int<kTileM>{}, cute::Int<kTileK>{})));
+using SmemLayoutB = decltype(cute::tile_to_shape(
+  SmemLayoutAtom{},
+  cute::make_shape(cute::Int<kTileN>{}, cute::Int<kTileK>{})));
 
 static_assert(sizeof(PackedPair) == 1, "Two E2M1 values must occupy one byte");
 static_assert(sizeof(ElementScale) == 1, "A UE4M3 scale must occupy one byte");
 static_assert(sizeof(ElementA) == 2, "FP16 storage must occupy two bytes");
+static_assert(kTileK % kScaleBlockK == 0, "A K tile must contain complete NVFP4 scale blocks");
+static_assert(kTileK % 32 == 0, "Packed B tiles must support aligned 128-bit copies");
+static_assert(kTileN % 4 == 0, "Scale tiles must support aligned 32-bit copies");
 
 struct Options {
   int m = 128;
@@ -86,10 +106,10 @@ struct Options {
 };
 
 struct SharedStorage {
-  alignas(16) ElementA a[kStages][kTileM * kTileK];
+  alignas(16) ElementA a[kStages][cute::cosize_v<SmemLayoutA>];
   alignas(16) uint8_t packed_b[kStages][kTileN * kTileK / 2];
-  alignas(16) ElementScale scales_b[kStages][kTileN];
-  alignas(16) ElementA b[kStages][kTileN * kTileK];
+  alignas(16) ElementScale scales_b[kStages][kScaleBlocksPerTile * kTileN];
+  alignas(16) ElementA b[kStages][cute::cosize_v<SmemLayoutB>];
 };
 
 bool parse_positive_integer(char const* arg, char const* name, int& value) {
@@ -136,7 +156,7 @@ void print_usage(char const* executable) {
   std::cout
     << "SM120/SM121 NVFP4 W4A16 CuTe pipeline proof of concept\n\n"
     << "Usage: " << executable
-    << " [--m=<multiple of 32>] [--n=<multiple of 16>] [--k=<multiple of 16>]"
+    << " [--m=<multiple of 64>] [--n=<multiple of 32>] [--k=<multiple of 64>]"
     << " [--iterations=<positive integer>] [--no-verify]\n";
 }
 
@@ -207,32 +227,43 @@ CUTE_DEVICE void issue_async_stage(
 
   int const thread = static_cast<int>(threadIdx.x);
   int const k_base = tile_k * kTileK;
+  SmemLayoutA layout_a;
 
-  // A tile: 32 rows x 16 FP16 values = 64 naturally aligned 16-byte copies.
-  if (thread < kTileM * 2) {
-    int const row = thread / 2;
-    int const vector = thread % 2;
+  // A tile: cooperatively move naturally aligned 16-byte vectors.
+  constexpr int kAVectorsPerRow = kTileK / 8;
+  constexpr int kAVectorCopies = kTileM * kAVectorsPerRow;
+  for (int copy_linear = thread; copy_linear < kAVectorCopies; copy_linear += kThreads) {
+    int const row = copy_linear / kAVectorsPerRow;
+    int const vector = copy_linear % kAVectorsPerRow;
     auto const& source = *reinterpret_cast<cute::uint128_t const*>(
       a + (row_base + row) * k + k_base + vector * 8);
     auto& destination = *reinterpret_cast<cute::uint128_t*>(
-      storage.a[stage] + row * kTileK + vector * 8);
+      storage.a[stage] + layout_a(row, vector * 8));
     cute::SM80_CP_ASYNC_CACHEALWAYS<cute::uint128_t>::copy(source, destination);
   }
 
-  // Packed B tile: one aligned eight-byte K segment for each output column.
-  if (thread < kTileN) {
-    auto const& source = *reinterpret_cast<uint64_t const*>(
-      packed_b + (column_base + thread) * (k / 2) + k_base / 2);
-    auto& destination = *reinterpret_cast<uint64_t*>(
-      storage.packed_b[stage] + thread * (kTileK / 2));
-    cute::SM80_CP_ASYNC_CACHEALWAYS<uint64_t>::copy(source, destination);
+  // Packed B tile: move aligned 16-byte vectors from each output column.
+  constexpr int kBPackedVectorsPerColumn = kTileK / 32;
+  constexpr int kBPackedVectorCopies = kTileN * kBPackedVectorsPerColumn;
+  for (int copy_linear = thread; copy_linear < kBPackedVectorCopies; copy_linear += kThreads) {
+    int const column = copy_linear / kBPackedVectorsPerColumn;
+    int const vector = copy_linear % kBPackedVectorsPerColumn;
+    auto const& source = *reinterpret_cast<cute::uint128_t const*>(
+      packed_b + (column_base + column) * (k / 2) + k_base / 2 + vector * 16);
+    auto& destination = *reinterpret_cast<cute::uint128_t*>(
+      storage.packed_b[stage] + column * (kTileK / 2) + vector * 16);
+    cute::SM80_CP_ASYNC_CACHEALWAYS<cute::uint128_t>::copy(source, destination);
   }
 
-  // Scales are repacked K-block-major so all 16 scale bytes form one contiguous tile.
-  if (thread < kTileN / 4) {
+  // Scales are K-block-major. Load all block-16 scale rows covered by this K tile.
+  constexpr int kScaleVectorCopies = kScaleBlocksPerTile * kTileN / 4;
+  if (thread < kScaleVectorCopies) {
+    int const scale_block = thread / (kTileN / 4);
+    int const vector = thread % (kTileN / 4);
     auto const& source = *reinterpret_cast<uint32_t const*>(
-      scales_b + tile_k * n + column_base + thread * 4);
-    auto& destination = *reinterpret_cast<uint32_t*>(storage.scales_b[stage] + thread * 4);
+      scales_b + (tile_k * kScaleBlocksPerTile + scale_block) * n + column_base + vector * 4);
+    auto& destination = *reinterpret_cast<uint32_t*>(
+      storage.scales_b[stage] + scale_block * kTileN + vector * 4);
     cute::SM80_CP_ASYNC_CACHEALWAYS<uint32_t>::copy(source, destination);
   }
 
@@ -247,6 +278,7 @@ CUTE_DEVICE void decode_weight_stage(SharedStorage& storage, int stage) {
 
   int const thread = static_cast<int>(threadIdx.x);
   constexpr int kPackedPairs = kTileN * kTileK / 2;
+  SmemLayoutB layout_b;
 
   for (int pair_linear = thread; pair_linear < kPackedPairs; pair_linear += kThreads) {
     int const column = pair_linear / (kTileK / 2);
@@ -255,11 +287,12 @@ CUTE_DEVICE void decode_weight_stage(SharedStorage& storage, int stage) {
     PackedPair packed_pair;
     *reinterpret_cast<uint8_t*>(&packed_pair) = storage.packed_b[stage][pair_linear];
     auto converted_pair = WeightConverter::convert(packed_pair);
-    ElementA scale = ScaleConverter{}(storage.scales_b[stage][column]);
+    int const scale_block = pair_k * 2 / kScaleBlockK;
+    ElementA scale = ScaleConverter{}(
+      storage.scales_b[stage][scale_block * kTileN + column]);
 
-    int const destination = column * kTileK + pair_k * 2;
-    storage.b[stage][destination] = converted_pair[0] * scale;
-    storage.b[stage][destination + 1] = converted_pair[1] * scale;
+    storage.b[stage][layout_b(column, pair_k * 2)] = converted_pair[0] * scale;
+    storage.b[stage][layout_b(column, pair_k * 2 + 1)] = converted_pair[1] * scale;
   }
 }
 
@@ -287,6 +320,13 @@ __global__ void nvfp4_w4a16_cute_pipeline_kernel(
   auto accumulators = thread_mma.make_fragment_C(thread_output);
   cute::clear(accumulators);
 
+  auto tiled_copy_a = cute::make_tiled_copy_A(
+    cute::Copy_Atom<cute::SM75_U32x4_LDSM_N, ElementA>{}, thread_mma);
+  auto thread_copy_a = tiled_copy_a.get_thread_slice(threadIdx.x);
+  auto tiled_copy_b = cute::make_tiled_copy_B(
+    cute::Copy_Atom<cute::SM75_U32x2_LDSM_N, ElementA>{}, thread_mma);
+  auto thread_copy_b = tiled_copy_b.get_thread_slice(threadIdx.x);
+
   issue_async_stage(
     storage, 0, 0, a, packed_b, scales_b, row_base, column_base, n, k);
   if (tile_count > 1) {
@@ -307,21 +347,17 @@ __global__ void nvfp4_w4a16_cute_pipeline_kernel(
     decode_weight_stage(storage, stage);
     __syncthreads();
 
-    auto layout_a = cute::make_layout(
-      cute::make_shape(cute::Int<kTileM>{}, cute::Int<kTileK>{}),
-      cute::make_stride(cute::Int<kTileK>{}, cute::_1{}));
-    auto layout_b = cute::make_layout(
-      cute::make_shape(cute::Int<kTileN>{}, cute::Int<kTileK>{}),
-      cute::make_stride(cute::Int<kTileK>{}, cute::_1{}));
-    auto shared_a = cute::make_tensor(cute::make_smem_ptr(storage.a[stage]), layout_a);
-    auto shared_b = cute::make_tensor(cute::make_smem_ptr(storage.b[stage]), layout_b);
+    auto shared_a = cute::make_tensor(cute::make_smem_ptr(storage.a[stage]), SmemLayoutA{});
+    auto shared_b = cute::make_tensor(cute::make_smem_ptr(storage.b[stage]), SmemLayoutB{});
 
-    auto thread_shared_a = thread_mma.partition_A(shared_a);
-    auto thread_shared_b = thread_mma.partition_B(shared_b);
     auto fragment_a = thread_mma.partition_fragment_A(shared_a);
     auto fragment_b = thread_mma.partition_fragment_B(shared_b);
-    cute::copy(thread_shared_a, fragment_a);
-    cute::copy(thread_shared_b, fragment_b);
+    auto copy_source_a = thread_copy_a.partition_S(shared_a);
+    auto copy_source_b = thread_copy_b.partition_S(shared_b);
+    auto copy_destination_a = thread_copy_a.retile_D(fragment_a);
+    auto copy_destination_b = thread_copy_b.retile_D(fragment_b);
+    cute::copy(tiled_copy_a, copy_source_a, copy_destination_a);
+    cute::copy(tiled_copy_b, copy_source_b, copy_destination_b);
     cute::gemm(tiled_mma, fragment_a, fragment_b, accumulators);
     __syncthreads();
 
@@ -362,7 +398,7 @@ void initialize_problem(
      0.5f,  1.0f,  1.5f,  2.0f,  3.0f,  4.0f,  6.0f, 0.0f
   };
 
-  for (int block_k = 0; block_k < options.k / kTileK; ++block_k) {
+  for (int block_k = 0; block_k < options.k / kScaleBlockK; ++block_k) {
     for (int column = 0; column < options.n; ++column) {
       float requested_scale = scale_candidates[(column * 3 + block_k * 7) % 5];
       scales_b[block_k * options.n + column] = ElementScale(requested_scale);
@@ -377,7 +413,7 @@ void initialize_problem(
         static_cast<uint8_t>((low.raw() & 0x0f) | ((high.raw() & 0x0f) << 4));
 
       float scale = static_cast<float>(
-        scales_b[(k_value / kTileK) * options.n + column]);
+        scales_b[(k_value / kScaleBlockK) * options.n + column]);
       logical_b[k_value * options.n + column] =
         fp16_product(static_cast<float>(low), scale);
       logical_b[(k_value + 1) * options.n + column] =
@@ -506,7 +542,7 @@ int main(int argc, char const** argv) {
     return EXIT_SUCCESS;
   }
   if (options.m % kTileM != 0 || options.n % kTileN != 0 || options.k % kTileK != 0) {
-    std::cerr << "M must be a multiple of 32; N and K must be multiples of 16.\n";
+    std::cerr << "M and K must be multiples of 64; N must be a multiple of 32.\n";
     return EXIT_FAILURE;
   }
 
@@ -524,7 +560,7 @@ int main(int argc, char const** argv) {
 
   size_t const a_elements = static_cast<size_t>(options.m) * options.k;
   size_t const packed_b_bytes = static_cast<size_t>(options.n) * options.k / 2;
-  size_t const scale_elements = static_cast<size_t>(options.n) * options.k / kTileK;
+  size_t const scale_elements = static_cast<size_t>(options.n) * options.k / kScaleBlockK;
   size_t const c_elements = static_cast<size_t>(options.m) * options.n;
 
   std::vector<ElementA> host_a(a_elements);
