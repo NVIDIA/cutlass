@@ -176,9 +176,9 @@ foreach(EXAMPLE
   111_hopper_ssd
   112_blackwell_ssd
   113_hopper_gemm_activation_fusion
+  114_blackwell_geforce_nvfp4_w4a16_poc
   )
 
   add_subdirectory(${EXAMPLE})
 
 endforeach()
-
