@@ -240,8 +240,8 @@ Since each thread block now computes multiple output tiles, the shape of the gri
 **Warp-Specialized Persistent Ping-Pong kernel design**
 
 The third kernel design is the [*Warp-Specialized Persistent Ping-Pong*](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp) kernel. 
-Like the Warp-Specialized Persistent Cooperative, kernel the concepts of warp groups, barrier synchronization between warp groups, and the shape of the grid launch remain the same in the persistent ping-pong design. 
-The distinctive feature of the Warp-Specialized Persistent Ping-Pong kernel is the following :
+Like the Warp-Specialized Persistent Cooperative kernel, the concepts of warp groups, barrier synchronization between warp groups, and the shape of the grid launch remain the same in the persistent ping-pong design. 
+The distinctive features of the Warp-Specialized Persistent Ping-Pong kernel are the following:
 * The two *consumer* warp groups are assigned a different output tile using the Tile Scheduler. This allows for *epilogue* of one *consumer* warp group to be overlapped with the math operations of the other *consumer* warp group - thus maximizing tensor core utilization. 
 * The *producer* warp group synchronizes using the [Ordered Sequence Barrier](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/pipeline/pipeline.hpp) to fill buffers of the two *consumer* warp groups one after the other in order.
 
