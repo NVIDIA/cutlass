@@ -129,7 +129,19 @@
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
 #endif
 
-#include <vector_types.h>
+#if defined(__has_include)
+#  if __has_include(<vector_types.h>)
+#    include <vector_types.h>
+#    define CUTLASS_HAS_VECTOR_TYPES_HEADER 1
+#  endif
+#else
+#  include <vector_types.h>
+#  define CUTLASS_HAS_VECTOR_TYPES_HEADER 1
+#endif
+
+#if !defined(CUTLASS_HAS_VECTOR_TYPES_HEADER)
+#  define CUTLASS_HAS_VECTOR_TYPES_HEADER 0
+#endif
 
 #endif
 

@@ -93,6 +93,44 @@ using DefaultCopy = AutoVectorizingCopyWithAssumedAlignment<8>;
 struct AutoCopyAsync {};
 
 //
+// Async-copy synchronization hooks. CUDA cp.async backends override these with
+// instruction-backed implementations; scalar fallback copy paths use no-ops.
+//
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+CUTE_HOST_DEVICE static void
+cp_async_fence()
+{}
+
+template <int N = 0>
+CUTE_HOST_DEVICE static void
+cp_async_wait()
+{}
+
+template <int N>
+CUTE_HOST_DEVICE static void
+cp_async_wait(Int<N>)
+{
+  return cp_async_wait<N>();
+}
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
+CUTE_HOST_DEVICE static void
+cp_async_fence()
+{}
+
+template <int N = 0>
+CUTE_HOST_DEVICE static void
+cp_async_wait()
+{}
+
+template <int N>
+CUTE_HOST_DEVICE static void
+cp_async_wait(Int<N>)
+{
+  return cp_async_wait<N>();
+}
+#endif
+
+//
 // Global memory prefetch into L2
 //
 

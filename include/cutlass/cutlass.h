@@ -37,7 +37,17 @@
 
 #include "cutlass/detail/helper_macros.hpp"
 
+#if defined(__MACACC__) || defined(__MACA_ARCH__)
+#define CUDA_STD_HEADER(header) <header>
+#elif defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)
+#define CUDA_STD_HEADER(header) <header>
+#elif defined(__CUDACC_RTC__)
 #define CUDA_STD_HEADER(header) <cuda/std/header>
+#elif defined(__CUDACC__) || defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
+#define CUDA_STD_HEADER(header) <cuda/std/header>
+#else
+#define CUDA_STD_HEADER(header) <header>
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
