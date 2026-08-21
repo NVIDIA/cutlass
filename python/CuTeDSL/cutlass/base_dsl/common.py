@@ -124,7 +124,9 @@ def _dsl_excepthook(
         else:
             # Just print the formatted message (which is in __str__)
             print(str(exc_value), file=sys.stderr)
-        sys.exit(1)
+        # Don't kill an interactive session (REPL, `python -i`, PYTHONINSPECT)
+        if not (hasattr(sys, "ps1") or sys.flags.interactive or sys.flags.inspect):
+            sys.exit(1)
     else:
         # Use the original exception hook for other exceptions
         _original_excepthook(exc_type, exc_value, exc_traceback)

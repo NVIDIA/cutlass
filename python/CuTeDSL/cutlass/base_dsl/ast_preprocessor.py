@@ -802,12 +802,11 @@ class DSLPreprocessor(ast.NodeTransformer):
                         _node.col_offset += _col_shift  # type: ignore[attr-defined]
                     if getattr(_node, "end_col_offset", None) is not None:
                         _node.end_col_offset += _col_shift  # type: ignore[attr-defined]
-        except Exception:
-            # Under REPL mode, there is no way to get source of a function object, error out
-            raise DSLRuntimeError(
-                f"Failed to parse function {func_name}",
-                suggestion="DSL does not support REPL mode, save the function to a file instead.",
-            )
+        except (OSError, TypeError) as e:
+            # No retrievable source (REPL / exec())
+            raise DSLUserCodeError(DiagId.UNSUP_NO_SOURCE, func=func_name, cause=e)
+        except Exception as e:
+            raise DSLRuntimeError(f"Failed to parse function {func_name}", cause=e)
 
         # Step 1.2 Check the decorator
         if not self.check_decorator(tree.body[0]):
