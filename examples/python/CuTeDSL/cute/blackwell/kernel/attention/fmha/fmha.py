@@ -445,6 +445,18 @@ class BlackwellFusedMultiHeadAttentionForward:
         d = cute.assume(Int32(d), align)
         dv = cute.assume(Int32(dv), align)
 
+        # The head dimension must be the static contiguous mode. Besides being a
+        # layout requirement of the kernel, this lets the compiler vectorize the
+        # global-memory accesses along d/dv.
+        if cutlass.const_expr(q_tensor.stride[4] != 1):
+            raise ValueError("q_tensor must be contiguous in the d mode")
+        if cutlass.const_expr(k_tensor.stride[4] != 1):
+            raise ValueError("k_tensor must be contiguous in the d mode")
+        if cutlass.const_expr(v_tensor.stride[4] != 1):
+            raise ValueError("v_tensor must be contiguous in the dv mode")
+        if cutlass.const_expr(o_tensor.stride[4] != 1):
+            raise ValueError("o_tensor must be contiguous in the dv mode")
+
         stride_b_q = q_tensor.stride[0] if cum_seqlen_q is None else 0
         stride_b_o = o_tensor.stride[0] if cum_seqlen_q is None else 0
         stride_b_k = k_tensor.stride[0] if cum_seqlen_k is None else 0
@@ -491,6 +503,8 @@ class BlackwellFusedMultiHeadAttentionForward:
         )
         o = cute.make_tensor(o_tensor.iterator, o_layout)
         if cutlass.const_expr(lse_tensor is not None):
+            if cutlass.const_expr(lse_tensor.stride[3] != 1):
+                raise ValueError("lse_tensor must be contiguous in the h_r mode")
             # (s, ((h_r, h_k), b)) - head stride=1 to match FlashInfer (total_q, h_q) convention
             stride_b_lse = lse_tensor.stride[0] if cum_seqlen_q is None else 0
             lse_layout = cute.make_layout(
@@ -3578,6 +3592,7 @@ def run(
         shape,
         dtype,
         is_dynamic_layout=True,
+        divisibility=1,
         use_random_int=True,
         zero_out=False,
     ):
@@ -3615,6 +3630,12 @@ def run(
             is_dynamic_layout,
             assumed_align=32,
         )
+        if is_dynamic_layout and divisibility > 1:
+            cute_tensor = cute_tensor.mark_compact_shape_dynamic(
+                mode=len(shape) - 1,
+                stride_order=tuple(range(len(shape))),
+                divisibility=divisibility,
+            )
         f32_torch_tensor_gpu = f32_torch_tensor.cuda()
         cute.testing.convert(
             cute_tensor, from_dlpack(f32_torch_tensor_gpu, assumed_align=32)
@@ -3657,24 +3678,28 @@ def run(
         qo_shape,
         qk_dtype,
         is_dynamic_layout=True,
+        divisibility=256 // qk_dtype.width,
         use_random_int=use_random,
     )
     k_ref, k_tensor, k_torch = create_and_permute_tensor(
         kv_shape,
         qk_dtype,
         is_dynamic_layout=True,
+        divisibility=256 // qk_dtype.width,
         use_random_int=use_random,
     )
     v_ref, v_tensor, v_torch = create_and_permute_tensor(
         v_shape,
         pv_dtype,
         is_dynamic_layout=True,
+        divisibility=256 // pv_dtype.width,
         use_random_int=use_random,
     )
     _, o_tensor, o_torch = create_and_permute_tensor(
         o_shape,
         out_dtype,
         is_dynamic_layout=True,
+        divisibility=256 // out_dtype.width,
         zero_out=True,
     )
     if lse_calculation:
@@ -4110,24 +4135,28 @@ def run(
             qo_shape,
             qk_dtype,
             is_dynamic_layout=True,
+            divisibility=256 // qk_dtype.width,
             use_random_int=False,
         )
         _, k_tensor_workspace, _ = create_and_permute_tensor(
             kv_shape,
             qk_dtype,
             is_dynamic_layout=True,
+            divisibility=256 // qk_dtype.width,
             use_random_int=False,
         )
         _, v_tensor_workspace, _ = create_and_permute_tensor(
             v_shape,
             pv_dtype,
             is_dynamic_layout=True,
+            divisibility=256 // pv_dtype.width,
             use_random_int=False,
         )
         _, o_tensor_workspace, _ = create_and_permute_tensor(
             o_shape,
             out_dtype,
             is_dynamic_layout=True,
+            divisibility=256 // out_dtype.width,
             zero_out=True,
         )
         if lse_calculation:
