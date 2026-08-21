@@ -1127,6 +1127,26 @@ class DSLPreprocessor(ast.NodeTransformer):
                     else:
                         invoked_args.add(base_name)
 
+                # Arguments passed to a call may be mutated in place by the
+                # callee (e.g. a nested @jit helper mutating a TiledMma via
+                # `.set`), exactly like the receiver of a method call above.
+                # Mark plain-name arguments as invoked so the mutated value is
+                # threaded out of the scf region instead of leaking a
+                # region-local SSA value ("operand does not dominate this use").
+                # `*args`/`**kwargs` container names are deliberately NOT
+                # marked: threading the container rebinds only the container
+                # name, silently detaching the mutated element from the
+                # variable the caller still holds, so those forms must keep
+                # failing loudly instead of miscompiling.
+                arg_exprs = list(node.args) + [
+                    kw.value for kw in node.keywords if kw.arg is not None
+                ]
+                for arg in arg_exprs:
+                    if isinstance(arg, ast.Name):
+                        if arg.id == "self" and support_pyir:
+                            continue
+                        invoked_args.add(arg.id)
+
                 self.generic_visit(node)
 
         analyzer = RegionAnalyzer()

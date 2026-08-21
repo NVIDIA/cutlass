@@ -2324,13 +2324,74 @@ class KernelLauncher:
 # =============================================================================
 # Utils
 # =============================================================================
+
+# Placeholder passed as the "argument name" when filtering region RESULTS
+# (e.g. dynamic if-expression branch values) rather than named variable
+# captures. Results are always yielded out of the region, so the
+# mutability-based read-only rules for captured variables must not apply to
+# them. An invalid Python identifier is used so it can never collide with a
+# real variable name.
+REGION_RESULT_NAME = "<region result>"
+
+
+def _is_immutable_python_value(item: Any) -> bool:
+    """True if `item` is an immutable Python value that a callee cannot
+    mutate in place (so it never needs to be threaded through staged
+    control-flow regions)."""
+    import enum as _enum
+    import types as _types
+
+    if item is None or isinstance(item, (int, float, complex, str, bytes)):
+        return True
+    if isinstance(item, _enum.Enum):
+        return True
+    if isinstance(item, (tuple, frozenset)):
+        return all(_is_immutable_python_value(e) for e in item)
+    if isinstance(
+        item,
+        (
+            _types.FunctionType,
+            _types.BuiltinFunctionType,
+            _types.MethodType,
+            _types.ModuleType,
+            type,
+        ),
+    ):
+        return True
+    return False
+
+
+def _carries_mlir_values(item: Any) -> bool:
+    """True if `item` (possibly a container or dataclass) holds any MLIR SSA
+    values that staged control flow would need to thread through region
+    boundaries."""
+    try:
+        leaves, _, _ = tree_flatten(item, return_ir_values=False)
+    except Exception:
+        return False
+    return any(is_dynamic_expression(leaf) for leaf in leaves)
+
+
 def is_read_only_object(item: Any, arg_name: Optional[str] = None) -> bool:
     """
-    Check if an item is a read-only object.
+    Check if an item is a read-only object (exempt from being threaded
+    through staged control-flow regions).
 
-    A read-only object is either a frozen dataclass or a method receiver
-    (``self``) whose class does not opt in to ``self`` threading via the
-    ``_dsl_thread_self_in_staged_cf`` class attribute.
+    An item is read-only when it is:
+
+    * a frozen dataclass;
+    * a method receiver (``self``) whose class does not opt in to ``self``
+      threading via the ``_dsl_thread_self_in_staged_cf`` class attribute
+      (an opted-in receiver is always threaded);
+    * any other named variable capture (``arg_name`` is a real variable
+      name) that a callee cannot observably mutate in place: an immutable
+      Python value, or an object carrying no MLIR SSA values.
+
+    The mutability-based rules apply only to named captures: region results
+    (``arg_name`` is :data:`REGION_RESULT_NAME`) and callers providing no
+    name information are always threaded as before, since e.g. dynamic
+    if-expression branch values must be yielded even when they are plain
+    Python literals.
     """
     if is_frozen_dataclass(item):
         return True
@@ -2340,8 +2401,25 @@ def is_read_only_object(item: Any, arg_name: Optional[str] = None) -> bool:
         # SSA values, which sibling regions then read ("operand does not
         # dominate this use"). Classes that mutate state reachable through
         # `self` inside dynamic regions set the flag (e.g. task_scheduling's
-        # Task).
+        # Task). This rule takes precedence over the mutability-based rules
+        # below so an opted-in receiver stays threaded regardless of its
+        # current contents.
         return not getattr(type(item), "_dsl_thread_self_in_staged_cf", False)
+    if arg_name is not None and arg_name != REGION_RESULT_NAME:
+        if _is_immutable_python_value(item):
+            # Immutable Python values (constexpr ints, strings, enum members,
+            # tuples of such, ...) cannot be observably mutated by a callee.
+            # Threading them through staged control flow would demote them
+            # from compile-time constants to staged Numerics (breaking e.g.
+            # range_constexpr bounds), so keep them read-only.
+            return True
+        if not _carries_mlir_values(item):
+            # Threading exists solely to rebind region-defined SSA values
+            # after the region closes. An object holding no MLIR values has
+            # nothing to rebind; threading it would either demote
+            # compile-time state to staged values or fail flattening
+            # entirely (plain Python objects).
+            return True
     return False
 
 

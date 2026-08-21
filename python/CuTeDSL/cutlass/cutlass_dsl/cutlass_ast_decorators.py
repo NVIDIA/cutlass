@@ -853,7 +853,7 @@ def _ifexp_execute_dynamic(
         op_type_name="ifexp",
         mix_iter_args=mix_iter_args,
         full_write_args_count=0,
-        mix_iter_arg_names=["unknown" for _ in mix_iter_args],
+        mix_iter_arg_names=[cutlass_dsl.REGION_RESULT_NAME for _ in mix_iter_args],
         create_op_func=create_if_op,
         region_builders=region_builders,
     )
