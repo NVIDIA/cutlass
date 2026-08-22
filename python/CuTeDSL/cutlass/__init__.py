@@ -77,6 +77,8 @@ from .cutlass_dsl import (
     DSLRuntimeError,
     DSLUserCodeError,
     JitArgAdapterRegistry,
+    PreparedLaunch,
+    PreparedLaunchError,
     # Construction utilities for user-defined classes
     extract_mlir_values,
     new_from_mlir_values,

@@ -1934,6 +1934,48 @@ class DiagId(_DiagMixin, enum.Enum):
             "Wrap the launch in a host function decorated with @cute.jit and call that host function.",
         ),
     )
+    LAUNCH_PREPARED_ARG_COUNT = (
+        "This prepared launch takes {expected} runtime arguments, but {provided} were provided.",
+        (
+            "Pass every runtime argument on each launch, in the order used at prepare().",
+        ),
+    )
+    LAUNCH_PREPARED_BAD_VALUE = (
+        "Prepared-launch argument `{arg_name}` cannot be updated from a {value_type} value.",
+        (
+            "Pass the same kind of value the argument was prepared with: a pointer "
+            "(or raw integer address), a numeric scalar, or a CUDA stream.",
+        ),
+    )
+    LAUNCH_PREPARED_MODULE_UNLOADED = (
+        "This prepared launch refers to a compiled module that has been unloaded.",
+        ("Prepare the launch again from a live compiled function.",),
+    )
+    LAUNCH_PREPARE_EXTRA_ARGS = (
+        "prepare() takes at most {expected} runtime arguments matching the function signature, but {provided} were provided.",
+        (
+            "Pass only the arguments declared by the function signature; extra "
+            "trailing arguments are not supported by prepared launches.",
+        ),
+    )
+    LAUNCH_PREPARE_UNSUPPORTED_ARG = (
+        "Argument `{arg_name}` of type {arg_type} cannot be re-bound in place by a prepared launch.",
+        (
+            "Eligible arguments are cute runtime pointers (`make_ptr`), "
+            "Boolean/Int8-Int64/Uint8-Uint64/Float32/Float64/TFloat32 scalars "
+            "(or plain Python bool/int/float), and CUDA streams.",
+            "Call the compiled function directly for argument types that need "
+            "per-call marshalling (e.g. dlpack tensors).",
+        ),
+    )
+    LAUNCH_PREPARE_UNSUPPORTED_EXECUTOR = (
+        "Prepared launches are not supported for `{function_kind}` compiled functions.",
+        (
+            "TVM-FFI compiled functions dispatch through their own direct "
+            "entry point; call the compiled function directly instead of "
+            "preparing it.",
+        ),
+    )
     # --- PHASE ---
     PHASE_CONDITIONAL_NOT_DYNAMIC = (
         "The condition must be a {staged} value, not a {meta}.",
