@@ -1821,15 +1821,31 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
     def get_shared_libs(self) -> list:
         shared_libs = []
+        missing_libs = []
         support_libs = self.envar.shared_libs
         if support_libs is not None:
             _libs = support_libs.split(":")
             for lib in _libs:
                 if not os.path.exists(lib):
-                    raise FileNotFoundError(
-                        errno.ENOENT, os.strerror(errno.ENOENT), lib
-                    )
+                    # Entries can be stale when the environment was built on
+                    # another machine (e.g. Slurm --export=ALL) and forwarded
+                    # here; a missing entry must not fail the whole compile
+                    # while other entries point at a usable runtime.
+                    missing_libs.append(lib)
+                    continue
                 shared_libs.append(lib)
+            if not shared_libs:
+                # Every entry is stale, so there is no usable runtime left
+                # and the compile cannot proceed.
+                raise FileNotFoundError(
+                    errno.ENOENT, os.strerror(errno.ENOENT), support_libs
+                )
+            for lib in missing_libs:
+                self.print_warning(
+                    f"Skipping {lib}: the file does not exist on this "
+                    "machine, but other entries of the shared library list "
+                    "point at a usable runtime."
+                )
         else:
             if is_cutlass_family_dsl_prefix(self.name):
                 self.print_warning(
