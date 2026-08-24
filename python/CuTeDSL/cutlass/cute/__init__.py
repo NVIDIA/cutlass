@@ -234,6 +234,7 @@ compile_to = compile.compile_to
 OptLevel = _dsl.OptLevel
 
 PtxasOptions = _dsl.PtxasOptions
+NvvmOptions = _dsl.NvvmOptions
 EnableAssertions = _dsl.EnableAssertions
 GenerateLineInfo = _dsl.GenerateLineInfo
 KeepCUBIN = _dsl.KeepCUBIN

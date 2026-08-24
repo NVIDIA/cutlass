@@ -62,6 +62,10 @@ You can provide additional compilation options as a string when calling ``cute.c
      - The options to pass to the PTX Compiler library.
      - ""
      - str
+   * - ``nvvm-options``
+     - The options to pass to the NVVM backend. LLVM codegen (llc) flags are passed as ``-Xllc <flag>`` pairs; prefer the ``llc{...}`` token below for those.
+     - ""
+     - str
    * - ``generate-line-info``
      - Generate line information for debugging.
      - False
@@ -91,6 +95,63 @@ You can use the following code to specify compilation options:
    jit_executor_with_keep_sass = cute.compile(add, 1, 2, options="--keep-sass")
    jit_executor_with_nvdisasm_options = cute.compile(add, 1, 2, options="--keep-sass --nvdisasm-options '-c'")
    jit_executor_with_ptxas_options = cute.compile(add, 1, 2, options="--ptxas-options '--opt-level=2'")
+   jit_executor_with_nvvm_options = cute.compile(add, 1, 2, options="--nvvm-options '-Xllc -aggressive-machine-cse=1'")
+
+
+Forwarding flags to LLVM codegen (``llc``)
+------------------------------------------
+
+LLVM codegen flags are reached through the NVVM backend as ``-Xllc <flag>`` pairs. The
+``llc{...}`` token composes those pairs for you and is accepted anywhere compact option
+tokens are, including the ``CUTE_DSL_COMPILER_OPT`` environment variable:
+
+.. code-block:: python
+
+   # one flag
+   jit_executor = cute.compile(add, 1, 2, options="llc{aggressive-machine-cse=1}")
+   # several flags in one token
+   jit_executor = cute.compile(add, 1, 2, options="llc{aggressive-machine-cse=1,enable-misched=0}")
+
+.. code-block:: bash
+
+   CUTE_DSL_COMPILER_OPT="llc{aggressive-machine-cse=1}" python my_kernel.py
+
+Spell each flag without its leading ``-``; names may contain letters, digits, ``_``,
+``.`` and ``-``, optionally followed by ``=<value>``. Malformed tokens are rejected when
+the options string is parsed. Flags themselves are forwarded as-is: the backend errors on
+flags it rejects and silently ignores ones it does not recognize, so these are power-user
+options tied to the LLVM version inside libNVVM, much like ``ptxas-options``.
+
+An explicit ``--nvvm-options`` value replaces flags contributed by ``llc{...}`` in the
+same options string.
+
+Process-global flag state
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``-Xllc`` flags are parsed into LLVM's process-global option registry (``cl::opt``) by
+the in-process backend, and the registry is only re-parsed by compiles that themselves
+pass ``nvvm-options``. A flagged compile therefore leaves the flag in effect for
+**every subsequent compile in the same process** that does not pass its own
+``nvvm-options`` — the flag does not expire when the flagged compile finishes (whether
+the emitted code actually differs depends on the flag and the kernel). This is a
+limitation of the current in-process backend and cannot be scoped from Python, so treat
+``llc{...}`` as setting process state, not a per-kernel attribute.
+
+Two consequences to plan around:
+
+- **Compile caches key on the requested option string, not on inherited flag state.**
+  A cached JIT compilation performed without options while a flag is active stores
+  flag-affected code under the clean cache key — including in the persistent file
+  cache, from which it can be served to later processes. Avoid mixing ``llc{...}`` with
+  cached JIT compilation in the same process unless you have reset the flags first
+  (as of this writing, explicit ``cute.compile`` always recompiles and is unaffected).
+- **Resets are best-effort.** Running a throwaway compile that passes the flag's
+  default value explicitly (e.g. ``llc{aggressive-machine-cse=0}``) restores that flag
+  for the rest of the process. This only works for flags whose default is expressible
+  as a value, requires the compile to actually reach the backend (a compile satisfied
+  from a cache does not re-parse the registry), and does not help for flags set via
+  ``CUTE_DSL_COMPILER_OPT``, which is re-applied on every compile. Full isolation is a
+  fresh process.
 
 
 ``cute.compile`` Compilation Options as separate Python types
@@ -101,7 +162,7 @@ Compilation options can be programmatically composed using tuple and passed to `
 
 .. code-block:: python
 
-  from cutlass.cute import OptLevel, EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX, KeepSASS, NvdisasmOptions
+  from cutlass.cute import OptLevel, EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX, KeepSASS, NvdisasmOptions, NvvmOptions
 
   my_debugging_options = (OptLevel(1), EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX)
   compiled_kernel_1 = cute.compile[my_debugging_options](my_kernel_1, ...)
@@ -120,3 +181,4 @@ Notebly, boolean options are automatically converted to True instances of the op
    jit_executor_with_keep_sass = cute.compile[KeepSASS](add, 1, 2)
    jit_executor_with_nvdisasm_options = cute.compile[KeepSASS, NvdisasmOptions("-c")](add, 1, 2)
    jit_executor_with_ptxas_options = cute.compile[PtxasOptions("--opt-level=2")](add, 1, 2)
+   jit_executor_with_nvvm_options = cute.compile[NvvmOptions("-Xllc -aggressive-machine-cse=1")](add, 1, 2)
