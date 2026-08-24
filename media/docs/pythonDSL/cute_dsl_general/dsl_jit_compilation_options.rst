@@ -125,6 +125,34 @@ options tied to the LLVM version inside libNVVM, much like ``ptxas-options``.
 An explicit ``--nvvm-options`` value replaces flags contributed by ``llc{...}`` in the
 same options string.
 
+Process-global flag state
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``-Xllc`` flags are parsed into LLVM's process-global option registry (``cl::opt``) by
+the in-process backend, and the registry is only re-parsed by compiles that themselves
+pass ``nvvm-options``. A flagged compile therefore leaves the flag in effect for
+**every subsequent compile in the same process** that does not pass its own
+``nvvm-options`` — the flag does not expire when the flagged compile finishes (whether
+the emitted code actually differs depends on the flag and the kernel). This is a
+limitation of the current in-process backend and cannot be scoped from Python, so treat
+``llc{...}`` as setting process state, not a per-kernel attribute.
+
+Two consequences to plan around:
+
+- **Compile caches key on the requested option string, not on inherited flag state.**
+  A cached JIT compilation performed without options while a flag is active stores
+  flag-affected code under the clean cache key — including in the persistent file
+  cache, from which it can be served to later processes. Avoid mixing ``llc{...}`` with
+  cached JIT compilation in the same process unless you have reset the flags first
+  (as of this writing, explicit ``cute.compile`` always recompiles and is unaffected).
+- **Resets are best-effort.** Running a throwaway compile that passes the flag's
+  default value explicitly (e.g. ``llc{aggressive-machine-cse=0}``) restores that flag
+  for the rest of the process. This only works for flags whose default is expressible
+  as a value, requires the compile to actually reach the backend (a compile satisfied
+  from a cache does not re-parse the registry), and does not help for flags set via
+  ``CUTE_DSL_COMPILER_OPT``, which is re-applied on every compile. Full isolation is a
+  fresh process.
+
 
 ``cute.compile`` Compilation Options as separate Python types
 -------------------------------------------------------------

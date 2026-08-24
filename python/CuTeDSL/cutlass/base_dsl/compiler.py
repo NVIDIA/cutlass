@@ -523,7 +523,16 @@ class NvvmOptions(StringCompileOption):
 
     Precedence: compact tokens are applied before the legacy string API, so
     an explicit ``--nvvm-options <value>`` replaces any flags contributed by
-    ``llc{...}`` in the same options string, regardless of their order."""
+    ``llc{...}`` in the same options string, regardless of their order.
+
+    Process-global state: the backend parses ``-Xllc`` flags into LLVM's
+    process-global option registry (``cl::opt``), and only compiles that
+    pass ``nvvm-options`` themselves re-parse it — a flag set here stays in
+    effect for every subsequent compile in the process that does not pass
+    its own ``nvvm-options``, and compile caches key on the requested
+    option string, not on inherited flag state. See the "Process-global
+    flag state" section of the JIT compilation options doc for the
+    consequences and a best-effort manual reset recipe."""
 
     _option_name = "nvvm-options"
     _suppress_when_absent = True
