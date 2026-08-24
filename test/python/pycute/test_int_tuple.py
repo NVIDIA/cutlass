@@ -77,4 +77,10 @@ class TestIntTuple(unittest.TestCase):
     self.assertEqual(prefix_product(((2,3),(2, 1, 2),( 5,  2,  1))),
                                     ((1,2),(6,12,12),(24,120,240)))
 
-
+  def test_idx2crd_shape1_stride0(self):
+    # A size-1 mode contributes coordinate 0 regardless of its stride;
+    # C++ skips the division for this case, so stride-0 broadcast modes
+    # must not raise.
+    self.assertEqual(idx2crd(7, (1,(2,2)), (0,(1,2))), (0,(1,1)))
+    self.assertEqual(idx2crd(5, 1, 0), 0)
+    self.assertEqual(idx2crd(6, (4,6), (1,4)), (2,1))

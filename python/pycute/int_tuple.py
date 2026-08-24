@@ -154,6 +154,11 @@ def idx2crd(idx, shape, stride=None):
       assert len(shape) == len(stride)
       return tuple(idx2crd(idx, s, d) for s,d in zip(shape,stride))
     else:                              # "int" "int" "int"
+      # A size-1 mode contributes coordinate 0 regardless of its stride;
+      # C++ skips the division for this case (include/cute/stride.hpp), so
+      # stride-0 broadcast modes are tolerated instead of raising.
+      if shape == 1:
+        return 0
       return (idx // stride) % shape
 
 
