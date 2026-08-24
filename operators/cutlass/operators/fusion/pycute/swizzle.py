@@ -38,11 +38,11 @@ from .layout import *
 
 
 def shiftr(a, s):
-    return a >> s if s > 0 else shiftl(a, -s)
+    return a >> s if s >= 0 else shiftl(a, -s)
 
 
 def shiftl(a, s):
-    return a << s if s > 0 else shiftr(a, -s)
+    return a << s if s >= 0 else shiftr(a, -s)
 
 
 ## A generic Swizzle functor
