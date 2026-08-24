@@ -29,6 +29,15 @@
 add_custom_target(cutlass_test_unit_conv)
 add_custom_target(test_unit_conv)
 
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_conv_problem_size
+  WITHOUT_CUDA
+  problem_size.cpp
+  )
+
+add_dependencies(cutlass_test_unit_conv cutlass_test_unit_conv_problem_size)
+add_dependencies(test_unit_conv cutlass_test_unit_conv_problem_size)
+
 set(CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED ON CACHE BOOL
   "Enable/Disable convolution device reference for conv unit tests.")
 
