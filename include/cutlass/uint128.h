@@ -82,9 +82,9 @@ uint64_t umul128(
   uint64_t p_hl = a_hi * b_lo;
   uint64_t p_hh = a_hi * b_hi;
 
-  uint64_t p_mid = (p_ll >> 32) + (p_lh & mask) + (p_hl & mask);
-  uint64_t r_lo = (p_ll & mask) + (p_mid << 32);
-  uint64_t r_hi = (p_lh & mask) + (p_hl & mask) + p_hh;
+  uint64_t mid = (p_ll >> 32) + (p_lh & mask) + (p_hl & mask);
+  uint64_t r_lo = (p_ll & mask) | (mid << 32);
+  uint64_t r_hi = p_hh + (p_lh >> 32) + (p_hl >> 32) + (mid >> 32);
 
   *high_product = r_hi;
   return r_lo;
