@@ -59,6 +59,7 @@ add_subdirectory(sm120_blockscaled_sparse_tensorop_gemm)
 add_subdirectory(sm120_sparse_tensorop_gemm)
 add_subdirectory(sm120_tensorop_gemm)
 add_subdirectory(sm120_blockscaled_tensorop_gemm)
+add_subdirectory(sm120_nvfp4_w4a16_gemm)
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt
@@ -1206,4 +1207,3 @@ cutlass_test_unit_gemm_device_add_executable(
   BATCH_SIZE 1
   sm100_gemm_f32_f32_f32_simt_align1_ptr_array.cu
 )
-

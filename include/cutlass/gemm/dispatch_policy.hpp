@@ -947,6 +947,10 @@ struct KernelScheduleSm120Blockwise: KernelScheduleSm120 { };
 struct KernelTmaWarpSpecializedBlockwiseCooperativeSm120 final : KernelScheduleSm120Blockwise, KernelTmaWarpSpecializedCooperative { };
 struct KernelTmaWarpSpecializedBlockwisePingpongSm120 final : KernelScheduleSm120Blockwise, KernelTmaWarpSpecializedPingpong { };
 
+// Mixed-input NVFP4 W4A16 uses cp.async loads and register conversion before FP16 MMA. Unlike the
+// native SM120 block-scaled schedules, only B carries block scales.
+struct KernelCpAsyncNvfp4W4A16Sm120 final : KernelScheduleSm120 { };
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM120 Sparse GEMM Dispatch Policies
@@ -1581,6 +1585,17 @@ struct MainloopSm120ArrayTmaWarpSpecializedBlockwiseScaling {
   static_assert(cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, Schedule> ||
                 cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, Schedule>, 
                 "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies.");
+};
+
+template <int Stages_ = 2, class ClusterShape_ = Shape<_1, _1, _1>>
+struct MainloopSm120CpAsyncNvfp4W4A16 {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using Schedule = KernelCpAsyncNvfp4W4A16Sm120;
+  using ArchTag = arch::Sm120;
+
+  static_assert(Stages == 2, "The SM120 NVFP4 W4A16 collective uses a two-stage cp.async pipeline");
+  static_assert(cute::size(ClusterShape{}) == 1, "The cp.async W4A16 collective does not use clusters");
 };
 
 

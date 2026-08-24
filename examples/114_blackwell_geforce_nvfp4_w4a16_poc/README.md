@@ -1,79 +1,61 @@
-# SM120/SM121 NVFP4 W4A16 GEMM proof of concept
+# SM120/SM121 NVFP4 W4A16 GEMM
 
-This example is the correctness-first phase of a weight-only NVFP4 GEMM for
-Blackwell GeForce GPUs:
+This example exercises the reusable CUTLASS mixed-input GEMM for Blackwell
+GeForce GPUs:
 
 ```text
-A: FP16, row major
-B: packed E2M1 FP4, column major, one UE4M3 scale per 16 K values
-C: FP32, row major
-Operation: C = A * B
+A: FP16 activations, row major
+B: packed E2M1 values with one UE4M3 scale per 16 K elements
+D: FP32, row major
+Operation: D = A * B
 ```
 
-The prototype keeps the missing W4A16 path self-contained in `examples/`.
-It does not change the production CUTLASS collective builders or existing
-NVFP4 W4A4 kernels.
+The implementation is split along standard CUTLASS ownership boundaries:
 
-## What this phase proves
+- `cutlass::layout::Nvfp4W4a16Weight` defines the packed value and scale
+  storage contract.
+- `cutlass::gemm::collective::Sm120CpAsyncNvfp4W4a16` owns asynchronous tile
+  movement, register conversion, scaling, and the MMA mainloop.
+- A schedule-specific `cutlass::gemm::kernel::GemmUniversal` specialization
+  owns grid mapping and composes the mainloop with a standard CUTLASS epilogue.
+- `cutlass::gemm::device::Sm120Nvfp4W4a16Gemm` is a normal
+  `GemmUniversalAdapter` alias and therefore exposes the standard CUTLASS 3.x
+  `can_implement`, `initialize`, `run`, and `operator()` interface.
 
-For each 16-element K step, one warp:
+## Mainloop
 
-1. Loads an FP16 activation tile.
-2. Loads packed E2M1 weight pairs and their UE4M3 block-16 scales.
-3. Uses CUTLASS numeric converters to expand only the current weight tile to
-   FP16 in shared memory.
-4. Executes FP16 Tensor Core MMA with FP32 accumulation.
-5. Repeats across K and stores an FP32 output tile.
+The four-warp mainloop uses `64 x 128 x 64` and `16 x 128 x 64` CTA variants.
+It double-buffers FP16 A, packed FP4 B, and block scales in shared memory. While
+one K tile is decoded and consumed, `cp.async` transfers the following tile into
+the alternate stage. E2M1 values and UE4M3 scales are converted to FP16 register
+fragments immediately before FP16 Tensor Core MMA with FP32 accumulation.
 
-There is no global FP16 weight workspace and no separate dequantization
-kernel. The executable creates a CPU reference from the same packed weights
-and fails when the GPU result is outside tolerance.
+No full FP16 weight matrix is written to global or shared memory, and no
+separate dequantization kernel is required.
 
-This is not yet a production CUTLASS collective. The phase-1 kernel uses a
-single-warp CUDA WMMA microkernel so that the data contract, FP4 conversion,
-scale mapping, and numerical behavior can be validated independently.
+## Weight layout
 
-## Phase 2 prototype
+Values are stored as two consecutive K elements per byte, with one contiguous
+`K / 2` byte row per output column. Scales are interleaved in four-column groups:
 
-`114b_sm120_nvfp4_w4a16_cute_pipeline` implements the pipelined phase without
-replacing the phase-1 reference. It adds:
+```text
+scale_offset = ((column / 4) * (K / 16) + scale_block) * 4 + column % 4
+```
 
-1. A four-warp `64 x 32 x 64` CuTe tiled MMA with FP32 accumulation, tuned for
-   large prefill shapes.
-2. Two shared-memory stages for A, packed B, block scales, and expanded B.
-3. `cp.async` loads for FP16 A tiles, packed E2M1 B tiles, and UE4M3 scale tiles.
-4. CUTLASS's K-major XOR-swizzled shared layouts and explicit LDSM copy atoms.
-5. Tile-local E2M1-to-FP16 conversion with four independent block-16 scale rows
-   per K tile while the following global-memory stage remains in flight.
-6. Correctness checking plus a kernel-only timing loop.
+The group-of-four layout makes the four block-16 scale rows required by a K=64
+tile one aligned 16-byte transaction.
 
-For coalesced asynchronous scale loads, Phase 2 expects scales repacked as
-`[K/16, N]`; this is a runtime kernel layout rather than the source GGUF layout.
-It still does not allocate a full FP16 B matrix. The expanded FP16 values exist
-only for the current two shared-memory stages.
+## Constraints
 
-SASS inspection on SM120 confirms `LDGSTS`, `LDSM`, E2M1 and UE4M3 conversion,
-and FP16 `HMMA` instructions. The selected kernel uses 39 registers per thread
-and 27,904 bytes of static shared memory. A possible next optimization is a
-warp-specialized load/decode/compute schedule that reduces synchronization and
-the shared-memory occupancy limit.
+- `M` is 16 or a multiple of 64. Callers may pad M and copy the valid rows.
+- `N` is a multiple of 128.
+- `K` is a multiple of 64.
+- A, packed B, scales, and D are 16-byte aligned.
+- The kernel targets SM120 and SM121.
 
-## RTX 5090 Phase 2 checkpoint
-
-Local measurements with CUDA 13.1 on an RTX 5090, using
-`M=8192, N=4096, K=4096` and kernel-only CUDA event timing:
-
-| Phase 2 CTA tile | Kernel time | Dense-equivalent throughput |
-| --- | ---: | ---: |
-| Initial `32 x 16 x 16` | about 7.12 ms | about 38.6 TFLOP/s |
-| Tuned `64 x 32 x 64` | 2.11-2.15 ms | 128-131 TFLOP/s |
-
-Nsight Compute measured approximately 65% SM throughput, 67% memory/L2
-throughput, and 24.75% achieved occupancy on the 8K shape. Shared memory limits
-the theoretical occupancy to 25%. These numbers validate the proof-of-concept
-direction; they are not yet a production claim or a comparison against a tuned
-Marlin or cuBLAS baseline. The larger tile is intentionally prefill-oriented and
-can be slower on small matrices with too few CTAs to fill the GPU.
+`114_sm120_nvfp4_w4a16_poc` remains as the original scalar reference.
+`114b_sm120_nvfp4_w4a16_cute_pipeline` uses the reusable device API and checks
+its output against a host reference before reporting performance.
 
 ## Build
 
@@ -98,7 +80,18 @@ For an SM121 target, replace `120a` with `121a`.
 
 The phase-1 executable requires `M`, `N`, and `K` to be multiples of 16.
 
-The Phase 2 executable requires `M` and `K` to be multiples of 64 and `N` to be
-a multiple of 32.
+The reusable device example requires the constraints listed above.
 `--no-verify` skips the cubic CPU reference for large performance experiments;
 the kernel launch and CUDA runtime errors are still checked.
+
+## Tests
+
+The registered device test covers the layout bijection, invalid API contracts,
+both CTA shapes, all E2M1 bit patterns, multiple N tiles, and representative
+llama.cpp dimensions (`K=5120` and `K=17408`):
+
+```console
+cmake -S . -B build -DCUTLASS_NVCC_ARCHS=120a -DCUTLASS_ENABLE_TESTS=ON
+cmake --build build --target cutlass_test_unit_gemm_device_sm120_nvfp4_w4a16 --config Release
+build/test/unit/gemm/device/sm120_nvfp4_w4a16_gemm/cutlass_test_unit_gemm_device_sm120_nvfp4_w4a16
+```

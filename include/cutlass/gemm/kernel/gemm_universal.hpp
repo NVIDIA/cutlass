@@ -77,5 +77,6 @@ struct IsCutlass3ArrayKernel<ProblemShape, cute::void_t<typename ProblemShape::U
 #include "cutlass/gemm/kernel/sm103_blockscaled_gemm_tma_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm103_blockscaled_gemm_array_tma_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm120_gemm_tma_warpspecialized_cooperative_asymmetric_dma.hpp"
+#include "cutlass/gemm/kernel/sm120_nvfp4_w4a16_gemm.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
