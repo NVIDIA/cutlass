@@ -396,6 +396,14 @@ def prep_editable_install(ctk_tag: str) -> None:
                 "libs wheels match the main wheel version "
                 f"({release_version})."
             )
+        if lib_files_copied == 0:
+            raise CutlassDSLSetupError(
+                "No runtime libraries were extracted from the libs wheel "
+                "(expected a cuXX/lib directory); the editable install "
+                "would fail at first JIT compile. Check that the libs "
+                "wheels match the main wheel version "
+                f"({release_version})."
+            )
 
         write_version_file(dev_version, package_root)
 
