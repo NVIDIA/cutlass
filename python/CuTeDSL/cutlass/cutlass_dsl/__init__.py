@@ -47,6 +47,7 @@ from ..base_dsl.compiler import (
     CompileCallable,
     OptLevel,
     PtxasOptions,
+    NvvmOptions,
     EnableAssertions,
     GenerateLineInfo,
     KeepCUBIN,

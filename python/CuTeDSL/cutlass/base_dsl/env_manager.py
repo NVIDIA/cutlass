@@ -560,10 +560,13 @@ class EnvironmentVarManager(LogEnvironmentManager):
         remarks{nvvm}               — show only nvvm (sync) remarks
         remarks{ptx}                — show ptxas perf remarks (spills, local mem)
         iket                        — enable IKET (In-Kernel Event Tracing) instrumentation
+        llc{<flag>[,<flag>...]}     — forward flag(s) to LLVM codegen (llc),
+                                      e.g. llc{aggressive-machine-cse=1}
       Examples:
         CUTE_DSL_COMPILER_OPT="warnings{nvvm}"
         CUTE_DSL_COMPILER_OPT="remarks{ptx}"
         CUTE_DSL_COMPILER_OPT="iket"
+        CUTE_DSL_COMPILER_OPT="llc{aggressive-machine-cse=1}"
       The same option strings are accepted by cute.compile(..., options=...).
 
     """

@@ -500,6 +500,48 @@ class PtxasOptions(StringCompileOption):
     _cli_flag = "ptxas-options"
 
 
+def _validate_nvvm_options(options: str) -> None:
+    """Reject characters that could corrupt or escape the quoted
+    ``nvvm-options='...'`` slot of the pass-pipeline string. Surrounding
+    quotes are ignored: ``serialize()`` strips them before re-quoting."""
+    if any(ch in options.strip("'") for ch in "'\"{}\\\n\r\t"):
+        raise DSLUserCodeError(
+            _diagnostics.DiagId.CONFIG_MALFORMED_COMPILE_OPTIONS,
+            options=f"nvvm-options={options}",
+        )
+
+
+@register_option
+class NvvmOptions(StringCompileOption):
+    """Options forwarded to the NVVM backend (``nvvm-options`` in the
+    ``cute-to-nvvm`` pipeline). LLVM codegen (llc) flags are passed as
+    ``-Xllc <flag>`` pairs, e.g. ``-Xllc -aggressive-machine-cse=1``. The
+    compact ``llc{...}`` token is the user-facing way to populate this
+    option. Flags are shape-validated here and forwarded as-is: the backend
+    errors on flags it rejects and silently ignores ones it does not
+    recognize.
+
+    Precedence: compact tokens are applied before the legacy string API, so
+    an explicit ``--nvvm-options <value>`` replaces any flags contributed by
+    ``llc{...}`` in the same options string, regardless of their order."""
+
+    _option_name = "nvvm-options"
+    _suppress_when_absent = True
+
+    def __init__(self, val: str = "") -> None:
+        _validate_nvvm_options(val)
+        super().__init__(val)
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    @value.setter
+    def value(self, value: str) -> None:
+        _validate_nvvm_options(value)
+        self._value = value
+
+
 @register_option
 class RDC(BooleanCompileOption):
     """Compile as relocatable device code (``ptxas -c``).
@@ -824,6 +866,7 @@ class CompileOptions:
             --debug{launch-check}            # check CUDA launch arguments
             --remarks{ptx}                   # show only ptxas remarks (spills...)
             --iket                           # enable IKET (In-Kernel Event Tracing) instrumentation
+            --llc{aggressive-machine-cse=1}  # forward flag(s) to LLVM codegen (llc)
 
         :param opt_str: Compact option string to parse.
         :raises ValueError: On malformed syntax:
@@ -861,7 +904,11 @@ class CompileOptions:
                 )
             # (2) Empty braces: name{} is ambiguous — reject unless the token
             #     takes sub-options (an empty list then just enables it).
-            if sub_str == "" and not ExtraCompilerOpts.takes_sub_options(name):
+            if (
+                sub_str == ""
+                and name != "llc"
+                and not ExtraCompilerOpts.takes_sub_options(name)
+            ):
                 raise ValueError(
                     f"Empty braces for option '{name}'; "
                     f"provide sub-options (e.g. {name}{{key=val}}) "
@@ -944,6 +991,42 @@ class CompileOptions:
                     rf = self.options[RemarkFilter]
                     have = {c for c in rf.value.split("|") if c}
                     rf.value = "|".join(sorted(have | new_cats))
+            elif name == "llc":
+                # llc{<flag>[,<flag>...]}: forward each flag to LLVM codegen
+                # (llc) as an ``-Xllc -<flag>`` pair via the ``nvvm-options``
+                # pipeline option. Flags are validated for shape only;
+                # the backend errors on flags it rejects and silently
+                # ignores ones it does not recognize.
+                if val_str is not None or sub_str is None:
+                    raise ValueError(
+                        "llc expects flag braces, e.g. llc{aggressive-machine-cse=1}"
+                    )
+                flags = [item.strip() for item in sub_str.split(",") if item.strip()]
+                if not flags:
+                    raise ValueError(
+                        "Empty braces for option 'llc'; provide one or more "
+                        "llc flags (e.g. llc{aggressive-machine-cse=1})"
+                    )
+                for flag in flags:
+                    if not re.fullmatch(r"[A-Za-z0-9][\w.-]*(?:=[\w.-]+)?", flag):
+                        raise ValueError(
+                            f"invalid llc flag {flag!r}: expected <name> or "
+                            "<name>=<value> spelled without the leading '-' "
+                            "(allowed characters: letters, digits, '_', '.', '-')"
+                        )
+                nvvm = self.options[NvvmOptions]
+                # Append, skipping flags already present: applying the same
+                # option string twice to one CompileOptions (e.g. the env var
+                # re-applied per compile) must be idempotent so the value --
+                # and hence the compile-cache key -- stays stable.
+                have = nvvm.value.split()
+                pending: "list[str]" = []
+                for flag in flags:
+                    pair = f"-Xllc -{flag}"
+                    if pair not in " ".join(have + pending):
+                        pending.append(pair)
+                if pending:
+                    nvvm.value = " ".join(have + pending).strip()
             elif name in ExtraCompilerOpts.COMPACT_FLAGS:
                 raw_opts.extend(ExtraCompilerOpts.expand(name, sub_str))
             elif sub_str is not None:
@@ -1228,8 +1311,7 @@ def _extract_compact_options(
     import shlex
 
     _COMPACT_NAMES: frozenset[str] = frozenset(
-        {"warnings", "remarks"}
-        | set(ExtraCompilerOpts.COMPACT_FLAGS)
+        {"llc", "warnings", "remarks"} | set(ExtraCompilerOpts.COMPACT_FLAGS)
     )
 
     def _is_compact(token: str) -> bool:
@@ -1300,7 +1382,7 @@ def _parse_compile_options_from_str(options: str) -> CompileOptions:
         parsed_options = _shlex.split(options) if options else []
         # Avoid parsing the ptxas-options value as a hyphen key
         for i in range(1, len(parsed_options)):
-            if parsed_options[i - 1] in ["--ptxas-options"]:
+            if parsed_options[i - 1] in ["--ptxas-options", "--nvvm-options"]:
                 parsed_options[i] = f"'{parsed_options[i]}'"
         option_dict = vars(parser.parse_args(parsed_options))
         for dest, value in option_dict.items():
