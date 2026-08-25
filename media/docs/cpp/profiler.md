@@ -55,7 +55,7 @@ The CUTLASS profiler employs a four-digit integer level (global instantiation le
 0. **Instruction Shape**
 1. **MMA Shape Multiplier**
 2. **Cluster Shape**
-3. **Schedule Pruning**
+3. **Schedule Prunning**
 
 Cluster shape levels define the number of CTAs (Cooperative Thread Arrays) included in the kernel generation:
 
@@ -81,17 +81,17 @@ Instruction shape levels control the selection of WGMMA shapes used in kernel ge
 
 The detailed definition of the three instantiation levels controlling cluster shape, MMA shape multiplier, and instruction shape can be found in [sm90_shapes.py](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/sm90_shapes.py).
 
-Schedule pruning levels decide the epilogue schedule and mainloop schedule to stamp out a kernel instance. As defined in `get_valid_schedules` in [sm90_utils.py](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/sm90_utils.py),
+Schedule prunning levels decide the epilogue schedule and mainloop schedule to stamp out a kernel instance. As defined in `get_valid_schedules` in [sm90_utils.py](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/sm90_utils.py),
 
-- **Level >= 1**: Indicates that no pruning is being applied.
-- **Level 0**: Indicates pruning according to existing [generator.py](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/generator.py) behavior.
+- **Level >= 1**: Indicates that no prunning is being applied.
+- **Level 0**: Indicates prunning according to existing [generator.py](https://github.com/NVIDIA/cutlass/tree/main/python/cutlass_library/generator.py) behavior.
 
 An instantiation level `500`, which is padded to `0500`, thus indicates:
 
 - **Instruction Shapes**: At level 0, generating only the "default" shape.
 - **MMA Multipliers**: At level 0, generating only one multiplier, `(2, 1, 4)`.
 - **Cluster Sizes**: At level 5, allowing for clusters with 1, 2, 4, 8, or 16 CTAs.
-- **Schedule Pruning**: At level 0, where pruning is applied according to the existing `generator.py` behavior.
+- **Schedule Prunning**: At level 0, where prunning is applied according to the existing `generator.py` behavior.
 
 ## Instantiating more MMA shapes with Hopper
 
@@ -143,7 +143,7 @@ The CUTLASS profiler uses the same four-digit integer level (global instantiatio
 0. **Instruction Shape**
 1. **MMA Shape Multiplier**
 2. **Cluster Shape**
-3. **Data Type and Schedule Pruning**
+3. **Data Type and Schedule Prunning**
 
 Note for Blackwell kernels an MMA shape multiplier is no longer necessary since Blackwell kernels do not have a different
 ping pong or cooperative schedule. The profiler ignores this digit when instantiating.
@@ -248,7 +248,7 @@ Profiling:
                                                    are launched up to the profiling duration. If non-zero, this
                                                    overrides `profiling-duration` and `min-iterations`.
 
-  --profiling-duration=<duration>                  Time to spend profiling each kernel (ms). Overriden by
+  --profiling-duration=<duration>                  Time to spend profiling each kernel (ms). Overridden by
                                                    `profiling-iterations` when `profiling-iterations` != 0.
                                                    Note that `min-iterations` must also be satisfied.
 
@@ -424,7 +424,7 @@ In addition to encoded data types, CUTLASS profiler allows non-encoded generic d
 Cluster shapes can be statically set to `Shape<int,int,_1>;` and specified via runtime arguments: `cluster_m`, `cluster_n` and `cluster_k` in CUTLASS profiler.  In addition to preferred cluster shapes, a user can also specify fallback cluster shapes via runtime arguments: `cluster_m_fallback`, `cluster_n_fallback` and `cluster_k_fallback` in CUTLASS profiler. Those fallback cluster shapes are smaller shapes than the preferred ones for the hardware to assign when there is no chance to issue a larger preferred cluster to the GPU. There are several rules for using a dynamic cluster: 1) Preferred cluster size should be divisible by fallback cluster size. 2) Grid dim should be divisible by preferred cluster size. 3) Preferred cluster and fallback cluster must have the same depth (cluster_dim.z must be equal). One may refer to our CUTLASS Example [73_blackwell_gemm_dynamic_cluster](https://github.com/NVIDIA/cutlass/tree/main/examples/73_blackwell_gemm_preferred_cluster/blackwell_gemm_preferred_cluster.cu) for more details of the this feature. 
 Please be noted that this feature (dynamic cluster shapes within a single grid) is only applicable to `sm100a` kernels. The hardware will rasterize into a single cluster shape for those kernels that do not support this feature even with preferred or fallback cluster shapes assigned.
 
-CUTLASS 3.x kernels for Hopper and Blackwell also support a new feature called programatic dependent launch (PDL). This can be enabled with `--use-pdl`, and can overlap the epilogue of the prior kernel with the prologue of the next kernel. This can effectively hide kernel prologues. Using PDL can improve performance for back to back GEMMs. See [dependent kernel launch](dependent_kernel_launch.md) for more information. CUDA graphs can also be used (`--use-cuda-graphs`) with PDL to ensure that smaller kernels are enqueued back-to-back on a stream.
+CUTLASS 3.x kernels for Hopper and Blackwell also support a new feature called programmatic dependent launch (PDL). This can be enabled with `--use-pdl`, and can overlap the epilogue of the prior kernel with the prologue of the next kernel. This can effectively hide kernel prologues. Using PDL can improve performance for back to back GEMMs. See [dependent kernel launch](dependent_kernel_launch.md) for more information. CUDA graphs can also be used (`--use-cuda-graphs`) with PDL to ensure that smaller kernels are enqueued back-to-back on a stream.
 
 ## Exhaustive search mode and top-k output ranking according to performance in GFLOPS/s
 
@@ -746,7 +746,7 @@ reference_device: Passed
 
 ## Example Tensor Core Convolution Operation
 
-Example command line for profiling forward propagation convolution kernels runing on Tensor Cores is as follows:
+Example command line for profiling forward propagation convolution kernels running on Tensor Cores is as follows:
 ```bash
 $ ./tools/profiler/cutlass_profiler --kernels=tensorop*fprop  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
 

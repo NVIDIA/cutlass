@@ -225,7 +225,7 @@ logical_divide(Tensor, Tiler)
   tiled_divide(Tensor, Tiler)
    flat_divide(Tensor, Tiler)
 ```
-The above operations allows arbitrary subtensors to be "factored out" of `Tensor`s. This very commonly used in tiling for threadgroups, tiling for MMAs, and reodering tiles of data for threads.
+The above operations allows arbitrary subtensors to be "factored out" of `Tensor`s. This very commonly used in tiling for threadgroups, tiling for MMAs, and reordering tiles of data for threads.
 
 Note that the `_product` operations are not implemented for `Tensor`s as those would
 often produce layouts with increased codomain sizes, which means the `Tensor` would
@@ -245,7 +245,7 @@ retain that mode of the tensor as if no coordinate had been used.
 
 Slicing a tensor performs two operations,
 * the `Layout` is evaluated on the partial coordinate and the resulting offset is accumulated into the iterator -- the new iterator points to the start of the new tensor.
-* the `Layout` modes cooresponding to `_`-elements of the coordinate are used to construct a new layout.
+* the `Layout` modes corresponding to `_`-elements of the coordinate are used to construct a new layout.
 Together, the new iterator and the new layout construct the new tensor.
 
 ```cpp
