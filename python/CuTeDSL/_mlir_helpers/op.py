@@ -19,7 +19,7 @@ import os
 import types
 import warnings
 from functools import wraps, lru_cache
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, TypeVar, TYPE_CHECKING
 
 from .._mlir import ir
 from ..base_dsl.common import (
@@ -281,7 +281,10 @@ def _get_location_from_frame_info(frameInfo: inspect.Traceback) -> ir.Location:
     )
 
 
-def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
+_FuncT = TypeVar("_FuncT", bound=Callable[..., Any])
+
+
+def dsl_user_op(opFunc: _FuncT) -> _FuncT:
     """Decorator for user-facing DSL op wrappers.
 
     Responsibilities:
@@ -435,7 +438,7 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
 
         return res_or_list
 
-    return wrapper
+    return wrapper  # type: ignore[return-value]
 
 
 def _get_call_arg_names(frameInfo: Any) -> dict[str | int, str]:
