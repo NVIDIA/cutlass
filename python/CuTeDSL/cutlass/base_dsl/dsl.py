@@ -955,20 +955,26 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
         Decorator to mark a function for JIT compilation for Host code.
         """
-        cur_frame = inspect.currentframe()
-        assert cur_frame is not None
-        frame = cur_frame.f_back
-        return BaseDSL.jit_runner(cls, "_func", frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(
+            cls,
+            "_func",
+            inspect.currentframe().f_back,  # type: ignore[union-attr]
+            *dargs,
+            **dkwargs,
+        )
 
     @classmethod
     def kernel(cls, *dargs: Any, **dkwargs: Any) -> Any:
         """
         Decorator to mark a function for JIT compilation for GPU.
         """
-        cur_frame = inspect.currentframe()
-        assert cur_frame is not None
-        frame = cur_frame.f_back
-        return BaseDSL.jit_runner(cls, "_kernel_helper", frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(
+            cls,
+            "_kernel_helper",
+            inspect.currentframe().f_back,  # type: ignore[union-attr]
+            *dargs,
+            **dkwargs,
+        )
 
     @abstractmethod
     def _kernel_helper(self, func: Any, *args: Any, **kwargs: Any) -> Any:

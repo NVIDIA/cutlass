@@ -623,6 +623,7 @@ class DSLOperationBuildError(DSLBaseError):
             current_frame = inspect.currentframe()
             frame = current_frame.f_back if current_frame else None
             frameInfo = inspect.getframeinfo(frame) if frame else None
+            del current_frame
 
         # Try to translate MLIR/nanobind errors if no custom message provided
         self.original_error = str(message)

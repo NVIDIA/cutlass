@@ -2,6 +2,30 @@
 
 # CUTLASS 4.x
 
+## [4.6.3](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.3) (2026-08-21)
+
+### CuTe DSL
+* Bug fixing and improvements
+  - Fixed a failed kernel compilation issue when setmaxnreg is used together with specific warp-specialized patterns
+([!3382](https://github.com/NVIDIA/cutlass/issues/3420))
+  - Fixed a leak with jit/kernel decorator ([!3421](https://github.com/NVIDIA/cutlass/issues/3421))
+  - Fixed bugs in cutlass.jax.cutlass_call with tensor aliasing and handling of optional tensors
+  - Reduced the protobuf version requirement of IKET profiler from 6.30 to 4.21
+  - Fixed import time write to CUTE_DSL_LIBS ([!3462](https://github.com/NVIDIA/cutlass/issues/3462))
+  - Fixed export_to_c outputs i32 dynamic shapes in headers for i64 inputs ([!3447](https://github.com/NVIDIA/cutlass/issues/3447))
+  - Improved performance of constructing `cutlass.Numeric` from Python value ([!3443](https://github.com/NVIDIA/cutlass/issues/3443))
+  - Fixed TVM-FFI env stream detection for GPU tensors in tuple
+([!3444](https://github.com/NVIDIA/cutlass/issues/3444))
+  - Fixed TVM-FFI error when passed a tensor with non-zero byte offset
+([!3450](https://github.com/NVIDIA/cutlass/issues/3450))
+
+This release has been tested against the following packages:
+  - FlashAttention: [main (a369df7)](https://github.com/Dao-AILab/flash-attention/commit/a369df707e1980fb328abcc1733e3457ec10155f)
+  - Quack: [main (680ef82)](https://github.com/Dao-AILab/quack/commit/680ef8299ab3ff4430e722c6567b0592448e620b)
+  - FlashInfer: [main (0263dc2)](https://github.com/flashinfer-ai/flashinfer/commit/0263dc2929ccdce84b9989cae4e8ac948bdadf46)
+  - cuDNN-Frontend:[deveop(ab9efe15)](https://github.com/NVIDIA/cudnn-frontend/commit/ab9efe15e73b13abb63a56bde34fcf6ababdef65)
+  - Pytorch: [main(cf30153)](https://github.com/pytorch/pytorch/commit/cf30153c4c131c8164ee7798e5022d810682e2cb)
+
 ## [4.6.2](https://github.com/NVIDIA/cutlass/releases/tag/v4.6.2) (2026-08-03)
 
 ### CuTe DSL

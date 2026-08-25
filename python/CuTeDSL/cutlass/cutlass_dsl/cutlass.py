@@ -1501,8 +1501,13 @@ class CuTeDSL(CutlassBaseDSL):
         # Capture the user's call site (mirroring BaseDSL.jit) so that
         # decorator source locations are reported relative to the caller,
         # not this override.
-        frame = inspect.currentframe().f_back  # type: ignore[union-attr]
-        return BaseDSL.jit_runner(target_cls, "_func", frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(
+            target_cls,
+            "_func",
+            inspect.currentframe().f_back,  # type: ignore[union-attr]
+            *dargs,
+            **dkwargs,
+        )
 
     @classmethod
     def kernel(cls, *dargs: Any, **dkwargs: Any) -> Any:
@@ -1541,11 +1546,11 @@ class CuTeDSL(CutlassBaseDSL):
         # Capture the user's call site here rather than relying on a
         # nested method, so source locations point at the caller rather
         # than this override.
-        current_frame = inspect.currentframe()
-        assert current_frame is not None
-        frame = current_frame.f_back
         return CutlassBaseDSL._make_kernel_decorator(
-            target_cls, frame, *dargs, **dkwargs
+            target_cls,
+            inspect.currentframe().f_back,  # type: ignore[union-attr]
+            *dargs,
+            **dkwargs,
         )
 
     @staticmethod
@@ -1891,10 +1896,12 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         # which would record *this* frame instead of the user's source
         # location (f_back would land in this override rather than in
         # the user file).
-        current_frame = inspect.currentframe()
-        assert current_frame is not None
-        frame = current_frame.f_back
-        return CutlassBaseDSL._make_kernel_decorator(cls, frame, *dargs, **dkwargs)
+        return CutlassBaseDSL._make_kernel_decorator(
+            cls,
+            inspect.currentframe().f_back,  # type: ignore[union-attr]
+            *dargs,
+            **dkwargs,
+        )
 
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
         import re

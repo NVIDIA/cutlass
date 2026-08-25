@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.6.2
+# CUTLASS 4.6.3
 
-_CUTLASS 4.6.2 - Aug 2026_
+_CUTLASS 4.6.3 - Aug 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -90,6 +90,18 @@ To get started quickly - please refer :
   - Fixed issue in ([!3351](https://github.com/NVIDIA/cutlass/issues/3351))
   - Reduced JIT compile overhead by ~50 ms per cute.compile
   - Speed up importing cutlass.cute by 3.8x with Torch installed, 1.25x without.
+  - Fixed a failed kernel compilation issue when setmaxnreg is used together with specific warp-specialized patterns
+([!3382](https://github.com/NVIDIA/cutlass/issues/3420))
+  - Fixed a leak with jit/kernel decorator ([!3421](https://github.com/NVIDIA/cutlass/issues/3421))
+  - Fixed bugs in cutlass.jax.cutlass_call with tensor aliasing and handling of optional tensors
+  - Reduced the protobuf version requirement of IKET profiler from 6.30 to 4.21
+  - Fixed import time write to CUTE_DSL_LIBS ([!3462](https://github.com/NVIDIA/cutlass/issues/3462))
+  - Fixed export_to_c outputs i32 dynamic shapes in headers for i64 inputs ([!3447](https://github.com/NVIDIA/cutlass/issues/3447))
+  - Improved performance of constructing `cutlass.Numeric` from Python value ([!3443](https://github.com/NVIDIA/cutlass/issues/3443))
+  - Fixed TVM-FFI env stream detection for GPU tensors in tuple
+([!3444](https://github.com/NVIDIA/cutlass/issues/3444))
+  - Fixed TVM-FFI error when passed a tensor with non-zero byte offset
+([!3450](https://github.com/NVIDIA/cutlass/issues/3450))
   - Fixed following issues
     - https://github.com/NVIDIA/cutlass/issues/3132
     - https://github.com/NVIDIA/cutlass/issues/3170
