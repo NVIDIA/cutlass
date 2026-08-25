@@ -112,6 +112,10 @@ _PTXAS_PERF_REMARKS = {
     "RemarkPerfLocalMemoryUsage",
 }
 _PTXAS_KERNEL_RE = re.compile(r"kernel `([^`]+)`")
+# Match ptxas fatal diagnostics while tolerating formatting differences.
+_PTXAS_FATAL_RE = re.compile(r"^\s*ptxas\s+fatal\s*:\s*(?P<text>.+?)\s*$", re.MULTILINE)
+_PTXAS_GENERIC_FATAL = "Ptx assembly aborted due to errors"
+_PTXAS_REGISTER_ALLOCATION_RE = re.compile(r"Register allocation failed")
 
 
 def _nvvm_info(code: str, ptx_ref: str, ptx_anchor: str) -> _CompilerDiagnosticInfo:
@@ -295,11 +299,22 @@ class CompilerDiagnosticSession:
             return ""
         return format_compiler_failure_diagnostics(diagnostics, raw_error)
 
+    def _collected_error_texts(self) -> tuple[str, ...]:
+        """Return MLIR errors consumed by the scoped diagnostic collector."""
+        texts: list[str] = []
+        for diag in self._collector.diagnostics:
+            if diag.severity != "error":
+                continue
+            location = f"{diag.location}: " if diag.location else ""
+            texts.append(f"{location}{diag.message}")
+        return tuple(texts)
+
     def format_backend_failure(
         self,
         *,
         raw_error: str,
         nvvm_error: str = "",
+        ptxas_error: str = "",
         ir_context: str = "",
         arch: str = "",
         location: str = "",
@@ -307,6 +322,7 @@ class CompilerDiagnosticSession:
         return format_compiler_backend_failure(
             raw_error=raw_error,
             nvvm_error=nvvm_error,
+            ptxas_error=ptxas_error,
             ir_context=ir_context,
             arch=arch,
             location=location,
@@ -1152,15 +1168,80 @@ def extract_compiler_location(text: str) -> str:
     return loc_match.group(0) if loc_match else ""
 
 
+def _ptxas_headline(ptxas_error: str) -> str:
+    """Promote the first actionable `ptxas fatal` line into the headline.
+
+    ptxas always follows a real diagnostic with the generic "Ptx assembly
+    aborted due to errors" trailer, which carries no information; skip it so the
+    headline names the actual problem.
+    """
+
+    for match in _PTXAS_FATAL_RE.finditer(ptxas_error):
+        text = match.group("text").strip()
+        if text and _PTXAS_GENERIC_FATAL not in text:
+            return f"PTX assembly failed: {text}"
+    return "PTX assembly failed"
+
+
+def _ptxas_suggestion(ptxas_error: str, arch: str) -> str:
+    if _PTXAS_REGISTER_ALLOCATION_RE.search(ptxas_error):
+        return (
+            "the kernel needs more registers than its launch configuration allows; "
+            "reduce register pressure or shorten live ranges, reduce the CTA thread "
+            "count, or, if the kernel uses dynamic warpgroup register redistribution, "
+            "relax or remove `warpgroup_reg_dealloc` or use an appropriate "
+            "`warpgroup_reg_alloc` scheme"
+        )
+    arch_flag = f" -arch={arch}" if arch else ""
+    return (
+        "read the ptxas log above; re-run with CUTE_DSL_KEEP=ptx and assemble the "
+        f"dumped PTX with `ptxas{arch_flag} <dumped>.ptx` to iterate on the failure"
+    )
+
+
+def _format_ptxas_backend_failure(*, ptxas_error: str, arch: str, location: str) -> str:
+    """Render a PTX -> SASS failure using the assembler's own log.
+
+    ptxas is the last device compilation stage, so its log is the only account of
+    what went wrong; reproduce it verbatim rather than summarizing it.
+    """
+
+    ptxas_error = ptxas_error.strip()
+    lines = [
+        _format_compiler_diagnostic_headline("error", _ptxas_headline(ptxas_error))
+    ]
+    lines.extend(_format_compiler_location(location))
+    lines.extend(
+        _format_labeled_text(
+            "error",
+            "ptxas rejected the PTX generated for this kernel while compiling it "
+            "to SASS.",
+        )
+    )
+    if arch:
+        lines.extend(_format_labeled_text("note", f"target architecture: {arch}"))
+    lines.extend(_format_labeled_block("note", "ptxas log:", ptxas_error))
+    lines.extend(
+        _format_labeled_text("suggestion", _ptxas_suggestion(ptxas_error, arch))
+    )
+    return "\n".join(lines)
+
+
 def format_compiler_backend_failure(
     *,
     raw_error: str,
     nvvm_error: str = "",
+    ptxas_error: str = "",
     ir_context: str = "",
     arch: str = "",
     location: str = "",
 ) -> str:
     """Render an unstructured backend failure with compiler diagnostic styling."""
+
+    if ptxas_error:
+        return _format_ptxas_backend_failure(
+            ptxas_error=ptxas_error, arch=arch, location=location
+        )
 
     is_nvvm_failure = bool(nvvm_error)
     concise_nvvm_error = is_nvvm_failure and _is_concise_nvvm_backend_error(nvvm_error)

@@ -49,6 +49,13 @@ if sys.version_info < (3, 11):
 
 import jax.numpy as jnp  # noqa: E402
 
+from cutlass.operators.arguments import GemmArguments
+
+from test_utils.reference_check import (
+    GemmReferenceTolerances,
+    gemm_reference_tolerances,
+)
+
 
 class TestTorchAssertCloseWithReferenceConversion:
     def test_basic_float32_match(self):
@@ -485,3 +492,47 @@ class TestEdgeCasesAssertCloseWithReferenceConversion:
         assert_close_with_reference_conversion(
             result, reference, output_dtypes=cutlass.Float32
         )
+
+
+def _make_gemm_args(K: int, accumulator_type) -> GemmArguments:
+    """Minimal GEMM problem with contraction dimension ``K``, for tolerance tests."""
+    A = torch.empty((8, K), dtype=torch.float16)
+    B = torch.empty((K, 8), dtype=torch.float16)
+    out = torch.empty((8, 8), dtype=torch.float16)
+    return GemmArguments(A, B, out, accumulator_type=accumulator_type)
+
+
+class TestGemmReferenceTolerances:
+    def test_integer_accumulator_dtype(self):
+        """Integer accumulator dtypes should have exact tolerances."""
+        args = _make_gemm_args(K=1024, accumulator_type=cutlass.Int32)
+        assert gemm_reference_tolerances(args) == GemmReferenceTolerances(
+            rtol=0.0, atol=0.0
+        )
+
+    def test_k_below_threshold_is_exact(self):
+        """Below K=512, no accumulation error is expected, so tolerances are exact."""
+        args = _make_gemm_args(K=511, accumulator_type=cutlass.Float16)
+        assert gemm_reference_tolerances(args) == GemmReferenceTolerances(
+            rtol=0.0, atol=0.0
+        )
+
+    def test_k_at_threshold(self):
+        """K=512 is the documented anchor point where rtol starts at 0.001."""
+        args = _make_gemm_args(K=512, accumulator_type=cutlass.Float16)
+        tol = gemm_reference_tolerances(args)
+        assert tol.atol == 0.0
+        assert tol.rtol == pytest.approx(0.001, rel=1e-6)
+
+    def test_k_above_threshold_grows(self):
+        """rtol grows past its K=512 base value as K increases further."""
+        args = _make_gemm_args(K=1500, accumulator_type=cutlass.Float16)
+        tol = gemm_reference_tolerances(args)
+        assert tol.rtol > 0.001
+
+    def test_fp16_accumulator_looser_than_fp32(self):
+        """fp16's larger ULP should recommend a looser rtol than fp32 at the same K."""
+        K = 1500
+        fp16_tol = gemm_reference_tolerances(_make_gemm_args(K, cutlass.Float16))
+        fp32_tol = gemm_reference_tolerances(_make_gemm_args(K, cutlass.Float32))
+        assert fp16_tol.rtol > fp32_tol.rtol

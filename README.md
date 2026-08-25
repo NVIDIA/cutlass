@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.7.0
+# CUTLASS 4.7.1
 
-_CUTLASS 4.7.0 - Aug 2026_
+_CUTLASS 4.7.1 - Aug 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -53,11 +53,26 @@ To get started quickly - please refer :
   - Introduced the Task Scheduling framework.  This provides static analysis of execution schedules for warp-specialized kernels.  Compilation stops when known concurrency issues are detected.  Also provides tools for visualizing resource/task dependencies and analyzing a kernel's schedule.
   - Improved compiler diagnostics.  Register spills and use of local memory can now be reported at compile time with source line numbers. Preliminary support for detecting classes of NVVM synchronization and execution hazards at compile-time when using the Primitives API.  Better reporting of compiler errors that previously did not include source line numbers.
 
+* Bug fixing and improvements
+  - Fixed a failed kernel compilation issue when setmaxnreg is used together with specific warp-specialized patterns
+([!3382](https://github.com/NVIDIA/cutlass/issues/3420))
+  - Fixed a leak with jit/kernel decorator ([!3421](https://github.com/NVIDIA/cutlass/issues/3421))
+  - Fixed bugs in cutlass.jax.cutlass_call with tensor aliasing and handling of optional tensors
+  - Fixed unexpected compile cache-misses with cutlass.jax.cutlass_call
+  - Reduced the protobuf version requirement of IKET profiler from 6.30 to 4.21
+  - Fixed import time write to CUTE_DSL_LIBS ([!3462](https://github.com/NVIDIA/cutlass/issues/3462))
+  - Fixed export_to_c outputs i32 dynamic shapes in headers for i64 inputs ([!3447](https://github.com/NVIDIA/cutlass/issues/3447))
+  - Improved performance of constructing `cutlass.Numeric` from Python value ([!3443](https://github.com/NVIDIA/cutlass/issues/3443))
+  - Fixed TVM-FFI env stream detection for GPU tensors in tuple
+([!3444](https://github.com/NVIDIA/cutlass/issues/3444))
+  - Fixed TVM-FFI error when passed a tensor with non-zero byte offset
+([!3450](https://github.com/NVIDIA/cutlass/issues/3450))
+
 This release has been tested against the following packages:
-  - FlashAttention: [main (c75d019)](https://github.com/Dao-AILab/flash-attention/commit/c75d019dea9d910312974417bc28f190dfdda6d9)
-  - Quack: [main (79517ae)](https://github.com/Dao-AILab/quack/commit/79517ae3063946fc2bb26a41bd45ee550e85cb26)
-  - FlashInfer: [main (4b964ec)](https://github.com/flashinfer-ai/flashinfer/commit/4b964ec4e147cf06a39e08b08c43188859df2652)
-  - cuDNN-Frontend:[deveop(5235c2b)](https://github.com/NVIDIA/cudnn-frontend/commit/5235c2bcaa7df095627cf51dcbe53a503d372855)
+  - FlashAttention: [main (a369df7)](https://github.com/Dao-AILab/flash-attention/commit/a369df707e1980fb328abcc1733e3457ec10155f)
+  - Quack: [main (60d8808)](https://github.com/Dao-AILab/quack/commit/60d88082272a256fa9b3b2ab631c82cfa78337c6)
+  - FlashInfer: [main (145b101)](https://github.com/flashinfer-ai/flashinfer/commit/145b1010051dbfd4bdc41a0ae55d495b08d7a458)
+- cuDNN-Frontend:[deveop(66efedf)](https://github.com/NVIDIA/cudnn-frontend/commit/66efedfe806ca2f86c28d123e974204660526ef7)
   - Pytorch: [main(cf30153)](https://github.com/pytorch/pytorch/commit/cf30153c4c131c8164ee7798e5022d810682e2cb)
 
 ## CUTLASS Operator API

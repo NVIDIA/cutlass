@@ -866,7 +866,11 @@ def test_nvfp4_gemm_sm100(
 
     reference = scaled_dense_gemm_reference(args, ref_as_acc_dtype=True)
     test_utils.reference_check.assert_close_with_reference_conversion(
-        D, reference, D.dtype, atols=1e-01, rtols=1e-02,
+        D,
+        reference,
+        D.dtype,
+        atols=1e-01,
+        rtols=1e-02,
     )
 
 
@@ -920,7 +924,11 @@ def test_nvfp4_gemm_sm100_batched(fixture_enable_tvm_ffi):
 
     reference = scaled_dense_gemm_reference(args, ref_as_acc_dtype=True)
     test_utils.reference_check.assert_close_with_reference_conversion(
-        D, reference, D.dtype, atols=1e-01, rtols=1e-02,
+        D,
+        reference,
+        D.dtype,
+        atols=1e-01,
+        rtols=1e-02,
     )
 
 
@@ -993,7 +1001,11 @@ def test_nvfp4_gemm_sm100_e8m0_scales(
 
     reference = scaled_dense_gemm_reference(args, ref_as_acc_dtype=True)
     test_utils.reference_check.assert_close_with_reference_conversion(
-        D, reference, D.dtype, atols=1e-01, rtols=1e-02,
+        D,
+        reference,
+        D.dtype,
+        atols=1e-01,
+        rtols=1e-02,
     )
 
 

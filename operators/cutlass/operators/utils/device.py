@@ -166,7 +166,6 @@ def device_or_env_supports(
         return Status.fail(f"Failed to get device or CUTE_DSL_ARCH: {e}")
 
 
-
 def device_l2_cache_size(device: int | None = None) -> int:
     """Return L2 cache size in bytes for the requested device.
 
