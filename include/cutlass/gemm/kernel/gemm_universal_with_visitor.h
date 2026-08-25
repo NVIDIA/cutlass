@@ -144,11 +144,7 @@ public:
       ptr_gather_A_indices(const_cast<int *>(args.ptr_gather_A_indices)),
       ptr_gather_B_indices(const_cast<int *>(args.ptr_gather_B_indices))
     {
-      // Raise error on unsupported modes
-      assert(args.mode != GemmUniversalMode::kGemmSplitKParallel && "Sm80 EVT does not support SplitKParallel.");
-      assert(!(args.mode == GemmUniversalMode::kGemm && this->grid_tiled_shape.k() > 1 )
-        && "Sm80 EVT does not support SplitKSerial.");
-      assert(args.mode != GemmUniversalMode::kArray && "Sm80 EVT does not support Array Gemm.");
+      // Modes are validated by can_implement()
     }
 
     /// Lightweight update given a subset of arguments.
@@ -177,6 +173,29 @@ public:
   //
   // Device-only API
   //
+  /// Determines whether the GEMM can execute the given problem.
+  static Status can_implement(Arguments const &args) {
+    if (args.mode == GemmUniversalMode::kGemmSplitKParallel) {
+      return Status::kErrorNotSupported;
+    }
+
+    ThreadblockSwizzle threadblock_swizzle;
+    cutlass::gemm::GemmCoord grid_tiled_shape = threadblock_swizzle.get_tiled_shape(
+        args.problem_size, 
+        {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+        args.batch_count);
+
+    if (args.mode == GemmUniversalMode::kGemm && grid_tiled_shape.k() > 1) {
+      return Status::kErrorNotSupported;
+    }
+
+    if (args.mode == GemmUniversalMode::kArray) {
+      return Status::kErrorNotSupported;
+    }
+
+    return Base::can_implement(args);
+  }
+
 
   // Factory invocation
   CUTLASS_DEVICE
