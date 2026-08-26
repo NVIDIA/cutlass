@@ -29,6 +29,7 @@
 
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -636,8 +637,9 @@ class TensorWrapper:
         return self._runtime_tensor.__dlpack_device__()
 
 
-def strides_to_layout_string(*strides: list[tuple[int, ...]]) -> str:
-    """Convert list[stride tuples] to layout string ('t' for row-major, 'n' for col-major).
+@functools.cache
+def strides_to_layout_string(*strides: tuple[int, ...]) -> str:
+    """Convert stride tuples to a layout string ('t' for row-major, 'n' for col-major).
 
     Example:
         >>> strides_to_layout_string((0, 1, 0), (0, 0, 1), (0, 0, 1))

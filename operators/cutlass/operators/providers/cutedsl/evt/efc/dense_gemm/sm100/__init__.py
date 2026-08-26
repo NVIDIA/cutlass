@@ -26,16 +26,16 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Dense GEMM EFC operator for SM100 (Blackwell).
+"""Dense GEMM EFC operation for SM100 (Blackwell).
 
 Internal layout:
-  _operator -- the DenseGemmEFC class itself + nested EFC.JIT/Kernel
+  _operation -- the DenseGemmEFC class itself + nested EFC.JIT/Kernel
                companions with the GEMM-pipeline-shaped methods that
                the EFC framework calls into.
   _helpers  -- copy/partition utilities used as bound class methods
                of DenseGemmEFC.
 """
 
-from ._operator import DenseGemmEFC  # noqa: F401 — public re-export.
+from ._operation import DenseGemmEFC  # noqa: F401 — public re-export.
 
 __all__ = ["DenseGemmEFC"]

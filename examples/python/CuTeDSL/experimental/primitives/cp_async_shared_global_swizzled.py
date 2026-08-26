@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -67,6 +67,10 @@ from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
 
+# ---------------------------------------------------------------------------
+# Kernel Configurations
+# ---------------------------------------------------------------------------
+
 _VEC_BYTES: int = 16
 _ELEMS_PER_THREAD: int = _VEC_BYTES // 4
 _SMEM_ROW_BYTES: int = 128
@@ -90,6 +94,11 @@ def _validate_problem_shape(n: int, BLOCK: int) -> None:
         raise ValueError(
             f"n ({n}) must be divisible by BLOCK * {_ELEMS_PER_THREAD} ({tile})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -142,6 +151,11 @@ def kernel(
     gmem_dst_ptr.store(vec, alignment=ELEMS_PER_THREAD * 4)
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     src: cute.Tensor,
@@ -165,6 +179,11 @@ def host(
     ).launch(grid=grid, block=(BLOCK, 1, 1))
 
 
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
+
+
 @lru_cache(maxsize=None)
 def compile(BLOCK: int = _DEFAULT_BLOCK) -> Callable:  # noqa: A001
     """AOT-compile :func:`host`; cache by ``BLOCK``."""
@@ -184,6 +203,11 @@ def compile(BLOCK: int = _DEFAULT_BLOCK) -> Callable:  # noqa: A001
     )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     n: int = _DEFAULT_N,
@@ -198,6 +222,11 @@ def run(
     return dst, src
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(n: int = _DEFAULT_N, BLOCK: int = _DEFAULT_BLOCK) -> None:
     """Compile, run, and assert dst == src."""
     _validate_problem_shape(n, BLOCK)
@@ -210,6 +239,10 @@ def verify(n: int = _DEFAULT_N, BLOCK: int = _DEFAULT_BLOCK) -> None:
     torch.testing.assert_close(dst, src)
     print(f"verify (n={n}, BLOCK={BLOCK}): PASS  dst[:4] = {dst[:4].tolist()}")
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

@@ -71,6 +71,53 @@ def active_env_manager(env_manager: Any) -> Generator[None, None, None]:
         _active_env_manager.reset(token)
 
 
+# The DSL package's own root as imported (wheel: site-packages/cutlass; dev: the
+# build python_packages farm -- modules imported through the package carry THIS
+# path in ``co_filename`` even though the files are symlinks into the source
+# tree).  Deliberately NOT a resolved-source-tree anchor: the source repo also
+# contains tests/examples, which are AUTHOR code.
+_DSL_PKG_ROOT: str = (
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
+)
+# Top-level name of the resolved source layout (dev checkouts import some
+# internal modules directly from the source tree top package).  Derived at
+# runtime from this module's resolved location -- no hardcoded layout name.
+_DSL_RESOLVED_TOP: str = os.path.basename(
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+)
+
+
+def is_dsl_internal_code(filename: Optional[str], module_name: str = "") -> bool:
+    """Whether code at *filename* (module *module_name*) is DSL-internal or
+    standard-library -- i.e. NOT the DSL user's own code.
+
+    THE single classifier for "ours vs author code" decisions (the
+    context-manager / lambda staging guards, ...).  DSL code is recognized by the
+    package's own path (as imported) or, for dev-layout direct imports, by the
+    resolved top-level package NAME; the stdlib by top-level module name (the
+    official ``sys.stdlib_module_names`` API).  Files that merely LIVE in the
+    source repo (tests, examples, user scripts run as ``__main__``) classify as
+    author code.  ``filename=None`` (no code object, e.g. builtins / C
+    extensions) classifies via the module's ``__file__`` when importable.
+    """
+    top = (module_name or "").split(".", 1)[0]
+    if top and top in getattr(sys, "stdlib_module_names", frozenset()):
+        return True
+    if top and top == _DSL_RESOLVED_TOP:
+        return True
+    if filename is None:
+        # No source: builtins / C extensions.  Resolve through the module's
+        # ``__file__`` when importable so DSL-shipped extensions classify as
+        # internal; unresolvable means we cannot vouch for it.
+        mod = sys.modules.get(module_name)
+        filename = getattr(mod, "__file__", "") or ""
+        if not filename:
+            return False
+    if filename.startswith("<"):
+        return True  # exec/<string> frames: generated glue, not author files
+    return os.path.abspath(filename).startswith(_DSL_PKG_ROOT)
+
+
 def is_pyir_enabled() -> bool:
     """Return True when the user has set ``ENABLE_PYIR=True``."""
     env_manager = get_current_env_manager()
@@ -139,6 +186,11 @@ sys.excepthook = _dsl_excepthook
 # =============================================================================
 
 
+def _format_cause(cause: Any) -> str:
+    """Render an error's underlying cause, or empty string when there is none."""
+    return f"Caused exception: {cause}" if cause else ""
+
+
 class DSLBaseError(Exception):
     """
     Base exception for DSL-related errors.
@@ -171,9 +223,7 @@ class DSLBaseError(Exception):
         """
         Generates a string representation of the cause of the error, if available.
         """
-        if self.cause:
-            return f"Caused exception: {self.cause}"
-        return ""
+        return _format_cause(self.cause)
 
     # Subclasses may set this to True to render the "compiler bug, please
     # report" envelope instead of the "here is your mistake" block.  See
@@ -254,10 +304,10 @@ def _normalize_cuda_error_name(error_name: Union[str, bytes]) -> str:
 def _get_friendly_cuda_error_message(
     error_code: int, error_name: Union[str, bytes]
 ) -> tuple[str, str, Union[str, tuple[str, ...]]]:
+    """Get a user-friendly error message for common CUDA errors."""
     # Avoid circular dependency
     from .runtime.cuda import get_device_info
 
-    """Get a user-friendly error message for common CUDA errors."""
     error_name = _normalize_cuda_error_name(error_name)
 
     env_manager = get_current_env_manager()
@@ -508,7 +558,7 @@ class DSLWarning(UserWarning):
         super().__init__(_render_user_diagnostic(self))
 
     def _generate_cause(self) -> str:
-        return f"Caused exception: {self.cause}" if self.cause else ""
+        return _format_cause(self.cause)
 
 
 class DSLNotImplemented(DSLBaseError):
@@ -695,8 +745,6 @@ class DSLOperationBuildError(DSLBaseError):
                       automatically captures the caller's frame
             auto_translate: If True, attempt to translate MLIR/nanobind errors
         """
-        import inspect
-
         # If frameInfo not provided, capture the caller's frame information
         if frameInfo is None:
             current_frame = inspect.currentframe()

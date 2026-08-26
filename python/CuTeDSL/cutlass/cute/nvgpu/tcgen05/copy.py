@@ -112,7 +112,10 @@ class _LdBase(CopyOp):
     pack: Pack = Pack.NONE
 
     admissible_archs = base_dsl.Arch.filter(
-        lambda arch: arch.is_family_of(base_dsl.Arch.sm_100f) or arch.is_family_of(base_dsl.Arch.sm_110f)
+        lambda arch: (
+            arch.is_family_of(base_dsl.Arch.sm_100f)
+            or arch.is_family_of(base_dsl.Arch.sm_110f)
+        )
     )
 
     def __post_init__(self) -> None:
@@ -526,6 +529,104 @@ class LdRed32x32bTrait(Trait):
     pass
 
 
+@dataclass(frozen=True)
+class LdSPCompress32x32bOp(_LdBase):
+    """
+    32x32b TMEM load Sparse Compression Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-instructions-tcgen05-ld>`__.
+    This Operation corresponds to the ``spcompress`` and ``.32x32`` qualifiers.
+    """
+
+    redOp: TmemLoadRedOp = TmemLoadRedOp.MAX
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "LdSPCompress32x32bTrait":
+        """
+        Create a trait object for the 32x32b TMEM load Sparse Compression operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: LdSPCompress32x32bTrait
+        """
+        ty = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType.get(
+            copy_internal_type.mlir_type,
+            32,
+            32,
+            self.repeat.value,
+            self.redOp.value,
+            None,
+            None,
+        )
+        return LdSPCompress32x32bTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdSPCompress32x32bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class LdRedSPCompress32x32bOp(_LdBase):
+    """
+    32x32b TMEM load Reduce and Sparse Compression Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-instructions-tcgen05-ld>`__.
+    This Operation corresponds to the ``.red.spcompress`` and ``.32x32`` qualifiers.
+    """
+
+    redOp: TmemLoadRedOp = TmemLoadRedOp.MAX
+    nan: bool = False
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "LdRedSPCompress32x32bTrait":
+        """
+        Create a trait object for the 32x32b TMEM load Reduce and Sparse Compression operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: LdRedSPCompress32x32bTrait
+        """
+        ty = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType.get(
+            copy_internal_type.mlir_type,
+            32,
+            32,
+            self.repeat.value,
+            self.redOp.value,
+            ir.UnitAttr.get(),
+            ir.UnitAttr.get() if self.nan else None,
+        )
+        return LdRedSPCompress32x32bTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdRedSPCompress32x32bTrait(Trait):
+    pass
+
 
 @dataclass(frozen=True)
 class _StBase(CopyOp):
@@ -547,7 +648,10 @@ class _StBase(CopyOp):
     unpack: Unpack = Unpack.NONE
 
     admissible_archs = base_dsl.Arch.filter(
-        lambda arch: arch.is_family_of(base_dsl.Arch.sm_100f) or arch.is_family_of(base_dsl.Arch.sm_110f)
+        lambda arch: (
+            arch.is_family_of(base_dsl.Arch.sm_100f)
+            or arch.is_family_of(base_dsl.Arch.sm_110f)
+        )
     )
 
     def __post_init__(self) -> None:
@@ -784,9 +888,15 @@ class _S2TCopyBase(CopyOp):
         # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
         # S2T tcgen05 copy encodings are valid on both SM100 and Thor SM110.
-        if not (arch.is_family_of(base_dsl.Arch.sm_100f) or arch.is_family_of(base_dsl.Arch.sm_110f)):
+        if not (
+            arch.is_family_of(base_dsl.Arch.sm_100f)
+            or arch.is_family_of(base_dsl.Arch.sm_110f)
+        ):
             supported = base_dsl.Arch.filter(
-                lambda a: a.is_family_of(base_dsl.Arch.sm_100f) or a.is_family_of(base_dsl.Arch.sm_110f)
+                lambda a: (
+                    a.is_family_of(base_dsl.Arch.sm_100f)
+                    or a.is_family_of(base_dsl.Arch.sm_110f)
+                )
             )
             raise DSLUserCodeError(
                 f"expects arch to be one of {supported}, but got {arch}",
@@ -797,6 +907,24 @@ class _S2TCopyBase(CopyOp):
             raise DSLUserCodeError(
                 "expects the 'cta_group' Op parameter to be a tcgen05.CtaGroup instance",
             )
+
+    @property
+    def broadcast_factor(self) -> int:
+        """
+        Number of TMEM core matrices this Operation writes per core matrix read from SMEM.
+
+        The ``tcgen05.cp`` variants that carry a broadcast qualifier replicate the
+        single core matrix they read from SMEM across several TMEM destinations, so
+        their TMEM footprint is this factor times their SMEM footprint. Variants
+        without a broadcast qualifier read and write one core matrix, hence a factor
+        of one.
+
+        The broadcast is only representable on the TMEM side of a copy: the SMEM
+        operand holds one core matrix no matter how many times it is replicated.
+        Partitioning an SMEM operand for such a copy therefore needs this factor to
+        reconcile the two sides, see ``append_s2t_broadcast_mode``.
+        """
+        return 1
 
     def __str__(self) -> str:
         res = (
@@ -1004,6 +1132,10 @@ class Cp4x32x128bOp(_S2TCopyBase):
         )
         return Cp4x32x128bTrait(make_atom(ty, loc=loc, ip=ip))
 
+    @property
+    def broadcast_factor(self) -> int:
+        return 4
+
 
 class Cp4x32x128bTrait(Trait):
     pass
@@ -1050,6 +1182,10 @@ class Cp2x64x128b0213Op(_S2TCopyBase):
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0213,
         )
         return Cp2x64x128b0213Trait(make_atom(ty, loc=loc, ip=ip))
+
+    @property
+    def broadcast_factor(self) -> int:
+        return 2
 
 
 class Cp2x64x128b0213Trait(Trait):
@@ -1098,6 +1234,10 @@ class Cp2x64x128b0123Op(_S2TCopyBase):
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0123,
         )
         return Cp2x64x128b0123Trait(make_atom(ty, loc=loc, ip=ip))
+
+    @property
+    def broadcast_factor(self) -> int:
+        return 2
 
 
 class Cp2x64x128b0123Trait(Trait):

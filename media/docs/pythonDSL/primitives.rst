@@ -3,6 +3,8 @@
 Primitives
 ==========
 
-.. automodule:: cutlass.experimental.primitives.nvvm_wrapper
+.. automodule:: cutlass.experimental.primitives
    :members:
+   :undoc-members:
    :show-inheritance:
+   :special-members: __init__

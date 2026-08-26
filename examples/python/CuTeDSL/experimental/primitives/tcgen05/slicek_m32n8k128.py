@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -58,6 +58,11 @@ Public API::
     verify("n_group_a_tmem_shift_wdm")
     verify("n_group_smem_a_reuse_wdm")
 
+To run::
+
+    python CuTeDSL/experimental/primitives/tcgen05/slicek_m32n8k128.py
+    python CuTeDSL/experimental/primitives/tcgen05/slicek_m32n8k128.py n_group_a_tmem_shift_wdm
+
 """
 
 from __future__ import annotations
@@ -77,6 +82,10 @@ import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 _LOGICAL_M = 32
 _LOGICAL_N = 8
@@ -115,6 +124,11 @@ def _check_sm100() -> bool:
         return False
     cap = torch.cuda.get_device_capability()
     return cap[0] >= 10
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.jit
@@ -479,6 +493,11 @@ def kernel(
         prims.tcgen05_dealloc(d_tmem, _TMEM_COLS, group="cta_1")
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     a: cute.Tensor,
@@ -527,6 +546,11 @@ def _variant_id(variant: str) -> int:
     except KeyError as exc:
         valid = ", ".join(_VARIANT_NAMES)
         raise ValueError(f"unknown SliceK variant {variant!r}; valid: {valid}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -578,6 +602,11 @@ def _make_inputs() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return a, b, c
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     *,
     compiled_fn: Callable | None = None,
@@ -591,6 +620,11 @@ def run(
     return c, a, b
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(variant: str = "async_s32_smem") -> None:
     compiled_fn = compile(variant)
     print(f"Compile SliceK real-instruction variant {variant!r} OK", flush=True)
@@ -600,6 +634,10 @@ def verify(variant: str = "async_s32_smem") -> None:
     torch.testing.assert_close(c, ref, atol=0.75, rtol=1e-5)
     print(f"verify ({variant}): PASS", flush=True)
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

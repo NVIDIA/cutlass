@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -79,6 +79,11 @@ import cutlass.cute as cute
 from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 from cutlass.experimental import primitives as prims
 
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 _DEFAULT_CLUSTER_SHAPE: tuple[int, int] = (2, 1)
 _ROWS_PER_TILE: int = 4
 _DEFAULT_TILE_COLS: int = 4
@@ -115,6 +120,11 @@ def _normalize_dtype(DTYPE: str) -> DTypeName:
     if DTYPE not in DTYPES:
         raise ValueError(f"DTYPE must be one of {DTYPES}, got {DTYPE!r}")
     return cast(DTypeName, DTYPE)
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.jit
@@ -216,9 +226,9 @@ def _smem_red(
 @cute.jit
 def _cluster_tree_reduce_tile(
     smem_buf,
-    tile_elems: cutlass.Constexpr,
+    TILE_ELEMS: cutlass.Constexpr,
     rank: cutlass.Int32,
-    cluster_ctas: cutlass.Constexpr,
+    CLUSTER_CTAS: cutlass.Constexpr,
     tx: cutlass.Int32,
     REDUCE_OP: cutlass.Constexpr,
     DTYPE: cutlass.Constexpr,
@@ -231,7 +241,7 @@ def _cluster_tree_reduce_tile(
     prims.barrier_cluster_wait()
 
     for stride in _TREE_STRIDES:
-        if cluster_ctas > stride:
+        if CLUSTER_CTAS > stride:
             peer_rank = rank + cutlass.Int32(stride)
             # Binary tree stage:
             #   stride=1: ranks 0,2,4,... absorb 1,3,5,...
@@ -239,8 +249,8 @@ def _cluster_tree_reduce_tile(
             # and so on. Non-owner CTAs simply wait for the next stage.
             if (
                 (rank % cutlass.Int32(2 * stride) == cutlass.Int32(0))
-                & (peer_rank < cutlass.Int32(cluster_ctas))
-                & (tx < tile_elems)
+                & (peer_rank < cutlass.Int32(CLUSTER_CTAS))
+                & (tx < TILE_ELEMS)
             ):
                 peer_smem_buf = prims.mapa(smem_buf.data_ptr(), peer_rank)
                 local_value = smem_buf[tx]
@@ -257,7 +267,7 @@ def _cluster_tree_reduce_tile(
 
 @cute.kernel
 def _kernel(
-    src: cute.Tensor,  # [cluster_ctas, _ROWS_PER_TILE, TILE_COLS]
+    src: cute.Tensor,  # [CLUSTER_CTAS, _ROWS_PER_TILE, TILE_COLS]
     out: cute.Tensor,  # [_ROWS_PER_TILE, TILE_COLS]
     CLUSTER_SHAPE: cutlass.Constexpr,
     REDUCE_OP: cutlass.Constexpr,
@@ -266,10 +276,10 @@ def _kernel(
 ) -> None:
     """Reduce one tile per CTA into one cluster-wide tile."""
     cluster_x, cluster_y = CLUSTER_SHAPE
-    cluster_ctas = cluster_x * cluster_y
+    CLUSTER_CTAS = cluster_x * cluster_y
     tx, _, _ = cute.arch.thread_idx()
     rank = cute.arch.block_idx_in_cluster()
-    tile_elems = _ROWS_PER_TILE * TILE_COLS
+    TILE_ELEMS = _ROWS_PER_TILE * TILE_COLS
 
     smem_buf = cutlass.Array(
         src.element_type,
@@ -286,16 +296,16 @@ def _kernel(
     # fallback path combines CTA-local SMEM tiles through peer reads.
     if cutlass.const_expr(not need_smem_reduction):
         if rank == 0:
-            if tx < tile_elems:
+            if tx < TILE_ELEMS:
                 smem_buf[tx] = _cast_to_dtype(_identity_value(REDUCE_OP, DTYPE), DTYPE)
 
         prims.barrier_cta_sync(0)
         prims.barrier_cluster_arrive()
         prims.barrier_cluster_wait()
 
-        if tx < tile_elems:
+        if tx < TILE_ELEMS:
             root_smem_buf = prims.mapa(smem_buf.data_ptr(), cutlass.Int32(0))
-            src_offset = rank * tile_elems + tx
+            src_offset = rank * TILE_ELEMS + tx
             _smem_red(
                 root_smem_buf + tx,
                 (src_ptr + src_offset).load(),
@@ -309,18 +319,18 @@ def _kernel(
         prims.barrier_cluster_arrive()
         prims.barrier_cluster_wait()
     else:
-        if tx < tile_elems:
+        if tx < TILE_ELEMS:
             # Each CTA starts by publishing its private input tile into local
             # SMEM. The tree reducer treats this as the per-rank SMEM tile.
-            src_offset = rank * tile_elems + tx
+            src_offset = rank * TILE_ELEMS + tx
             smem_buf[tx] = (src_ptr + src_offset).load()
 
         _cluster_tree_reduce_tile(
-            smem_buf, tile_elems, rank, cluster_ctas, tx, REDUCE_OP, DTYPE
+            smem_buf, TILE_ELEMS, rank, CLUSTER_CTAS, tx, REDUCE_OP, DTYPE
         )
 
     if rank == 0:
-        if tx < tile_elems:
+        if tx < TILE_ELEMS:
             # After the final tree stage, rank 0's SMEM tile is the complete
             # cluster reduction. Preserve tile shape in the output.
             (out.iterator.raw_ptr() + tx).store(smem_buf[tx])
@@ -330,6 +340,11 @@ def _kernel(
     # needed here.
     prims.barrier_cluster_arrive_relaxed()
     prims.barrier_cluster_wait()
+
+
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
 
 
 @cute.jit
@@ -352,17 +367,22 @@ def _host(
     )
 
 
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
+
+
 def _normalize_cluster_shape(CLUSTER_SHAPE: tuple[int, int]) -> tuple[int, int]:
     """Return a validated ``(cluster_x, cluster_y)`` tuple."""
     if len(CLUSTER_SHAPE) != 2:
         raise ValueError(f"CLUSTER_SHAPE must have two dimensions, got {CLUSTER_SHAPE}")
     cluster_x, cluster_y = (int(CLUSTER_SHAPE[0]), int(CLUSTER_SHAPE[1]))
-    cluster_ctas = cluster_x * cluster_y
-    if cluster_x < 1 or cluster_y < 1 or cluster_ctas < 2:
+    CLUSTER_CTAS = cluster_x * cluster_y
+    if cluster_x < 1 or cluster_y < 1 or CLUSTER_CTAS < 2:
         raise ValueError(
             f"cluster must contain at least 2 CTAs (got {cluster_x}x{cluster_y})"
         )
-    if cluster_ctas > 16:
+    if CLUSTER_CTAS > 16:
         raise ValueError(
             f"cluster must contain at most 16 CTAs (got {cluster_x}x{cluster_y})"
         )
@@ -404,11 +424,11 @@ def _compile_cached(
     DTYPE: DTypeName,
 ) -> Callable:
     """AOT-compile the cluster shared-memory reduction example."""
-    cluster_ctas = CLUSTER_SHAPE[0] * CLUSTER_SHAPE[1]
+    CLUSTER_CTAS = CLUSTER_SHAPE[0] * CLUSTER_SHAPE[1]
     cutlass_dtype = _CUTLASS_DTYPES[DTYPE]
     fake_src = make_fake_compact_tensor(
         cutlass_dtype,
-        (cluster_ctas, _ROWS_PER_TILE, TILE_COLS),
+        (CLUSTER_CTAS, _ROWS_PER_TILE, TILE_COLS),
         stride_order=(2, 1, 0),
         assumed_align=16,
     )
@@ -462,6 +482,11 @@ def expected(
     return src.max(dim=0).values
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     CLUSTER_SHAPE: tuple[int, int] = _DEFAULT_CLUSTER_SHAPE,
@@ -478,12 +503,12 @@ def run(
     DTYPE = _normalize_dtype(DTYPE)
     cluster_x, cluster_y = _normalize_cluster_shape(CLUSTER_SHAPE)
     TILE_COLS = _normalize_tile_cols(TILE_COLS)
-    cluster_ctas = cluster_x * cluster_y
+    CLUSTER_CTAS = cluster_x * cluster_y
     src = torch.arange(
-        cluster_ctas * _ROWS_PER_TILE * TILE_COLS,
+        CLUSTER_CTAS * _ROWS_PER_TILE * TILE_COLS,
         dtype=torch.float32,
         device="cuda",
-    ).reshape(cluster_ctas, _ROWS_PER_TILE, TILE_COLS)
+    ).reshape(CLUSTER_CTAS, _ROWS_PER_TILE, TILE_COLS)
     src = (src % 37.0) - 18.0 + float(_PARTIAL_BASE)
     if DTYPE != "i32":
         src = src * 0.5
@@ -495,6 +520,11 @@ def run(
     compiled_fn(src, out, stream)
     torch.cuda.synchronize()
     return out, src
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(
@@ -547,6 +577,11 @@ def verify(
         f"verify (cluster_shape={cluster_x}x{cluster_y}, "
         f"REDUCE_OP={REDUCE_OP}, DTYPE={DTYPE}): PASS"
     )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:

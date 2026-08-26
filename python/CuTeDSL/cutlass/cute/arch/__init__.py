@@ -11,6 +11,7 @@
 
 from .constants import *
 from .elect import *
+from .features import *
 from .mbar import *
 from .nvvm_wrappers import *
 from .smem import *
@@ -23,6 +24,9 @@ from cutlass.base_dsl import Arch
 
 # __all__ is required here for documentation generation
 __all__ = [
+    #
+    # features.py
+    #
     #
     # elect.py
     #
@@ -71,7 +75,6 @@ __all__ = [
     "fence_acq_rel_sys",
     "cp_async_commit_group",
     "cp_async_wait_group",
-    "cp_async_shared_global",
     "cp_async_bulk_commit_group",
     "cp_async_bulk_wait_group",
     "cluster_wait",
@@ -113,7 +116,19 @@ __all__ = [
     "fma_packed_f32x2_bf16x2_f32x2_f32x2",
     "mul_packed_f32x2",
     "add_packed_f32x2",
+    "add_packed_f16x2",
+    "add_packed_bf16x2",
+    "add_packed_f16x2_f32x2_f32x2",
+    "add_packed_bf16x2_f32x2_f32x2",
+    "add_packed_f32x2_f16x2_f32x2",
+    "add_packed_f32x2_bf16x2_f32x2",
     "sub_packed_f32x2",
+    "sub_packed_f16x2",
+    "sub_packed_bf16x2",
+    "sub_packed_f16x2_f32x2_f32x2",
+    "sub_packed_bf16x2_f32x2_f32x2",
+    "sub_packed_f32x2_f16x2_f32x2",
+    "sub_packed_f32x2_bf16x2_f32x2",
     "fmax",
     "fmin",
     "rcp_approx",

@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -63,7 +63,7 @@ TMA requires the contiguous box dimension to match the selected swizzle width:
 the logical row at TILE_K = 64 fp16 by issuing multiple TMA boxes for the
 smaller swizzles and reading each packed box back into the correct row segment.
 
-To run all four modes::
+To run::
 
     python CuTeDSL/experimental/primitives/tma/tma_swizzle_modes.py
 
@@ -149,6 +149,7 @@ def kernel(
        store linearly to dst.
     """
     _, smem_sw, tma_box_k = _SWIZZLE_TABLE[SWIZZLE]
+    num_boxes = TILE_K // tma_box_k
 
     smem = cutlass.Array(
         cutlass.Float16, TILE_M * TILE_K, space=cutlass.AddressSpace.smem, alignment=128
@@ -168,13 +169,13 @@ def kernel(
     # ---- Producer: arrive_expect_tx + TMA load -----------------------------
     if warp_idx == 0:
         if prims.elect_sync():
-            num_tma_boxes = cutlass.const_expr(TILE_K // tma_box_k)
-            total_tx_bytes = tma_src_desc.global_tx_bytes() * num_tma_boxes
-            prims.mbarrier_arrive_expect_tx(mbar, total_tx_bytes)
+            prims.mbarrier_arrive_expect_tx(
+                mbar, tma_src_desc.global_tx_bytes() * num_boxes
+            )
         if prims.elect_sync():
             smem_ptr = smem.data_ptr()
             box_elems = TILE_M * tma_box_k
-            for box_idx in cutlass.range_constexpr(TILE_K // tma_box_k):
+            for box_idx in cutlass.range_constexpr(num_boxes):
                 prims.cp_async_bulk_tensor_shared_cta_global(
                     smem_ptr + box_idx * box_elems,
                     tma_src_desc.get_ptr(),
@@ -202,7 +203,7 @@ def kernel(
     # CHUNK=8 -> one 128-bit vector load per iteration. CHUNK=tma_box_k -> one
     # vector load per row segment. Any divisor of tma_box_k is legal; the CuTe
     # tensor layout applies the swizzle XOR re-map per element for any count.
-    for box_idx in cutlass.range_constexpr(TILE_K // tma_box_k):
+    for box_idx in cutlass.range_constexpr(num_boxes):
         smem_row = smem_ptr + box_idx * box_elems + row * tma_box_k
         dst_row = dst_ptr + row * TILE_K + box_idx * tma_box_k
         for i in cutlass.range_constexpr(tma_box_k // CHUNK):
@@ -321,7 +322,8 @@ if __name__ == "__main__":
         type=int,
         default=DEFAULT_CHUNK,
         help=(
-            f"fp16 elements per load_swizzled call (must divide TILE_K={TILE_K}; "
+            "fp16 elements per load_swizzled call (must divide the selected "
+            "swizzle's TMA box width; "
             f"default: {DEFAULT_CHUNK}; valid values are swizzle-specific "
             f"subsets of {list(ALL_CHUNKS)})."
             " Pass 'sweep' via --chunk_sweep to iterate over all valid chunks."

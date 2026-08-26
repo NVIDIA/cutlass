@@ -27,7 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from collections.abc import Callable
-from typing import Union
 
 import cuda.bindings.driver as cuda
 
@@ -246,9 +245,13 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         self.a_dtype: type[cutlass.Numeric] = a.element_type
         self.b_dtype: type[cutlass.Numeric] = b.element_type
         self.c_dtype: type[cutlass.Numeric] = c.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # Check if input data types are compatible with MMA instruction
         if cutlass.const_expr(self.a_dtype != self.b_dtype):
@@ -441,10 +444,8 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         tma_atom_c: cute.CopyAtom | None,
         mC_mnl: cute.Tensor,
         cluster_layout_vmnk: cute.Layout,
-        tile_sched_params: Union[
-            utils.ClcDynamicPersistentTileSchedulerParams,
-            utils.PersistentTileSchedulerParams,
-        ],
+        tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams
+        | utils.PersistentTileSchedulerParams,
         num_tma_producer: int,
         is_a_mcast: bool,
         is_b_mcast: bool,
@@ -561,7 +562,7 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
                 tmem_dealloc_mbar: cutlass.Int64
                 tmem_holding_buf: cutlass.Int32
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(SharedStorage)
 
         # AB mainloop pipeline (TMA → SMEM → MMA)
@@ -628,7 +629,7 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
                 barrier_id=self.tmem_dealloc_sync_bar_id,
                 num_threads=32 * len(self.epilogue_warp_id),
             )
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
@@ -1008,14 +1009,10 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: cute.Layout | cute.ComposedLayout | None,
         epi_tile: cute.Tile,
-        preferred_tile_sched_params: Union[
-            utils.ClcDynamicPersistentTileSchedulerParams,
-            utils.PersistentTileSchedulerParams,
-        ],
-        fallback_tile_sched_params: Union[
-            utils.ClcDynamicPersistentTileSchedulerParams,
-            utils.PersistentTileSchedulerParams,
-        ],
+        preferred_tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams
+        | utils.PersistentTileSchedulerParams,
+        fallback_tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams
+        | utils.PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
         """Mega-kernel that dispatches to the appropriate cluster-specific body.

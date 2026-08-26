@@ -41,6 +41,7 @@ from .typing import (
     Int4,
     Int8,
     Int32,
+    FloatNV8E5M3FNU,
     BFloat16,
     Float32,
     IntTuple,
@@ -90,6 +91,7 @@ from .tuple import transform_leaf, product, product_like, flatten_to_tuple
 from .arch import (
     cvt_i8_bf16_intrinsic,
     cvt_i4_bf16_intrinsic,
+    cvt_f32x4_to_fnv8e5m3x4,
 )
 
 
@@ -857,6 +859,14 @@ def make_tensor(
     ):
         # SmemDescType requires specific vec_mode layout configuration
         res_ty = _cute_nvgpu_ir.SmemDescViewType.get(layout.type)  # type: ignore[union-attr]
+    # Handle SM107 SmemDesc type
+    elif isinstance(iterator, ir.Value) and isinstance(
+        iterator.type, _cute_nvgpu_ir.SmemDescSM107Type
+    ):
+        res_ty = _cute_nvgpu_ir.SmemDescViewType.get_with_smem_desc(
+            iterator.type,
+            layout.type,  # type: ignore[union-attr]
+        )
     else:
         raise TypeError(f"unsupported iterator type, got {type(iterator)}")
 
@@ -1155,6 +1165,8 @@ def recast_tensor(
         # Both tensors share the same memory, but interpret it differently
     """
     dst_width = None
+    if isinstance(dtype, _SparseElemType):
+        dst_width = dtype.width
     if dst_width is None:
         if not isclass(dtype) or not issubclass(dtype, Numeric):
             raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
@@ -2291,8 +2303,13 @@ class TensorSSA(Vector):
         :return: The element-wise negation of the tensor
         :rtype: TensorSSA
         """
-
-        return self._apply_op(operator.sub, 0, flip=True, loc=loc, ip=ip)
+        if self.dtype.is_float:
+            # Exact sign flip: -(+0.0) == -0.0. `0 - x` would give +0.0
+            # and cannot fold into a SASS negation modifier.
+            res_vect = arith.negf(self.maybe_downcast(), loc=loc, ip=ip)
+            return TensorSSA(res_vect, self._shape, self.dtype)
+        # No integer negf; use 0 - x with a typed zero to avoid promotion.
+        return self._apply_op(operator.sub, self.dtype(0), flip=True, loc=loc, ip=ip)
 
     @dsl_user_op
     def __abs__(
@@ -2512,6 +2529,12 @@ class TensorSSA(Vector):
                 loc: Optional[ir.Location],
                 ip: Optional[ir.InsertionPoint],
             ) -> ir.Value:
+                if (
+                    size(self.shape) == 4
+                    and self.dtype == Float32
+                    and dst_dtype == FloatNV8E5M3FNU
+                ):
+                    return cvt_f32x4_to_fnv8e5m3x4(src, loc=loc, ip=ip)
                 return cutlass_arith.cvtf(src, dst_dtype.mlir_type, loc=loc, ip=ip)
 
             res_vect = convert_fp_to_fp(src, dtype, loc, ip)

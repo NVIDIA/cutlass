@@ -10,14 +10,14 @@
 # is strictly prohibited.
 
 from cutlass import AddressSpace
-from typing import Optional, Type
+from typing import Optional, Tuple, Type, Union
 
 from cutlass.cutlass_dsl import T, dsl_user_op
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import nvvm, llvm
+from cutlass._mlir.dialects import nvvm, llvm, vector
 
 from ..typing import Int, Int32, Pointer, Numeric, NumericMeta
 
@@ -167,7 +167,7 @@ def map_dsmem_ptr(
 @dsl_user_op
 def store_async_dsmem(
     smem_ptr: Pointer,
-    value: Int,
+    value: Union[Int, Tuple[Int, Int], Tuple[Int, Int, Int, Int]],
     mbar_ptr: Pointer,
     peer_cta_rank: Int,
     *,
@@ -182,7 +182,7 @@ def store_async_dsmem(
     mbarrier arrive.
 
     :param smem_ptr:       Destination pointer in this CTA's shared memory.
-    :param value:          The i32 value to store.
+    :param value:          i32 value, or tuple of 2/4 i32 values to store.
     :param mbar_ptr:       Mbarrier pointer in this CTA's shared memory.
                            Mapped to the peer CTA via ``nvvm.mapa``.
     :param peer_cta_rank:  Target CTA rank in the cluster.
@@ -239,18 +239,12 @@ def store_async_dsmem(
         ip=ip,
     )
 
-    addr_i32 = llvm.ptrtoint(T.i32(), dsmem_addr, loc=loc, ip=ip)
-    mbar_i32 = llvm.ptrtoint(T.i32(), dsmem_mbar, loc=loc, ip=ip)
-    value_ir = Int32(value).ir_value(loc=loc, ip=ip)
+    val_irs = [Int32(v).ir_value(loc=loc, ip=ip) for v in values]
 
-    llvm.inline_asm(
-        None,
-        [addr_i32, value_ir, mbar_i32],
-        "st.async.shared::cluster.mbarrier::complete_tx::bytes.b32 [$0], $1, [$2];",
-        "r,r,r",
-        has_side_effects=True,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
-        loc=loc,
-        ip=ip,
-    )
+    if n == 1:
+        value_ir = val_irs[0]
+    else:
+        vec_type = ir.VectorType.get([n], Int32.mlir_type)
+        value_ir = vector.from_elements(vec_type, val_irs, loc=loc, ip=ip)
+
+    nvvm.store_async(dsmem_addr, value_ir, dsmem_mbar, loc=loc, ip=ip)

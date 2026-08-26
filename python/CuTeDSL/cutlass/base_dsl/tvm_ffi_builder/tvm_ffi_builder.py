@@ -321,10 +321,6 @@ class TVMFFIBuilder(MLIRBuilder):
                 self.i64_type,
             ],
         )
-        self.tvm_ffi_func_type = self.func_type(
-            ret=self.i32_type,
-            params=[self.ptr_type, self.ptr_type, self.i32_type, self.ptr_type],
-        )
         self.cuda_launch_dim3_type = ir.Type.parse("!llvm.array<3 x i32>")
         self._cuda_launch_config_type: ir.Type | None = None
 
@@ -396,218 +392,129 @@ class TVMFFIBuilder(MLIRBuilder):
         )
         return llvm.load(self.i32_type, type_index_ptr)
 
-    def load_ffi_any_array_item_v_int64(self, args: ir.Value, index: int) -> ir.Value:
-        """Get the v_int64 from the index-th field of tvm_ffi_any_type struct.
+    def _load_ffi_any_array_item_value(
+        self, args: ir.Value, index: int, load_type: ir.Type
+    ) -> ir.Value:
+        """Load the union value field (field 2) of ``args[index]`` as ``load_type``.
 
-        Semantics as follows:
-
-        .. code-block:: c
-
-            int64_t get_v_int64(void* args, const int index) {
-                return ((TVMFFIAny*)args)[index].v_int64;
-            }
+        All three TVMFFIAny value accessors read the same struct field and differ
+        only in the load type (v_int64/v_float64/v_ptr are a C union).
         """
-        v_int64_ptr = self.getelementptr(
+        value_ptr = self.getelementptr(
             args,
             [index, 2],
             elem_type=self.tvm_ffi_any_type,
         )
-        return llvm.load(self.i64_type, v_int64_ptr)
+        return llvm.load(load_type, value_ptr)
+
+    def load_ffi_any_array_item_v_int64(self, args: ir.Value, index: int) -> ir.Value:
+        """Get the v_int64 from the index-th field of tvm_ffi_any_type struct.
+
+        Semantics: ``((TVMFFIAny*)args)[index].v_int64``.
+        """
+        return self._load_ffi_any_array_item_value(args, index, self.i64_type)
 
     def load_ffi_any_array_item_v_float64(self, args: ir.Value, index: int) -> ir.Value:
         """Get the v_float64 from the index-th field of tvm_ffi_any_type struct.
 
-        Semantics as follows:
-
-        .. code-block:: c
-
-            double get_v_float64(void* args, const int index) {
-                return ((TVMFFIAny*)args)[index].v_float64;
-            }
+        Semantics: ``((TVMFFIAny*)args)[index].v_float64``.
         """
-        v_float64_ptr = self.getelementptr(
-            args,
-            [index, 2],
-            elem_type=self.tvm_ffi_any_type,
-        )
-        return llvm.load(self.f64_type, v_float64_ptr)
+        return self._load_ffi_any_array_item_value(args, index, self.f64_type)
 
     def load_ffi_any_array_item_v_ptr(
         self, args: ir.Value, index: int, address_space: Optional[int] = None
     ) -> ir.Value:
         """Get the v_ptr from the index-th field of tvm_ffi_any_type struct.
 
-        Semantics as follows:
-
-        .. code-block:: c
-
-            void* get_v_ptr(void* args, const int index) {
-                return ((TVMFFIAny*)args)[index].v_ptr;
-            }
+        Semantics: ``((TVMFFIAny*)args)[index].v_ptr``.
         """
-        v_ptr_ptr = self.getelementptr(
-            args,
-            [index, 2],
-            elem_type=self.tvm_ffi_any_type,
-        )
         ptr_type = self.ptr_type_with_address_space(address_space)
-        return llvm.load(ptr_type, v_ptr_ptr)
+        return self._load_ffi_any_array_item_value(args, index, ptr_type)
+
+    def _gep_load(
+        self,
+        obj: ir.Value,
+        indices: list[int],
+        elem_type: ir.Type,
+        load_type: ir.Type,
+    ) -> ir.Value:
+        """GEP into ``obj`` at ``indices`` (as ``elem_type``) and load ``load_type``.
+
+        Shared body for the shape-cell / array-cell / DLTensor field accessors,
+        which all do a getelementptr followed by an llvm.load and differ only in
+        the index path, struct type, and loaded type.
+        """
+        ptr = self.getelementptr(obj, indices, elem_type=elem_type)
+        return llvm.load(load_type, ptr)
 
     def load_shape_cell_data_ptr(self, shape_cell: ir.Value) -> ir.Value:
         """Get the data pointer from the shape cell."""
-        data_ptr = self.getelementptr(
-            shape_cell,
-            [0, 0],
-            elem_type=self.tvm_ffi_shape_cell_type,
+        return self._gep_load(
+            shape_cell, [0, 0], self.tvm_ffi_shape_cell_type, self.ptr_type
         )
-        return llvm.load(self.ptr_type, data_ptr)
 
     def load_shape_cell_size_as_i64(self, shape_cell: ir.Value) -> ir.Value:
         """Get the size from the shape cell as i64."""
-        size_ptr = self.getelementptr(
-            shape_cell,
-            [0, 1],
-            elem_type=self.tvm_ffi_shape_cell_type,
+        size_as_ptr_type = self._gep_load(
+            shape_cell, [0, 1], self.tvm_ffi_shape_cell_type, self.ptr_type
         )
-        size_as_ptr_type = llvm.load(self.ptr_type, size_ptr)
         return llvm.ptrtoint(self.i64_type, size_as_ptr_type)
 
     def load_array_cell_data_ptr(self, array_cell: ir.Value) -> ir.Value:
         """Get the data pointer from the array cell."""
-        data_ptr = self.getelementptr(
-            array_cell,
-            [0, 0],
-            elem_type=self.tvm_ffi_array_cell_type,
+        return self._gep_load(
+            array_cell, [0, 0], self.tvm_ffi_array_cell_type, self.ptr_type
         )
-        return llvm.load(self.ptr_type, data_ptr)
 
     def load_array_cell_size_as_i64(self, array_cell: ir.Value) -> ir.Value:
         """Get the size from the array cell as i64."""
-        size_ptr = self.getelementptr(
-            array_cell,
-            [0, 1],
-            elem_type=self.tvm_ffi_array_cell_type,
+        return self._gep_load(
+            array_cell, [0, 1], self.tvm_ffi_array_cell_type, self.i64_type
         )
-        return llvm.load(self.i64_type, size_ptr)
 
     def load_i64_array_item(self, data: ir.Value, index: int) -> ir.Value:
         """Load a shape value at the given index from the shape pointer."""
-        # Get pointer to the specific shape element at index
-        shape_elem_ptr = self.getelementptr(
-            data,
-            [index],
-            elem_type=self.i64_type,
-        )
-        # Load the actual strides value
-        return llvm.load(self.i64_type, shape_elem_ptr)
+        return self._gep_load(data, [index], self.i64_type, self.i64_type)
 
     def load_dltensor_data_ptr(self, dltensor: ir.Value) -> ir.Value:
-        """Get the data pointer from the DLTensor struct."""
-        # Get pointer to the data field (first field at index 0)
-        data_ptr = self.getelementptr(
-            dltensor,
-            [0, 0],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual data pointer
-        return llvm.load(self.ptr_type, data_ptr)
+        """Get the data pointer from the DLTensor struct (field 0)."""
+        return self._gep_load(dltensor, [0, 0], self.dltensor_type, self.ptr_type)
 
     def load_dltensor_device_type(self, dltensor: ir.Value) -> ir.Value:
-        """Get the device type from the DLTensor struct."""
-        # Get pointer to the device_type field (device at index 1, then device_type at index 0)
-        device_type_ptr = self.getelementptr(
-            dltensor,
-            [0, 1, 0],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual device type value
-        return llvm.load(self.i32_type, device_type_ptr)
+        """Get the device type from the DLTensor struct (device[1].device_type[0])."""
+        return self._gep_load(dltensor, [0, 1, 0], self.dltensor_type, self.i32_type)
 
     def load_dltensor_device_id(self, dltensor: ir.Value) -> ir.Value:
-        """Get the device id from the DLTensor struct."""
-        # Get pointer to the device_id field (device field at index 1, then device_id at index 1)
-        device_id_ptr = self.getelementptr(
-            dltensor,
-            [0, 1, 1],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual device id value
-        return llvm.load(self.i32_type, device_id_ptr)
+        """Get the device id from the DLTensor struct (device[1].device_id[1])."""
+        return self._gep_load(dltensor, [0, 1, 1], self.dltensor_type, self.i32_type)
 
     def load_dltensor_dtype_code(self, dltensor: ir.Value) -> ir.Value:
-        """Get the dtype code from the DLTensor struct."""
-        # Get pointer to the dtype code field (dtype field at index 3, then code at index 0)
-        dtype_code_ptr = self.getelementptr(
-            dltensor,
-            [0, 3, 0],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual dtype code value
-        return llvm.load(self.i8_type, dtype_code_ptr)
+        """Get the dtype code from the DLTensor struct (dtype[3].code[0])."""
+        return self._gep_load(dltensor, [0, 3, 0], self.dltensor_type, self.i8_type)
 
     def load_dltensor_dtype_bits(self, dltensor: ir.Value) -> ir.Value:
-        """Get the dtype bits from the DLTensor struct."""
-        # Get pointer to the dtype bits field (dtype field at index 3, then bits at index 1)
-        dtype_bits_ptr = self.getelementptr(
-            dltensor,
-            [0, 3, 1],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual dtype bits value
-        return llvm.load(self.i8_type, dtype_bits_ptr)
+        """Get the dtype bits from the DLTensor struct (dtype[3].bits[1])."""
+        return self._gep_load(dltensor, [0, 3, 1], self.dltensor_type, self.i8_type)
 
     def load_dltensor_dtype_lanes(self, dltensor: ir.Value) -> ir.Value:
-        """Get the dtype lanes from the DLTensor struct."""
-        # Get pointer to the dtype lanes field (dtype field at index 3, then lanes at index 2)
-        dtype_lanes_ptr = self.getelementptr(
-            dltensor,
-            [0, 3, 2],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual dtype lanes value
-        return llvm.load(self.i16_type, dtype_lanes_ptr)
+        """Get the dtype lanes from the DLTensor struct (dtype[3].lanes[2])."""
+        return self._gep_load(dltensor, [0, 3, 2], self.dltensor_type, self.i16_type)
 
     def load_dltensor_ndim(self, dltensor: ir.Value) -> ir.Value:
-        """Get the number of dimensions from the DLTensor struct."""
-        # Get pointer to the ndim field (third field at index 2)
-        ndim_ptr = self.getelementptr(
-            dltensor,
-            [0, 2],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual ndim value
-        return llvm.load(self.i32_type, ndim_ptr)
+        """Get the number of dimensions from the DLTensor struct (field 2)."""
+        return self._gep_load(dltensor, [0, 2], self.dltensor_type, self.i32_type)
 
     def load_dltensor_shape(self, dltensor: ir.Value) -> ir.Value:
-        """Get the shape value at the given index from the DLTensor struct."""
-        # Get pointer to the shape array (fifth field at index 4)
-        shape_ptr = self.getelementptr(
-            dltensor,
-            [0, 4],
-            elem_type=self.dltensor_type,
-        )
-        return llvm.load(self.ptr_type, shape_ptr)
+        """Get the shape pointer from the DLTensor struct (field 4)."""
+        return self._gep_load(dltensor, [0, 4], self.dltensor_type, self.ptr_type)
 
     def load_dltensor_strides(self, dltensor: ir.Value) -> ir.Value:
-        """Get the strides value at the given index from the DLTensor struct."""
-        # Get pointer to the strides array (sixth field at index 5)
-        strides_ptr = self.getelementptr(
-            dltensor,
-            [0, 5],
-            elem_type=self.dltensor_type,
-        )
-        return llvm.load(self.ptr_type, strides_ptr)
+        """Get the strides pointer from the DLTensor struct (field 5)."""
+        return self._gep_load(dltensor, [0, 5], self.dltensor_type, self.ptr_type)
 
     def load_dltensor_byte_offset(self, dltensor: ir.Value) -> ir.Value:
-        """Get the byte offset from the DLTensor struct."""
-        # Get pointer to the byte_offset field (seventh field at index 6)
-        byte_offset_ptr = self.getelementptr(
-            dltensor,
-            [0, 6],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual byte offset value
-        return llvm.load(self.i64_type, byte_offset_ptr)
+        """Get the byte offset from the DLTensor struct (field 6)."""
+        return self._gep_load(dltensor, [0, 6], self.dltensor_type, self.i64_type)
 
     def downcast_i64_to_lower_bits(
         self, v_int64: ir.Value, target_dtype: "tvm_ffi.dtype"
@@ -807,7 +714,12 @@ class TVMFFIBuilder(MLIRBuilder):
         """Return the runtime helper parameter types for CUDA launch diagnostics."""
         launch_dim_types = [self.i32_type] * 7
         launch_limit_types = [self.i32_type] * 10
-        source_location_types = [self.ptr_type, self.i32_type, self.i32_type, self.i32_type]
+        source_location_types = [
+            self.ptr_type,
+            self.i32_type,
+            self.i32_type,
+            self.i32_type,
+        ]
         return (
             [self.ptr_type]
             + launch_dim_types
@@ -868,9 +780,7 @@ class TVMFFIBuilder(MLIRBuilder):
         def positive_and_gt(value: ir.Value, limit: ir.Value) -> ir.Value:
             return self.and_(gt(limit, self.i32(0)), gt(value, limit))
 
-        def positive_i64_and_gt_i32_limit(
-            value: ir.Value, limit: ir.Value
-        ) -> ir.Value:
+        def positive_i64_and_gt_i32_limit(value: ir.Value, limit: ir.Value) -> ir.Value:
             limit_i64 = llvm.zext(self.i64_type, limit)
             return self.and_(
                 gt(limit, self.i32(0)),
@@ -965,9 +875,7 @@ class TVMFFIBuilder(MLIRBuilder):
                         true_block=error_block,
                         false_block=next_block,
                         true_dest_operands=[
-                            self.address_of(
-                                violation_symbols[violation], self.ptr_type
-                            )
+                            self.address_of(violation_symbols[violation], self.ptr_type)
                         ],
                         branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
                     )
@@ -1109,9 +1017,7 @@ class TVMFFIBuilder(MLIRBuilder):
 
         return helper_name
 
-    _PY_SOURCE_LOC_RE = re.compile(
-        r'"(?P<file>[^"]+?\.py)":(?P<line>\d+):(?P<col>\d+)'
-    )
+    _PY_SOURCE_LOC_RE = re.compile(r'"(?P<file>[^"]+?\.py)":(?P<line>\d+):(?P<col>\d+)')
 
     @staticmethod
     def _extract_python_source_location(op: ir.Operation) -> tuple[str, int, int, int]:
@@ -1385,6 +1291,22 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         self.matched_var_source = {}
         self.matched_var_arg_field_name = {}
 
+    def _arg_err(
+        self, prefix: str, arg_context: "ArgContext", suffix: str | None = None
+    ) -> list:
+        """Build a decode-error message-parts list.
+
+        Every decode_param_* error follows the shape
+        ``[prefix, *arg_context.get(), self._fn_call_context, suffix?]``; this
+        centralizes that construction (message text is unchanged). ``suffix`` is
+        omitted when the message ends at the call context (e.g. the "value "
+        binding messages).
+        """
+        parts = [prefix, *arg_context.get(), self._fn_call_context]
+        if suffix is not None:
+            parts.append(suffix)
+        return parts
+
     def decode_param_int(
         self,
         current_block: ir.Block,
@@ -1409,12 +1331,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: is_int_or_bool,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected int",
-            ],
+            self._arg_err("Mismatched type ", arg_context, ", expected int"),
         )
         with ir.InsertionPoint(current_block):
             v_int64: ir.Value = self.load_ffi_any_array_item_v_int64(args, arg_index)
@@ -1425,11 +1342,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             param,
             v_int64,
-            [
-                "value ",
-                *arg_context.get(),
-                self._fn_call_context,
-            ],
+            self._arg_err("value ", arg_context),
             arg_context.get_field_name(""),
         )
 
@@ -1519,12 +1432,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             # Break error message into reusable parts for better string deduplication
             self.raise_error_and_return(
                 "TypeError",
-                [
-                    "Mismatched type ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected float",
-                ],
+                self._arg_err("Mismatched type ", arg_context, ", expected float"),
             )
 
         # Merge the results using block argument
@@ -1573,12 +1481,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: is_opaque_ptr_or_nullptr,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                expect_message,
-            ],
+            self._arg_err("Mismatched type ", arg_context, expect_message),
         )
 
         with ir.InsertionPoint(current_block):
@@ -1619,9 +1522,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         # with ``payload_kind`` so the display value tracks the Python type
         # (e.g. bool → True/False) rather than the wire value (int 1/0).
         accepted: tuple[TVMFFITypeIndex, ...]
-        payload_kind: (
-            tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
-        )
+        payload_kind: tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
         expected_repr: bool | int | float
         if isinstance(param, spec.ConstNone):
             accepted = (TVMFFITypeIndex.kTVMFFINone,)
@@ -1657,19 +1558,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
             type_ok: ir.Value = self.equal(type_index, self.i32(accepted[0]))
             for tx in accepted[1:]:
-                type_ok = self.or_(
-                    type_ok, self.equal(type_index, self.i32(tx))
-                )
+                type_ok = self.or_(type_ok, self.equal(type_index, self.i32(tx)))
         current_block = self.check_condition(
             current_block,
             lambda: type_ok,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                f", expected {kind_name}",
-            ],
+            self._arg_err("Mismatched type ", arg_context, f", expected {kind_name}"),
         )
 
         # Step 2 — value check (None has no payload).
@@ -1692,19 +1586,16 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     self.f64_type,
                     ir.FloatAttr.get(self.f64_type, expected_float),
                 ).res
-                value_ok = llvm.fcmp(
-                    llvm.FCmpPredicate.oeq, v_float64, expected_const
-                )
+                value_ok = llvm.fcmp(llvm.FCmpPredicate.oeq, v_float64, expected_const)
         return self.check_condition(
             current_block,
             lambda: value_ok,
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched constexpr value ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected {expected_repr}",
-            ],
+            ),
         )
 
     def check_int_value_dtype_bound(
@@ -1930,12 +1821,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(array_size, self.i64(len(param.shape))),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched Shape ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected shape size={len(param.shape)}",
-            ],
+            ),
         )
 
         # Load and validate each element of the array
@@ -2000,12 +1890,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(shape_size, self.i64(len(param.shape))),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched Shape ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected shape size={len(param.shape)}",
-            ],
+            ),
         )
 
         with ir.InsertionPoint(current_block):
@@ -2086,12 +1975,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             # Break error message into reusable parts for better string deduplication
             self.raise_error_and_return(
                 "TypeError",
-                [
-                    "Mismatched type ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected ffi.Shape or ffi.Array",
-                ],
+                self._arg_err(
+                    "Mismatched type ", arg_context, ", expected ffi.Shape or ffi.Array"
+                ),
             )
 
         # Set or check the matched variable bindings for each dimension
@@ -2163,12 +2049,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             # Break error message into reusable parts for better string deduplication
             self.raise_error_and_return(
                 "TypeError",
-                [
-                    "Mismatched type ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected Tensor",
-                ],
+                self._arg_err("Mismatched type ", arg_context, ", expected Tensor"),
             )
 
         # subsequent block: receive DLTensor pointer and set it to parameter
@@ -2213,12 +2094,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 current_block,
                 check_alignment,
                 "ValueError",
-                [
+                self._arg_err(
                     "Misaligned Tensor data ",
-                    *arg_context.get(),
-                    self._fn_call_context,
+                    arg_context,
                     f", expected data alignment={param.data_alignment} bytes",
-                ],
+                ),
             )
 
         # store the matched values, these do not need constraint checks
@@ -2233,11 +2113,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             param.device_id,
             device_id,
-            [
-                "device index ",
-                *arg_context.get(),
-                self._fn_call_context,
-            ],
+            self._arg_err("device index ", arg_context),
             arg_context.get_field_name(".device.index"),
             skip_cast_and_check=True,
         )
@@ -2249,12 +2125,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(ndim, self.i32(expected_ndim)),
             "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                f", expected ndim={expected_ndim}",
-            ],
+            self._arg_err(
+                "Mismatched Tensor ", arg_context, f", expected ndim={expected_ndim}"
+            ),
         )
         # check device_type
         # Break error message into reusable parts for better string deduplication
@@ -2262,12 +2135,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(device_type, self.i32(param.dlpack_device_type)),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected device_type={param.device_type_name}",
-            ],
+            ),
         )
 
         # check dtype
@@ -2300,12 +2172,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             dtype_equal,
             "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                f", expected dtype={param.dtype}",
-            ],
+            self._arg_err(
+                "Mismatched Tensor ", arg_context, f", expected dtype={param.dtype}"
+            ),
         )
         # check byte_offset
         # Break error message into reusable parts for better string deduplication
@@ -2313,12 +2182,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(byte_offset, self.i64(0)),
             "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected byte_offset=0",
-            ],
+            self._arg_err(
+                "Mismatched Tensor ", arg_context, ", expected byte_offset=0"
+            ),
         )
 
         with ir.InsertionPoint(current_block):
@@ -2365,12 +2231,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 current_block,
                 lambda: self.is_contiguous(param.shape, load_shapes, load_strides),
                 "ValueError",
-                [
-                    "Mismatched Tensor ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected contiguous",
-                ],
+                self._arg_err(
+                    "Mismatched Tensor ", arg_context, ", expected contiguous"
+                ),
             )
         return current_block
 
@@ -2427,7 +2290,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             The working stream.
         """
         for param in params:
-            if (
+            if isinstance(param, spec.TupleParam):
+                # Recursively check tuples
+                result = self.find_env_stream(param.params)
+                if result is not None:
+                    return result
+            elif (
                 isinstance(param, spec.Tensor)
                 and param.dlpack_device_type != tvm_ffi.DLDeviceType.kDLCPU
             ):
@@ -2440,10 +2308,6 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
-            elif isinstance(param, spec.TupleParam):
-                stream = self.find_env_stream(param.params)
-                if stream is not None:
-                    return stream
         return None
 
     def get_expected_num_args(self, params: list[spec.Param]) -> int:
@@ -2477,12 +2341,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: is_ffi_array,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected ffi.Array for tuple",
-            ],
+            self._arg_err(
+                "Mismatched type ", arg_context, ", expected ffi.Array for tuple"
+            ),
         )
 
         # Load the array cell
@@ -2498,12 +2359,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(array_size, self.i64(len(param.params))),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched tuple size ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected tuple size={len(param.params)}",
-            ],
+            ),
         )
 
         # Recursively decode each element of the tuple
@@ -2540,39 +2400,33 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             Context information for error messages.
         """
         if isinstance(param, spec.Var):
-            if param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.INT:
+            _codes = tvm_ffi._dtype.DataTypeCode
+            type_code = param.dtype.type_code
+            # INT / UINT / BOOL all decode via v_int64; FLOAT / BFLOAT via
+            # v_float64. BOOL and BFLOAT may be absent in older tvm_ffi, so build
+            # the code sets conditionally (getattr guarded) rather than repeating
+            # per-arm hasattr checks.
+            _int_codes = {_codes.INT, _codes.UINT}
+            if hasattr(_codes, "BOOL"):
+                _int_codes.add(_codes.BOOL)
+            _float_codes = {_codes.FLOAT}
+            if hasattr(_codes, "BFLOAT"):
+                _float_codes.add(_codes.BFLOAT)
+
+            if type_code in _int_codes:
                 return self.decode_param_int(
                     current_block, param, args, arg_index, arg_context
                 )
-            elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.UINT:
-                # UINT uses the same logic as INT since both are stored in v_int64
-                return self.decode_param_int(
-                    current_block, param, args, arg_index, arg_context
-                )
-            elif (
-                hasattr(tvm_ffi._dtype.DataTypeCode, "BOOL")
-                and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BOOL
-            ):
-                return self.decode_param_int(
-                    current_block, param, args, arg_index, arg_context
-                )
-            elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.FLOAT:
+            elif type_code in _float_codes:
                 return self.decode_param_float(
                     current_block, param, args, arg_index, arg_context
                 )
-            elif (
-                hasattr(tvm_ffi._dtype.DataTypeCode, "BFLOAT")
-                and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BFLOAT
-            ):
-                return self.decode_param_float(
-                    current_block, param, args, arg_index, arg_context
-                )
-            elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.HANDLE:
+            elif type_code == _codes.HANDLE:
                 return self.decode_param_opaque_handle(
                     current_block, param, args, arg_index, arg_context
                 )
             else:
-                raise ValueError(f"Unsupported parameter type: {param.dtype.type_code}")
+                raise ValueError(f"Unsupported parameter type: {type_code}")
         elif isinstance(param, spec.Shape):
             return self.decode_param_shape(
                 current_block, param, args, arg_index, arg_context

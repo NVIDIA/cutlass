@@ -288,7 +288,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
   # TODO: randomize beta values for wider coverage
   beta_values = [0.5]
 
-  is_supported_arch = (arch in ["100a", "100f", "101a", "101f", "103a", "110a", "110f", "120a", "120f", "121a", "121f"])
+  is_supported_arch = (arch in ["100a", "100f", "101a", "101f", "103a", "107a", "107f", "110a", "110f", "120a", "120f", "121a", "121f"])
 
   is_runtime_datatype_enabled = mode == "functional_L0" and is_supported_arch
 
@@ -307,7 +307,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       'bf16gemm_f32_f32_f32_f32_f32',
     ]
 
-    exclude_archs = arch not in ("103a")
+    exclude_archs = arch not in ("103a", "107a", "107f")
     if exclude_archs:
       sm100_mma_data_type_general.append('gemm_s8_s8_s32_s8_s8')
 
@@ -395,6 +395,14 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                       f"({block_scaled_filter_regex_2sm})|" \
                       f"({sm103_block_scaled_filter_regex_1sm})|" \
                       f"({sm103_block_scaled_filter_regex_2sm})"
+    elif arch in ["107a", "107f",
+                 ]:
+      kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \
+                      f"({sm100_mma_filter_regex_2sm})|" \
+                      f"({block_scaled_filter_regex_1sm})|" \
+                      f"({block_scaled_filter_regex_2sm})"
+      kernel_filter = kernel_filter.replace("sm100", "sm107")
+      kernel_filter = kernel_filter.replace("sm103", "sm107")
     elif arch in ["120a", "120f", "121a", "121f",
                  ]:
 
@@ -411,7 +419,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
       kernel_filter = f"({filter_regex_blockscaled_sm120_mma})"
     else:
-      error_message = "unsupported arch, only support sm100a, sm100f, sm101a, sm101f, sm110a, sm110f, sm103a, sm120a, sm120f, sm121a, sm121f"
+      error_message = "unsupported arch, only support sm100a, sm100f, sm101a, sm101f, sm110a, sm110f, sm103a, sm107a, sm107f, sm120a, sm120f, sm121a, sm121f"
       raise Exception(error_message)
 
   elif mode == "functional_L1":
@@ -528,6 +536,9 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       kernel_filter = f"({filter_regex_sm120_mma})"
     else:
       kernel_filter = f"({filter_regex_sm100_mma})"
+      if arch in ["107a", "107f",
+                 ]:
+        kernel_filter = kernel_filter.replace("sm100", "sm107")
   else:
     raise ValueError()
 

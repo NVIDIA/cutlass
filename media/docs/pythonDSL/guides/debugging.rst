@@ -84,6 +84,210 @@ info off:
     a production run. See :doc:`JIT caching <../cute_dsl_general/dsl_jit_caching>`
     for how the cache key is formed.
 
+Compiler Diagnostics
+--------------------
+
+CuTe DSL also provides compiler diagnostic passes for catching invalid
+primitive protocols and resource issues at compile time. These checks are useful
+when a kernel fails before launch, when synchronization around primitives is
+unclear, or when ``ptxas`` reports resource pressure that is hard to map back to
+the generated kernel.
+
+Enable diagnostics with ``CUTE_DSL_COMPILER_OPT`` or the ``options=`` argument
+to ``cute.compile``. Diagnostic controls have two axes: the severity level to
+show and the diagnostic category to collect. Bare ``warnings`` or ``remarks``
+selects all available categories; selector braces restrict the request to one
+category.
+
+.. list-table:: Diagnostic levels
+   :header-rows: 1
+
+   * - Level
+     - Enable with
+     - Useful for
+     - Fatal?
+   * - Info (remark)
+     - ``remarks`` or ``remarks{<category>}``
+     - Performance-only findings, such as synchronization opportunities or
+       register-spill and local-memory resource reports.
+     - No
+   * - Warning
+     - ``warnings`` or ``warnings{<category>}``
+     - Legal but questionable patterns that can hang, fault, or behave
+       differently than intended.
+     - No
+   * - Error
+     - No separate ``errors{...}`` option. Enable the relevant category with
+       ``warnings{<category>}`` or ``remarks{<category>}``.
+     - Proven defects reported by an enabled diagnostic category.
+     - Yes
+
+.. list-table:: Diagnostic categories
+   :header-rows: 1
+
+   * - Category
+     - Enable with
+     - Source
+     - Useful levels
+   * - ``nvvm``
+     - ``warnings{nvvm}``, ``remarks{nvvm}``
+     - NVVM-level primitive protocol diagnostics for operations such as
+       ``mbarrier``, bulk copy, TMA multicast, and ``tcgen05``.
+     - Error, warning, info (remark)
+   * - ``ptxas`` (selector: ``ptx``)
+     - ``remarks{ptx}``
+     - ``ptxas`` resource diagnostics surfaced through the remark stream,
+       including register spills and local-memory usage.
+     - Info (remark)
+
+For example, enable NVVM primitive diagnostics with:
+
+.. code:: bash
+
+    export CUTE_DSL_COMPILER_OPT='warnings{nvvm},remarks{nvvm}'
+
+The ``warnings{nvvm}`` and ``remarks{nvvm}`` selectors enable NVVM-level
+primitive diagnostics for protocol rules around primitives such as ``mbarrier``,
+bulk copy, TMA multicast, and ``tcgen05`` operations. For example, these
+diagnostics can report missing transaction completion for
+``mbarrier.arrive.expect_tx``, ``tcgen05.commit`` calls that are not guarded by
+``elect.sync``, missing ``tcgen05.fence::after_thread_sync`` before TMEM loads,
+and CTA-pair restrictions for CTA_2 TMA multicast.
+
+The diagnostic examples are compile-only negative cases under
+``examples/python/CuTeDSL/experimental/compiler_diagnostic`` in the public
+CUTLASS tree. From a built checkout, run all primitive diagnostic examples with:
+
+.. code:: bash
+
+    CUTE_DSL_COMPILER_OPT='warnings{nvvm},remarks{nvvm}' \
+    python examples/python/CuTeDSL/experimental/compiler_diagnostic/prims_negative_cases.py
+
+Run a single case by name when you want a small reproducer:
+
+.. code:: bash
+
+    CUTE_DSL_COMPILER_OPT='warnings{nvvm},remarks{nvvm}' \
+    python examples/python/CuTeDSL/experimental/compiler_diagnostic/prims_negative_cases.py \
+        --case expect_tx_without_complete_tx
+
+The ``expect_tx_without_complete_tx`` case intentionally initializes a
+transaction-counting barrier and calls ``mbarrier_arrive_expect_tx`` without a
+matching completion source:
+
+.. code:: python
+
+    import cutlass
+    import cutlass.cute as cute
+    from cutlass.cute.runtime import make_fake_stream
+    from cutlass.experimental import primitives as prims
+
+
+    @cute.kernel
+    def expect_tx_without_complete_tx_kernel() -> None:
+        mbar = cutlass.Array(
+            cutlass.Int64, 1, space=cutlass.AddressSpace.smem, alignment=8
+        )
+
+        if prims.elect_sync():
+            prims.mbarrier_init(mbar, 1)
+        prims.fence_mbarrier_init()
+        prims.barrier_cta_sync(0)
+
+        if prims.elect_sync():
+            prims.mbarrier_arrive_expect_tx(mbar, 16_384)
+        prims.mbarrier_try_wait_parity(mbar, 0, time_limit=10_000_000)
+
+
+    @cute.jit
+    def host_expect_tx_without_complete_tx(stream) -> None:
+        expect_tx_without_complete_tx_kernel().launch(
+            grid=(1, 1, 1), block=(32, 1, 1), stream=stream
+        )
+
+
+    cute.compile(
+        host_expect_tx_without_complete_tx,
+        make_fake_stream(),
+        options="warnings{nvvm},remarks{nvvm}",
+    )
+
+The emitted diagnostic points back to the Python source and names the protocol
+rule that failed:
+
+.. code:: text
+
+    ===== expect_tx_without_complete_tx =====
+    error[E####]: mbarrier.arrive.expect_tx has no completion source for 16384 registered transaction bytes
+
+      --> examples/python/CuTeDSL/experimental/compiler_diagnostic/prims_negative_cases.py:94:8
+          in function `_expect_tx_without_complete_tx_kernel(...)`:
+       |
+      92 |
+      93 |     if prims.elect_sync():
+    > 94 |         prims.mbarrier_arrive_expect_tx(mbar, 16_384)
+         |        ^
+      95 |     prims.mbarrier_try_wait_parity(mbar, 0, time_limit=_WAIT_TICKS)
+      96 |
+      error: arrive.expect_tx increments the barrier transaction count, but no explicit
+             mbarrier.complete_tx or TMA complete_tx source targets this barrier. The transaction count
+             can never be retired.
+      suggestion: add a matching nvvm.mbarrier_complete_tx(...) on this barrier, or issue a TMA
+                  operation whose completion targets the same barrier
+      note: PTX ISA mbarrier.arrive.expect_tx
+            docs: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-expect-tx-operation
+    PASS expect_tx_without_complete_tx
+
+For ``ptxas`` resource diagnostics, pass ``remarks{ptx}`` through the JIT
+compile options. This selector surfaces resource remarks such as register spills
+and local-memory usage:
+
+.. code:: python
+
+    cute.compile(my_host_fn, *args, options="remarks{ptx}")
+
+If a kernel only spills under a tighter register budget, combine the selector
+with ``--ptxas-options``. The DSL automatically enables verbose ``ptxas`` output
+for ``remarks{ptx}``, so spill and local-memory remarks are available to the
+diagnostic formatter:
+
+.. code:: python
+
+    cute.compile(
+        my_host_fn,
+        *args,
+        options=(
+            "remarks{ptx} "
+            "--ptxas-options '--maxrregcount=128 --override-directive-values'"
+        ),
+    )
+
+Keep ``--remark-output`` unset when you want terminal diagnostics with source
+frames. The YAML remark-output path is intended for raw LLVM remark export and
+does not use the Python source-frame renderer.
+
+The companion ``ptxas_spill_cases.py`` helper in the same directory contains
+compile-only examples for two common symptoms:
+
+* ``dynamic_index_local_memory``: dynamic indexing of a register array forces
+  local-memory accesses.
+* ``global_reverse_register_spill``: high register pressure creates ptxas
+  register spills when constrained with ``--maxrregcount``.
+
+Run it from a built checkout to confirm the ptxas remark pipeline and inspect
+the rendered source frames:
+
+.. code:: bash
+
+    python examples/python/CuTeDSL/experimental/compiler_diagnostic/ptxas_spill_cases.py
+
+Use these helpers when a kernel's generated SASS shows unexpected local-memory
+traffic, when ``ptxas`` reports spills, or when you need a minimal reproducer
+for register-pressure regressions. Register-spill source frames are best-effort:
+``ptxas`` reports spill totals at kernel granularity, so the frame identifies
+the reported kernel / likely pressure region rather than an exact spill
+instruction.
+
 DSL Debugging
 -------------
 

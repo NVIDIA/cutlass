@@ -87,27 +87,36 @@ from .cutlass_dsl import (
 from .cute.typing import *
 from .base_dsl.typing import Pointer as Pointer  # type: ignore[assignment]
 from .base_dsl.typing import (
-    Array,
     TypedPointer,
     Uint128,
     align,
     GridConstant,
     grid_constant,
 )
-from .base_dsl.array import make_array_view
 from .base_dsl.pointer import inttoptr
+from .base_dsl.jit_executor import (
+    register_library_unload_callback,
+    unregister_library_unload_callback,
+)
 from .base_dsl.swizzle import Swizzle, apply_swizzle, load_swizzled, store_swizzled
 from ._mlir_helpers.vector import Vector, full, full_like, print_nd_vector
 
 # Utilities not belonging to CuTe
 from .base_dsl import vector as vector
 
+# Array view factory: build a cutlass.Array over an existing cute.Tensor (no
+# allocation). Defined next to the Array type in base_dsl.array. To view a raw
+# pointer, call cutlass.Array(pointer, shape=..., dtype=...) directly. For a typed
+# TMEM pointer, use prims.make_tmem_ptr(addr, dtype).
+from .base_dsl.array import make_array_view
+
 from . import runtime as runtime
+from . import block as block
+from . import memory as memory
+from . import tensor_utils as tensor_utils
 from . import utils as utils
 from . import pipeline as pipeline
 from . import testing as testing
-from . import experimental as experimental
-
 # Package-private symbol used by exported aliases below.
 from . import cutlass_dsl as _dsl
 
@@ -116,6 +125,11 @@ LaunchConfig = _dsl.BaseDSL.LaunchConfig
 register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 gpu = _dsl.cutlass_gpu
 cuda = _dsl.cuda_helpers
+
+import sys as _sys
+
+_sys.modules.setdefault(__name__ + ".cuda", cuda)
+del _sys
 
 # Jax Framework support
 from . import jax as jax

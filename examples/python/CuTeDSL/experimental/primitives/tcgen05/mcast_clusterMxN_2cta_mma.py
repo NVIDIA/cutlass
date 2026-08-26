@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -29,27 +29,10 @@
 """
 Cluster multicast GEMM example.
 
-Cluster MxN CTA_2 tcgen05 GEMM with real A/B TMA multicast.
+To run::
 
-This is the CTA_2 counterpart of ``mcast_clusterMxN_1cta_mma.py``.  The unit
-of compute is a 2-CTA pair, but the cluster can contain any even number of
-CTAs up to 16.  Each pair computes one ``GROUP_TILE``.  A and B are multicast
-across M/N groups while preserving the CTA_2 per-lane operand split:
-
-* A is shared across the cluster-N axis for the same physical M rank.  Every
-  N-rank CTA issues a disjoint row shard of its lane-local A tile.
-* B is shared across the cluster-M pair axis for the same physical N rank and
-  CTA-pair lane.  Every M-pair issues a disjoint row shard of its lane-local B
-  tile.
-
-The TMA calls intentionally use ``group=CTA_2``.  That routes TMA
-``complete_tx`` to the 2-CTA pair leader mbarrier, matching the CTA_2 tutorial
-pipeline in ``fp16_gemm_3.py``.  Each pair leader arms one txcount covering
-the incoming shard complete_tx bytes for the two lane-local A/B tiles received
-after multicast by that pair.  The TMA descriptor box is the pre-multicast
-shard; each CTA's SMEM buffer is the post-multicast complete lane-local tile.
-The empty mbarrier releases the union of A/B producer pairs, while the
-accumulator-done mbarrier remains pair-local.
+    python CuTeDSL/experimental/primitives/tcgen05/mcast_clusterMxN_2cta_mma.py
+    python CuTeDSL/experimental/primitives/tcgen05/mcast_clusterMxN_2cta_mma.py --mnk 512,512,128 --CLUSTER_SHAPE 2,2
 
 """
 
@@ -70,6 +53,10 @@ from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 io_dtype = cutlass.Float16
 
 MMA_K_GRANULE: cutlass.Constexpr[int] = 16
@@ -80,6 +67,11 @@ _MIN_CTA_TILE_N: int = 128
 _MAX_DENSE_M_DIM: int = 496
 _MAX_DENSE_N_DIM: int = 504
 _MAX_TMA_BOX_DIM: int = 256
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -298,6 +290,9 @@ def kernel(
                     group=prims.CTAGroup.CTA_2,
                 )
 
+    # One-shot output tile: acc_done is sufficient here. Persistent CTA_2
+    # reuse of the CTA_2 MMA accumulator needs a separate acc_empty peer-drain
+    # barrier before the pair leader MMA warp starts the next work tile.
     prims.barrier_cta_sync(0)
     while not prims.mbarrier_try_wait_parity(
         acc_done_mbar, cutlass.Int32(0), time_limit=10_000_000
@@ -342,6 +337,11 @@ def kernel(
     prims.barrier_cta_sync(0)
     if warp_idx == 0:
         prims.tcgen05_dealloc(tmem_ptr, NUM_TMEM_COLS, group="cta_2")
+
+
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
 
 
 @cute.jit
@@ -395,6 +395,11 @@ def host(
         block=(128, 1, 1),
         cluster=(CLUSTER_SX, CLUSTER_SY, 1),
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -568,6 +573,11 @@ def _validate(
         )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     mnk: Tuple[int, int, int] = _DEFAULT_MNK,
@@ -618,6 +628,11 @@ def run(
     return c, ref
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(
     mnk: Tuple[int, int, int] = _DEFAULT_MNK,
     *,
@@ -646,6 +661,10 @@ def verify(
     torch.testing.assert_close(c, ref, atol=tolerance, rtol=1e-5)
     print("PASS")
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

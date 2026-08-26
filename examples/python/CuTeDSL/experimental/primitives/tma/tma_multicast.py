@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -48,10 +48,10 @@ Demonstrates:
     :func:`~cutlass.primitives.barrier_cluster_wait` — cluster-scope barrier used both to fence
     mbarrier init (before the main loop) and to coordinate after TMA completes
     (so every block sees the loaded data before it writes to global output).
-  - Static configuration (``cluster_size``) passed as a plain Python ``int``
-    kernel argument — the JIT compiler specialises on its concrete value so
-    compile-time constants like ``multicast_mask`` and ``leader_txcount`` are
-    folded in without requiring a factory/closure pattern.
+  - Static configuration (``cluster_size``) passed as a ``Constexpr`` host
+    argument — the JIT compiler specialises on its concrete value so constants
+    like ``multicast_mask`` and ``leader_txcount`` are folded in without a
+    factory/closure pattern.
 
 Setup
 -----
@@ -60,7 +60,7 @@ Cluster of 2 thread blocks.  Each block independently allocates a
 multicasts a tile from ``src`` into both blocks' shared memory.  Every block
 writes its shared-memory tile to a distinct row of ``dst`` for verification.
 
-To run with 2-block cluster::
+To run::
 
     python CuTeDSL/experimental/primitives/tma/tma_multicast.py --cluster_size 2
 
@@ -236,7 +236,9 @@ def kernel(
 
 
 @cute.jit
-def host(src: cute.Tensor, dst: cute.Tensor, cluster_size: int) -> None:
+def host(
+    src: cute.Tensor, dst: cute.Tensor, cluster_size: cutlass.Constexpr[int]
+) -> None:
     """Build TMA descriptor and launch multicast kernel."""
     # src is (TILE_M, TILE_K) row-major fp16.  TMA col-major: K innermost.
     tma_src_desc = cuda.create_tensor_map_tiled(
@@ -301,7 +303,9 @@ def run(cluster_size: int = 2) -> None:
     # Each block's output slice should equal the flattened src tile.
     dst = torch.zeros(cluster_size, TILE_M * TILE_K, dtype=torch.float16, device="cuda")
 
-    compiled(src, dst, cluster_size)
+    # cluster_size is baked into the static launch shape, so it is not a
+    # runtime argument of the compiled host function.
+    compiled(src, dst)
 
     expected = src.reshape(-1).unsqueeze(0).expand(cluster_size, -1)
     torch.testing.assert_close(dst, expected, atol=0, rtol=0)

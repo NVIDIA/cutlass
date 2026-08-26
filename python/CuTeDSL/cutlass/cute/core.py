@@ -1724,14 +1724,12 @@ class _Pointer(Pointer):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> _BasePointer:
-        """Return this CuTe pointer as the base-DSL ``Pointer`` bridge type."""
         dtype = (
             cast(Type[Numeric], self.dtype)
             if isinstance(self.dtype, NumericMeta)
             else _BaseInt8
         )
         return _BasePointer(self.to_llvm_ptr(loc=loc, ip=ip), dtype=dtype)
-
     @dsl_user_op
     @lru_cache_ir()
     def _to_builtin_memref(
@@ -2246,8 +2244,11 @@ def is_major(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> bool:
-    """
-    Check whether a mode in stride is the major mode.
+    """Check whether a mode has a statically-known unit stride.
+
+    Dynamic stride expressions are not considered major, even if their runtime
+    value could be 1. This keeps the result a meta-level Python boolean that is
+    safe to use while tracing a JIT function.
     """
     first_stride = front(get(stride, mode=[mode], loc=loc, ip=ip), loc=loc, ip=ip)
     if is_dynamic_expression(first_stride):
@@ -2259,21 +2260,41 @@ def is_major(
 def assume(
     src: Any,
     divby: Optional[int] = None,
+    pow2: Optional[bool] = None,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Any:
-    if divby is None:
+    if pow2 is not None and not isinstance(pow2, bool):
+        raise ValueError(f"Expected `pow2` to be a bool, got {pow2}")
+
+    if divby is None and pow2 is None:
         return src
+
+    if divby is None:
+        divby = 1
+
+    if pow2 is None:
+        pow2 = False
 
     if not isinstance(divby, int) or divby <= 0:
         raise ValueError(f"Expected `divby` to be a positive integer, got {divby}")
+
+    if pow2 and divby > 1 and (divby & (divby - 1)) != 0:
+        raise ValueError(
+            f"Expected `divby` to be a power of two when pow2=True, got {divby}"
+        )
 
     if isinstance(src, int):
         if src % divby != 0:
             raise ValueError(
                 f"Expected {src} to be divisible by {divby}, got {src % divby}"
             )
+        if pow2:
+            if src <= 0:
+                raise ValueError(f"Expected a positive power of two, got {src}")
+            if (src & (src - 1)) != 0:
+                raise ValueError(f"Expected {src} to be a power of two")
         return src
 
     if isinstance(src, Integer):
@@ -2283,7 +2304,7 @@ def assume(
         width = src.type.width
         src_val = src
 
-    res_ty = _cute_ir.ConstrainedIntType.get(divby, width)
+    res_ty = _cute_ir.ConstrainedIntType.get(divby, width, pow2)
     assumed_val = _cute_ir.assume(res_ty, src_val, loc=loc, ip=ip)
     return type(src)(IntValue(_pack_int_tuple(assumed_val, loc=loc, ip=ip)))
 
@@ -2305,6 +2326,42 @@ def make_swizzle(
     ty = ir.Type.parse(f'!cute.swizzle<"S<{b},{m},{s}>">')
     return Swizzle(static(ty, loc=loc, ip=ip))
 
+
+@ir.register_value_caster(_cute_ir.SparseElemType.get_static_typeid(), replace=True)
+class SparseElem(ir.Value):
+    def __init__(self, op_result: ir.Value) -> None:
+        super().__init__(op_result)
+
+
+@dsl_user_op
+def get_sparse_elem_type(
+    num_logical: int,
+    num_phys: int,
+    elem_type: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    if not isinstance(elem_type, ir.Type):
+        elem_type = elem_type.mlir_type
+    return _cute_ir.SparseElemType.get(num_logical, num_phys, elem_type)
+
+
+@dsl_user_op
+def make_sparse_elem(
+    num_logical: int,
+    elems: Tuple[Any, ...],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    elem_0 = elems[0]
+    if not isinstance(elem_0, ir.Value):
+        elems = tuple(e.ir_value() for e in elems)
+        elem_0 = elems[0]
+    sparse_elem_type = get_sparse_elem_type(num_logical, len(elems), elem_0.type)
+    physical_storage = vector.from_elements(sparse_elem_type.physical_type, elems)
+    return _cute_ir.MakeSparseElemOp(sparse_elem_type, physical_storage).result
 
 
 @dsl_user_op
@@ -4046,6 +4103,7 @@ def size_in_bytes(
         dtype,
         (
             NumericMeta,
+            _cute_ir.SparseElemType,
         ),
     ):
         raise TypeError(f"dtype must be a Numeric, but got {dtype}")
@@ -4397,6 +4455,9 @@ def recast_ptr(
 ) -> Pointer:
     cvt_ty = None
     if dtype is not None:
+        if isinstance(dtype, _cute_ir.SparseElemType):
+            # use SparseElemType as dtype
+            cvt_ty = dtype
         if cvt_ty is None:
             if not isclass(dtype) or not issubclass(dtype, Numeric):
                 raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
@@ -5065,6 +5126,7 @@ def max_common_vector(
     # Keep only the static identity component of the common layout
     if (
         is_static(get(common.shape, mode=[0], loc=loc, ip=ip))
+        and isinstance(get(common.stride, mode=[0], loc=loc, ip=ip), int)
         and get(common.stride, mode=[0], loc=loc, ip=ip) == 1
     ):
         # Truncate to the size of the contiguous vector (static stride-1 mode)
@@ -5242,11 +5304,10 @@ def make_layout_image_mask(
     """
     Makes a 16-bit integer mask of the image of a layout sliced at a given mode
     and accounting for the offset given by the input coordinate for the other modes.
+
+    Static layouts unroll the OR-chain at trace time. Dynamic layouts emit an
+    ``scf.for`` over the multicast axis.
     """
-    if not is_static(lay):
-        raise ValueError(
-            f"make_layout_image_mask requires the layout to be static, but got {pretty_str(lay)}"
-        )
     r = rank(lay)
     if rank(coord) != r:
         raise ValueError(
@@ -5254,25 +5315,28 @@ def make_layout_image_mask(
         )
     if mode > r or mode < 0:
         raise ValueError(f"expects `mode` to be in [0,rank(lay)), but got {mode}")
-    # Given that we require the layout to be static, we can check that the mask fits in 16 bits
-    # This might be too conservative but safe
-    if cosize(lay) > 16:
+    # Bound check runs only for fully-static layouts; dynamic spans cannot be
+    # validated at trace time and must satisfy cosize <= 16 at runtime.
+    if is_static(lay) and cosize(lay) > 16:
         raise ValueError("the mask may not fit into a 16-bit integer")
 
-    # Replace the mode to keep with _ in the coordinate
     slicer = tuple(None if idx == mode else x for idx, x in enumerate(coord))  # type: ignore[arg-type]
-    # Slice the layout with the slicer above and keep track of the offset
     sliced_lay, offset = slice_and_offset(slicer, lay, loc=loc, ip=ip)
-    # Given that we replace only one mode with _, the rank of the slice should be 1
     assert rank(sliced_lay) == 1
-    assert is_static(sliced_lay), (
-        "make_layout_image_mask requires the layout to be static"
-    )
 
-    # Create the mask of the image
     mcast_mask = Int16(0)
-    for i in range(size(sliced_lay)):
-        mcast_mask = mcast_mask | (1 << sliced_lay(i))
+    if is_static(sliced_lay):
+        for i in range(size(sliced_lay)):
+            mcast_mask = mcast_mask | (1 << sliced_lay(i))
+    else:  # pragma: no cover - mixed-cluster path; exercised only by GPU tests
+        from cutlass.cutlass_dsl import for_generate, yield_out
+
+        for i, mask_acc, mcast_mask in for_generate(
+            0, Int32(size(sliced_lay)), 1, [mcast_mask], loc=loc, ip=ip
+        ):
+            new_mask = mask_acc | (Int16(1) << Int16(sliced_lay(i, loc=loc, ip=ip)))
+            yield_out([new_mask], loc=loc, ip=ip)
+
     mcast_mask <<= offset
     return Int16(mcast_mask)
 
@@ -6129,7 +6193,7 @@ class union(struct):
         align = data_union.__alignof__()
 
         # Allocate and reference elements:
-        allocator = cutlass.utils.SmemAllocator()
+        allocator = cutlass.memory.SmemAllocator()
         value = allocator.allocate(data_union)
 
         # Access union members (all at the same offset):

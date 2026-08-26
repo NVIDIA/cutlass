@@ -24,18 +24,34 @@ decorators most kernels need directly:
     Work callback attributes such as ``WorkAttr.AUXILIARY``.
 """
 
-from .enums import WorkAttr
+from .enums import (
+    Every,
+    IterationPredicate,
+    OpaqueCondition,
+    WorkAttr,
+)
 from . import pipeline
 from .resources import consumer_work, producer_work
-from .schedule_builder import domain_loop, schedule, work_tile_loop
+from .schedule_builder import (
+    domain_loop,
+    schedule,
+    when_false,
+    when_true,
+    work_tile_loop,
+)
 
 
 __all__ = [
     "consumer_work",
     "domain_loop",
+    "Every",
+    "IterationPredicate",
+    "OpaqueCondition",
     "pipeline",
     "producer_work",
     "schedule",
+    "when_false",
+    "when_true",
     "WorkAttr",
     "work_tile_loop",
 ]

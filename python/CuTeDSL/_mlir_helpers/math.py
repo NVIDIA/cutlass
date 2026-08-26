@@ -403,6 +403,26 @@ def _call_nvvm_unary(
     return _wrap_result(x, result)
 
 
+def _to_nvvm_rounding(r: RoundingMode) -> "nvvm.FPRoundingMode":
+    """Map this module's ``RoundingMode`` enum to ``nvvm.FPRoundingMode``."""
+    return {
+        "rn": nvvm.FPRoundingMode.RN,
+        "rz": nvvm.FPRoundingMode.RZ,
+        "rm": nvvm.FPRoundingMode.RM,
+        "rp": nvvm.FPRoundingMode.RP,
+    }[r.value]
+
+
+# Op names handled by the NVVM dialect (rather than raw llvm.call_intrinsic).
+# Anything not listed here keeps using the stringly-typed intrinsic-name path
+# until upstream adds a dialect equivalent.  ``sub`` is intentionally absent:
+# the public ``sub()`` always lowers to ``arith.subf`` (NVVM ``sub`` uses a
+# different intrinsic convention), so it never reaches this dispatch.
+_NVVM_BINARY_DIALECT_OPS = {
+    "add": nvvm.addf,
+}
+
+
 def _call_nvvm_binary(
     x: MathOperand,
     y: MathOperand,
@@ -429,6 +449,26 @@ def _call_nvvm_binary(
             f"vectorize). For vector inputs, use fastmath=True — the "
             f"math/arith dialect lowering will be vectorized by the compiler."
         )
+
+    # Prefer the proper NVVM dialect op when one exists.  Only "add" has
+    # dialect coverage from this dispatch today (nvvm.addf); approx and full
+    # are div-only attributes that don't apply here either way.
+    nvvm_dialect_op = _NVVM_BINARY_DIALECT_OPS.get(op_name)
+    if nvvm_dialect_op is not None:
+        x_ir = _get_ir_value(x, ip=ip)
+        y_ir = _get_ir_value(y, ip=ip)
+        rnd = _to_nvvm_rounding(rounding) if rounding is not None else None
+        result = nvvm_dialect_op(
+            x_ir,
+            y_ir,
+            rnd=rnd,
+            ftz=True if ftz else None,
+            loc=loc,
+            ip=ip,
+        )
+        return _wrap_result(x, result)
+
+    # Fallback: ops without a dedicated NVVM dialect wrapper (mul, div, ...).
     x_ir = _get_ir_value(x, ip=ip)
     y_ir = _get_ir_value(y, ip=ip)
     result_type = _get_llvm_type(x)
@@ -482,6 +522,34 @@ def _call_nvvm_ternary(
             f"vectorize). For vector inputs, use fastmath=True — the "
             f"math/arith dialect lowering will be vectorized by the compiler."
         )
+
+    # Prefer the proper NVVM dialect op when one exists.  Only "fma" has
+    # dialect coverage today.
+    if op_name == "fma":
+        a_ir = _get_ir_value(a, ip=ip)
+        b_ir = _get_ir_value(b, ip=ip)
+        c_ir = _get_ir_value(c, ip=ip)
+        rnd_value = (
+            _to_nvvm_rounding(rounding)
+            if rounding is not None
+            else nvvm.FPRoundingMode.RN
+        )
+        # nvvm.fma's ``rnd`` is built via the FPArithRoundingMode AttrBuilder,
+        # which the Python bindings don't register — so the op only accepts a
+        # pre-built ``ir.Attribute``, not the enum.
+        rnd_attr = ir.Attribute.parse(f"#nvvm.fp_rnd_mode<{rnd_value.name.lower()}>")
+        result = nvvm.fma(
+            a_ir,
+            b_ir,
+            c_ir,
+            rnd_attr,
+            ftz=True if ftz else None,
+            loc=loc,
+            ip=ip,
+        )
+        return _wrap_result(a, result)
+
+    # Fallback: ternary ops without a dedicated NVVM dialect wrapper.
     a_ir = _get_ir_value(a, ip=ip)
     b_ir = _get_ir_value(b, ip=ip)
     c_ir = _get_ir_value(c, ip=ip)

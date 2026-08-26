@@ -26,7 +26,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import contextlib
 import logging
 from collections.abc import Callable
 
@@ -36,6 +35,10 @@ _logger = logging.getLogger(__name__)
 
 available_providers: dict[str, type[Provider]] = {}
 """Dictionary of available providers by name."""
+
+# Stores the ImportError raised by each provider that failed to load, keyed by
+# the attribute name that would have been bound on this module.
+_import_errors: dict[str, ImportError] = {}
 
 
 def register_provider(name: str) -> Callable[[type[Provider]], type[Provider]]:
@@ -66,29 +69,38 @@ def register_provider(name: str) -> Callable[[type[Provider]], type[Provider]]:
     return wrapper
 
 
-# Import each provider submodule's ``*Provider`` class. The submodule
-# registers its class as a side effect when its underlying DSL is importable
-# and otherwise leaves the class undefined
+# Import provider submodules' ``*Provider`` subclasses independently.  A
+# failure in one must never block the others.  Failures are logged and stored
+# so __getattr__ can surface the traceback.
 
-with contextlib.suppress(ImportError):
+try:
     from cutlass.operators.providers.cutedsl import CuTeDSLProvider
+except ImportError as _exc:
+    _import_errors["CuTeDSLProvider"] = _exc
+    _logger.debug("CuTeDSLProvider unavailable: %s", _exc, exc_info=True)
 
 
 def __getattr__(name: str) -> object:
     """Give a clear ImportError for known but unavailable providers.
 
+    If the provider attempted to load but failed, the original exception is
+    chained, to allow distinguishing a missing dependency from a bug.
     For unknown attributes, raise the generic AttributeError.
     """
     PROVIDER_INSTALL_HINTS = {
         "CuTeDSLProvider": "install 'nvidia-cutlass-dsl' to enable it",
     }
-    if name in PROVIDER_INSTALL_HINTS:
+    exc = _import_errors.get(name)
+    if exc is None and name not in PROVIDER_INSTALL_HINTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    if isinstance(exc, ModuleNotFoundError) or exc is None:
         raise ImportError(
-            f"{name} is unavailable: "
-            f"{PROVIDER_INSTALL_HINTS[name]}. Check "
-            f"`available_providers` for runtime availability."
-        )
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+            f"{name} is unavailable: {PROVIDER_INSTALL_HINTS[name]}."
+        ) from exc
+    raise ImportError(
+        f"{name} failed to import."
+    ) from exc
 
 
 __all__ = [

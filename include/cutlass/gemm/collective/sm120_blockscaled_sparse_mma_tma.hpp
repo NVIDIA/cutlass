@@ -270,9 +270,10 @@ struct CollectiveMma<
                                           SmemLayoutAtomE_>;
 
   static_assert(rank(SmemLayoutAtomE{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
-  static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomE{})) == 0, "SmemLayoutAtomE must evenly divide tile shape.");
+  static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomE{})) == 0,
+      "SmemLayoutAtomE must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomE{})) == 0,
-                "TileShape_K must be a multiple of the metadata atom K extent (256 for nvf4 and mxf4, 128 for mxf8f6f4).");
+      "TileShape_K must be a multiple of the metadata atom K extent (256 for nvf4 and mxf4, 128 for mxf8f6f4).");
 
   using SmemLayoutE = decltype(tile_to_shape(
                   SmemLayoutAtomE{},

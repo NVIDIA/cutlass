@@ -15,9 +15,9 @@ communicate through memory, such as shared memory or tensor memory.
 
 Synchronization with mbarriers and named barriers is needed to prevent
 concurrent data accesses.
-Barrier behavior depends on the kernel configuration (1-CTA or Cluster-wide kernel),
+Barrier behavior depends on the kernel configuration,
 the producer/consumer pattern (how many warps are writing and reading data)
-between specialized warps, the operation type (TMA, MMA, etc),
+between specialized warps, the operation type (TMA, MMA, cpasync, etc),
 which threads signal each barrier, and which memory regions overlap in time.  A
 wrong arrival count, a missed barrier advance, or a release before the producer
 has finished writing can cause a wrong result or a runtime hang.

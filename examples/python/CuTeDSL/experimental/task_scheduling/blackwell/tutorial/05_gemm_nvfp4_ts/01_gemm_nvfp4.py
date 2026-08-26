@@ -132,7 +132,7 @@ from cutlass.experimental import primitives as prims
 # ═══════════════════════════════════════════════════════════════════════
 # Kernel configuration constants
 # ═══════════════════════════════════════════════════════════════════════
-smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
 num_tmem_alloc_cols = 512
 mma_tiler_mnk = (256, 256, 256)
 mma_tiler_mnk_per_cta = (128, 256, 256)
@@ -401,12 +401,6 @@ class GmemResource(MemoryResource):
             default=cutlass.Int32(0),
             docs="B operand batch coordinate for the current TMA load tile.",
         )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.bidx, self.bidy, self.bidz = (
-            cutlass.Int32(0),
-            cutlass.Int32(0),
-            cutlass.Int32(0),
-        )
 
     @consumer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
@@ -521,12 +515,6 @@ class GmemSfResource(MemoryResource):
             default=cutlass.Int32(0),
             docs="SFB scale-factor L coordinate.",
         )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.bidx, self.bidy, self.bidz = (
-            cutlass.Int32(0),
-            cutlass.Int32(0),
-            cutlass.Int32(0),
-        )
 
     @consumer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
@@ -626,15 +614,6 @@ class SmemResource(MemoryResource):
             default=cutlass.Int64(0),
             docs="B operand SMEM descriptor base consumed by MMA.",
         )
-        nullptr = cutlass.inttoptr(0, mem_space=3, dtype=cutlass.Uint8)
-        self.smem_buf = cutlass.Array(
-            nullptr,
-            dtype=cutlass.Uint8,
-            shape=(self.stage_bytes_val * num_ab_stage,),
-            addrspace=3,
-        )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.mcast_mask = cutlass.Int16(0)
 
     def get_smem_requirements(self):
         return [self._alloc]
@@ -814,16 +793,6 @@ class SmemSfResource(MemoryResource):
             default=cutlass.Int64(0),
             docs="SFB SMEM descriptor base consumed by S2T copy.",
         )
-        nullptr = cutlass.inttoptr(0, mem_space=3, dtype=cutlass.Uint8)
-        self.smem_buf = cutlass.Array(
-            nullptr,
-            dtype=cutlass.Uint8,
-            shape=(self.stage_bytes_val * num_ab_stage,),
-            addrspace=3,
-        )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.mcast_mask = cutlass.Int16(0)
-        self.bidx_mod2 = cutlass.Int32(0)
 
     def get_smem_requirements(self):
         return [self._alloc]
@@ -1013,9 +982,6 @@ class TmemSfResource(MemoryResource):
             default=cutlass.Int32(0),
             docs="Current SFB TMEM stage column offset.",
         )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.sfa_tmem_addr_base = cutlass.Int32(0)
-        self.sfb_tmem_addr_base = cutlass.Int32(0)
 
     def get_tmem_requirements(self):
         return [self._alloc]
@@ -1179,13 +1145,6 @@ class TmemCResource(MemoryResource):
             default=cutlass.full([epi_t2r_repx], 0.0, cutlass.Float32),
             docs="Register-memory subtile loaded from TMEM for the epilogue.",
         )
-        self.idesc = cutlass.Int32(0)
-        self.tmem_raw_addr = cutlass.Int32(0)
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.scale_d = cutlass.Boolean(False)
-        self.acc_tmem_ptr = prims.make_tmem_ptr(self.tmem_raw_addr, cutlass.Float32)
-        self.sfa_tmem_addr_base = cutlass.Int32(0)
-        self.sfb_tmem_addr_base = cutlass.Int32(0)
 
     def get_tmem_requirements(self):
         return [self._alloc_acc]
@@ -1233,7 +1192,7 @@ class TmemCResource(MemoryResource):
     @producer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
     def init_work_tile_state(self, stage_info: StageInfo) -> None:
-        self.scale_d = cutlass.Boolean(False)
+        self.scale_d = False
 
     @producer_work
     @cute.jit
@@ -1324,7 +1283,7 @@ class TmemCResource(MemoryResource):
                         scale_b=sfb_tmem_ptr_mma,
                         scale_vec_size=prims.Tcgen05MMABlockScale.BLOCK16,
                     )
-                self.scale_d = cutlass.Boolean(True)
+                self.scale_d = True
 
     @consumer_work(returns=t2r_rmem)
     @cute.jit
@@ -3254,7 +3213,7 @@ def gemm(
     """
     Host function: creates tensors, TMA descriptors, and launches kernel.
     """
-    c_layout_enum = utils.LayoutEnum.ROW_MAJOR
+    c_layout_enum = cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
     m, n, k, l = problem_size  # noqa: E741
 
     # Keep stride-1 dimension first to match current host-op descriptor logic.
@@ -3542,7 +3501,7 @@ def run_nvfp4_gemm(
     )
 
     # Compile and launch
-    compiled_gemm = cute.compile(
+    compiled_gemm = cute.compile[cute.FrontendNext](
         gemm,
         a_ptr,
         b_ptr,

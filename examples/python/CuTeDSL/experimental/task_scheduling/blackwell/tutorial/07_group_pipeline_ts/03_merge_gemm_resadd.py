@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -26,19 +26,19 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Tutorial 07: **Merge** PipelineGroup — two merge groups in GEMM + residual-add.
+"""Tutorial 07: **Merge** / **FusedMerge** - two groups in GEMM + residual-add.
 
-Demonstrates two independent ``PipelineGroup(Merge)`` barriers in one 1-CTA
-kernel:
+Demonstrates two independent ``PipelineGroup`` barriers in one 1-CTA kernel,
+each of which can be built as either a ``Merge`` or a ``FusedMerge`` group:
 
-- **ab_sync** — LoadA + LoadB (both ``TmaUmma``) share one empty barrier for MMA.
-- **resadd_sync** — epilogue Merge of TMEM accumulator (``UmmaAsync``) and SMEM
-  residual (``AsyncAsync`` or ``TmaAsync``).
+- **ab_sync** - LoadA + LoadB (both ``TmaUmma``) feed the MMA consumer.
+- **resadd_sync** - epilogue merge of TMEM accumulator (``UmmaAsync``) and
+  SMEM residual (``AsyncAsync`` or ``TmaAsync``).
 
 Configurable residual load via ``residual_load_mode``:
 
-- ``"gmem"`` -> global memory load (``AsyncAsync``) - Merge(UmmaAsync + AsyncAsync)
-- ``"tma"`` → TMA load (``TmaAsync``) — Merge(UmmaAsync + TmaAsync)
+- ``"gmem"`` -> global memory load - [Fused]Merge(UmmaAsync + AsyncAsync)
+- ``"tma"``  -> TMA load           - [Fused]Merge(UmmaAsync + TmaAsync)
 
 The MMA engine produces the accumulator (UmmaAsync) and the residual is loaded
 into SMEM by a separate warp.  The epilogue task consumes both via
@@ -49,12 +49,12 @@ Resources::
 
     GmemA ──→ SmemA (TmaUmma) ──┐
                                 ├── ab_sync (Merge) → MMA → TmemAcc (UmmaAsync) ──┐
-    GmemB ──→ SmemB (TmaUmma) ──┘                                                  │
-                                                                                   ├── resadd_sync (Merge)
-    GmemRes ──→ SmemRes (AsyncAsync or TmaAsync) ──────────────────────────────────┘
-                                                                                   │
-                                                                                   ▼
-                                                                       Epilogue: D = Acc + Res
+    GmemB ──→ SmemB (TmaUmma) ──┘                                                 │
+                                                                                  ├── resadd_sync (Merge)
+    GmemRes ──→ SmemRes (AsyncAsync or TmaAsync) ─────────────────────────────────┘
+                                                                                  │
+                                                                                  ▼
+                                                                      Epilogue: D = Acc + Res
 
 Validation: D == matmul(A, B) + Residual
 """
@@ -722,14 +722,20 @@ def create_smem_b(tma_desc_b: cutlass.Pointer) -> SmemBResource:
 
 
 @cute.jit
-def create_ab_sync(smem_a: SmemAResource, smem_b: SmemBResource) -> PipelineGroup:
-    """
-    Merge group synchronizing SmemA and SmemB for the MMA consumer.
+def create_ab_sync(
+    smem_a: SmemAResource,
+    smem_b: SmemBResource,
+    mode: cutlass.Constexpr[PipelineGroupMode],
+) -> PipelineGroup:
+    """Group synchronizing SmemA and SmemB for the MMA consumer.
+
+    ``mode`` selects ``Merge`` (per-member full barriers) or ``FusedMerge``
+    (one shared full barrier; the MMA waits once on the group).
     """
     return PipelineGroup(
         name="ab_sync",
         members=[smem_a, smem_b],
-        mode=PipelineGroupMode.Merge,
+        mode=mode,
     )
 
 
@@ -803,14 +809,17 @@ def create_smem_res_tma(tma_desc_res: cutlass.Pointer) -> SmemResResource:
 def create_resadd_sync(
     tmem_acc: TmemAccResource,
     smem_res: SmemResResource,
+    mode: cutlass.Constexpr[PipelineGroupMode],
 ) -> PipelineGroup:
-    """
-    Merge group for epilogue: TMEM accumulator plus SMEM residual.
+    """Epilogue group: TMEM accumulator plus SMEM residual.
+
+    ``mode`` selects ``Merge`` (per-member full barriers) or ``FusedMerge``
+    (one shared full barrier; the epilogue waits once on the group).
     """
     return PipelineGroup(
         name="resadd_sync",
         members=[tmem_acc, smem_res],
-        mode=PipelineGroupMode.Merge,
+        mode=mode,
     )
 
 
@@ -829,9 +838,11 @@ def kernel(
     mnk: Tuple[int, int, int],
     use_tma_res: cutlass.Constexpr[bool],
     tma_res_desc: cutlass.GridConstant[cuda.TensorMap],
+    ab_sync_mode: cutlass.Constexpr[PipelineGroupMode],
+    resadd_sync_mode: cutlass.Constexpr[PipelineGroupMode],
 ) -> None:
     """
-    Device kernel: TMA GEMM with dual Merge groups and residual-add epilogue.
+    Kernel: TMA GEMM with dual [Fused]Merge groups and residual-add epilogue.
     """
     m, n, k = mnk
     num_epilogue_warps = num_store_warps
@@ -850,7 +861,6 @@ def kernel(
         SmemAllocation("tmem_ptr_i32", dtype=cutlass.Int32, alignment=4)
     )
 
-    gA = cutlass.make_array_view(mA_mk)
     gRes = cutlass.make_array_view(mRes_mn)
 
     gmem_a = GmemAResource(name="gmem_a")
@@ -858,8 +868,8 @@ def kernel(
     gmem_res = GmemResResource(name="gmem_res")
     smem_a = create_smem_a(tma_a_desc.get_ptr())
     smem_b = create_smem_b(tma_b_desc.get_ptr())
-    # Merge SmemA and SmemB for the MMA mainloop consumer
-    ab_sync = create_ab_sync(smem_a, smem_b)
+    # Group SmemA and SmemB for the MMA mainloop consumer ([Fused]Merge)
+    ab_sync = create_ab_sync(smem_a, smem_b, ab_sync_mode)
 
     tmem_acc = create_tmem_acc(num_epilogue_warps)
 
@@ -868,8 +878,8 @@ def kernel(
     else:
         smem_res = create_smem_res_gmem(gRes)
 
-    # Merge TmemAcc and SmemRes for the epilogue consumer
-    resadd_sync = create_resadd_sync(tmem_acc, smem_res)
+    # Group TmemAcc and SmemRes for the epilogue consumer ([Fused]Merge)
+    resadd_sync = create_resadd_sync(tmem_acc, smem_res, resadd_sync_mode)
 
     gmem_d = GmemDResource(mD_mn=mD_mn, n_dim=n, name="gmem_d")
 
@@ -972,11 +982,16 @@ def kernel(
         tmem_ref.try_acquire()
         tmem_ref.acquire()
         with domain_loop(0, num_k_tiles, 1):
-            # Call waits on both shared SMEM resources and then works on both members.
-            smem_a_ref.try_wait()
-            smem_a_ref.wait()
-            smem_b_ref.try_wait()
-            smem_b_ref.wait()
+            if cutlass.const_expr(ab_sync_mode == PipelineGroupMode.FusedMerge):
+                # FusedMerge: one shared full barrier — wait once on the group.
+                ab_group.try_wait()
+                ab_group.wait()
+            else:
+                # Merge: per-member full barriers — wait on each member.
+                smem_a_ref.try_wait()
+                smem_b_ref.try_wait()
+                smem_a_ref.wait()
+                smem_b_ref.wait()
             desc_a_base = smem_a_ref.build_descriptor()
             desc_b_base = smem_b_ref.build_descriptor()
             tmem_ref.mma(desc_a_base=desc_a_base, desc_b_base=desc_b_base)
@@ -1015,10 +1030,16 @@ def kernel(
         smem_res_ref.init_store_state()
         with domain_loop(0, num_k_tiles, 1):
             pass
-        tmem_ref.try_wait()
-        tmem_ref.wait()
-        smem_res_ref.try_wait()
-        smem_res_ref.wait()
+        if cutlass.const_expr(resadd_sync_mode == PipelineGroupMode.FusedMerge):
+            # FusedMerge: one shared full barrier — wait once on the group.
+            resadd_group.try_wait()
+            resadd_group.wait()
+        else:
+            # Merge: per-member full barriers — wait on each member.
+            tmem_ref.try_wait()
+            smem_res_ref.try_wait()
+            tmem_ref.wait()
+            smem_res_ref.wait()
         t2r_rmem = tmem_ref.load_acc()
         res_rmem = smem_res_ref.read_residual()
         gmem.store(t2r_rmem=t2r_rmem, res_rmem=res_rmem)
@@ -1119,6 +1140,8 @@ def host_function(
     res: cute.Tensor,
     mnk: Tuple[int, int, int],
     use_tma_res: cutlass.Constexpr[bool],
+    ab_sync_mode: cutlass.Constexpr[PipelineGroupMode],
+    resadd_sync_mode: cutlass.Constexpr[PipelineGroupMode],
 ) -> None:
     """
     Build TMA descriptors and launch the GEMM + residual-add kernel.
@@ -1153,7 +1176,18 @@ def host_function(
     grid = (m_tiles, n_tiles, 1)
     block = (total_warps * cute.arch.WARP_SIZE, 1, 1)
 
-    kernel(a, tma_a_desc, tma_b_desc, d, res, mnk, use_tma_res, tma_res_desc).launch(
+    kernel(
+        a,
+        tma_a_desc,
+        tma_b_desc,
+        d,
+        res,
+        mnk,
+        use_tma_res,
+        tma_res_desc,
+        ab_sync_mode,
+        resadd_sync_mode,
+    ).launch(
         grid=grid,
         block=block,
     )
@@ -1164,8 +1198,21 @@ def host_function(
 # ──────────────────────────────────────────────────────────────────────
 
 
-@lru_cache(maxsize=4)
-def _prepare(m: int, n: int, k: int, use_tma_res: bool):
+_GROUP_MODE_MAP = {
+    "merge": PipelineGroupMode.Merge,
+    "fused": PipelineGroupMode.FusedMerge,
+}
+
+
+@lru_cache(maxsize=16)
+def _prepare(
+    m: int,
+    n: int,
+    k: int,
+    use_tma_res: bool,
+    ab_sync_mode: PipelineGroupMode,
+    resadd_sync_mode: PipelineGroupMode,
+):
     """
     Allocate tensors and compile host_function for the given problem size.
     """
@@ -1190,7 +1237,7 @@ def _prepare(m: int, n: int, k: int, use_tma_res: bool):
     res_ = from_dlpack(res).mark_layout_dynamic()
 
     mnk = (m, n, k)
-    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+    compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
         host_function,
         a_,
         b_,
@@ -1198,6 +1245,8 @@ def _prepare(m: int, n: int, k: int, use_tma_res: bool):
         res_,
         mnk,
         use_tma_res,
+        ab_sync_mode,
+        resadd_sync_mode,
     )
     return compiled_fn, (a, b, d, res, a_, b_, d_, res_, mnk)
 
@@ -1205,6 +1254,8 @@ def _prepare(m: int, n: int, k: int, use_tma_res: bool):
 def run(
     mnk: Tuple[int, int, int] = (256, 256, 256),
     residual_load_mode: str = "gmem",
+    ab_sync_mode: str = "fused",
+    resadd_sync_mode: str = "merge",
     tolerance: float = 1e-01,
 ) -> None:
     """Run the GEMM + residual-add kernel.
@@ -1213,6 +1264,8 @@ def run(
         mnk: M, N, K dimensions.
         residual_load_mode: "gmem" for global memory load with AsyncAsync pipeline,
             "tma" for TmaAsync.
+        ab_sync_mode: "merge" or "fused" - group mode for the A/B (TmaUmma) group.
+        resadd_sync_mode: "merge" or "fused" - group mode for the epilogue group.
         tolerance: Tolerance for validation.
     """
     import torch
@@ -1221,6 +1274,19 @@ def run(
     m, n, k = mnk
     use_tma_res = residual_load_mode == "tma"
 
+    if ab_sync_mode not in _GROUP_MODE_MAP:
+        raise ValueError(
+            f"ab_sync_mode must be one of {sorted(_GROUP_MODE_MAP)}, "
+            f"got {ab_sync_mode!r}."
+        )
+    if resadd_sync_mode not in _GROUP_MODE_MAP:
+        raise ValueError(
+            f"resadd_sync_mode must be one of {sorted(_GROUP_MODE_MAP)}, "
+            f"got {resadd_sync_mode!r}."
+        )
+    ab_mode = _GROUP_MODE_MAP[ab_sync_mode]
+    resadd_mode = _GROUP_MODE_MAP[resadd_sync_mode]
+
     torch.manual_seed(1111)
 
     compiled_fn, (a, b, d, res, a_, b_, d_, res_, mnk_t) = _prepare(
@@ -1228,6 +1294,8 @@ def run(
         n,
         k,
         use_tma_res,
+        ab_mode,
+        resadd_mode,
     )
     compiled_fn(a_, b_, d_, res_, mnk_t)
     torch.cuda.synchronize()
@@ -1246,9 +1314,27 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GEMM + residual-add kernel")
     parser.add_argument("--mnk", type=str, default="256,256,256")
     parser.add_argument("--mode", choices=["gmem", "tma"], default="gmem")
+    parser.add_argument(
+        "--ab-sync-mode",
+        choices=["merge", "fused"],
+        default="fused",
+        help="Group mode for the A/B (TmaUmma) group.",
+    )
+    parser.add_argument(
+        "--resadd-sync-mode",
+        choices=_GROUP_MODE_MAP.keys(),
+        default="merge",
+        help="Group mode for the epilogue accumulator + residual group.",
+    )
     parser.add_argument("--tolerance", type=float, default=1e-01)
     args = parser.parse_args()
 
     mnk = tuple(int(x) for x in args.mnk.split(","))
-    run(mnk=mnk, residual_load_mode=args.mode, tolerance=args.tolerance)
+    run(
+        mnk=mnk,
+        residual_load_mode=args.mode,
+        ab_sync_mode=args.ab_sync_mode,
+        resadd_sync_mode=args.resadd_sync_mode,
+        tolerance=args.tolerance,
+    )
     print("PASS")

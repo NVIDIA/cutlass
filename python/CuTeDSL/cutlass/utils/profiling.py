@@ -117,6 +117,8 @@ class Scope:
         Pass ``kind="warp"`` or ``kind="barrier"`` to categorize.
     """
 
+    __dsl_trace_time_ctxmgr__ = True
+
     def __init__(
         self,
         name: Union[str, tuple[str, ...]] = "",

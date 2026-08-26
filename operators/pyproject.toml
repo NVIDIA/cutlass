@@ -31,7 +31,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "nvidia-cutlass-dsl >= 4.6",
+    "nvidia-cutlass-dsl >= 4.8.0",
     "apache-tvm-ffi >= 0.1.11",  # Required for best performance. To opt-out: uninstall, set CUTLASS_OPERATORS_USE_TVM_FFI=0, or set cutlass.operators.config.GlobalOptions().use_tvm_ffi=False
     "networkx >= 3.0.0", # Required by dag-ir.py
 ]
@@ -50,6 +50,12 @@ torch = [
 jax = [
     "jax[cuda13]; python_version >= '3.11'",
 ]
+# Optional deps for the ``nvmatmul`` heuristic (nvMatmulHeuristics). Kept out of
+# the hard runtime dependencies so users who never pass ``heuristic=`` do not
+# need them; pulled in automatically via ``test`` / ``dev``.
+heuristics = [
+    "nvidia-matmul-heuristics>=0.1.0.27",
+]
 test = [
     "jupyter",
     "nbconvert",
@@ -57,6 +63,7 @@ test = [
     "pytest",
     "nvidia-cutlass-operators[torch]",
     "nvidia-cutlass-operators[jax]",
+    "nvidia-cutlass-operators[heuristics]",
 ]
 dev = [
     "nvidia-cutlass-operators[test]",
@@ -67,7 +74,7 @@ dev = [
 # Discover the `cutlass` namespace package and all `cutlass.*` subpackages.
 # The wrapper directory `cutlass/` has no `__init__.py` (implicit PEP 420
 # namespace package), so `namespaces = true` is required for setuptools to
-# pick up `cutlass.operators`.
+# pick up `cutlass.operators` and `cutlass.kernels`.
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cutlass", "cutlass.*"]
@@ -81,14 +88,15 @@ pythonpath = ["test", "."]
 
 [tool.ruff]
 target-version = "py310"
-src = ["cutlass/operators"]
+src = ["cutlass/operators", "cutlass/kernels"]
 line-length = 88
 
-# Exclude fusion/ from all ruff checks
+# Exclude ruff checks on below dirs
 extend-exclude = [
     "**/cutlass/operators/fusion",
     "**/cutlass/operators/providers/cutedsl/evt",
     "**/cutlass/operators/providers/cutedsl/*/implementations",
+    "**/cutlass/kernels",
 ]
 
 [tool.ruff.format]
@@ -126,6 +134,7 @@ ignore = [
     "D203",   # 1 blank line required before class      - conflicts with D211 (ruff "incompatible-default")
     "D213",   # Multi-line summary on second line       - conflicts with D212 (ruff "incompatible-default")
 ]
+allowed-confusables = ["l"]  # ignore warnings about ambiguous `l` for RUF001/2/3
 
 [tool.ruff.lint.flake8-type-checking]
 # Subclasses of these base classes evaluate their field annotations at
@@ -150,11 +159,9 @@ runtime-evaluated-decorators = [
 
 [tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "cutlass", "first-party", "local-folder"]
-# `cutlass.operators` is our own code, but the top-level `cutlass` package is
-# owned by `nvidia-cutlass-dsl`. We classify the operators API as first-party
-# so that `import cutlass.operators as ops` and `from cutlass.operators...`
-# imports group together and after the DSL imports.
-known-first-party = ["cutlass.operators"]
+# `cutlass.operators` and `cutlass.kernels` come from this project,
+# and the top-level `cutlass` package comes from `nvidia-cutlass-dsl`.
+known-first-party = ["cutlass.operators", "cutlass.kernels"]
 known-local-folder = ["test_utils"]
 
 [tool.ruff.lint.isort.sections]

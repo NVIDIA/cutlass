@@ -27,7 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from collections.abc import Callable
-from typing import Literal, Union
 
 import cuda.bindings.driver as cuda
 
@@ -268,7 +267,7 @@ class PersistentDenseGemmKernel:
         self.tmem_alloc_sync_bar_id = 2
         self.tmem_dealloc_sync_bar_id = 3
 
-        self.smem_capacity = utils.get_smem_capacity_in_bytes(self.arch)
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes(self.arch)
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
@@ -433,9 +432,13 @@ class PersistentDenseGemmKernel:
         self.a_dtype: type[cutlass.Numeric] = a.element_type
         self.b_dtype: type[cutlass.Numeric] = b.element_type
         self.c_dtype: type[cutlass.Numeric] = c.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # Check if input data types are compatible with MMA instruction
         if cutlass.const_expr(self.a_dtype != self.b_dtype):
@@ -565,10 +568,8 @@ class PersistentDenseGemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: cute.Layout | cute.ComposedLayout | None,
         epi_tile: cute.Tile,
-        tile_sched_params: Union[
-            utils.ClcDynamicPersistentTileSchedulerParams,
-            utils.PersistentTileSchedulerParams,
-        ],
+        tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams
+        | utils.PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
         """GPU device kernel performing the Persistent batched GEMM computation."""
@@ -641,7 +642,7 @@ class PersistentDenseGemmKernel:
                 tmem_dealloc_mbar: cutlass.Int64
                 tmem_holding_buf: cutlass.Int32
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(SharedStorage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
@@ -710,7 +711,7 @@ class PersistentDenseGemmKernel:
                 num_threads=32 * len(self.epilogue_warp_id),
             )
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
@@ -1272,6 +1273,6 @@ class PersistentDenseGemmKernel:
         """
         acc_shape = tiled_mma.partition_shape_C(mma_tiler[:2])
         tCtAcc_fake = tiled_mma.make_fragment_C(cute.append(acc_shape, num_acc_stage))
-        num_tmem_alloc_cols = utils.get_num_tmem_alloc_cols(tCtAcc_fake)
+        num_tmem_alloc_cols = cutlass.memory.get_num_tmem_alloc_cols(tCtAcc_fake)
 
         return num_tmem_alloc_cols

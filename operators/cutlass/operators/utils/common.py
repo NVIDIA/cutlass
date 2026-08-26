@@ -30,6 +30,7 @@
 
 from __future__ import annotations
 
+import functools
 import importlib
 import logging
 
@@ -79,6 +80,7 @@ def is_jax_available() -> bool:
     return importlib.util.find_spec("jax") is not None
 
 
+@functools.cache
 def tuple_to_string(tuple: tuple[int, ...]) -> str:
     """Convert a tuple of integers to an 'x'-separated string (e.g., (2, 3, 4) -> '2x3x4')."""
     return "x".join(str(x) for x in tuple) if len(tuple) > 1 else str(tuple[0])

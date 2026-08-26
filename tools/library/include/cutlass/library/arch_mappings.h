@@ -143,6 +143,15 @@ template <> struct ArchMap<arch::Sm103, arch::OpClassTensorOp> {
   static int const kMax = 103;
 };
 
+template <typename OperatorClass> struct ArchMap<arch::Sm107, OperatorClass> {
+  static int const kMin = 107;
+  static int const kMax = 1024;
+};
+template <> struct ArchMap<arch::Sm107, arch::OpClassTensorOp> {
+  static int const kMin = 107;
+  static int const kMax = 107;
+};
+
 template <typename OperatorClass> struct ArchMap<arch::Sm120, OperatorClass> {
   static int const kMin = 120;
   static int const kMax = 121;

@@ -82,6 +82,27 @@ test_complement(Layout const& layout)
   return test_complement(layout, cosize(layout));
 }
 
+TEST(CuTe_core, ComplementPureVsBounded)
+{
+  using namespace cute;
+
+  auto layout  = Layout<_2,_3>{};
+  auto pure    = complement(layout);
+  auto bounded = complement(layout, Int<6>{});
+
+  EXPECT_TRUE(bool(pure == make_layout(make_shape(_3{}, _1{}),
+                                       make_stride(_1{}, _6{}))));
+  EXPECT_TRUE(bool(bounded == Layout<_3,_1>{}));
+  EXPECT_NE(pure(3), layout(1));
+
+  auto composed = composition(Layout<_8,_1>{}, _0{}, layout);
+  EXPECT_TRUE(bool(complement(composed) == pure));
+
+  auto compact = make_layout(make_shape(_4{}, _8{}),
+                             make_stride(_1{}, _4{}));
+  EXPECT_TRUE(bool(complement(compact) == Layout<_1,_32>{}));
+}
+
 TEST(CuTe_core, Complement)
 {
   using namespace cute;

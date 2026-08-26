@@ -68,6 +68,7 @@ def _populate_tma_load_common_kwargs(
     if update_expect_tx:
         kwargs["update_expect_tx"] = True
 
+
 def _emit_tma_load(
     src: cute.Tensor,
     dst: cute.Tensor,
@@ -96,15 +97,22 @@ def _emit_tma_load(
         internal_type,
         update_expect_tx,
     )
-
     if multicast:
         if vmnk_layout is None:
             raise ValueError("tma_load multicast requires vmnk_layout")
         if multicast_mode is None:
             raise ValueError("tma_load multicast requires multicast_mode")
-        kwargs["vmnk_layout"] = vmnk_layout
-        kwargs["multicast_mode"] = multicast_mode
-        cutlass_lir.TmaLoadMulticastOp(src.value, dst.value, mbar, **kwargs)
+        # The op now takes a resolved `mcast_layout` value. Bundle the vmnk
+        # projection into a `lir.get_mcast_layout` placeholder here so existing
+        # kernels keep their semantics; `lir-get-mcast-layout-conversion` rewrites it
+        # (via the multicast analysis, with the vmnk projection as fallback)
+        # before any later TMA analysis. The result type is inferred.
+        mcast_layout = cutlass_lir.GetMcastLayoutOp(
+            vmnk_layout=vmnk_layout, multicast_mode=multicast_mode, loc=loc, ip=ip
+        ).result
+        cutlass_lir.TmaLoadMulticastOp(
+            src.value, dst.value, mbar, mcast_layout, **kwargs
+        )
     else:
         cutlass_lir.TmaLoadOp(src.value, dst.value, mbar, **kwargs)
 
@@ -139,7 +147,6 @@ def allocate(
         layout = layout.outer
 
     bit_layout = None
-
     # Handle SparseElemType (pass through) vs regular types (get mlir_type)
     if isinstance(type, _cute_ir.SparseElemType):
         pass

@@ -342,6 +342,7 @@ struct CollectiveBuilder<
     BuilderScheduleTag,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm103> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       // Not paired input, Not Complex input
       (cute::is_tuple_v<ElementPairA>       && cute::is_tuple_v<ElementPairB> &&

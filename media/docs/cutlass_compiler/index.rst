@@ -35,14 +35,3 @@ This documentation is split into four sections:
 
 For build, test, and tool-usage instructions see the top-level
 `CUTLASS Compiler README <https://github.com/NVIDIA/cutlass/blob/main/cutlass_compiler/README.md>`__.
-
----------------------------------------------------------------------------
-
-LLM skill
----------
-
-If you're using an LLM assistant to write CuTe IR code, install the skill from the
-`CUTLASS Compiler skills.md <https://github.com/NVIDIA/cutlass/blob/main/cutlass_compiler/docs/skills.md>`__.
-The skill teaches the assistant the CuTe dialect's syntax, common idioms,
-and where to look in this documentation for any concept it doesn't
-already know.

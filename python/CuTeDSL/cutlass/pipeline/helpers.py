@@ -21,7 +21,7 @@ from cutlass._mlir import ir
 from cutlass import base_dsl
 from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cutlass_dsl import CuTeDSL, Boolean, Int32, Int64, if_generate, dsl_user_op
-from cutlass.utils import SmemAllocator, SmemPartition
+from cutlass.memory.smem import SmemAllocator, SmemPartition
 
 
 ##############################################################################
@@ -99,21 +99,7 @@ class CooperativeGroup:
     CooperativeGroup contains size restrictions for an Agent.
     """
 
-    def __init__(
-        self,
-        agent: Agent,
-        size: Union[int, Int32] = 1,
-        alignment: Optional[int] = None,
-    ):
-        if alignment is not None:
-            warnings.warn(
-                "The 'alignment' parameter of CooperativeGroup's constructor is "
-                "deprecated and will be removed in a subsequent release, please "
-                "remove it from your code.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
+    def __init__(self, agent: Agent, size: Union[int, Int32] = 1):
         if agent in [
             Agent.Thread,
             Agent.Warp,
@@ -978,6 +964,151 @@ def make_pipeline_state(
             "Error: invalid PipelineUserType specified for make_pipeline_state."
         )
 
+
+##############################################################################
+# PerStagePipelineState class
+##############################################################################
+
+
+class PerStagePipelineState:
+    """Pipeline state that tracks phases and counts independently per stage.
+
+    Unlike PipelineState (single global phase/count), each stage progresses
+    independently. Can be used when stages complete out of order due to retries.
+    """
+
+    def __init__(self, num_stages: int):
+        self._num_stages = num_stages
+        self._index = Int32(0)
+        self._phases = cute.make_rmem_tensor((num_stages,), Int32)
+        self._counts = cute.make_rmem_tensor((num_stages,), Int32)
+        self._phases.fill(0)
+        self._counts.fill(0)
+
+    @property
+    def index(self) -> Int32:
+        """Current stage index."""
+        return self._index
+
+    @property
+    def phase(self) -> Int32:
+        """Phase for current stage."""
+        return self._phases[self._index]
+
+    @property
+    def count(self) -> Int32:
+        """Rounds completed for current stage."""
+        return self._counts[self._index]
+
+    @dsl_user_op
+    def next(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Advance to next stage (with wraparound).
+
+        Does not modify phase or count - those are handled by mark_valid()/mark_invalid().
+        """
+        self._index += 1
+
+        def then_body(index: Int32) -> Int32:
+            return Int32(0, loc=loc, ip=ip)
+
+        def else_body(index: Int32) -> Int32:
+            return index
+
+        self._index = if_generate(  # type: ignore[assignment]
+            self._index == self._num_stages,
+            then_body,
+            else_body,
+            [self._index],  # type: ignore[list-item]
+            [Int32],
+            loc=loc,
+            ip=ip,
+        )
+
+    @dsl_user_op
+    def mark_invalid(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Update state to indicate that TMA completed but data in stage buffer is invalid, requiring a re-issue of the TMA."""
+        self._phases[self._index] = self._phases[self._index] ^ 1
+
+    @dsl_user_op
+    def mark_valid(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Update state to indicate that TMA completed and data in stage buffer is valid."""
+        self._phases[self._index] = self._phases[self._index] ^ 1
+        self._counts[self._index] = self._counts[self._index] + 1
+
+    @dsl_user_op
+    def reset_count(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Reset all counts for new work tile."""
+        for i in range(self._num_stages):
+            self._counts[i] = 0
+
+    def __get_mlir_types__(self) -> list[ir.Type]:
+        return [self._index.type]  # type: ignore[attr-defined]
+
+    def __extract_mlir_values__(self) -> list[ir.Value]:
+        return [self._index.ir_value()]
+
+    def __new_from_mlir_values__(
+        self, values: list[ir.Value]
+    ) -> "PerStagePipelineState":
+        new = object.__new__(PerStagePipelineState)
+        new._num_stages = self._num_stages
+        new._index = Int32(values[0])
+        new._phases = self._phases
+        new._counts = self._counts
+        return new
+
+
+@dsl_user_op
+def compute_k_tile(
+    stage_idx: Int32,
+    stage_count: Int32,
+    stage_offset: Int32,
+    num_stages: int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    """Compute which k_tile the given stage is processing.
+
+    Args:
+        stage_idx: Current stage index
+        stage_count: Rounds completed for this stage
+        stage_offset: Which stage k_tile 0 maps to (for this work tile)
+        num_stages: Total number of stage buffers
+
+    Returns:
+        k_tile index this stage is processing
+    """
+    # Avoid modulo: safe since x < 2 * num_stages
+    x = stage_idx - stage_offset + num_stages
+    pos_in_round = if_generate(
+        x < num_stages,
+        lambda x: x,
+        lambda x: x - num_stages,
+        [x],
+        [Int32],
+    )
+    return pos_in_round + stage_count * num_stages
 
 
 ##############################################################################

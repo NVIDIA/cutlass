@@ -15,16 +15,15 @@ Submodules:
 
 - ``primitives`` — typed hardware MMA descriptors for the SM90 ``wgmma`` and
   SM100 ``tcgen05`` instructions (``Tcgen05SmemDesc``, ``Tcgen05InstrDesc``,
-  ``WgmmaSmemDesc``, the swizzle/format enums, ...), plus lazy aliases for
-  low-level NVVM wrappers. Imported eagerly; wrapper-backed symbols resolve
-  lazily.
+  ``WgmmaSmemDesc``, the swizzle/format enums, ...), plus the NVVM op wrappers
+  from its own ``nvvm_wrapper`` submodule. Imported eagerly.
 - ``cuda`` — CUDA tensor-map utilities (lazily loaded).
 - ``task_scheduling`` — resource/task scheduling framework (lazily loaded).
 
 ``cuda`` and ``task_scheduling`` are loaded lazily (PEP 562 ``__getattr__``)
 because they import back into ``cutlass`` itself (``cutlass.cute``,
 ``cutlass.pipeline``, ``cutlass.experimental.primitives``), which is still
-initializing when this module first runs -- importing them eagerly here would
+initializing when this module first runs — importing them eagerly here would
 form a cycle.
 """
 

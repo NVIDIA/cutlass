@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -118,6 +118,20 @@ CTA_2 critical details
    any CTA_2 N.  Applying the CTA_1 formula ``(N // 8) * 32`` to
    collective ``N`` over-allocates beyond 512 →
    ``cudaErrorIllegalInstruction``.
+
+4. **Persistent accumulator reuse needs ``acc_empty``**: this example is
+   a non-persistent one-shot output tile.  After the epilogue drains TMEM,
+   no next work tile reuses the same accumulator before kernel exit, so
+   ``acc_done`` is sufficient and ``acc_empty`` is intentionally omitted.
+   If this CTA_2 structure is adapted into a persistent kernel where
+   ``acc_full`` wakes both CTAs and both epilogues drain the same CTA_2
+   MMA accumulator before the pair leader reuses TMEM for the next work tile,
+   ``acc_empty`` is a peer-drain barrier, not a local epilogue barrier.
+   CTA_1 means one CTA arrival; CTA_2 means two CTA arrivals, so initialize
+   ``acc_empty`` with count 2. Have each CTA arrive at the pair leader's
+   barrier via ``prims.mapa(acc_empty, pair_leader_rank)`` after its local
+   ``tcgen05_ld`` drain, and let only the pair leader's MMA warp wait before
+   starting the next tile.
 
 Deferred — cross-group multicast (CTA_2)
 ========================================
@@ -306,6 +320,19 @@ def kernel(
     acc_done_mbar = cutlass.Array(
         cutlass.Int64, 1, space=cutlass.AddressSpace.smem, alignment=8
     )
+    # Persistent CTA_2 adaptation, not needed for this one-shot example:
+    #
+    # acc_empty_mbar = cutlass.Array(
+    #     cutlass.Int64, 1, space=cutlass.AddressSpace.smem, alignment=8
+    # )
+    #
+    # CTA_1 means count 1; CTA_2 means count 2. Initialize with count 2 here
+    # because acc_full wakes both CTAs and both epilogues drain the same CTA_2
+    # MMA accumulator before TMEM reuse.
+    #
+    # if warp_idx == 0:
+    #     if prims.elect_sync():
+    #         prims.mbarrier_init(acc_empty_mbar, 2)
     tmem_ptr_i32 = cutlass.Array(
         cutlass.Int32, 1, space=cutlass.AddressSpace.smem, alignment=4
     )
@@ -481,6 +508,10 @@ def kernel(
                     prims.tcgen05_commit(acc_done_mbar, group=prims.CTAGroup.CTA_1)
 
     # ---- Epilogue ------------------------------------------------------
+    # This is a one-shot output tile, so acc_done only gates the final drain.
+    # Persistent CTA_2 kernels that reuse the CTA_2 MMA accumulator for the next
+    # work tile need a separate acc_empty peer-drain barrier after both CTAs
+    # finish tcgen05_ld, before the pair leader MMA warp can overwrite TMEM.
     prims.barrier_cta_sync(0)
     while not prims.mbarrier_try_wait_parity(
         acc_done_mbar, cutlass.Int32(0), time_limit=10_000_000
@@ -525,6 +556,20 @@ def kernel(
             linear_idx = row * mC_mn.shape[1] + col + j * vsize
             (gC_ptr + linear_idx).store(vec_f16, alignment=16)
 
+    # Persistent CTA_2 adaptation, not needed for this one-shot example:
+    #
+    # prims.tcgen05_fence(prims.Tcgen05Fence.BEFORE_THREAD_SYNC)
+    # prims.barrier_cta_sync(0)
+    # if cutlass.const_expr(USE_2CTA_GROUP):
+    #     pair_leader_rank = cluster_rank & cutlass.Int32(-2)
+    #     if warp_idx == 0 and prims.elect_sync():
+    #         leader_acc_empty_mbar = prims.mapa(
+    #             acc_empty_mbar, pair_leader_rank
+    #         )
+    #         prims.mbarrier_arrive(leader_acc_empty_mbar, relaxed=True)
+    #
+    # Only the pair leader's MMA warp waits on acc_empty before starting the
+    # next persistent work tile.
     prims.tcgen05_fence(prims.Tcgen05Fence.BEFORE_THREAD_SYNC)
     prims.barrier_cta_sync(0)
     if warp_idx == 0:

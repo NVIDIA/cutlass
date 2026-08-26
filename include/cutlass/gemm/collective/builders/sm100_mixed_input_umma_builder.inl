@@ -181,6 +181,7 @@ struct CollectiveBuilder<
     KernelScheduleType,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       (cute::is_base_of_v<KernelScheduleSm100MixedInputGemm, KernelScheduleType>) &&
       ((sizeof(float) * AlignmentA) % detail::tma_alignment_bytes == 0) &&

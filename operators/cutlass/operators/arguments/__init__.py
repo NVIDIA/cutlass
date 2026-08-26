@@ -39,7 +39,11 @@ from .epilogue import (
     Transport,
 )
 from .gemm import GemmArguments, GemmProblemSize
-from .grouped_gemm import GroupedGemmArguments
+from .grouped_gemm import (
+    GroupedGemmArguments,
+    IndexPtrGroupedGemmArguments,
+    IndexPtrGroupedGemmProblemSize,
+)
 from .operand import (
     DenseTensor,
     ScaledOperand,
@@ -56,6 +60,8 @@ __all__ = [
     "GemmArguments",
     "GemmProblemSize",
     "GroupedGemmArguments",
+    "IndexPtrGroupedGemmArguments",
+    "IndexPtrGroupedGemmProblemSize",
     # Operands & related classes
     "Operand",
     "DenseTensor",

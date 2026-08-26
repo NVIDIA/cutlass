@@ -54,14 +54,6 @@ class MLIRTypeBuilder:
         """Convert the type to a type attribute."""
         return ir.TypeAttr.get(tp)
 
-    def int_type(self, bits: int) -> ir.Type:
-        """Get the `i<bits>` type."""
-        return ir.IntegerType.get_signless(bits)
-
-    def uint_type(self, bits: int) -> ir.Type:
-        """Get the `ui<bits>` type."""
-        return ir.IntegerType.get_unsigned(bits)
-
     def struct_type(
         self,
         *,
@@ -93,10 +85,6 @@ class MLIRTypeBuilder:
         else:
             return llvm.StructType.new_identified(name, fields, packed=packed)
 
-    def identified_struct_type(self, name: str) -> ir.Type:
-        """Get a previously created identified struct type by its name."""
-        return llvm.StructType.get_identified(name)
-
     def func_type(self, *, params: Sequence[ir.Type] = (), ret: ir.Type) -> ir.Type:
         """Get a function type.
 
@@ -115,15 +103,6 @@ class MLIRTypeBuilder:
         return ir.Type.parse(
             "!llvm.func<{} ({})>".format(str(ret), ", ".join(map(str, params)))
         )  # did not find a programmatic way to get the function type
-
-    def global_dtor_entry_type(self) -> ir.Type:
-        """Get the type of the global destructor entry.
-
-        See Also:
-        - https://llvm.org/docs/LangRef.html#the-llvm-global-dtors-global-variable
-        - https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirglobal_dtors-llvmglobaldtorsop
-        """
-        return self.struct_type(fields=[self.i32_type, self.ptr_type, self.ptr_type])
 
 
 class MLIRBuilder(MLIRTypeBuilder):

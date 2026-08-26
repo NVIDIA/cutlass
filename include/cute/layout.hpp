@@ -1163,15 +1163,83 @@ composition(Layout<LShape,LStride> const& lhs,
 //
 // Complement
 //
-// Build the complement of a layout.
-// @post size(@a result) >= @a cosize_hi / size(filter(@a layout)));
+// Build a minimal, ordered layout that is disjoint from the input layout.
+// The argument-free overload preserves the terminal size-1 mode that defines
+// the complement on the extended domain. The cotarget overload grows that mode
+// until the requested target is covered.
 // @post For all i in [1,size(@a result)),
-//           @a result(i) < @a result(i-1)
+//           @a result(i-1) < @a result(i)
 //           For all j in [0, size(@a layout)),
 //               @a result(i) != @a layout(j)
 //
 
 namespace detail {
+
+// @pre @a layout has been filtered (flattened and no stride-0 or size-1 modes).
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+complement_prefix(Shape const& shape, Stride const& stride)
+{
+  constexpr int R = rank_v<Shape>;
+  static_assert(R == 1 || is_static<Stride>::value,
+                "Dynamic-stride complement only for rank-1 layouts");
+
+  // Should just be a sort and a fold...
+  // Then we could even handle dynamic strides (but they would destroy all static strides)
+  auto [shape_, stride_, result_shape_, result_stride] =
+    fold(make_seq<R-1>{},
+         cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
+         [](auto const& init, auto i)
+         {
+            auto [shape, stride, result_shape, result_stride] = init;
+            auto min_stride = cute::min(stride);
+            auto min_idx    = cute::find(stride, min_stride);
+            auto new_shape  = min_stride / get<i>(result_stride);
+            auto new_stride = min_stride * get<min_idx>(shape);
+            static_assert(not is_constant<0, decltype(new_shape)>::value, "Non-injective Layout detected in complement.");
+
+            return cute::make_tuple(remove<min_idx>(shape),              // Remove the min_idx from shape
+                                    remove<min_idx>(stride),             // Remove the min_idx from stride
+                                    append(result_shape , new_shape ),   // new shape  = min_stride / last_stride
+                                    append(result_stride, new_stride));  // new stride = min_stride * curr_shape
+          });
+
+  // Append the last shape mode
+  auto new_shape    = get<0>(stride_) / get<R-1>(result_stride);         // new shape  = min_stride / last_stride
+  static_assert(not is_constant<0, decltype(new_shape)>::value, "Non-injective Layout detected in complement.");
+  auto result_shape = append(result_shape_, new_shape);
+  auto new_stride   = get<0>(stride_) * get<0>(shape_);                  // new stride = min_stride * curr_shape
+
+  return cute::make_tuple(result_shape, result_stride, new_stride);
+}
+
+// @pre @a layout has been filtered (flattened and no stride-0 or size-1 modes).
+// Build the minimal complement while preserving the terminal size-1 mode that
+// defines its behavior on the extended domain.
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+complement(Shape const& shape, Stride const& stride)
+{
+  if constexpr (is_constant<0, Stride>::value) {
+    // Special case for irreducible rank-1 stride-0 layout
+    return Layout<_1,_1>{};
+  } else {
+    // General case
+    auto [result_shape, result_stride, new_stride] = complement_prefix(shape, stride);
+    auto result = coalesce(make_layout(result_shape, result_stride));
+
+    if constexpr (is_constant<1, decltype(size(result))>::value) {
+      return make_layout(Int<1>{}, new_stride);
+    } else {
+      return make_layout(append(result.shape(),  Int<1>{}),
+                         append(result.stride(), new_stride));
+    }
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
 
 // @pre @a layout has been filtered (flattened and no stride-0 or size-1 modes).
 template <class Shape, class Stride, class CoTarget>
@@ -1184,37 +1252,9 @@ complement(Shape const& shape, Stride const& stride, CoTarget const& cotarget)
     return make_layout(coalesce(cotarget));
   } else {
     // General case
-    constexpr int R = rank_v<Shape>;
-    static_assert(R == 1 || is_static<Stride>::value,
-                  "Dynamic-stride complement only for rank-1 layouts");
-
-    // Should just be a sort and a fold...
-    // Then we could even handle dynamic strides (but they would destroy all static strides)
-    auto [shape_, stride_, result_shape_, result_stride] =
-      fold(make_seq<R-1>{},
-           cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
-           [](auto const& init, auto i)
-           {
-              auto [shape, stride, result_shape, result_stride] = init;
-              auto min_stride = cute::min(stride);
-              auto min_idx    = cute::find(stride, min_stride);
-              auto new_shape  = min_stride / get<i>(result_stride);
-              auto new_stride = min_stride * get<min_idx>(shape);
-              static_assert(not is_constant<0, decltype(new_shape)>::value, "Non-injective Layout detected in complement.");
-
-              return cute::make_tuple(remove<min_idx>(shape),              // Remove the min_idx from shape
-                                      remove<min_idx>(stride),             // Remove the min_idx from stride
-                                      append(result_shape , new_shape ),   // new shape  = min_stride / last_stride
-                                      append(result_stride, new_stride));  // new stride = min_stride * curr_shape
-            });
-
-    // Append the last shape mode
-    auto new_shape    = get<0>(stride_) / get<R-1>(result_stride);         // new shape  = min_stride / last_stride
-    static_assert(not is_constant<0, decltype(new_shape)>::value, "Non-injective Layout detected in complement.");
-    auto result_shape = append(result_shape_, new_shape);
+    auto [result_shape, result_stride, new_stride] = complement_prefix(shape, stride);
 
     // Compute the rest_shape and rest_stride
-    auto new_stride  = get<0>(stride_) * get<0>(shape_);                   // new stride = min_stride * curr_shape
     auto rest_shape  = coalesce(ceil_div(cotarget, new_stride));
     auto rest_stride = compact_major<LayoutLeft>(rest_shape, new_stride);
 
@@ -1243,7 +1283,7 @@ auto
 complement(Layout<Shape,Stride> const& layout)
 {
   auto filter_layout = filter(layout);
-  return detail::complement(filter_layout.shape(), filter_layout.stride(), cosize(filter_layout));
+  return detail::complement(filter_layout.shape(), filter_layout.stride());
 }
 
 //
@@ -1653,7 +1693,7 @@ auto
 logical_product(Layout<LShape,LStride> const& block,
                 Layout<TShape,TStride> const& tiler)
 {
-  return make_layout(block, composition(complement(block, size(block)*cosize(tiler)), tiler));
+  return make_layout(block, composition(complement(block), tiler));
 }
 
 template <class LShape, class LStride, class Tiler>

@@ -13,8 +13,11 @@
 This module provides MLIR's OP helper functions
 """
 
+import dis
 import inspect
 import importlib.util
+import itertools
+import linecache
 import os
 import types
 import warnings
@@ -35,6 +38,7 @@ from ..base_dsl.utils.stacktrace import walk_to_top_module
 
 if TYPE_CHECKING:
     from ..base_dsl.pyir_runtime import MutableValue
+
 
 try:
     from ..base_dsl.pyir_runtime import (
@@ -244,7 +248,77 @@ def _is_missing_context_error(e: BaseException) -> bool:
     return False
 
 
+# Cache of ``inspect.getsourcefile(frame) or inspect.getfile(frame)`` keyed on
+# ``co_filename``.  The resolution only depends on the code object's filename
+# (suffix checks + an ``os.path.exists`` probe), so one lookup per distinct
+# source file is enough for the per-op hot path below.
+_SOURCE_FILE_CACHE: dict[str, str] = {}
+
+# Python >= 3.11: code objects carry a position table and
+# ``inspect.Traceback`` accepts ``positions=``.  On older interpreters
+# ``_fast_frameinfo`` falls back to plain ``inspect.getframeinfo``.
+_HAS_CO_POSITIONS: bool = hasattr(types.CodeType, "co_positions")
+
+# The 3.11+ APIs used below (``CodeType.co_positions``, ``dis.Positions``,
+# ``inspect.Traceback``'s ``positions=`` field) are absent from the stubs at
+# the project's mypy floor (``python_version = "3.10"``), so resolve them
+# dynamically.  All uses are behind the ``_HAS_CO_POSITIONS`` run-time gate.
+_CO_POSITIONS: Any = getattr(types.CodeType, "co_positions", None)
+_DIS_POSITIONS: Any = getattr(dis, "Positions", None)
+_TRACEBACK_WITH_POSITIONS: Any = inspect.Traceback
+
+
+def _fast_frameinfo(frame: types.FrameType) -> inspect.Traceback:
+    """Build the same ``inspect.Traceback`` as ``inspect.getframeinfo(frame)``
+    without its per-call cost.
+
+    ``getframeinfo`` re-resolves the source file (2x ``os.stat``) and runs
+    ``inspect.findsource`` — module lookup plus a regex walk over the source —
+    on EVERY call; profiling shows it as the single largest trace-time cost of
+    a kernel compile (it runs once per built MLIR op).  The same fields come
+    straight from the frame: positions from the code object's position table,
+    the context line from ``linecache``, and the filename from a per-file
+    cache.  (Sole divergence: for a ``lineno`` beyond the real file length —
+    stale source on disk — ``getframeinfo`` returns an arbitrary clamped line
+    while this returns no context and callers fall back to the function name.)
+    """
+    if not _HAS_CO_POSITIONS:
+        return inspect.getframeinfo(frame)
+    code = frame.f_code
+    lasti = frame.f_lasti
+    if lasti >= 0:
+        positions = next(itertools.islice(_CO_POSITIONS(code), lasti // 2, None))
+    else:
+        positions = (None, None, None, None)
+    if positions[0] is None:
+        positions = (frame.f_lineno,) + tuple(positions[1:])
+    lineno = positions[0]
+
+    co_filename = code.co_filename
+    filename = _SOURCE_FILE_CACHE.get(co_filename)
+    if filename is None:
+        filename = inspect.getsourcefile(frame) or inspect.getfile(frame)
+        _SOURCE_FILE_CACHE[co_filename] = filename
+
+    line = linecache.getline(filename, lineno, frame.f_globals)
+    code_context = [line] if line else None
+    return _TRACEBACK_WITH_POSITIONS(
+        filename,
+        lineno,
+        code.co_name,
+        code_context,
+        0 if code_context else None,
+        positions=_DIS_POSITIONS(*positions),
+    )
+
+
 def _get_caller_frame_info() -> inspect.Traceback | None:
+    """Return lightweight frame info for the DSL user callsite.
+
+    This helper is only called when source-location tracking is enabled. It
+    skips the wrapper frame, applies framework-frame filtering, and avoids
+    `inspect.getframeinfo()`'s source-context lookup on the hot path.
+    """
     cur_frame = inspect.currentframe()
     if cur_frame is None:
         return None
@@ -254,10 +328,16 @@ def _get_caller_frame_info() -> inspect.Traceback | None:
     del cur_frame
     if frame is None:
         return None
-    return inspect.getframeinfo(frame)
+    return _fast_frameinfo(frame)
 
 
 def _get_location_from_frame_info(frameInfo: inspect.Traceback) -> ir.Location:
+    """Build an MLIR location from captured Python frame information.
+
+    The file/line/column portion becomes the child `FileLineColLoc`, while the
+    name location carries either the source snippet, when available, or the
+    Python function name.
+    """
     # In Python < 3.11, getframeinfo returns a NamedTuple without positions.
     if not hasattr(frameInfo, "positions"):
         file_loc = ir.Location.file(
@@ -311,7 +391,7 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
         # PyIR: auto-load from pyir.ref for any arg carrying an accessible
         # ``_mutable_ref`` (see pyir_runtime._pyir_auto_load_arg).
         log().debug("[dsl_user_op] %s called with %d args", opFunc.__name__, len(args))
-        args = tuple(_pyir_auto_load_arg(a) for a in args)
+        args = tuple(map(_pyir_auto_load_arg, args))
         # Pop loc= from kwargs so callers that still pass it don't break.
         # The wrapper replaces it only when source-location tracking is enabled.
         loc: Any = kwargs.pop("loc", None)

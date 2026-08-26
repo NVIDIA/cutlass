@@ -37,7 +37,8 @@ import cutlass.pipeline as pipeline
 import cutlass.cute as cute
 from cutlass.experimental import primitives as prims
 
-from cutlass.base_dsl.leaf_utils import TraversableLeafMixin
+import cutlass.cute.experimental.iket as iket
+from cutlass.base_dsl.utils.leaf_utils import TraversableLeafMixin
 from collections.abc import Iterator, Sequence, Set as AbstractSet
 from itertools import chain
 from typing import Any, Callable, FrozenSet, Optional, List, TYPE_CHECKING
@@ -49,11 +50,17 @@ from cutlass.utils.static_persistent_tile_scheduler import (
 if TYPE_CHECKING:
     from .schedule_builder import ScheduleResult
 from .enums import (
+    Every,
+    FIRST_ITER,
+    LAST_ITER,
+    IterationPredicate,
     LoopGuard,
+    OpaqueCondition,
     PipelineType,
     SignalingThreads,
     ScheduleStage,
     ScheduleStageType,
+    is_loop_guard as _enum_is_loop_guard,
 )
 from .enums import PipelineGroupMode
 from .memory import ResourceContext
@@ -91,13 +98,28 @@ def _is_schedule_stage_type(value: object) -> bool:
 
 
 def _is_loop_guard(value: object) -> bool:
-    """Check if a value is a LoopGuard."""
-    return isinstance(value, LoopGuard)
+    """Check if a value is a supported loop-schedule guard."""
+    return _enum_is_loop_guard(value)
+
+
+def _is_last_iter_guard(guard: object) -> bool:
+    return guard == LoopGuard.LastIter or guard is LAST_ITER
+
+
+def _is_first_iter_guard(guard: object) -> bool:
+    return guard == LoopGuard.FirstIter or guard is FIRST_ITER
 
 
 def _is_label(value: object) -> bool:
     """Check if a value is a user-defined work label."""
     return not _is_schedule_stage_type(value) and not _is_loop_guard(value)
+
+
+def _condition_value_to_bool_impl(value: object) -> cutlass.Boolean:
+    """Normalize a stored condition result to a DSL Boolean."""
+    if cutlass.const_expr(isinstance(value, cutlass.Boolean)):
+        return cast(cutlass.Boolean, value)
+    return cutlass.Boolean(value != 0)
 
 
 def _validate_get_domain_signature(
@@ -147,7 +169,8 @@ _CONSUMER_DST_STAGES = frozenset(
 
 HeadTailEntry = tuple[MemoryResource, ScheduleStage, int, object]
 HeadTailExecGroup = tuple[bool, list[HeadTailEntry]]
-LoopExecGroup = tuple[LoopGuard, list[HeadTailEntry]]
+LoopScheduleGuard = LoopGuard | IterationPredicate | OpaqueCondition
+LoopExecGroup = tuple[LoopScheduleGuard, list[HeadTailEntry]]
 
 
 def _task_local_slot_names(resource: object) -> tuple[str | None, ...]:
@@ -335,50 +358,39 @@ def normalize_and_validate_schedule_list(
         #   * Fork ``ProducerCommit`` → must be ``(group, ...)`` at
         #     the group level (the shared full barrier fires once
         #     per stage, committing for all members at once).
+        #   * FusedMerge ``ConsumerWait`` / ``ConsumerTryWait`` /
+        #     ``ConsumerRelease`` → must be ``(group, ...)`` at
+        #     the group level (producers are fused onto shared full
+        #     barriers, and the shared empty barrier behaves like Merge).
         #   * All other barrier ops on a group member → must be
         #     ``(group.member, ...)``; bare ``member`` is rejected.
+        group_stages = {
+            PipelineGroupMode.Merge: [ScheduleStage.ConsumerRelease],
+            PipelineGroupMode.Fork: [ScheduleStage.ProducerCommit],
+            PipelineGroupMode.FusedMerge: [
+                ScheduleStage.ConsumerTryWait,
+                ScheduleStage.ConsumerWait,
+                ScheduleStage.ConsumerRelease,
+            ],
+        }
         if isinstance(resource, _GroupMemberRef):
             ref: _GroupMemberRef = resource
-            if (
-                ref.group.mode == PipelineGroupMode.Merge
-                and stage == ScheduleStage.ConsumerRelease
-            ):
+            if stage in group_stages[ref.group.mode]:
                 raise ValueError(
-                    f"Merge group '{ref.group.name}': ConsumerRelease must "
-                    f"be emitted on the group itself (`{ref.group.name}`), "
-                    f"not on member `{ref.member.name}`.  The shared empty "
-                    f"barrier fires once per stage, releasing all members "
-                    f"at once."
-                )
-            if (
-                ref.group.mode == PipelineGroupMode.Fork
-                and stage == ScheduleStage.ProducerCommit
-            ):
-                raise ValueError(
-                    f"Fork group '{ref.group.name}': ProducerCommit must "
-                    f"be emitted on the group itself (`{ref.group.name}`), "
-                    f"not on member `{ref.member.name}`.  The shared full "
-                    f"barrier fires once per stage, committing for all "
-                    f"members at once."
+                    f"{ref.group.mode.value} group '{ref.group.name}': "
+                    f"{stage.name} must be emitted on the group itself "
+                    f"(`{ref.group.name}`), not on member `{ref.member.name}`."
                 )
             resource = ref.member
         elif isinstance(resource, PipelineGroup):
-            if resource.mode == PipelineGroupMode.Merge:
-                if stage != ScheduleStage.ConsumerRelease:
-                    raise ValueError(
-                        f"Merge group '{resource.name}' only accepts "
-                        f"ConsumerRelease at the group level, got "
-                        f"{stage.name}.  Use `{resource.name}.<member>` for "
-                        f"member-level barrier ops."
-                    )
-            else:
-                if stage != ScheduleStage.ProducerCommit:
-                    raise ValueError(
-                        f"Fork group '{resource.name}' only accepts "
-                        f"ProducerCommit at the group level, got "
-                        f"{stage.name}.  Use `{resource.name}.<member>` for "
-                        f"member-level barrier ops."
-                    )
+            if stage not in group_stages[resource.mode]:
+                accepted_stages = ", ".join(s.name for s in group_stages[resource.mode])
+                raise ValueError(
+                    f"{resource.mode.value} group '{resource.name}' only "
+                    f"accepts {accepted_stages} at the group level, "
+                    f"got {stage.name}.  Use `{resource.name}.<member>` "
+                    f"for member-level barrier ops."
+                )
         else:
             # Bare member of *some* group is forbidden — must use the
             # group-qualified form so the barrier identity is explicit.
@@ -422,7 +434,9 @@ def normalize_and_validate_schedule_list(
                 )
             if not _is_loop_guard(guard):
                 raise ValueError(
-                    f"schedule_list 4th element must be a LoopGuard, got {type(guard)}"
+                    "schedule_list 4th element must be a loop guard "
+                    f"(LoopGuard, IterationPredicate, or OpaqueCondition), "
+                    f"got {type(guard)}"
                 )
         else:
             raise ValueError(
@@ -439,9 +453,14 @@ def normalize_and_validate_schedule_list(
 
         if guard != LoopGuard.Always and phase != ScheduleStageType.Loop:
             raise ValueError(
-                f"LoopGuard can only be used with ScheduleStageType.Loop "
+                f"Loop guards can only be used with ScheduleStageType.Loop "
                 f"entries, got {phase}"
             )
+
+        if guard is FIRST_ITER:
+            guard = LoopGuard.FirstIter
+        elif guard is LAST_ITER:
+            guard = LoopGuard.LastIter
 
         if not isinstance(phase, ScheduleStageType):
             raise ValueError(
@@ -572,19 +591,24 @@ class Task(TraversableLeafMixin):
     debug_print : bool
         Emit per-step debug prints to stdout (default: False).
 
+    iket_enable_profiling : bool
+        Enable per-step IKET ``range_start``/``range_end`` markers around
+        each selected ``(resource, ScheduleStage)`` entry.  Each
+        unique pair consumes 1 of 31 IKET marker slots; use
+        ``iket_profiling_stages`` and ``iket_profiling_resources`` to stay
+        within the limit (default: False).
+    iket_profiling_stages : Optional[FrozenSet[ScheduleStage]]
+        Restrict per-step IKET markers to the given ``ScheduleStage``
+        values.  ``None`` means all stages are profiled (default: None).
+    iket_profiling_resources : Optional[FrozenSet[str]]
+        Restrict per-step IKET markers to resources whose ``name`` is in
+        this set.  ``None`` means all resources are profiled
+        (default: None).
+
     head_schedule_list, loop_schedule_list, tail_schedule_list
         Normalised schedule phases, each a list of
         ``(MemoryResource, ScheduleStage, call_id)`` tuples.
     """
-
-    # Thread ``self`` through dynamic control flow on the legacy frontend.
-    # Task methods mutate pipeline state (mbarrier phases, producer/consumer
-    # cursors) reachable through ``self`` from inside dynamic for/while/if
-    # regions, so ``self`` must be carried as region state -- otherwise
-    # sibling warp-specialized regions read region-internal SSA values
-    # ("operand does not dominate this use"). See ``is_read_only_object`` in
-    # cutlass_dsl/cutlass.py.
-    _dsl_thread_self_in_staged_cf = True
 
     def __init__(
         self,
@@ -597,6 +621,23 @@ class Task(TraversableLeafMixin):
         num_registers: Optional[int] = None,
         name: str = "",
         debug_print: bool = False,
+        # Enable per-step IKET range_start/end markers around each
+        # selected (resource, ScheduleStage) entry in head, loop, and tail
+        # schedules.  Each unique (resource, stage) pair consumes 1 of 31
+        # IKET marker slots; use ``iket_profiling_stages`` and
+        # ``iket_profiling_resources`` to keep the count within the hardware
+        # limit on large kernels.
+        iket_enable_profiling: bool = False,
+        # Whitelist of ScheduleStage values to instrument with IKET
+        # range_start/end in per-step profiling.  ``None`` means all stages.
+        # Example: ``frozenset({ScheduleStage.ProducerWork, ScheduleStage.ConsumerWork})``
+        # to profile only actual data-movement / compute work.
+        iket_profiling_stages: Optional[FrozenSet[ScheduleStage]] = None,
+        # Whitelist of resource names to instrument.  ``None`` means all
+        # resources.  Only entries whose ``resource.name`` is in this set
+        # will emit IKET ranges, keeping the event count within the
+        # 30-slot hardware limit on large kernels.
+        iket_profiling_resources: Optional[FrozenSet[str]] = None,
         # Hoist the CTA-leader gate into is_selected() so the entire
         # task body runs only on CTA 0.  See class docstring for details.
         run_only_on_cta_id: Optional[int] = None,
@@ -629,6 +670,16 @@ class Task(TraversableLeafMixin):
             Human-readable task name used in diagnostics and PTX comments.
         debug_print : bool, optional
             Emit per-step debug prints from generated code.
+
+        iket_enable_profiling : bool, optional
+            Emit per-step IKET ``range_start`` / ``range_end`` markers for
+            selected head, loop, and tail schedule entries.
+        iket_profiling_stages : Optional[FrozenSet[ScheduleStage]], optional
+            Restrict per-step IKET markers to the selected schedule stages.
+            ``None`` profiles all stages.
+        iket_profiling_resources : Optional[FrozenSet[str]], optional
+            Restrict per-step IKET markers to resources with matching names.
+            ``None`` profiles all resources.
 
         run_only_on_cta_id : int, optional
             Hoist task selection so all task work runs only on the given CTA
@@ -697,6 +748,9 @@ class Task(TraversableLeafMixin):
             isinstance(res, WorkQueue) for res in self.src_resources
         )
         self.debug_print = debug_print
+        self.iket_enable_profiling = iket_enable_profiling
+        self.iket_profiling_stages = iket_profiling_stages
+        self.iket_profiling_resources = iket_profiling_resources
         if run_only_on_cta_id is not None:
             if type(run_only_on_cta_id) is not int or run_only_on_cta_id < 0:
                 raise ValueError(
@@ -736,6 +790,14 @@ class Task(TraversableLeafMixin):
             skip_if, self.work_queue, name
         )
         self._has_skip_if = skip_if is not None
+        # WORKAROUND: pre-initialise so that
+        # `self.dummy = cutlass.Boolean(True)` inside dynamic for/while/if is
+        # a value update, not a first-time attribute addition (structural
+        # change). Without this, nesting task_manager.run() inside a dynamic
+        # `if` triggers "self is structured different after this for".
+        self.dummy = cutlass.Boolean(True)
+        self._resource_context: Optional[ResourceContext] = None
+
         # User-supplied slot-to-slot variable-flow routing.  This is the
         # single source of truth consumed by the runtime dispatch in
         # ``_consumer_work*``: for each writer slot it lists which
@@ -794,19 +856,19 @@ class Task(TraversableLeafMixin):
                     (guard, [(resource, schedule_stage, call_id, label)])
                 )
         self._has_last_iter = any(
-            guard == LoopGuard.LastIter for guard, _ in self._loop_exec_groups
+            _is_last_iter_guard(guard) for guard, _ in self._loop_exec_groups
         )
         # Fallback lists for domain-0 (no loop iterations): splice guarded
         # entries into the head+tail path so their side effects still fire.
         self.loop_first_iter_fallback_list = [
             (r, s, c, lbl)
             for r, s, c, g, lbl in self.loop_schedule_list
-            if g == LoopGuard.FirstIter
+            if _is_first_iter_guard(g)
         ]
         self.loop_last_iter_fallback_list = [
             (r, s, c, lbl)
             for r, s, c, g, lbl in self.loop_schedule_list
-            if g == LoopGuard.LastIter
+            if _is_last_iter_guard(g)
         ]
         if self.num_registers is not None:
             assert (
@@ -1025,7 +1087,6 @@ class Task(TraversableLeafMixin):
         idx: Any,
         work_tile: WorkTileInfo,
         resolved_domain: Any,
-        context: Optional[ResourceContext],
     ) -> None:
         """Execute a group of (resource, schedule_stage, call_id, label) entries.
 
@@ -1049,6 +1110,7 @@ class Task(TraversableLeafMixin):
                 lbl,
                 require_label_for_named=self.captured_schedule,
             )
+
             routing_slot = self._routing_slot(r, s, ScheduleStageType.Loop, c)
             if cutlass.const_expr(
                 is_producer
@@ -1066,7 +1128,6 @@ class Task(TraversableLeafMixin):
                     is_producer,
                     resolved_domain,
                     routing_slot,
-                    context,
                     label=lbl,
                 )
             else:
@@ -1079,9 +1140,118 @@ class Task(TraversableLeafMixin):
                     label=lbl,
                     schedule_stage=s,
                     routing_slot=routing_slot,
-                    context=context,
                 )
-                self._run_step(r, si, s, work_method, routing_slot)
+                self._run_profiled_step(r, si, s, work_method, routing_slot)
+
+    def _should_profile_entry(
+        self,
+        resource: MemoryResource | PipelineGroup,
+        schedule_stage: ScheduleStage,
+    ) -> bool:
+        """Return true when this schedule entry should emit an IKET range."""
+        return (
+            self.iket_enable_profiling
+            and (
+                self.iket_profiling_stages is None
+                or schedule_stage in self.iket_profiling_stages
+            )
+            and (
+                self.iket_profiling_resources is None
+                or resource.name in self.iket_profiling_resources
+            )
+        )
+
+    def _start_profile_entry(
+        self,
+        resource: MemoryResource | PipelineGroup,
+        schedule_stage: ScheduleStage,
+    ) -> object | None:
+        """Start the per-entry IKET range, if this entry is selected."""
+        if cutlass.const_expr(self._should_profile_entry(resource, schedule_stage)):
+            return iket.range_start(resource.name + "_" + schedule_stage.value)
+        return None
+
+    def _end_profile_entry(
+        self,
+        resource: MemoryResource | PipelineGroup,
+        schedule_stage: ScheduleStage,
+        token: object | None,
+    ) -> None:
+        """End the per-entry IKET range, if this entry is selected."""
+        if cutlass.const_expr(self._should_profile_entry(resource, schedule_stage)):
+            assert token is not None
+            iket.range_end(token)
+
+    def _run_profiled_step(
+        self,
+        resource: MemoryResource | PipelineGroup,
+        stage_info: StageInfo,
+        schedule_stage: ScheduleStage,
+        work_method: Optional[Callable[..., object]] = None,
+        routing_slot: object = None,
+    ) -> None:
+        """Run one schedule step and close its IKET range on trace errors."""
+        _iket_entry_tok = self._start_profile_entry(resource, schedule_stage)
+        try:
+            self._run_step(
+                resource, stage_info, schedule_stage, work_method, routing_slot
+            )
+        finally:
+            self._end_profile_entry(resource, schedule_stage, _iket_entry_tok)
+
+    @cute.jit
+    def _run_every_group(
+        self,
+        guard: Every,
+        entries: list[HeadTailEntry],
+        idx: Any,
+        work_tile: WorkTileInfo,
+        resolved_domain: Any,
+    ) -> None:
+        """Run one group when its zero-based loop iteration count matches."""
+        iteration_count = (idx - self.domain_start) // self.step
+        start = cutlass.Int32(guard.start)
+        period = cutlass.Int32(guard.period)
+        is_active = (iteration_count >= start) & (
+            (iteration_count - start) % period == cutlass.Int32(0)
+        )
+        if is_active:
+            self._run_group_entries(entries, idx, work_tile, resolved_domain)
+            self.dummy = cutlass.Boolean(True)
+
+    @cute.jit
+    def _run_opaque_group(
+        self,
+        guard: OpaqueCondition,
+        entries: list[HeadTailEntry],
+        idx: Any,
+        work_tile: WorkTileInfo,
+        resolved_domain: Any,
+    ) -> None:
+        """Run one group when its runtime condition evaluates true."""
+        if cutlass.const_expr(guard.resource is None):
+            active = cutlass.Boolean(True)
+        else:
+            resource = cast(MemoryResource, guard.resource)
+            if cutlass.const_expr(guard.result_name is None):
+                raise ValueError(
+                    "OpaqueCondition with a resource must name a stored condition "
+                    "result."
+                )
+            active = self._condition_value_to_bool(
+                resource._get_consumer_var_from_ts(cast(str, guard.result_name))
+            )
+        if cutlass.const_expr(guard.negated):
+            active = cast(cutlass.Boolean, ~active)
+        if active:
+            self._run_group_entries(entries, idx, work_tile, resolved_domain)
+            self.dummy = cutlass.Boolean(True)
+
+    @staticmethod
+    @cute.jit
+    def _condition_value_to_bool(value: object) -> cutlass.Boolean:
+        return _condition_value_to_bool_impl(value)
+
     def _run_head_entry(
         self,
         resource: MemoryResource,
@@ -1090,7 +1260,6 @@ class Task(TraversableLeafMixin):
         label_head: object,
         work_tile: WorkTileInfo,
         resolved_domain: Any,
-        context: Optional[ResourceContext],
     ) -> None:
         """Execute one HEAD schedule entry."""
         assert resource in self.resources or isinstance(resource, PipelineGroup), (
@@ -1124,7 +1293,6 @@ class Task(TraversableLeafMixin):
                 is_producer_head,
                 resolved_domain,
                 routing_slot,
-                context,
                 label=label_head,
             )
         else:
@@ -1137,9 +1305,8 @@ class Task(TraversableLeafMixin):
                 label=label_head,
                 schedule_stage=schedule_stage,
                 routing_slot=routing_slot,
-                context=context,
             )
-            self._run_step(
+            self._run_profiled_step(
                 resource,
                 stage_info_head,
                 schedule_stage,
@@ -1152,7 +1319,6 @@ class Task(TraversableLeafMixin):
         entries: list[HeadTailEntry],
         work_tile: WorkTileInfo,
         resolved_domain: object,
-        context: Optional[ResourceContext],
     ) -> None:
         """Execute a grouped set of HEAD schedule entries."""
         for resource, schedule_stage, call_id_head, label_head in entries:
@@ -1163,7 +1329,6 @@ class Task(TraversableLeafMixin):
                 label_head,
                 work_tile,
                 resolved_domain,
-                context,
             )
 
     def _run_tail_entry(
@@ -1174,7 +1339,6 @@ class Task(TraversableLeafMixin):
         label_tail: object,
         work_tile: WorkTileInfo,
         resolved_domain: Any,
-        context: Optional[ResourceContext],
     ) -> None:
         """Execute one TAIL schedule entry."""
         assert resource in self.resources or isinstance(resource, PipelineGroup), (
@@ -1212,7 +1376,6 @@ class Task(TraversableLeafMixin):
                 is_producer_tail,
                 resolved_domain,
                 routing_slot,
-                context,
                 label=label_tail,
             )
         else:
@@ -1225,9 +1388,8 @@ class Task(TraversableLeafMixin):
                 label=label_tail,
                 schedule_stage=schedule_stage,
                 routing_slot=routing_slot,
-                context=context,
             )
-            self._run_step(
+            self._run_profiled_step(
                 resource,
                 stage_info_tail,
                 schedule_stage,
@@ -1240,7 +1402,6 @@ class Task(TraversableLeafMixin):
         entries: list[HeadTailEntry],
         work_tile: WorkTileInfo,
         resolved_domain: object,
-        context: Optional[ResourceContext],
     ) -> None:
         """Execute a grouped set of TAIL schedule entries."""
         for resource, schedule_stage, call_id_tail, label_tail in entries:
@@ -1251,7 +1412,6 @@ class Task(TraversableLeafMixin):
                 label_tail,
                 work_tile,
                 resolved_domain,
-                context,
             )
 
     @staticmethod
@@ -1265,12 +1425,7 @@ class Task(TraversableLeafMixin):
         return num_iters, last_idx
 
     @cute.jit
-    def _run_loop_simple(
-        self,
-        resolved_domain: Any,
-        work_tile: WorkTileInfo,
-        context: Optional[ResourceContext],
-    ) -> None:
+    def _run_loop_simple(self, resolved_domain: Any, work_tile: WorkTileInfo) -> None:
         """K-loop without loop peeling (no LastIter entries)."""
         # Keep the steady-state task body as a staged runtime loop.  The
         # unroll hint comes from ``self.unroll`` (default ``1`` =
@@ -1290,7 +1445,6 @@ class Task(TraversableLeafMixin):
                         idx,
                         work_tile,
                         resolved_domain,
-                        context,
                     )
                 elif cutlass.const_expr(group_guard == LoopGuard.FirstIter):
                     if is_first_iter:
@@ -1299,16 +1453,32 @@ class Task(TraversableLeafMixin):
                             idx,
                             work_tile,
                             resolved_domain,
-                            context,
                         )
+                        # WORKAROUND: force `self` state
+                        # threading across dynamic control flow.
+                        self.dummy = cutlass.Boolean(True)
+                elif cutlass.const_expr(isinstance(group_guard, Every)):
+                    self._run_every_group(
+                        group_guard,
+                        group_entries,
+                        idx,
+                        work_tile,
+                        resolved_domain,
+                    )
+                elif cutlass.const_expr(isinstance(group_guard, OpaqueCondition)):
+                    self._run_opaque_group(
+                        group_guard,
+                        group_entries,
+                        idx,
+                        work_tile,
+                        resolved_domain,
+                    )
+            # WORKAROUND: force `self` state threading
+            # across dynamic control flow.
+            self.dummy = cutlass.Boolean(True)
 
     @cute.jit
-    def _run_loop_peeled(
-        self,
-        resolved_domain: Any,
-        work_tile: WorkTileInfo,
-        context: Optional[ResourceContext],
-    ) -> None:
+    def _run_loop_peeled(self, resolved_domain: Any, work_tile: WorkTileInfo) -> None:
         """K-loop with last-iteration peeling for LastIter entries.
 
         Runs iterations 0..N-2 inside an scf.for (Always + FirstIter only),
@@ -1341,7 +1511,6 @@ class Task(TraversableLeafMixin):
                             idx,
                             work_tile,
                             resolved_domain,
-                            context,
                         )
                     elif cutlass.const_expr(group_guard == LoopGuard.FirstIter):
                         if is_first_iter:
@@ -1350,9 +1519,30 @@ class Task(TraversableLeafMixin):
                                 idx,
                                 work_tile,
                                 resolved_domain,
-                                context,
                             )
+                            # WORKAROUND: force `self`
+                            # state threading across dynamic control flow.
+                            self.dummy = cutlass.Boolean(True)
+                    elif cutlass.const_expr(isinstance(group_guard, Every)):
+                        self._run_every_group(
+                            group_guard,
+                            group_entries,
+                            idx,
+                            work_tile,
+                            resolved_domain,
+                        )
+                    elif cutlass.const_expr(isinstance(group_guard, OpaqueCondition)):
+                        self._run_opaque_group(
+                            group_guard,
+                            group_entries,
+                            idx,
+                            work_tile,
+                            resolved_domain,
+                        )
                     # LastIter entries skipped in main loop
+                # WORKAROUND: force `self` state threading
+                # across dynamic control flow.
+                self.dummy = cutlass.Boolean(True)
 
             # Peeled last iteration: Always + LastIter groups, plus FirstIter
             # only when this is the sole iteration.
@@ -1364,7 +1554,6 @@ class Task(TraversableLeafMixin):
                         last_idx,
                         work_tile,
                         resolved_domain,
-                        context,
                     )
                 elif cutlass.const_expr(group_guard == LoopGuard.FirstIter):
                     # Only runs if N=1 (last is also first)
@@ -1374,8 +1563,10 @@ class Task(TraversableLeafMixin):
                             last_idx,
                             work_tile,
                             resolved_domain,
-                            context,
                         )
+                        # WORKAROUND: force `self` state
+                        # threading across dynamic control flow.
+                        self.dummy = cutlass.Boolean(True)
                 elif cutlass.const_expr(group_guard == LoopGuard.LastIter):
                     # Runs unconditionally — no scf.if needed
                     self._run_group_entries(
@@ -1383,8 +1574,26 @@ class Task(TraversableLeafMixin):
                         last_idx,
                         work_tile,
                         resolved_domain,
-                        context,
                     )
+                elif cutlass.const_expr(isinstance(group_guard, Every)):
+                    self._run_every_group(
+                        group_guard,
+                        group_entries,
+                        last_idx,
+                        work_tile,
+                        resolved_domain,
+                    )
+                elif cutlass.const_expr(isinstance(group_guard, OpaqueCondition)):
+                    self._run_opaque_group(
+                        group_guard,
+                        group_entries,
+                        last_idx,
+                        work_tile,
+                        resolved_domain,
+                    )
+        # WORKAROUND: force `self` state threading across
+        # dynamic control flow.
+        self.dummy = cutlass.Boolean(True)
 
     @cute.jit
     def _run_step(
@@ -1743,7 +1952,6 @@ class Task(TraversableLeafMixin):
         is_producer: bool,
         resolved_domain: object,
         routing_slot: object,
-        context: Optional[ResourceContext],
         label: object = None,
     ) -> None:
         """Run a producer entry while forwarding untouched split cursors.
@@ -1790,9 +1998,8 @@ class Task(TraversableLeafMixin):
                 label=label,
                 schedule_stage=schedule_stage,
                 routing_slot=routing_slot,
-                context=context,
             )
-            self._run_step(
+            self._run_profiled_step(
                 resource, stage_info, schedule_stage, work_method, routing_slot
             )
 
@@ -1955,10 +2162,15 @@ class Task(TraversableLeafMixin):
                     resource.pipeline_config.pipeline_type != PipelineType.ClcFetchAsync
                 ):
                     _ptx_comment(resource.name + "_consumer_try_wait")
+                    # For PipelineGroups, self.pipeline is None to avoid
+                    # aliasing issues with inject_leaves; use group_pipeline.
+                    pipe = (
+                        resource.group_pipeline
+                        if cutlass.const_expr(isinstance(resource, PipelineGroup))
+                        else resource.pipeline
+                    )
                     resource.store_consumer_status(
-                        resource.pipeline.consumer_try_wait(
-                            resource.state_src.consumer_state
-                        )
+                        pipe.consumer_try_wait(resource.state_src.consumer_state)
                     )
 
     @cute.jit
@@ -2000,7 +2212,14 @@ class Task(TraversableLeafMixin):
             if do_wait:
                 _ptx_comment(resource.name + "_consumer_wait")
                 if cutlass.const_expr(resource.pipeline_config is not None):
-                    resource.pipeline.consumer_wait(
+                    # For PipelineGroups, self.pipeline is None to avoid
+                    # aliasing issues with inject_leaves; use group_pipeline.
+                    pipe = (
+                        resource.group_pipeline
+                        if cutlass.const_expr(isinstance(resource, PipelineGroup))
+                        else resource.pipeline
+                    )
+                    pipe.consumer_wait(
                         resource.state_src.consumer_state,
                         resource.load_consumer_status(),
                     )
@@ -2811,7 +3030,6 @@ class Task(TraversableLeafMixin):
         label: object = None,
         schedule_stage: Optional[ScheduleStage] = None,
         routing_slot: object = None,
-        context: Optional[ResourceContext] = None,
     ) -> StageInfo:
         """Build a ``StageInfo`` snapshot for the current schedule step.
 
@@ -2841,8 +3059,6 @@ class Task(TraversableLeafMixin):
             Per-step routing identity from :meth:`_routing_slot`.  Used to
             decide whether an ``advance_on_acquire`` ProducerWork slot follows
             an earlier acquire in this contiguous task schedule.
-        context : ResourceContext or None
-            Framework-level SMEM/TMEM pointers forwarded by ``TaskManager``.
         """
         stage_idx = None
         prim_barrier_array: "cutlass.Array | None" = None
@@ -2969,14 +3185,12 @@ class Task(TraversableLeafMixin):
             label=label,
             barrier=prim_barrier_array,
             work_tile=work_tile,
-            context=context,
+            context=self._resource_context,
             task_cache=self.make_task_cache(),
         )
 
     @cute.jit
-    def _run_task_body_persistent(
-        self, context: Optional[ResourceContext] = None
-    ) -> None:
+    def _run_task_body_persistent(self) -> None:
         """Persistent work loop: iterate while the tile scheduler provides valid tiles.
 
         Each iteration calls ``_run_task_body_impl`` for one work tile.
@@ -2989,7 +3203,7 @@ class Task(TraversableLeafMixin):
         work_tile = self.work_queue.initial_work_tile_info()
         self.work_queue._set_consumer_var_from_ts("work_tile", work_tile)
 
-        self._run_pre_work_loop_entries(work_tile, context)
+        self._run_pre_work_loop_entries(work_tile)
         work_tile = self.work_queue._get_consumer_var_from_ts("work_tile")
         for resource in self.dst_resources:
             if cutlass.const_expr(
@@ -3001,12 +3215,15 @@ class Task(TraversableLeafMixin):
         while work_tile.is_valid_tile:
             if cutlass.const_expr(self._has_skip_if):
                 skip_work_tile = self._should_skip_work_tile(work_tile)
-                self._run_task_body_impl(work_tile, skip_work_tile, context)
+                self._run_task_body_impl(work_tile, skip_work_tile)
             else:
-                self._run_task_body_impl(work_tile, context=context)
+                self._run_task_body_impl(work_tile)
             work_tile = self.work_queue._get_consumer_var_from_ts("work_tile")
+            # WORKAROUND: force `self` state threading
+            # across dynamic control flow.
+            self.dummy = cutlass.Boolean(True)
 
-        self._run_post_work_loop_entries(work_tile, context)
+        self._run_post_work_loop_entries(work_tile)
         # Drain in-flight pipeline stages for every dst resource.
         # PTX requires all outstanding mbarrier arrivals to be completed
         # before the producing warp exits; without this the kernel hits
@@ -3030,11 +3247,12 @@ class Task(TraversableLeafMixin):
             and self.work_queue.pipeline_config is not None
         ):
             self.work_queue.producer_tail()
+        # WORKAROUND: force `self` state threading across
+        # dynamic control flow.
+        self.dummy = cutlass.Boolean(True)
 
     @cute.jit
-    def _run_task_body_non_persistent(
-        self, context: Optional[ResourceContext] = None
-    ) -> None:
+    def _run_task_body_non_persistent(self) -> None:
         """Single-shot execution for non-persistent tasks (no loop over work tiles).
 
         Constructs a ``WorkTileInfo`` from ``cute.arch.block_idx()`` so that
@@ -3042,7 +3260,7 @@ class Task(TraversableLeafMixin):
         persistent schedules).
         """
         work_tile = WorkTileInfo(cute.arch.block_idx(), cutlass.Boolean(True))
-        self._run_task_body_impl(work_tile, context=context)
+        self._run_task_body_impl(work_tile)
         for resource in self.dst_resources:
             if cutlass.const_expr(
                 resource.pipeline_config is not None
@@ -3071,6 +3289,9 @@ class Task(TraversableLeafMixin):
                         self._strided_advance(_state, _cfg, _producer_stride)
                 else:
                     self._producer_tail(resource)
+        # WORKAROUND: force `self` state threading across
+        # dynamic control flow.
+        self.dummy = cutlass.Boolean(True)
 
     @cute.jit
     def _should_skip_work_tile(self, work_tile: WorkTileInfo) -> bool:
@@ -3101,11 +3322,7 @@ class Task(TraversableLeafMixin):
         return cast(bool, skip_work_tile)
 
     @cute.jit
-    def _run_persistent_skip_iteration(
-        self,
-        work_tile: WorkTileInfo,
-        context: Optional[ResourceContext] = None,
-    ) -> None:
+    def _run_persistent_skip_iteration(self, work_tile: WorkTileInfo) -> None:
         """Run non-skippable head/tail entries for one inactive tile."""
         tile_coord = work_tile.tile_idx
         resolved_domain = self.get_domain(tile_coord)
@@ -3141,9 +3358,8 @@ class Task(TraversableLeafMixin):
                     label=label_head,
                     schedule_stage=schedule_stage_head,
                     routing_slot=routing_slot,
-                    context=context,
                 )
-                self._run_step(
+                self._run_profiled_step(
                     resource_head,
                     stage_info_head,
                     schedule_stage_head,
@@ -3186,9 +3402,8 @@ class Task(TraversableLeafMixin):
                     label=label_tail,
                     schedule_stage=schedule_stage_tail,
                     routing_slot=routing_slot,
-                    context=context,
                 )
-                self._run_step(
+                self._run_profiled_step(
                     resource_tail,
                     stage_info_tail,
                     schedule_stage_tail,
@@ -3197,11 +3412,7 @@ class Task(TraversableLeafMixin):
                 )
 
     @cute.jit
-    def _run_pre_work_loop_entries(
-        self,
-        work_tile: WorkTileInfo,
-        context: Optional[ResourceContext] = None,
-    ) -> None:
+    def _run_pre_work_loop_entries(self, work_tile: WorkTileInfo) -> None:
         """Run head entries captured before ``work_tile_loop()`` starts."""
         for (
             resource_head,
@@ -3234,9 +3445,8 @@ class Task(TraversableLeafMixin):
                     label=label_head,
                     schedule_stage=schedule_stage_head,
                     routing_slot=routing_slot,
-                    context=context,
                 )
-                self._run_step(
+                self._run_profiled_step(
                     resource_head,
                     stage_info_head,
                     schedule_stage_head,
@@ -3245,11 +3455,7 @@ class Task(TraversableLeafMixin):
                 )
 
     @cute.jit
-    def _run_post_work_loop_entries(
-        self,
-        work_tile: WorkTileInfo,
-        context: Optional[ResourceContext] = None,
-    ) -> None:
+    def _run_post_work_loop_entries(self, work_tile: WorkTileInfo) -> None:
         """Run tail entries captured after ``work_tile_loop()`` exits."""
         for (
             resource_tail,
@@ -3282,9 +3488,8 @@ class Task(TraversableLeafMixin):
                     label=label_tail,
                     schedule_stage=schedule_stage_tail,
                     routing_slot=routing_slot,
-                    context=context,
                 )
-                self._run_step(
+                self._run_profiled_step(
                     resource_tail,
                     stage_info_tail,
                     schedule_stage_tail,
@@ -3297,11 +3502,10 @@ class Task(TraversableLeafMixin):
         resource_index: int,
         work_tile: WorkTileInfo,
         skip_work_tile: Any,
-        context: Optional[ResourceContext],
     ) -> None:
         """Thread split producer cursors across one work-tile schedule body."""
         if resource_index >= len(self._advance_on_acquire_state_resources):
-            self._run_task_body_impl_schedule(work_tile, skip_work_tile, context)
+            self._run_task_body_impl_schedule(work_tile, skip_work_tile)
             return
 
         resource = self._advance_on_acquire_state_resources[resource_index]
@@ -3313,7 +3517,6 @@ class Task(TraversableLeafMixin):
                 resource_index + 1,
                 work_tile,
                 skip_work_tile,
-                context,
             )
             return
 
@@ -3343,7 +3546,6 @@ class Task(TraversableLeafMixin):
                 resource_index + 1,
                 work_tile,
                 skip_work_tile,
-                context,
             )
             return self._load_advance_on_acquire_state(resource)
 
@@ -3360,14 +3562,12 @@ class Task(TraversableLeafMixin):
         self,
         work_tile: WorkTileInfo,
         skip_work_tile: Any = None,
-        context: Optional[ResourceContext] = None,
     ) -> None:
         """Execute one work tile while threading split producer cursors."""
         self._run_task_body_with_advance_on_acquire_state(
             0,
             work_tile,
             skip_work_tile,
-            context,
         )
 
     @cute.jit
@@ -3375,7 +3575,6 @@ class Task(TraversableLeafMixin):
         self,
         work_tile: WorkTileInfo,
         skip_work_tile: Any = None,
-        context: Optional[ResourceContext] = None,
     ) -> None:
         """Execute one work tile through the full head -> loop -> tail schedule.
 
@@ -3412,7 +3611,6 @@ class Task(TraversableLeafMixin):
                     label_head,
                     work_tile,
                     resolved_domain,
-                    context,
                 )
         else:
             for is_skippable_head, head_entries in self._head_exec_groups:
@@ -3422,12 +3620,9 @@ class Task(TraversableLeafMixin):
                             head_entries,
                             work_tile,
                             resolved_domain,
-                            context,
                         )
                 else:
-                    self._run_head_entry_group(
-                        head_entries, work_tile, resolved_domain, context
-                    )
+                    self._run_head_entry_group(head_entries, work_tile, resolved_domain)
 
         # Execute loop schedule (steady state)
         # Uses pre-computed _loop_exec_groups: consecutive entries with the
@@ -3459,14 +3654,14 @@ class Task(TraversableLeafMixin):
                 [cutlass.Int32],
             )
             if cutlass.const_expr(self._has_last_iter):
-                self._run_loop_peeled(loop_domain, work_tile, context)
+                self._run_loop_peeled(loop_domain, work_tile)
             else:
-                self._run_loop_simple(loop_domain, work_tile, context)
+                self._run_loop_simple(loop_domain, work_tile)
         else:
             if cutlass.const_expr(self._has_last_iter):
-                self._run_loop_peeled(resolved_domain, work_tile, context)
+                self._run_loop_peeled(resolved_domain, work_tile)
             else:
-                self._run_loop_simple(resolved_domain, work_tile, context)
+                self._run_loop_simple(resolved_domain, work_tile)
 
         # Execute tail schedule (drain phase)
         if cutlass.const_expr(skip_work_tile is None):
@@ -3489,7 +3684,6 @@ class Task(TraversableLeafMixin):
                     label_tail,
                     work_tile,
                     resolved_domain,
-                    context,
                 )
         else:
             for is_skippable_tail, tail_entries in self._tail_exec_groups:
@@ -3499,12 +3693,10 @@ class Task(TraversableLeafMixin):
                             tail_entries,
                             work_tile,
                             resolved_domain,
-                            context,
                         )
                 else:
-                    self._run_tail_entry_group(
-                        tail_entries, work_tile, resolved_domain, context
-                    )
+                    self._run_tail_entry_group(tail_entries, work_tile, resolved_domain)
+
     @cute.jit
     def is_selected(self) -> bool:
         """Return ``True`` if the current warp falls within this task's range."""
@@ -3535,6 +3727,7 @@ class Task(TraversableLeafMixin):
             Carries ``smem_base`` and/or ``tmem_ptr_i32`` when
             allocators are in use.
         """
+        self._resource_context = context
         for resource in self.resources:
             resource.initialize_runtime_state_internal(
                 context,
@@ -3800,12 +3993,11 @@ class Task(TraversableLeafMixin):
         return None
 
     @cute.jit
-    def run_body(self, context: Optional[ResourceContext] = None) -> None:
+    def run_body(self) -> None:
         """Gate on warp selection and execute the task body.
 
         Call only after ``init_variables()`` has already been invoked
-        for *all* tasks.  ``context`` is forwarded explicitly into
-        ``StageInfo`` so traced task structure does not change at runtime.
+        for *all* tasks.
         """
         if self.is_selected():
             _ptx_comment(
@@ -3813,9 +4005,12 @@ class Task(TraversableLeafMixin):
             )
             self._set_max_register()
             if cutlass.const_expr(self.is_persistent):
-                self._run_task_body_persistent(context)
+                self._run_task_body_persistent()
             else:
-                self._run_task_body_non_persistent(context)
+                self._run_task_body_non_persistent()
+            # WORKAROUND: force `self` state threading
+            # across dynamic control flow.
+            self.dummy = cutlass.Boolean(True)
 
     @cute.jit
     def run(self) -> None:

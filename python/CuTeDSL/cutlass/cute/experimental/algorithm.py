@@ -77,14 +77,25 @@ def partition_and_copy(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
-    Copies a tensor between two cute.memref buffer
+    Partitions ``src`` / ``dst`` with ``tiled_copy`` and issues the copy.
+
+    Non-register operands are partitioned with the tiled copy's TV layouts and
+    tiler; register operands are left as-is. For a broadcasting SMEM to TMEM
+    copy, SMEM is first rewritten by ``tcgen05.append_s2t_broadcast_mode`` so
+    its MMA mode matches the TMEM-derived tiler. The SMEM descriptor such a copy
+    needs is materialized when the copy is lowered.
     """
     src_partitioned = src
     dst_partitioned = dst
     tid_x = tiled_copy.thr_idx
     if src.memspace != AddressSpace.rmem:
+        src_to_partition = src
+        if src.memspace == AddressSpace.smem and dst.memspace == AddressSpace.tmem:
+            src_to_partition = cute.nvgpu.tcgen05.append_s2t_broadcast_mode(
+                tiled_copy.op, src, loc=loc, ip=ip
+            )
         src_partitioned = partition(
-            src,
+            src_to_partition,
             tid_x,
             layout_tv=tiled_copy.layout_src_tv_tiled,
             tiler=cute.core._pack_tile(tiled_copy.tiler_mn),

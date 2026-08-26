@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -287,8 +287,6 @@ class GmemAbResource(MemoryResource):
             default=cutlass.Int32(0),
             docs="N coordinate for the current TMA load tile.",
         )
-        self.bx, self.by, self.bz = cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0)
-        self.cta_rank_in_cluster = cutlass.Int32(0)
 
     @consumer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
@@ -400,16 +398,16 @@ class SmemAbResource(MemoryResource):
             copy_elems = mma_tiler_mnk_per_cta[0] * mma_tiler_mnk[2]
         else:
             copy_elems = mma_tiler_mnk_per_cta[1] * mma_tiler_mnk[2]
-        self.copy_elems = cutlass.Int32(copy_elems)
-        self.act_num_pair_cols = cutlass.Int32(
+        self.copy_elems = copy_elems
+        self.act_num_pair_cols = (
             act_num_pair_cols if act_num_pair_cols is not None else num_pair_cols
         )
-        self.act_a_mcast_template = cutlass.Int32(
+        self.act_a_mcast_template = (
             act_a_mcast_template
             if act_a_mcast_template is not None
             else _a_mcast_template
         )
-        self.act_b_mcast_template = cutlass.Int32(
+        self.act_b_mcast_template = (
             act_b_mcast_template
             if act_b_mcast_template is not None
             else _b_mcast_template
@@ -417,17 +415,6 @@ class SmemAbResource(MemoryResource):
         elem_bytes = io_dtype.width // 8
         smem_bytes = copy_elems * ab_stages * elem_bytes
         self._alloc = SmemAllocation(f"smem_{operand}", smem_bytes, alignment=128)
-        nullptr = cutlass.inttoptr(0, mem_space=3, dtype=io_dtype)
-        self.shared_smem = cutlass.Array(
-            nullptr,
-            dtype=io_dtype,
-            shape=(self.copy_elems * ab_stages,),
-            addrspace=3,
-        )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.rank_in_pair = cutlass.Int32(0)
-        self.tma_mcast_mask = cutlass.Int32(0)
-        self.is_leader = cutlass.Boolean(False)
 
     @cute.jit
     def _init_smem_state(self, stage_info: StageInfo) -> None:
@@ -619,10 +606,6 @@ class TmemCResource(MemoryResource):
             default=cutlass.full([self.t2r_inst_repx], 0.0, cutlass.Float32),
             docs="Register-memory subtile loaded from TMEM for the epilogue.",
         )
-        self.scale_d = cutlass.Boolean(False)
-        self.idesc = cutlass.Int32(0)
-        self.tmem_raw_addr = cutlass.Int32(0)
-        self.cta_rank_in_cluster = cutlass.Int32(0)
 
     @cute.jit
     def _init_tmem_state(self, stage_info: StageInfo) -> None:
@@ -655,7 +638,7 @@ class TmemCResource(MemoryResource):
     @cute.jit
     def init_work_tile_state(self, stage_info: StageInfo) -> None:
         del stage_info
-        self.scale_d = cutlass.Boolean(False)
+        self.scale_d = False
 
     def get_tmem_requirements(self):
         return [self._alloc_acc]
@@ -1817,7 +1800,7 @@ def host_function(
     bias: Optional[cute.Tensor] = None,
 ) -> None:
     # Construct TMA Descriptors
-    # A/B use cutlass to create tensormap descriptors, like the base GEMM example.
+    # A/B use cutlass to create tensormap descriptors (like fp16_gemm_0_prim.py)
     # box_dims in tensor's original mode order: A is (M, K), B is (N, K).
     tma_a_desc = cuda.create_tensor_map_tiled_from_view(
         a,
@@ -1944,7 +1927,7 @@ def prepare_run(
         )
     mnk = (m, n, k)
 
-    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+    compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
         callable,
         a_,
         b_,
@@ -2028,7 +2011,7 @@ def prepare_cuda_graph_chain_run(
         )
     mnk = (m, n, k)
 
-    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+    compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
         callable,
         chain_tensors_[0],
         b_,
@@ -2081,7 +2064,7 @@ def run_dense_gemm_ws(
         else ""
     )
     print("===================================================================")
-    print("Running Blackwell 16-bit GEMM example 3 task-scheduling (clustered) with:")
+    print("Running Blackwell 16-bit GEMM example 3 PRIM (clustered) with:")
     print(f"  mnk:       {mnk}")
     print(f"  dtype:     {_get_io_dtype_name()}")
     print(f"  cluster:   {cluster_shape_mnk}{fallback_str}")
@@ -2156,7 +2139,7 @@ if __name__ == "__main__":
         raise RuntimeError("A GPU is required to run this example")
 
     parser = argparse.ArgumentParser(
-        description="Blackwell 16-bit GEMM example 3 task-scheduling (clustered)"
+        description="Blackwell 16-bit GEMM example 3 PRIM (clustered)"
     )
     parser.add_argument(
         "--mnk",

@@ -1026,7 +1026,7 @@ struct CollectiveMma<
       int read_stage_tma = mainloop_pipe_tma_consumer_state.index();
       int read_stage_cpasync = mainloop_pipe_cpasync_consumer_state.index();
 
-      if (cute::elect_one_sync()) {
+      if (is_mma_leader_cta && cute::elect_one_sync()) {
         copy(tiled_copy_s2t_SFA, thr_tCsSFA_s2t(_,_,_,_,read_stage_tma), thr_tCtSFA_s2t);
         copy(tiled_copy_s2t_SFB, thr_tCsSFB_s2t(_,_,_,_,read_stage_tma), thr_tCtSFB_s2t);
       }

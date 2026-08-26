@@ -15,6 +15,7 @@ from dataclasses import is_dataclass, fields as dataclass_fields
 from cutlass.base_dsl.tvm_ffi_builder import spec
 from cutlass.base_dsl.jit_executor import ExecutionArgs
 from cutlass.base_dsl.common import DSLRuntimeError
+from cutlass.base_dsl.typing import TypedPointer
 from cutlass.base_dsl.utils.tree_utils import is_constexpr_field
 from cutlass.cutlass_dsl import is_cute_algebra_type
 from .runtime import _FakeStream
@@ -48,6 +49,7 @@ import cuda.bindings.driver as cuda
 
 from types import UnionType
 from typing import (
+    Annotated,
     List,
     Dict,
     Any,
@@ -58,6 +60,7 @@ from typing import (
     get_type_hints,
 )
 import inspect
+import tvm_ffi
 
 NumericToTVMFFIDtype = {
     Boolean: "bool",
@@ -86,7 +89,9 @@ NumericToTVMFFIDtype = {
     Float4E2M1FNx2: "float4_e2m1fnx2",
 }
 
-_UNSUPPORTED_TVM_FFI_NUMERIC_TYPES = set[Any]()
+_TVM_FFI_FLOAT4X2_DTYPE = tvm_ffi.dtype("float4_e2m1fnx2")
+
+_UNSUPPORTED_TVM_FFI_NUMERIC_TYPES: set[type[Numeric]] = set()
 
 def _numeric_to_tvm_ffi_dtype(dtype: type[Numeric]) -> str:
     if dtype in _UNSUPPORTED_TVM_FFI_NUMERIC_TYPES:
@@ -100,7 +105,6 @@ def _numeric_to_tvm_ffi_dtype(dtype: type[Numeric]) -> str:
         raise DSLRuntimeError(
             f"TVM-FFI does not support tensor dtype {dtype.__name__}."
         ) from exc
-
 
 # Functions which return the MLIR type for the specified CuTe type.
 # The functions take a MLIRBuilder as an argument and return the MLIR type.
@@ -133,6 +137,18 @@ def _get_llvm_address_space_from_memspace(
     if memspace == AddressSpace.gmem:
         return 1
     return None
+
+
+def _get_llvm_address_space_from_pointer_annotation(
+    annotation: Any,
+) -> Optional[int]:
+    """Return the declared address space from a typed pointer annotation."""
+    while get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    if not isinstance(annotation, TypedPointer):
+        return None
+    address_space = getattr(annotation.space, "value", annotation.space)
+    return int(address_space)
 
 
 def _is_gpu_memspace(
@@ -241,7 +257,6 @@ def _shape_elem_to_spec(elem: Any, ctx: ConverterContext) -> Any:
         return spec.Var(ctx.alloc_shape_name(), _numeric_to_tvm_ffi_dtype(elem.dtype))
     else:
         raise DSLRuntimeError(f"Unexpected element type in cute shape: {type(elem)}")
-
 
 def _convert_cute_shape_arg(
     arg: Any, arg_name: str, ctx: ConverterContext
@@ -367,19 +382,32 @@ def _convert_single_arg(
                 else:
                     dtype = NumericToTVMFFIDtype[Int64]
                 strides.append(spec.Var(ctx.alloc_stride_name(), dtype))
+        map_tensor_dtype_f4x2_to_f4 = arg.element_type == Float4E2M1FN
         if hasattr(arg, "_tvm_ffi_tensor"):
             tvm_ffi_tensor = arg._tvm_ffi_tensor
-            dtype = tvm_ffi_tensor.dtype
             device_type = tvm_ffi_tensor.device.type
 
             # Allocate device_id (returns None for CPU tensors)
             vdevice_id = tvm_ffi_tensor.device.index
             device_id = ctx.alloc_or_reuse_device_id(device_type, vdevice_id)
 
+            # A recast uint8 tensor keeps its uint8 TVM-FFI object. Preserve
+            # that ABI dtype so runtime validation matches the object returned
+            # by _Tensor.__tvm_ffi_object__(). Native FP4x2 backings still need
+            # the logical FP4-to-packed-FP4x2 shape and stride remapping.
+            map_tensor_dtype_f4x2_to_f4 = (
+                map_tensor_dtype_f4x2_to_f4
+                and tvm_ffi_tensor.dtype == _TVM_FFI_FLOAT4X2_DTYPE
+            )
+            tensor_dtype = (
+                _numeric_to_tvm_ffi_dtype(arg.element_type)
+                if map_tensor_dtype_f4x2_to_f4
+                else tvm_ffi_tensor.dtype
+            )
             tvm_ffi_cute_tensor = spec.Tensor(
                 arg_name,
                 shapes,
-                arg._tvm_ffi_tensor.dtype,
+                tensor_dtype,
                 strides=strides,
                 data_alignment=arg._assumed_align,  # type: ignore[attr-defined]
                 device_type=device_type,
@@ -401,14 +429,16 @@ def _convert_single_arg(
                 device_type=device_type,
                 device_id=device_id,
             )
-            if arg.element_type == Float4E2M1FN:
-                tvm_ffi_cute_tensor = spec.create_map_tensor_dtype_f4x2_to_f4_spec(
-                    tvm_ffi_cute_tensor
-                )
+
+        if map_tensor_dtype_f4x2_to_f4:
+            tvm_ffi_cute_tensor = spec.create_map_tensor_dtype_f4x2_to_f4_spec(
+                tvm_ffi_cute_tensor
+            )
+
         return tvm_ffi_cute_tensor
     elif isinstance(arg, Pointer) or arg_type == Pointer:
-        address_space = None
-        if hasattr(arg, "memspace"):
+        address_space = _get_llvm_address_space_from_pointer_annotation(arg_type)
+        if address_space is None and hasattr(arg, "memspace"):
             address_space = _get_llvm_address_space_from_memspace(arg.memspace)
         return spec.DataPointer(arg_name, address_space=address_space)
     elif isinstance(arg, _FakeStream):

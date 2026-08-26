@@ -49,6 +49,8 @@ class IfOpRegion:
     Automatically inserts `scf.yield([])` when exiting the context.
     """
 
+    __dsl_trace_time_ctxmgr__ = True
+
     def __init__(
         self,
         block: ir.Block,
@@ -135,9 +137,9 @@ def elect_one(
     :rtype: IfOpRegion
 
     .. seealso::
-       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Requires elect_one
-       - :func:`cute.arch.mbarrier_arrive_and_expect_tx <cutlass.cute.arch.mbarrier_arrive_and_expect_tx>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_init` - Requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx` - Requires elect_one
+       - :func:`cute.arch.mbarrier_arrive_and_expect_tx` - Requires elect_one
        - PTX ISA documentation on ``elect.sync``
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """

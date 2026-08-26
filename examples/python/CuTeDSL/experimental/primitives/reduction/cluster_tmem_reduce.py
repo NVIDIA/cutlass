@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -96,6 +96,11 @@ import cutlass.cute as cute
 from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 from cutlass.experimental import primitives as prims
 
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 _DEFAULT_CLUSTER_SHAPE: tuple[int, int] = (2, 1)
 _DEFAULT_TMEM_LAYOUT: Literal["32x32b", "16x64b", "16x128b", "16x256b"] = "32x32b"
 _DEFAULT_REDUCE_OP: Literal["add", "max", "min"] = "add"
@@ -142,6 +147,11 @@ def _output_rows(TMEM_LAYOUT: str) -> int:
     if TMEM_LAYOUT == "16x256b":
         return _TILE_ROWS // 2
     return _TILE_ROWS
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 def _cluster_reduce_identity(REDUCE_OP: cutlass.Constexpr) -> cutlass.Float32:
@@ -320,6 +330,11 @@ def _kernel(
         prims.tcgen05_dealloc(tmem_ptr, _N_TMEM_COLS, group=prims.CTAGroup.CTA_1)
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def _host(
     src: cute.Tensor,
@@ -337,6 +352,11 @@ def _host(
         cluster=(cluster_x, cluster_y, 1),
         stream=stream,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 def _normalize_cluster_shape(CLUSTER_SHAPE: tuple[int, int]) -> tuple[int, int]:
@@ -462,6 +482,11 @@ def expected(
     return active.max(dim=0).values
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     CLUSTER_SHAPE: tuple[int, int] = _DEFAULT_CLUSTER_SHAPE,
@@ -490,6 +515,11 @@ def run(
     compiled_fn(src, out, stream)
     torch.cuda.synchronize()
     return out, src
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(
@@ -536,6 +566,11 @@ def verify(
         f"(CLUSTER_SHAPE={CLUSTER_SHAPE}, TMEM_LAYOUT={TMEM_LAYOUT}, "
         f"REDUCE_OP={REDUCE_OP}): PASS"
     )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def _parse_cluster_shape(value: str) -> tuple[int, int]:

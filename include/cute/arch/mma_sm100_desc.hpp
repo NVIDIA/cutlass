@@ -103,10 +103,18 @@ union SmemDescriptor
   uint64_t desc_ = 0;
   // Bitfield implementation avoids the need for shifts in assignment
   struct {
+#if (defined(CUTLASS_ARCH_MMA_SM107A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM107F_ENABLED)\
+    )
+    // start_address, bit [0,15), 4LSB not included
+    uint16_t start_address_ : 15, : 1;                     // 15 bits [0,15), 1 bit unused
+    // leading dimension byte offset, bit [16,31), 4LSB not included
+    uint16_t leading_byte_offset_ : 15, : 1;               // 15 bits [0,15), 1 bit unused
+#else
     // start_address, bit [0,14), 4LSB not included
     uint16_t start_address_ : 14, : 2;                     // 14 bits [0,14), 2 bits unused
     // leading dimension byte offset, bit [16,30), 4LSB not included
     uint16_t leading_byte_offset_ : 14, : 2;               // 14 bits [0,14), 2 bits unused
+#endif
     // stride dimension byte offset, bit [32,46), 4LSB not included
     uint16_t stride_byte_offset_ : 14, version_ : 2;       // 14 bits [0,14), 2 bits [14,16)
     // base_offset, bit [49,52). leading_byte_offset_mode, bit [52,53).
@@ -433,7 +441,7 @@ union InstrDescriptor
              n_dim_         : 6,  // bit [17,23) : 3 LSBs not included. Valid values range from 1 (N=8) to 32 (N=256).  All values are not valid for all instruction formats
                             : 1,  //
              m_dim_         : 5,  // bit [24,29) : 4 LSBs not included. Valid values are: 4 (M=64), 8 (M=128), 16 (M=256)
-                            : 1,  //
+             k_size_        : 1,  // bit [29,30) : MMA-K Dim. For MXF8F6F4 0=[dense: K32], 1=[dense: K64]; for all other instructions set to 0.
              max_shift_     : 2;  // bit [30,32) : Maximum shift for WS instruction. Encoded as follows: 0 = no shift, 1 = maximum shift of 8, 2 = maximum shift of 16, 3 = maximum shift of 32.
   };
 
@@ -505,6 +513,24 @@ make_instr_desc()
   return desc_i;
 }
 
+// Specialized helper to create instruction descriptor for SM107 (K=64)
+template <class a_type, class b_type, class c_type, int M, int N,
+          UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One,
+          UMMA::ScaleIn b_neg = UMMA::ScaleIn::One,
+          UMMA::Saturate c_sat = UMMA::Saturate::False, bool is_sparse = false,
+          UMMA::MaxShift max_shift = UMMA::MaxShift::NoShift>
+CUTE_HOST_DEVICE constexpr
+UMMA::InstrDescriptor
+make_sm107_instr_desc()
+{
+  UMMA::InstrDescriptor desc_i =
+      make_instr_desc<a_type, b_type, c_type, M, N, a_major, b_major, a_neg,
+                      b_neg, c_sat, is_sparse, max_shift>();
+  desc_i.k_size_ = 1;
+
+  return desc_i;
+}
 template <class a_type, class b_type, class c_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
           UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One,

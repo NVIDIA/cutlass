@@ -80,6 +80,7 @@ enum class FpEncoding
   E5M2,   // FP8
   E4M3,   // FP8
   UE4M3,  // FP8
+  UE5M3,  // FP8
   UE8M0,  // FP8
   E3M2,   // FP6
   E2M3,   // FP6
@@ -870,6 +871,10 @@ CUTLASS_CONSTEXPR_IF_CXX17 auto fp_encoding_selector() {
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 4, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>{};
   }
 
+  else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::UE5M3)   {   // FP8
+    return cutlass::detail::FpBitRepresentation<uint8_t, 8, 5, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>{};
+  }
+
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::UE8M0)   {   // FP8
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 8, 0, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>{};
   }
@@ -911,6 +916,10 @@ template <> struct FpEncodingSelector<FpEncoding::E4M3> {
 
 template <> struct FpEncodingSelector<FpEncoding::UE4M3> {
   using type = cutlass::detail::FpBitRepresentation<uint8_t, 8, 4, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>;
+};
+
+template <> struct FpEncodingSelector<FpEncoding::UE5M3> {
+  using type = cutlass::detail::FpBitRepresentation<uint8_t, 8, 5, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>;
 };
 
 template <> struct FpEncodingSelector<FpEncoding::UE8M0> {

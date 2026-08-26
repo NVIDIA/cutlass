@@ -131,7 +131,7 @@ Route
     feeds one named input on the consuming ``Step``.
 
 ConditionalBlock
-    A region whose body runs only when its ``BlockCondition`` holds.
+    A region whose body runs only when its :class:`~.enums.BlockGuard` holds.
 
 DomainLoop
     A ``range``-style loop over the work tile's iteration domain; any
@@ -140,10 +140,6 @@ DomainLoop
 WorkTileLoop
     The persistent (while) loop over work tiles, driven by a ``WorkQueue``;
     an optional ``skip_if`` predicate enables skipped-tile execution.
-
-BlockCondition
-    Enum predicate guarding a ``ConditionalBlock``: ``FirstIter`` / ``LastIter``
-    (first / last domain iteration) and ``Skippable`` (omitted on skipped tiles).
 
 DataFlowToken
     Opaque handle returned by a work call — one per ``TaskLocalVariable``
@@ -157,7 +153,7 @@ ResourceProxy
 DomainLoopProxy / WorkTileLoopProxy
     Handles yielded by ``domain_loop()`` / ``work_tile_loop()``.
     ``DomainLoopProxy`` opens per-iteration ``first_iter()`` / ``last_iter()``
-    blocks; ``WorkTileLoopProxy`` opens ``skippable()`` blocks.
+    / ``every()`` blocks; ``WorkTileLoopProxy`` opens ``skippable()`` blocks.
 
 ScheduleBuilder
     Internal state machine that accumulates the schedule tree during
@@ -195,21 +191,29 @@ consumer_work / producer_work
     work_attrs=...)`` and ``@producer_work(work_attrs=...)``.
 """
 
-from cutlass.experimental.task_scheduling.enums import ScheduleStage
 import functools
 import inspect
+import itertools
 import warnings
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Callable, NoReturn
+from typing import Callable, Hashable, NoReturn
 
 import cutlass
 from typing_extensions import assert_never
 
-from .enums import ScheduleStage
+from .enums import (
+    BlockGuard,
+    Every,
+    FIRST_ITER,
+    IterationPredicate,
+    LAST_ITER,
+    OpaqueCondition,
+    SKIPPABLE,
+    ScheduleStage,
+)
 from .resources import (
     MemoryResource,
     SlotRouting,
@@ -224,19 +228,6 @@ from .resources import (
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
-
-
-class BlockCondition(Enum):
-    """Predicate that guards a :class:`ConditionalBlock`.
-
-    ``FirstIter`` / ``LastIter`` gate the first / last iteration of the
-    enclosing :class:`DomainLoop`; ``Skippable`` marks work that is omitted on a
-    skipped work tile (only inside a ``work_tile_loop(skip_if=...)``).
-    """
-
-    FirstIter = "FirstIter"
-    LastIter = "LastIter"
-    Skippable = "Skippable"
 
 
 @dataclass(kw_only=True)
@@ -304,10 +295,10 @@ class Step:
 
 @dataclass(kw_only=True, eq=False)
 class ConditionalBlock:
-    """A region executed only when ``condition`` holds (first/last iter, skip)."""
+    """A region executed only when its guard holds."""
 
     body: "list[Node]"
-    condition: BlockCondition
+    condition: BlockGuard
 
 
 @dataclass(kw_only=True, eq=False)
@@ -519,7 +510,7 @@ def _format_schedule(schedule: Schedule, *, show_routes: bool = True) -> str:
                 lbl = f", label={label!r}" if label else ""
                 return f"[#{node.unique_id}] Step({resource.name}, {stage.name}{lbl})"
             case ConditionalBlock(condition=condition):
-                return f"ConditionalBlock(condition={condition.name})"
+                return f"ConditionalBlock(condition={_format_block_guard(condition)})"
             case DomainLoop(start=start, end=end, step=step, unroll=unroll):
                 bounds = (
                     f"start={fmt_bound(start)}, end={fmt_bound(end)}, "
@@ -625,6 +616,140 @@ class DataFlowToken:
         )
 
 
+_opaque_capture_counter = itertools.count()
+
+
+def _format_iteration_predicate(condition: IterationPredicate) -> str:
+    if isinstance(condition, Every):
+        return f"Every(period={condition.period}, start={condition.start})"
+    if condition is FIRST_ITER:
+        return "FirstIter"
+    if condition is LAST_ITER:
+        return "LastIter"
+    return repr(condition)
+
+
+def _format_block_guard(condition: BlockGuard) -> str:
+    if condition is SKIPPABLE:
+        return "Skippable"
+    if isinstance(condition, OpaqueCondition):
+        polarity = "when_false" if condition.negated else "when_true"
+        return f"{polarity}(key={condition.key!r})"
+    if isinstance(condition, IterationPredicate):
+        return _format_iteration_predicate(condition)
+    raise TypeError(f"unsupported block guard type: {type(condition).__name__}")
+
+
+def _resolve_when_guard(
+    builder: "ScheduleBuilder",
+    cond: object,
+    *,
+    key: Hashable | None,
+    negated: bool,
+    api: str,
+) -> IterationPredicate | OpaqueCondition:
+    if isinstance(cond, IterationPredicate):
+        if key is not None:
+            warnings.warn(
+                f"{api}(): key= is ignored for iteration predicates.",
+                stacklevel=3,
+            )
+        if negated:
+            raise ScheduleError(
+                f"{api}() cannot negate an iteration predicate; use a different "
+                "predicate or an opaque runtime condition."
+            )
+        if not builder._is_inside_domain_loop():
+            raise ScheduleError(
+                f"{api}() with an iteration predicate is only valid inside "
+                "domain_loop()."
+            )
+        if builder._in_per_iteration_condition():
+            raise ScheduleError(
+                "per-iteration condition blocks cannot be nested; express "
+                "independent cadences as sibling blocks."
+            )
+        return cond
+    if isinstance(cond, DataFlowToken):
+        if cond.variable is None:
+            raise ScheduleError(
+                f"{api}() condition must be a work-call output declared with "
+                "returns=TaskLocalVariable."
+            )
+        if builder.is_stale(cond):
+            raise ScheduleError(
+                "condition token is stale; use the latest handle returned by "
+                "the work call."
+            )
+        label = cond.producer_step.label or cond.producer_step.schedule_stage.value
+        result_name = cond.variable.slot_name
+        assert result_name is not None
+        resolved_key = (
+            key
+            if key is not None
+            else (
+                id(cond.producer_step.memory_resource),
+                label,
+                result_name,
+            )
+        )
+        builder.record_condition_use(cond)
+        return OpaqueCondition(
+            key=resolved_key,
+            negated=negated,
+            resource=cond.producer_step.memory_resource,
+            method_label=label,
+            result_name=result_name,
+        )
+    resolved_key = (
+        key if key is not None else ("__opaque__", next(_opaque_capture_counter))
+    )
+    return OpaqueCondition(key=resolved_key, negated=negated)
+
+
+def _validate_opaque_guard_placement(
+    builder: "ScheduleBuilder", _guard: OpaqueCondition, api: str
+) -> None:
+    if builder._in_per_iteration_condition():
+        raise ScheduleError(
+            f"{api}() with an opaque condition cannot be nested inside a "
+            "per-iteration predicate block or another opaque condition block."
+        )
+
+
+@contextmanager
+def when_true(cond: object, *, key: Hashable | None = None) -> Iterator[None]:
+    """Open a block that runs when ``cond`` is true.
+
+    Iteration predicates are only valid inside ``domain_loop()``.  Opaque
+    runtime conditions are work-call outputs backed by ``TaskLocalVariable``
+    slots; they may be used as sibling blocks or inside ``skippable()``, but
+    condition blocks are intentionally not nestable.
+    """
+    builder = _require_active_builder("when_true()")
+    guard = _resolve_when_guard(builder, cond, key=key, negated=False, api="when_true")
+    if isinstance(guard, OpaqueCondition):
+        _validate_opaque_guard_placement(builder, guard, "when_true")
+    with _conditional_block(builder, guard):
+        yield
+
+
+@contextmanager
+def when_false(cond: object, *, key: Hashable | None = None) -> Iterator[None]:
+    """Open a block that runs when ``cond`` is false.
+
+    ``when_false`` accepts opaque runtime conditions only; iteration predicates
+    cannot be negated because their complement may not be contiguous in the
+    lowered loop schedule.
+    """
+    builder = _require_active_builder("when_false()")
+    guard = _resolve_when_guard(builder, cond, key=key, negated=True, api="when_false")
+    if isinstance(guard, OpaqueCondition):
+        _validate_opaque_guard_placement(builder, guard, "when_false")
+    with _conditional_block(builder, guard):
+        yield
+
+
 @dataclass(frozen=True)
 class _WorkInfo:
     """Per-proxy-method metadata needed to record a step and its routes.
@@ -684,6 +809,9 @@ class ScheduleBuilder:
         self._after_work_tile_loop = False
         # The latest token minted per variable (by variable identity).
         self._latest_token: dict[TaskLocalVariable, DataFlowToken] = {}
+        # Produced values used as opaque conditions are consumed by control flow,
+        # not by a data-flow route.
+        self._condition_uses: set[tuple[int, int]] = set()
         # Monotonic per-schedule counter stamping each step's stable unique_id.
         self._next_unique_id = 0
 
@@ -700,13 +828,19 @@ class ScheduleBuilder:
             return True
         return self._latest_token.get(token.variable) is not token
 
+    def record_condition_use(self, token: DataFlowToken) -> None:
+        """Mark ``token`` as consumed by a ``when_true`` / ``when_false`` guard."""
+        assert token.variable is not None
+        self._condition_uses.add((id(token.producer_step), id(token.variable)))
+
     def _warn_unconsumed(self) -> None:
         """Warn about consumer outputs that are produced but never routed.
 
         Derived from the tree: a produced variable is consumed iff it appears as
-        a :class:`Route` source on its producing step.  WorkQueue tile state
-        (e.g. ``work_tile``) is intentionally exempt -- it is consumed by the
-        persistent-loop machinery via ``stage_info`` rather than by a route.
+        a :class:`Route` source on its producing step or as a guard for an opaque
+        conditional block.  WorkQueue tile state (e.g. ``work_tile``) is
+        intentionally exempt -- it is consumed by the persistent-loop machinery
+        via ``stage_info`` rather than by a route.
         """
         for step in _iter_steps(self._schedule):
             if isinstance(step.memory_resource, WorkQueue):
@@ -715,6 +849,8 @@ class ScheduleBuilder:
             label = step.label or step.schedule_stage.name
             for variable in step.returned_variables:
                 if variable in routed:
+                    continue
+                if (id(step), id(variable)) in self._condition_uses:
                     continue
                 warnings.warn(
                     f"{step.memory_resource.name}.{label}() produces "
@@ -781,7 +917,7 @@ class ScheduleBuilder:
 
     def _in_skippable(self) -> bool:
         return any(
-            isinstance(f, ConditionalBlock) and f.condition is BlockCondition.Skippable
+            isinstance(f, ConditionalBlock) and f.condition is SKIPPABLE
             for f in self._stack
         )
 
@@ -794,6 +930,14 @@ class ScheduleBuilder:
     def _is_inside_domain_loop(self) -> bool:
         return any(isinstance(f, DomainLoop) for f in self._stack)
 
+    def _in_per_iteration_condition(self) -> bool:
+        """Return whether an iteration or opaque condition guard is open."""
+        return any(
+            isinstance(frame, ConditionalBlock)
+            and isinstance(frame.condition, (IterationPredicate, OpaqueCondition))
+            for frame in self._stack
+        )
+
     def is_scope_open(self, node: _Scope) -> bool:
         """True while ``node`` is still an open scope on the stack (by identity)."""
         return any(scope is node for scope in self._stack)
@@ -801,7 +945,6 @@ class ScheduleBuilder:
     def _validate_open(
         self, container: ConditionalBlock | DomainLoop | WorkTileLoop
     ) -> None:
-        Cond = BlockCondition
         match container:
             case WorkTileLoop():
                 if self._stack[-1] is not self._schedule:
@@ -837,7 +980,7 @@ class ScheduleBuilder:
                         "with work_tile_loop(skip_if=...), domain_loop() must be "
                         "inside wtl.skippable()."
                     )
-            case ConditionalBlock(condition=Cond.Skippable):
+            case ConditionalBlock(condition=guard) if guard is SKIPPABLE:
                 if self._in_skippable():
                     raise ScheduleError("skippable() blocks cannot be nested.")
                 wtl = self._enclosing_work_tile_loop()
@@ -845,13 +988,26 @@ class ScheduleBuilder:
                     raise ScheduleError(
                         "skippable() requires an enclosing work_tile_loop(skip_if=...)."
                     )
-            case ConditionalBlock(
-                condition=(Cond.FirstIter | Cond.LastIter) as condition
-            ):
+            case ConditionalBlock(condition=IterationPredicate() as condition):
                 if not self._is_inside_domain_loop():
+                    condition_name = _format_block_guard(condition)
                     raise ScheduleError(
-                        f"{condition.name} condition is only valid inside a domain_loop()."
+                        f"{condition_name} condition is only valid inside a "
+                        "domain_loop()."
                     )
+                if self._in_per_iteration_condition():
+                    raise ScheduleError(
+                        "per-iteration condition blocks cannot be nested; "
+                        "express independent cadences as sibling blocks."
+                    )
+            case ConditionalBlock(condition=OpaqueCondition() as opaque):
+                if self._in_per_iteration_condition():
+                    raise ScheduleError(
+                        "opaque when_true/when_false blocks cannot be nested "
+                        "inside a per-iteration predicate block or another "
+                        "opaque condition block."
+                    )
+                del opaque
 
 
 class ResourceProxy:
@@ -1221,7 +1377,8 @@ def _validate_domain_loop_bound_fn(name: str, fn: Callable[..., object]) -> None
 
 @contextmanager
 def _conditional_block(
-    builder: ScheduleBuilder, condition: BlockCondition
+    builder: ScheduleBuilder,
+    condition: BlockGuard,
 ) -> Iterator[None]:
     """Open a :class:`ConditionalBlock` with ``condition`` on enter, close it on exit."""
     node = ConditionalBlock(body=[], condition=condition)
@@ -1241,7 +1398,7 @@ class WorkTileLoopProxy:
 
     def skippable(self) -> AbstractContextManager[None]:
         self._check_active("skippable")
-        return _conditional_block(self._builder, BlockCondition.Skippable)
+        return _conditional_block(self._builder, SKIPPABLE)
 
     def _check_active(self, api: str) -> None:
         if not self._builder.is_scope_open(self._loop):
@@ -1256,9 +1413,9 @@ class DomainLoopProxy:
     """Yielded by domain_loop(); opens per-iteration condition blocks.
 
     Bound to the specific :class:`DomainLoop` it was produced for, so
-    ``first_iter()`` / ``last_iter()`` are rejected once that loop's ``with``
-    block has exited -- including when called from inside a later sibling
-    ``domain_loop()``.
+    ``first_iter()`` / ``last_iter()`` / ``every()`` are rejected once that
+    loop's ``with`` block has exited -- including when called from inside a
+    later sibling ``domain_loop()``.
     """
 
     def __init__(self, builder: ScheduleBuilder, loop: DomainLoop) -> None:
@@ -1267,11 +1424,15 @@ class DomainLoopProxy:
 
     def first_iter(self) -> AbstractContextManager[None]:
         self._check_active("first_iter")
-        return _conditional_block(self._builder, BlockCondition.FirstIter)
+        return when_true(FIRST_ITER)
 
     def last_iter(self) -> AbstractContextManager[None]:
         self._check_active("last_iter")
-        return _conditional_block(self._builder, BlockCondition.LastIter)
+        return when_true(LAST_ITER)
+
+    def every(self, period: int, *, start: int = 0) -> AbstractContextManager[None]:
+        self._check_active("every")
+        return when_true(Every(period=period, start=start))
 
     def _check_active(self, api: str) -> None:
         if not self._builder.is_scope_open(self._loop):

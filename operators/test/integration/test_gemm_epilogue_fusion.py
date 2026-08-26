@@ -30,6 +30,8 @@
 import pytest
 import torch
 
+import cutlass.torch as cutlass_torch
+
 import cutlass.operators as ops
 from cutlass.operators.providers.cutedsl.gemm.sm100_static_persistent_efc import (
     PersistentDenseGemmEFCOperator,
@@ -615,7 +617,10 @@ def test_gemm_fusion_matmul_input_as_aux():
     # Test binary op inside
     #########################################################
     def epi(accum, C, A):
-        D = torch.sigmoid(torch.relu(accum) * C) + A
+        # Match the kernel's view of C: the kernel loads C cast to the
+        # operator's epi_dtype, so the reference must use C at the same
+        # dtype for the exact-match comparison to be meaningful.
+        D = torch.sigmoid(torch.relu(accum) * C.to(epi_dtype)) + A
         return D
 
     epi_str = "def epi(accum, C, A): D = sigmoid(relu(accum) * C) + A; return D"
@@ -630,6 +635,7 @@ def test_gemm_fusion_matmul_input_as_aux():
     assert len(operators) > 0
     operators[0].run(args)
 
+    epi_dtype = cutlass_torch.dtype(operators[0].impl.epi_dtype)
     reference = epi(A @ B, C, A)
     assert_close_with_reference_conversion(D, reference, D.dtype)
 
@@ -852,6 +858,68 @@ def test_gemm_fusion_scalar_reduction_fake_tensor(fixture_toggle_tvm_ffi):
     not device_or_env_supports("100f"),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
+def test_gemm_fusion_column_reduction_fake_tensor(fixture_toggle_tvm_ffi):
+    """A column reduction (keep M) must compile from fake tensors.
+
+    The kept-axis counterpart of ``test_gemm_fusion_scalar_reduction_fake_tensor``.
+    Both tests run discovery under ``FakeTensorMode``; what differs is the
+    ``TensorWrapper`` layout marking of the reduction destination: the scalar
+    test's single-element destination is wrapped with ``static_layout=True``
+    (fully static shape), while this test's column-major ``(M, 1)`` destination
+    takes the default *dynamic*-layout marking -- so the dynamic-layout wrapping
+    of a reduce destination is exercised under fake tensors too.  Operator
+    discovery runs from fake metadata, then a real run verifies the fold.
+    """
+    import torch._functorch.config
+
+    torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
+
+    M, N, K = 256, 512, 128
+    epi = "def epi(accum): D = accum; row_max = max(accum, dim=[1]); return D, row_max"
+
+    with torch._subclasses.fake_tensor.FakeTensorMode():
+        A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+        B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+        D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+        row_max = torch.empty_strided(
+            (M, 1), (1, M), device="cuda", dtype=torch.float32
+        ).fill_(float("-inf"))
+
+    args = ops.GemmArguments(
+        A=A,
+        B=B,
+        out=D,
+        accumulator_type=torch.float32,
+        epilogue=ops.EpilogueArguments(epi, row_max=row_max, D=D),
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+    operator = operators[0]
+
+    A_real = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B_real = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D_real = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    row_max_real = torch.empty_strided(
+        (M, 1), (1, M), device="cuda", dtype=torch.float32
+    ).fill_(float("-inf"))
+    operator.run(
+        ops.GemmArguments(
+            A=A_real,
+            B=B_real,
+            out=D_real,
+            accumulator_type=torch.float32,
+            epilogue=ops.EpilogueArguments(epi, row_max=row_max_real, D=D_real),
+        )
+    )
+
+    ref = A_real.float() @ B_real.float()
+    torch.testing.assert_close(row_max_real, ref.amax(dim=1, keepdim=True))
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
 def test_gemm_big_epi(fixture_toggle_tvm_ffi):
     M, N, K, L = 256, 512, 128, 2
     ab_dtype = torch.float16
@@ -981,27 +1049,138 @@ def test_gemm_big_epi(fixture_toggle_tvm_ffi):
     not device_or_env_supports("100f"),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
 )
-def test_gemm_fusion_reduction_not_available(fixture_toggle_tvm_ffi):
-    """Row/column reductions are not supported by the EFC converter (only scalar reductions are)."""
-    M = 256
-    N = 512
-    K = 1024
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_row_reduction(fixture_toggle_tvm_ffi):
+    """Row reduction (reduce M, keep N): per-column max over the GEMM output.
+
+    ``max(accum, dim=[0])`` folds the M axis, leaving an (N,) result whose
+    destination has strideMN (0, 1) -> RowReductionImpl -> the EFC kept-axis
+    reduction with subscript ``[:, 0, :]``.  Max is order-independent, so the
+    result matches the reference exactly.
+    """
+    M, N, K = 256, 512, 128
     A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
     B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
-    D = torch.empty((M, N), device="cuda", dtype=torch.float16)
-    row_max = torch.empty((N,), device="cuda", dtype=torch.float32)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Max identity: start at -inf so atomic max composes correctly.
+    col_max = torch.full((N,), float("-inf"), device="cuda", dtype=torch.float32)
 
     epi_str = (
-        "def epi(accum): row_max = max(accum, dim=[0]); D = accum; return D, row_max"
+        "def epi(accum): D = accum; col_max = max(accum, dim=[0]); return D, col_max"
+    )
+
+    epi_args = ops.EpilogueArguments(epi_str, col_max=col_max, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    torch.testing.assert_close(col_max, ref_accum.amax(dim=0))
+
+
+def _row_reduction_epi(accum):
+    # The epilogue is never executed as Python: the tracer parses its source
+    # (``inspect.getsource``), so ``max`` here resolves to the DAGIR reduction
+    # op, not ``builtins.max``.  Outputs are assigned in the body, not taken
+    # as parameters (a reassigned parameter would break the tracer's SSA rule).
+    D = accum
+    col_max = max(accum, dim=[0])  # noqa: F821 -- traced, not executed.
+    return D, col_max
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_row_reduction_callable_epilogue(fixture_toggle_tvm_ffi):
+    """The row-reduction epilogue passed as a Python callable, not a string.
+
+    Twin of ``test_gemm_fusion_row_reduction``: same reduction, but the
+    epilogue is the function object ``_row_reduction_epi`` so the
+    ``inspect.getsource`` half of the tracer is covered for reductions --
+    every other reduction test passes the epilogue as a source string.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Max identity: start at -inf so atomic max composes correctly.
+    col_max = torch.full((N,), float("-inf"), device="cuda", dtype=torch.float32)
+
+    epi_args = ops.EpilogueArguments(_row_reduction_epi, col_max=col_max, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    torch.testing.assert_close(col_max, ref_accum.amax(dim=0))
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_column_reduction(fixture_toggle_tvm_ffi):
+    """Column reduction (reduce N, keep M): per-row max over the GEMM output.
+
+    ``max(accum, dim=[1])`` folds the N axis, leaving a per-row (M,)
+    result.  N spans four and M two 128-wide MMA tiles, so this covers
+    the keep-M direct atomic scatter (``_emit_axis_reduce``,
+    subscript ``[0, :, :]``) and its per-M-tile offset.
+
+    The destination is a column-major ``(M, 1)`` on purpose: the fusion
+    front-end infers a reduction's kept axis from the destination
+    *layout*, not from the ``dim=`` argument.  A bare 1-D ``(M,)`` buffer
+    is ambiguous and defaults to the N axis (``RowReductionImpl``), which
+    folds the wrong axis and, when M != N, raises ``Invalid Broadcast``
+    in ``layout_algorithm._broadcast``.  A 2-D ``(M, 1)`` carries
+    strideMN ``(1, 0)`` -> ``ColumnReductionImpl`` -> keep M, but it must
+    be column-major (M-dim stride 1) so its leading dimension is
+    unambiguous: a *contiguous* ``(M, 1)`` has both strides equal (the
+    size-1 dim is degenerate) and the non-tvm tensor path rejects it
+    with ``Invalid leading dimension``.  (Row reduction keeps N, the
+    default, so its dest can stay 1-D -- see
+    ``test_gemm_fusion_row_reduction``.)
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Column-major (M, 1) so the front-end keeps M (see docstring); -inf
+    # is the max identity.
+    row_max = torch.empty_strided(
+        (M, 1), (1, M), device="cuda", dtype=torch.float32
+    ).fill_(float("-inf"))
+
+    epi_str = (
+        "def epi(accum): D = accum; row_max = max(accum, dim=[1]); return D, row_max"
     )
 
     epi_args = ops.EpilogueArguments(epi_str, row_max=row_max, D=D)
     args = ops.GemmArguments(
-        A=A, B=B, out=D, accumulator_type=torch.float16, epilogue=epi_args
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
     )
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
 
-    assert len(operators) == 0
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    torch.testing.assert_close(row_max, ref_accum.amax(dim=1, keepdim=True))
 
 
 @pytest.mark.skipif(
@@ -1075,6 +1254,80 @@ def test_gemm_fusion_scalar_max_reduction(fixture_toggle_tvm_ffi):
     torch.testing.assert_close(D, ref_accum)
     # Floating-point max is commutative and associative, so this is bit-exact.
     torch.testing.assert_close(max_val, ref_accum.max().unsqueeze(0))
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_scalar_min_reduction(fixture_toggle_tvm_ffi):
+    """Scalar min reduction: a single float32 scalar holds the minimum GEMM output element.
+
+    The ``min`` twin of ``test_gemm_fusion_scalar_max_reduction``: min is the
+    one reduction whose device fold has no native float atomic, so it
+    exercises the bitcast-based atomic-fmin path end to end.  Min is
+    order-independent, so the result is bit-exact with the CPU reference.
+    """
+    M = 256
+    N = 512
+    K = 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Min identity: start at +inf so atomic min operations find the true minimum.
+    min_val = torch.full((1,), float("inf"), device="cuda", dtype=torch.float32)
+
+    epi_str = "def epi(accum): D = accum; min_val = min(accum); return D, min_val"
+
+    epi_args = ops.EpilogueArguments(epi_str, min_val=min_val, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    # Floating-point min is commutative and associative, so this is bit-exact.
+    torch.testing.assert_close(min_val, ref_accum.min().unsqueeze(0))
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_row_reduction_min(fixture_toggle_tvm_ffi):
+    """Kept-axis min: per-column minima of the GEMM output into a (N,) vector.
+
+    The ``min`` twin of ``test_gemm_fusion_row_reduction``, covering the
+    kept-axis (SMEM-staged / atomic-scatter) fold with the bitcast-based
+    atomic-fmin.  Min is order-independent, so the result is bit-exact.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    # Min identity: start at +inf so atomic min composes correctly.
+    col_min = torch.full((N,), float("inf"), device="cuda", dtype=torch.float32)
+
+    epi_str = (
+        "def epi(accum): D = accum; col_min = min(accum, dim=[0]); return D, col_min"
+    )
+
+    epi_args = ops.EpilogueArguments(epi_str, col_min=col_min, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    torch.testing.assert_close(col_min, ref_accum.amin(dim=0))
 
 
 @pytest.mark.parametrize("M, N, K, L", problem_sizes())

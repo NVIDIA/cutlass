@@ -28,7 +28,7 @@
 
 """Internal copy/partition helpers for DenseGemmEFC.
 
-These functions are imported by `_operator.py` and bound as class
+These functions are imported by `_operation.py` and bound as class
 attributes of DenseGemmEFC, so they remain callable as instance
 methods (e.g. `self.epilogue_tmem_copy_and_partition(...)`) but
 live in their own module for cohesion.  Each function takes
@@ -46,7 +46,7 @@ import cutlass
 import cutlass.cute as cute
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
-from cutlass.utils import print_latex_tv
+from cutlass.cute.viz import print_latex_tv
 
 
 def maybe_dump_tv_latex(
@@ -93,9 +93,8 @@ def maybe_dump_tv_latex(
         with open(path, "w") as out:
             out.write(buf.getvalue())
     except Exception as exc:  # noqa: BLE001 -- diagnostic, must not abort.
-        with contextlib.suppress(Exception):
-            with open(path + ".error", "w") as err:
-                err.write(f"{type(exc).__name__}: {exc}\n")
+        with contextlib.suppress(Exception), open(path + ".error", "w") as err:
+            err.write(f"{type(exc).__name__}: {exc}\n")
 
 
 def epilogue_tmem_copy_and_partition(
@@ -345,7 +344,7 @@ def epilogue_gmem_copy_and_partition_async(
 
     # The cp.async vector follows the read tensor's own contiguous axis
     # (its sC is staged from this tensor's layout).
-    read_layout = cutlass.utils.LayoutEnum.from_tensor(raw_gmem_tensor)
+    read_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(raw_gmem_tensor)
     tiled_copy_g2s, strided_mode = build_tiled_copy(
         1 if read_layout.is_n_major_c() else 0
     )

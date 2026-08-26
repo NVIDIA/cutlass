@@ -33,20 +33,25 @@ provides two entry points called from the kernel:
 """
 
 import cutlass
+import itertools
 import warnings
 
 import cutlass.cute as cute
 import cutlass.pipeline as pipeline
 from typing import FrozenSet, Optional, List, Dict, Any, Set, Callable
 from typing import Tuple
+from dataclasses import dataclass
 from .enums import (
+    Every,
     LoopGuard,
+    OpaqueCondition,
     PipelineGroupMode,
     PipelineType,
     ScheduleStage,
     ScheduleStageType,
     SignalingThreads,
     TileSchedulerType,
+    guard_fires,
 )
 from .memory import ResourceContext, SmemAllocator, TmemAllocator
 from dataclasses import replace as _dataclass_replace
@@ -62,6 +67,33 @@ from .task import Task
 
 
 WARP_SIZE = 32
+
+# Credit-tracking key: ``(id(resource), physical_stage)``.  A
+# domain-interleaved resource is tracked per physical ring stage (see
+# ``_stage_credit_key``); every other resource uses the single fixed
+# stage ``0`` and therefore a single fungible pool.  Group members use
+# their own ``(id(member), 0)`` key.
+CreditKey = Tuple[int, int]
+
+
+@dataclass(frozen=True)
+class DependencyGraphEdge:
+    """Renderable metadata for one resource dependency graph edge."""
+
+    upstream: MemoryResource
+    downstream: MemoryResource
+    backing_tasks: Tuple[Task, ...]
+    edge_kind: str
+
+
+@dataclass(frozen=True)
+class DependencyGraphControlEdge:
+    """Renderable metadata for a collapsed non-dataflow control edge."""
+
+    source: MemoryResource
+    target_node_id: str
+    target_label: str
+    edge_label: str
 
 
 def _combined_schedule(task: Task) -> List:
@@ -126,6 +158,198 @@ def _count_independent_interleave_lane(
     return True
 
 
+_OPAQUE_VERIFIER_KEYS_WARN_THRESHOLD = 4
+
+
+def _collect_opaque_keys(tasks: List[Task]) -> list[object]:
+    """Return distinct opaque correlation keys across all task loop schedules."""
+    keys: list[object] = []
+    seen: set[object] = set()
+    for task in tasks:
+        for _resource, _stage, _call_id, guard, _label in task.loop_schedule_list:
+            if isinstance(guard, OpaqueCondition) and guard.key not in seen:
+                seen.add(guard.key)
+                keys.append(guard.key)
+    return keys
+
+
+def _opaque_assignments(keys: list[object]) -> list[dict[object, bool]]:
+    if len(keys) > _OPAQUE_VERIFIER_KEYS_WARN_THRESHOLD:
+        warnings.warn(
+            f"Schedule uses {len(keys)} distinct opaque correlation keys; "
+            f"validation runs 2**{len(keys)} = {2 ** len(keys)} joint "
+            "assignments. Consider reducing independent opaque conditions or "
+            "sharing a correlation key when tasks branch on the same runtime "
+            "boolean.",
+            stacklevel=3,
+        )
+    if not keys:
+        return [{}]
+    return [
+        dict(zip(keys, values))
+        for values in itertools.product((False, True), repeat=len(keys))
+    ]
+
+
+def _format_opaque_assignment(opaque_assignment: dict[object, bool]) -> str:
+    """Format opaque correlation keys and their resolved boolean values."""
+    if not opaque_assignment:
+        return "{}"
+    return ", ".join(f"{key}={value}" for key, value in opaque_assignment.items())
+
+
+def _opaque_print_assignment(keys: list[object]) -> dict[object, bool]:
+    """Resolve opaque schedule guards for the single printed schedule view."""
+    return {key: True for key in keys}
+
+
+# ── Per-physical-stage credit identity (domain-lane soundness) ──────────
+#
+# A fungible per-resource credit counter (a single ``int`` keyed by
+# ``id(resource)``) cannot tell apart the ``stride`` independent lane
+# sub-pipelines that share one ring of ``num_stages`` barriers
+# (``PipelineConfig.interleave_stride``).  A lane-0 consumer could then be
+# "satisfied" by a lane-1 producer's credit, masking a genuine per-lane
+# ordering bug — on hardware the two lanes are physically *different*
+# mbarriers, so a stage-1 commit can never release a stage-0 wait.
+#
+# To model the hardware faithfully, credits for a domain-interleaved
+# resource are tracked per *physical stage*: a lane ``L`` (a task whose
+# ``domain_start % stride == L``) owns stages ``L, L+stride, …`` and
+# advances ``stride`` stages per loop iteration, while a dense (non-lane,
+# stride-1) partner cycles through every physical stage.  Non-interleaved
+# and warp-lane resources keep the single fungible key and are completely
+# unaffected (the fungible model is already sound for FIFO single-lane
+# rings).
+_CREDIT_STAGES: FrozenSet[ScheduleStage] = frozenset(
+    {
+        ScheduleStage.ProducerAcquire,
+        ScheduleStage.ProducerCommit,
+        ScheduleStage.ConsumerWait,
+        ScheduleStage.ConsumerRelease,
+    }
+)
+
+
+def _domain_lane_offset_stride(
+    task: Task, resource: MemoryResource, stage: ScheduleStage
+) -> Tuple[int, int]:
+    """Return ``(initial_stage, advance)`` for *task*'s role on *resource*.
+
+    For a domain-split lane the role starts at physical stage
+    ``domain_start % stride`` and advances ``stride`` stages per loop
+    iteration (owning the strided subset of the ring).  Dense / non-lane
+    participants start at stage 0 and advance by 1, cycling through every
+    physical stage.
+    """
+    stride = _domain_lane_stride(task, resource, stage)
+    if stride <= 1:
+        return 0, 1
+    return task.domain_start % stride, stride
+
+
+def _domain_interleaved_resource_ids(tasks: List[Task]) -> Set[int]:
+    """Ids of resources driven through a domain-split interleave lane.
+
+    Only these resources get per-physical-stage credit tracking; every
+    other resource keeps the single fungible credit key, so the credit
+    model is byte-for-byte unchanged for non-interleaved and warp-lane
+    pipelines.
+    """
+    rids: Set[int] = set()
+    for task in tasks:
+        for res in list(task.src_resources) + list(task.dst_resources):
+            rid = id(res)
+            if (
+                rid in rids
+                or res.pipeline_config is None
+                or isinstance(res, (WorkQueue, PipelineGroup))
+            ):
+                continue
+            for stage in _CREDIT_STAGES:
+                if (
+                    _task_has_stage_for_resource(task, res, stage)
+                    and _domain_lane_stride(task, res, stage) > 1
+                ):
+                    rids.add(rid)
+                    break
+    return rids
+
+
+def _credit_key(res: MemoryResource, stage: ScheduleStage) -> int:
+    """Canonical id for credit tracking.
+
+    Special case for FusedMerge: producer resources share a single full
+    barrier, and the group itself is the canonical key holder for it.
+    Thus, for ``ProducerCommit``, we route credits to the group.
+    For ``ConsumerWait`` / ``ConsumerTryWait``, ``res`` is the group itself.
+
+    For all non-FusedMerge cases the default behavior returns ``id(res)``.
+    """
+    if stage == ScheduleStage.ProducerCommit:
+        pg = getattr(res, "pipeline_group", None)
+        if pg is not None and pg.mode == PipelineGroupMode.FusedMerge:
+            return id(pg)
+    return id(res)
+
+
+def _stage_credit_key(
+    task: Task,
+    resource: MemoryResource,
+    stage: ScheduleStage,
+    occurrence: int,
+    domain_rids: Set[int],
+) -> CreditKey:
+    """Credit key ``(id(resource), physical_stage)`` for one barrier op.
+
+    For a domain-interleaved resource ``physical_stage`` is the ring slot
+    this lane touches on its ``occurrence``-th (0-based) same-role op; the
+    ``occurrence``-th producer acquire and commit (and consumer wait and
+    release) belong to the same loop iteration, so they map to the same
+    physical stage and a commit always releases the matching wait.  Every
+    other resource uses the fixed stage ``0`` (a single fungible pool).
+    """
+    rid = _credit_key(resource, stage)
+    if rid not in domain_rids or stage not in _CREDIT_STAGES:
+        return (rid, 0)
+    offset, advance = _domain_lane_offset_stride(task, resource, stage)
+    cfg = resource.pipeline_config
+    if cfg is None:
+        return (rid, 0)
+    num_stages = cfg.num_stages
+    return (rid, (offset + occurrence * advance) % num_stages)
+
+
+def _precompute_stage_credit_keys(
+    tasks: List[Task], schedules: List[List], domain_rids: Set[int]
+) -> List[List[CreditKey]]:
+    """Map every schedule entry to its credit key (see ``_stage_credit_key``).
+
+    ``schedules`` is one expanded entry list per task where     ``entry[0]`` is
+    the resource and ``entry[1]`` the :class:`ScheduleStage`.  Returns a
+    parallel list of keys; entries that do not bear credits simply map to
+    ``(id(resource), 0)``.  Pre-scanning the (statically ordered) schedule
+    once lets both the linear simulator and the BFS checker look the key up
+    by position instead of recomputing per-event occurrence counts.
+    """
+    all_keys: List[List[CreditKey]] = []
+    for task, sched in zip(tasks, schedules):
+        occ: Dict[Tuple[int, ScheduleStage], int] = {}
+        keys: List[CreditKey] = []
+        for entry in sched:
+            res = entry[0]
+            stage = entry[1]
+            rid = _credit_key(res, stage)
+            if rid in domain_rids and stage in _CREDIT_STAGES:
+                k = occ.get((rid, stage), 0)
+                occ[(rid, stage)] = k + 1
+                keys.append(_stage_credit_key(task, res, stage, k, domain_rids))
+            else:
+                keys.append((rid, 0))
+        all_keys.append(keys)
+    return all_keys
+
+
 def _try_probe_domain(task: Task) -> int | None:
     """Probe a dynamic-domain getter for a compile-time loop end.
 
@@ -151,7 +375,8 @@ def _try_probe_domain(task: Task) -> int | None:
     return None
 
 
-def expand_loop(task: Task, dynamic_domain_fallback: int = 1) -> List:
+def expand_loop(task: Task, dynamic_domain_fallback: int = 1, 
+    opaque_assignment: dict[object, bool] | None = None) -> List:
     """Expand a task's schedule into a flat list respecting guards.
 
     FirstIter (LoopFirstIter) entries appear only on iteration 0;
@@ -171,14 +396,11 @@ def expand_loop(task: Task, dynamic_domain_fallback: int = 1) -> List:
     - ``""``  — Loop body (every iteration)
     - ``"F"`` — FirstIter (loop, first iteration only)
     - ``"L"`` — LastIter (loop, last iteration only)
+    - ``"P"`` — Periodic / Every guard
+    - ``"I"`` — Opaque when_true/when_false guard
     - ``"T"`` — Tail (drain, once after the loop)
     """
 
-    _GUARD_TAG = {
-        LoopGuard.Always: "",
-        LoopGuard.FirstIter: "F",
-        LoopGuard.LastIter: "L",
-    }
 
     # The runtime loop is ``range(domain_start, domain, step)``.  We unroll an
     # exact iteration count only when *every* bound is a compile-time int: a
@@ -231,14 +453,25 @@ def expand_loop(task: Task, dynamic_domain_fallback: int = 1) -> List:
 
     expanded_loop: List = []
     for iter_idx in range(loop_iters):
-        is_first = iter_idx == 0
-        is_last = iter_idx == loop_iters - 1
         for res, stage, cid, guard, _lbl in task.loop_schedule_list:
-            if guard == LoopGuard.FirstIter and not is_first:
+            if not guard_fires(
+                guard,
+                iter_idx,
+                loop_iters,
+                opaque_assignment=opaque_assignment,
+            ):
                 continue
-            if guard == LoopGuard.LastIter and not is_last:
-                continue
-            expanded_loop.append((res, stage, cid, _GUARD_TAG.get(guard, "")))
+            if guard == LoopGuard.FirstIter:
+                tag = "F"
+            elif guard == LoopGuard.LastIter:
+                tag = "L"
+            elif isinstance(guard, Every):
+                tag = "P"
+            elif isinstance(guard, OpaqueCondition):
+                tag = "I"
+            else:
+                tag = ""
+            expanded_loop.append((res, stage, cid, tag))
     if loop_iters == 0:
         return head + tail
     return head + expanded_loop + tail
@@ -247,13 +480,13 @@ def expand_loop(task: Task, dynamic_domain_fallback: int = 1) -> List:
 def print_schedule_list(
     tasks: List[Task],
     func_name: str,
-    input_prod_commit_list: Dict[int, Tuple[int, Any]],
-    input_cons_release: Dict[int, Tuple[int, Any]],
-    initial_cons_release: Dict[int, Tuple[int, Any]],
+    input_prod_commit_list: Dict[CreditKey, Tuple[int, Any]],
+    input_cons_release: Dict[CreditKey, Tuple[int, Any]],
+    initial_cons_release: Dict[CreditKey, Tuple[int, Any]],
     check_lists: bool = True,
     schedule_lists: Optional[List[List]] = None,
     verbose: bool = True,
-) -> Tuple[Dict[int, Tuple[int, Any]], Dict[int, Tuple[int, Any]]]:
+) -> Tuple[Dict[CreditKey, Tuple[int, Any]], Dict[CreditKey, Tuple[int, Any]]]:
     """Pretty-print one schedule phase and verify producer/consumer pairing.
 
     Simulates concurrent execution of the schedule entries across all
@@ -319,6 +552,15 @@ def print_schedule_list(
         for sched in schedule_lists
     ]
 
+    # Domain-interleaved resources track credits per physical stage so a
+    # lane-0 commit cannot release a lane-1 wait (and vice versa).  For
+    # every other resource ``_stage_credit_keys[i][p] == id(resource)``,
+    # leaving the fungible credit model below unchanged.
+    domain_rids = _domain_interleaved_resource_ids(tasks)
+    _stage_credit_keys = _precompute_stage_credit_keys(
+        tasks, schedule_lists, domain_rids
+    )
+
     def _sname(resource: MemoryResource) -> str:
         return resource.name[:10] if len(resource.name) > 10 else resource.name
 
@@ -326,17 +568,48 @@ def print_schedule_list(
     def _track_resource(res: MemoryResource) -> bool:
         return not isinstance(res, WorkQueue)
 
-    def _credit_key(res: MemoryResource) -> int:
-        """Canonical id for credit tracking."""
-        return id(res)
+    def _positive_credit_stages(
+        credits: Dict[CreditKey, Tuple[int, Any]], resource_id: int
+    ) -> Tuple[Tuple[int, int], ...]:
+        return tuple(
+            (stage, count)
+            for (rid, stage), (count, _resource) in sorted(credits.items())
+            if rid == resource_id and count > 0
+        )
 
-    # ── Credit model for merge/fork pipelines ───────────────────────
+    def _format_blocked_stage(
+        resource: MemoryResource,
+        schedule_stage: ScheduleStage,
+        credit_key: CreditKey,
+    ) -> str:
+        if schedule_stage == ScheduleStage.ConsumerWait:
+            credit_kind = "producer commit credit"
+            credits = prod_commit_list
+        else:
+            credit_kind = "empty-slot credit"
+            credits = cons_release
+
+        rid = id(resource)
+        text = f"waiting for {credit_kind}"
+        if rid in domain_rids:
+            text += f" at physical stage {credit_key[1]}"
+        available = _positive_credit_stages(credits, rid)
+        if not available:
+            return f"{text}; no matching credit is available for this resource"
+
+        stage_text = ", ".join(
+            f"physical stage {stage} ({count} credit{'s' if count != 1 else ''})"
+            for stage, count in available
+        )
+        return f"{text}; available credits are on {stage_text}"
+
+    # ── Credit model for merge/fork/fused-merge pipelines ───────────
     # In a merge/fork PipelineGroup, a single pipeline stage involves
     # multiple tasks on the same side (e.g. two producers filling
     # smem_a and smem_b).  A credit must only be produced/consumed
     # when ALL participating tasks complete their part of the round:
     #
-    #   Merge (N producers → 1 consumer):
+    #   Merge / FusedMerge (N producers → 1 consumer):
     #     ProducerCommit fires N times per stage; credit += 1 only
     #     after the Nth commit.  ConsumerWait consumes that credit.
     #
@@ -357,6 +630,8 @@ def print_schedule_list(
     # resource lists to correctly handle split-consumer patterns where
     # a task may list a resource in src_resources (for ConsumerWork +
     # ConsumerRelease) without performing ConsumerWait on it.
+    # Participant counts stay keyed by ``id(resource)`` (and group member
+    # ids); only the credit pools below carry per-physical-stage keys.
     _num_committers: Dict[int, int] = {}  # tasks that ProducerCommit
     _num_waiters: Dict[int, int] = {}  # tasks that ConsumerWait
     _num_releasers: Dict[int, int] = {}  # tasks that ConsumerRelease
@@ -371,14 +646,14 @@ def print_schedule_list(
             stage = entry[1]
             if not _track_resource(res):
                 continue
-            rid = _credit_key(res)
-            # For Fork groups, ProducerCommit is on the group object
-            # but delivers credits to each member.  Count per-member.
+            rid = _credit_key(res, stage)
             if stage == ScheduleStage.ProducerCommit:
                 if (
                     isinstance(res, PipelineGroup)
                     and res.mode == PipelineGroupMode.Fork
                 ):
+                    # Fork: ProducerCommit is on the group object
+                    # but delivers credits to each member.  Count per-member.
                     for _m in res.members:
                         _mid = id(_m)
                         if _mid not in seen_commit:
@@ -392,6 +667,9 @@ def print_schedule_list(
                     _num_committers[rid] = _num_committers.get(rid, 0) + 1
                     seen_commit.add(rid)
             elif stage == ScheduleStage.ConsumerWait:
+                # FusedMerge: ConsumerWait is on the group object and is
+                # aggregating, not distributing: the single wait consumes one
+                # credit from the one shared full barrier.
                 if _count_independent_interleave_lane(
                     _num_waiters, rid, task, res, stage
                 ):
@@ -399,13 +677,15 @@ def print_schedule_list(
                 elif rid not in seen_wait:
                     _num_waiters[rid] = _num_waiters.get(rid, 0) + 1
                     seen_wait.add(rid)
-            # For Merge groups, ConsumerRelease is on the group object
-            # but delivers credits to each member.  Count per-member.
+
             elif stage == ScheduleStage.ConsumerRelease:
                 if (
                     isinstance(res, PipelineGroup)
-                    and res.mode == PipelineGroupMode.Merge
+                    and res.mode
+                    in (PipelineGroupMode.Merge, PipelineGroupMode.FusedMerge)
                 ):
+                    # Merge / FusedMerge: ConsumerRelease is on the group object
+                    # but delivers credits to each member.  Count per-member.
                     for _m in res.members:
                         _mid = id(_m)
                         if _mid not in seen_release:
@@ -427,10 +707,10 @@ def print_schedule_list(
                     _num_acquirers[rid] = _num_acquirers.get(rid, 0) + 1
                     seen_acquire.add(rid)
 
-    _total_commits: Dict[int, int] = {}
-    _total_waits: Dict[int, int] = {}
-    _total_releases: Dict[int, int] = {}
-    _total_acquires: Dict[int, int] = {}
+    _total_commits: Dict[CreditKey, int] = {}
+    _total_waits: Dict[CreditKey, int] = {}
+    _total_releases: Dict[CreditKey, int] = {}
+    _total_acquires: Dict[CreditKey, int] = {}
 
     max_steps = max((len(s) for s in schedule_lists), default=0) + 100
     for idx in range(max_steps):
@@ -443,14 +723,14 @@ def print_schedule_list(
             else:
                 _res, _stage, _, _tag = sched[task_idx[i]]
                 if _stage in blocking_stages and _track_resource(_res):
-                    rid = _credit_key(_res)
+                    ck = _stage_credit_keys[i][task_idx[i]]
                     if _stage == ScheduleStage.ConsumerWait:
-                        if rid in prod_commit_list and prod_commit_list[rid][0] > 0:
+                        if ck in prod_commit_list and prod_commit_list[ck][0] > 0:
                             status_array.append(2)  # resolvable --> runnable
                         else:
                             status_array.append(1)  # genuinely blocked
                     elif _stage == ScheduleStage.ProducerAcquire:
-                        if rid in cons_release and cons_release[rid][0] > 0:
+                        if ck in cons_release and cons_release[ck][0] > 0:
                             status_array.append(2)  # resolvable --> runnable
                         else:
                             status_array.append(1)  # genuinely blocked
@@ -459,19 +739,25 @@ def print_schedule_list(
         if all(x == 0 for x in status_array):
             break
         if all(x == 0 or x == 1 for x in status_array):
+            lines = ["Schedule is blocked!"]
             for i, task in enumerate(tasks):
                 sched = schedule_lists[i]
-                if task_idx[i] < len(sched):
-                    resource, schedule_stage, call_id_loop, _tag = sched[task_idx[i]]
-                    raise ValueError(
-                        f"{_sname(resource):10} {schedule_stage.name:14} "
-                        f"{call_id_loop:2} is blocked!  "
-                        f"NOTE: if the domain is not a compile-time Python "
-                        f"int, this may be a FALSE POSITIVE (domain defaults "
-                        f"to 1).  Re-run with a realistic int domain via "
-                        f"validate-only mode for accurate results."
-                    )
-            break
+                if task_idx[i] >= len(sched) or status_array[i] != 1:
+                    continue
+                resource, schedule_stage, call_id_loop, _tag = sched[task_idx[i]]
+                credit_key = _stage_credit_keys[i][task_idx[i]]
+                lines.append(
+                    f"  {_sname(resource):10} {schedule_stage.name:14} "
+                    f"{call_id_loop:2} is blocked: "
+                    f"{_format_blocked_stage(resource, schedule_stage, credit_key)}"
+                )
+            lines.append(
+                "NOTE: if the domain is not a compile-time Python int, this "
+                "may be a FALSE POSITIVE (domain defaults to 1). Re-run with "
+                "a realistic int domain via validate-only mode for accurate "
+                "results."
+            )
+            raise ValueError("\n".join(lines))
         for i, task in enumerate(tasks):
             sched = schedule_lists[i]
             if task_idx[i] >= len(sched):
@@ -479,7 +765,12 @@ def print_schedule_list(
                 continue
             resource, schedule_stage, call_id_loop, phase_tag = sched[task_idx[i]]
             sname = _sname(resource)
-            rid = _credit_key(resource)
+            rid = _credit_key(resource, schedule_stage)
+            # Per-physical-stage key for domain-interleaved resources;
+            # identical to ``rid`` for every other resource.  ``rid`` is
+            # still used for the per-resource participant counts (pinned to
+            # 1 for domain lanes); ``ck`` keys the actual credit pools.
+            ck = _stage_credit_keys[i][task_idx[i]]
             track = _track_resource(resource)
 
             if track and schedule_stage == ScheduleStage.ProducerCommit:
@@ -498,17 +789,18 @@ def print_schedule_list(
                 ):
                     for _m in resource.members:
                         _mid = id(_m)
+                        _mkey = (_mid, 0)
                         n_comm = _num_committers.get(_mid, 1)
-                        _total_commits[_mid] = _total_commits.get(_mid, 0) + 1
-                        if _total_commits[_mid] % n_comm == 0:
-                            mc, mr = prod_commit_list.get(_mid, (0, _m))
-                            prod_commit_list[_mid] = (mc + 1, mr)
+                        _total_commits[_mkey] = _total_commits.get(_mkey, 0) + 1
+                        if _total_commits[_mkey] % n_comm == 0:
+                            mc, mr = prod_commit_list.get(_mkey, (0, _m))
+                            prod_commit_list[_mkey] = (mc + 1, mr)
                 else:
                     n_comm = _num_committers.get(rid, 1)
-                    _total_commits[rid] = _total_commits.get(rid, 0) + 1
-                    if _total_commits[rid] % n_comm == 0:
-                        count, res = prod_commit_list.get(rid, (0, resource))
-                        prod_commit_list[rid] = (count + 1, res)
+                    _total_commits[ck] = _total_commits.get(ck, 0) + 1
+                    if _total_commits[ck] % n_comm == 0:
+                        count, res = prod_commit_list.get(ck, (0, resource))
+                        prod_commit_list[ck] = (count + 1, res)
             if track and schedule_stage == ScheduleStage.ConsumerRelease:
                 # Merge: ``(group, ConsumerRelease)`` is the only
                 # legal form — the shared empty barrier fires once
@@ -523,45 +815,45 @@ def print_schedule_list(
                 # on each member directly, no propagation needed.
                 if (
                     isinstance(resource, PipelineGroup)
-                    and resource.mode == PipelineGroupMode.Merge
+                    and resource.mode
+                    in (PipelineGroupMode.Merge, PipelineGroupMode.FusedMerge)
                 ):
                     for _m in resource.members:
                         _mid = id(_m)
+                        _mkey = (_mid, 0)
                         n_rel = _num_releasers.get(_mid, 1)
-                        _total_releases[_mid] = _total_releases.get(_mid, 0) + 1
-                        if _total_releases[_mid] % n_rel == 0:
-                            mc, mr = cons_release.get(_mid, (0, _m))
-                            cons_release[_mid] = (mc + 1, mr)
+                        _total_releases[_mkey] = _total_releases.get(_mkey, 0) + 1
+                        if _total_releases[_mkey] % n_rel == 0:
+                            mc, mr = cons_release.get(_mkey, (0, _m))
+                            cons_release[_mkey] = (mc + 1, mr)
                 else:
                     n_rel = _num_releasers.get(rid, 1)
-                    _total_releases[rid] = _total_releases.get(rid, 0) + 1
-                    if _total_releases[rid] % n_rel == 0:
-                        count, res = cons_release.get(rid, (0, resource))
-                        cons_release[rid] = (count + 1, res)
+                    _total_releases[ck] = _total_releases.get(ck, 0) + 1
+                    if _total_releases[ck] % n_rel == 0:
+                        count, res = cons_release.get(ck, (0, resource))
+                        cons_release[ck] = (count + 1, res)
 
             if track and schedule_stage in blocking_stages:
                 resolvable = False
                 if schedule_stage == ScheduleStage.ConsumerWait:
-                    resolvable = (
-                        rid in prod_commit_list and prod_commit_list[rid][0] > 0
-                    )
+                    resolvable = ck in prod_commit_list and prod_commit_list[ck][0] > 0
                 elif schedule_stage == ScheduleStage.ProducerAcquire:
-                    resolvable = rid in cons_release and cons_release[rid][0] > 0
+                    resolvable = ck in cons_release and cons_release[ck][0] > 0
                 if resolvable:
                     line += f" {sname:10} {str(schedule_stage):12}{phase_tag:>2} {call_id_loop:2} |"
                     task_idx[i] += 1
                     if schedule_stage == ScheduleStage.ConsumerWait:
                         n_wait = _num_waiters.get(rid, 1)
-                        _total_waits[rid] = _total_waits.get(rid, 0) + 1
-                        if _total_waits[rid] % n_wait == 0:
-                            count, res = prod_commit_list[rid]
-                            prod_commit_list[rid] = (count - 1, res)
+                        _total_waits[ck] = _total_waits.get(ck, 0) + 1
+                        if _total_waits[ck] % n_wait == 0:
+                            count, res = prod_commit_list[ck]
+                            prod_commit_list[ck] = (count - 1, res)
                     elif schedule_stage == ScheduleStage.ProducerAcquire:
                         n_acq = _num_acquirers.get(rid, 1)
-                        _total_acquires[rid] = _total_acquires.get(rid, 0) + 1
-                        if _total_acquires[rid] % n_acq == 0:
-                            count, res = cons_release[rid]
-                            cons_release[rid] = (count - 1, res)
+                        _total_acquires[ck] = _total_acquires.get(ck, 0) + 1
+                        if _total_acquires[ck] % n_acq == 0:
+                            count, res = cons_release[ck]
+                            cons_release[ck] = (count - 1, res)
                 else:
                     line += " " * 30 + "|"
             else:
@@ -624,6 +916,9 @@ class TaskManager:
         dma_consumer_release_labels: Optional[
             Dict[Tuple[MemoryResource, MemoryResource], Set[str]]
         ] = None,
+        iket_enable_profiling: bool = False,
+        iket_profiling_stages: Optional[FrozenSet[ScheduleStage]] = None,
+        iket_profiling_resources: Optional[FrozenSet[str]] = None,
         skip_validation: bool = False,
         smem_allocator: Optional[SmemAllocator] = None,
         tmem_allocator: Optional[TmemAllocator] = None,
@@ -662,6 +957,25 @@ class TaskManager:
             validation.  Use this when one upstream resource feeds multiple
             downstream DMA producers through different named consumer work
             functions.  Keys are ``(upstream, downstream)`` resource pairs.
+
+        iket_enable_profiling : bool, optional
+            Enable per-step IKET ``range_start/end`` instrumentation on the
+            selected head, loop, and tail schedule entries.  Use
+            ``iket_profiling_stages`` and ``iket_profiling_resources`` to keep
+            the marker count within the hardware limit.  Default False.
+        iket_profiling_stages : frozenset of ScheduleStage or None, optional
+            Whitelist of ``ScheduleStage`` values for per-step IKET
+            instrumentation.  When ``None`` (default), every stage that
+            appears in the schedule list is instrumented.  Pass e.g.
+            ``frozenset({ScheduleStage.ProducerWork, ScheduleStage.ConsumerWork})``
+            to restrict tracing to actual data-movement / compute work
+            and stay well within the 31-event hardware limit.
+        iket_profiling_resources : frozenset of str or None, optional
+            Whitelist of resource *names* for per-step IKET
+            instrumentation.  When ``None`` (default), entries for all
+            resources are instrumented.  Pass a set of names to restrict
+            tracing to specific resources.
+
         skip_validation : bool, optional
             When ``True``, verification checks still run but failures are
             emitted as warnings instead of raising exceptions.  Use this
@@ -708,6 +1022,12 @@ class TaskManager:
             PDL-dependent access that happens outside TS.
         """
         self.tasks = tasks
+        for task in tasks:
+            task.iket_enable_profiling = iket_enable_profiling
+        for task in tasks:
+            task.iket_profiling_stages = iket_profiling_stages
+        for task in tasks:
+            task.iket_profiling_resources = iket_profiling_resources
         if not resource_dependency_graph:
             raise ValueError(
                 "resource_dependency_graph must be provided and non-empty."
@@ -762,6 +1082,223 @@ class TaskManager:
 
         # TODO: create padding tasks to have multiple of 4 warps
 
+    @staticmethod
+    def _mermaid_label(text: str) -> str:
+        """Escape text for a quoted Mermaid node or edge label."""
+        return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+    @staticmethod
+    def _task_label(task: Task) -> str:
+        """Return the compact task label used on graph edges."""
+        return f"{task.name}[{task.warp_start}:{task.warp_end})"
+
+    @staticmethod
+    def _resource_label(
+        resource: MemoryResource,
+        include_resource_details: bool,
+    ) -> str:
+        """Return a Mermaid node label for a resource."""
+        parts = [resource.name]
+        cfg = resource.pipeline_config
+        if include_resource_details and cfg is not None:
+            parts.append(f"{cfg.pipeline_type.value}, stages={cfg.num_stages}")
+        if include_resource_details and resource.is_barrier:
+            parts.append("barrier")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _has_resource(
+        resources: List[MemoryResource], resource: MemoryResource
+    ) -> bool:
+        """Return true when *resources* contains *resource* by identity."""
+        return any(id(candidate) == id(resource) for candidate in resources)
+
+    def _dependency_graph_resources(self) -> List[MemoryResource]:
+        """Return dependency-graph resources in stable task-manager order."""
+        graph_ids: Set[int] = set()
+        graph_resources: List[MemoryResource] = []
+        for downstream, upstreams in self.resource_dependency_graph.items():
+            if id(downstream) not in graph_ids:
+                graph_ids.add(id(downstream))
+                graph_resources.append(downstream)
+            for upstream in upstreams:
+                if id(upstream) not in graph_ids:
+                    graph_ids.add(id(upstream))
+                    graph_resources.append(upstream)
+
+        ordered: List[MemoryResource] = []
+        seen: Set[int] = set()
+        for resource in self.resources + graph_resources:
+            resource_id = id(resource)
+            if resource_id in graph_ids and resource_id not in seen:
+                seen.add(resource_id)
+                ordered.append(resource)
+        return ordered
+
+    def _dependency_edge_kind(
+        self,
+        upstream: MemoryResource,
+        downstream: MemoryResource,
+    ) -> str:
+        """Classify an edge using the same concepts as dependency validation."""
+        if isinstance(upstream, WorkQueue) or isinstance(downstream, WorkQueue):
+            return "work-queue"
+        if id(upstream) == id(downstream):
+            return "ping-pong"
+        if upstream.is_barrier or downstream.is_barrier:
+            return "ordering"
+        return "data"
+
+    def _backing_tasks_for_dependency_edge(
+        self,
+        upstream: MemoryResource,
+        downstream: MemoryResource,
+    ) -> Tuple[Task, ...]:
+        """Return tasks that explain how a dependency edge is realized."""
+        standard_backing_tasks = [
+            task
+            for task in self.tasks
+            if self._has_resource(task.src_resources, upstream)
+            and self._has_resource(task.dst_resources, downstream)
+        ]
+        if standard_backing_tasks:
+            return tuple(standard_backing_tasks)
+
+        # Ping-pong self-edges may be produced and consumed by different tasks,
+        # so show every task that participates in either side of the lifetime.
+        if id(upstream) == id(downstream) and not isinstance(downstream, WorkQueue):
+            return tuple(
+                task
+                for task in self.tasks
+                if self._has_resource(task.src_resources, upstream)
+                or self._has_resource(task.dst_resources, downstream)
+            )
+
+        # Barrier and ping-pong-adjacent edges are accepted by the verifier when
+        # one task mentions both resources, regardless of strict src/dst roles.
+        return tuple(
+            task
+            for task in self.tasks
+            if self._has_resource(task.src_resources + task.dst_resources, upstream)
+            and self._has_resource(task.src_resources + task.dst_resources, downstream)
+        )
+
+    def _dependency_graph_edges(self) -> List[DependencyGraphEdge]:
+        """Collect renderable dependency graph edges."""
+        edges: List[DependencyGraphEdge] = []
+        for downstream, upstreams in self.resource_dependency_graph.items():
+            for upstream in upstreams:
+                backing_tasks = self._backing_tasks_for_dependency_edge(
+                    upstream,
+                    downstream,
+                )
+                edges.append(
+                    DependencyGraphEdge(
+                        upstream=upstream,
+                        downstream=downstream,
+                        backing_tasks=backing_tasks,
+                        edge_kind=self._dependency_edge_kind(upstream, downstream),
+                    )
+                )
+        return edges
+
+    def _collapsed_work_queue_edges(self) -> List[DependencyGraphControlEdge]:
+        """Return compact WorkQueue control edges for persistent tasks."""
+        edges: List[DependencyGraphControlEdge] = []
+        seen_work_queue_ids: Set[int] = set()
+        for task in self.tasks:
+            for resource in task.src_resources:
+                if not isinstance(resource, WorkQueue):
+                    continue
+                resource_id = id(resource)
+                if resource_id in seen_work_queue_ids:
+                    continue
+                seen_work_queue_ids.add(resource_id)
+                edges.append(
+                    DependencyGraphControlEdge(
+                        source=resource,
+                        target_node_id=f"WQTasks{len(edges)}",
+                        target_label="all persistent tasks",
+                        edge_label="tile token",
+                    )
+                )
+        return edges
+
+    def _dependency_edge_label(self, edge: DependencyGraphEdge) -> str:
+        """Return the Mermaid edge label for a dependency graph edge."""
+        task_part = ", ".join(self._task_label(task) for task in edge.backing_tasks)
+        if not task_part:
+            task_part = "unbacked"
+        return f"{task_part} {edge.edge_kind}"
+
+    def get_marmaid_string_dependency_graph(
+        self,
+        direction: str = "TD",
+        include_resource_details: bool = True,
+        collapse_work_queue_edges: bool = True,
+    ) -> str:
+        """Return a Mermaid flowchart string for the resource dependency graph.
+
+        Edge labels identify the task(s) that realize each dependency and the
+        verifier-level edge kind: ``data``, ``ordering``, ``ping-pong``, or
+        ``work-queue``.
+
+        Args:
+            direction: Mermaid flowchart direction (for example ``"TD"`` for
+                top-down or ``"LR"`` for left-to-right).  Must be non-empty.
+            include_resource_details: When ``True``, resource node labels
+                include pipeline type, stage count, and barrier metadata.
+                When ``False``, only resource names are shown.
+            collapse_work_queue_edges: When ``True`` (default), WorkQueue
+                control-token dependencies are collapsed into one edge to all
+                persistent tasks so they do not obscure the dataflow.  When
+                ``False``, each work-queue dependency is drawn as its own edge.
+
+        Returns:
+            A Mermaid flowchart source string for graph/chart rendering.  The
+            text has no external dependencies and can be pasted into Markdown
+            or rendered by any Mermaid-compatible tool.
+        """
+        if not direction:
+            raise ValueError(
+                "direction must be a non-empty Mermaid flowchart direction."
+            )
+
+        resources = self._dependency_graph_resources()
+        node_ids = {id(resource): f"R{idx}" for idx, resource in enumerate(resources)}
+
+        lines = [f"flowchart {direction}"]
+        for resource in resources:
+            node_label = self._resource_label(resource, include_resource_details)
+            lines.append(
+                f'  {node_ids[id(resource)]}["{self._mermaid_label(node_label)}"]'
+            )
+
+        control_edges = (
+            self._collapsed_work_queue_edges() if collapse_work_queue_edges else []
+        )
+        for control_edge in control_edges:
+            target_label = self._mermaid_label(control_edge.target_label)
+            lines.append(f'  {control_edge.target_node_id}["{target_label}"]')
+
+        for dependency_edge in self._dependency_graph_edges():
+            if collapse_work_queue_edges and dependency_edge.edge_kind == "work-queue":
+                continue
+            upstream_id = node_ids[id(dependency_edge.upstream)]
+            downstream_id = node_ids[id(dependency_edge.downstream)]
+            edge_label = self._dependency_edge_label(dependency_edge)
+            lines.append(
+                f'  {upstream_id} -->|"{self._mermaid_label(edge_label)}"| '
+                f"{downstream_id}"
+            )
+        for control_edge in control_edges:
+            edge_label = self._mermaid_label(control_edge.edge_label)
+            lines.append(
+                f'  {node_ids[id(control_edge.source)]} -->|"{edge_label}"| '
+                f"{control_edge.target_node_id}"
+            )
+        return "\n".join(lines)
+
     @property
     def smem_allocator(self) -> Optional[SmemAllocator]:
         """The SMEM allocator (if configured)."""
@@ -789,7 +1326,7 @@ class TaskManager:
         for task in self.tasks:
             task.default_num_registers = default_num_regs
 
-    def _build_initial_cons_release(self) -> Dict[int, Tuple[int, Any]]:
+    def _build_initial_cons_release(self) -> Dict[CreditKey, Tuple[int, Any]]:
         """Build initial release credits for all pipelined resources.
 
         Each pipelined resource starts with ``num_stages`` credits,
@@ -797,8 +1334,14 @@ class TaskManager:
         producer acquire).  Group members get their own independent
         credits (group objects are skipped since they are not in
         schedules).
+
+        A domain-interleaved resource is split into one credit *per
+        physical stage* (each ring slot starts with a single empty
+        credit), matching the per-physical-stage keys produced by
+        :func:`_stage_credit_key`; the total empty count is unchanged.
         """
-        credits: Dict[int, Tuple[int, Any]] = {}
+        domain_rids = _domain_interleaved_resource_ids(self.tasks)
+        credits: Dict[CreditKey, Tuple[int, Any]] = {}
         for resource in self.resources:
             has_pipeline = resource.pipeline_config is not None
             if (
@@ -807,8 +1350,12 @@ class TaskManager:
                 and not isinstance(resource, PipelineGroup)
             ):
                 rid = id(resource)
-                if rid not in credits:
-                    credits[rid] = (resource.pipeline_config.num_stages, resource)
+                num_stages = resource.pipeline_config.num_stages
+                if rid in domain_rids:
+                    for stage in range(num_stages):
+                        credits.setdefault((rid, stage), (1, resource))
+                else:
+                    credits.setdefault((rid, 0), (num_stages, resource))
         return credits
 
     def _print_task_schedules(self) -> None:
@@ -885,8 +1432,13 @@ class TaskManager:
             )
             + 1
         )
+        opaque_assignment = _opaque_print_assignment(_collect_opaque_keys(self.tasks))
         combined_schedules = [
-            expand_loop(t, dynamic_domain_fallback=dynamic_domain_fallback)
+            expand_loop(
+                t,
+                dynamic_domain_fallback=dynamic_domain_fallback,
+                opaque_assignment=opaque_assignment,
+            )
             for t in self.tasks
         ]
         run_section(
@@ -899,6 +1451,7 @@ class TaskManager:
                 "Phase tags:  H — Head (prefetch, before the loop)"
                 "  |  F — FirstIter (first iteration only)"
                 "  |  L — LastIter (last iteration only)"
+                "  |  P — Periodic (Every)  |  I — Opaque when_true/when_false"
                 "  |  T — Tail (drain, after the loop)"
             )
 
@@ -3814,12 +4367,15 @@ class TaskManager:
                 )
 
             if result.deadlock_states:
-                msg = (
+                lines = [
                     f"Exhaustive checker found {len(result.deadlock_states)} "
                     f"deadlock(s){context_msg} after exploring "
                     f"{result.states_explored} states."
-                )
-                raise ValueError(msg)
+                ]
+                for idx, deadlock in enumerate(result.deadlock_states, start=1):
+                    lines.append(f"  Deadlock {idx}:")
+                    lines.extend(f"    {line}" for line in deadlock.format_lines())
+                raise ValueError("\n".join(lines))
 
             if result.race_states:
                 lines = [
@@ -3850,23 +4406,42 @@ class TaskManager:
                     )
                 raise ValueError("\n".join(lines))
 
-        normal_result = check_all_interleavings(
-            self.tasks,
-            num_tiles=num_tiles,
-            assume_pdl_wait_completed=self._assume_pdl_wait_completed,
-            verbose=self._verbose,
-        )
-        _raise_if_unsafe(normal_result)
-
-        if any(getattr(task, "skip_if", None) is not None for task in self.tasks):
-            skipped_result = check_all_interleavings(
+        # Opaque predicates are evaluated by the compiled kernel at runtime.
+        # Static validation proves the schedule for every assignment of those
+        # same correlation keys; there is no separate validation-only predicate.
+        opaque_assignments = _opaque_assignments(_collect_opaque_keys(self.tasks))
+        for assignment_index, opaque_assignment in enumerate(opaque_assignments):
+            context_suffix = ""
+            if len(opaque_assignments) > 1:
+                context_suffix = (
+                    f"opaque assignment {assignment_index + 1}/"
+                    f"{len(opaque_assignments)} "
+                    f"({_format_opaque_assignment(opaque_assignment)})"
+                )
+            normal_result = check_all_interleavings(
                 self.tasks,
                 num_tiles=num_tiles,
-                skipped_tile=True,
                 assume_pdl_wait_completed=self._assume_pdl_wait_completed,
                 verbose=self._verbose,
+                opaque_assignment=opaque_assignment,
             )
-            _raise_if_unsafe(skipped_result, "skipped-tile execution")
+            _raise_if_unsafe(normal_result, context_suffix)
+
+            if any(getattr(task, "skip_if", None) is not None for task in self.tasks):
+                skipped_result = check_all_interleavings(
+                    self.tasks,
+                    num_tiles=num_tiles,
+                    skipped_tile=True,
+                    assume_pdl_wait_completed=self._assume_pdl_wait_completed,
+                    verbose=self._verbose,
+                    opaque_assignment=opaque_assignment,
+                )
+                skipped_context = (
+                    f"{context_suffix}, skipped-tile execution"
+                    if context_suffix
+                    else "skipped-tile execution"
+                )
+                _raise_if_unsafe(skipped_result, skipped_context)
 
     def _verify_pipeline_group_consistency(self) -> None:
         """Validate PipelineGroup members against the merged config.
@@ -4500,7 +5075,7 @@ class TaskManager:
 
         When an ``SmemAllocator`` or ``tmem_ptr_i32`` is configured,
         builds a ``ResourceContext`` and passes it to every task's
-        ``init_variables`` and ``run_body``.
+        ``init_variables``.
 
         This is a plain Python method (not ``@cute.jit``) so that the
         ``_is_setup`` assertion runs at Python level against a plain
@@ -4547,4 +5122,4 @@ class TaskManager:
                     task._init_interleaved_state()
 
         for task in self.tasks:
-            task.run_body(context)
+            task.run_body()

@@ -25,7 +25,7 @@ See ``write-dsl-kernel/swizzle.md`` for full documentation and worked examples.
 """
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from . import dsl_user_op
 from .._mlir import ir as _ir
@@ -118,7 +118,6 @@ class Swizzle:
             return self
 
         from cutlass.experimental.cuda import TensorMapSwizzle  # noqa: PLC0415
-
         from cutlass.experimental.primitives import Tcgen05SmemSwizzle  # noqa: PLC0415
 
         mapping: dict[Swizzle, object]
@@ -186,6 +185,29 @@ def apply_swizzle(
     return Pointer._from_raw_ptr(op.result, base_ptr.dtype)
 
 
+def _make_swizzled_cute_ptr(
+    base_ptr: Any,
+    swizzle: "Swizzle",
+    alignment: int | None,
+    loc: "_ir.Location | None",
+    ip: "_ir.InsertionPoint | None",
+) -> Any:
+    """Build a CuTe-typed pointer with the swizzle encoded into its type."""
+    import cutlass.cute as cute  # noqa: PLC0415
+
+    swizzle_obj = cute.make_swizzle(
+        swizzle.bbits, swizzle.mbase, swizzle.sshift, loc=loc, ip=ip
+    )
+    return cute.make_ptr(
+        base_ptr.dtype,
+        base_ptr,
+        assumed_align=alignment,
+        swizzle_=swizzle_obj,
+        loc=loc,
+        ip=ip,
+    )
+
+
 @dsl_user_op
 def load_swizzled(
     ptr: object,
@@ -217,12 +239,12 @@ def load_swizzled(
     :param swizzle: ``Swizzle`` descriptor matching the SMEM layout.
     :param alignment: Optional byte alignment hint for the load.
     :param count: Element count.  ``None`` → scalar load.  Any integer
-        ``N ≥ 1`` → a ``Vector`` of length ``N`` (even ``count=1``
+        ``N ≥ 1`` → a ``cutlass.Vector`` of length ``N`` (even ``count=1``
         returns a 1-element Vector, not a scalar).  Very large counts
         (≥ 256) can stress the MLIR lowering; if you see compile-time
         regressions, drop back to one period per load.
     :return: Scalar ``Numeric`` when ``count is None``; otherwise a
-        base-DSL ``Vector[ptr.dtype, count]`` so callers can use
+        base-DSL ``cutlass.Vector[ptr.dtype, count]`` so callers can use
         ``vec.reduce(op)``, ``vec.to(dtype)``, element-wise arithmetic,
         and pair with :func:`store_swizzled` without any intermediate
         conversions.
@@ -237,17 +259,7 @@ def load_swizzled(
     import cutlass.cute as cute  # noqa: PLC0415
 
     base_ptr = cast(Pointer, ptr)
-    swizzle_obj = cute.make_swizzle(
-        swizzle.bbits, swizzle.mbase, swizzle.sshift, loc=loc, ip=ip
-    )
-    cute_ptr = cute.make_ptr(
-        base_ptr.dtype,
-        base_ptr,
-        assumed_align=alignment,
-        swizzle_=swizzle_obj,
-        loc=loc,
-        ip=ip,
-    )
+    cute_ptr = _make_swizzled_cute_ptr(base_ptr, swizzle, alignment, loc, ip)
     if count is None:
         return cute_ptr.load(loc=loc, ip=ip)
     # Shape must be a tuple — passing a bare int here causes downstream
@@ -287,7 +299,7 @@ def store_swizzled(
 
     :param ptr: SMEM base-DSL ``Pointer`` to store to.
     :param value: Either a scalar ``Numeric`` / ``ArithValue`` / Python
-        ``int`` / ``float`` (one element), or a 1-D ``Vector`` of
+        ``int`` / ``float`` (one element), or a 1-D ``cutlass.Vector`` of
         values.  The element type is cast to ``ptr.dtype``
         automatically.  Mirrors :func:`load_swizzled`: a scalar return
         there pairs with a scalar ``value`` here; a ``Vector[T, N]``
@@ -323,17 +335,7 @@ def store_swizzled(
         swizzled_ptr = cast(Pointer, apply_swizzle(base_ptr, swizzle, loc=loc, ip=ip))
         swizzled_ptr.store(value, loc=loc, ip=ip)
         return
-    swizzle_obj = cute.make_swizzle(
-        swizzle.bbits, swizzle.mbase, swizzle.sshift, loc=loc, ip=ip
-    )
-    cute_ptr = cute.make_ptr(
-        base_ptr.dtype,
-        base_ptr,
-        assumed_align=alignment,
-        swizzle_=swizzle_obj,
-        loc=loc,
-        ip=ip,
-    )
+    cute_ptr = _make_swizzled_cute_ptr(base_ptr, swizzle, alignment, loc, ip)
     if len(value_shape) != 1:
         raise ValueError(
             "store_swizzled only supports scalar or 1-D Vector, "

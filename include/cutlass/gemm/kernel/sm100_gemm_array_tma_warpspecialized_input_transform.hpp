@@ -919,7 +919,7 @@ public:
       warpgroup_reg_reconfig<GenericRegisterRequirement>();
 
       // Allocate all tmem
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
@@ -979,7 +979,7 @@ public:
       }
 
       // Tmem deallocation sequence
-      tmem_allocator.free(tmem_base_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+      tmem_allocator.free(tmem_base_ptr, ArchTag::kTmemCapacityColumns);
     }
 
     else if (is_participant.epi_load) {

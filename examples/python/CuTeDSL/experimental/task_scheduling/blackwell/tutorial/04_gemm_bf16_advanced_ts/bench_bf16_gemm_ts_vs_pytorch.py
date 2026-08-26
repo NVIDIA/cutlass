@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -58,9 +58,9 @@ except Exception:
     pass
 
 import cuda.bindings.driver as cuda
+import cutlass.utils as utils
 import cutlass.cute as cute
 import cutlass.torch as cutlass_torch
-import cutlass.utils as utils
 import torch
 from cutlass import Numeric, testing
 from cutlass.cute.runtime import from_dlpack, make_fake_stream
@@ -557,7 +557,7 @@ def main() -> None:
         compile_inputs = _create_inputs(valid_configs[0], module.io_dtype)
         max_active_clusters = _get_max_active_clusters(cluster, fallback_cluster)
         print(f"Compiling {label} with {args.dtype} inputs...")
-        compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+        compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
             module.host_function,
             compile_inputs.a_view,
             compile_inputs.b_view,

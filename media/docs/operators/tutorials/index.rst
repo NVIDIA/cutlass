@@ -16,3 +16,4 @@ examples. The same notebooks are runnable from `operators/examples/ <https://git
    Fake tensors for compilation <004_fake_tensors>
    Grouped GEMM with contiguous offset <005_grouped_gemm_contiguous_offset>
    Block-scaled GEMM (MXFP8) <006_block_scaled_gemm>
+   Heuristics to rank operators <007_heuristics>

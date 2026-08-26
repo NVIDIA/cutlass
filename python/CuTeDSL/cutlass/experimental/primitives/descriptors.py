@@ -289,7 +289,7 @@ class WgmmaSwizzle(IntEnum):
 # =============================================================================
 
 
-class WgmmaSmemDesc(Int64):
+class WgmmaSmemDesc(Int64, width=64):  # type: ignore[call-arg]
     """Hopper ``wgmma.mma_async`` shared-memory matrix descriptor (64-bit).
 
     Consumed by ``wgmma.mma_async`` (SM90+).
@@ -353,16 +353,12 @@ class WgmmaSmemDesc(Int64):
         )
 
 
-WgmmaSmemDesc.width = Int64.width
-WgmmaSmemDesc.bytes = Int64.bytes
-
-
 # =============================================================================
 # Tcgen05SmemDesc  (SM100)
 # =============================================================================
 
 
-class Tcgen05SmemDesc(Int64):
+class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
     """SM100 ``tcgen05.mma`` shared-memory descriptor (64-bit).
 
     Bitfield layout::
@@ -524,10 +520,6 @@ class Tcgen05SmemDesc(Int64):
                 swizzle_code,
             )
         )
-
-
-Tcgen05SmemDesc.width = Int64.width
-Tcgen05SmemDesc.bytes = Int64.bytes
 
 
 # =============================================================================
@@ -957,11 +949,7 @@ class Tcgen05MxInstrDesc(Int32):
             return 1
         if dtype is _cutlass.Float6E2M3FN:
             return 3
-        if dtype is _cutlass.Float6E2M3FNx4:
-            return 3
         if dtype is _cutlass.Float6E3M2FN:
-            return 4
-        if dtype is _cutlass.Float6E3M2FNx4:
             return 4
         if dtype is _cutlass.Float4E2M1FN:
             return 5

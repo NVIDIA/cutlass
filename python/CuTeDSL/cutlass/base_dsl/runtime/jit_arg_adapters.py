@@ -13,7 +13,10 @@
 This module provides runtime utilities for JIT argument conversion in DSL.
 """
 
-from typing import Callable, Any, Optional, get_origin
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Callable, Any, Optional, ParamSpec, TypeVar, get_origin
+from collections.abc import Iterator
 from inspect import Parameter
 from dataclasses import is_dataclass, fields
 from itertools import chain
@@ -37,6 +40,31 @@ from ..utils.tree_utils import is_constexpr_field
 from ..._mlir import ir
 
 
+_ScopeArgs = ParamSpec("_ScopeArgs")
+_ScopeResult = TypeVar("_ScopeResult")
+
+
+def _is_reserved_python_func_arg(
+    arg_index: int, arg_name: str, func: Optional[Callable[..., Any]]
+) -> bool:
+    """
+    Check if the argument is a reserved python function argument.
+    """
+
+    if arg_index != 0:
+        return False
+
+    if arg_name == "self":
+        return True
+
+    if func:
+        is_classmethod = isinstance(func, classmethod) or (
+            hasattr(func, "__func__") and isinstance(func.__func__, classmethod)
+        )
+        return arg_name == "cls" and is_classmethod
+    return False
+
+
 def is_arg_annotation_constexpr(
     arg_annotation: Any,
     arg_name: str,
@@ -46,31 +74,20 @@ def is_arg_annotation_constexpr(
     """
     Check if the argument annotation is a constexpr.
     """
-
-    def _is_reserved_python_func_arg(
-        arg_index: int, arg_name: str, func: Optional[Callable[..., Any]]
-    ) -> bool:
-        """
-        Check if the argument is a reserved python function argument.
-        """
-
-        if arg_index != 0:
-            return False
-
-        if arg_name == "self":
-            return True
-
-        if func:
-            is_classmethod = isinstance(func, classmethod) or (
-                hasattr(func, "__func__") and isinstance(func.__func__, classmethod)
-            )
-            return arg_name == "cls" and is_classmethod
-        return False
-
     return (
         _is_reserved_python_func_arg(arg_index, arg_name, owning_func)
         or (isinstance(arg_annotation, type) and issubclass(arg_annotation, Constexpr))  # type: ignore[misc]
         or (get_origin(arg_annotation) is Constexpr)
+    )
+
+
+def _is_type_argument(arg: Any, arg_annotation: Any) -> bool:
+    """
+    Check if the argument is a type argument like Type[X]
+    """
+
+    return isinstance(arg, type) and (
+        arg_annotation is Parameter.empty or get_origin(arg_annotation) is type
     )
 
 
@@ -84,16 +101,6 @@ def is_argument_constexpr(
     """
     Check if the argument is a constexpr.
     """
-
-    def _is_type_argument(arg: Any, arg_annotation: Any) -> bool:
-        """
-        Check if the argument is a type argument like Type[X]
-        """
-
-        return isinstance(arg, type) and (
-            arg_annotation is Parameter.empty or get_origin(arg_annotation) is type
-        )
-
     return (
         is_arg_annotation_constexpr(arg_annotation, arg_name, arg_index, owning_func)
         or _is_type_argument(arg, arg_annotation)
@@ -111,8 +118,23 @@ class JitArgAdapterRegistry:
     The converted type can then be further processed by DSL to generate arguments for JIT functions.
     """
 
-    # A dictionary with key=type and value=callable
+    # Common adapters shared by every DSL, with key=type and value=callable.
+    # Keep this legacy public map for unscoped registrations. Scoped adapters
+    # intentionally are not mirrored here: choosing one as the global value
+    # would make behavior depend on module import order again.
     jit_arg_adapter_registry: dict[type, Any] = {}
+
+    # Dialect-specific adapters. A Python type may have a different adapter in
+    # each scope (for example, CUstream maps to either gpu.async.token or
+    # cuda.stream depending on the DSL compiling the function).
+    scoped_jit_arg_adapter_registries: dict[str, dict[type, Any]] = {}
+
+    GPU_DIALECT_SCOPE = "gpu"
+    CUDA_DIALECT_SCOPE = "cuda"
+
+    _active_scope: ContextVar[str | None] = ContextVar(
+        "jit_arg_adapter_scope", default=None
+    )
 
     # Adapters keyed by fully-qualified type name ("module.QualName") for
     # types whose defining module is too expensive to import at registration
@@ -133,6 +155,7 @@ class JitArgAdapterRegistry:
         cls,
         python_type: "type | str | None" = None,
         *,
+        scope: str | None = None,
         lazy: bool = False,
     ) -> Callable[[Any], Any]:
         """
@@ -148,7 +171,9 @@ class JitArgAdapterRegistry:
         class MyAdapterForMyPythonType:
             ...
 
-        The adapters are registered per type. If a type is already registerd, an error will be raised.
+        Common adapters are registered per type. Dialect-specific adapters can
+        pass ``scope=...`` and are registered per ``(scope, type)`` pair.
+        Registering the same type twice in the same scope raises an error.
 
         With ``lazy=True`` the type is named by its fully-qualified
         "module.QualName" string instead, so registration never imports the
@@ -174,6 +199,10 @@ class JitArgAdapterRegistry:
                     "lazy JIT argument adapter type name must be fully-qualified "
                     "as 'module.QualName'"
                 )
+            if scope is not None:
+                raise DSLRuntimeError(
+                    "lazy JIT argument adapters do not support scoped registration"
+                )
             lazy_module_root = name_parts[0]
         elif isinstance(python_type, str):
             raise DSLRuntimeError(
@@ -186,15 +215,18 @@ class JitArgAdapterRegistry:
                     "a callable must be provided for registering JIT argument adapter"
                 )
 
-            registry: Any = (
-                cls.lazy_jit_arg_adapter_registry
-                if lazy
-                else cls.jit_arg_adapter_registry
-            )
+            registry: Any
+            if lazy:
+                registry = cls.lazy_jit_arg_adapter_registry
+            elif scope is None:
+                registry = cls.jit_arg_adapter_registry
+            else:
+                registry = cls.scoped_jit_arg_adapter_registries.setdefault(scope, {})
             if python_type in registry:
                 raise DSLRuntimeError(
                     f"JIT argument adapter for {python_type} is already registered!",
                     context={
+                        "Scope": scope,
                         "Registered adapter": registry[python_type],
                         "Adapter to be registered": adapter,
                     },
@@ -215,12 +247,54 @@ class JitArgAdapterRegistry:
         return adapter
 
     @classmethod
+    @contextmanager
+    def using_scope(cls, scope: str | None) -> Iterator[None]:
+        """Use ``scope`` for adapter lookup, including nested adaptations."""
+        token = cls._active_scope.set(scope)
+        try:
+            yield
+        finally:
+            cls._active_scope.reset(token)
+
+    @classmethod
+    def call_with_scope(
+        cls,
+        scope: str | None,
+        callback: Callable[_ScopeArgs, _ScopeResult],
+        *args: _ScopeArgs.args,
+        **kwargs: _ScopeArgs.kwargs,
+    ) -> _ScopeResult:
+        """Call ``callback`` with an adapter scope and restore the prior scope.
+
+        This avoids the generator-based context-manager overhead on the compiled
+        launch path while preserving the scope for nested adapter lookups.
+        """
+        token = cls._active_scope.set(scope)
+        try:
+            return callback(*args, **kwargs)
+        finally:
+            cls._active_scope.reset(token)
+
+    @classmethod
     def get_registered_adapter(cls, arg: object) -> Any:
         """
         Get the registered JIT argument adapter for the given argument.
+
+        A scoped lookup checks that scope first and then the common registry.
+        An unscoped lookup remains compatible when exactly one scoped adapter
+        exists, but reports ambiguity instead of silently choosing an adapter
+        based on module import order.
         """
         python_type = type(arg)
-        adapter = cls.jit_arg_adapter_registry.get(python_type)
+        resolved_scope = cls._active_scope.get()
+        adapter = None
+        if resolved_scope is not None:
+            adapter = cls.scoped_jit_arg_adapter_registries.get(resolved_scope, {}).get(
+                python_type
+            )
+
+        if adapter is None:
+            adapter = cls.jit_arg_adapter_registry.get(python_type)
 
         if (
             adapter is None
@@ -229,6 +303,26 @@ class JitArgAdapterRegistry:
             in cls._lazy_adapter_module_roots
         ):
             adapter = cls._promote_lazy_adapter(python_type)
+
+        if adapter is None and resolved_scope is None:
+            scoped_matches = [
+                (registered_scope, registry[python_type])
+                for registered_scope, registry in (
+                    cls.scoped_jit_arg_adapter_registries.items()
+                )
+                if python_type in registry
+            ]
+            if len(scoped_matches) == 1:
+                adapter = scoped_matches[0][1]
+            elif len(scoped_matches) > 1:
+                raise DSLRuntimeError(
+                    f"JIT argument adapter for {python_type} is ambiguous; "
+                    "perform the lookup inside "
+                    "JitArgAdapterRegistry.using_scope(...) instead",
+                    context={
+                        "Registered scopes": [scope for scope, _ in scoped_matches]
+                    },
+                )
 
         if adapter is None:
             if (
@@ -323,6 +417,13 @@ JitArgAdapterRegistry.set_default_dataclass_adapter(DefaultDataclassAdapter)
 # =============================================================================
 
 
+_PYTHON_SCALAR_CONVERSION_MAP = {
+    int: Int32,
+    float: Float32,
+    bool: Boolean,
+}
+
+
 @JitArgAdapterRegistry.register_jit_arg_adapter(int)
 @JitArgAdapterRegistry.register_jit_arg_adapter(float)
 @JitArgAdapterRegistry.register_jit_arg_adapter(bool)
@@ -330,12 +431,7 @@ def _convert_python_scalar(arg: Any) -> Any:
     """
     Convert a Python scalar to a DSL type.
     """
-    conversion_map = {
-        int: Int32,
-        float: Float32,
-        bool: Boolean,
-    }
-    return conversion_map.get(type(arg))(arg)  # type: ignore[misc]
+    return _PYTHON_SCALAR_CONVERSION_MAP.get(type(arg))(arg)  # type: ignore[misc]
 
 
 @JitArgAdapterRegistry.register_jit_arg_adapter(tuple)

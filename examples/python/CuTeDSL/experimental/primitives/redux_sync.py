@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -36,12 +36,13 @@ Demonstrates:
     ``redux.sync.{op}.{s32|u32}`` instruction; all 32 lanes receive the same
     broadcast result.
   - :func:`~cutlass.primitives.redux_sync` with ``FMIN`` / ``FMAX`` and the ``abs=True``
-    modifier (sm_100+) — ``redux.sync.{min|max}.abs.f32``; replaces a
-    5-step butterfly shuffle loop with one instruction.
-  - Side-by-side: :func:`~cutlass.primitives.redux_sync` (1 instruction, sm_100+) vs
+    modifier (sm_100a/sm_103a/sm_107a only) — ``redux.sync.{min|max}.abs.f32``;
+    replaces a 5-step butterfly shuffle loop with one instruction.
+  - Side-by-side: :func:`~cutlass.primitives.redux_sync` (1 instruction,
+    sm_100a/sm_103a/sm_107a only) vs
     :func:`~cutlass.shuffle_sync_down` butterfly loop (5 instructions, sm_80+);
     both produce identical abs-max results.
-  - Per-block abs-max → FP8 quantization (sm_100+): the MXFP8 pattern from
+  - Per-block abs-max → FP8 quantization (sm_100a/sm_103a/sm_107a only): the MXFP8 pattern from
     ``kgen/examples/sm100/perfbot/5_gelu_mxfp8.py``.
 
 Four kernels, each with a dedicated ``compile_*()``, ``run_*()``,
@@ -56,14 +57,14 @@ PTX reference: §9.7.13.12 ``redux.sync``
 API reference: ``cutlass/primitives warp-vote helpers``,
                ``cutlass/primitives wrappers``
 
-Requires SM80+ for integer ops and FMIN/FMAX; SM100+ for ``abs`` / ``nan``
-modifiers.
+Requires SM80+ for integer ops. FMIN/FMAX, including ``abs`` / ``nan``
+modifiers, require sm_100a/sm_103a/sm_107a.
 
 To run::
 
-    python CuTeDSL/experimental/primitives/redux_sync.py                  # all four kernels (skips sm_100+ on older HW)
+    python CuTeDSL/experimental/primitives/redux_sync.py                  # all four kernels (skips fp redux kernels on older HW)
     python CuTeDSL/experimental/primitives/redux_sync.py --kernel 1       # integer reductions (sm_80+)
-    python CuTeDSL/experimental/primitives/redux_sync.py --kernel 4       # FP8 quantization   (sm_100+ only)
+    python CuTeDSL/experimental/primitives/redux_sync.py --kernel 4       # FP8 quantization   (sm_100a/sm_103a/sm_107a only)
 
 """
 
@@ -243,7 +244,7 @@ def float_reductions_kernel(
 
     ``abs=True`` applies ``|value|`` before each lane's contribution, so
     ``FMAX`` with ``abs`` returns ``max(|v_0|, …, |v_31|)`` (warp abs-max) in
-    a single ``redux.sync.max.abs.f32`` instruction (sm_100+).
+    a single ``redux.sync.max.abs.f32`` instruction (sm_100a/sm_103a/sm_107a only).
 
     :param vals_arr: Input float values, one per lane.
     :type vals_arr: cutlass.Array
@@ -256,7 +257,8 @@ def float_reductions_kernel(
 
     fmin_r = prims.redux_sync(v, prims.ReductionKind.FMIN, 0xFFFFFFFF)
     fmax_r = prims.redux_sync(v, prims.ReductionKind.FMAX, 0xFFFFFFFF)
-    # abs=True: each lane's |v| is used before the reduction (sm_100+ only).
+    # abs=True: each lane's |v| is used before the reduction
+    # (sm_100a/sm_103a/sm_107a only).
     absmax_r = prims.redux_sync(
         v, prims.ReductionKind.FMAX, 0xFFFFFFFF, abs=True
     )  # max(|v|)
@@ -363,7 +365,8 @@ def redux_vs_shuffle_kernel(
 ):
     """Compute warp abs-max by two methods and write both results.
 
-    *Method A* (:func:`~cutlass.primitives.redux_sync`, 1 instruction, sm_100+):
+    *Method A* (:func:`~cutlass.primitives.redux_sync`, 1 instruction,
+    sm_100a/sm_103a/sm_107a):
     ``redux.sync.max.abs.f32``
 
     *Method B* (butterfly shuffle, 5 instructions + broadcast, sm_80+):
@@ -384,7 +387,7 @@ def redux_vs_shuffle_kernel(
 
     v = vals_arr[tidx]
 
-    # ── Method A: hardware redux (sm_100+ for abs modifier) ───────────────────
+    # ── Method A: hardware redux (sm_100a/sm_103a/sm_107a) ───────────────────
     absmax_redux = prims.redux_sync(v, prims.ReductionKind.FMAX, 0xFFFFFFFF, abs=True)
 
     # ── Method B: butterfly shuffle (sm_80+) ─────────────────────────────────
@@ -482,7 +485,7 @@ def verify_redux_vs_shuffle() -> None:
 
 
 # =============================================================================
-# Kernel 4 — Per-Block Abs-Max → FP8 Quantization (sm_100+)
+# Kernel 4 — Per-Block Abs-Max → FP8 Quantization (sm_100a/sm_103a/sm_107a)
 # =============================================================================
 
 
@@ -498,7 +501,8 @@ def absmax_quantize_kernel(
     One thread block per row, one warp per block: each of the 32 lanes owns one element.
 
     The per-row abs-max is computed with a single
-    ``redux.sync.max.abs.f32`` instruction (sm_100+), avoiding a 5-step
+    ``redux.sync.max.abs.f32`` instruction (sm_100a/sm_103a/sm_107a only), avoiding a
+    5-step
     butterfly shuffle.  This is the MXFP8 block-quantization pattern used in
     ``kgen/examples/sm100/perfbot/5_gelu_mxfp8.py``, lines 152–159.
 
@@ -522,7 +526,8 @@ def absmax_quantize_kernel(
     # Step 1: load BF16 element and widen to FP32
     x = inp_arr[row, tidx].to(cutlass.Float32)
 
-    # Step 2: warp abs-max — single ``redux.sync.max.abs.f32`` (sm_100+)
+    # Step 2: warp abs-max — single ``redux.sync.max.abs.f32``
+    # (sm_100a/sm_103a/sm_107a only)
     amax = prims.redux_sync(x, prims.ReductionKind.FMAX, 0xFFFFFFFF, abs=True)
 
     # Step 3: guard against zero-valued rows; compute inverse scale
@@ -751,10 +756,10 @@ if __name__ == "__main__":
         help=(
             "kernel to run: "
             "1=integer_reductions [sm_80+], "
-            "2=float_reductions   [sm_100+], "
-            "3=redux_vs_shuffle   [sm_100+], "
-            "4=absmax_quantize    [sm_100+], "
-            "all=run all (skips sm_100+ kernels on older hardware)"
+            "2=float_reductions   [sm_100a/sm_103a/sm_107a], "
+            "3=redux_vs_shuffle   [sm_100a/sm_103a/sm_107a], "
+            "4=absmax_quantize    [sm_100a/sm_103a/sm_107a], "
+            "all=run all (skips fp redux kernels on older hardware)"
         ),
     )
     p.add_argument(

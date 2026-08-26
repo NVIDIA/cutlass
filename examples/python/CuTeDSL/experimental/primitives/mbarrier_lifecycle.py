@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -42,6 +42,11 @@ It complements ``mbarrier.py`` and ``async_pipeline.py`` by covering the direct
   - ``mbarrier_inval``
 
 Requires SM90+.
+
+To run::
+
+    python CuTeDSL/experimental/primitives/mbarrier_lifecycle.py
+
 """
 
 from functools import lru_cache
@@ -55,7 +60,16 @@ import cutlass.experimental.primitives as prims
 from cutlass.cute.runtime import make_fake_compact_tensor
 
 
+# ---------------------------------------------------------------------------
+# Kernel Configurations
+# ---------------------------------------------------------------------------
+
 _N_RESULTS: int = 1
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -88,10 +102,20 @@ def kernel(dst: cute.Tensor) -> None:
     prims.mbarrier_inval(mbar)
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(dst: cute.Tensor) -> None:
     """Launch ``kernel`` as one CTA with one thread."""
     kernel(dst).launch(grid=(1, 1, 1), block=(1, 1, 1))
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -103,6 +127,11 @@ def compile() -> Callable:  # noqa: A001
     """
     fake_dst = make_fake_compact_tensor(cutlass.Int32, (_N_RESULTS,))
     return cute.compile(host, fake_dst, options="--enable-tvm-ffi")
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 
 def run(compiled_fn: Callable) -> tuple[torch.Tensor]:
@@ -132,6 +161,11 @@ def _require_sm90_device() -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify() -> None:
     """Compile, run, and assert that the mbarrier wait completed.
 
@@ -151,6 +185,10 @@ def verify() -> None:
     torch.testing.assert_close(dst, expected)
     print(f"verify: PASS  dst = {dst.tolist()}")
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     verify()

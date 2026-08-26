@@ -50,6 +50,7 @@ from cutlass.base_dsl.typing import (
     Float8E5M2,
     Float8E4M3FN,
     Float8E4M3B11FNUZ,
+    FloatNV8E5M3FNU,
     Float8E4M3,
     Float8E8M0FNU,
     Float4E2M1FN,
@@ -59,6 +60,7 @@ from cutlass.base_dsl.typing import (
     Float6E2M3FNx4,
     Float6E3M2FNx4,
     as_numeric,
+    Array,
 )
 
 _element_precision_width = _base_typing._element_precision_width
@@ -993,6 +995,7 @@ __all__ = [
     "Float8E5M2",
     "Float8E4M3FN",
     "Float8E4M3B11FNUZ",
+    "FloatNV8E5M3FNU",
     "Float8E4M3",
     "Float8E8M0FNU",
     "Float4E2M1FN",
@@ -1018,4 +1021,5 @@ __all__ = [
     "is_integer",
     "is_int_tuple",
     "is_int_tuple_type",
+    "Array",
 ]

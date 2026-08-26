@@ -94,9 +94,7 @@ def clc_response(
         [0],
     )
     # Query if the cluster was canceled
-    # res parameter expects an MLIR Type, and returns the actual OpResult value
     pred = _nvvm.clusterlaunchcontrol_query_cancel(
-        res=ir.IntegerType.get_signless(1),
         query_type="is_canceled",
         try_cancel_response=clc_result_i128,
         loc=loc,
@@ -106,7 +104,6 @@ def clc_response(
 
     # Get first CTA ID x component
     m_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
-        res=ir.IntegerType.get_signless(32),
         query_type="get_first_cta_id_x",
         try_cancel_response=clc_result_i128,
         loc=loc,
@@ -115,7 +112,6 @@ def clc_response(
 
     # Get first CTA ID y component
     n_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
-        res=ir.IntegerType.get_signless(32),
         query_type="get_first_cta_id_y",
         try_cancel_response=clc_result_i128,
         loc=loc,
@@ -124,7 +120,6 @@ def clc_response(
 
     # Get first CTA ID z component
     l_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
-        res=ir.IntegerType.get_signless(32),
         query_type="get_first_cta_id_z",
         try_cancel_response=clc_result_i128,
         loc=loc,

@@ -136,12 +136,12 @@ class Configuration:
         match self.phase:
             case Phase.ParameterAnalysis:
                 # Use some dummy value during introspection phase.
-                return cutlass.Float32(42).to(self.efc.operator.epi_dtype)
+                return cutlass.Float32(42).to(self.efc.operation.epi_dtype)
 
             case Phase.ThreadOperation:
                 # Return directly the real kernel parameter with the same name.
                 return cutlass.Float32(self.efc.kernel.parameter[name]).to(
-                    self.efc.operator.epi_dtype
+                    self.efc.operation.epi_dtype
                 )
 
             case Phase.PyTorchEvaluation:
@@ -439,15 +439,17 @@ class Configuration:
             case Phase.ParameterAnalysis:
                 return 1
             case Phase.ThreadOperation:
-                # Use self.full_like to have all the computation done with
-                # the same type as x element type.
                 # sigmoid(x) = 1 / (1 + exp(-x))
-                return self.full_like(x, 1) / (
-                    self.full_like(x, 1) + cutlass.cute.exp(-x)
-                )
+                # Equivalent to torch.sigmoid: compute in f32 and round
+                # once back to the element type, so an f16 sigmoid is
+                # bitwise-identical to torch's (which uses f32 opmath
+                # internally for half-precision inputs).
+                xf = x.to(cutlass.Float32) if x.dtype.width < 32 else x
+                return (1.0 / (1.0 + cutlass.cute.exp(-xf))).to(x.dtype)
             case Phase.PyTorchEvaluation:
                 import torch
 
+                # torch.sigmoid computes internally in fp32
                 return torch.sigmoid(x)
             case _:
                 raise NotImplementedError(

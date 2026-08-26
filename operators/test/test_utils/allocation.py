@@ -26,6 +26,11 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+"""Operand allocation for Operator API tests.
+
+"""
+
+import hashlib
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -35,6 +40,7 @@ import torch
 
 import cutlass
 import cutlass.torch
+from cutlass.utils.gemm.tensor_utils import create_scale_factor_tensor
 
 import cutlass.operators as ops
 from cutlass.operators.metadata import (
@@ -42,9 +48,11 @@ from cutlass.operators.metadata import (
     OperandConstraints,
     ScaledOperandConstraints,
 )
-from cutlass.operators.utils.common import ceil_div, round_up
-from cutlass.operators.utils.dtype import torch_storage_packing_factor
-from cutlass.utils.gemm.tensor_utils import create_scale_factor_tensor
+from cutlass.operators.utils.dtype import (
+    get_torch_to_cutlass_dtype_map,
+)
+
+from .common import reference_device
 
 
 class RNGStateManager:
@@ -210,6 +218,52 @@ class EmptyInitializationMode(InitializationMode):
 ################################################################################
 
 
+# Upper bound, in elements, on the random offset a pooled tensor may start at.
+#
+# The offset exists to stress dependence on pointer alignments higher than the
+# Operator declares it needs, which only depends on the offset's residues modulo
+# those alignments -- not on its magnitude.
+#
+# 4096 keeps at least 4096/divisibility distinct offsets (256 at the common
+# divisibility of 16), spanning every residue modulo the 256- and 1024-byte
+# alignments worth stressing.
+MAX_RANDOM_OFFSET = 4096
+
+
+def _pool_seed(key: tuple[str, ...]) -> int:
+    """
+    Returns a stable RNG seed derived from a pool key.
+
+    Two keys sharing a seed would hand their buffers the same sequence, which is
+    exactly the operand correlation the per-name keying exists to prevent, so the
+    seed uses the full width `torch.manual_seed` accepts -- 64 bits, from an
+    8-byte digest. Across the tens of keys in play that puts a collision at ~1e-16
+    rather than the ~1e-7 a 32-bit checksum would give, and it stays negligible as
+    keys are added.
+
+    Hashing the key, rather than drawing seeds from a parent generator, keeps the
+    seed independent of the order keys are first requested -- which varies with
+    test selection and xdist sharding, and would otherwise give one operand
+    different data depending on which worker ran it. blake2b rather than `hash`,
+    whose string salt varies per process.
+
+    :param key: The pool key to derive a seed for
+    :type key: tuple[str, ...]
+    :return: A seed for the given pool key, in `[0, 2**64)`
+    :rtype: int
+    """
+    # digest_size=8 gives 8 bytes, i.e. the 64 bits torch.manual_seed takes.
+    seed = hashlib.blake2b(digest_size=8)
+    # Terminate each part. A hash sees one flat byte stream -- successive
+    # update() calls are equivalent to one update() of the concatenation -- so
+    # without a delimiter ("A", "AB") and ("AA", "B") would hash alike. NUL
+    # cannot occur in a dtype name or an InitializationMode repr.
+    for part in key:
+        seed.update(part.encode())
+        seed.update(b"\0")
+    return int(seed.hexdigest(), 16)
+
+
 class MemPool:
     """
     A pool of tensors used for test cases. The goals of the pool are the following:
@@ -219,7 +273,11 @@ class MemPool:
       - Allow for returning non-compact tensors
 
     Toward these goals, the pool maintains a set of tensors, with one tensor corresponding to a
-    combination of datatype and InitializationMode.
+    combination of tensor name, datatype and InitializationMode.
+
+    The tensor name is part of the key, and each key seeds its data independently
+    (see `_pool_seed`), so that distinct operands never share a backing tensor nor
+    the same sequence.
 
     Callers request a tensor of a given datatype, shape, and InitializationMode.
 
@@ -241,6 +299,9 @@ class MemPool:
         """
         self.device = device
         self.tensors = {}
+        # seed -> the key that claimed it, so a collision is caught rather than
+        # silently handing two operands the same data.
+        self._seed_owners = {}
 
     def get(
         self,
@@ -249,6 +310,7 @@ class MemPool:
         stride: tuple[int, ...],
         initialization_mode: InitializationMode,
         random_offset_divisibility: int = None,
+        name: str = "",
     ) -> torch.Tensor:
         """
         Gets a tensor of the given datatype, shape, and stride, and initialized with the given initialization mode.
@@ -266,8 +328,15 @@ class MemPool:
         :type initialization_mode: InitializationMode
         :param random_offset_divisibility: The divisibility of the random offset
         :type random_offset_divisibility: int
+        :param name: The operand name ("A", "B", "out", ...). Tensors with different names
+            never share a backing tensor, and are seeded independently
+        :type name: str
         :return: A tensor of the given datatype, shape, and stride, and initialized with the given initialization mode
         :rtype: torch.Tensor
+        :raises ValueError: If `random_offset_divisibility` is not positive; if `shape`
+            and `stride` differ in length; if any extent in `shape` is not positive; or
+            if this key's seed is already claimed by a different key, which would give
+            two operands the same data
         """
         if random_offset_divisibility is not None and random_offset_divisibility <= 0:
             raise ValueError(
@@ -279,26 +348,57 @@ class MemPool:
                 f"Expected shape and stride to have the same length, got {len(shape)} and {len(stride)}"
             )
 
-        size_required = sum(shape[i] * stride[i] for i in range(len(shape)))
-        if size_required == 0:
+        if any(extent <= 0 for extent in shape):
             raise ValueError(
-                f"Expected size_required to be greater than 0, got {size_required}"
+                f"Expected every extent in shape to be positive, got {shape}"
             )
 
-        key = str(dtype) + str(initialization_mode)
+        # Elements the view spans: its largest reachable index, plus one.
+        size_required = 1 + sum((shape[i] - 1) * stride[i] for i in range(len(shape)))
+
+        # The buffer holds the data plus room for the random offset.
+        capacity_required = size_required + MAX_RANDOM_OFFSET
+
+        # A tuple rather than a concatenated string: ("A", "AB") and ("AA", "B")
+        # would otherwise spell the same key.
+        key = (name, str(dtype), str(initialization_mode))
         torch_dtype = cutlass.torch.dtype(dtype)
         tensor = self.tensors.get(key, torch.tensor([], dtype=torch_dtype))
 
-        if tensor.numel() < 2 * size_required:
+        if tensor.numel() < capacity_required:
+            seed = _pool_seed(key)
+            owner = self._seed_owners.setdefault(seed, key)
+            if owner != key:
+                raise ValueError(
+                    f"Pool keys {owner} and {key} both derive seed {seed}. Distinct "
+                    "operands must draw independent data: sharing a stream would give "
+                    "their buffers the same sequence and recreate the correlation this "
+                    "keying exists to prevent."
+                )
+            # The tensors generated by the mempool are always for self.device.
+            # When reference_device is cpu, we also want initialization on cpu
+            #
+            #
+            # We initialize on cpu and copy the contents to mempool's original device.
+            # The copy is of the whole backing store, so that later when we take random offsets
+            # below, we do it on the correct allocation.
+            init_device = self.device if reference_device() == "cuda" else "cpu"
             tensor = initialization_mode.create(
-                torch_dtype, (2 * size_required,), device=self.device
+                torch_dtype,
+                (capacity_required,),
+                seed=seed,
+                device=init_device,
             )
+            if init_device != self.device:
+                tensor = tensor.to(self.device)
             self.tensors[key] = tensor
 
-        if random_offset_divisibility is not None:
+        if random_offset_divisibility is not None and (
+            random_offset_divisibility < MAX_RANDOM_OFFSET
+        ):
             offset = random.randrange(
                 random_offset_divisibility,
-                size_required - 1,
+                MAX_RANDOM_OFFSET,
                 random_offset_divisibility,
             )
         else:
@@ -369,6 +469,7 @@ def dense_tensor_from_metadata(
         stride,
         initialization_mode,
         attr.divisibility if randomly_offset else None,
+        name=tensor_name,
     )
     return ops.DenseTensor(tensor)
 
@@ -419,7 +520,12 @@ def scaled_tensor_from_metadata(
             quantized_shape = (shape[0], shape[1] // 2, shape[2])
 
     quantized = create(
-        mempool, attr.quantized, quantized_shape, tensor_name, initialization_mode, randomly_offset
+        mempool,
+        attr.quantized,
+        quantized_shape,
+        tensor_name,
+        initialization_mode,
+        randomly_offset,
     )
 
     # ScaledOperand.numel_scale takes the quantized shape as (L, outer, K), where
@@ -437,10 +543,14 @@ def scaled_tensor_from_metadata(
         # on-device layout (sf_gpu).  The emulated reference in gemm.py
         # calls unpack_scale_factors directly on the scale tensor from args,
         # so no pre-unpacked data needs to be threaded through here.
-        _sf_ref, _sf_cute, sf_gpu = create_scale_factor_tensor(
+        _sf_ref, sf_cute, sf_gpu = create_scale_factor_tensor(
             outer, K, L, sf_vec_size, attr.scale.dtype
         )
-        scale = ops.DenseTensor(sf_gpu.flatten())
+        # SF dtypes torch cannot represent (e.g. FloatNV8E5M3FNU) are backed by
+        # uint8 storage, so the flat torch view would report Uint8 and no
+        # operator would match. Pass the CuTe tensor for those.
+        has_torch_dtype = attr.scale.dtype in get_torch_to_cutlass_dtype_map().values()
+        scale = ops.DenseTensor(sf_gpu.flatten() if has_torch_dtype else sf_cute)
         return ops.ScaledOperand(quantized, scale, attr.mode, attr.swizzle)
 
     total_tensor_size = ops.ScaledOperand.numel_scale(
@@ -459,11 +569,14 @@ def scaled_tensor_from_metadata(
             f"treats scale factors as non-negative magnitudes."
         )
 
+    # Name the scale distinctly from its quantized tensor so the two never share a
+    # pool buffer. They currently differ by dtype anyway, which keys them apart,
+    # but relying on that is accidental rather than intended.
     scale = create(
         mempool,
         attr.scale,
         (total_tensor_size,),
-        tensor_name,
+        f"{tensor_name}_scale",
         initialization_mode,
         randomly_offset,
     )

@@ -69,6 +69,8 @@ from .core import (
     make_composed_layout,
     make_layout_tv,
     make_swizzle,
+    make_sparse_elem,
+    get_sparse_elem_type,
     recast_ptr,
     get,
     select,
@@ -233,6 +235,8 @@ compile = _dsl.CompileCallable()
 compile_to = compile.compile_to
 OptLevel = _dsl.OptLevel
 
+
+
 PtxasOptions = _dsl.PtxasOptions
 EnableAssertions = _dsl.EnableAssertions
 GenerateLineInfo = _dsl.GenerateLineInfo
@@ -244,6 +248,7 @@ GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
 DeviceTarget = _dsl.DeviceTarget
+DisableCuteExtCompile = _dsl.DisableCuteExtCompile
 FrontendNext = _dsl.FrontendNext
 RDC = _dsl.RDC
 RemarkFilter = _dsl.RemarkFilter
@@ -257,6 +262,8 @@ make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 # cannot change DSL behavior. GPU-arch detection stays deferred to first use.
 _dsl.CuTeDSL._get_dsl()
 _dsl.CuteExperimentalDSL._get_dsl()
+
+from . import viz
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
@@ -435,6 +442,7 @@ __all__ = [
     "nvgpu",
     "testing",
     "runtime",
+    "viz",
     # Math utils
     *math.__all__,
     # Decorators and code generation
@@ -443,6 +451,7 @@ __all__ = [
     "register_jit_arg_adapter",
     "compile",
     "compile_to",
+    "DisableCuteExtCompile",
     "ArtifactType",
     "PreCompiledMlirArtifact",
     # Foreign function interface

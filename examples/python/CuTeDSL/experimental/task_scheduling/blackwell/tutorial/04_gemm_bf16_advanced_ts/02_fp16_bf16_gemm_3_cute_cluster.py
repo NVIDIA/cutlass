@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -225,6 +225,10 @@ class GmemAbResource(MemoryResource):
     coord_k: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.uninitialized()
     coord_m: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.uninitialized()
     coord_n: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.uninitialized()
+    cta_rank_in_cluster: Any = field(init=False, default=None)
+    bx: Any = field(init=False, default=None)
+    by: Any = field(init=False, default=None)
+    bz: Any = field(init=False, default=None)
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
@@ -244,24 +248,28 @@ class GmemAbResource(MemoryResource):
             docs="N coordinate for the current TMA load tile.",
         )
 
+    @consumer_work(work_attrs=WorkAttr.AUXILIARY)
+    @cute.jit
+    def init_tile_coords(self, stage_info: StageInfo) -> None:
+        bidx, bidy, _ = cute.arch.block_idx()
+        self.cta_rank_in_cluster = (bidy % cluster_shape_mnk[1]) * cluster_shape_mnk[
+            0
+        ] + (bidx % cluster_shape_mnk[0])
+        self.bx, self.by, self.bz = stage_info.work_tile.tile_idx
+
     @consumer_work(returns=(coord_k, coord_m, coord_n))
     @cute.jit
     def compute_coords(
         self, stage_info: StageInfo
     ) -> tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32]:
-        bidx, bidy, _ = cute.arch.block_idx()
-        cta_rank_in_cluster = (bidy % cluster_shape_mnk[1]) * cluster_shape_mnk[0] + (
-            bidx % cluster_shape_mnk[0]
-        )
-        bx, by, bz = stage_info.work_tile.tile_idx
         mma_tile_coord_mnl = (
-            bx // cluster_shape_mnk[0],
-            by // cluster_shape_mnk[1],
-            bz,
+            self.bx // cluster_shape_mnk[0],
+            self.by // cluster_shape_mnk[1],
+            self.bz,
         )
 
-        pair_id = cta_rank_in_cluster // num_mma_ctas
-        rank_in_pair = cta_rank_in_cluster % num_mma_ctas
+        pair_id = self.cta_rank_in_cluster // num_mma_ctas
+        rank_in_pair = self.cta_rank_in_cluster % num_mma_ctas
         pair_row = pair_id // num_pair_cols
         pair_col = pair_id % num_pair_cols
 
@@ -293,9 +301,6 @@ class SmemAbResource(MemoryResource):
     mA_mkl: Any = field(init=False, default=None)
     mB_nkl: Any = field(init=False, default=None)
     tiled_mma: Any = field(init=False, default=None)
-    a_smem_layout: cutlass.Constexpr = field(init=False, default=None)
-    b_smem_layout: cutlass.Constexpr = field(init=False, default=None)
-    cta_layout_vmnk: cutlass.Constexpr = field(init=False, default=None)
     # Precomputed cta_layout_vmnk mode sizes for producer_work TMA partitioning
     cta_layout_size_v: cutlass.Constexpr[int] = field(init=False, default=0)
     cta_layout_size_m: cutlass.Constexpr[int] = field(init=False, default=0)
@@ -347,15 +352,15 @@ class SmemAbResource(MemoryResource):
         self.cta_layout_size_v = cute.size(cta_layout_vmnk, mode=[0])
         self.cta_layout_size_m = cute.size(cta_layout_vmnk, mode=[1])
         self.cta_layout_size_n = cute.size(cta_layout_vmnk, mode=[2])
-        self.act_num_pair_cols = cutlass.Int32(
+        self.act_num_pair_cols = (
             act_num_pair_cols if act_num_pair_cols is not None else num_pair_cols
         )
-        self.act_a_mcast_template = cutlass.Int32(
+        self.act_a_mcast_template = (
             act_a_mcast_template
             if act_a_mcast_template is not None
             else _a_mcast_template
         )
-        self.act_b_mcast_template = cutlass.Int32(
+        self.act_b_mcast_template = (
             act_b_mcast_template
             if act_b_mcast_template is not None
             else _b_mcast_template
@@ -386,11 +391,6 @@ class SmemAbResource(MemoryResource):
             cute.recast_ptr(smem_ptr_b, self.b_smem_layout.inner),
             self.b_smem_layout.outer,
         )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.cta_in_cluster_coord_vmnk = (cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0),cutlass.Int32(0))
-        self.mma_v_coord = cutlass.Int32(0)
-        self.tma_mcast_mask_a = cutlass.Int16(0)
-        self.tma_mcast_mask_b = cutlass.Int16(0)
 
     def get_smem_requirements(self):
         return [self._alloc_a, self._alloc_b]
@@ -555,12 +555,12 @@ class TmemCResource(MemoryResource):
     into registers and passes them to GmemDResource for the GMEM store.
     """
 
+    scale_d: Any = field(init=False, default=None)
     cta_rank_in_cluster: Any = field(init=False, default=None)
     _alloc_acc: cutlass.Constexpr = field(init=False, default=None)
 
     # CuteDSL objects for cute.gemm
     tiled_mma_obj: Any = field(init=False, default=None)
-    mC_mn: Any = field(init=False, default=None)
     num_k_blocks: cutlass.Constexpr[int] = field(init=False, default=None)
 
     # FP32 register tensor for T2R results — sized from GMEM partition.
@@ -569,8 +569,8 @@ class TmemCResource(MemoryResource):
     # Local SMEM tensor views consumed by MMA.
     sA: Any = field(init=False, default=None)
     sB: Any = field(init=False, default=None)
-    a_smem_layout: cutlass.Constexpr = field(init=False, default=None)
-    b_smem_layout: cutlass.Constexpr = field(init=False, default=None)
+    a_smem_layout: Any = field(init=False, default=None)
+    b_smem_layout: Any = field(init=False, default=None)
     alloc_a_offset: cutlass.Constexpr[int] = field(init=False, default=0)
     alloc_b_offset: cutlass.Constexpr[int] = field(init=False, default=0)
 
@@ -621,13 +621,13 @@ class TmemCResource(MemoryResource):
             True,
             io_dtype.width,
         )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
 
     def get_tmem_requirements(self):
         return [self._alloc_acc]
 
+    @producer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
-    def _init_tmem_state(self, stage_info: StageInfo) -> None:
+    def init_accumulator_state(self, stage_info: StageInfo) -> None:
         context = stage_info.context
         smem_ptr_a = cute.make_ptr(
             io_dtype,
@@ -657,13 +657,9 @@ class TmemCResource(MemoryResource):
 
     @producer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
-    def init_accumulator_state(self, stage_info: StageInfo) -> None:
-        self._init_tmem_state(stage_info)
-
-    @consumer_work(work_attrs=WorkAttr.AUXILIARY)
-    @cute.jit
-    def init_store_state(self, stage_info: StageInfo) -> None:
-        self._init_tmem_state(stage_info)
+    def init_work_tile_state(self, stage_info: StageInfo) -> None:
+        del stage_info
+        self.scale_d = cutlass.Boolean(False)
 
     @consumer_work(returns=t2r_rmem)
     @cute.jit
@@ -732,17 +728,14 @@ class TmemCResource(MemoryResource):
         tDtC_slice = tDtC_stage[(None, None, None, subtile_idx)]
         cute.copy(tiled_copy_t2r, tDtC_slice, tCrC)
         cute.arch.fence_view_async_tmem_load()
-        return cutlass.Vector(tCrC.load())
+        return tCrC.load()
 
     @producer_work
     @cute.jit
     def mma(self, stage_info: StageInfo, *, ab_stage_idx: cutlass.Int32) -> None:
         if self.cta_rank_in_cluster % num_mma_ctas == 0:
             tiled_mma = self.tiled_mma_obj.with_()
-            accumulate_mode = cutlass.Boolean(
-                stage_info.loop_offset != cutlass.Int32(0)
-            )
-            tiled_mma.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, accumulate_mode)
+            tiled_mma.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, self.scale_d)
 
             acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
             acc_template = tiled_mma.make_fragment_C(cute.append(acc_shape, acc_stages))
@@ -778,9 +771,7 @@ class TmemCResource(MemoryResource):
             )
 
             tiled_mma_accumulate = self.tiled_mma_obj.with_()
-            tiled_mma_accumulate.set(
-                cute.nvgpu.tcgen05.Field.ACCUMULATE, cutlass.Boolean(True)
-            )
+            tiled_mma_accumulate.set(cute.nvgpu.tcgen05.Field.ACCUMULATE, True)
             for k_block_idx in cutlass.range_constexpr(1, self.num_k_blocks):
                 k_block_coord = (None, None, k_block_idx, ab_stage_idx)
                 cute.gemm(
@@ -790,6 +781,7 @@ class TmemCResource(MemoryResource):
                     tCrB[k_block_coord],
                     tCtAcc,
                 )
+            self.scale_d = True
 
 
 @dataclass
@@ -802,11 +794,27 @@ class GmemDResource(MemoryResource):
     cutlass vector initialized by ``cutlass.vector.full``.
     """
 
+    bx: Any = field(init=False, default=None)
+    by: Any = field(init=False, default=None)
+    bz: Any = field(init=False, default=None)
+    rank_in_pair: Any = field(init=False, default=None)
+    pair_row: Any = field(init=False, default=None)
+    pair_col: Any = field(init=False, default=None)
     mC_mn: Any = field(init=False, default=None)
 
     def __init__(self, mC_mn: cute.Tensor, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self.mC_mn = mC_mn
+
+    @producer_work(work_attrs=WorkAttr.AUXILIARY)
+    @cute.jit
+    def init_tile_coords(self, stage_info: StageInfo) -> None:
+        cta_rank = cute.arch.block_idx_in_cluster()
+        self.rank_in_pair = cta_rank % num_mma_ctas
+        pair_id = cta_rank // num_mma_ctas
+        self.pair_row = pair_id // num_pair_cols
+        self.pair_col = pair_id % num_pair_cols
+        self.bx, self.by, self.bz = stage_info.work_tile.tile_idx
 
     @producer_work
     @cute.jit
@@ -817,28 +825,13 @@ class GmemDResource(MemoryResource):
         t2r_rmem: cutlass.Float32,
         subtile_idx: cutlass.Constexpr[int],
     ) -> None:
-        bx, by, bz = stage_info.work_tile.tile_idx
-        cta_rank_for_coords = (by % cluster_shape_mnk[1]) * cluster_shape_mnk[0] + (
-            bx % cluster_shape_mnk[0]
-        )
-        mma_tile_coord_mnl = (
-            bx // cluster_shape_mnk[0],
-            by // cluster_shape_mnk[1],
-            bz,
-        )
-
-        pair_id = cta_rank_for_coords // num_mma_ctas
-        rank_in_pair = cta_rank_for_coords % num_mma_ctas
-        pair_row = pair_id // num_pair_cols
-        pair_col = pair_id % num_pair_cols
-
         tx, _, _ = cute.arch.thread_idx()
         coordc_m = (
-            mma_tile_coord_mnl[0] * super_tile_m
-            + pair_row * mma_tiler_mnk[0]
-            + rank_in_pair * mma_tiler_mnk_per_cta[0]
+            (self.bx // cluster_shape_mnk[0]) * super_tile_m
+            + self.pair_row * mma_tiler_mnk[0]
+            + self.rank_in_pair * mma_tiler_mnk_per_cta[0]
         )
-        coordc_n = mma_tile_coord_mnl[1] * super_tile_n + pair_col * mma_tiler_mnk[1]
+        coordc_n = self.by * mma_tiler_mnk[1]
         row = coordc_m + tx
         col = coordc_n + subtile_idx * 32
         num_rows = self.mC_mn.shape[0]
@@ -1046,6 +1039,7 @@ def create_load_task(
     ) -> None:
         smem_ab.init_load_state()
         with work_tile_loop(wq):
+            gmem_ab.init_tile_coords()
             with domain_loop(0, num_k_tiles, 1):
                 coords = gmem_ab.compute_coords()
                 smem_ab.try_acquire()
@@ -1116,6 +1110,7 @@ def create_mma_task(
         smem_ab.init_stage_state()
         tmem_c.init_accumulator_state()
         with work_tile_loop(wq):
+            tmem_c.init_work_tile_state()
             tmem_c.try_acquire()
             tmem_c.acquire()
             with domain_loop(0, num_k_tiles, 1):
@@ -1167,8 +1162,8 @@ def create_store_task(
     def store_schedule(
         tmem_c: MemoryResource, gmem_d: MemoryResource, wq: WorkQueue
     ) -> None:
-        tmem_c.init_store_state()
         with work_tile_loop(wq):
+            gmem_d.init_tile_coords()
             with domain_loop(0, num_k_tiles, 1):
                 pass
             tmem_c.try_wait()
@@ -1850,7 +1845,7 @@ def prepare_run(
         )
     mnk = (m, n, k)
 
-    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+    compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
         callable,
         a_,
         b_,

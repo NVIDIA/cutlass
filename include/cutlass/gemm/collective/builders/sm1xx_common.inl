@@ -62,6 +62,8 @@ struct KernelScheduleAuto;
 
 namespace detail {
 
+constexpr int sm107_smem_capacity_bytes = cutlass::arch::sm107_smem_capacity_bytes;
+
 // Maps input element to umma element
 template <class Element, bool IsF8F6F4 = true>
 constexpr auto

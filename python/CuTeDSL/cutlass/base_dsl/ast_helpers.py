@@ -28,23 +28,8 @@ import builtins
 
 from .utils.logger import log
 from .common import *
+from .common import DSLUserCodeError as DSLUserCodeError  # star-import re-export
 from .diagnostics import DiagId
-from .env_manager import get_str_env_var
-
-from .pyir_runtime import (  # noqa: F401 (re-exported via wildcard)
-    pyir_assign,
-    pyir_read,
-    pyir_function_scope,
-    pyir_promote_loop_body_arg,
-    _PYIR_SKIP,
-    _pyir_pre_subscript_assign,
-    _pyir_post_subscript_read,
-    _pyir_check_no_complex_m2m_call,
-)
-from .multi_stage_manager import (  # noqa: F401 (re-exported via wildcard)
-    enter_constexpr_loop,
-    exit_constexpr_loop,
-)
 
 
 class Executor:
@@ -677,6 +662,83 @@ def closure_check(
             raise DSLUserCodeError(
                 DiagId.SCOPE_CLOSURE_CAPTURE,
                 func_name=closure.__name__,
+                var_name=name,
+            )
+
+
+def _is_dsl_traced_callable(fn: object) -> bool:
+    """Whether *fn* is a jit-/kernel-decorated wrapper.
+
+    Such a wrapper re-traces its body on every staged pass (the jit decorator
+    tags the wrapper with ``_dsl_cls`` / ``_dsl_object``), so its effects are
+    NOT frozen at the first trace.
+    """
+    return hasattr(fn, "_dsl_cls") or hasattr(fn, "_dsl_object")
+
+
+_REGION_BUILDER_SCOPES = (
+    "loop_body_",
+    "then_block_",
+    "else_block_",
+    "if_region_",
+    "while_region_",
+    "while_before_block_",
+    "while_after_block_",
+    "ifexp_then_block_",
+    "ifexp_else_block_",
+)
+
+
+def lambda_capture_check(candidates: list[Any]) -> None:
+    """Reject a ``lambda`` invoked inside staged CF that captures an enclosing
+    local.
+
+    A bare ``lambda`` is invoked as raw Python at trace time; its body reads
+    captured variables through a closure cell bound to the ENCLOSING function's
+    local -- not the staged region's loop-carried slot.  A captured meta that
+    is mutated inside the region therefore reads its first-pass value forever
+    (a silent miscompile).  Only lambdas are handled here; ordinary (``def``)
+    closures are out of scope.  Jit-decorated lambdas trace per pass,
+    and lambdas capturing nothing (or only globals / other functions) are safe.
+
+    *candidates* is the region's bare-name calls that resolve to values in
+    scope (rather than tracked callables); non-lambdas are skipped.  Emitted
+    only by the PyIR preprocessor subclass, so non-pyir compilation never runs
+    this check.
+    """
+    for fn in candidates:
+        if not isinstance(fn, types.FunctionType):
+            continue
+        if _is_dsl_traced_callable(fn):
+            continue
+        if getattr(fn, "__name__", None) != "<lambda>":
+            continue
+        # A lambda DEFINED INSIDE the staged region cannot go stale: the
+        # region builder re-creates it on the trace pass, so its closure
+        # cells hold that pass's bindings.  Only lambdas defined OUTSIDE and
+        # called INSIDE freeze their captures.  Region-builder scopes are
+        # identifiable from the generated block names in the qualname.
+        qualname = getattr(fn, "__qualname__", "")
+        if any(f".{part}" in qualname for part in _REGION_BUILDER_SCOPES):
+            continue
+        # Read the closure captures natively.  A lambda's captured (nonlocal)
+        # names are ``co_freevars`` positionally paired with its ``__closure__``
+        # cells; globals/builtins are not cells, so they are excluded.  An
+        # UNFILLED cell cannot be vouched for -> map it to ``None`` so it takes
+        # the reject path below (fail closed).
+        for name, cell in zip(fn.__code__.co_freevars, fn.__closure__ or ()):
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                value = None
+            if value is not None and (
+                inspect.ismodule(value)
+                or inspect.isfunction(value)
+                or inspect.ismethod(value)
+            ):
+                continue
+            raise DSLUserCodeError(
+                DiagId.SCOPE_LAMBDA_CAPTURE,
                 var_name=name,
             )
 

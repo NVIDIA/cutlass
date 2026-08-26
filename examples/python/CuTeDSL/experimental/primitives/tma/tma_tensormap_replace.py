@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -63,6 +63,10 @@ from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 TENSOR_MAP_BYTES = 128
 TENSOR_MAP_QWORDS = TENSOR_MAP_BYTES // 8
 
@@ -76,6 +80,11 @@ BOX_DIMS = (16, 32)
 
 CTA_SIZE = 32
 COLS_TO_SHOW = 4
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.jit
@@ -191,6 +200,11 @@ def tma_desc_replace_kernel(
             out_row[col] = smem_tile[col_end - COLS_TO_SHOW + col]
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     matrix_a: cute.Tensor,
@@ -215,6 +229,11 @@ def host(
         row_offset,
         active_rows,
     ).launch(grid=(1, 1, 1), block=(CTA_SIZE, 1, 1))
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -247,6 +266,11 @@ def compile() -> Callable:  # noqa: A001
         cutlass.Int32(0),
         options="--enable-tvm-ffi",
     )
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 
 def run(
@@ -299,6 +323,11 @@ def run(
     return output, expected
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(row_offset: int = ROW_OFFSET, active_rows: int = ACTIVE_ROWS) -> None:
     """Compile, run, and assert the patched TMA descriptor result."""
     compiled_fn = compile()
@@ -325,6 +354,11 @@ def verify(row_offset: int = ROW_OFFSET, active_rows: int = ACTIVE_ROWS) -> None
 
     torch.testing.assert_close(output, expected, atol=0, rtol=0)
     print("\nPASS")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:

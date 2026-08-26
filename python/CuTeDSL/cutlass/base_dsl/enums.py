@@ -37,6 +37,9 @@ class Arch(Enum):
     sm_103 = (10, 3, "")
     sm_103a = (10, 3, "a")
     sm_103f = (10, 3, "f")
+    sm_107 = (10, 7, "")
+    sm_107a = (10, 7, "a")
+    sm_107f = (10, 7, "f")
     sm_120 = (12, 0, "")
     sm_120a = (12, 0, "a")
     sm_120f = (12, 0, "f")
@@ -73,6 +76,9 @@ class Arch(Enum):
             Arch.sm_103,
             Arch.sm_103a,
             Arch.sm_103f,
+            Arch.sm_107,
+            Arch.sm_107a,
+            Arch.sm_107f,
             Arch.sm_110,
             Arch.sm_110a,
             Arch.sm_110f,
@@ -84,6 +90,14 @@ class Arch(Enum):
             Arch.sm_121f,
         )
         return tuple(dict.fromkeys(archs))
+
+    @classmethod
+    def RubinArchs(cls) -> tuple["Arch", ...]:
+        return (
+            Arch.sm_107,
+            Arch.sm_107a,
+            Arch.sm_107f,
+        )
 
     def __str__(self) -> str:
         return self.name

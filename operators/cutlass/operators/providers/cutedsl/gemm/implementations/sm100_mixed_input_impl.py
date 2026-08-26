@@ -363,7 +363,7 @@ def compute_capacity_config(
     computations, used by both early validation and compile-time configuration.
     """
     from cutlass.cute.arch import get_max_tmem_alloc_cols
-    from cutlass.utils import get_smem_capacity_in_bytes
+    from cutlass.memory import get_smem_capacity_in_bytes
 
     # Get hardware capacities
     if smem_capacity is None:
@@ -535,7 +535,7 @@ class MixedInputGemmKernel:
         )
 
         self.smem_buffer_align_bytes = SM100_SMEM_ALIGN
-        self.smem_capacity = utils.get_smem_capacity_in_bytes(self.arch)
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes(self.arch)
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs.
@@ -731,7 +731,7 @@ class MixedInputGemmKernel:
             if a_scale is None:
                 raise ValueError("Scale tensor required for convert-scale mode")
             if (
-                utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
+                cutlass.tensor_utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
                 != OperandMajorMode.MN
             ):
                 raise ValueError("scale_major_mode must be M-major")
@@ -795,14 +795,18 @@ class MixedInputGemmKernel:
         self.mma_dtype = self.b_dtype
 
         # Extract layout information
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
         self.scale_major_mode = (
-            utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
+            cutlass.tensor_utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
             if self.scale_mode is TransformMode.ConvertScale
             else None
         )
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
             self.gmem_layout_scale = mixed_input_utils.get_gmem_layout_scale(
@@ -1094,7 +1098,7 @@ class MixedInputGemmKernel:
         )
         tidx, _, _ = cute.arch.thread_idx()
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # Initialize load2transform pipeline, which tracks the dependencies between TMA's loading
@@ -1184,7 +1188,7 @@ class MixedInputGemmKernel:
         )
 
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_ptr_sync_barrier,
             allocator_warp_id=self.epilog_warp_id[0],

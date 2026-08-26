@@ -31,9 +31,11 @@ from typing import (
     Any,
     get_origin,
     get_args,
+    cast as typing_cast,
 )
 import functools
 import inspect
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from math import ceil
@@ -68,6 +70,7 @@ from ..base_dsl.typing import (
     Boolean,
     Numeric,
     NumericMeta,
+    TypedPointer,
     DslType,
     as_numeric,
     get_c_pointers,
@@ -81,6 +84,7 @@ from ..base_dsl.common import (
     active_env_manager,
 )
 from ..base_dsl.diagnostics import DiagId, find_user_source_location
+from ..base_dsl.env_manager import EnvironmentVarManager, get_bool_env_var
 from ..base_dsl.utils.logger import log
 from ..base_dsl.utils.tree_utils import (
     Leaf,
@@ -90,8 +94,11 @@ from ..base_dsl.utils.tree_utils import (
     DSLTreeFlattenError,
     is_constexpr_field,
 )
-from ..base_dsl.leaf_utils import is_frozen_dataclass
-from ..base_dsl.runtime.jit_arg_adapters import is_arg_annotation_constexpr
+from ..base_dsl.utils.leaf_utils import is_frozen_dataclass
+from ..base_dsl.runtime.jit_arg_adapters import (
+    JitArgAdapterRegistry,
+    is_arg_annotation_constexpr,
+)
 from ..base_dsl.jit_executor import ExecutionArgs, _is_pointer_annotation  # noqa: F401
 from ..base_dsl.runtime import cuda as cuda_helpers
 from .cuda_stream_adapter import CudaDriverStreamAdapter, CudaRuntimeStreamAdapter  # noqa: F401
@@ -138,8 +145,6 @@ from .cutlass_ast_decorators import (
     LoopUnroll,
 )
 
-from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
-
 # =============================================================================
 # Cutlass DSL Device Info
 # =============================================================================
@@ -148,6 +153,7 @@ from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
 SMEM_CAPACITY_MAP = {
     "sm_121": (100 - 1) * 1024,
     "sm_120": (100 - 1) * 1024,
+    "sm_107": (328 - 1) * 1024,
     "sm_110": (228 - 1) * 1024,
     "sm_103": (228 - 1) * 1024,
     "sm_101": (228 - 1) * 1024,
@@ -166,7 +172,7 @@ SMEM_CAPACITY_MAP = {
 
 def _get_max_cpu_threads() -> int:
     """Return a safe thread-pool size: half of CPU count, clamped to [1, 16]."""
-    return max(1, min(16, (os.cpu_count() or 8) // 2))
+    return builtins.max(1, builtins.min(16, (os.cpu_count() or 8) // 2))
 
 
 def _get_baked_dso_digest(so_name: str) -> bytes:
@@ -238,13 +244,21 @@ def is_cute_algebra_type(arg_spec: object) -> bool:
     return False
 
 
-def _is_cutlass_pointer_annotation(annotation: object) -> bool:
-    if get_origin(annotation) is Annotated:
+def _normalize_cutlass_pointer_annotation(
+    annotation: object,
+) -> TypedPointer | type[Pointer] | None:
+    """Return the underlying Cutlass pointer annotation, ignoring metadata."""
+    while get_origin(annotation) is Annotated:
         annotation = get_args(annotation)[0]
-    return type(annotation).__name__ == "TypedPointer" or (
-        getattr(annotation, "__name__", None) == "Pointer"
-        and getattr(annotation, "__module__", "").endswith("cutlass.base_dsl.typing")
-    )
+    if isinstance(annotation, TypedPointer):
+        return annotation
+    if annotation is Pointer:
+        return Pointer
+    return None
+
+
+def _is_cutlass_pointer_annotation(annotation: object) -> bool:
+    return _normalize_cutlass_pointer_annotation(annotation) is not None
 
 
 def _is_cute_pointer_like(arg: object) -> bool:
@@ -274,7 +288,7 @@ def _is_cutlass_array_annotation(annotation: object) -> bool:
     if not isinstance(annotation, type):
         return False
     try:
-        from cutlass.base_dsl.array import Array as _CutlassArray  # type: ignore
+        from cutlass.base_dsl.array import Array as _CutlassArray
     except Exception:  # noqa: BLE001 - array module may be unavailable in some builds
         return False
     return annotation is _CutlassArray
@@ -291,7 +305,7 @@ def _is_cutlass_array_subscripted_annotation(annotation: object) -> bool:
     """
     try:
         from typing import get_origin
-        from cutlass.base_dsl.array import Array as _CutlassArray  # type: ignore
+        from cutlass.base_dsl.array import Array as _CutlassArray
     except Exception:  # noqa: BLE001 - array module may be unavailable in some builds
         return False
     return get_origin(annotation) is _CutlassArray
@@ -305,7 +319,7 @@ def _is_cutlass_array(arg: object) -> bool:
     intentional — both should be reconstructed via the Array path.
     """
     try:
-        from cutlass.base_dsl.array import Array as _CutlassArray  # type: ignore
+        from cutlass.base_dsl.array import Array as _CutlassArray
     except Exception:  # noqa: BLE001
         return False
     return isinstance(arg, _CutlassArray)
@@ -332,9 +346,11 @@ def _cutlass_pointer_dtype_addrspace(
     annotation: object,
     arg: object,
 ) -> tuple[type[Numeric], int]:
-    if type(annotation).__name__ == "TypedPointer":
-        dtype = annotation.dtype  # type: ignore[attr-defined]
-        space = annotation.space  # type: ignore[attr-defined]
+    pointer_annotation = _normalize_cutlass_pointer_annotation(annotation)
+    assert pointer_annotation is not None
+    if isinstance(pointer_annotation, TypedPointer):
+        dtype = pointer_annotation.dtype
+        space = pointer_annotation.space
     else:
         dtype = getattr(arg, "dtype", Int8)
         space = getattr(arg, "memspace", 0)
@@ -356,10 +372,11 @@ def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
 class CutlassBaseDSL(BaseDSL):
     """This abstract class provides a DSL for Cutlass."""
 
+    _jit_arg_adapter_scope = JitArgAdapterRegistry.CUDA_DIALECT_SCOPE
     _name_mangling_prefix = "cutlass"
     _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset()
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = None
-
+    decorator_location: DSLLocation | None
     @staticmethod
     def _make_kernel_decorator(
         target_cls: type["CutlassBaseDSL"],
@@ -417,6 +434,35 @@ class CutlassBaseDSL(BaseDSL):
         # this needs to be reverse registered because the arg convention
         # depends on the runtime type of the DSL arguments
         self._tvm_ffi_args_spec_converter: Optional[Callable[..., Any]] = None
+        # KernelLaunchers built during the current host trace, so we can reject
+        # any left un-launched (see `_track_deferred_kernel_launches`); None
+        # when no host body is being traced.
+        self._pending_launches: Optional[List["KernelLauncher"]] = None
+
+    @contextmanager
+    def _track_deferred_kernel_launches(self) -> Generator[None, None, None]:
+        # Calling a @cute.kernel returns a KernelLauncher; the kernel only runs
+        # when it is launched. A bare `my_kernel(...)` statement thus compiles
+        # to nothing. Launchers built here register on `_pending_launches`; on
+        # clean exit any that were never launched are a mistake. (On an
+        # exception the generator resumes at `yield`, so the check is skipped.)
+        outer, self._pending_launches = self._pending_launches, []
+        try:
+            yield
+            pending = self._pending_launches
+        finally:
+            self._pending_launches = outer
+        for launcher in pending:
+            if not launcher._launched:
+                filename, lineno, col, end_col = launcher._creation_loc
+                raise DSLUserCodeError(
+                    DiagId.LAUNCH_NEVER_ISSUED,
+                    filename=filename,
+                    lineno=lineno,
+                    col_offset=col,
+                    end_col_offset=end_col,
+                    kernel_name=getattr(launcher.funcBody, "__name__", "<kernel>"),
+                )
 
     def _set_smem_tracking(
         self, allocator: object, callback: Callable[[object], int]
@@ -522,11 +568,35 @@ class CutlassBaseDSL(BaseDSL):
         if pipeline is None:
             # cubin format is required to be cubin as we launch cuda module at python level.
             return (
-                "builtin.module(cute-to-nvvm{cubin-format=bin "
+                "builtin.module(cute-to-nvvm{check-inline-asm=false cubin-format=bin "
                 + self.compile_options.to_str()
                 + "})"
             )
 
+        return pipeline
+
+    def _get_extension_pipeline(self, pipeline: Optional[str]) -> str:
+        """Return the compiler pipeline used by CuTe extension APIs."""
+        pipeline = BaseDSL._get_pipeline(self, pipeline)
+        if pipeline is None:
+            # Build the `lir-to-cute-dsl` entry separately from
+            # ``compile_options.to_str()``, which targets ``cute-to-nvvm``.
+            # The DSL-specific lowering pipeline owns its CUDA/launch defaults.
+            lir_to_cute_pipeline = "lir-to-cute-dsl"
+            lir_to_cute_opts = []
+            # Under PyIR the kernel body is still pyir form here; the pipeline's
+            # C++ ``enable-pyir`` option lowers it before touching ``!lir.pipeline_state``.
+            if self.envar.enable_pyir:
+                lir_to_cute_opts.append("enable-pyir=true")
+            if lir_to_cute_opts:
+                lir_to_cute_pipeline += "{" + " ".join(lir_to_cute_opts) + "}"
+            return (
+                "builtin.module("
+                + lir_to_cute_pipeline
+                + ", cute-to-nvvm{check-inline-asm=false cubin-format=bin enable-cuda-dialect "
+                + self.compile_options.to_str()
+                + "})"
+            )
         return pipeline
 
     def preprocess_pipeline(self, pipeline: str, arch: str) -> str:
@@ -543,16 +613,18 @@ class CutlassBaseDSL(BaseDSL):
         log().info(f"GPU module: {self.gpu_module}")
         return ir.InsertionPoint(self.gpu_module.bodyRegion.blocks[0])
 
-    @staticmethod
     def generate_func_ret_op(
-        loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+        self,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        _use_extension_compilation: Optional[bool] = None,
     ) -> None:
         raise NotImplementedError(
             "generate_func_ret_op() must be implemented by subclasses."
         )
 
-    @staticmethod
     def generate_func_op(
+        self,
         arg_types: List[ir.Type],
         arg_attrs: Optional[List[ir.Attribute]],
         kernel_name: str,
@@ -568,7 +640,7 @@ class CutlassBaseDSL(BaseDSL):
         )
 
         ret = {}
-        if config.has_max_number_threads():
+        if not config.has_max_number_threads():
             block_str = ", ".join(map(str, config.block))
             has_dynamic = any(is_dynamic_expression(dim) for dim in config.block)
             if not has_dynamic:
@@ -650,6 +722,11 @@ class CutlassBaseDSL(BaseDSL):
         dims_str = ",".join(map(str, normalized_dims))
         return ir.Attribute.parse(f'#cute.shape<"({dims_str})">')
 
+    @staticmethod
+    def _cluster_dims_are_static(dims: Sequence[Any]) -> bool:
+        """Return whether every cluster dimension is known at trace time."""
+        return not is_dynamic_expression(list(dims))
+
     @classmethod
     def _get_cluster_kernel_attrs(
         cls, config: BaseDSL.LaunchConfig
@@ -662,6 +739,14 @@ class CutlassBaseDSL(BaseDSL):
         if config.has_fallback_cluster:
             assert config.cluster is not None
             assert config.fallback_cluster is not None
+            # Preferred and fallback shapes must both be encoded as static kernel
+            # attributes. Dynamic dimensions instead flow through the runtime
+            # launch configuration, so neither attribute can be attached.
+            if not (
+                cls._cluster_dims_are_static(config.cluster)
+                and cls._cluster_dims_are_static(config.fallback_cluster)
+            ):
+                return {}
             if tuple(config.cluster) == tuple(config.fallback_cluster):
                 return {
                     "cluster_shape": cls._materialize_cluster_shape_attr(
@@ -679,6 +764,10 @@ class CutlassBaseDSL(BaseDSL):
 
         if config.has_cluster:
             assert config.cluster is not None
+            # Dynamic cluster dimensions are carried by the runtime launch and
+            # cannot be represented by the static cluster_shape attribute.
+            if not cls._cluster_dims_are_static(config.cluster):
+                return {}
             return {
                 "cluster_shape": cls._materialize_cluster_shape_attr(
                     config.cluster, "cluster"
@@ -1091,8 +1180,10 @@ class CutlassBaseDSL(BaseDSL):
             )
 
         if preferred_cluster_size_x is not None:
-            preferred_cluster_size_y = preferred_cluster_size_y or 1
-            preferred_cluster_size_z = preferred_cluster_size_z or 1
+            if preferred_cluster_size_y is None:
+                preferred_cluster_size_y = 1
+            if preferred_cluster_size_z is None:
+                preferred_cluster_size_z = 1
             preferred_x = Int32(preferred_cluster_size_x).ir_value(loc=loc, ip=ip)
             preferred_y = Int32(preferred_cluster_size_y).ir_value(loc=loc, ip=ip)
             preferred_z = Int32(preferred_cluster_size_z).ir_value(loc=loc, ip=ip)
@@ -1105,10 +1196,10 @@ class CutlassBaseDSL(BaseDSL):
         )
 
         op = cuda_dialect.launch_ex(
-            cuda_dialect.ResultType.get(),
             kernel,
             cfg,
             kernel_operands,
+            results=[cuda_dialect.ResultType.get()],
             # This is true for any DSL generated kernel
             assume_kernel_attr=ir.Attribute.parse("#cuda.assume_kernel_attr<true>"),
             loc=loc,
@@ -1176,6 +1267,7 @@ class CutlassBaseDSL(BaseDSL):
             def __init__(self, dsl: CutlassBaseDSL):
                 super().__init__()
                 self.dsl = dsl
+                self._uses_extension_compilation = False
 
             def generate_func_op(
                 self,
@@ -1189,6 +1281,9 @@ class CutlassBaseDSL(BaseDSL):
                 self.func_op = self.dsl.generate_func_op(
                     arg_types, arg_attrs, kernel_name, loc
                 )
+                self._uses_extension_compilation = getattr(
+                    self.dsl, "_current_func_uses_extension_compilation", False
+                )
                 self.arg_types = arg_types
                 return self.func_op
 
@@ -1197,7 +1292,11 @@ class CutlassBaseDSL(BaseDSL):
                 loc: Optional[ir.Location] = None,
                 ip: Optional[ir.InsertionPoint] = None,
             ) -> None:
-                self.dsl.generate_func_ret_op(loc, ip)
+                self.dsl.generate_func_ret_op(
+                    loc,
+                    ip,
+                    _use_extension_compilation=self._uses_extension_compilation,
+                )
 
             def get_func_body_start(self) -> ir.Block:
                 assert self.func_op is not None, "Invalid func_op is not expected!"
@@ -1585,7 +1684,7 @@ class CutlassBaseDSL(BaseDSL):
                 if _is_cutlass_array(rebuilt):
                     ir_arg.append(rebuilt)
                 else:
-                    from cutlass.base_dsl.array import make_array_view
+                    from ..base_dsl.array import make_array_view
 
                     ir_arg.append(make_array_view(rebuilt))
             elif _is_cutlass_pointer_annotation(arg_spec) and _is_cute_pointer_like(
@@ -1623,10 +1722,28 @@ class CutlassBaseDSL(BaseDSL):
 # =============================================================================
 
 
+class CuTeDSLEnvironmentManager(EnvironmentVarManager):
+    """Adds environment variables specific to CuTeDSL compilation.
+
+    Routing options:
+    - CUTE_DSL_USE_EXTENSION_COMPILER: Use extension compilation by default for
+      programs without an explicit per-compile opt-out (default: False).
+    """
+
+    def __init__(self, prefix: str = "CUTE_DSL") -> None:
+        super().__init__(prefix)
+        self.use_extension_compiler = get_bool_env_var(
+            f"{prefix}_USE_EXTENSION_COMPILER", False
+        )
+
+
 class CuTeDSL(CutlassBaseDSL):
     """
     This is a concrete DSL subclass for the CuTe dialect.
     """
+
+    _env_class = CuTeDSLEnvironmentManager
+    envar: CuTeDSLEnvironmentManager
 
     def __init__(self) -> None:
         name = "CUTE_DSL"
@@ -1663,6 +1780,36 @@ class CuTeDSL(CutlassBaseDSL):
         # not this override.
         frame = inspect.currentframe().f_back  # type: ignore[union-attr]
         return BaseDSL.jit_runner(target_cls, "_func", frame, *dargs, **dkwargs)
+
+    def _should_use_extension_compilation(self) -> bool:
+        """Return whether the current compilation uses the extension compiler."""
+        if self.compile_options.options[compiler.DisableCuteExtCompile].value:
+            return False
+
+        # The rollout gate only controls the otherwise-unqualified default;
+        # all explicit and architecture-wide opt-outs above win.
+        return self.envar.use_extension_compiler
+
+    def _get_pipeline(self, pipeline: Optional[str]) -> str:
+        if self._should_use_extension_compilation():
+            return self._get_extension_pipeline(pipeline)
+        return super()._get_pipeline(pipeline)
+
+    def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
+        ret = super()._generate_kernel_attrs(config)
+        if not self._should_use_extension_compilation():
+            return ret
+
+        ret.update(self._get_cluster_kernel_attrs(config))
+
+        arch_enum = self.get_arch_enum()
+        sm_match = re.match(r"(sm_\d+)", arch_enum.to_string())
+        if sm_match:
+            ret["cc_attr"] = ir.Attribute.parse(
+                f"#core.compute_capability<arch = {sm_match.group(1)}>"
+            )
+
+        return ret
 
     @classmethod
     def kernel(cls, *dargs: Any, **dkwargs: Any) -> Any:
@@ -1708,8 +1855,27 @@ class CuTeDSL(CutlassBaseDSL):
             target_cls, frame, *dargs, **dkwargs
         )
 
-    @staticmethod
     def generate_func_op(
+        self,
+        arg_types: List[ir.Type],
+        arg_attrs: Optional[List[ir.Attribute]],
+        kernel_name: str,
+        loc: Optional[ir.Location] = None,
+    ) -> ir.Operation:
+        if not self._should_use_extension_compilation():
+            self._current_func_uses_extension_compilation = False
+            return self._generate_cuda_kernel_op(arg_types, arg_attrs, kernel_name, loc)
+
+        self._current_func_uses_extension_compilation = True
+        return CuteExperimentalDSL.generate_func_op(
+            arg_types,
+            arg_attrs,
+            kernel_name,
+            loc,
+        )
+
+    @staticmethod
+    def _generate_cuda_kernel_op(
         arg_types: List[ir.Type],
         arg_attrs: Optional[List[ir.Attribute]],
         kernel_name: str,
@@ -1733,10 +1899,19 @@ class CuTeDSL(CutlassBaseDSL):
             func_op.arg_attrs = arg_attrs
         return func_op
 
-    @staticmethod
     def generate_func_ret_op(
-        loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+        self,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        _use_extension_compilation: Optional[bool] = None,
     ) -> Any:
+        uses_extension_compilation = (
+            _use_extension_compilation
+            if _use_extension_compilation is not None
+            else getattr(self, "_current_func_uses_extension_compilation", False)
+        )
+        if uses_extension_compilation:
+            return cutlass_lir.ReturnOp([], loc=loc, ip=ip)
         return cuda_dialect.ReturnOp([], loc=loc, ip=ip)
 
     @staticmethod
@@ -1754,6 +1929,129 @@ class CuTeDSL(CutlassBaseDSL):
         if arg_attrs is not None:
             func_op.arg_attrs = arg_attrs
         return func_op
+
+    @staticmethod
+    def _resolve_device_func_ret_types(ret_annotation: Any) -> List[ir.Type]:
+        """Convert a Python return annotation to the MLIR types for a
+        ``cuda.func`` return list.
+
+        Accepts the annotation as-is from
+        ``inspect.Signature.return_annotation``: ``inspect.Signature.empty``
+        and ``None`` map to ``[]`` (void); a DSL Numeric / type exposing
+        ``mlir_type`` (optionally callable) and a ``@native_struct`` class
+        exposing ``_struct_type`` map to a single MLIR type.
+
+        Annotations that are neither a DSL type nor a native struct are
+        rejected with :data:`DiagId.TYPE_DEVICE_FUNC_RETURN_INVALID` so
+        mis-typed signatures fail at trace time with an author-facing
+        diagnostic rather than being silently lowered as void (which would
+        drop the result and break the device ABI).  Shared by
+        :meth:`_device_func` and :meth:`instantiate` so both code paths
+        accept the exact same return-type vocabulary and reject the same
+        mistakes identically.
+        """
+        if ret_annotation is None or ret_annotation is inspect.Signature.empty:
+            return []
+        if hasattr(ret_annotation, "mlir_type"):
+            mt = ret_annotation.mlir_type
+            return [mt() if callable(mt) else mt]
+        if hasattr(ret_annotation, "_struct_type"):
+            return [ret_annotation._struct_type]
+        raise DSLUserCodeError(DiagId.TYPE_DEVICE_FUNC_RETURN_INVALID)
+
+    @staticmethod
+    def _extract_single_ret_value(
+        result: Any,
+        ret_types: List[ir.Type],
+    ) -> Optional[Any]:
+        """Decode a Python return object into the single ``ir.Value`` that
+        should feed a ``cuda.return`` / ``func.return`` terminator.
+
+        Returns ``None`` when ``ret_types`` is empty (void signature).  For
+        a non-void signature, decodes ``result`` with the same conventions
+        used elsewhere in the DSL: DSL Numeric wrappers via ``ir_value()``,
+        native structs via ``__extract_mlir_values__`` (which must produce
+        exactly one value), and otherwise a raw ``ir.Value`` (or a value
+        coercible to one).
+
+        A ``None`` result for a non-void function indicates a missing
+        ``return`` in the user body
+        (:data:`DiagId.TYPE_DEVICE_FUNC_RETURN_NONE`), and a struct that
+        decodes to anything other than one MLIR value is likewise rejected
+        (:data:`DiagId.TYPE_DEVICE_FUNC_RETURN_COUNT`) so the failure is
+        reported at trace time with an author-facing diagnostic rather
+        than later by the func / cuda dialect verifier.  Shared by
+        :meth:`_emit_device_func_ret_op` (cuda.return) and
+        :meth:`_emit_host_func_ret_op` (func.return) so both targets agree
+        on how a Python return object maps to a single MLIR SSA value.
+        """
+        if not ret_types:
+            return None
+        if result is None:
+            raise DSLUserCodeError(DiagId.TYPE_DEVICE_FUNC_RETURN_NONE)
+        if hasattr(result, "ir_value"):
+            return result.ir_value()
+        if hasattr(result, "__extract_mlir_values__"):
+            extracted_vals = result.__extract_mlir_values__()
+            if len(extracted_vals) != 1:
+                raise DSLUserCodeError(
+                    DiagId.TYPE_DEVICE_FUNC_RETURN_COUNT,
+                    count=len(extracted_vals),
+                )
+            return extracted_vals[0]
+        return result
+
+    @staticmethod
+    def _emit_device_func_ret_op(
+        result: Any,
+        ret_types: List[ir.Type],
+        loc: Optional[ir.Location] = None,
+    ) -> None:
+        """Emit a ``cuda.return`` op closing a ``cuda.func`` body.
+
+        ``ret_types`` selects between the void form (``cuda.return``) and
+        the value-returning form (``cuda.return %v``).  The caller is
+        responsible for having declared the ``cuda.func`` signature with
+        matching return types — passing a non-empty ``ret_types`` here
+        with a void-signed func op would fail later in the verifier.
+
+        Value decoding is delegated to :meth:`_extract_single_ret_value`
+        so ``_device_func``, :meth:`_instantiate_device` and
+        :meth:`_instantiate_host` all agree on the return-value ABI.
+        """
+        ret_val = CuTeDSL._extract_single_ret_value(result, ret_types)
+        if ret_val is None:
+            cuda_dialect.ReturnOp([], loc=loc)
+        else:
+            cuda_dialect.ReturnOp([ret_val], loc=loc)
+
+    @staticmethod
+    def _reject_lir_ops_in_device_func(module: ir.Module, function_name: str) -> None:
+        """Reject any LIR-dialect op in a device-function module.
+
+        Device functions bypass the LIR pass pipeline and compile with the
+        standard cute-to-nvvm pipeline (see ``_device_func_impl``), so a
+        ``lir.*`` op in the body has no lowering pass in front of it and would
+        otherwise fail late with an opaque partial-conversion error. Detect it
+        up front and raise a clear, actionable user error instead. Matching by
+        the ``lir.`` dialect prefix covers every LIR op; no ``lir.*`` op is
+        expected in a well-formed device-function module.
+        """
+        offending: List[str] = []
+
+        def _check(op: Any) -> ir.WalkResult:
+            if op.name.startswith("lir."):
+                offending.append(op.name)
+            return ir.WalkResult.ADVANCE
+
+        module.operation.walk(_check)
+        if offending:
+            # The offending op is a `lir.*` op internally, but that dialect name
+            # is not user-facing; the diagnostic refers to it as a cute_ext op.
+            raise DSLUserCodeError(
+                DiagId.UNSUP_CUTE_EXT_OP_IN_DEVICE_FUNC,
+                function_name=function_name,
+            )
 
     def _device_func(
         self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any
@@ -1865,20 +2163,11 @@ class CuTeDSL(CutlassBaseDSL):
                     except Exception:
                         pass
 
-                # Resolve return types from annotation.
-                # Mirrors _annotation_to_mlir_type: handles callable mlir_type
-                # (some DSL types) and the _struct_type fallback (@native_struct).
-                ret_types = []
-                if ret_annotation is not None:
-                    if hasattr(ret_annotation, "mlir_type"):
-                        mt = ret_annotation.mlir_type
-                        ret_types = [mt() if callable(mt) else mt]
-                    elif hasattr(ret_annotation, "_struct_type"):
-                        ret_types = [ret_annotation._struct_type]
-                    else:
-                        raise DSLUserCodeError(
-                            DiagId.TYPE_DEVICE_FUNC_RETURN_INVALID,
-                        )
+                # Resolve return types from the Python annotation.  Shared
+                # with cute.instantiate so the nested device compile here and
+                # the standalone device compile agree on the ABI and reject
+                # the same mistyped annotations identically.
+                ret_types = self._resolve_device_func_ret_types(ret_annotation)
 
                 loc = self.get_ir_location(setup.location)
                 module = ir.Module.create(loc=loc)
@@ -1912,27 +2201,11 @@ class CuTeDSL(CutlassBaseDSL):
                             with isolated_region():
                                 result = funcBody(*ir_args, **ir_kwargs)
 
-                            # Generate return op
-                            if ret_types:
-                                if result is None:
-                                    raise DSLUserCodeError(
-                                        DiagId.TYPE_DEVICE_FUNC_RETURN_NONE,
-                                    )
-                                if hasattr(result, "ir_value"):
-                                    ret_val = result.ir_value()
-                                elif hasattr(result, "__extract_mlir_values__"):
-                                    extracted_vals = result.__extract_mlir_values__()
-                                    if len(extracted_vals) != 1:
-                                        raise DSLUserCodeError(
-                                            DiagId.TYPE_DEVICE_FUNC_RETURN_COUNT,
-                                            count=len(extracted_vals),
-                                        )
-                                    ret_val = extracted_vals[0]
-                                else:
-                                    ret_val = result
-                                cuda_dialect.ReturnOp([ret_val], loc=loc)
-                            else:
-                                cuda_dialect.ReturnOp([], loc=loc)
+                            # Emit the cuda.return terminator (shared with
+                            # cute.instantiate): void for an empty ret_types,
+                            # value-bearing otherwise, rejecting a missing
+                            # return for a non-void signature.
+                            self._emit_device_func_ret_op(result, ret_types, loc=loc)
 
                 # Increment kernel count so the gpu.module is not removed
                 self.num_kernels += 1
@@ -1950,17 +2223,27 @@ class CuTeDSL(CutlassBaseDSL):
                 self._run_trace_finalize_hooks(module, setup.function_name)
                 module = self.build_module(module, setup.function_name)
 
+                # Device functions skip the LIR pipeline, so reject any LIR op
+                # here with a clear error rather than failing late in
+                # cute-to-nvvm, which cannot lower LIR ops.
+                self._reject_lir_ops_in_device_func(module, setup.function_name)
+
                 # dryrun: generate IR and header, skip compilation
                 if self.envar.dryrun:
                     print(device_header)
                     return result
 
                 module_hash = self.get_module_hash(module, setup.function_name)
+                # Device functions have no kernel launch and need no LIR
+                # lowering, so always use the standard cute-to-nvvm pipeline.
+                # Resolving via CutlassBaseDSL bypasses the experimental LIR
+                # pipeline override while still honoring an explicit pipeline.
+                device_pipeline = CutlassBaseDSL._get_pipeline(self, setup.pipeline)
                 jit_function = self.compile_and_cache(
                     module,
                     module_hash,
                     setup.function_name,
-                    setup.pipeline,
+                    device_pipeline,
                     setup.sig,
                     setup.no_cache,
                     no_jit_engine=True,
@@ -1974,7 +2257,8 @@ class CuTeDSL(CutlassBaseDSL):
                 if cubin_path:
                     obj_path = cubin_path.rsplit(".cubin", 1)[0] + ".o"
                     try:
-                        os.rename(cubin_path, obj_path)
+                        # os.replace: Windows rename raises if the .o exists.
+                        os.replace(cubin_path, obj_path)
                     except FileNotFoundError:
                         # Already renamed or not produced.
                         if not os.path.exists(obj_path):
@@ -2002,23 +2286,7 @@ class CuTeDSL(CutlassBaseDSL):
 
 
 class _CuteExperimentalJitCompiledFunction(CudaDialectJitCompiledFunction):
-    """JitCompiledFunction subclass for CuteExperimentalDSL.
-
-    Overrides ``__call__`` to validate that the caller supplies exactly
-    ``total_added_arguments`` extra workspace pointer arguments beyond the
-    original kernel signature.
-    """
-
-    def __call__(self, *args: Any, **kwargs: Any) -> int | None:
-        n = self.execution_args._meta.arg_count
-        n_extra = builtins.max(0, len(args) - n)
-        if n_extra != self.total_added_arguments:
-            raise DSLUserCodeError(
-                DiagId.ARG_WORKSPACE_COUNT_MISMATCH,
-                expected=self.total_added_arguments,
-                got=n_extra,
-            )
-        return super().__call__(*args, **kwargs)
+    """Compatibility subclass for ``CuteExperimentalDSL`` compiled functions."""
 
 
 # =============================================================================
@@ -2039,6 +2307,21 @@ class CuteExperimentalDSL(CutlassBaseDSL):
     # ``@cute.kernel(is_experimental=True)``).
     _is_experimental_dsl: bool = True
     JitCompiledFunction = _CuteExperimentalJitCompiledFunction
+
+    # Reuse CuTeDSL's device-function codegen (the two are siblings, so it is
+    # not inherited). Device functions compile via cute-to-nvvm, skipping LIR.
+    # The LIR-op guard is aliased too, since the aliased _device_func_impl
+    # calls it via self.
+    generate_device_func_op = staticmethod(CuTeDSL.generate_device_func_op)
+    _resolve_device_func_ret_types = staticmethod(
+        CuTeDSL._resolve_device_func_ret_types
+    )
+    _emit_device_func_ret_op = staticmethod(CuTeDSL._emit_device_func_ret_op)
+    _reject_lir_ops_in_device_func = staticmethod(
+        CuTeDSL._reject_lir_ops_in_device_func
+    )
+    _device_func_impl = CuTeDSL._device_func_impl
+    _device_func = CuTeDSL._device_func
 
     def __init__(self) -> None:
         name = "CUTE_EXPERIMENTAL_DSL"
@@ -2079,20 +2362,7 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         return ret
 
     def _get_pipeline(self, pipeline: Optional[str]) -> str:
-        if pipeline == None:
-            # Build the `lir-to-cute{...}` brace. Separate from
-            # ``compile_options.to_str()`` -- which targets
-            # ``cute-to-nvvm{...}`` -- because the two live on
-            # different pipelines.
-            lir_to_cute_opts = "enable-cuda-dialect enable-lir-func-finalization=false"
-            return (
-                "builtin.module(gpu.module(lir-to-cute{"
-                + lir_to_cute_opts
-                + "}), lir-func-finalization{enable-cuda-dialect=true require-configure-launch=false}, cute-to-nvvm{check-inline-asm=false cubin-format=bin enable-cuda-dialect "
-                + self.compile_options.to_str()
-                + "})"
-            )
-        return pipeline
+        return self._get_extension_pipeline(pipeline)
 
     @staticmethod
     def generate_func_op(
@@ -2116,6 +2386,8 @@ class CuteExperimentalDSL(CutlassBaseDSL):
                 ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
             }
         )
+        if arg_attrs is not None:
+            func_op.arg_attrs = ir.ArrayAttr.get(arg_attrs)
         # Monkey patch FuncOp to add an add_entry_block method, if not already defined.
         if not hasattr(func_op, "add_entry_block"):
 
@@ -2130,8 +2402,11 @@ class CuteExperimentalDSL(CutlassBaseDSL):
 
     @staticmethod
     def generate_func_ret_op(
-        loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        _use_extension_compilation: Optional[bool] = None,
     ) -> Any:
+        del _use_extension_compilation
         return cutlass_lir.ReturnOp([], loc=loc, ip=ip)
 
     def compile_and_cache(
@@ -2228,6 +2503,18 @@ class KernelLauncher:
         self._name_options = dsl._get_name_options(funcBody)
         self._launch_name = None
 
+        # While a host body is being traced, register so an un-launched call is
+        # reported (see `_track_deferred_kernel_launches`); capture the call
+        # site now, while the user's frame is live, for the diagnostic's caret.
+        # No active trace => a launch outside @cute.jit (LAUNCH_OUTSIDE_JIT).
+        self._launched = False
+        self._creation_loc: Tuple[
+            Optional[str], Optional[int], Optional[int], Optional[int]
+        ] = (None, None, None, None)
+        if dsl._pending_launches is not None:
+            self._creation_loc = find_user_source_location()
+            dsl._pending_launches.append(self)
+
         self._check_func_args(funcBody, *func_args, **func_kwargs)
 
     def _check_func_args(
@@ -2269,6 +2556,9 @@ class KernelLauncher:
                 DiagId.LAUNCH_OUTSIDE_JIT,
                 kernel_name=getattr(self.funcBody, "__name__", "<kernel>"),
             )
+        # A launch is being issued: this launcher is no longer a dangling
+        # `my_kernel(...)` call (see `_track_deferred_kernel_launches`).
+        self._launched = True
         launch_location = None
         if self.dsl.compile_options.debug_launch_check:
             launch_filename, launch_lineno, launch_col, _ = find_user_source_location()
@@ -2324,42 +2614,18 @@ class KernelLauncher:
 # =============================================================================
 # Utils
 # =============================================================================
-def is_read_only_object(item: Any, arg_name: Optional[str] = None) -> bool:
-    """
-    Check if an item is a read-only object.
-
-    A read-only object is either a frozen dataclass or a method receiver
-    (``self``) whose class does not opt in to ``self`` threading via the
-    ``_dsl_thread_self_in_staged_cf`` class attribute.
-    """
-    if is_frozen_dataclass(item):
-        return True
-    if arg_name is not None and arg_name == "self":
-        # Threading `self` is opt-in: carrying every receiver through staged
-        # control flow rebinds the shared Python object to region-internal
-        # SSA values, which sibling regions then read ("operand does not
-        # dominate this use"). Classes that mutate state reachable through
-        # `self` inside dynamic regions set the flag (e.g. task_scheduling's
-        # Task).
-        return not getattr(type(item), "_dsl_thread_self_in_staged_cf", False)
-    return False
-
-
-def _filter_readonly_objects(
-    iter_args: List[Any],
-    items_to_filter: List[Any],
-    full_write_args_count: int,
-    arg_names: Optional[List[str]] = None,
+def _filter_readonly_frozen_dataclass(
+    iter_args: List[Any], items_to_filter: List[Any], full_write_args_count: int
 ) -> List[Any]:
     """
-    Filter items based on whether corresponding iter_args are read-only objects.
+    Filter items based on whether corresponding iter_args are frozen dataclasses.
 
     This function filters items (which can be values or names) based on the same
     logic: keep items if they correspond to full-write arguments (index < full_write_args_count)
-    or if the corresponding iter_arg is not a read-only object.
+    or if the corresponding iter_arg is not a frozen dataclass.
 
     Args:
-        iter_args: List of arguments to check for read-only object status
+        iter_args: List of arguments to check for frozen dataclass status
         items_to_filter: List of items to filter (values or names)
         full_write_args_count: Number of arguments that are always written (not read-only)
 
@@ -2367,103 +2633,79 @@ def _filter_readonly_objects(
         Filtered list of items
 
     Examples:
-        # Filter values (original remove_read_only_objects behavior)
-        filtered_values = _filter_readonly_objects(iter_args, iter_args, full_write_args_count)
+        # Filter values (original remove_read_only_frozen_dataclass behavior)
+        filtered_values = _filter_readonly_frozen_dataclass(iter_args, iter_args, full_write_args_count)
 
-        # Filter names (original filter_readonly_objects_names behavior)
-        filtered_names = _filter_readonly_objects(iter_args, iter_args_names, full_write_args_count)
+        # Filter names (original filter_readonly_frozen_dataclass_names behavior)
+        filtered_names = _filter_readonly_frozen_dataclass(iter_args, iter_args_names, full_write_args_count)
     """
-
-    # Callers may have no (or fewer) names than values -- hand-written
-    # selector calls pass write_args without write_args_names. No name
-    # information means no receiver to gate: keep the pre-existing behavior.
     return [
         item
         for i, item in enumerate(items_to_filter)
-        if i < full_write_args_count
-        or not is_read_only_object(
-            iter_args[i],
-            arg_names[i] if arg_names is not None and i < len(arg_names) else None,
-        )
+        if i < full_write_args_count or not is_frozen_dataclass(iter_args[i])
     ]
 
 
-def remove_readonly_objects(
-    iter_args: List[Any],
-    full_write_args_count: int,
-    arg_names: List[str],
+def remove_read_only_frozen_dataclass(
+    iter_args: List[Any], full_write_args_count: int
 ) -> List[Any]:
-    """Filter out read-only objects arguments that are not full-write arguments."""
-    return _filter_readonly_objects(
-        iter_args,
-        iter_args,
-        full_write_args_count,
-        arg_names if len(arg_names) > 0 else None,
+    """Filter out frozen dataclass arguments that are not full-write arguments."""
+    return _filter_readonly_frozen_dataclass(
+        iter_args, iter_args, full_write_args_count
     )
 
 
-def filter_readonly_objects_names(
-    iter_args: List[Any],
-    iter_args_names: List[str],
-    full_write_args_count: int,
-    arg_names: List[str],
+def filter_readonly_frozen_dataclass_names(
+    iter_args: List[Any], iter_args_names: List[str], full_write_args_count: int
 ) -> List[str]:
-    """Filter names based on whether corresponding iter_args are read-only objects."""
-    return _filter_readonly_objects(
-        iter_args,
-        iter_args_names,
-        full_write_args_count,
-        arg_names if len(arg_names) > 0 else None,
+    """Filter names based on whether corresponding iter_args are frozen dataclasses."""
+    return _filter_readonly_frozen_dataclass(
+        iter_args, iter_args_names, full_write_args_count
     )
 
 
-def insert_readonly_objects(
-    iter_args: List[Any],
-    original_iter_args: List[Any],
-    full_write_args_count: int,
-    arg_names: List[str],
+def insert_read_only_frozen_dataclass(
+    iter_args: List[Any], original_iter_args: List[Any], full_write_args_count: int
 ) -> List[Any]:
     """
-    Insert read-only objects arguments back into the iteration arguments.
+    Insert read-only frozen dataclass arguments back into the iteration arguments.
 
     This function takes the new iteration arguments and the original arguments,
-    and preserves read-only objects instances from the original arguments while
-    using the new arguments for non-read-only objects instances.
+    and preserves frozen dataclass instances from the original arguments while
+    using the new arguments for non-frozen dataclass instances.
 
     Args:
-        iter_args: New iteration arguments to use for non-read-only objects instances
+        iter_args: New iteration arguments to use for non-frozen dataclass instances
         original_iter_args: Original iteration arguments to preserve frozen dataclass instances from
         full_write_args_count: Number of arguments that are always written (not read-only)
 
     Returns:
-        List of arguments with read-only objects instances preserved from original
+        List of arguments with frozen dataclass instances preserved from original
     """
     # Take full-write arguments from new iter_args
     full_write_args = (
         iter_args[:full_write_args_count] if full_write_args_count > 0 else []
     )
 
-    # Process remaining arguments: preserve read-only from original, use new
-    # for others. The classification must match the filtering side exactly or
-    # the flattened leaf counts diverge.
-    new_arg_iter = iter(iter_args[full_write_args_count:])
+    # Process remaining arguments: preserve frozen dataclass from original, use new for others
+    remaining_original = original_iter_args[full_write_args_count:]
+    remaining_new = iter_args[full_write_args_count:]
+
+    def process_remaining_arg(original_arg: object, new_arg_iter: Any) -> object:
+        """Process a single remaining argument, preserving frozen dataclass if present"""
+        return original_arg if is_frozen_dataclass(original_arg) else next(new_arg_iter)
+
+    # Use zip to pair original args with new args, then map the processing function
+    new_arg_iter = iter(remaining_new)
     processed_remaining = [
-        orig_arg
-        if is_read_only_object(orig_arg, arg_names[i] if i < len(arg_names) else None)
-        else next(new_arg_iter)
-        for i, orig_arg in enumerate(
-            original_iter_args[full_write_args_count:], start=full_write_args_count
-        )
+        process_remaining_arg(orig_arg, new_arg_iter) for orig_arg in remaining_original
     ]
 
     return full_write_args + processed_remaining
 
 
 def unpack_to_irvalue(
-    mixed_values: List[Any],
-    body_name: str,
-    full_write_args_count: int,
-    arg_names: List[str] = [],
+    mixed_values: List[Any], body_name: str, full_write_args_count: int
 ) -> Tuple[List[ir.Value], Union[PyTreeDef, Leaf]]:
     log().debug("===--- Values UNPack")
     for idx, packed in enumerate(mixed_values):
@@ -2511,7 +2753,7 @@ def unpack_to_irvalue(
 
     try:
         unpacked_values, _, treedef = tree_flatten(
-            remove_readonly_objects(mixed_values, full_write_args_count, arg_names)
+            remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
         )
     except DSLTreeFlattenError as e:
         # Strip the "builtins." prefix so the author sees a plain type name.
@@ -2547,7 +2789,6 @@ def pack_from_irvalue(
     pytree_def: PyTreeDef,
     mixed_values: List[Any],
     full_write_args_count: int,
-    arg_names: List[str] = [],
 ) -> List[Any]:
     """
     Packs MLIR values into a list of mixed values.
@@ -2559,8 +2800,8 @@ def pack_from_irvalue(
     log().debug("------------------ ")
 
     unflattened = tree_unflatten(pytree_def, ir_values)
-    return insert_readonly_objects(
-        unflattened, mixed_values, full_write_args_count, arg_names
+    return insert_read_only_frozen_dataclass(
+        unflattened, mixed_values, full_write_args_count
     )
 
 
@@ -3413,7 +3654,9 @@ def _lte_gte(
         for l, r in zip(lhs, rhs):
             is_equal = equal(l, r)
             mask.append(not_(or_(is_equal, unequal_found)))
-            unequal_found = not_(is_equal)
+            unequal_found = typing_cast(
+                Union[Numeric, bool], or_(unequal_found, not_(is_equal))
+            )
             comp_results.append(_lte_gte(l, r, op))
 
         result = any_(and_(r, m) for r, m in zip(comp_results, mask))

@@ -19,16 +19,39 @@ pipeline barriers.  It enables:
   their own member; one consumer waits for all of them.
 - **Fork** (1 producer → N consumers): one producer fills all members;
   multiple consumers each read their own member.
+- **FusedMerge** (N producers → 1 consumer): like ``Merge`` but with a
+  single shared full barrier instead of one per producer.
 
 Barrier Layout (Heterogeneous)
 ------------------------------
-For N members with S pipeline stages::
+
+``Merge`` (N producers, 1 consumer) with S pipeline stage::
 
     [full_0 × S] [full_1 × S] … [full_{N-1} × S] [shared_empty × S]
     Total entries: (N + 1) × S
 
 Each member's pipeline object receives a pointer to its dedicated full
 barrier section and the shared empty barrier.
+
+``Fork`` (1 producer, N consumers) — shared full barrier,
+per-member empty barriers::
+
+    [shared_full × S] [empty_0 × S] [empty_1 × S] … [empty_{N-1} × S]
+    Total entries: (N + 1) × S
+
+Each member's pipeline object receives a pointer to the shared full
+barrier and its dedicated empty barrier section.
+
+Both layouts use ``(N + 1) × S`` barrier entries total.
+
+``FusedMerge`` (N producers, 1 consumer) — shared full AND shared
+empty barrier::
+
+    [shared_full × S] [shared_empty × S]
+    Total entries: 2 × S
+
+Every member's pipeline object receives a pointer to the shared full
+barrier and the shared empty barrier.
 
 Allowed Pipeline Types
 ----------------------
@@ -124,6 +147,9 @@ class PipelineGroup(MemoryResource):
       the shared consumer task calls ``group.release()`` once.
     * ``Fork`` collapses the producer side. Members release individually, and
       the shared producer task calls ``group.commit()`` once.
+    * ``FusedMerge`` collapses both sides under shared barriers. Members
+      commit individually, and the shared consumer task calls ``group.wait()``
+      and ``group.release()`` once.
 
     ``PipelineGroup``:
 
@@ -148,6 +174,7 @@ class PipelineGroup(MemoryResource):
     mode : PipelineGroupMode
         ``Merge`` - N producers, 1 consumer; collapse the consumer side.
         ``Fork`` - 1 producer, N consumers; collapse the producer side.
+        ``FusedMerge`` - N producers, 1 consumer; collapse both sides.
     """
 
     members: List["MemoryResource"] = field(default_factory=list)
@@ -167,6 +194,16 @@ class PipelineGroup(MemoryResource):
             self.pipeline_config = self._derive_merged_config()
         else:
             self._validate_explicit_config()
+        # FusedMerge with interleaved stride is not supported.
+        if (
+            self.mode == PipelineGroupMode.FusedMerge
+            and self.pipeline_config is not None
+            and self.pipeline_config.has_interleaved_stride
+        ):
+            raise ValueError(
+                f"Not supported: FusedMerge group '{self.name}' "
+                f"cannot use interleaved strides."
+            )
         # Pre-resolve the state source for Merge members so barrier ops
         # inside ``@cute.jit`` regions use a uniform attribute access
         # ``resource.state_src`` (see ``MemoryResource.state_src``).
@@ -175,7 +212,10 @@ class PipelineGroup(MemoryResource):
         # The canonical pipeline state for Merge members lives on the group
         # (``MemoryResource.state_src`` derives it from ``pipeline_group``);
         # Fork members keep their own state.
-        if self.mode == PipelineGroupMode.Merge:
+        if self.mode in (
+            PipelineGroupMode.Merge,
+            PipelineGroupMode.FusedMerge,
+        ):
             for m in self.members:
                 m._state_src_owner = self
 
@@ -208,11 +248,10 @@ class PipelineGroup(MemoryResource):
     def group_pipeline(self) -> cutlass.Constexpr:
         """Access the first member's pipeline for group-level ops.
 
-        Group-level barrier operations (ConsumerRelease for Merge,
-        ProducerCommit for Fork) need a pipeline object to call
-        ``consumer_release`` / ``producer_commit``.  Instead of aliasing
-        ``self.pipeline`` (which breaks under ``inject_leaves``), this
-        property reads the first member's pipeline on demand.
+        Group-level barrier operations need a pipeline object to call
+        the underlying barrier API. Instead of aliasing ``self.pipeline``
+        (which breaks under ``inject_leaves``), this property reads the
+        first member's pipeline on demand.
         """
         return self.members[0].pipeline
 
@@ -230,6 +269,14 @@ class PipelineGroup(MemoryResource):
             if m.pipeline_config is not None
         }
         return len(types) > 1
+
+    @property
+    def num_barriers_per_stage(self) -> int:
+        """Number of distinct mbarriers this group's layout uses per stage."""
+        if self.mode == PipelineGroupMode.FusedMerge:
+            return 2
+        else:
+            return len(self.members) + 1
 
     # ── Config derivation / validation ────────────────────────────────
 
@@ -254,6 +301,10 @@ class PipelineGroup(MemoryResource):
                 raise ValueError(
                     "PipelineGroup members have mismatched advance_on_wait."
                 )
+            if cfg.advance_on_acquire != ref.advance_on_acquire:
+                raise ValueError(
+                    "PipelineGroup members have mismatched advance_on_acquire."
+                )
             if cfg.interleave_strides != ref.interleave_strides:
                 raise ValueError(
                     "PipelineGroup members have mismatched interleave_strides: "
@@ -264,17 +315,51 @@ class PipelineGroup(MemoryResource):
                     "PipelineGroup members have mismatched cta_layout_vmnk: "
                     f"{ref.cta_layout_vmnk} vs {cfg.cta_layout_vmnk}."
                 )
-            if cfg.num_bytes_per_warp_per_cta != ref.num_bytes_per_warp_per_cta:
-                raise ValueError(
-                    "PipelineGroup members have mismatched "
-                    "num_bytes_per_warp_per_cta: "
-                    f"{ref.num_bytes_per_warp_per_cta} vs "
-                    f"{cfg.num_bytes_per_warp_per_cta}."
-                )
             if cfg.mcast_mode_mn != ref.mcast_mode_mn:
                 raise ValueError(
                     "PipelineGroup members have mismatched mcast_mode_mn: "
                     f"{ref.mcast_mode_mn} vs {cfg.mcast_mode_mn}."
+                )
+            if (
+                self.mode in (PipelineGroupMode.Fork, PipelineGroupMode.FusedMerge)
+                and cfg.producer_signaling_threads != ref.producer_signaling_threads
+            ):
+                raise ValueError(
+                    f"{self.mode.value} group members have mismatched "
+                    f"producer_signaling_threads: "
+                    f"{ref.producer_signaling_threads} "
+                    f"vs {cfg.producer_signaling_threads}."
+                )
+            if (
+                self.mode in (PipelineGroupMode.Merge, PipelineGroupMode.FusedMerge)
+                and cfg.consumer_signaling_threads != ref.consumer_signaling_threads
+            ):
+                raise ValueError(
+                    f"{self.mode.value} group members have mismatched "
+                    f"consumer_signaling_threads: "
+                    f"{ref.consumer_signaling_threads} "
+                    f"vs {cfg.consumer_signaling_threads}."
+                )
+            cfg_consumer_wait_signaling_threads = (
+                cfg.consumer_signaling_threads
+                if cfg.consumer_wait_signaling_threads is None
+                else cfg.consumer_wait_signaling_threads
+            )
+            ref_consumer_wait_signaling_threads = (
+                ref.consumer_signaling_threads
+                if ref.consumer_wait_signaling_threads is None
+                else ref.consumer_wait_signaling_threads
+            )
+            if (
+                self.mode == PipelineGroupMode.FusedMerge
+                and cfg_consumer_wait_signaling_threads
+                != ref_consumer_wait_signaling_threads
+            ):
+                raise ValueError(
+                    f"{self.mode.value} group members have mismatched "
+                    f"consumer_wait_signaling_threads: "
+                    f"{ref_consumer_wait_signaling_threads} "
+                    f"vs {cfg_consumer_wait_signaling_threads}."
                 )
 
         all_bytes = [c.num_bytes for c in cfgs]
@@ -339,15 +424,24 @@ class PipelineGroup(MemoryResource):
                 f"consumer kinds: {consumer_kinds}."
             )
 
+        # ``FusedMerge`` shares the ``Merge`` topology.
+        # Use ``effective_mode`` = ``Merge`` for the derivation below so
+        # the checks and size math match ``Merge``.
+        effective_mode = (
+            PipelineGroupMode.Merge
+            if self.mode == PipelineGroupMode.FusedMerge
+            else self.mode
+        )
+
         if len(producer_kinds) > 1:
             derived_mode = PipelineGroupMode.Merge
         elif len(consumer_kinds) > 1:
             derived_mode = PipelineGroupMode.Fork
         else:
-            derived_mode = self.mode
+            derived_mode = effective_mode
 
         member_types = {c.pipeline_type for c in cfgs}
-        if len(member_types) > 1 and self.mode != derived_mode:
+        if len(member_types) > 1 and effective_mode != derived_mode:
             raise ValueError(
                 f"PipelineGroup mode={self.mode.value} contradicts the "
                 f"derived topology ({derived_mode.value}) from member "
@@ -464,6 +558,7 @@ class PipelineGroup(MemoryResource):
             cta_layout_vmnk=ref.cta_layout_vmnk,
             producer_signaling_threads=ref.producer_signaling_threads,
             consumer_signaling_threads=ref.consumer_signaling_threads,
+            consumer_wait_signaling_threads=ref.consumer_wait_signaling_threads,
             async_producer_op=(
                 ref.async_producer_op
                 if merged_pipeline_type == PipelineType.AsyncAsync
@@ -534,16 +629,12 @@ class PipelineGroup(MemoryResource):
     def create(self) -> None:
         """Create pipeline(s) for this group and assign to members.
 
-        Always uses per-member barriers to avoid double-arming issues
-        when multiple producers/consumers call acquire on the same
-        shared pipeline.  The layout depends on the mode:
-
-        - *Merge*: per-member full barriers + 1 shared empty barrier.
-        - *Fork*: 1 shared full barrier + per-member empty barriers.
+        Merge/Fork use per-member barriers. FusedMerge uses shared barriers
+        but members still have distinct pipelines to arrive with their own
+        op conventions.
 
         A per-member pipeline object of the correct type is constructed
-        and assigned to ``m.pipeline``.  The group's ``self.pipeline``
-        is also set for group-level operations (e.g. ``producer_tail``).
+        and assigned to ``m.pipeline``.
         """
         if self.pipeline_config is None:
             return
@@ -568,7 +659,10 @@ class PipelineGroup(MemoryResource):
 
             [shared_full × S] [empty_0 × S] [empty_1 × S] … [empty_{N-1} × S]
 
-        Both layouts use ``(N + 1) × S`` barrier entries total.
+        **FusedMerge** (N producers, 1 consumer) — shared full AND shared
+        empty barrier::
+
+            [shared_full × S] [shared_empty × S]
 
         Fork caveat: the schedule has ``ProducerAcquire`` for every
         member, but ``_producer_acquire`` in task.py treats secondary
@@ -616,7 +710,7 @@ class PipelineGroup(MemoryResource):
                     shared_empty,
                     cta_layout,
                 )
-        else:
+        elif self.mode == PipelineGroupMode.Fork:
             # ── Fork: shared full + per-member empty ─────────────
             # Shared full barrier uses the merged config (tx_count =
             # bytes for one load, producer_group = validated-equal).
@@ -636,6 +730,38 @@ class PipelineGroup(MemoryResource):
                     empty_so,
                     cta_layout,
                 )
+        elif self.mode == PipelineGroupMode.FusedMerge:
+            # ── FusedMerge: shared full + shared empty ───────────
+            # Both barriers are shared across all members.  The shared
+            # empty behaves exactly as in Merge (one consumer release
+            # unblocks every producer).  The shared full is initialized
+            # once with the combined arrive count (merged producer_group)
+            # and combined transaction bytes; each member then arrives on
+            # it with its own op convention via a recast view of the same
+            # storage (no re-init, no double-arm of the init).
+            shared_empty = self._make_empty_sync_object(
+                cfg,
+                base_ptr + S,
+            )
+            shared_full = self._make_full_sync_object(
+                cfg,
+                base_ptr,
+            )
+            for m in self.members:
+                assert m.pipeline_config is not None
+                member_full = self._make_member_full_view(
+                    shared_full,
+                    m.pipeline_config,
+                )
+                m.pipeline = self._build_member_pipeline(
+                    m,
+                    m.pipeline_config,
+                    member_full,
+                    shared_empty,
+                    cta_layout,
+                )
+        else:
+            raise ValueError(f"Unsupported pipeline group mode: {self.mode}.")
 
         # Do NOT alias self.pipeline to a member's pipeline object.
         # ``inject_leaves`` (SSA value injection after scf.if / scf.while)
@@ -646,8 +772,7 @@ class PipelineGroup(MemoryResource):
         # original snapshot → structural-mismatch DSL error.
         #
         # Leave self.pipeline = None.  Group-level barrier operations
-        # (ConsumerRelease / ProducerCommit) access the first member's
-        # pipeline via ``group_pipeline``.
+        # access the first member's pipeline via ``group_pipeline``.
         pass
 
     def _make_full_sync_object(
@@ -688,6 +813,52 @@ class PipelineGroup(MemoryResource):
             producer_agent,
             tx_count,
         )
+
+    def _make_member_full_view(
+        self,
+        shared_full: pipeline.SyncObject,
+        member_cfg: "PipelineConfig",
+    ) -> pipeline.SyncObject:
+        """Recast the shared full barrier to a member's producer convention.
+
+        For ``FusedMerge`` every member arrives on the *same* full barrier
+        storage, but each producer must arrive with its own op type — a
+        ``cp.async`` / thread ``arrive`` for async producers, and an
+        ``arrive_and_expect_tx`` (with the member's own transaction byte
+        count) for TMA producers.  ``recast_to_new_op_type`` produces a view
+        that shares the barrier storage and the combined arrive count of
+        ``shared_full`` **without re-initializing** it; only ``op_type`` and
+        ``tx_count`` are overridden per member.
+        """
+        _PRODUCER_OP = {
+            PipelineType.AsyncAsync: member_cfg.async_producer_op,
+            PipelineType.TmaAsync: pipeline.PipelineOp.TmaLoad,
+            PipelineType.TmaUmma: pipeline.PipelineOp.TmaLoad,
+            PipelineType.UmmaAsync: pipeline.PipelineOp.TCGen05Mma,
+            PipelineType.AsyncUmma: member_cfg.umma_consumer_producer_op,
+            PipelineType.UmmaUmma: pipeline.PipelineOp.TCGen05Mma,
+        }
+        if member_cfg.pipeline_type not in _PRODUCER_OP:
+            raise ValueError(
+                f"Unsupported pipeline_type for FusedMerge full barrier: "
+                f"{member_cfg.pipeline_type}."
+            )
+        producer_op = _PRODUCER_OP[member_cfg.pipeline_type]
+        tx_count = (
+            member_cfg.num_bytes
+            if member_cfg.pipeline_type in {PipelineType.TmaAsync, PipelineType.TmaUmma}
+            else 0
+        )
+        # Only ``MbarrierArray`` supports the storage-sharing recast; the
+        # FusedMerge full barrier is always backed by one.
+        if not isinstance(shared_full, pipeline.MbarrierArray):
+            raise TypeError(
+                f"FusedMerge full barrier must be an MbarrierArray, got "
+                f"{type(shared_full).__name__}."
+            )
+        member_view = shared_full.recast_to_new_op_type(producer_op)
+        member_view.tx_count = tx_count
+        return member_view
 
     def _make_empty_sync_object(
         self,

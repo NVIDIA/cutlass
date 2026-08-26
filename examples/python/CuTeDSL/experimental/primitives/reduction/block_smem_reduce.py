@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -33,8 +33,9 @@ Each thread block owns a small 2-D tile with ``ROWS_PER_CTA`` rows and
 ``THREADS * ITEMS_PER_LANE`` columns. Every thread loads a contiguous vector
 from the column dimension for each row, folds that vector locally with
 ``Vector.reduce``. Each warp then reduces its per-lane values with
-``prims.redux_sync`` for ``i32`` reductions and with a shuffle tree for the
-floating-point paths. The cross-warp pass uses the narrowest shared-memory
+``prims.redux_sync`` for ``i32`` reductions and sm_100a/sm_103a/sm_107a ``f32``
+min/max, falling back to a shuffle tree for the other floating-point paths.
+The cross-warp pass uses the narrowest shared-memory
 primitive available for the specialization: scalar ``prims.red`` for
 supported integer and add reductions, ATOMS-style integer-bitcast atomics for
 ``f32`` min/max, and an explicit SMEM warp-result combine for
@@ -52,9 +53,11 @@ Cross-warp reduction path:
 | ``i32``           | ``prims.redux_sync`` then       | ``prims.redux_sync`` then       | ``prims.redux_sync`` then       |
 |                   | ``prims.red`` shared::cta add   | ``prims.red`` shared::cta min   | ``prims.red`` shared::cta max   |
 +-------------------+--------------------------------+--------------------------------+--------------------------------+
-| ``f32``           | Shuffle tree then              | Shuffle tree then              | Shuffle tree then              |
-|                   | ``prims.red`` shared::cta add   | ``cute.arch.atomic_fmin``      | ``cute.arch.atomic_fmax``      |
-|                   |                                | (ATOMS-style)                  | (ATOMS-style)                  |
+| ``f32``           | Shuffle tree then              | sm_100a/103a/107a:             | sm_100a/103a/107a:             |
+|                   | ``prims.red`` shared::cta add   | ``redux.sync.f32`` then        | ``redux.sync.f32`` then        |
+|                   |                                | ``cute.arch.atomic_fmin``      | ``cute.arch.atomic_fmax``      |
+|                   |                                | else shuffle tree then         | else shuffle tree then         |
+|                   |                                | ``cute.arch.atomic_fmin``      | ``cute.arch.atomic_fmax``      |
 +-------------------+--------------------------------+--------------------------------+--------------------------------+
 | ``f16``/``bf16``  | Shuffle tree then              | Shuffle tree then              | Shuffle tree then              |
 |                   | ``prims.red`` shared::cta add   | SMEM warp-result combine       | SMEM warp-result combine       |
@@ -79,6 +82,13 @@ import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 from cutlass.experimental import primitives as prims
+from cutlass import base_dsl
+from cutlass.cutlass_dsl import BaseDSL
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 _DEFAULT_ROW_TILES: int = 4
 _ROWS_PER_CTA: int = 4
@@ -126,6 +136,37 @@ def _redux_kind(REDUCE_OP: Literal["add", "max", "min"]) -> prims.ReductionKind:
     if REDUCE_OP == "min":
         return prims.ReductionKind.MIN
     return prims.ReductionKind.MAX
+
+
+# Fast path for the f32 redux.sync.{min,max}.f32 instruction, which ptxas accepts
+# only for sm_100a/sm_103a/sm_107a. Other targets use the generic shuffle
+# butterfly.
+_F32_REDUX_ARCHS = (
+    base_dsl.Arch.sm_100a,
+    base_dsl.Arch.sm_103a,
+    base_dsl.Arch.sm_107a,
+)
+
+
+def _f32_redux_available() -> bool:
+    """Return True at compile time when the target supports redux.sync.f32."""
+    return BaseDSL._get_dsl().get_arch_enum() in _F32_REDUX_ARCHS
+
+
+def _use_f32_redux(DTYPE, REDUCE_OP) -> bool:
+    # f32 min/max only: no f32 redux-add, no f16/bf16 redux at all.
+    return DTYPE == "f32" and REDUCE_OP in ("min", "max") and _f32_redux_available()
+
+
+def _f32_redux_kind(REDUCE_OP):
+    # NOTE: default (no .NaN) ignores NaN lanes, matching cutlass.max/min for
+    # NaN-free inputs. Use nan=True on prims.redux_sync if propagation is needed.
+    return prims.ReductionKind.FMIN if REDUCE_OP == "min" else prims.ReductionKind.FMAX
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.jit
@@ -293,6 +334,10 @@ def _kernel(
         lane_out = values.reduce(REDUCE_OP)
         if cutlass.const_expr(DTYPE == "i32"):
             warp_out = prims.redux_sync(lane_out, REDUX_KIND, _FULL_MASK)
+        elif cutlass.const_expr(_use_f32_redux(DTYPE, REDUCE_OP)):
+            warp_out = prims.redux_sync(
+                lane_out, _f32_redux_kind(REDUCE_OP), _FULL_MASK
+            )
         else:
             warp_out = _warp_reduce_tree(lane_out, REDUCE_OP, DTYPE)
 
@@ -324,6 +369,11 @@ def _kernel(
             (out.iterator.raw_ptr() + row).store(smem_buf[tx])
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def _host(
     src: cute.Tensor,
@@ -345,6 +395,11 @@ def _host(
         block=(_THREADS, 1, 1),
         stream=stream,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -384,6 +439,11 @@ def compile(
     )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     row_tiles: int = _DEFAULT_ROW_TILES,
@@ -411,6 +471,11 @@ def run(
     compiled_fn(src, out, stream)
     torch.cuda.synchronize()
     return out, src
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(
@@ -461,6 +526,11 @@ def verify(
         f"ITEMS_PER_LANE={ITEMS_PER_LANE}, "
         f"REDUCE_OP={REDUCE_OP}, DTYPE={DTYPE}): PASS"
     )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:

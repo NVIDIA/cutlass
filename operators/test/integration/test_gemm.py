@@ -41,7 +41,7 @@ from cutlass.operators.metadata import (
 )
 from cutlass.operators.utils.device import device_or_env_target_sm
 
-from test_utils import assert_close_with_reference_conversion
+from test_utils import assert_close_with_reference_conversion, reference_device
 
 torch.manual_seed(2025)
 logger = logging.getLogger(__name__)
@@ -62,15 +62,16 @@ def test_gemm(
     L: int,
     fixture_toggle_tvm_ffi,
 ):
-    device = "cuda"
+    device = reference_device()
+
     ab_dtype = torch.float16
     c_dtype = torch.float16
     accumulator_type = torch.float32
     A = torch.randint(-1, 2, (L, M, K), device=device, dtype=ab_dtype)
     B = torch.randint(-1, 2, (L, K, N), device=device, dtype=ab_dtype)
-    D = torch.empty((L, M, N), device=device, dtype=c_dtype)
+    out = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
 
-    args = ops.GemmArguments(A.cuda(), B.cuda(), D.cuda(), accumulator_type)
+    args = ops.GemmArguments(A.cuda(), B.cuda(), out, accumulator_type)
 
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
     assert len(operators) > 0
@@ -81,14 +82,15 @@ def test_gemm(
 
     reference = A.float() @ B.float()
     assert_close_with_reference_conversion(
-        D,
+        out,
         reference,
-        D.dtype,
+        out.dtype,
     )
 
 
 def test_gemm_2d(fixture_toggle_tvm_ffi):
-    device = "cuda"
+    device = reference_device()
+
     ab_dtype = torch.float16
     c_dtype = torch.float16
     accumulator_type = torch.float32
@@ -97,9 +99,9 @@ def test_gemm_2d(fixture_toggle_tvm_ffi):
     K = 128
     A = torch.randint(-1, 2, (M, K), device=device, dtype=ab_dtype)
     B = torch.randint(-1, 2, (K, N), device=device, dtype=ab_dtype)
-    D = torch.empty((M, N), device=device, dtype=c_dtype)
+    out = torch.empty((M, N), device="cuda", dtype=c_dtype)
 
-    args = ops.GemmArguments(A.cuda(), B.cuda(), D.cuda(), accumulator_type)
+    args = ops.GemmArguments(A.cuda(), B.cuda(), out, accumulator_type)
 
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
 
@@ -111,9 +113,9 @@ def test_gemm_2d(fixture_toggle_tvm_ffi):
 
     reference = A.float() @ B.float()
     assert_close_with_reference_conversion(
-        D,
+        out,
         reference,
-        D.dtype,
+        out.dtype,
     )
 
 
@@ -122,9 +124,9 @@ def test_no_gemms_available():
     L = 1
     A = torch.empty((L, M, K)).to(torch.float32)
     B = torch.empty((L, K, N)).to(torch.float32)
-    D = torch.empty((L, M, N)).to(torch.float32)
+    out = torch.empty((L, M, N)).to(torch.float32)
 
-    args = ops.GemmArguments(A, B, D, accumulator_type=torch.float32)
+    args = ops.GemmArguments(A, B, out, accumulator_type=torch.float32)
     operators = ops.get_operators(args, target_sm="70")
 
     # There are currently no operators available for compute capability 70.
@@ -132,7 +134,8 @@ def test_no_gemms_available():
 
 
 def test_metadata_filter():
-    device = "cuda"
+    device = reference_device()
+
     # Test supplying metadata filter only
     def tile_size_m_filter(metadata: ops.OperatorMetadata) -> bool:
         if not isinstance(metadata.design, Sm100DesignMetadata):
@@ -149,11 +152,9 @@ def test_metadata_filter():
     # Test supplying metadata filter and arguments
     A = torch.randint(-1, 2, (1, 256, 256), device=device).to(torch.float16)
     B = torch.randint(-1, 2, (1, 256, 256), device=device).to(torch.float16)
-    D = torch.empty((1, 256, 256), device=device).to(torch.float16)
+    out = torch.empty((1, 256, 256), device="cuda").to(torch.float16)
 
-    args = ops.GemmArguments(
-        A.cuda(), B.cuda(), D.cuda(), accumulator_type=torch.float16
-    )
+    args = ops.GemmArguments(A.cuda(), B.cuda(), out, accumulator_type=torch.float16)
     operators = ops.get_operators(args=args, metadata_filter=tile_size_m_filter)
     for operator in operators:
         assert operator.metadata.design.tile_shape[0] == 64, (
@@ -171,7 +172,8 @@ def test_gemm_fake_tensor(fixture_toggle_tvm_ffi):
 
     torch._functorch.config.fake_tensor_allow_unsafe_data_ptr_access = False
 
-    device = "cuda"
+    device = reference_device()
+
     M, N, K, L = 256, 512, 128, 1
     ab_dtype = torch.float16
     c_dtype = torch.float16
@@ -180,9 +182,9 @@ def test_gemm_fake_tensor(fixture_toggle_tvm_ffi):
     with torch._subclasses.fake_tensor.FakeTensorMode():
         A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=ab_dtype)
         B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=ab_dtype)
-        D = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+        out = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
 
-    fake_args = ops.GemmArguments(A, B, D, accumulator_type)
+    fake_args = ops.GemmArguments(A, B, out, accumulator_type)
 
     operators = ops.get_operators(fake_args, target_sm=device_or_env_target_sm())
 
@@ -193,14 +195,14 @@ def test_gemm_fake_tensor(fixture_toggle_tvm_ffi):
 
     A = torch.randint(-1, 2, (L, M, K), device=device, dtype=ab_dtype)
     B = torch.randint(-1, 2, (L, K, N), device=device, dtype=ab_dtype)
-    D = torch.empty((L, M, N), device=device, dtype=c_dtype)
-    args = ops.GemmArguments(A.cuda(), B.cuda(), D.cuda(), accumulator_type)
+    out = torch.empty((L, M, N), device="cuda", dtype=c_dtype)
+    args = ops.GemmArguments(A.cuda(), B.cuda(), out, accumulator_type)
 
     operator.run(args, compiled_artifact=compiled_artifact)
 
     reference = A.float() @ B.float()
     assert_close_with_reference_conversion(
-        D,
+        out,
         reference,
-        D.dtype,
+        out.dtype,
     )

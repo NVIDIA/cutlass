@@ -220,7 +220,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     kTotal = kO0 + kSizeO
   };
 
-  static_assert(static_cast<int>(TmemAllocation::kTotal) <= TmemAllocator::Sm100TmemCapacityColumns, "using too much tmem");
+  static_assert(static_cast<int>(TmemAllocation::kTotal) <= ArchTag::kTmemCapacityColumns, "using too much tmem");
 
   struct TensorStorage {
     // to communicate max and row_sum
@@ -745,7 +745,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       }
     }
     else if (role == WarpRole::kMma) {
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
     
       if (is_mma_leader_cta) {
@@ -778,7 +778,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       //cutlass::arch::NamedBarrier((kNumComputeWarps + 1) * NumThreadsPerWarp, kNamedBarrierTmemDealloc).arrive_and_wait();
 
       //uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-      //tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+      //tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
     }
     else if (role == WarpRole::kCompute) {
       CUTLASS_PRAGMA_NO_UNROLL
@@ -816,7 +816,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     cutlass::arch::NamedBarrier((kNumComputeWarps + 1) * NumThreadsPerWarp, kNamedBarrierTmemDealloc).arrive();
     if (role == WarpRole::kMma) {
       uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-      tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+      tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
     }
 #endif
   }
