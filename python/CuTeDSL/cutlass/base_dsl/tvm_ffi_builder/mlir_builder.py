@@ -135,6 +135,8 @@ class MLIRBuilder(MLIRTypeBuilder):
     but not set the insersion point.
     """
 
+    MLIR_DYNAMIC_INDEX = -(2**31)
+
     def __init__(self) -> None:
         """Initialize the MLIR builder."""
         super().__init__()
@@ -286,7 +288,11 @@ class MLIRBuilder(MLIRTypeBuilder):
         return llvm.AddressOfOp(tp, name).result
 
     def getelementptr(
-        self, ptr: ir.Value, constant_indices: Sequence[int], elem_type: ir.Type
+        self,
+        ptr: ir.Value,
+        constant_indices: Sequence[int],
+        elem_type: ir.Type,
+        dynamic_indices: Sequence[ir.Value] = [],
     ) -> ir.Value:
         """Create a getelementptr operation.
 
@@ -294,10 +300,13 @@ class MLIRBuilder(MLIRTypeBuilder):
         ----------
         ptr : ir.Value
             The pointer to the element.
-        indices : Sequence[ir.Value]
-            The indices to the element.
+        constant_indices : Sequence[int]
+            The indices to the element. Use ``MLIR_DYNAMIC_INDEX`` as a
+            placeholder for an index taken from ``dynamic_indices`` instead.
         elem_type : ir.Type
             The type of the element.
+        dynamic_indices : Sequence[ir.Value], optional
+            Runtime index values.
 
         Returns
         -------
@@ -308,7 +317,7 @@ class MLIRBuilder(MLIRTypeBuilder):
             return llvm.getelementptr(
                 self.ptr_type,
                 ptr,
-                [],
+                dynamic_indices,
                 raw_constant_indices=ir.DenseI32ArrayAttr.get(constant_indices),
                 elem_type=elem_type,
                 **self.get_element_extra_kwargs,
@@ -319,11 +328,20 @@ class MLIRBuilder(MLIRTypeBuilder):
             return llvm.getelementptr(
                 self.ptr_type,
                 ptr,
-                [],
+                dynamic_indices,
                 raw_constant_indices=ir.DenseI32ArrayAttr.get(constant_indices),
                 elem_type=elem_type,
                 **self.get_element_extra_kwargs,
             )
+
+    def offset_ptr_bytes(self, ptr: ir.Value, byte_offset: ir.Value) -> ir.Value:
+        """Displace ``ptr`` by a runtime number of bytes."""
+        return self.getelementptr(
+            ptr,
+            [self.MLIR_DYNAMIC_INDEX],
+            self.i8_type,
+            dynamic_indices=[byte_offset],
+        )
 
     def return_(self, ret: Optional[ir.Value] = None) -> None:
         """Create a return statement."""

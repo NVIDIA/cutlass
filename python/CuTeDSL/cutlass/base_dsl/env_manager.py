@@ -415,6 +415,35 @@ def dump_sass(
         subprocess.run(tokens, stdout=sys.stderr, check=True)
 
 
+# Cache the result to avoid re-searching the same directory multiple times
+@lru_cache(maxsize=5)
+def _get_libs_cand(start: str | Path) -> str | None:
+    target_dsl_runtime_libs = {
+        "cute_dsl_runtime",
+    }
+    lib_folder_guesses = [
+        "lib",
+    ]
+
+    try:
+        from .version_info import CUDA_VERSION
+        major = CUDA_VERSION.major
+        lib_folder_guesses.append(f"cu{major}/lib")
+    except Exception:
+        lib_folder_guesses.extend(["cu12/lib", "cu13/lib"])
+
+    for target_libs in [
+        target_dsl_runtime_libs,
+    ]:
+        libs_cand = find_libs_in_ancestors(start, target_libs, lib_folder_guesses)
+        if libs_cand:
+            # Consumers split this on os.pathsep, which is ";" on
+            # Windows -- ":" would tear the "C:\..." drive letters.
+            dsl_libs = os.pathsep.join(libs_cand)
+            return dsl_libs
+    return None
+
+
 def get_prefix_dsl_libs(prefix: str) -> str | None:
     """
     Returns get_str_env_var('{prefix}_LIBS') if set.
@@ -427,33 +456,12 @@ def get_prefix_dsl_libs(prefix: str) -> str | None:
         if prefix_libs_existing:
             return prefix_libs_existing
 
-        def get_libs_cand(start: str | Path) -> str | None:
-            target_dsl_runtime_libs = {
-                "cute_dsl_runtime",
-            }
-            lib_folder_guesses = [
-                "lib",
-                "cu12/lib",
-                "cu13/lib",
-            ]
-
-            for target_libs in [
-                target_dsl_runtime_libs,
-            ]:
-                libs_cand = find_libs_in_ancestors(
-                    start, target_libs, lib_folder_guesses
-                )
-                if libs_cand:
-                    dsl_libs = ":".join(libs_cand)
-                    return dsl_libs
-            return None
-
         # find from install folder
-        dsl_libs = get_libs_cand(__file__)
+        dsl_libs = _get_libs_cand(__file__)
 
         if not dsl_libs:
             # try to find from build folder structure
-            dsl_libs = get_libs_cand(Path(__file__).parent.parent.resolve())
+            dsl_libs = _get_libs_cand(Path(__file__).parent.parent.resolve())
 
         if dsl_libs:
             return dsl_libs

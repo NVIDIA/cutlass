@@ -9,7 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, Sequence, Callable
+from collections.abc import Mapping
+from typing import Any, Callable, Sequence
 import logging
 
 
@@ -20,10 +21,17 @@ from jax._src.interpreters import ad
 from jax._src.interpreters import batching
 
 
-from .compile import get_or_compile_kernel, build_function_spec
+from .compile import (
+    _normalize_input_output_aliases,
+    build_function_spec,
+    get_or_compile_kernel,
+)
 from .types import (
+    _normalize_divisibility,
+    _validate_permutation,
     cutlass_to_jax_layout_order,
     default_tensor_spec,
+    row_major_layout,
     TensorSpec,
 )
 from .ffi import (
@@ -45,7 +53,9 @@ def cutlass_call(
     output_spec: Any = None,
     input_mode: Any = None,
     output_mode: Any = None,
-    input_output_aliases: dict[int, int] | None = None,
+    input_output_aliases: (
+        Mapping[int | jax.tree_util.KeyPath, int | jax.tree_util.KeyPath] | None
+    ) = None,
     allow_cuda_graph: bool = True,
     ffi_call_target: str | None = None,
     compile_options: str | None = None,
@@ -57,7 +67,8 @@ def cutlass_call(
     Returns a callable that accepts JAX arrays and dispatches to *fn* as part
     of a ``jax.jit``-compiled computation.  The kernel is compiled once on the
     first call and cached for subsequent invocations with the same shapes and
-    specs.
+    specs. Inputs may be ``None``; absent tensors consume no FFI buffer and
+    each distinct input pytree structure is compiled and cached independently.
 
     Example::
 
@@ -82,16 +93,39 @@ def cutlass_call(
             ``(stream, *inputs, *outputs, **kwargs)``.
         output_shape_dtype: A pytree of :class:`jax.ShapeDtypeStruct` (or
             objects with ``.shape`` and ``.dtype`` attributes) describing each
-            output buffer.
+            output buffer. A sequence at the root describes the outer output
+            sequence. Wrap a tuple-like pytree in a one-element tuple when it
+            should be treated as one top-level output.
         input_spec: A :class:`TensorSpec` or list thereof providing
             layout/mode/divisibility hints for input tensors. ``None`` infers
-            defaults from each array. A ``TensorSpec`` with ``layout=None`` uses
-            and constrains row-major physical layout; use ``mode`` to remap
-            physical dimensions to the kernel's logical modes.
+            defaults from each array. Specs may either describe only present
+            tensors or mirror the input pytree, using ``None`` for absent
+            tensors. For a single positional pytree argument, the spec may
+            mirror that argument directly. A ``TensorSpec`` with
+            ``layout=None`` uses and constrains row-major physical layout; use
+            ``mode`` to remap physical dimensions to the kernel's logical modes.
         output_spec: Same as *input_spec* but applied to output tensors.
-        input_output_aliases: ``{input_index: output_index}`` mapping that
-            allows an input buffer to alias an output, avoiding an extra copy.
-            Indices are into the flattened input and output pytrees.
+        input_output_aliases: Mapping from inputs to outputs that should share
+            storage. Integer mappings select complete top-level input and output
+            pytrees. Key-path mappings select individual tensor leaves.
+
+            Input key paths are rooted at the tuple of positional arguments
+            passed to the returned callable. Output key paths are rooted at the
+            outer output sequence derived from ``output_shape_dtype``. A path
+            therefore usually starts with ``SequenceKey(index)`` to select a
+            positional input or output. For example, given one input state and
+            one output state::
+
+                state_path = (
+                    jax.tree_util.SequenceKey(0),
+                    jax.tree_util.GetAttrKey("persistent"),
+                )
+                aliases = {state_path: state_path}
+
+            Input and output paths need not be identical; each must resolve to
+            a tensor leaf in its respective pytree. Selected leaves must have
+            matching shapes, dtypes, and physical layouts. Sibling leaves
+            remain ordinary outputs.
         allow_cuda_graph: If ``False``, prevents XLA from capturing this call
             in a CUDA graph.  Defaults to ``True``.
         ffi_call_target: Exact FFI target name to call without automatic
@@ -119,6 +153,7 @@ def cutlass_call(
     """
     if output_shape_dtype is None:
         raise ValueError("'output_shape_dtype' must be specified.")
+    input_output_aliases = _normalize_input_output_aliases(input_output_aliases)
     if ffi_call_target is None:
         # Resolve the process default before binding so the target participates
         # in JAX's compilation cache key.
@@ -127,9 +162,6 @@ def cutlass_call(
     output_shape_dtype = jax.tree.map(
         lambda leaf: jax.ShapeDtypeStruct(leaf.shape, leaf.dtype), output_shape_dtype
     )
-
-    if input_output_aliases is None:
-        input_output_aliases = {}
 
     if input_spec and input_mode:
         raise ValueError(
@@ -217,26 +249,71 @@ def _resolve_spec_flat(spec: Any, tensors: list) -> tuple[TensorSpec, ...]:
     )
 
 
+def _resolve_input_spec_flat(
+    spec: Any, inputs: Any, tensors: list
+) -> tuple[TensorSpec, ...]:
+    """Resolve specs for present tensors while preserving optional input structure."""
+    specs = _normalize_tensor_spec(spec) if spec is not None else []
+    if spec is None or len(specs) == len(tensors):
+        return _resolve_spec_flat(spec, tensors)
+
+    _, spec_tree = jax.tree.flatten(spec, is_leaf=_is_spec_leaf)
+    structured_inputs = inputs
+    _, input_tree = jax.tree.flatten(structured_inputs, is_leaf=lambda x: x is None)
+    if input_tree != spec_tree and isinstance(inputs, tuple) and len(inputs) == 1:
+        structured_inputs = inputs[0]
+        _, input_tree = jax.tree.flatten(structured_inputs, is_leaf=lambda x: x is None)
+    if input_tree != spec_tree:
+        raise ValueError(
+            f"Must have the same number of specs ({len(specs)}) as tensors "
+            f"({len(tensors)}), or an input_spec pytree matching the inputs."
+        )
+
+    def resolve(input_value: Any, input_spec: Any) -> TensorSpec | None:
+        if input_value is None:
+            if input_spec is not None:
+                raise ValueError("An absent tensor input must have a None input_spec.")
+            return None
+        if input_spec is None:
+            return default_tensor_spec(input_value)
+        if isinstance(input_spec, TensorSpec):
+            return input_spec
+        if isinstance(input_spec, (list, tuple)):
+            return TensorSpec(mode=tuple(input_spec))
+        raise TypeError(
+            f"Unexpected value for TensorSpec: {input_spec!r} "
+            f"({type(input_spec).__name__})"
+        )
+
+    resolved = jax.tree.map(resolve, structured_inputs, spec, is_leaf=_is_spec_leaf)
+    return tuple(jax.tree.leaves(resolved, is_leaf=lambda x: isinstance(x, TensorSpec)))
+
+
 def _validate_specs(label: str, tensors: list, specs: tuple[TensorSpec, ...]) -> None:
     """Validate that each spec's rank-dependent fields match the corresponding tensor shape."""
     for idx, (tensor, spec) in enumerate(zip(tensors, specs)):
-        ndim = len(tensor.shape)
-        if spec.layout is not None and len(spec.layout) != ndim:
-            raise ValueError(
-                f"{label} #{idx} has invalid layout {spec.layout} for shape {tensor.shape}."
-            )
-        if spec.mode is not None and len(spec.mode) != ndim:
-            raise ValueError(
-                f"{label} #{idx} has invalid mode {spec.mode} for shape {tensor.shape}."
-            )
-        if (
-            spec.divisibility is not None
-            and not isinstance(spec.divisibility, int)
-            and len(spec.divisibility) != ndim
-        ):
+        if spec.layout is not None:
+            try:
+                _validate_permutation("layout", spec.layout, tensor.shape)
+            except ValueError as e:
+                raise ValueError(
+                    f"{label} #{idx} has invalid layout {spec.layout} for shape {tensor.shape}."
+                ) from e
+        if spec.mode is not None:
+            try:
+                _validate_permutation("mode", spec.mode, tensor.shape)
+            except ValueError as e:
+                raise ValueError(
+                    f"{label} #{idx} has invalid mode {spec.mode} for shape {tensor.shape}."
+                ) from e
+
+        order = spec.layout if spec.layout is not None else row_major_layout(tensor)
+        try:
+            _normalize_divisibility(spec.divisibility, order, tensor.shape)
+        except ValueError as e:
             raise ValueError(
                 f"{label} #{idx} has invalid divisibility {spec.divisibility} for shape {tensor.shape}."
-            )
+            ) from e
 
 
 def _cutlass_call_impl(
@@ -245,7 +322,9 @@ def _cutlass_call_impl(
     output_shape_dtype: Any,
     input_spec: Any,
     output_spec: Any,
-    input_output_aliases: dict[int, int],
+    input_output_aliases: tuple[
+        tuple[int | jax.tree_util.KeyPath, int | jax.tree_util.KeyPath], ...
+    ],
     allow_cuda_graph: bool,
     ffi_call_target: str,
     compile_options: str | None,
@@ -262,7 +341,7 @@ def _cutlass_call_impl(
     def call_wrapper(*args: Any) -> Any:
         args_flat, args_tree = jax.tree.flatten(args)
 
-        input_spec_flat = _resolve_spec_flat(input_spec, args_flat)
+        input_spec_flat = _resolve_input_spec_flat(input_spec, args, args_flat)
         output_spec_flat = _resolve_spec_flat(output_spec, output_shape_dtype_flat)
 
         _validate_specs("Input", args_flat, input_spec_flat)
@@ -276,7 +355,7 @@ def _cutlass_call_impl(
             output_tree=output_tree,
             input_spec_flat=input_spec_flat,
             output_spec_flat=output_spec_flat,
-            input_output_aliases=tuple(input_output_aliases.items()),
+            input_output_aliases=input_output_aliases,
             allow_cuda_graph=allow_cuda_graph,
             ffi_call_target=ffi_call_target,
             compile_options=compile_options,
@@ -305,7 +384,9 @@ def cutlass_call_inner_p_impl(
     output_tree: Any,
     input_spec_flat: tuple[TensorSpec, ...],
     output_spec_flat: tuple[TensorSpec, ...],
-    input_output_aliases: tuple[tuple[int, int], ...],
+    input_output_aliases: tuple[
+        tuple[int | jax.tree_util.KeyPath, int | jax.tree_util.KeyPath], ...
+    ],
     allow_cuda_graph: bool,
     ffi_call_target: str,
     compile_options: str | None,
