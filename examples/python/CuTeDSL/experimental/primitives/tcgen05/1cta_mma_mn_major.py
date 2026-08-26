@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -43,7 +43,7 @@ MN-major group has 64 FP16 elements:
   ``B_LBO_BYTES = K_TILE * N_BOX * 2`` and
   ``B_SBO_BYTES = 8 * N_BOX * 2``.
 
-Usage::
+To run::
 
     python CuTeDSL/experimental/primitives/tcgen05/1cta_mma_mn_major.py
     python CuTeDSL/experimental/primitives/tcgen05/1cta_mma_mn_major.py --tile_mn 64,64
@@ -67,6 +67,10 @@ import cutlass.cute as cute
 from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 _DEFAULT_TILE_MN: tuple[int, int] = (128, 128)
 _K_TILE: int = 64
@@ -95,6 +99,11 @@ def _check_sm100() -> bool:
         return False
     cap = torch.cuda.get_device_capability()
     return cap[0] >= 10
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -281,6 +290,11 @@ def kernel(
         prims.tcgen05_dealloc(tmem_ptr, tmem_cols, group="cta_1")
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     a: cute.Tensor,
@@ -338,6 +352,11 @@ def _validate_mnk(mnk: tuple[int, int, int], tile_mn: tuple[int, int]) -> None:
         raise ValueError(f"K={k} must be a multiple of {_K_TILE}")
 
 
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
+
+
 @lru_cache(maxsize=None)
 def compile(tile_mn: tuple[int, int] = _DEFAULT_TILE_MN) -> Callable:  # noqa: A001
     """AOT-compile the fixed CTA_1 MN-major A/B kernel."""
@@ -384,6 +403,11 @@ def _make_inputs(
     return a, b, c
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     *,
     compiled_fn: Callable | None = None,
@@ -400,6 +424,11 @@ def run(
     compiled_fn(a, b, c)
     torch.cuda.synchronize()
     return c, a, b
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(
@@ -438,6 +467,10 @@ def _parse_tile_mn(value: str) -> tuple[int, int]:
         raise argparse.ArgumentTypeError("--tile_mn must be M_TILE,N_TILE")
     return parts
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

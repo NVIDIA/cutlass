@@ -28,10 +28,14 @@
 
 from .base import OperandsMetadata
 from .gemm import GemmOperandsMetadata
-from .grouped_gemm import GroupedGemmOperandsMetadata
+from .grouped_gemm import (
+    GroupedGemmOperandsMetadata,
+    IndexPtrGroupedGemmOperandsMetadata,
+)
 
 __all__ = [
     "OperandsMetadata",
     "GemmOperandsMetadata",
     "GroupedGemmOperandsMetadata",
+    "IndexPtrGroupedGemmOperandsMetadata",
 ]

@@ -102,8 +102,10 @@ struct tmem_frg : tmem_frg_base
   CUTE_HOST_DEVICE constexpr static auto
   make(TmemShape const& tmem_shape)
   {
-    CUTE_STATIC_ASSERT_V(size(tmem_shape)*Int<int(sizeof_bits_v<StorageType>)>{} <= TMEM::MAX_CAPACITY_BITS{},
+#if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
+    CUTE_STATIC_ASSERT_V(size(tmem_shape)*Int<int(sizeof_bits_v<StorageType>)>{} <= Int<TMEM::TargetTmemCapacityBits>{},
                         "Requesting more TMEM than is available.");
+#endif  // CUTE_ARCH_TCGEN05_TMEM_ENABLED
     CUTE_STATIC_ASSERT_V(rank<0>(tmem_shape) == Int<2>{}, "Expected post-partitioned shape ((M_MMA,N_MMA),...).");
     constexpr int R     = decltype(rank(tmem_shape))::value;
     constexpr int M_MMA = decltype(size<0,0>(tmem_shape))::value;
@@ -494,6 +496,80 @@ struct tmem_sf_frg: tmem_frg_base
   }
 };
 
+
+template <class ValueType, int SFVecSize, int N_SM, bool Is_SFA>
+struct sm107_tmem_sf_frg: tmem_frg_base
+{
+  template <class TmemShape>
+  CUTE_HOST_DEVICE constexpr static auto
+  make(TmemShape const& tmem_shape)
+  {
+    CUTE_STATIC_ASSERT_V(rank<0>(tmem_shape) == Int<2>{}, "Expected post-partitioned shape ((M_MMA,N_MMA),...).");
+    constexpr int MMA_MN  = decltype(size<0,0>(tmem_shape))::value;
+    constexpr int MMA_VS  = decltype(size<0,1,0>(tmem_shape))::value;
+    constexpr int MMA_NSF = decltype(size<0,1,1>(tmem_shape))::value;
+    constexpr int R_MMA_K = decltype(rank(get<0,1>(tmem_shape)))::value;
+    constexpr int R = decltype(rank(tmem_shape))::value;
+    constexpr int MMA_K = decltype(size<0,1>(tmem_shape))::value;
+    constexpr int REST_NSF = MMA_K / (MMA_VS * MMA_NSF);
+
+    // We expect an MMA-SF partitioned tensor
+    // ((MMA_MN, (VecSize, NSF)), num_MMA_MN, num_MMA_K, ...)
+    //   where VecSize*NSF = MMA_K
+    static_assert(R >= 3,       "Expected an MMA partitioned tensor");                            // ((MMA), num_MMA_MN, num_MMA_K, ...)
+    static_assert(R_MMA_K == 2, "Expected an MMA-SF partitioned tensor");                         // (VecSize, NSF)
+    using REP = _4;                   // Replication factor. Data is always replicated across subpartitions
+    constexpr int SUBPART_DPs = 32;   // Number of DPs in a subpartition
+
+    // There are two main reasons for this implementation to differ from sm100:
+    // 1. It is possible to end up with a layout where get<1>(tmem_shape) > 1,
+    //    in which case we would like to tile accross the K-mode first, and then
+    //    the MN-mode. This scenario happens when we have b-reuse enabled.
+    // 2. It is possible to end up with a case where MMA_NSF > 4. For example,
+    //    with Rubin FP4 and VS=16 NSF will be (4,2) because we will need 128 / 16
+    //    = 8 SFs in order to cover what a single MMA requires. On SM100, this
+    //    was never possible and MMA_NSF was always rank-1 and at most 4.
+    // This implementation starts from manually creating a TMEM atom, then tiling
+    // a certain target shape and a particular order, followed by accounting for
+    // replication accross 4 different subpartitions, and finally accounting for
+    // the other num_MMA_MN and num_MMA_K modes (K-mode first, then the MN-mode).
+    auto dp_stride = TMEM::DP<ValueType>{};
+    auto tmem_atom = Layout<Shape <Shape <Shape <  Int<SUBPART_DPs>>, Int<MMA_MN/SUBPART_DPs>>, Shape<Int<MMA_VS>, _1>>,
+                            Stride<Stride<Stride< TMEM::DP<ValueType>>,                    _4>, Stride<        _0, _1>>>{};
+
+    auto target_shape = Shape<_1, Shape<Int<MMA_NSF>, Int<REST_NSF>>>{};
+    auto target_order = Shape<_1, Shape<_0, _2>>{};
+    auto ordered_layout = make_ordered_layout(target_shape, target_order);
+
+    auto blocked_tmem_atom = blocked_product(tmem_atom, ordered_layout);
+
+    auto coalesced_tmem_atom = coalesce(blocked_tmem_atom, target_shape);
+
+    auto atom_shape = coalesced_tmem_atom.shape();
+    auto atom_stride = coalesced_tmem_atom.stride();
+    auto final_tmem_atom = Layout<Shape<Shape<decltype(get<0>(atom_shape)), REP>, decltype(get<1>(atom_shape))>,
+                                  Stride<Stride<decltype(get<0>(atom_stride)), Int<dp_stride * SUBPART_DPs>>, decltype(get<1>(atom_stride))>>{};
+
+    auto rest_shape_ordered_layout = make_ordered_layout(take<1,R>(tmem_shape), Shape<_2,_1>{});
+    auto final_tmem_layout = tiled_product(final_tmem_atom, rest_shape_ordered_layout);
+
+    #if 0
+    if (thread0()) {
+      cute::print("sm107_tmem_sf_frg:make\n");
+      cute::print("\ttmem_atom: "); cute::print(tmem_atom); cute::print("\n");
+      cute::print("\tordered_layout: "); cute::print(ordered_layout); cute::print("\n");
+      cute::print("\tblocked_tmem_layout: "); cute::print(blocked_tmem_atom); cute::print("\n");
+      cute::print("\tcoalesced_tmem_atom: "); cute::print(coalesced_tmem_atom); cute::print("\n");
+      cute::print("\tfinal_tmem_atom: "); cute::print(final_tmem_atom); cute::print("\n");
+      cute::print("\tfinal_tmem_layout: "); cute::print(final_tmem_layout); cute::print("\n");
+    }
+    #endif
+
+    return make_tensor(make_tmem_ptr<ValueType>(), final_tmem_layout);
+  }
+};
+
+
 // Make C/D Tmem fragment for weight-stationary MMAs
 template <class ValueType, class StorageType, int N_SM>
 struct tmem_frg_ws : tmem_frg_base
@@ -517,8 +593,10 @@ struct tmem_frg_ws : tmem_frg_base
   CUTE_HOST_DEVICE constexpr static auto
   make(TmemShape const& tmem_shape)
   {
-    CUTE_STATIC_ASSERT_V(size(tmem_shape)*Int<int(sizeof_bits_v<StorageType>)>{} <= TMEM::MAX_CAPACITY_BITS{},
+#if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
+    CUTE_STATIC_ASSERT_V(size(tmem_shape)*Int<int(sizeof_bits_v<StorageType>)>{} <= Int<TMEM::TargetTmemCapacityBits>{},
                         "Requesting more TMEM than is available.");
+#endif  // CUTE_ARCH_TCGEN05_TMEM_ENABLED
     CUTE_STATIC_ASSERT_V(rank<0>(tmem_shape) == Int<2>{}, "Expected post-partitioned shape ((M_MMA,N_MMA),...).");
     constexpr int R     = decltype(rank(tmem_shape))::value;
     constexpr int M_MMA = decltype(size<0,0>(tmem_shape))::value;
@@ -637,5 +715,17 @@ struct MakeTensor<UMMA::tmem_sf_frg<ValueType, SFVecSize, N_SM, Is_SFA, TmemAllo
     return UMMA::tmem_sf_frg<ValueType, SFVecSize, N_SM, Is_SFA, TmemAlloc>::make(shape(tmem_shape));
   }
 };
+
+
+template <class ValueType, int SFVecSize, int N_SM, bool Is_SFA>
+struct MakeTensor<UMMA::sm107_tmem_sf_frg<ValueType, SFVecSize, N_SM, Is_SFA>>
+{
+  template <class Shape>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Shape const& tmem_shape) {
+    return UMMA::sm107_tmem_sf_frg<ValueType, SFVecSize, N_SM, Is_SFA>::make(tmem_shape);
+  }
+};
+
 
 } // namespace cute

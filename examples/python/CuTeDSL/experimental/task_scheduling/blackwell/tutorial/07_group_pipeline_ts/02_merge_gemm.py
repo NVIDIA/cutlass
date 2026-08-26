@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -26,19 +26,22 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Tutorial 07: **Merge**(AsyncUmma + TmaUmma) GEMM with ReLU.
+"""Tutorial 07: **Merge** / **FusedMerge**(AsyncUmma + TmaUmma) GEMM with ReLU.
 
 Heterogeneous ``PipelineGroup`` merge in a 1-CTA GEMM: LoadA uses
 ``AsyncUmma`` (global memory load to SMEM A) and LoadB uses ``TmaUmma`` (TMA to SMEM B).
-Both producers join ``ab_sync`` (``PipelineGroupMode.Merge``), which
-owns per-member full barriers and **one shared empty barrier**.  The MMA
-schedule calls ``group.release()`` once per K-tile; TS propagates that
-release to every member so both SMEM pipelines advance together.
+Both producers join ``ab_sync``.
+
+LoadA fills SmemA via async register-through copy (``AsyncUmma``).
+LoadB fills SmemB via TMA (``TmaUmma``).
 
   **Merge** (N producers → 1 consumer):
-    LoadA fills SmemA via async register-through copy (``AsyncUmma``).
-    LoadB fills SmemB via TMA (``TmaUmma``).
     MMA waits each member, runs tcgen05 MMA, then ``group.release()``.
+
+  **FusedMerge** (N producers → 1 consumer):
+    MMA waits once on the group (``group.wait()``), runs tcgen05 MMA, then
+    ``group.release()``. Each producer still ``commit()``s on the shared
+    full barrier with its own op.
 
 Resources::
 
@@ -631,14 +634,20 @@ def create_smem_b_resource(tma_b_desc: cutlass.Pointer) -> SmemBResource:
 
 
 @cute.jit
-def create_ab_sync_group(smem_a: SmemAResource, smem_b: SmemBResource) -> PipelineGroup:
-    """
-    Merge PipelineGroup for smem_a + smem_b with one shared empty barrier.
+def create_ab_sync_group(
+    smem_a: SmemAResource,
+    smem_b: SmemBResource,
+    mode: cutlass.Constexpr[PipelineGroupMode],
+) -> PipelineGroup:
+    """PipelineGroup for smem_a + smem_b feeding the MMA consumer.
+
+    ``mode`` selects ``Merge`` (per-member full barriers) or ``FusedMerge``
+    (one shared full barrier; the MMA waits once on the group).
     """
     return PipelineGroup(
         name="ab_sync",
         members=[smem_a, smem_b],
-        mode=PipelineGroupMode.Merge,
+        mode=mode,
     )
 
 
@@ -756,6 +765,7 @@ def create_mma_task(
     ab_sync: PipelineGroup,
     tmem_c: TmemCResource,
     num_k_tiles: int,
+    ab_sync_mode: cutlass.Constexpr[PipelineGroupMode],
 ) -> Task:
     """
     Warp 6 MMA: wait both SMEM members, MMA, then group.release().
@@ -774,11 +784,16 @@ def create_mma_task(
         tmem.try_acquire()
         tmem.acquire()
         with domain_loop(0, num_k_tiles, 1):
-            # Call waits on both shared SMEM resources and then works on both members.
-            smem_a_ref.try_wait()
-            smem_a_ref.wait()
-            smem_b_ref.try_wait()
-            smem_b_ref.wait()
+            if cutlass.const_expr(ab_sync_mode == PipelineGroupMode.FusedMerge):
+                # FusedMerge: one shared full barrier — wait once on the group.
+                group.try_wait()
+                group.wait()
+            else:
+                # Merge: per-member full barriers — wait on each member.
+                smem_a_ref.try_wait()
+                smem_b_ref.try_wait()
+                smem_a_ref.wait()
+                smem_b_ref.wait()
             desc_a_base = smem_a_ref.build_descriptor()
             desc_b_base = smem_b_ref.build_descriptor()
             tmem.mma(desc_a_base=desc_a_base, desc_b_base=desc_b_base)
@@ -870,9 +885,12 @@ def merge_gemm_kernel(
     tma_b_desc: cutlass.GridConstant[cuda.TensorMap],
     mD0_mn: cutlass.Array,
     mnk: Tuple[int, int, int],
+    ab_sync_mode: cutlass.Constexpr[PipelineGroupMode],
 ) -> None:
     """
-    1-CTA TS kernel: Merge PipelineGroup, resources, and TaskManager.
+    1-CTA TS kernel: Merge/FusedMerge PipelineGroup, resources, and TaskManager.
+
+    ``ab_sync_mode`` selects ``Merge`` or ``FusedMerge`` for the A/B group.
     """
     m, n, k = mnk
     num_epilogue_warps = num_store_warps
@@ -895,7 +913,7 @@ def merge_gemm_kernel(
     smem_a = create_smem_a_resource(gA)
     smem_b = create_smem_b_resource(tma_b_desc.get_ptr())
     # Merge two SMEM resources into a single PipelineGroup
-    ab_sync = create_ab_sync_group(smem_a, smem_b)
+    ab_sync = create_ab_sync_group(smem_a, smem_b, ab_sync_mode)
     tmem_c = create_tmem_c_resource(num_epilogue_warps)
     gmem_d_relu = create_gmem_d_relu_resource(mD0_mn, n)
 
@@ -907,7 +925,9 @@ def merge_gemm_kernel(
     # Task schedule construction
     load_a_task = create_load_a_task(gmem_a, smem_a, ab_sync, num_k_tiles)
     load_b_task = create_load_b_task(gmem_b, smem_b, ab_sync, num_k_tiles)
-    mma_task = create_mma_task(smem_a, smem_b, ab_sync, tmem_c, num_k_tiles)
+    mma_task = create_mma_task(
+        smem_a, smem_b, ab_sync, tmem_c, num_k_tiles, ab_sync_mode
+    )
     store_relu_task = create_store_relu_task(tmem_c, gmem_d_relu, num_k_tiles)
     padding_task = create_padding_task(num_k_tiles)
 
@@ -989,6 +1009,7 @@ def host_function(
     b: cute.Tensor,
     d0: cute.Tensor,
     mnk: Tuple[int, int, int],
+    ab_sync_mode: cutlass.Constexpr[PipelineGroupMode],
 ) -> None:
     """
     Host JIT: build B TMA tensor map and launch merge_gemm_kernel.
@@ -1007,7 +1028,7 @@ def host_function(
     grid_shape = (m_tiles, n_tiles, 1)
     block_size = total_warps * cute.arch.WARP_SIZE
 
-    merge_gemm_kernel(a, tma_b_desc, d0, mnk).launch(
+    merge_gemm_kernel(a, tma_b_desc, d0, mnk, ab_sync_mode).launch(
         grid=grid_shape,
         block=[block_size, 1, 1],
     )
@@ -1018,8 +1039,14 @@ def host_function(
 # ──────────────────────────────────────────────────────────────────────
 
 
-@lru_cache(maxsize=1)
-def _prepare(m: int, n: int, k: int):
+_GROUP_MODE_MAP = {
+    "merge": PipelineGroupMode.Merge,
+    "fused": PipelineGroupMode.FusedMerge,
+}
+
+
+@lru_cache(maxsize=2)
+def _prepare(m: int, n: int, k: int, ab_sync_mode: PipelineGroupMode):
     """
     Allocate random CUDA tensors and compile host_function (cached).
     """
@@ -1042,18 +1069,20 @@ def _prepare(m: int, n: int, k: int):
     d0_ = from_dlpack(d0).mark_layout_dynamic()
 
     mnk = (m, n, k)
-    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+    compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
         host_function,
         a_,
         b_,
         d0_,
         mnk,
+        ab_sync_mode,
     )
     return compiled_fn, (a, b, d0, a_, b_, d0_, mnk)
 
 
 def run(
     mnk: Tuple[int, int, int] = (256, 256, 256),
+    ab_sync_mode: str = "merge",
     tolerance: float = 1e-01,
 ) -> None:
     """
@@ -1062,10 +1091,17 @@ def run(
     import torch
     import cutlass.torch as cutlass_torch
 
+    if ab_sync_mode not in _GROUP_MODE_MAP:
+        raise ValueError(
+            f"ab_sync_mode must be one of {sorted(_GROUP_MODE_MAP)}, "
+            f"got {ab_sync_mode!r}."
+        )
+    ab_mode = _GROUP_MODE_MAP[ab_sync_mode]
+
     m, n, k = mnk
     torch.manual_seed(1111)
 
-    compiled_fn, (a, b, d0, a_, b_, d0_, mnk_t) = _prepare(m, n, k)
+    compiled_fn, (a, b, d0, a_, b_, d0_, mnk_t) = _prepare(m, n, k, ab_mode)
     compiled_fn(a_, b_, d0_, mnk_t)
     torch.cuda.synchronize()
 
@@ -1081,7 +1117,7 @@ if __name__ == "__main__":
     cu_driver.cuInit(0)
 
     parser = argparse.ArgumentParser(
-        description="Merge(AsyncUmma + TmaUmma) GEMM + ReLU"
+        description="Merge/FusedMerge(AsyncUmma + TmaUmma) GEMM + ReLU"
     )
     parser.add_argument(
         "--mnk",
@@ -1090,10 +1126,16 @@ if __name__ == "__main__":
         help="MNK dimensions (comma-separated)",
     )
     parser.add_argument(
+        "--ab-sync-mode",
+        choices=_GROUP_MODE_MAP.keys(),
+        default="merge",
+        help="Group mode for the A/B (AsyncUmma + TmaUmma) group feeding the MMA.",
+    )
+    parser.add_argument(
         "--tolerance", type=float, default=1e-01, help="Tolerance for validation"
     )
     args = parser.parse_args()
     mnk = tuple(int(x) for x in args.mnk.split(","))
 
-    run(mnk=mnk, tolerance=args.tolerance)
+    run(mnk=mnk, ab_sync_mode=args.ab_sync_mode, tolerance=args.tolerance)
     print("PASS")

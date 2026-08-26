@@ -27,7 +27,10 @@ from cutlass._mlir.dialects.core import OperationTypeEnum
 from cutlass.cute.typing import Boolean
 from cutlass.cute.experimental.core import (
     create_pipeline,
+    get_arrival_count,
     producer_acquire,
+    get_pipeline_produce_phase,
+    get_pipeline_consume_phase,
     get_pipeline_produce_stage,
     get_pipeline_consume_stage,
     get_mbarrier,
@@ -47,6 +50,7 @@ from cutlass.cute.experimental.core import (
     consumer_try_wait,
     OperationTypeSpec,
     SkipWaitToken,
+    PipelineLocale,
 )
 
 from cutlass.cutlass_dsl import CuteExperimentalDSL
@@ -110,7 +114,7 @@ class GenericPipelineBase:
 
     def producer_acquire(self) -> "GenericPipelineBase":
         """Acquire producer state."""
-        producer_acquire(self.raw_pipeline, self.producer_state)
+        self.producer_state = producer_acquire(self.raw_pipeline, self.producer_state)
         return self
 
     def producer_try_acquire(self, *, token: Optional[SkipWaitToken] = None) -> Boolean:
@@ -124,6 +128,14 @@ class GenericPipelineBase:
     def get_consumer_stage(self) -> ir.Value:
         """Get consumer stage."""
         return get_pipeline_consume_stage(self.raw_pipeline, self.consumer_state)
+
+    def get_producer_phase(self) -> cute.Int32:
+        """Get the producer component from this wrapper's producer cursor."""
+        return get_pipeline_produce_phase(self.producer_state)
+
+    def get_consumer_phase(self) -> cute.Int32:
+        """Get the consumer component from this wrapper's consumer cursor."""
+        return get_pipeline_consume_phase(self.consumer_state)
 
     # Instance methods that can now be used directly in kernel context
     def producer_acquire_and_get_stage(
@@ -150,6 +162,29 @@ class GenericPipelineBase:
             self.raw_pipeline, stage_state
         )
         return stage_token, stage_idx
+
+    def producer_acquire_and_get_phase(
+        self, *, token: Optional[SkipWaitToken] = None
+    ) -> cute.Int32:
+        """Acquire a producer stage and return its producer phase.
+
+        Keep acquisition coupled to phase selection so callers cannot choose
+        phase-indexed storage without first establishing producer ownership.
+        Use ``get_producer_phase`` only when synchronization is deliberately
+        managed separately.
+        """
+        if token is None:
+            self.producer_acquire()
+            return get_pipeline_produce_phase(self.producer_state)
+
+        skip_wait = normalize_skip_wait_token(token)
+        stage_state = cutlass_lir_ir.ProducerAcquireOp(
+            self.raw_pipeline,
+            self.producer_state,
+            skipWait=skip_wait,
+        ).outState
+        self.producer_state = stage_state
+        return get_pipeline_produce_phase(stage_state)
 
     def producer_commit(
         self,
@@ -185,9 +220,17 @@ class GenericPipelineBase:
         )
         return self
 
-    def producer_commit_and_advance(self) -> "GenericPipelineBase":
-        """Combined producer commit + advance with automatic elect_one using stored state."""
-        self.producer_commit()
+    def producer_commit_and_advance(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "GenericPipelineBase":
+        """Combined producer commit + advance using stored state."""
+        self.producer_commit(
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         # Update state in-place for better performance
         self.producer_state = pipeline_advance_iterator(
             self.raw_pipeline, self.producer_state
@@ -219,14 +262,37 @@ class GenericPipelineBase:
         )
         return stage_token, stage_idx
 
+    def consumer_wait_and_get_phase(
+        self, *, token: Optional[SkipWaitToken] = None
+    ) -> cute.Int32:
+        """Wait for a consumer stage and return its consumer phase.
+
+        Keep waiting coupled to phase selection so callers cannot read a
+        phase-indexed view before the producer has made it available. Use
+        ``get_consumer_phase`` only when synchronization is deliberately
+        managed separately.
+        """
+        if token is None:
+            self.consumer_wait()
+            return get_pipeline_consume_phase(self.consumer_state)
+
+        skip_wait = normalize_skip_wait_token(token)
+        stage_state = cutlass_lir_ir.ConsumerWaitOp(
+            self.raw_pipeline,
+            self.consumer_state,
+            skipWait=skip_wait,
+        ).outState
+        self.consumer_state = stage_state
+        return get_pipeline_consume_phase(stage_state)
+
     def consumer_wait(
         self, state: Optional[PipelineState] = None
     ) -> "GenericPipelineBase":
         """Wait for consumer to be ready."""
-        if state:
+        if state is not None:
             consumer_wait(self.raw_pipeline, state)
         else:
-            consumer_wait(self.raw_pipeline, self.consumer_state)
+            self.consumer_state = consumer_wait(self.raw_pipeline, self.consumer_state)
         return self
 
     def consumer_release_and_advance(self) -> "GenericPipelineBase":
@@ -274,6 +340,7 @@ class GenericPipeline(GenericPipelineBase):
         producer_arv_count: cute.Int32,
         consumer_arv_count: cute.Int32,
         num_stages: cute.Int32,
+        locale: Optional[PipelineLocale] = None,
     ) -> "GenericPipeline":
         """
         Create a generic pipeline with parameterized producer and consumer.
@@ -284,6 +351,7 @@ class GenericPipeline(GenericPipelineBase):
             producer_arv_count: Producer arrival count
             consumer_arv_count: Consumer arrival count
             num_stages: Number of pipeline stages
+            locale: Optional explicit pipeline synchronization locale.
         """
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
@@ -291,6 +359,7 @@ class GenericPipeline(GenericPipelineBase):
             consumer,
             producer_arv_count=producer_arv_count,
             consumer_arv_count=consumer_arv_count,
+            locale=locale,
         )
 
         return GenericPipeline(
@@ -430,8 +499,31 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 num_stages,
                 tma_operation_type,
                 mma_operation_type,
-                producer_arv_count=1,
-                consumer_arv_count=1,
+                # Mirror this class's producer_commit: one warp issues,
+                # elect_one_sync elects one thread, and for 2SM only the
+                # leader CTA commits.
+                producer_arv_count=get_arrival_count(
+                    num_stages,
+                    tma_operation_type,
+                    mma_operation_type,
+                    side="producer",
+                    num_threads_per_cta=32,
+                    elect_one_sync=True,
+                    elect_leader_cta=True,
+                ),
+                # Mirror this class's consumer_release. The consumer arrivals
+                # are multicast-masked (the mask below covers the CTA pair),
+                # so the fan-in is not derivable from the pipeline: one
+                # issuing CTA pair converges on each barrier in the mask.
+                consumer_arv_count=get_arrival_count(
+                    num_stages,
+                    tma_operation_type,
+                    mma_operation_type,
+                    side="consumer",
+                    num_threads_per_cta=32,
+                    elect_one_sync=True,
+                    fan_in=1,
+                ),
                 arrival_mask=arrival_mask,
             )
         elif tma_operation_type == OperationTypeEnum.SM90_TMA_LOAD:
@@ -439,8 +531,24 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 num_stages,
                 tma_operation_type,
                 mma_operation_type,
-                producer_arv_count=1,
-                consumer_arv_count=1,
+                # Mirror this class's producer_commit / consumer_release:
+                # one warp issues each release with elect_one_sync.
+                producer_arv_count=get_arrival_count(
+                    num_stages,
+                    tma_operation_type,
+                    mma_operation_type,
+                    side="producer",
+                    num_threads_per_cta=32,
+                    elect_one_sync=True,
+                ),
+                consumer_arv_count=get_arrival_count(
+                    num_stages,
+                    tma_operation_type,
+                    mma_operation_type,
+                    side="consumer",
+                    num_threads_per_cta=32,
+                    elect_one_sync=True,
+                ),
             )
         else:
             raise ValueError(f"Invalid tma_operation_type: {tma_operation_type}")
@@ -530,15 +638,39 @@ class TMAToUMMAPipeline(GenericPipelineBase):
         num_mcast_ctas_b = cute.size(cluster_shape_vmnk[1])
         num_mcast_participants = num_mcast_ctas_a + num_mcast_ctas_b - 1
 
+        is_2sm = _is_2sm_tma_operation_type(tma_operation_type)
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
             tma_operation_type,
             mma_operation_type,
-            producer_arv_count=1,
-            consumer_arv_count=num_mcast_participants,
+            # Mirror this class's producer_commit: one warp issues,
+            # elect_one_sync elects one thread, and for 2SM only the leader
+            # CTA commits.
+            producer_arv_count=get_arrival_count(
+                num_stages,
+                tma_operation_type,
+                mma_operation_type,
+                side="producer",
+                num_threads_per_cta=32,
+                elect_one_sync=True,
+                elect_leader_cta=is_2sm,
+            ),
+            # Mirror this class's consumer_release. The consumer arrivals are
+            # multicast-masked, so the fan-in is not derivable from the
+            # pipeline: the multicast participant count is the number of
+            # issuing CTAs (pairs, for 2SM) converging on each barrier in
+            # the mask.
+            consumer_arv_count=get_arrival_count(
+                num_stages,
+                tma_operation_type,
+                mma_operation_type,
+                side="consumer",
+                num_threads_per_cta=32,
+                elect_one_sync=True,
+                fan_in=num_mcast_participants,
+            ),
             arrival_mask=arrival_mask_c,
         )
-        is_2sm = _is_2sm_tma_operation_type(tma_operation_type)
         return TMAToUMMAPipeline(
             raw_pipeline,
             num_stages,
@@ -766,7 +898,16 @@ class TMAToAsyncPipeline(GenericPipelineBase):
             num_stages,
             OperationTypeEnum.SM90_TMA_LOAD,
             consumer,
-            producer_arv_count=1,
+            # Mirror this class's producer_commit: one warp issues the TMA
+            # load with elect_one_sync.
+            producer_arv_count=get_arrival_count(
+                num_stages,
+                OperationTypeEnum.SM90_TMA_LOAD,
+                consumer,
+                side="producer",
+                num_threads_per_cta=32,
+                elect_one_sync=True,
+            ),
             consumer_arv_count=consumer_arv_count,
         )
         return TMAToAsyncPipeline(
@@ -888,7 +1029,16 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
                 num_stages,
                 mma_operation_type,
                 consumer,
-                producer_arv_count=1,
+                # Mirror this class's producer_commit: one warp issues the
+                # UMMA commit with elect_one_sync.
+                producer_arv_count=get_arrival_count(
+                    num_stages,
+                    mma_operation_type,
+                    consumer,
+                    side="producer",
+                    num_threads_per_cta=32,
+                    elect_one_sync=True,
+                ),
                 consumer_arv_count=consumer_arv_count,
             )
             return UMMAtoAsyncPipeline(
@@ -917,7 +1067,20 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
             num_stages,
             mma_operation_type,
             consumer_type,
-            producer_arv_count=1,
+            # Mirror this class's producer_commit: one warp issues the UMMA
+            # commit with elect_one_sync. The producer arrivals are
+            # multicast-masked (the tmem sync mask covers the CTA pair), so
+            # the fan-in is not derivable from the pipeline: one issuing CTA
+            # pair converges on each barrier in the mask.
+            producer_arv_count=get_arrival_count(
+                num_stages,
+                mma_operation_type,
+                consumer_type,
+                side="producer",
+                num_threads_per_cta=32,
+                elect_one_sync=True,
+                fan_in=1,
+            ),
             consumer_arv_count=consumer_arv_count,
             arrival_mask=tmem_sync_mask,
         )
@@ -1111,12 +1274,25 @@ class GroupedGemmSchedulerPipeline(GenericPipelineBase):
         elect_leader_cta: Optional[bool] = None,
     ) -> "GroupedGemmSchedulerPipeline":
         """Release consumer state."""
-        consumer_release(self.raw_pipeline, self.consumer_state)
+        consumer_release(
+            self.raw_pipeline,
+            self.consumer_state,
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         return self
 
-    def producer_commit_and_advance(self) -> "GroupedGemmSchedulerPipeline":
+    def producer_commit_and_advance(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "GroupedGemmSchedulerPipeline":
         """Commit producer state and advance to next stage."""
-        super().producer_commit_and_advance()
+        super().producer_commit_and_advance(
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         return self
 
 
@@ -1171,7 +1347,15 @@ class CLCPipeline(GenericPipelineBase):
             num_stages,
             OperationTypeEnum.SM100_LAUNCH_CONTROL,
             OperationTypeEnum.LD_SHARED,
-            producer_arv_count=1,
+            # The CLC producer edge is warp-distributed: one warp lands a
+            # single arrive on each CTA's barrier regardless of thread count.
+            producer_arv_count=get_arrival_count(
+                num_stages,
+                OperationTypeEnum.SM100_LAUNCH_CONTROL,
+                OperationTypeEnum.LD_SHARED,
+                side="producer",
+                num_threads_per_cta=1,
+            ),
             consumer_arv_count=consumer_arv_count,
         )
         return CLCPipeline(
@@ -1189,7 +1373,12 @@ class CLCPipeline(GenericPipelineBase):
         elect_leader_cta: Optional[bool] = None,
     ) -> "CLCPipeline":
         """Commit producer state."""
-        producer_commit(self.raw_pipeline, self.producer_state)
+        producer_commit(
+            self.raw_pipeline,
+            self.producer_state,
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         return self
 
     def get_response_ptr(self, stage_idx: ir.Value) -> ir.Value:

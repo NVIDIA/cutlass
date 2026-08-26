@@ -170,4 +170,7 @@ def filter_exception(value: BaseException, module_dir: str) -> None:
         filter_exception(value.__cause__, module_dir)
 
     if hasattr(value, "__traceback__"):
-        filter_stackframe(value.__traceback__, module_dir)
+        # Assign the result back: filter_stackframe returns a NEW head when the
+        # leading frame(s) are stripped, so discarding it would leave top-of-stack
+        # internal frames on the exception.
+        value.__traceback__ = filter_stackframe(value.__traceback__, module_dir)

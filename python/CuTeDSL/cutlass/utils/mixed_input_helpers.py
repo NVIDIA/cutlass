@@ -31,7 +31,7 @@ from cutlass.cutlass_dsl import (
     new_from_mlir_values,
 )
 from cutlass.cute.typing import Int32 as _Int32, Int4 as _Int4, Int8 as _Int8
-from cutlass.utils.layout import LayoutEnum
+from cutlass.tensor_utils import LayoutEnum
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 
@@ -1025,7 +1025,7 @@ def cvt_tensor_a(
 
 
 def cvt_tensor_a_mxf8(src: cute.Tensor, dtype: type[cutlass.Numeric]) -> cute.TensorSSA:
-    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic <cutlass.cute.arch.cvt_i4_mxf8_intrinsic>`."""
+    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic`."""
     rst = src.load()
     return cute.TensorSSA.from_vector(
         cute.arch.cvt_i4_mxf8_intrinsic(rst, cute.size(rst.shape), dtype),

@@ -292,6 +292,8 @@ class _CapturedScheduleAccessContext:
 class _CapturedScheduleExecutionGuard:
     """Temporarily mark a resource call as driven by a captured schedule."""
 
+    __dsl_trace_time_ctxmgr__ = True
+
     def __init__(self, resource: "MemoryResource", enabled: bool) -> None:
         self.resource = resource
         self.enabled = enabled
@@ -319,6 +321,8 @@ class _CapturedScheduleExecutionGuard:
 
 class _CapturedScheduleUserHookGuard:
     """Disallow raw producer/consumer-var state access inside user hook code."""
+
+    __dsl_trace_time_ctxmgr__ = True
 
     def __init__(
         self, resource: "MemoryResource", hook_name: str, enabled: bool
@@ -703,6 +707,7 @@ class PipelineConfig:
         producer_signaling_threads: SignalingThreads = SignalingThreads.All,
         consumer_signaling_threads: SignalingThreads = SignalingThreads.All,
         barrier_ptr: Optional[cute.Pointer] = None,
+        advance_on_wait: bool = False,
         interleave_stride: InterleaveStride = 1,
         num_bytes_per_warp_per_cta: Optional[int] = None,
     ) -> "PipelineConfig":
@@ -722,6 +727,15 @@ class PipelineConfig:
             Threads that execute producer- and consumer-side barrier operations.
         barrier_ptr : cute.Pointer, optional
             Pre-allocated barrier storage.  ``None`` lets the allocator place it.
+        advance_on_wait : bool, optional
+            Setting advance_on_wait=True on a PipelineConfig decouples the consumer's wait
+            cursor from its release cursor by introducing two independent pipeline state objects:
+                | State                    | Advances when     | Points to                       |
+                | ------------------------ | ----------------- | ------------------------------- |
+                | `consumer_state`         | `ConsumerWait`    | the *next* buffer to wait on    |
+                | `consumer_release_state` | `ConsumerRelease` | the *oldest* un-released buffer |
+            With this split, the consumer can wait on buffer N+1 (advancing consumer_state) while
+            still holding buffer N (not yet released via consumer_release_state).
         interleave_stride : int or tuple[int, int, int, int], optional
             Role-specific pipeline-state stride.  Mismatched opening and
             closing roles require the corresponding advance flag.
@@ -744,6 +758,7 @@ class PipelineConfig:
             producer_signaling_threads=producer_signaling_threads,
             consumer_signaling_threads=consumer_signaling_threads,
             barrier_ptr=barrier_ptr,
+            advance_on_wait=advance_on_wait,
             interleave_stride=interleave_stride,
             num_bytes_per_warp_per_cta=num_bytes_per_warp_per_cta,
         )
@@ -1744,6 +1759,13 @@ def _is_value_compatible_with_task_local_dtype(
     dtype: object,
 ) -> bool:
     """Best-effort runtime validation for ``returns=`` values."""
+    dtype_isinstance = getattr(dtype, "isinstance", None)
+    if callable(dtype_isinstance):
+        try:
+            if dtype_isinstance(value):
+                return True
+        except TypeError:
+            pass
     if type(value) is dtype:
         return True
     if isinstance(dtype, type):
@@ -2459,7 +2481,7 @@ class MemoryResource(metaclass=_MemoryResourceMeta):
     def state_src(self) -> "MemoryResource":
         """The object that owns this resource's *consumer* pipeline state.
 
-        Returns ``self`` by default.  For a member of a *Merge*
+        Returns ``self`` by default.  For a member of a Merge or FusedMerge
         ``PipelineGroup`` this returns the group itself, so all
         members share the group's canonical consumer state (one
         consumer drives pipeline progression).  Fork members and
@@ -2475,7 +2497,7 @@ class MemoryResource(metaclass=_MemoryResourceMeta):
         inside ``@cute.jit`` regions) avoids DSL-tracer side
         effects that would otherwise emit IR dominance errors.
         The ``_state_src_owner`` field is set by
-        ``PipelineGroup.__post_init__`` for Merge members only.
+        ``PipelineGroup.__post_init__`` for Merge and FusedMerge members.
         """
         return self._state_src_owner if self._state_src_owner is not None else self
 
@@ -2918,9 +2940,9 @@ class MemoryResource(metaclass=_MemoryResourceMeta):
     def initialize_runtime_state_internal(
         self,
         context: Optional[ResourceContext] = None,
-        captured_schedule: bool = False,
+        captured_schedule: cutlass.Constexpr[bool] = False,
     ) -> None:
-        """Initialise pipeline state/status and task-local storage defaults.
+        """Initialize pipeline state/status and task-local storage defaults.
 
         Always creates ``consumer_status`` / ``producer_status`` (Int32)
         and ``consumer_state`` / ``producer_state`` (pipeline state or
@@ -2947,8 +2969,8 @@ class MemoryResource(metaclass=_MemoryResourceMeta):
         self.consumer_status = cutlass.Int32(0)
         self.producer_status = cutlass.Int32(0)
 
-        # Members of a Merge PipelineGroup share the group's pipeline
-        # state (one consumer drives progression).  Fork members need
+        # Members of a Merge / FusedMerge PipelineGroup share the group's
+        # pipeline state (one consumer drives progression).  Fork members need
         # their own states because consumers advance independently.
         from .enums import PipelineGroupMode
         from .pipeline_group import PipelineGroup
@@ -2961,7 +2983,8 @@ class MemoryResource(metaclass=_MemoryResourceMeta):
             self.pipeline_config is not None
             and self.pipeline_group is not None
             and isinstance(self.pipeline_group, PipelineGroup)
-            and self.pipeline_group.mode == PipelineGroupMode.Merge
+            and self.pipeline_group.mode
+            in (PipelineGroupMode.Merge, PipelineGroupMode.FusedMerge)
         )
         if cutlass.const_expr(has_own_pipeline):
             assert self.pipeline_config is not None
@@ -3512,12 +3535,9 @@ class WorkQueue(MemoryResource):
             self.tile_scheduler.advance_to_next_work()
             work_tile = self.tile_scheduler.get_current_work()
         else:
-            # CLC dynamic: read from the per-stage response buffer
+            # CLC dynamic: read from the per-stage response buffer.
             stage_response_ptr = self._get_stage_response_ptr(stage_info.stage_idx)
-            assert isinstance(self.tile_scheduler, ClcDynamicPersistentTileScheduler)
-            work_tile = self.tile_scheduler.work_tile_info_from_clc_response(
-                stage_response_ptr
-            )
+            work_tile = self._work_tile_info_from_clc_response(stage_response_ptr)
         return work_tile
 
     @consumer_work(returns=("work_tile",))

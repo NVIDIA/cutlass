@@ -7,14 +7,14 @@
 - [Overview](#overview)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
-- [Block-Level Copy Utilities](#block-level-copy-utilities-blockpy)
+- [Block-Level Copy Utilities](#block-level-copy-utilities-cutlassblock)
   - [Block Copy Overview](#block-copy-overview)
   - [`block_copy`](#block_copy)
   - [TMA Copy](#tma-copy)
   - [Compiler-Driven TMA Multicast IR rewriting](#compiler-driven-tma-multicast-ir-rewriting)
   - [S2T Copy (SMEM to TMEM)](#s2t-copy-smem-to-tmem)
 - [TmaInfo Container](#tmainfo-container)
-- [Tensor Memory Allocator](#tensor-memory-allocator-tmem_allocatorpy)
+- [Tensor Memory Allocator](#tensor-memory-allocator-cutlassmemory)
   - [TMEM Allocator Overview](#tmem-allocator-overview)
   - [`TmemAllocator`](#tmemallocator)
   - [`TmemBufferPool`](#tmembufferpool)
@@ -35,11 +35,11 @@ This folder provides high-level building blocks that simplify common patterns in
 
 | Utility | File | Purpose |
 |---------|------|---------|
-| Block-level copy | [`block.py`](./block.py) | Simplified tile copies (TMA, S2T) without manual partitioning |
-| TMEM allocator | [`tmem_allocator.py`](./tmem_allocator.py) | Tensor memory management for Blackwell GPUs |
+| Block-level copy | [`cutlass/block.py`](../block.py) | Simplified tile copies (TMA, S2T) without manual partitioning |
+| TMEM allocator | [`cutlass/memory/tmem.py`](../memory/tmem.py) | Tensor memory management for Blackwell GPUs |
 | Static tile scheduler | [`static_persistent_tile_scheduler.py`](./static_persistent_tile_scheduler.py) | Persistent kernel scheduling with static work distribution |
 | Dynamic tile scheduler | [`dynamic_persistent_tile_scheduler.py`](./dynamic_persistent_tile_scheduler.py) | Persistent kernel scheduling with dynamic work stealing |
-| Grouped GEMM helpers | [`grouped_gemm_tile_scheduler_helper.py`](./grouped_gemm_tile_scheduler_helper.py), [`tensormap_manager.py`](./tensormap_manager.py) | Utilities for batched/grouped GEMM kernels |
+| Grouped GEMM helpers | [`grouped_gemm_tile_scheduler_helper.py`](./grouped_gemm_tile_scheduler_helper.py), [`cutlass/tensor_utils/tensormap.py`](../tensor_utils/tensormap.py) | Utilities for batched/grouped GEMM kernels |
 
 ---
 
@@ -55,7 +55,7 @@ This folder provides high-level building blocks that simplify common patterns in
 ```python
 import cutlass
 import cutlass.cute as cute
-from cutlass import utils, pipeline
+from cutlass import pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
 ```
 
@@ -68,7 +68,6 @@ Here's a minimal example showing how to use `block_copy` for TMA loads in a GEMM
 ```python
 import cutlass
 import cutlass.cute as cute
-from cutlass import utils
 
 # Inside your kernel function...
 
@@ -85,7 +84,7 @@ for k_tile_idx in range(num_k_tiles):
     pipeline_state = mainloop_pipeline.producer_acquire(producer_state)
 
     # TMA load A tile: group_modes makes the first mode represent the TMATile
-    utils.block_copy(
+    cutlass.block.block_copy(
         tma_atom_a,
         cute.group_modes(gA[(None, None, k_tile_idx)], 0, 2),
         cute.group_modes(sA[(None, None, producer_state.index)], 0, 2),
@@ -93,7 +92,7 @@ for k_tile_idx in range(num_k_tiles):
     )
 
     # TMA load B tile
-    utils.block_copy(
+    cutlass.block.block_copy(
         tma_atom_b,
         cute.group_modes(gB[(None, None, k_tile_idx)], 0, 2),
         cute.group_modes(sB[(None, None, producer_state.index)], 0, 2),
@@ -108,7 +107,7 @@ For complete working examples, see the [Examples](#examples) section.
 
 ---
 
-## Block-Level Copy Utilities (`block.py`)
+## Block-Level Copy Utilities (`cutlass.block`)
 
 ### Block Copy Overview
 
@@ -182,7 +181,7 @@ src_grouped = cute.group_modes(src_tile, 0, 2)  # Now has layout (TMATile,)
 dst_grouped = cute.group_modes(dst_tile, 0, 2)  # Now has layout (TMATile,)
 
 # TMA load (Global → Shared) - requires barrier pointer
-utils.block_copy(
+cutlass.block.block_copy(
     tma_atom,
     src_grouped,
     dst_grouped,
@@ -190,7 +189,7 @@ utils.block_copy(
 )
 
 # TMA store (Shared → Global) - no barrier needed
-utils.block_copy(
+cutlass.block.block_copy(
     tma_atom_store,
     smem_grouped,
     gmem_grouped,
@@ -227,7 +226,7 @@ cluster_shape_m, cluster_shape_n = 2, 1
 
 # Load A with multicast along M dimension
 # A has shape (M, K), so CTAs along M share the same A tile
-utils.block_copy(
+cutlass.block.block_copy(
     tma_atom_a,
     cute.group_modes(gA[(None, None, k_tile_idx)], 0, 2),  # Slice then group
     cute.group_modes(sA[(None, None, stage_idx)], 0, 2),
@@ -241,7 +240,7 @@ utils.block_copy(
 
 # Load B with multicast along N dimension
 # B has shape (N, K), so CTAs along N share the same B tile
-utils.block_copy(
+cutlass.block.block_copy(
     tma_atom_b,
     cute.group_modes(gB[(None, None, k_tile_idx)], 0, 2),
     cute.group_modes(sB[(None, None, stage_idx)], 0, 2),
@@ -271,7 +270,7 @@ copy_atom_s2t = cute.make_copy_atom(
 )
 
 # Copy directly without group_modes
-utils.block_copy(copy_atom_s2t, smem_tensor, tmem_tensor)
+cutlass.block.block_copy(copy_atom_s2t, smem_tensor, tmem_tensor)
 ```
 
 The function automatically handles filtering, partitioning, and SMEM descriptor creation.
@@ -323,7 +322,7 @@ tma_info = cpasync.make_tiled_tma_atom(
 )
 
 # Access the Copy Atom for use with block_copy
-utils.block_copy(
+cutlass.block.block_copy(
     tma_info.atom,
     cute.group_modes(gA[(None, None, k_tile_idx)], 0, 2),
     cute.group_modes(sA[(None, None, stage_idx)], 0, 2),
@@ -336,7 +335,7 @@ print(f"SMEM layout: {tma_info.smem_layout}")
 
 ---
 
-## Tensor Memory Allocator (`tmem_allocator.py`)
+## Tensor Memory Allocator (`cutlass.memory`)
 
 ### TMEM Allocator Overview
 
@@ -368,10 +367,11 @@ TmemAllocator(
 #### Basic Usage Pattern
 
 ```python
-from cutlass import utils, pipeline
+import cutlass.cute as cute
+from cutlass import pipeline
 
 # 1. Setup: allocate SMEM for holding the TMEM address
-smem = cutlass.utils.SmemAllocator()
+smem = cutlass.memory.SmemAllocator()
 storage = smem.allocate(SharedStorage)  # SharedStorage has tmem_holding_buf field
 
 # 2. Create barrier for synchronization
@@ -381,7 +381,7 @@ tmem_alloc_barrier = pipeline.NamedBarrier(
 )
 
 # 3. Create allocator
-tmem = utils.TmemAllocator(
+tmem = cutlass.memory.TmemAllocator(
     storage.tmem_holding_buf.ptr,
     barrier_for_retrieve=tmem_alloc_barrier,
 )
@@ -459,7 +459,7 @@ tCtSFB = cute.make_tensor(sfb_ptr, scale_b_layout)
 Calculate the total TMEM columns needed for given tensors:
 
 ```python
-from cutlass.utils.tmem_allocator import get_num_tmem_alloc_cols
+from cutlass.memory import get_num_tmem_alloc_cols
 
 # Calculate required columns (rounded to power of 2)
 num_cols = get_num_tmem_alloc_cols(
@@ -474,7 +474,7 @@ num_cols = get_num_tmem_alloc_cols(
 Compute TMEM columns required for a layout (without creating a tensor):
 
 ```python
-from cutlass.utils.tmem_allocator import compute_tmem_cols_from_layout
+from cutlass.memory import compute_tmem_cols_from_layout
 
 num_cols = compute_tmem_cols_from_layout(acc_layout, cutlass.Float32)
 ```
@@ -488,8 +488,8 @@ num_cols = compute_tmem_cols_from_layout(acc_layout, cutlass.Float32)
 | [`static_persistent_tile_scheduler.py`](./static_persistent_tile_scheduler.py) | Static work distribution for persistent kernels |
 | [`dynamic_persistent_tile_scheduler.py`](./dynamic_persistent_tile_scheduler.py) | Dynamic work stealing for load-balanced scheduling |
 | [`grouped_gemm_tile_scheduler_helper.py`](./grouped_gemm_tile_scheduler_helper.py) | Helpers for grouped/batched GEMM |
-| [`tensormap_manager.py`](./tensormap_manager.py) | TMA descriptor management for grouped GEMM |
-| [`smem_allocator.py`](./smem_allocator.py) | Shared memory allocation utilities |
+| [`cutlass/tensor_utils/tensormap.py`](../tensor_utils/tensormap.py) | TMA descriptor management for grouped GEMM |
+| [`cutlass/memory/smem.py`](../memory/smem.py) | Shared memory allocation utilities |
 | [`blackwell_helpers.py`](./blackwell_helpers.py) | Blackwell-specific helper functions |
 | [`hopper_helpers.py`](./hopper_helpers.py) | Hopper-specific helper functions |
 
@@ -569,7 +569,7 @@ Comparing these pairs shows how the block API simplifies implementation.
 - **Fix**: Pass `tma_bar_ptr=barrier_ptr` for all TMA load operations
 
 ```python
-utils.block_copy(tma_atom, src, dst, tma_bar_ptr=barrier_ptr)
+cutlass.block.block_copy(tma_atom, src, dst, tma_bar_ptr=barrier_ptr)
 ```
 
 #### `ValueError: "block_copy with tma_multicast expects CopyBulkTensorTileG2SOp for compiler-driven multicast"`

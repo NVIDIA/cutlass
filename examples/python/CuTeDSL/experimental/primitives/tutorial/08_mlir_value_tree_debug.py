@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -25,102 +25,6 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-# cutlass DSL Chapter 8: MLIR Value Tree Debugging
-#
-# This tutorial covers both straightforward and tricky value-tracking cases.
-#
-# =============================================================================
-# WHY THIS EXISTS: Understanding MLIR Value Tracking in Dynamic Loops
-# =============================================================================
-#
-# BACKGROUND: THE MLIR CONSTRAINT
-# -------------------------------
-# When the DSL compiles Python code to MLIR (the underlying compiler IR),
-# dynamic control flow like `for` loops becomes SCF (Structured Control Flow)
-# operations. These SCF operations have a critical constraint:
-#
-#   The "iter_args" (loop-carried variables) must have a FIXED STRUCTURE
-#   that remains IDENTICAL across all loop iterations.
-#
-# This means if you enter a loop with a variable that has 3 MLIR values
-# (e.g., a Particle with position.x, position.y, velocity.x, velocity.y = 4 values),
-# the loop body MUST return exactly 4 values of the same types.
-#
-# THE PROBLEM THIS SOLVES
-# -----------------------
-# Users often create custom Python classes to organize their data (Accumulators,
-# Particles, Systems, etc.). The DSL needs to:
-#
-#   1. EXTRACT: Flatten these objects into a list of MLIR values for the loop
-#   2. TRACK: Remember the structure so values can be reassembled
-#   3. RECONSTRUCT: After the loop body, rebuild the Python objects
-#   4. VERIFY: Ensure the returned structure matches the input structure
-#
-# When users accidentally change the structure mid-loop (add a field, change
-# a type, resize a list), the DSL must detect this and provide a CLEAR error
-# message explaining what went wrong.
-#
-# THE TREE-BASED APPROACH
-# -----------------------
-# Previously, MLIR values were tracked as flat lists, making errors cryptic:
-#   "Expected 4 values but got 5" - Which field was added? No idea.
-#
-# The tree-based approach preserves the nested dict/list structure:
-#   {
-#       "position": {"x": ir.Value, "y": ir.Value},
-#       "velocity": {"x": ir.Value, "y": ir.Value}
-#   }
-#
-# This enables:
-#   - Clear debug output showing the full structure with field names
-#   - Precise error messages: "particle.position.x changed from f32 to i32"
-#   - Compact diff tables showing exactly what changed
-#
-# COMMON STRUCTURE MISMATCH ERRORS
-# --------------------------------
-# 1. ADDING A FIELD: {value: f32} -> {value: f32, extra: f32}
-# 2. CHANGING A TYPE: position.x starts as f32, body returns i32
-# 3. RESIZING A LIST: particles list starts with 2 items, body returns 3 items
-# 4. CHANGING LIST ELEMENT TYPE: forces[1] starts as f32, body returns i32
-#
-# All of these violate the MLIR constraint and will be caught with detailed errors.
-#
-# DEBUG OUTPUT CONTROL
-# --------------------
-# Use set_dynamic_debug(True, max_depth=N) to see what values flow through loops:
-#   - max_depth=0: Only top-level loops
-#   - max_depth=1: Top-level + 1 nested level
-#   - max_depth=None: All levels (can be verbose!)
-#
-# The debug output shows:
-#   [Level 0] DEBUG 'for'
-#     source: myfile.py:42
-#       for step in range(num_steps):
-#     [0] type: Particle
-#         Particle:
-#           position:
-#             x: f32
-#             y: f32
-#           velocity:
-#             x: f32
-#             y: f32
-#     => flattened to 4 ir.Values
-#
-# =============================================================================
-# WHAT THIS TUTORIAL DEMONSTRATES
-# =============================================================================
-#
-# 1. Custom classes with __extract_mlir_values__ returning dict structures
-# 2. Using enum and dataclass alongside dynamic expressions
-# 3. Dynamic loops with iter_args using custom types
-# 4. Debug printing of the MLIR value tree structure
-# 5. ParticleSystem: handling lists of dynamic objects
-# 6. Error cases: what happens when structure changes mid-loop
-#
-# The key insight is that __extract_mlir_values__ returns a nested dict/list
-# structure (not a flat list), making it easier to understand and debug
-# what MLIR values are being tracked.
 
 """MLIR value-tree debugging — custom classes in dynamic loops.
 

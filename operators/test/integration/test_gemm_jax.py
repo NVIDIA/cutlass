@@ -27,11 +27,22 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-import logging
 import sys
-from pprint import pformat
 
 import pytest
+
+# jax is unavailable on Python < 3.11
+if sys.version_info < (3, 11):
+    pytest.skip(
+        "JAX is unavailable on Python < 3.11",
+        allow_module_level=True,
+    )
+
+import logging
+from pprint import pformat
+
+import jax
+import jax.numpy as jnp
 
 import cutlass
 
@@ -40,22 +51,19 @@ from cutlass.operators.utils.device import device_or_env_target_sm
 
 from test_utils import assert_close_with_reference_conversion
 
-# jax[cuda13] is not available on Python<3.11, but should be
-# present otherwise.
-if sys.version_info < (3, 11):
-    pytest.skip(
-        "JAX is unavailable on Python<3.11",
-        allow_module_level=True,
-    )
-
-import jax  # noqa: E402
-import jax.numpy as jnp  # noqa: E402
-
 # The test exercises the JAX-to-GPU operator path, which requires a GPU backend.
 pytestmark = pytest.mark.skipif(
     not any(d.platform == "gpu" for d in jax.devices()),
     reason="JAX has no GPU device available",
 )
+
+pytestmark = [
+    pytestmark,
+    pytest.mark.skipif(
+        device_or_env_target_sm().cc == 107,
+        reason="jax[cuda13] ptxas does not support sm_107a",
+    ),
+]
 
 logger = logging.getLogger(__name__)
 

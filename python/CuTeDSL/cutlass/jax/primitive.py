@@ -9,9 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, Sequence, Callable
+from collections.abc import Hashable, Mapping
 import logging
-
+from typing import Any, Callable, Sequence
 
 import jax
 import jax.extend
@@ -20,7 +20,13 @@ from jax._src.interpreters import ad
 from jax._src.interpreters import batching
 
 
-from .compile import get_or_compile_kernel, build_function_spec
+from .compile import (
+    _KernelLoweringTarget,
+    _normalize_input_output_aliases,
+    FunctionSpec,
+    build_function_spec,
+    get_or_compile_kernel,
+)
 from .types import (
     _normalize_divisibility,
     _validate_permutation,
@@ -48,19 +54,24 @@ def cutlass_call(
     output_spec: Any = None,
     input_mode: Any = None,
     output_mode: Any = None,
-    input_output_aliases: dict[int, int] | None = None,
+    input_output_aliases: (
+        Mapping[int | jax.tree_util.KeyPath, int | jax.tree_util.KeyPath] | None
+    ) = None,
     allow_cuda_graph: bool = True,
     ffi_call_target: str | None = None,
     compile_options: str | None = None,
+    compile_key: Hashable | None = None,
     use_static_tensors: bool = False,
     **kwargs: Any,
 ) -> Callable[..., Any]:
     """Create a callable that invokes a ``@cute.jit`` function from JAX.
 
     Returns a callable that accepts JAX arrays and dispatches to *fn* as part
-    of a ``jax.jit``-compiled computation.  The kernel is compiled once on the
-    first call and cached for subsequent invocations with the same shapes and
-    specs.
+    of a ``jax.jit``-compiled computation. The backend kernel is compiled once
+    and cached for subsequent invocations with the same shapes and specs, but
+    automatic cache lookup may still generate frontend IR. Inputs may be
+    ``None``; absent tensors consume no FFI buffer and each distinct input
+    pytree structure is compiled and cached independently.
 
     Example::
 
@@ -85,16 +96,39 @@ def cutlass_call(
             ``(stream, *inputs, *outputs, **kwargs)``.
         output_shape_dtype: A pytree of :class:`jax.ShapeDtypeStruct` (or
             objects with ``.shape`` and ``.dtype`` attributes) describing each
-            output buffer.
+            output buffer. A sequence at the root describes the outer output
+            sequence. Wrap a tuple-like pytree in a one-element tuple when it
+            should be treated as one top-level output.
         input_spec: A :class:`TensorSpec` or list thereof providing
             layout/mode/divisibility hints for input tensors. ``None`` infers
-            defaults from each array. A ``TensorSpec`` with ``layout=None`` uses
-            and constrains row-major physical layout; use ``mode`` to remap
-            physical dimensions to the kernel's logical modes.
+            defaults from each array. Specs may either describe only present
+            tensors or mirror the input pytree, using ``None`` for absent
+            tensors. For a single positional pytree argument, the spec may
+            mirror that argument directly. A ``TensorSpec`` with
+            ``layout=None`` uses and constrains row-major physical layout; use
+            ``mode`` to remap physical dimensions to the kernel's logical modes.
         output_spec: Same as *input_spec* but applied to output tensors.
-        input_output_aliases: ``{input_index: output_index}`` mapping that
-            allows an input buffer to alias an output, avoiding an extra copy.
-            Indices are into the flattened input and output pytrees.
+        input_output_aliases: Mapping from inputs to outputs that should share
+            storage. Integer mappings select complete top-level input and output
+            pytrees. Key-path mappings select individual tensor leaves.
+
+            Input key paths are rooted at the tuple of positional arguments
+            passed to the returned callable. Output key paths are rooted at the
+            outer output sequence derived from ``output_shape_dtype``. A path
+            therefore usually starts with ``SequenceKey(index)`` to select a
+            positional input or output. For example, given one input state and
+            one output state::
+
+                state_path = (
+                    jax.tree_util.SequenceKey(0),
+                    jax.tree_util.GetAttrKey("persistent"),
+                )
+                aliases = {state_path: state_path}
+
+            Input and output paths need not be identical; each must resolve to
+            a tensor leaf in its respective pytree. Selected leaves must have
+            matching shapes, dtypes, and physical layouts. Sibling leaves
+            remain ordinary outputs.
         allow_cuda_graph: If ``False``, prevents XLA from capturing this call
             in a CUDA graph.  Defaults to ``True``.
         ffi_call_target: Exact FFI target name to call without automatic
@@ -107,6 +141,15 @@ def cutlass_call(
             ``None``.
         compile_options: Optional string of compiler flags forwarded to
             ``cute.compile``.
+        compile_key: Optional hashable component of the compilation cache key
+            that skips IR generation during cache lookup. The value must
+            uniquely identify the kernel body, captured state, and relevant
+            global state; reusing it for incompatible calls can return an
+            incorrect cached binary. A stable function object or
+            application-defined identifier may be used.
+            Input/output pytrees, shapes, dtypes, tensor specifications,
+            aliases, compile-time arguments, compiler options, and
+            environment are included automatically.
         use_static_tensors: If ``True``, tensor shapes and strides are baked in
             as compile-time constants, improving performance when shapes are
             fixed across calls.  Defaults to ``False``.
@@ -119,20 +162,24 @@ def cutlass_call(
 
     Note:
         This API is experimental and subject to change.
+        Without ``compile_key``, each cache lookup that reaches Cutlass
+        lowering generates precompiled IR to derive a content key. On a cache
+        miss, object compilation traces ``fn`` again, so both traces must generate
+        identical IR for identical compile-time arguments.
     """
     if output_shape_dtype is None:
         raise ValueError("'output_shape_dtype' must be specified.")
+    input_output_aliases = _normalize_input_output_aliases(input_output_aliases)
     if ffi_call_target is None:
         # Resolve the process default before binding so the target participates
         # in JAX's compilation cache key.
         ffi_call_target = _register_and_get_default_ffi_call_target(allow_cuda_graph)
+    if compile_key is not None and getattr(type(compile_key), "__hash__", None) is None:
+        raise TypeError("'compile_key' must be hashable or None.")
 
     output_shape_dtype = jax.tree.map(
         lambda leaf: jax.ShapeDtypeStruct(leaf.shape, leaf.dtype), output_shape_dtype
     )
-
-    if input_output_aliases is None:
-        input_output_aliases = {}
 
     if input_spec and input_mode:
         raise ValueError(
@@ -154,9 +201,9 @@ def cutlass_call(
         input_spec=input_spec,
         output_spec=output_spec,
         input_output_aliases=input_output_aliases,
-        allow_cuda_graph=allow_cuda_graph,
         ffi_call_target=ffi_call_target,
         compile_options=compile_options,
+        compile_key=compile_key,
         use_static_tensors=use_static_tensors,
         **kwargs,
     )
@@ -220,6 +267,46 @@ def _resolve_spec_flat(spec: Any, tensors: list) -> tuple[TensorSpec, ...]:
     )
 
 
+def _resolve_input_spec_flat(
+    spec: Any, inputs: Any, tensors: list
+) -> tuple[TensorSpec, ...]:
+    """Resolve specs for present tensors while preserving optional input structure."""
+    specs = _normalize_tensor_spec(spec) if spec is not None else []
+    if spec is None or len(specs) == len(tensors):
+        return _resolve_spec_flat(spec, tensors)
+
+    _, spec_tree = jax.tree.flatten(spec, is_leaf=_is_spec_leaf)
+    structured_inputs = inputs
+    _, input_tree = jax.tree.flatten(structured_inputs, is_leaf=lambda x: x is None)
+    if input_tree != spec_tree and isinstance(inputs, tuple) and len(inputs) == 1:
+        structured_inputs = inputs[0]
+        _, input_tree = jax.tree.flatten(structured_inputs, is_leaf=lambda x: x is None)
+    if input_tree != spec_tree:
+        raise ValueError(
+            f"Must have the same number of specs ({len(specs)}) as tensors "
+            f"({len(tensors)}), or an input_spec pytree matching the inputs."
+        )
+
+    def resolve(input_value: Any, input_spec: Any) -> TensorSpec | None:
+        if input_value is None:
+            if input_spec is not None:
+                raise ValueError("An absent tensor input must have a None input_spec.")
+            return None
+        if input_spec is None:
+            return default_tensor_spec(input_value)
+        if isinstance(input_spec, TensorSpec):
+            return input_spec
+        if isinstance(input_spec, (list, tuple)):
+            return TensorSpec(mode=tuple(input_spec))
+        raise TypeError(
+            f"Unexpected value for TensorSpec: {input_spec!r} "
+            f"({type(input_spec).__name__})"
+        )
+
+    resolved = jax.tree.map(resolve, structured_inputs, spec, is_leaf=_is_spec_leaf)
+    return tuple(jax.tree.leaves(resolved, is_leaf=lambda x: isinstance(x, TensorSpec)))
+
+
 def _validate_specs(label: str, tensors: list, specs: tuple[TensorSpec, ...]) -> None:
     """Validate that each spec's rank-dependent fields match the corresponding tensor shape."""
     for idx, (tensor, spec) in enumerate(zip(tensors, specs)):
@@ -253,10 +340,12 @@ def _cutlass_call_impl(
     output_shape_dtype: Any,
     input_spec: Any,
     output_spec: Any,
-    input_output_aliases: dict[int, int],
-    allow_cuda_graph: bool,
+    input_output_aliases: tuple[
+        tuple[int | jax.tree_util.KeyPath, int | jax.tree_util.KeyPath], ...
+    ],
     ffi_call_target: str,
     compile_options: str | None,
+    compile_key: Hashable | None,
     use_static_tensors: bool,
     **kwargs: Any,
 ) -> Callable[..., Any]:
@@ -265,31 +354,36 @@ def _cutlass_call_impl(
     if not multiple_results:
         output_shape_dtype = (output_shape_dtype,)
     output_shape_dtype_flat, output_tree = jax.tree.flatten(output_shape_dtype)
+    lowering_target = _KernelLoweringTarget(fn, compile_key)
 
     @jax.jit
     def call_wrapper(*args: Any) -> Any:
         args_flat, args_tree = jax.tree.flatten(args)
 
-        input_spec_flat = _resolve_spec_flat(input_spec, args_flat)
+        input_spec_flat = _resolve_input_spec_flat(input_spec, args, args_flat)
         output_spec_flat = _resolve_spec_flat(output_spec, output_shape_dtype_flat)
 
         _validate_specs("Input", args_flat, input_spec_flat)
         _validate_specs("Output", output_shape_dtype_flat, output_spec_flat)
+        spec = build_function_spec(
+            args_flat,
+            args_tree,
+            output_shape_dtype_flat,
+            output_tree,
+            input_spec_flat,
+            output_spec_flat,
+            dict(input_output_aliases),
+            compile_options,
+            use_static_tensors,
+            kwargs,
+        )
 
         output_flat = cutlass_call_inner_p.bind(
             *args_flat,
-            fn=fn,
-            args_tree=args_tree,
+            lowering_target=lowering_target,
+            spec=spec,
             output_shape_dtype_flat=tuple(output_shape_dtype_flat),
-            output_tree=output_tree,
-            input_spec_flat=input_spec_flat,
-            output_spec_flat=output_spec_flat,
-            input_output_aliases=tuple(input_output_aliases.items()),
-            allow_cuda_graph=allow_cuda_graph,
             ffi_call_target=ffi_call_target,
-            compile_options=compile_options,
-            use_static_tensors=use_static_tensors,
-            **kwargs,
         )
 
         output = jax.tree.unflatten(output_tree, output_flat)
@@ -305,42 +399,24 @@ def cutlass_call_inner_p_abstract(
     return [jax.core.ShapedArray(x.shape, x.dtype) for x in output_shape_dtype_flat]
 
 
-def cutlass_call_inner_p_impl(
+def _cutlass_call_inner_p_impl(
     *args_flat: Any,
-    fn: Callable[..., None],
-    args_tree: Any,
+    lowering_target: _KernelLoweringTarget,
+    spec: FunctionSpec,
     output_shape_dtype_flat: tuple[Any, ...],
-    output_tree: Any,
-    input_spec_flat: tuple[TensorSpec, ...],
-    output_spec_flat: tuple[TensorSpec, ...],
-    input_output_aliases: tuple[tuple[int, int], ...],
-    allow_cuda_graph: bool,
     ffi_call_target: str,
-    compile_options: str | None,
-    use_static_tensors: bool,
-    **kwargs: Any,
 ) -> Any:
-    aliases_dict = dict(input_output_aliases)
-    spec = build_function_spec(
-        args_flat,
-        args_tree,
-        output_shape_dtype_flat,
-        output_tree,
-        input_spec_flat,
-        output_spec_flat,
-        aliases_dict,
-        compile_options,
-        use_static_tensors,
-        kwargs,
+    kernel = get_or_compile_kernel(
+        lowering_target.fn,
+        spec,
+        compile_key=lowering_target.user_compile_key,
     )
-
-    kernel = get_or_compile_kernel(fn, spec)
 
     # Convert explicit layout constraints from CuTeDSL to JAX order. ``None`` is
     # passed through intentionally: jax.ffi.ffi_call treats it as default
     # row-major layout.
-    input_layouts = [cutlass_to_jax_layout_order(s.layout) for s in input_spec_flat]
-    output_layouts = [cutlass_to_jax_layout_order(s.layout) for s in output_spec_flat]
+    input_layouts = [cutlass_to_jax_layout_order(s.layout) for s in spec.input_spec]
+    output_layouts = [cutlass_to_jax_layout_order(s.layout) for s in spec.output_spec]
 
     fun = jax.ffi.ffi_call(
         ffi_call_target,
@@ -385,5 +461,20 @@ batching.primitive_batchers[cutlass_call_inner_p] = _cutlass_call_vmap_rule
 
 jax._src.dispatch.simple_impl(cutlass_call_inner_p)
 jax._src.dispatch.prim_requires_devices_during_lowering.add(cutlass_call_inner_p)
-lowering = mlir.lower_fun(cutlass_call_inner_p_impl, multiple_results=True)
-mlir.register_lowering(cutlass_call_inner_p, lowering, platform="cuda")
+_cutlass_call_inner_p_lowering = mlir.lower_fun(
+    _cutlass_call_inner_p_impl, multiple_results=True
+)
+if jax.version.__version_info__ >= (0, 7, 0):
+    mlir.register_lowering(
+        cutlass_call_inner_p,
+        _cutlass_call_inner_p_lowering,
+        platform="cuda",
+        inline=False,
+    )
+else:
+    # JAX 0.7 added cached out-of-line primitive lowerings.
+    mlir.register_lowering(
+        cutlass_call_inner_p,
+        _cutlass_call_inner_p_lowering,
+        platform="cuda",
+    )

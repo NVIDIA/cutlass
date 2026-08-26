@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import copy
+from collections.abc import Callable
 from typing import Any
 
 from . import cuda as cuda_helpers
@@ -87,35 +88,32 @@ def copy_from_gpu(
     log().info("copyout done tensor=[%s] dev_ptr=[%s]", tensor, tensor.device_pointer)
 
 
+def _transfer(
+    tensor: Any, copy_fn: Callable[..., Any], func_name: str, stream: Any
+) -> TensorDescriptor:
+    """Wrap ``tensor`` in a TensorDescriptor and run ``copy_fn`` (to/from GPU)."""
+    if isinstance(tensor, TensorDescriptor):
+        new_tensor = copy.copy(tensor)
+        copy_fn(new_tensor, stream=stream)
+        return new_tensor
+
+    if TensorDescriptor.can_transformed_to_dlpack(tensor):
+        new_tensor = TensorDescriptor(tensor)
+        copy_fn(new_tensor, stream=stream)
+        return new_tensor
+
+    raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_TENSOR, func=func_name)
+
+
 def to_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
     """
     Copies the tensor to the GPU memory from Host memory
     """
-    if isinstance(tensor, TensorDescriptor):
-        new_tensor = copy.copy(tensor)
-        copy_to_gpu(new_tensor, stream=stream)
-        return new_tensor
-
-    if TensorDescriptor.can_transformed_to_dlpack(tensor):
-        new_tensor = TensorDescriptor(tensor)
-        copy_to_gpu(new_tensor, stream=stream)
-        return new_tensor
-
-    raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_TENSOR, func="to_gpu()")
+    return _transfer(tensor, copy_to_gpu, "to_gpu()", stream)
 
 
 def from_gpu(tensor: Any, stream: Any = None) -> TensorDescriptor:
     """
-    Copies the tensor to the GPU memory from Host memory
+    Copies the tensor from the GPU memory to Host memory
     """
-    if isinstance(tensor, TensorDescriptor):
-        new_tensor = copy.copy(tensor)
-        copy_from_gpu(new_tensor, stream=stream)
-        return new_tensor
-
-    if TensorDescriptor.can_transformed_to_dlpack(tensor):
-        new_tensor = TensorDescriptor(tensor)
-        copy_from_gpu(new_tensor, stream=stream)
-        return new_tensor
-
-    raise DSLUserCodeError(DiagId.TYPE_UNSUPPORTED_TENSOR, func="from_gpu()")
+    return _transfer(tensor, copy_from_gpu, "from_gpu()", stream)

@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -29,27 +29,10 @@
 """
 Cluster multicast GEMM example.
 
-Cluster MxN CTA_1 tcgen05 GEMM with real A/B TMA multicast.
+To run::
 
-This example extends the single-CTA tcgen05 GEMM into an MxN cluster.  Each
-CTA still owns one output tile and issues CTA_1 MMA, but the TMA loads are
-cohort multicast instead of selfcast:
-
-* A is shared across the cluster-N axis.  Every CTA in the N cohort issues a
-  disjoint row shard of the A tile, and the mask covers all CTAs with the same
-  ``cluster_m``.
-* B is shared across the cluster-M axis.  Every CTA in the M cohort issues a
-  disjoint row shard of the B tile, and the mask covers all CTAs with the same
-  ``cluster_n``.
-
-Every CTA initializes and waits on its own local full mbarrier.  TMA multicast
-delivers the bytes to the same SMEM offset in each destination CTA, so each
-CTA arms the sum of incoming shard complete_tx bytes.  This equals one
-complete A tile plus one complete B tile after multicast.  The TMA descriptor
-box is the pre-multicast shard, not the post-multicast full tile.  The empty
-mbarrier mirrors the dense PipelineTmaUmma multicast protocol: consumers
-release the union of A/B producer cohorts before the next shard can overwrite
-receiver SMEM.
+    python CuTeDSL/experimental/primitives/tcgen05/mcast_clusterMxN_1cta_mma.py
+    python CuTeDSL/experimental/primitives/tcgen05/mcast_clusterMxN_1cta_mma.py --mnk 512,512,128 --CLUSTER_SHAPE 2,2
 
 """
 
@@ -70,6 +53,10 @@ from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 io_dtype = cutlass.Float16
 
 MMA_K_GRANULE: cutlass.Constexpr[int] = 16
@@ -81,6 +68,11 @@ _MIN_CTA_TILE_N: int = 128
 _MAX_DENSE_M_DIM: int = 496
 _MAX_DENSE_N_DIM: int = 504
 _MAX_TMA_BOX_DIM: int = 256
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -262,6 +254,9 @@ def kernel(
         if prims.elect_sync():
             prims.tcgen05_commit(acc_done_mbar, group=prims.CTAGroup.CTA_1)
 
+    # One-shot output tile: acc_done is sufficient here. Persistent variants
+    # must signal acc_empty only after the last tcgen05_ld drains the reusable
+    # TMEM slot.
     prims.barrier_cta_sync(0)
     while not prims.mbarrier_try_wait_parity(
         acc_done_mbar, cutlass.Int32(0), time_limit=10_000_000
@@ -308,6 +303,11 @@ def kernel(
         prims.tcgen05_dealloc(tmem_ptr, NUM_TMEM_COLS, group="cta_1")
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     a: cute.Tensor,
@@ -349,6 +349,11 @@ def host(
         block=(128, 1, 1),
         cluster=(CLUSTER_M, CLUSTER_N, 1),
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -484,6 +489,11 @@ def _validate(
         )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     mnk: Tuple[int, int, int] = _DEFAULT_MNK,
@@ -531,6 +541,11 @@ def run(
     return c, ref
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(
     mnk: Tuple[int, int, int] = _DEFAULT_MNK,
     *,
@@ -556,6 +571,10 @@ def verify(
     torch.testing.assert_close(c, ref, atol=tolerance, rtol=1e-5)
     print("PASS")
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

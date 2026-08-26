@@ -29,6 +29,8 @@
 import pytest
 import torch
 
+import cutlass
+
 import cutlass.operators as ops
 from cutlass.operators.metadata import Sm100DesignMetadata
 from cutlass.operators.providers.cutedsl.gemm.sm100_dense_blockscaled_static_persistent import (
@@ -40,8 +42,11 @@ import test_utils
 from test_utils import assert_close_with_reference_conversion
 from test_utils.gemm import (
     make_mxfp4_kmajor,
+    make_mxfp6_cute_batched_kmajor,
+    make_mxfp6_cute_kmajor,
     make_random_pow2_scale,
     scaled_dense_gemm_reference,
+    scaled_dense_gemm_reference_from_f32,
 )
 from test_utils.reference_check import reference_scaled_mm
 
@@ -866,7 +871,11 @@ def test_nvfp4_gemm_sm100(
 
     reference = scaled_dense_gemm_reference(args, ref_as_acc_dtype=True)
     test_utils.reference_check.assert_close_with_reference_conversion(
-        D, reference, D.dtype, atols=1e-01, rtols=1e-02,
+        D,
+        reference,
+        D.dtype,
+        atols=1e-01,
+        rtols=1e-02,
     )
 
 
@@ -920,7 +929,11 @@ def test_nvfp4_gemm_sm100_batched(fixture_enable_tvm_ffi):
 
     reference = scaled_dense_gemm_reference(args, ref_as_acc_dtype=True)
     test_utils.reference_check.assert_close_with_reference_conversion(
-        D, reference, D.dtype, atols=1e-01, rtols=1e-02,
+        D,
+        reference,
+        D.dtype,
+        atols=1e-01,
+        rtols=1e-02,
     )
 
 
@@ -993,7 +1006,11 @@ def test_nvfp4_gemm_sm100_e8m0_scales(
 
     reference = scaled_dense_gemm_reference(args, ref_as_acc_dtype=True)
     test_utils.reference_check.assert_close_with_reference_conversion(
-        D, reference, D.dtype, atols=1e-01, rtols=1e-02,
+        D,
+        reference,
+        D.dtype,
+        atols=1e-01,
+        rtols=1e-02,
     )
 
 
@@ -1150,3 +1167,258 @@ def test_nvfp4_incompatible_swizzle(fixture_enable_tvm_ffi):
 
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
     assert len(operators) == 0
+
+
+def _make_mxfp6_mxfp8_operands(
+    M: int,
+    N: int,
+    K: int,
+    a_dtype,
+    b_dtype,
+):
+    """Build mixed MXFP6/MXFP8 operands and float32 sources for reference.
+
+    ``a_dtype`` / ``b_dtype`` are either a cutlass FP6 type or
+    ``torch.float8_e4m3fn``. Returns
+    ``(A, B, a_f32, b_f32, D, SFA, SFB, scale_mode, swizzle)``.
+    """
+    scale_mode = ops.ScaleMode.Blockwise1x32
+    swizzle = ops.ScaleSwizzleMode.Swizzle32x4x4
+    fp6_dtypes = {cutlass.Float6E2M3FN, cutlass.Float6E3M2FN}
+
+    if a_dtype in fp6_dtypes:
+        A, a_f32 = make_mxfp6_cute_kmajor(M, K, a_dtype)
+    else:
+        A = torch.randint(-1, 2, (M, K), device="cuda").to(a_dtype)
+        a_f32 = A.to(torch.float32)
+
+    if b_dtype in fp6_dtypes:
+        B, b_f32 = make_mxfp6_cute_kmajor(N, K, b_dtype, as_b=True)
+    else:
+        B = torch.randint(-1, 2, (N, K), device="cuda").to(b_dtype).transpose(0, 1)
+        b_f32 = B.to(torch.float32)
+
+    D = torch.empty((M, N), device="cuda", dtype=torch.float16)
+    SFA = make_random_pow2_scale(
+        ops.ScaledOperand.numel_scale((M, K), scale_mode, swizzle)
+    )
+    SFB = make_random_pow2_scale(
+        ops.ScaledOperand.numel_scale((N, K), scale_mode, swizzle)
+    )
+    return A, B, a_f32, b_f32, D, SFA, SFB, scale_mode, swizzle
+
+
+@pytest.mark.parametrize(
+    "M, N, K",
+    [
+        (256, 512, 512),
+        (512, 256, 512),
+    ],
+)
+@pytest.mark.parametrize(
+    "a_dtype, b_dtype",
+    [
+        (cutlass.Float6E3M2FN, torch.float8_e4m3fn),
+        (cutlass.Float6E2M3FN, torch.float8_e4m3fn),
+        (torch.float8_e4m3fn, cutlass.Float6E3M2FN),
+        (torch.float8_e4m3fn, cutlass.Float6E2M3FN),
+    ],
+    ids=[
+        "mxfp6_e3m2_mxfp8",
+        "mxfp6_e2m3_mxfp8",
+        "mxfp8_mxfp6_e3m2",
+        "mxfp8_mxfp6_e2m3",
+    ],
+)
+@pytest.mark.arch(sms=["100f"])
+def test_mxfp6_mxfp8_mixed_gemm_sm100(
+    M: int,
+    N: int,
+    K: int,
+    a_dtype,
+    b_dtype,
+    fixture_disable_tvm_ffi,
+):
+    """Tests mixed MXFP8E4M3 x MXFP6 GEMM via CuTe tensors for the FP6 operand.
+
+    Covers both directions and both FP6 encodings with Blockwise1x32 / E8M0
+    scales. Integer operands and power-of-two scales keep the reference exact.
+    """
+    A, B, a_f32, b_f32, D, SFA, SFB, scale_mode, swizzle = _make_mxfp6_mxfp8_operands(
+        M, N, K, a_dtype, b_dtype
+    )
+
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA, scale_mode, swizzle),
+        B=ops.ScaledOperand(B, SFB, scale_mode, swizzle),
+        out=D,
+        accumulator_type=torch.float32,
+    )
+
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0, (
+        f"No MXFP6 kernels found for A={a_dtype}, B={b_dtype}, M={M}, N={N}, K={K}"
+    )
+    operator = operators[0]
+    assert operator.supports(args)
+    compiled_artifact = operator.compile(args)
+    operator.run(args, compiled_artifact=compiled_artifact, assume_supported_args=True)
+
+    reference = scaled_dense_gemm_reference_from_f32(
+        a_f32,
+        b_f32,
+        SFA,
+        SFB,
+        ops.ScaleMode.numel(scale_mode),
+        ref_as_acc_dtype=True,
+    )
+    test_utils.reference_check.assert_close_with_reference_conversion(
+        D, reference, D.dtype, atols=0.0, rtols=0.0
+    )
+
+
+@pytest.mark.arch(sms=["100f"])
+def test_mxfp6_mxfp8_mixed_gemm_sm100_batched(fixture_disable_tvm_ffi):
+    """Batched (L=2) mixed MXFP8E4M3 x MXFP6E3M2 GEMM with CuTe FP6 A."""
+    M, N, K, L = 256, 512, 512, 2
+    scale_mode = ops.ScaleMode.Blockwise1x32
+    swizzle = ops.ScaleSwizzleMode.Swizzle32x4x4
+
+    A, a_f32 = make_mxfp6_cute_batched_kmajor(L, M, K, cutlass.Float6E3M2FN)
+    B = (
+        torch.randint(-1, 2, (L, N, K), device="cuda")
+        .to(torch.float8_e4m3fn)
+        .transpose(1, 2)
+    )
+    b_f32 = B.to(torch.float32)
+    D = torch.empty((L, M, N), device="cuda", dtype=torch.float16)
+
+    SFA = make_random_pow2_scale(
+        ops.ScaledOperand.numel_scale((L, M, K), scale_mode, swizzle)
+    )
+    SFB = make_random_pow2_scale(
+        ops.ScaledOperand.numel_scale((L, N, K), scale_mode, swizzle)
+    )
+
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA, scale_mode, swizzle),
+        B=ops.ScaledOperand(B, SFB, scale_mode, swizzle),
+        out=D,
+        accumulator_type=torch.float32,
+    )
+
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+    operator = operators[0]
+    assert operator.supports(args)
+    compiled_artifact = operator.compile(args)
+    operator.run(args, compiled_artifact=compiled_artifact, assume_supported_args=True)
+
+    reference = scaled_dense_gemm_reference_from_f32(
+        a_f32,
+        b_f32,
+        SFA,
+        SFB,
+        ops.ScaleMode.numel(scale_mode),
+        ref_as_acc_dtype=True,
+    )
+    test_utils.reference_check.assert_close_with_reference_conversion(
+        D, reference, D.dtype, atols=0.0, rtols=0.0
+    )
+
+
+def _make_mxfp6_mxfp8_tensors_for_negatives(M, N, K):
+    """Standard MXFP6A x MXFP8B tensors for negative discovery tests."""
+    return _make_mxfp6_mxfp8_operands(
+        M, N, K, cutlass.Float6E3M2FN, torch.float8_e4m3fn
+    )
+
+
+@pytest.mark.arch(sms=["100f"])
+def test_mxfp6_invalid_scale_factors(fixture_disable_tvm_ffi):
+    """No kernels when SFA/SFB have the wrong number of elements for MXFP6."""
+    M, N, K = 256, 512, 512
+    A, B, _, _, D, _, _, scale_mode, swizzle = _make_mxfp6_mxfp8_tensors_for_negatives(
+        M, N, K
+    )
+    scale_dtype = torch.float8_e8m0fnu
+    correct_sfa = ops.ScaledOperand.numel_scale((M, K), scale_mode, swizzle)
+    correct_sfb = ops.ScaledOperand.numel_scale((N, K), scale_mode, swizzle)
+
+    SFA_bad = torch.rand(correct_sfa + 32, device="cuda").to(scale_dtype)
+    SFB_good = torch.rand(correct_sfb, device="cuda").to(scale_dtype)
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA_bad, scale_mode, swizzle),
+        B=ops.ScaledOperand(B, SFB_good, scale_mode, swizzle),
+        out=D,
+        accumulator_type=torch.float32,
+    )
+    assert len(ops.get_operators(args, target_sm=device_or_env_target_sm())) == 0
+
+    SFA_good = torch.rand(correct_sfa, device="cuda").to(scale_dtype)
+    SFB_bad = torch.rand(correct_sfb + 32, device="cuda").to(scale_dtype)
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA_good, scale_mode, swizzle),
+        B=ops.ScaledOperand(B, SFB_bad, scale_mode, swizzle),
+        out=D,
+        accumulator_type=torch.float32,
+    )
+    assert len(ops.get_operators(args, target_sm=device_or_env_target_sm())) == 0
+
+
+@pytest.mark.arch(sms=["100f"])
+def test_mxfp6_missing_scale_factors(fixture_disable_tvm_ffi):
+    """No blockscaled kernels when B is a plain DenseTensor without scales."""
+    M, N, K = 256, 512, 512
+    A, B, _, _, D, SFA, _, scale_mode, swizzle = (
+        _make_mxfp6_mxfp8_tensors_for_negatives(M, N, K)
+    )
+
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA, scale_mode, swizzle),
+        B=B,
+        out=D,
+        accumulator_type=torch.float32,
+    )
+    assert len(ops.get_operators(args, target_sm=device_or_env_target_sm())) == 0
+
+
+@pytest.mark.arch(sms=["100f"])
+def test_mxfp6_incompatible_swizzle(fixture_disable_tvm_ffi):
+    """No kernels when MXFP6 operands use SwizzleNone instead of Swizzle32x4x4."""
+    M, N, K = 256, 512, 512
+    A, B, _, _, D, SFA, SFB, scale_mode, _ = _make_mxfp6_mxfp8_tensors_for_negatives(
+        M, N, K
+    )
+
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA, scale_mode, ops.ScaleSwizzleMode.SwizzleNone),
+        B=ops.ScaledOperand(B, SFB, scale_mode, ops.ScaleSwizzleMode.Swizzle32x4x4),
+        out=D,
+        accumulator_type=torch.float32,
+    )
+    assert len(ops.get_operators(args, target_sm=device_or_env_target_sm())) == 0
+
+
+@pytest.mark.arch(sms=["100f"])
+def test_mxfp6_incompatible_scale_mode(fixture_disable_tvm_ffi):
+    """No kernels when MXFP6 uses Blockwise1x16 (MXFP6 requires vec size 32)."""
+    M, N, K = 256, 512, 512
+    A, B, _, _, D, _, _, _, swizzle = _make_mxfp6_mxfp8_tensors_for_negatives(M, N, K)
+    bad_mode = ops.ScaleMode.Blockwise1x16
+    scale_dtype = torch.float8_e8m0fnu
+
+    SFA = torch.rand(
+        ops.ScaledOperand.numel_scale((M, K), bad_mode, swizzle), device="cuda"
+    ).to(scale_dtype)
+    SFB = torch.rand(
+        ops.ScaledOperand.numel_scale((N, K), bad_mode, swizzle), device="cuda"
+    ).to(scale_dtype)
+
+    args = ops.GemmArguments(
+        A=ops.ScaledOperand(A, SFA, bad_mode, swizzle),
+        B=ops.ScaledOperand(B, SFB, bad_mode, swizzle),
+        out=D,
+        accumulator_type=torch.float32,
+    )
+    assert len(ops.get_operators(args, target_sm=device_or_env_target_sm())) == 0

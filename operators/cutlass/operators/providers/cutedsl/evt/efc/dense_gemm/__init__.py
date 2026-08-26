@@ -26,18 +26,18 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Dense GEMM operators built on top of the EFC framework.
+"""Dense GEMM operations built on top of the EFC framework.
 
-This package groups all dense-GEMM EFC operator implementations, with
+This package groups all dense-GEMM EFC operation implementations, with
 one architecture-specific subdirectory per supported GPU generation:
 
   sm100/ -- Blackwell (sm_100*) implementation
   ...    -- future arches (sm103, ...) live here as siblings
 
-Here an "operator" is the per-operation implementation (dense GEMM),
-split into an arch-neutral base in this directory's ``_operator.py`` and
-an arch-specific subclass in each ``<arch>/_operator.py`` (e.g.
-``sm100/_operator.py``).  Each arch subpackage exposes a concrete operator
+Here an "operation" is the per-operation implementation (dense GEMM),
+split into an arch-neutral base in this directory's ``_operation.py`` and
+an arch-specific subclass in each ``<arch>/_operation.py`` (e.g.
+``sm100/_operation.py``).  Each arch subpackage exposes a concrete operation
 class, for example
 ``cutlass.operators.providers.cutedsl.evt.efc.dense_gemm.sm100.DenseGemmEFC``,
 that the user instantiates directly.

@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -38,6 +38,12 @@ This module keeps small, architecture-portable examples for the low-level
 
 Each example has a compile/run/verify entry point so pytest can call the Python
 API directly without shelling out through this file's CLI.
+
+To run::
+
+    python CuTeDSL/experimental/primitives/basic_types.py
+    python CuTeDSL/experimental/primitives/basic_types.py --example vector_2d_slice
+
 """
 
 import argparse
@@ -49,6 +55,10 @@ import torch
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import make_fake_compact_tensor
+
+# ---------------------------------------------------------------------------
+# Example registry
+# ---------------------------------------------------------------------------
 
 ExampleName: TypeAlias = Literal[
     "masked_load_store",
@@ -68,6 +78,11 @@ def _normalize_example(example: str) -> ExampleName:
     if example not in EXAMPLES:
         raise ValueError(f"example must be one of {EXAMPLES}, got {example!r}")
     return cast(ExampleName, example)
+
+
+# ---------------------------------------------------------------------------
+# Device kernels and host launchers
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -149,6 +164,11 @@ def _vector_outerproduct_host(dst: cute.Tensor) -> None:
     _vector_outerproduct_kernel(dst).launch(grid=(1, 1, 1), block=(1, 1, 1))
 
 
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
+
+
 @lru_cache(maxsize=None)
 def compile(example: str = "masked_load_store") -> Callable:  # noqa: A001
     """AOT-compile one Pointer/Vector primitive example."""
@@ -185,6 +205,11 @@ def compile(example: str = "masked_load_store") -> Callable:  # noqa: A001
         fake_dst,
         options="--enable-tvm-ffi",
     )
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 
 def run(compiled_fn: Callable, example: str = "masked_load_store") -> tuple:
@@ -239,6 +264,11 @@ def _expected(example: ExampleName, run_result: tuple) -> torch.Tensor:
     )
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(example: str = "all") -> None:
     """Compile, run, and verify one example or the full suite."""
     examples = EXAMPLES if example == "all" else (_normalize_example(example),)
@@ -251,6 +281,10 @@ def verify(example: str = "all") -> None:
         torch.testing.assert_close(dst, expected, atol=0, rtol=0)
         print(f"verify basic_types ({name}): PASS", flush=True)
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

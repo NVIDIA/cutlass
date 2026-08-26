@@ -29,6 +29,7 @@
 """Unit tests for :mod:`cutlass.operators.arguments`."""
 
 import pytest
+import torch
 
 import cutlass.operators as ops
 
@@ -150,4 +151,161 @@ class TestNumelScale:
                 (1, 1, 256, 1024),
                 ops.ScaleMode.Blockwise1x32,
                 ops.ScaleSwizzleMode.Swizzle32x4x4,
+            )
+
+
+
+class TestGroupedGemmArgumentsCompatibility:
+    def test_delegates_to_m_offset_arguments(self, fixture_enable_tvm_ffi):
+        A = torch.empty((8, 4), dtype=torch.float16)
+        B = torch.empty((2, 4, 16), dtype=torch.float16)
+        out = torch.empty((8, 16), dtype=torch.float16)
+        offsets = torch.tensor([4, 8], dtype=torch.int32)
+
+        with pytest.warns(
+            DeprecationWarning, match="GroupedGemmArguments is deprecated"
+        ):
+            args = ops.GroupedGemmArguments(A, B, out, torch.float32, offsets)
+
+        assert isinstance(args, ops.GroupedGemmArguments)
+        assert isinstance(args, ops.IndexPtrGroupedGemmArguments)
+        assert args.offsets_along == "m"
+
+
+class TestIndexPtrGroupedGemmArguments:
+    @pytest.mark.parametrize(
+        "offsets_along, A_shape, B_shape, out_shape",
+        [
+            # "m": A is 2D, B is 3D, out is 2D.
+            ("m", (8, 4), (2, 4, 16), (8, 16)),
+            # "n": A is 3D, B is 2D, out is 2D.
+            ("n", (2, 8, 4), (4, 16), (8, 16)),
+            # "k": A is 2D, B is 2D, out is 3D (one M x N slab per group,
+            # laid out group-first as (group_count, M, N)).
+            ("k", (8, 4), (4, 16), (2, 8, 16)),
+        ],
+    )
+    def test_constructs_all_offset_axes(
+        self, offsets_along, A_shape, B_shape, out_shape, fixture_enable_tvm_ffi
+    ):
+        args = ops.IndexPtrGroupedGemmArguments(
+            A=torch.empty(A_shape, dtype=torch.float16),
+            B=torch.empty(B_shape, dtype=torch.float16),
+            out=torch.empty(out_shape, dtype=torch.float16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([4, 8], dtype=torch.int32),
+            offsets_along=offsets_along,
+        )
+
+        assert isinstance(args.A, ops.DenseTensor)
+        assert isinstance(args.offsets, ops.DenseTensor)
+        assert args.offsets_along == offsets_along
+
+    def test_accepts_operand_inputs(self, fixture_enable_tvm_ffi):
+        A = ops.ScaledOperand(
+            quantized=torch.empty((8, 32), dtype=torch.float16),
+            scale=torch.empty((8, 1), dtype=torch.float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        args = ops.IndexPtrGroupedGemmArguments(
+            A=A,
+            B=torch.empty((2, 32, 16), dtype=torch.float16),
+            out=torch.empty((8, 16), dtype=torch.float16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([4, 8], dtype=torch.int32),
+            offsets_along="m",
+        )
+
+        assert isinstance(args.A, ops.ScaledOperand)
+
+    @pytest.mark.parametrize(
+        "offsets, offsets_along, error",
+        [
+            (torch.ones((1, 2), dtype=torch.int32), "m", "rank 1"),
+            (torch.ones(2, dtype=torch.float32), "m", "integer dtype"),
+            (torch.ones(2, dtype=torch.int32), "batch", "offsets_along"),
+        ],
+    )
+    def test_validates_offsets(self, offsets, offsets_along, error):
+        with pytest.raises(ValueError, match=error):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty((8, 4), dtype=torch.float16),
+                B=torch.empty((2, 4, 16), dtype=torch.float16),
+                out=torch.empty((8, 16), dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=offsets,
+                offsets_along=offsets_along,
+            )
+
+    @pytest.mark.parametrize(
+        "offsets_along, A_shape, B_shape, out_shape, bad_operand",
+        [
+            # "m" requires A 2D, B 3D, out 2D. Only the bad operand is off-rank;
+            # the others are valid for the axis so the check flags the intended one.
+            ("m", (2, 8, 4), (2, 4, 16), (8, 16), "A"),
+            ("m", (8, 4), (2, 4, 16), (2, 8, 16), "out"),
+            # "n" requires A 3D, B 2D, out 2D.
+            ("n", (2, 8, 4), (2, 4, 16), (8, 16), "B"),
+            ("n", (2, 8, 4), (4, 16), (2, 8, 16), "out"),
+            # "k" requires A 2D, B 2D, out 3D.
+            ("k", (8, 4), (2, 4, 16), (2, 8, 16), "B"),
+            ("k", (8, 4), (4, 16), (8, 16), "out"),
+        ],
+    )
+    def test_rejects_invalid_operand_ranks(
+        self,
+        offsets_along,
+        A_shape,
+        B_shape,
+        out_shape,
+        bad_operand,
+        fixture_enable_tvm_ffi,
+    ):
+        # Each offset axis constrains the rank of A, B, and out. Ranks that are
+        # otherwise valid (2 or 3) but wrong for the chosen axis are rejected,
+        # and the error names the offending operand and the active axis.
+        with pytest.raises(
+            ValueError,
+            match=rf"{bad_operand} must be a tensor of rank .* offsets_along={offsets_along!r}",
+        ):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty(A_shape, dtype=torch.float16),
+                B=torch.empty(B_shape, dtype=torch.float16),
+                out=torch.empty(out_shape, dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along=offsets_along,
+            )
+
+    @pytest.mark.parametrize(
+        "offsets_along, A_shape, B_shape, out_shape, bad_operand",
+        [
+            # A 3D operand must be group-first (group_count, rows, cols); here the
+            # leading dim (3) does not match group_count (2, from two offsets).
+            ("m", (8, 4), (3, 4, 16), (8, 16), "B"),
+            ("n", (3, 8, 4), (4, 16), (8, 16), "A"),
+            ("k", (8, 4), (4, 16), (3, 8, 16), "out"),
+        ],
+    )
+    def test_rejects_mismatched_group_dim(
+        self,
+        offsets_along,
+        A_shape,
+        B_shape,
+        out_shape,
+        bad_operand,
+        fixture_enable_tvm_ffi,
+    ):
+        with pytest.raises(
+            ValueError,
+            match=rf"{bad_operand} is a 3D operand and must be laid out",
+        ):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty(A_shape, dtype=torch.float16),
+                B=torch.empty(B_shape, dtype=torch.float16),
+                out=torch.empty(out_shape, dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along=offsets_along,
             )

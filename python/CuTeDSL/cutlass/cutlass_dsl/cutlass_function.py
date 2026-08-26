@@ -59,6 +59,27 @@ _PyCapsule_GetPointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 def _pack_tensor_cutlass_call(value: Any) -> tuple[Any, Any]:
     """CutlassCall Tensor slot: reuse the cute.Tensor's own MemRef descriptor.
 
+    What the kernel reads: ``_mlir_ciface_<sym>`` takes each tensor as a
+    ``!cute.memref`` argument, which CuteToNVVM lowers to the cute-flat LLVM
+    struct::
+
+        { void* data;  <i32|i64> dyn_shapes[N];  <i32|i64> dyn_strides[M]; }
+
+    Only the dynamic dims appear (N / M skip static dims, baked into the kernel),
+    each field at its symbol's width (32- or 64-bit). The ``cutlass_call_<sym>``
+    wrapper does not define a layout of its own -- it just loads the caller's
+    slot as that ciface argument type and forwards it.
+
+    What the cute.Tensor produces: ``__c_pointers__()`` builds, once and caches
+    (``_c_pointers_cache``), a ``cute::abi::MemRef`` buffer with that same
+    ``{data, dynamic shapes, dynamic strides}`` layout, via the host builder
+    ``cute::abi::MemRef::build``.
+
+    The host builder and the device ``!cute.memref`` lowering are generated from
+    the *same* layout definition, so the two are byte-identical by construction. We
+    therefore hand the kernel the cute.Tensor's descriptor directly -- no
+    separate Python builder, no rebuild, no chance of the two drifting apart.
+
     Returns ``(address, keepalive)``; the keepalive is the tensor, which owns the
     descriptor buffer (freed when its capsule is collected)."""
     if not hasattr(value, "__c_pointers__"):
@@ -75,17 +96,36 @@ def _pack_tensor_cutlass_call(value: Any) -> tuple[Any, Any]:
 
 def _pack_tensor_tvm_ffi(value: Any) -> tuple[Any, Any]:
     """TvmFfi Tensor slot: a borrowed ``DLTensor*`` from the producer's DLPack
-    capsule. The keepalive is the capsule, so its DLPack deleter does not run
-    before the call consumes the tensor.
+    capsule (keepalive = the capsule, so its deleter doesn't run early).
 
-    Request ``stream=-1`` (no synchronization), like ``cute.runtime.from_dlpack``
-    does, and fall back to a bare ``__dlpack__()`` for producers whose
-    ``__dlpack__`` does not accept a ``stream`` kwarg. A bare call lets the
-    producer pick its default stream behaviour, which on some torch versions
-    forces an implicit stream sync -- avoided here since this is a per-call hot
-    path."""
+    Pass ``stream=-1`` (no sync) on CUDA; DLPack requires ``stream=None`` on CPU,
+    so pick it from ``__dlpack_device__()``. Fall back to a bare ``__dlpack__()``
+    for producers without a ``stream`` kwarg."""
+    if hasattr(value, "_tvm_ffi_tensor"):
+        value = value._tvm_ffi_tensor
+    else:
+        raise TypeError(
+            f"{type(value).__name__} was not produced by from_dlpack(..., enable_tvm_ffi=True)."
+        )
+
+    if not hasattr(value, "__dlpack__"):
+        raise TypeError(
+            "TvmFfi expects a DLPack producer (e.g. a torch.Tensor exposing "
+            f"__dlpack__); got {type(value).__name__}. A cute.Tensor has no "
+            "__dlpack__ -- use the CutlassCall ABI, or pass the torch tensor it "
+            "was built from."
+        )
+
+    # device type 1 == kDLCPU (needs stream=None); tolerate a producer lacking
+    # __dlpack_device__, but let a real error from it surface.
+    stream: int | None = -1
     try:
-        capsule = value.__dlpack__(stream=-1)
+        if value.__dlpack_device__()[0] == 1:
+            stream = None
+    except AttributeError:
+        pass
+    try:
+        capsule = value.__dlpack__(stream=stream)
     except TypeError:
         capsule = value.__dlpack__()
     if not _PyCapsule_IsValid(capsule, b"dltensor"):
@@ -101,12 +141,29 @@ def _pack_scalar(binding: Var | Const, value: Any) -> tuple[Any, Any]:
     # Const shares Var's ptr-to-scalar wire: the caller still supplies the
     # value (TvmFfi validates it equals the pinned literal, CutlassCall drops
     # it unchecked), so both pack identically from the binding's dtype.
+    #
+    # Unwrap a cutlass.Numeric scalar (e.g. cutlass.Float32(1.0)) via .value, not
+    # float()/int() -- its __index__ returns a float and would raise.
+    from cutlass import Numeric
+
+    if isinstance(value, Numeric):
+        value = value.value
     buf = binding.dtype.get_ctype()(value)
     return ctypes.addressof(buf), buf
 
 
 def _pack_pointer(value: Any) -> tuple[Any, Any]:
-    buf = ctypes.c_void_p(0 if value is None else int(value))
+    # int() handles int / cuda.CUstream; a cute.Pointer (make_ptr) isn't int()-able,
+    # so take the device address it wraps (._pointer).
+    import cutlass.cute as cute
+
+    if value is None:
+        addr = 0
+    elif isinstance(value, cute.Pointer):
+        addr = value._pointer  # type: ignore[attr-defined]
+    else:
+        addr = int(value)
+    buf = ctypes.c_void_p(addr)
     return ctypes.addressof(buf), buf
 
 
@@ -200,7 +257,8 @@ class CallableFunction:
     ABI:
 
       * CutlassCall -- the tensor's own cute-flat / ``cute::abi::MemRef``
-        descriptor, reused via ``cute.Tensor.__c_pointers__()``.
+        descriptor, reused via ``cute.Tensor.__c_pointers__()`` (one canonical
+        cute-built layout, no Python re-implementation). Pass a cute.Tensor.
       * TvmFfi      -- a borrowed ``DLTensor*`` from ``value.__dlpack__()``.
         Pass a DLPack producer (e.g. a torch.Tensor).
 
@@ -323,3 +381,142 @@ class CallableFunction:
         # `keepalive` holds each arg's buffer / capsule / tensor alive across the
         # call; released when this method returns.
         return _decode_return(self._function.metadata.ret, ret_buf)
+
+
+# Sentinel stored in ``engine`` / ``capi_func`` so in-memory JIT cache treats
+# cutlass-backed compiles as executable without an MLIR ExecutionEngine.
+_CUTLASS_JIT_SENTINEL = object()
+
+
+class CutlassCallJitCompiledFunction:
+    """``JitCompiledFunction`` surface backed by ``cutlass.compiler`` + CutlassCall."""
+
+    # Names ``__getattr__`` forwards to the composed ``JitCompiledFunction``
+    # (``self._jit_base``): the compiled-artifact accessors plus the JIT
+    # metadata / AOT-header surface this wrapper reuses rather than
+    # reimplements. Everything NOT listed here (typos, or engine-only members
+    # such as the ``to`` / ``dump_to_object`` helpers this wrapper overrides
+    # with ``NotImplementedError``) falls through to the default ``object``
+    # lookup, which raises the usual ``AttributeError`` instead of being
+    # silently masked by the delegate.
+    _DELEGATED_ATTRS = frozenset(
+        {
+            # Compiled-artifact accessors (``@property`` on the base).
+            "__ptx__",
+            "__cubin__",
+            "__sass__",
+            "__llvm_ir__",
+            "__mlir__",
+            # JIT metadata / bookkeeping.
+            "function_name",
+            "kernel_info",
+            "execution_args",
+            "artifacts",
+            "jit_time_profiling",
+            "prefix",
+            "load_from_binary",
+            "host_target",
+            "jit_module",
+            "has_gpu_module",
+            "export_provider",
+            # AOT header helpers.
+            "generate_execution_args",
+            "c_header_arguments",
+            "dummy_prefix_name",
+        }
+    )
+
+    def __init__(
+        self,
+        *,
+        ir_module: Any,
+        cutlass_call: CallableFunction,
+        executor: Any,
+        signature: inspect.Signature,
+        function_name: str,
+        kernel_info: dict[str, Any] | None,
+        jit_time_profiling: bool,
+        jit_function_artifacts: Any,
+        compile_time_args: tuple[Any, ...],
+        compile_time_kwargs: dict[str, Any],
+        dynamic_args: tuple[Any, ...] = tuple(),
+        dynamic_kwargs: dict[str, Any] | None = None,
+        has_gpu_module: bool = True,
+        host_target: Any = None,
+    ) -> None:
+        from cutlass.base_dsl.jit_executor import JitCompiledFunction
+
+        if host_target is None:
+            from cutlass.base_dsl.compiler import HostTarget
+
+            host_target = HostTarget("")
+
+        self._cutlass_call = cutlass_call
+        self._executor = executor
+        self._compile_time_args = compile_time_args
+        self._compile_time_kwargs = compile_time_kwargs or {}
+        self.ir_module = ir_module
+        self.engine = _CUTLASS_JIT_SENTINEL
+        self.capi_func = _CUTLASS_JIT_SENTINEL
+
+        # Reuse ``JitCompiledFunction`` for AOT helpers and artifact properties.
+        self._jit_base = JitCompiledFunction(
+            ir_module,
+            _CUTLASS_JIT_SENTINEL,
+            _CUTLASS_JIT_SENTINEL,
+            signature,
+            function_name,
+            kernel_info,
+            jit_time_profiling,
+            jit_function_artifacts,
+            dynamic_args=dynamic_args,
+            dynamic_kwargs=dynamic_kwargs or {},
+            has_gpu_module=has_gpu_module,
+            host_target=host_target,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        # Forward only the known ``JitCompiledFunction`` surface (see
+        # ``_DELEGATED_ATTRS``) to the composed base. Any other missing name
+        # defers to the super class' default lookup, which raises the normal
+        # ``AttributeError`` -- this also breaks the recursion for
+        # ``_jit_base`` itself before ``__init__`` has set it.
+        if name in self._DELEGATED_ATTRS:
+            return getattr(self._jit_base, name)
+        return super().__getattribute__(name)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._cutlass_call(*args, **kwargs)
+
+    def run_compiled_program(self, exe_args: list[Any]) -> int | None:
+        """Eager ``@cute.jit`` first call: launch with compile-time Python args."""
+        return self._cutlass_call(*exe_args)
+
+    def to(self, device: Any = None) -> Any:
+        raise NotImplementedError(
+            "CutlassCallJitCompiledFunction.to() requires the MLIR ExecutionEngine "
+            "and is not supported by the cutlass compiler backend yet."
+        )
+
+    def get_aux_func(self, func_class: Any, kernel: Any) -> Any:
+        raise NotImplementedError(
+            "CutlassCallJitCompiledFunction.get_aux_func() requires engine symbol "
+            "lookup and is not supported by the cutlass compiler backend yet."
+        )
+
+    def dump_to_object(self, function_prefix: str) -> bytes:
+        raise NotImplementedError(
+            "CutlassCallJitCompiledFunction.dump_to_object() requires the MLIR "
+            "ExecutionEngine and is not supported by the cutlass compiler backend yet."
+        )
+
+    def export_to_c(
+        self,
+        file_path: str,
+        file_name: str,
+        function_prefix: str = "",
+    ) -> None:
+        raise NotImplementedError(
+            "CutlassCallJitCompiledFunction.export_to_c() requires the MLIR "
+            "ExecutionEngine and is not supported by the cutlass compiler backend yet."
+        )

@@ -16,6 +16,7 @@ This module provides jit executor related classes for CUTLASS.
 import ctypes
 import functools
 import inspect
+import sys
 import weakref
 import threading
 from typing import Any, List, Optional, Tuple, Union
@@ -30,6 +31,7 @@ from ..base_dsl.jit_executor import (
     JitModule,
     ExecutionArgs,
     JitFunctionArtifacts,
+    _notify_library_unload,
 )
 from ..base_dsl.compiler import HostTarget
 from ..base_dsl.utils.logger import log
@@ -37,6 +39,7 @@ from ..base_dsl.common import DSLRuntimeError, DSLUserCodeError
 from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.typing import Int32
 from ..base_dsl.runtime.cuda import checkCudaErrors
+from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
 
 from .._mlir import ir, execution_engine
 
@@ -63,6 +66,9 @@ class CudaDialectJitModule:
     def unload(self) -> None:
         try:
             for library in self.cuda_library:
+                # Notify subscribers (e.g. NVSHMEM interop) while the handle is
+                # still valid so they can drop their references first.
+                _notify_library_unload(int(library))
                 cuda_runtime.cudaLibraryUnload(library)
             self.cuda_library.clear()
         except Exception as e:
@@ -71,12 +77,17 @@ class CudaDialectJitModule:
             self._unloaded = True
 
     def __del__(self) -> None:
-        self.unload()
+        # At interpreter shutdown leave libraries to the driver: unload
+        # callbacks and driver calls are not safe during teardown.
+        if not sys.is_finalizing():
+            self.unload()
 
 
 class CudaDialectJitCompiledFunction(JitCompiledFunction):
     """Holds a compiled function and its module."""
 
+    _KERNEL_EXTRA_ARGS_ATTR = "lir.kernel_extra_args"
+    _jit_arg_adapter_scope = JitArgAdapterRegistry.CUDA_DIALECT_SCOPE
     jit_module: "JitModule | CudaDialectJitModule | None"  # type: ignore[assignment]
     device_header: Optional[str]
     device_object_path: Optional[str]
@@ -116,10 +127,20 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             host_target=host_target,
         )
 
-        # Populated from module attributes by CuteExperimentalDSL.compile_and_cache;
-        # defaults match pre-pass state and non-experimental CUDA JIT functions.
         self.kernel_extra_args: dict[str, int] = {}
         self.total_added_arguments: int = 0
+        # Extension finalization records workspace arguments on the module;
+        # Modules compiled without CuTe extension support simply omit this attribute.
+        if self.ir_module is not None:
+            attrs = self.ir_module.operation.attributes
+            if self._KERNEL_EXTRA_ARGS_ATTR in attrs:
+                for named in ir.DictAttr(attrs[self._KERNEL_EXTRA_ARGS_ATTR]):
+                    self.kernel_extra_args[named.name] = ir.IntegerAttr(
+                        named.attr
+                    ).value
+                self.total_added_arguments = self.kernel_extra_args.pop(
+                    "total_added_arguments", 0
+                )
 
         # Set cuda result return type.
         # When execution engine/capi function is None, do not set the return type.
@@ -129,6 +150,17 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             self.execution_args.signature = self.execution_args.signature.replace(
                 return_annotation=Int32
             )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> int | None:
+        n = self.execution_args._meta.arg_count
+        n_extra = max(0, len(args) - n)
+        if n_extra != self.total_added_arguments:
+            raise DSLUserCodeError(
+                DiagId.ARG_WORKSPACE_COUNT_MISMATCH,
+                expected=self.total_added_arguments,
+                got=n_extra,
+            )
+        return super().__call__(*args, **kwargs)
 
     @functools.cached_property
     def num_devices(self) -> int:
@@ -297,6 +329,9 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
 
         Triggers a lazy ``.to()`` call if the library isn't loaded yet,
         so callers can access this before any explicit kernel launch
+        (the typical case: passing ``compiled.library`` as a ``!cuda.library``
+        argument into another ``@cute.jit`` body for an in-trace symbol store).
+
         :raises RuntimeError: when the compile produced no gpu.module
             (host-only program) or multiple cubins (explicit selection
             is not yet supported).

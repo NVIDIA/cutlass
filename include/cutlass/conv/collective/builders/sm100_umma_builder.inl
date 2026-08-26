@@ -76,6 +76,7 @@ struct CollectiveBuilder<
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100> 
       || cute::is_same_v<ArchTag, arch::Sm103>
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       (cute::is_same_v<KernelScheduleType, KernelImplicitTmaWarpSpecialized1SmSm100> ||
        cute::is_same_v<KernelScheduleType, KernelImplicitTmaWarpSpecialized2SmSm100> ||

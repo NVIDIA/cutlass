@@ -27,6 +27,7 @@ from .ast_preprocessor import (
     DSLPreprocessor,
     ScopeManager,
     _create_module_attribute,
+    _deepcopy_ast_root,
     SessionData,
 )
 from .common import DSLUserCodeError
@@ -114,10 +115,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
     """
 
     @override
-    def _has_pyir_support(self) -> bool:
-        return True
-
-    @override
     def _create_session_data(self) -> SessionData:
         return PyIRSessionData()
 
@@ -136,8 +133,81 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # PYIRToSCF promotes to iter_args, so the check is unnecessary.
         return None
 
-    def _visit_stmts_in_cf_scope(self, stmts: list[ast.stmt]) -> list[ast.stmt]:
-        """Visit statements in an isolated scope for const_expr branches.
+    @override
+    def _create_lambda_check_call(
+        self, called_value_symbols: list[str], node: ast.stmt
+    ) -> ast.Expr | None:
+        # Emit ``lambda_capture_check([names...])`` at staged-region entry.
+        # A raw lambda invoked in the region reads its captures from the
+        # ENCLOSING frame, not the region's loop-carried slots (pyir's ref
+        # mechanism does not reach an un-preprocessed lambda body), so a
+        # captured meta mutated inside the region would freeze at its
+        # first-pass value — a silent miscompile. The check rejects that at
+        # trace time (non-lambdas/jit-lambdas/region-local lambdas pass).
+        #
+        # This override lives ONLY on the PyIR subclass (instantiated only when
+        # pyir is enabled, see preprocess_mode). The base returns None, so
+        # non-pyir compilation emits a byte-identical region with no
+        # lambda_capture_check call — pyir-gated by construction.
+        if not called_value_symbols:
+            return None
+        return ast.Expr(
+            ast.Call(
+                func=_create_module_attribute(
+                    "lambda_capture_check",
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
+                args=[
+                    ast.List(
+                        elts=[
+                            ast.Name(id=c, ctx=ast.Load()) for c in called_value_symbols
+                        ],
+                        ctx=ast.Load(),
+                    )
+                ],
+                keywords=[],
+            )
+        )
+
+    def visit_With(self, node: ast.With) -> ast.AST:
+        # Base handling first: register optional-vars in scope + recurse into
+        # children. Then wrap each context-manager expression in the trace-time
+        # guard ``with_ctxmgr_check`` so a ``with`` whose __enter__/__exit__ are
+        # raw-Python user dunders is rejected inside staged CF (their effects
+        # would run once at trace time and freeze — a silent miscompile).
+        #
+        # This override lives ONLY on the PyIR subclass, which the DSL
+        # instantiates exclusively when pyir is enabled (see preprocess_mode).
+        # The base ``DSLPreprocessor.visit_With`` is untouched, so non-pyir
+        # compilation emits a byte-identical plain ``with`` — the wrapping is
+        # pyir-gated by construction, no runtime flag needed. Decorated /
+        # DSL-internal / stdlib managers pass through unchanged at run time.
+        visited = super().visit_With(node)
+        with_node = visited if isinstance(visited, ast.With) else None
+        if with_node is None:
+            return visited
+        for item in with_node.items:
+            ctx = item.context_expr
+            item.context_expr = ast.copy_location(
+                ast.Call(
+                    func=_create_module_attribute(
+                        "with_ctxmgr_check",
+                        submodule_name="pyir_runtime",
+                        lineno=getattr(ctx, "lineno", None),
+                        col_offset=getattr(ctx, "col_offset", None),
+                    ),
+                    args=[ctx],
+                    keywords=[],
+                ),
+                ctx,
+            )
+        return with_node
+
+    def _visit_stmts_in_cf_scope_and_collect_definitions(
+        self, stmts: list[ast.stmt]
+    ) -> tuple[list[ast.stmt], set[str]]:
+        """Visit an isolated const_expr scope and return its definitions.
 
         Used when visiting bodies of ``const_expr`` if/for/while — meta-level
         control flow where only one branch executes at runtime.
@@ -171,7 +241,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     result.extend(visited)
                 elif visited is not None:
                     result.append(visited)
-            return result
+            definitions = set(self.session_data.scope_manager.scopes[-1])
+        return result, definitions
+
+    def _visit_stmts_in_cf_scope(self, stmts: list[ast.stmt]) -> list[ast.stmt]:
+        """Visit statements in an isolated const_expr scope."""
+        result, _ = self._visit_stmts_in_cf_scope_and_collect_definitions(stmts)
+        return result
 
     def _handle_constexpr_for(self, node: ast.For) -> ast.For | list[ast.stmt]:
         """Override to add PyIR scope isolation for const_expr loops, and
@@ -216,7 +292,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ast.Expr(
                         value=ast.Call(
                             func=_create_module_attribute(
-                                name, lineno=lineno, col_offset=col_offset
+                                name,
+                                submodule_name="multi_stage_manager",
+                                lineno=lineno,
+                                col_offset=col_offset,
                             ),
                             args=[],
                             keywords=[],
@@ -277,7 +356,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 ast.withitem(
                     context_expr=ast.Call(
                         func=_create_module_attribute(
-                            "pyir_function_scope", lineno=lineno, col_offset=col_offset
+                            "pyir_function_scope",
+                            submodule_name="pyir_runtime",
+                            lineno=lineno,
+                            col_offset=col_offset,
                         ),
                         args=[ast.Constant(value=id(node))],
                         keywords=[],
@@ -427,8 +509,69 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             return any(node.value.id in scope for scope in active)
         return False
 
+    @staticmethod
+    def _names_read_before_and_after_walrus(node: ast.AST) -> set[str]:
+        """Names ``X`` read BOTH before AND after the same-statement walrus
+        ``(X := ...)`` (outside the walrus subtree).  Such a name is
+        UN-ANCHORABLE: element0 wants the pre-walrus value and a later element
+        wants the post-walrus value from ONE ``X``.  ``a, b, c = m1, (m1 :=
+        m1+1), m1`` silently miscompiled the mismatched read (verified on this
+        base), so these shapes are refused loudly instead.  Self-contained AST
+        scan (same-statement, positional, walrus-RHS reads excluded)."""
+        walrus_pos: dict[str, tuple[int, int]] = {}
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.NamedExpr) and isinstance(sub.target, ast.Name):
+                pos = (sub.lineno, sub.col_offset)
+                tgt = sub.target.id
+                if tgt not in walrus_pos or pos < walrus_pos[tgt]:
+                    walrus_pos[tgt] = pos
+        if not walrus_pos:
+            return set()
+        loads: dict[str, list[tuple[int, int]]] = {}
+
+        def _scan(n: ast.AST, in_walrus: bool) -> None:
+            child_in_walrus = in_walrus or isinstance(n, ast.NamedExpr)
+            if (
+                isinstance(n, ast.Name)
+                and isinstance(n.ctx, ast.Load)
+                and n.id in walrus_pos
+                and not in_walrus
+            ):
+                loads.setdefault(n.id, []).append((n.lineno, n.col_offset))
+            for child in ast.iter_child_nodes(n):
+                _scan(child, child_in_walrus)
+
+        _scan(node, False)
+        both: set[str] = set()
+        for name, w_pos in walrus_pos.items():
+            positions = loads.get(name)
+            if (
+                positions
+                and any(p < w_pos for p in positions)
+                and any(p > w_pos for p in positions)
+            ):
+                both.add(name)
+        return both
+
     def visit_Assign(self, node: ast.Assign) -> ast.stmt | list[ast.stmt]:
         """Override to add PyIR instrumentation for reassignments."""
+        # A walrus-target name read on BOTH sides of its walrus in a tuple RHS
+        # is un-anchorable and silently miscompiled the mismatched read (fresh-
+        # Name AND subscript targets).  Scoped to a Tuple target so the
+        # positional before/after test matches left-to-right RHS evaluation (a
+        # ternary/boolop RHS has positional != eval order).
+        _walrus_both = self._names_read_before_and_after_walrus(node)
+        if _walrus_both:
+            for _tgt in node.targets:
+                if isinstance(_tgt, ast.Tuple):
+                    raise DSLUserCodeError(
+                        DiagId.UNSUP_WALRUS_TUPLE_REBIND,
+                        filename=self.session_data.file_name,
+                        lineno=node.lineno,
+                        col_offset=node.col_offset,
+                        end_col_offset=getattr(node, "end_col_offset", None),
+                        var=sorted(_walrus_both)[0],
+                    )
         # Check scope BEFORE _visit_target adds the target.
         # This distinguishes first-time definitions from reassignments.
         targets_to_instrument = [t for t in node.targets if self._is_target_in_scope(t)]
@@ -563,8 +706,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             exclude = {self._target_to_path_str(t) for t in subscript_targets}
             # Same ordering invariant as scalar_targets above: collect RHS
             # reads first so the subscript-assign sees rewritten reads.
-            self_reads = self._collect_attr_reads(node.value, exclude)
-            other_reads = self._collect_other_attr_reads(node.value, exclude)
+            rhs_call_func_ids = self._collect_call_func_ids(node.value)
+            self_reads = self._collect_attr_reads(
+                node.value, exclude, rhs_call_func_ids
+            )
+            other_reads = self._collect_other_attr_reads(
+                node.value, exclude, rhs_call_func_ids
+            )
             prologue_reads: list[ast.stmt] | None = None
             if self_reads or other_reads:
                 attr_read_result = self._insert_pyir_attr_reads(node, exclude)
@@ -584,8 +732,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             # and ``obj = Cls(obj.x + 1)`` rebinding patterns (covered by
             # ``_collect_other_attr_reads``) keep the raw attribute access
             # in the RHS and bypass the read.
-            self_reads = self._collect_attr_reads(node.value, exclude)
-            other_reads = self._collect_other_attr_reads(node.value, exclude)
+            rhs_call_func_ids = self._collect_call_func_ids(node.value)
+            self_reads = self._collect_attr_reads(
+                node.value, exclude, rhs_call_func_ids
+            )
+            other_reads = self._collect_other_attr_reads(
+                node.value, exclude, rhs_call_func_ids
+            )
             prologue_reads = None
             if self_reads or other_reads:
                 attr_read_result = self._insert_pyir_attr_reads(node, exclude)
@@ -610,6 +763,39 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     return base + first_def_stmts
                 return [base] + first_def_stmts
         return base
+
+    def visit_Delete(self, node: ast.Delete) -> ast.stmt | list[ast.stmt]:
+        """Reject ``del`` of a LOOP-CARRIED local inside control flow.
+
+        A name defined BEFORE the enclosing for/while/if carries a value into
+        the region; ``del``'ing it mid-body drops that carry (the following
+        rebind is a body-local first-def with no pre-region init), so the next
+        read has no value -- baseline raises a raw ``NameError``.  Refuse with a
+        curated, del-aware diagnostic instead.  A name present only in the
+        INNERMOST region scope was defined inside the region (a trace-time temp)
+        and deleting it is benign -> pass, constexpr-unrolled or dynamic.  A
+        top-level ``del`` and a skip-reference name (loop induction var) pass.
+        """
+        active = self.session_data.scope_manager.get_active_symbols()
+        if len(active) > 1:
+            enclosing = active[:-1]
+            for tgt in node.targets:
+                if (
+                    isinstance(tgt, ast.Name)
+                    and not self.session_data.scope_manager.is_skip_reference_taking(
+                        tgt.id
+                    )
+                    and any(tgt.id in scope for scope in enclosing)
+                ):
+                    raise DSLUserCodeError(
+                        DiagId.SCOPE_DEL_LOOP_CARRIED,
+                        filename=self.session_data.file_name,
+                        lineno=node.lineno,
+                        col_offset=node.col_offset,
+                        end_col_offset=getattr(node, "end_col_offset", None),
+                        var=tgt.id,
+                    )
+        return node
 
     def visit_AugAssign(self, node: ast.AugAssign) -> ast.AugAssign | list[ast.stmt]:
         """Override to add PyIR instrumentation for augmented assignments."""
@@ -672,6 +858,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         call = ast.Call(
             func=_create_module_attribute(
                 "_pyir_post_subscript_read",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=col_offset,
             ),
@@ -722,9 +909,12 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         expressions, plus a runtime mutation guard for ``a.append(...)``
         style calls on meta Python containers inside staged CF.
         """
+        # Build the mutation guard BEFORE generic_visit: generic_visit rewrites
+        # a subscript receiver (``d["xs"]``) into a ``_pyir_post_subscript_read``
+        # Call, hiding the ``<subscript>.<mutator>`` pattern the guard matches on.
+        guard = self._build_container_mutator_guard(node)
         self.generic_visit(node)
         result = self._insert_pyir_attr_reads(node)
-        guard = self._build_container_mutator_guard(node)
         if guard is None:
             return result
         if isinstance(result, list):
@@ -750,7 +940,16 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # container expressions (e.g. ``obj.field.list``) would require
         # a temporary to avoid re-evaluation and are out of scope for
         # this guard.
-        if not isinstance(container, (ast.Name, ast.Attribute)):
+        if isinstance(container, (ast.Name, ast.Attribute)):
+            pass
+        elif isinstance(container, ast.Subscript) and not any(
+            isinstance(_n, ast.Call) for _n in ast.walk(container)
+        ):
+            # A dict/list-held container reached one indirection deep
+            # (``d["xs"].append``); accept only side-effect-free receivers so
+            # re-evaluating the receiver for the guard cannot double-execute.
+            pass
+        else:
             return None
         return ast.copy_location(
             ast.fix_missing_locations(
@@ -758,6 +957,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     value=ast.Call(
                         func=_create_module_attribute(
                             "_pyir_check_no_complex_m2m_call",
+                            submodule_name="pyir_runtime",
                             lineno=node.lineno,
                             col_offset=node.col_offset,
                         ),
@@ -791,12 +991,23 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
     def _handle_constexpr_if(self, node: ast.If) -> list[ast.stmt]:
         """Override to add PyIR scope isolation for const_expr if statements."""
         # Visit test expression outside branch scopes.
+        has_else = bool(node.orelse)
         self.visit(node.test)
         # Visit each branch in its own scope so first-definitions in one
         # branch don't leak into sibling branches (fixes UnboundLocalError
         # when only one const_expr branch runs at runtime).
-        node.body = self._visit_stmts_in_cf_scope(node.body)
-        node.orelse = self._visit_stmts_in_cf_scope(node.orelse)
+        node.body, body_definitions = (
+            self._visit_stmts_in_cf_scope_and_collect_definitions(node.body)
+        )
+        node.orelse, else_definitions = (
+            self._visit_stmts_in_cf_scope_and_collect_definitions(node.orelse)
+        )
+        # An exhaustive if/else definitely initializes names defined by every
+        # arm. Propagate only that intersection; one-sided definitions remain
+        # out of scope and retain Python's possible-UnboundLocal semantics.
+        if has_else:
+            for name in body_definitions & else_definitions:
+                self.session_data.scope_manager.add_to_scope(name)
         # Bracket each branch (the trace-time-selected one runs once) so
         # mutations directly inside it are treated as constexpr-governed.
         node.body = self._wrap_body_in_constexpr_scope(node, node.body)
@@ -810,9 +1021,20 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # Visit test outside branch scopes; visit each
         # branch in its own scope to prevent cross-branch
         # first-definition leakage.
+        has_else = bool(elif_node.orelse)
         self.visit(elif_node.test)
-        elif_node.body = self._visit_stmts_in_cf_scope(elif_node.body)
-        elif_node.orelse = self._visit_stmts_in_cf_scope(elif_node.orelse)
+        elif_node.body, body_definitions = (
+            self._visit_stmts_in_cf_scope_and_collect_definitions(elif_node.body)
+        )
+        elif_node.orelse, else_definitions = (
+            self._visit_stmts_in_cf_scope_and_collect_definitions(elif_node.orelse)
+        )
+        # Feed definitions from a complete elif/else tail into its parent's
+        # temporary branch scope. The outer if then intersects that set with
+        # its own body, handling arbitrary exhaustive elif chains.
+        if has_else:
+            for name in body_definitions & else_definitions:
+                self.session_data.scope_manager.add_to_scope(name)
         # Bracket each branch so mutations directly inside the
         # trace-time-selected branch are treated as constexpr-governed.
         elif_node.body = self._wrap_body_in_constexpr_scope(elif_node, elif_node.body)
@@ -821,6 +1043,35 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         )
         assert isinstance(elif_node.test, ast.Call)
         return self._insert_cf_symbol_check(elif_node.test.func)
+
+    def visit_While(self, node: ast.While) -> "ast.While | list[ast.stmt]":
+        """Route a staged ``while`` condition through ``_pyir_while_cond``.
+
+        The base preprocessor moves ``node.test`` into ``while_before_block``
+        verbatim, where a watched fold bakes ``scf.condition(true)`` -- an
+        unkillable runtime hang once the body mutates a condition slot.
+        Wrapping the condition in ``_pyir_while_cond`` BEFORE ``super()``
+        embeds the lift inside the before-block (evaluated per iteration),
+        so a to-be-stored slot lifts to a dynamic ``scf.condition(cmpi...)``.
+
+        Constexpr whiles keep the base behavior (they unroll at trace time).
+        """
+        if self.is_node_constexpr(node):
+            return super().visit_While(node)
+        node.test = ast.copy_location(
+            ast.Call(
+                func=_create_module_attribute(
+                    "_pyir_while_cond",
+                    submodule_name="pyir_runtime",
+                    lineno=getattr(node.test, "lineno", None),
+                    col_offset=getattr(node.test, "col_offset", None),
+                ),
+                args=[node.test],
+                keywords=[],
+            ),
+            node.test,
+        )
+        return super().visit_While(node)
 
     def _prepare_while_condition_vars(
         self,
@@ -832,8 +1083,100 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
         Without this, literal-backed values (e.g. Int32(0)) rematerialize
         arith.constant instead of loading from the pyir.ref.
+
+        Also prepends the ``pyir_tag_pending_writes`` write-set prologue so
+        ``_pyir_while_cond`` can see the body's not-yet-landed stores when it
+        decides fold-vs-lift.  Both land at the top of
+        ``while_before_block`` (evaluated once per iteration, before the
+        condition): the tag FIRST so the write-set is populated before the
+        operand reload and the condition eval.
         """
-        return self._build_pyir_read_prologue(node, write_args, helper="pyir_read")
+        prep = self._build_pyir_read_prologue(node, write_args, helper="pyir_read")
+        tag_stmt = self._build_pending_write_tags(node, write_args)
+        return tag_stmt + prep
+
+    def _build_pending_write_tags(
+        self,
+        node: ast.While,
+        write_args: list[str],
+    ) -> list[ast.stmt]:
+        """Build the ``pyir_tag_pending_writes(...)`` before-block prologue.
+
+        Collects the while BODY's syntactic write-set: the plain-name
+        write_args, plus attribute/subscript targets whose owner Name also
+        appears in the CONDITION (only those can affect the condition's
+        fold, and only those are guaranteed readable in the before-block
+        scope).  See ``pyir_tag_pending_writes`` for why this must run
+        before the condition evaluates.
+        """
+        cond_names = {
+            n.id
+            for n in ast.walk(node.test)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        }
+        specs: list[ast.expr] = []
+        seen: set[str] = set()
+        for name in write_args:
+            if name in seen:
+                continue
+            seen.add(name)
+            specs.append(
+                ast.Tuple(
+                    elts=[
+                        ast.Constant(value=name),
+                        ast.Constant(value=None),
+                        ast.Constant(value=None),
+                    ],
+                    ctx=ast.Load(),
+                )
+            )
+        for stmt in ast.walk(node):
+            targets: list[ast.expr] = []
+            if isinstance(stmt, ast.Assign):
+                targets = list(stmt.targets)
+            elif isinstance(stmt, (ast.AugAssign, ast.AnnAssign)):
+                targets = [stmt.target]
+            for t in targets:
+                owner_expr: ast.expr | None = None
+                slot_const: ast.expr | None = None
+                if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name):
+                    owner_expr = ast.Name(id=t.value.id, ctx=ast.Load())
+                    slot_const = ast.Constant(value=t.attr)
+                    dotted = f"{t.value.id}.{t.attr}"
+                elif (
+                    isinstance(t, ast.Subscript)
+                    and isinstance(t.value, ast.Name)
+                    and isinstance(t.slice, ast.Constant)
+                ):
+                    owner_expr = ast.Name(id=t.value.id, ctx=ast.Load())
+                    slot_const = ast.Constant(value=t.slice.value)
+                    dotted = f"{t.value.id}[{t.slice.value!r}]"
+                else:
+                    continue
+                if t.value.id not in cond_names or dotted in seen:
+                    continue
+                seen.add(dotted)
+                specs.append(
+                    ast.Tuple(
+                        elts=[ast.Constant(value=dotted), owner_expr, slot_const],
+                        ctx=ast.Load(),
+                    )
+                )
+        if not specs:
+            return []
+        call = ast.Expr(
+            value=ast.Call(
+                func=_create_module_attribute(
+                    "pyir_tag_pending_writes",
+                    submodule_name="pyir_runtime",
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
+                args=specs,
+                keywords=[],
+            )
+        )
+        return [ast.copy_location(ast.fix_missing_locations(call), node)]
 
     def _prepare_loop_body_vars(
         self,
@@ -902,6 +1245,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_read_call = ast.Call(
                 func=_create_module_attribute(
                     helper,
+                    submodule_name="pyir_runtime",
                     lineno=node.lineno,
                     col_offset=node.col_offset,
                 ),
@@ -1000,7 +1344,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         return self._target_as_load(target)
 
     def _collect_attr_reads(
-        self, node: ast.AST, exclude_paths: set[str] | None = None
+        self,
+        node: ast.AST,
+        exclude_paths: set[str] | None = None,
+        call_func_ids: set[int] | None = None,
     ) -> list[tuple[str, str, str]]:
         """Collect ``self.X`` attribute reads from *node*.
 
@@ -1009,11 +1356,16 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         ``ast.Name`` ``self`` -- i.e. ``self.x`` but not ``self.x.y``.
         Skips attributes that are call targets (``self.advance()``), and
         any path in *exclude_paths*.
+
+        *call_func_ids* lets a caller that already walked *node* pass the
+        call-target id set in, so we skip a redundant ``ast.walk``; it is
+        computed on demand when omitted.
         """
         if exclude_paths is None:
             exclude_paths = set()
 
-        call_func_ids = self._collect_call_func_ids(node)
+        if call_func_ids is None:
+            call_func_ids = self._collect_call_func_ids(node)
 
         seen: set[str] = set()
         results: list[tuple[str, str, str]] = []
@@ -1079,7 +1431,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         return False
 
     def _collect_other_attr_reads(
-        self, node: ast.AST, exclude_paths: set[str] | None = None
+        self,
+        node: ast.AST,
+        exclude_paths: set[str] | None = None,
+        call_func_ids: set[int] | None = None,
     ) -> list[tuple[str, str, str]]:
         """Collect ``obj.X`` attribute reads from *node* (D1 Attribute-Load).
 
@@ -1091,13 +1446,18 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         Only fires inside a control-flow scope -- function-scope reads
         are already handled by the existing ``_mutable_ref`` /
         ``_pyir_auto_load_arg`` machinery.
+
+        *call_func_ids* lets a caller that already walked *node* pass the
+        call-target id set in, so we skip a redundant ``ast.walk``; it is
+        computed on demand when omitted.
         """
         if not self._is_inside_cf_scope():
             return []
         if exclude_paths is None:
             exclude_paths = set()
 
-        call_func_ids = self._collect_call_func_ids(node)
+        if call_func_ids is None:
+            call_func_ids = self._collect_call_func_ids(node)
 
         seen: set[str] = set()
         results: list[tuple[str, str, str]] = []
@@ -1144,7 +1504,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             return False
 
     def _collect_name_loads(
-        self, node: ast.AST, exclude_names: set[str] | None = None
+        self,
+        node: ast.AST,
+        exclude_names: set[str] | None = None,
+        call_func_ids: set[int] | None = None,
     ) -> list[str]:
         """Collect plain ``Name`` reads from *node* (D1 Name-Load).
 
@@ -1168,19 +1531,31 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         if exclude_names is None:
             exclude_names = set()
 
-        call_func_ids = self._collect_call_func_ids(node)
+        if call_func_ids is None:
+            call_func_ids = self._collect_call_func_ids(node)
 
-        # Names that appear as the .value of an Attribute (and so are
-        # already handled by attribute-read instrumentation) — skip them
-        # to keep the rewritten AST tidy. We still wrap names that ALSO
-        # appear elsewhere as bare reads.
+        # Single walk: record every Attribute-base Name id (already covered by
+        # attribute-read instrumentation) and every Name-Load occurrence in
+        # source order. Iterating the collected occurrences below preserves the
+        # original first-occurrence result ordering without re-walking.
         attr_value_only_ids: set[int] = set()
-        bare_name_ids: set[int] = set()
+        load_name_nodes: list[tuple[int, str]] = []
         for child in ast.walk(node):
             if isinstance(child, ast.Attribute) and isinstance(child.value, ast.Name):
                 attr_value_only_ids.add(id(child.value))
             elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
-                bare_name_ids.add(id(child))
+                load_name_nodes.append((id(child), child.id))
+
+        # A name qualifies only if it has at least one "bare" Load occurrence —
+        # one that is neither an Attribute base nor a call target. Otherwise
+        # `boo = pyir_read('boo', boo)` would be redundant with the attribute
+        # instrumentation for `boo.val`. Precomputing this set replaces the
+        # per-candidate ``ast.walk`` rescan the loop used to do.
+        names_with_bare_load = {
+            name
+            for node_id, name in load_name_nodes
+            if node_id not in attr_value_only_ids and node_id not in call_func_ids
+        }
 
         active = self.session_data.scope_manager.get_active_symbols()
 
@@ -1189,21 +1564,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
         seen: set[str] = set()
         results: list[str] = []
-        for child in ast.walk(node):
-            if not (isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)):
+        for node_id, name in load_name_nodes:
+            if node_id in call_func_ids:
                 continue
-            if id(child) in call_func_ids:
-                continue
-            if (
-                id(child) in attr_value_only_ids
-                and id(child) not in bare_name_ids - attr_value_only_ids
-            ):
-                # The only occurrences are as Attribute bases — the
-                # attribute-read instrumentation already covers reads
-                # through obj.attr. Wrapping the bare obj would be
-                # redundant.
-                pass  # but we still allow if it appears as bare elsewhere
-            name = child.id
             if name in exclude_names or name in seen:
                 continue
             if name in ("__base_dsl__", "__module_dsl__"):
@@ -1214,19 +1577,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 continue
             if self._is_module_or_class_name(name):
                 continue
-            # Skip names that ONLY appear as Attribute base. Without this
-            # we emit `boo = pyir_read('boo', boo)` for every `boo.val`,
-            # which is correct but noisy.
-            other_uses = [
-                c
-                for c in ast.walk(node)
-                if isinstance(c, ast.Name)
-                and isinstance(c.ctx, ast.Load)
-                and c.id == name
-                and id(c) not in attr_value_only_ids
-                and id(c) not in call_func_ids
-            ]
-            if not other_uses:
+            if name not in names_with_bare_load:
                 continue
             seen.add(name)
             results.append(name)
@@ -1270,6 +1621,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_assign",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=node.col_offset,
                 ),
@@ -1283,7 +1635,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 keywords=[deepcopy(kw) for kw in slot_kwargs],
             )
             reassign = ast.Assign(
-                targets=[deepcopy(target)],
+                targets=[_deepcopy_ast_root(target)],
                 value=pyir_call,
             )
             stmts.append(ast.copy_location(ast.fix_missing_locations(reassign), node))
@@ -1318,9 +1670,14 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         a single ``cute.printf(boo.val, bar)`` statement instruments both
         ``boo.val`` and ``bar`` in one call.
         """
-        self_reads = self._collect_attr_reads(node, exclude_paths)
-        other_attr_reads = self._collect_other_attr_reads(node, exclude_paths)
-        name_loads = self._collect_name_loads(node, exclude_paths)
+        # All three collectors need the call-target id set for *node*; compute
+        # it once here instead of three identical ``ast.walk`` passes.
+        call_func_ids = self._collect_call_func_ids(node)
+        self_reads = self._collect_attr_reads(node, exclude_paths, call_func_ids)
+        other_attr_reads = self._collect_other_attr_reads(
+            node, exclude_paths, call_func_ids
+        )
+        name_loads = self._collect_name_loads(node, exclude_paths, call_func_ids)
 
         # Don't emit a Name-Load writeback for a name that already serves
         # as the owner of a non-self Attribute writeback we just emitted:
@@ -1353,6 +1710,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_read_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_read",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=col_offset,
                 ),
@@ -1402,6 +1760,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_read_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_read",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=col_offset,
                 ),
@@ -1460,6 +1819,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_read_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_read",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=col_offset,
                 ),
@@ -1577,6 +1937,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_read_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_read",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=node.col_offset,
                 ),
@@ -1606,6 +1967,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_assign",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=node.col_offset,
                 ),
@@ -1692,6 +2054,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         pyir_read_call = ast.Call(
             func=_create_module_attribute(
                 "pyir_read",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=node.col_offset,
             ),
@@ -1722,6 +2085,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         pyir_call = ast.Call(
             func=_create_module_attribute(
                 "pyir_assign",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=node.col_offset,
             ),
@@ -1769,6 +2133,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         pre_call = ast.Call(
             func=_create_module_attribute(
                 "_pyir_pre_subscript_assign",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=col_offset,
             ),
@@ -1789,6 +2154,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         pyir_call = ast.Call(
             func=_create_module_attribute(
                 "pyir_assign",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=col_offset,
             ),
@@ -1808,6 +2174,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
         skip_sentinel = _create_module_attribute(
             "_PYIR_SKIP",
+            submodule_name="pyir_runtime",
             lineno=lineno,
             col_offset=col_offset,
         )
@@ -1827,6 +2194,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # Without this, `d[key] = d[key] + Int32(1)` reads stale d[key].
         skip_sentinel_wb = _create_module_attribute(
             "_PYIR_SKIP",
+            submodule_name="pyir_runtime",
             lineno=lineno,
             col_offset=col_offset,
         )
@@ -1869,6 +2237,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         pre_call = ast.Call(
             func=_create_module_attribute(
                 "_pyir_pre_subscript_assign",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=col_offset,
             ),
@@ -1886,6 +2255,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
         skip_sentinel_1 = _create_module_attribute(
             "_PYIR_SKIP",
+            submodule_name="pyir_runtime",
             lineno=lineno,
             col_offset=col_offset,
         )
@@ -1909,6 +2279,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         pyir_call = ast.Call(
             func=_create_module_attribute(
                 "pyir_assign",
+                submodule_name="pyir_runtime",
                 lineno=lineno,
                 col_offset=col_offset,
             ),
@@ -1927,6 +2298,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         )
         skip_sentinel_2 = _create_module_attribute(
             "_PYIR_SKIP",
+            submodule_name="pyir_runtime",
             lineno=lineno,
             col_offset=col_offset,
         )
@@ -2002,6 +2374,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             read_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_read",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=col_offset,
                 ),
@@ -2062,6 +2435,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             pyir_call = ast.Call(
                 func=_create_module_attribute(
                     "pyir_assign",
+                    submodule_name="pyir_runtime",
                     lineno=lineno,
                     col_offset=col_offset,
                 ),

@@ -34,6 +34,8 @@ from cutlass.cute.typing import (
     BFloat16,
     Boolean,
     Float4E2M1FN,
+    Float6E2M3FN,
+    Float6E3M2FN,
     Float8E4M3B11FNUZ,
     Float8E4M3FN,
     Float8E5M2,
@@ -171,11 +173,14 @@ def torch_storage_packing_factor(dtype: type[Numeric]) -> int:
     packed into one storage element, e.g. ``Float4E2M1FN`` -> 2 via torch's packed
     ``float4_e2m1fn_x2`` (two values per byte).
 
-    ``Int4`` is special-cased: PyTorch has no native int4 dtype, so
-    ``cutlass.torch.cute_tensor_like`` packs it two-per-byte into ``uint8``
-    storage. We resolve it to that storage dtype so the same
-    ``storage_bits // width`` formula applies (-> 2). When PyTorch ships a native
-    int4 dtype, drop this branch and add it to the dtype map instead.
+    ``Int4`` and the FP6 types are special-cased: PyTorch has no native dtype for
+    them, so ``cutlass.torch.cute_tensor_like`` uses ``uint8`` storage. We resolve
+    them to that storage dtype so the same ``storage_bits // width`` formula
+    applies:
+
+    * ``Int4`` -> 2 (two 4-bit values packed per byte)
+    * FP6 (``Float6E2M3FN`` / ``Float6E3M2FN``) -> 1 (one 6-bit value per byte,
+      UNPACK_U8-style)
 
     Args:
         dtype: A CUTLASS numeric type.
@@ -184,12 +189,16 @@ def torch_storage_packing_factor(dtype: type[Numeric]) -> int:
         int: The packing factor (logical elements per stored element).
 
     Raises:
-        KeyError: If ``dtype`` is not ``Int4`` and has no torch dtype mapping
-            (propagated from :func:`torch_type_from_cutlass_type`).
+        KeyError: If ``dtype`` has no torch dtype mapping and is not one of the
+            special-cased types (propagated from
+            :func:`torch_type_from_cutlass_type`).
     """
     import torch
 
-    torch_dtype = torch.uint8 if dtype is Int4 else torch_type_from_cutlass_type(dtype)
+    if dtype in {Int4, Float6E2M3FN, Float6E3M2FN}:
+        torch_dtype = torch.uint8
+    else:
+        torch_dtype = torch_type_from_cutlass_type(dtype)
     torch_bits = torch_dtype.itemsize * 8
     return torch_bits // dtype.width
 

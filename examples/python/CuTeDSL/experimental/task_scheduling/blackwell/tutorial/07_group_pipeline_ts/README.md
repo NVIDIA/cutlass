@@ -1,3 +1,4 @@
+
 These kernels are intended only for TS educational purposes. State-of-the-art performance is not guaranteed.
 
 # Tutorial 07: PipelineGroup (merge / fork)
@@ -12,6 +13,8 @@ These kernels are intended only for TS educational purposes. State-of-the-art pe
 - [Example Resource Graphs](#example-resource-graphs)
 - [How to run](#how-to-run)
 
+Full reference: [`docs/prim-ts-skill/patterns/pipeline_group.md`](../docs/prim-ts-skill/patterns/pipeline_group.md).
+
 ## What PipelineGroup is
 
 Several pipelined resources that always synchronize together can share
@@ -21,6 +24,10 @@ one mbarrier instead of issuing one arrive per member:
   consumer calls `group.release()` once.
 - Fork: 1 producer -> N consumers. One shared full barrier; the
   producer calls `group.commit()` once.
+- FusedMerge: same dataflow as Merge, but the producer side is collapsed
+  too — one shared full *and* one shared empty barrier. The consumer calls
+  `group.wait()` and `group.release()` once; producers still `commit()`
+  individually.
 
 This is a performance optimization. Per-resource barriers are still correct;
 the group is optional.
@@ -126,8 +133,8 @@ Fork. TS rejects that; the collapsed stage must be on the group object.
 | # | File | What it demonstrates |
 |---|------|----------------------|
 | 01 | [`01_merge_copy.py`](01_merge_copy.py) | Minimal Merge example. Separate LoadA / LoadB tasks fill `SmemA` and `SmemB`; one Store task waits on both and calls `ab_sync.release()` once. Pipeline mix: `AsyncAsync + TmaAsync`, or both `AsyncAsync`. |
-| 02 | [`02_merge_gemm.py`](02_merge_gemm.py) | FP16 GEMM with two independent load warps: global memory load for A and TMA for B. `SmemA` and `SmemB` are grouped in `ab_sync` (Merge), so the MMA task waits on both members and issues one shared consumer release. Mix: `AsyncUmma + TmaUmma`. |
-| 03 | [`03_merge_gemm_resadd.py`](03_merge_gemm_resadd.py) | Builds on kernel 02. A third task loads the residual tile into `SmemRes`. `ab_sync` groups A/B for MMA, and `resadd_sync` lets the epilogue wait on `TmemAcc` and `SmemRes` together before one release. |
+| 02 | [`02_merge_gemm.py`](02_merge_gemm.py) | FP16 GEMM with two independent load warps: global memory load for A and TMA for B. `SmemA` and `SmemB` are grouped in `ab_sync` (`Merge` or `FusedMerge`), so the MMA tasks waits on both members (`Merge`) or the group (`FusedMerge`) and issues a consumer release on the group Mix: `AsyncUmma + TmaUmma`. |
+| 03 | [`03_merge_gemm_resadd.py`](03_merge_gemm_resadd.py) | Builds on kernel 02. A third task loads the residual tile into `SmemRes`. Two groups — `ab_sync` (A/B for MMA) and `resadd_sync` (epilogue accumulator + residual) can use either Merge or FusedMerge. |
 | 04 | [`04_fork_load_gemm_act.py`](04_fork_load_gemm_act.py) | Fork example. LoadA fills one physical SMEM A buffer once; `fork_sync` exposes it as `SmemAGemm` for MMA descriptors and `SmemAAct` for ReLU. One `fork_sync.commit()` wakes both consumers. |
 
 ## Example Resource Graphs
@@ -154,8 +161,9 @@ flowchart TD
     Tmem -->|StoreReLU: apply ReLU + store D0| GmemD[GmemDReluResource]
 ```
 
-`03_merge_gemm_resadd.py` has two Merge groups: one before MMA and one before
-the residual-add epilogue:
+`03_merge_gemm_resadd.py` has two groups: `ab_sync` before MMA and
+`resadd_sync` before the residual-add epilogue.
+Each can be `Merged` or `FusedMerge`:
 
 ```mermaid
 flowchart TD

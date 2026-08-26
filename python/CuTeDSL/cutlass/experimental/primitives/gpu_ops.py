@@ -12,25 +12,30 @@
 """``cutlass.experimental.primitives.gpu_ops`` -- the ``cutlass.Array`` allocation backend.
 
 Owns the memory-allocation surface behind ``cutlass.Array(dtype, shape, space=...)``:
-the SMEM/RMEM/local allocators, the ``_GlobalVariable`` cubin-static handle, and
-``_Array_factory_dispatch`` (registered with ``base_dsl.register_array_factory`` from
-``cutlass.experimental.primitives.__init__``).
+the SMEM/RMEM/local allocators and ``_Array_factory_dispatch`` (registered with
+``base_dsl.register_array_factory`` from ``cutlass.experimental.primitives.__init__``).
+
+The ``gmem``/``cmem`` cubin-static handle (``_GlobalVariable``) lives in
+``base_dsl.array`` next to ``Array`` itself, because ``cutlass.experimental`` is
+not imported in public releases and those spaces are public ``cutlass.Array``
+API. It is re-exported here so this module's dispatch table stays complete.
 """
 
 from functools import reduce
 import inspect
 import operator
-import re
-import uuid
-from typing import Any, Sequence, Type, Literal
+from typing import Type
 
-from cutlass import Pointer
 from cutlass.base_dsl.typing import Array, _normalize_address_space
 
-from cutlass.base_dsl.array import (
+from cutlass.base_dsl.array import (  # noqa: F401  (re-exports, see module docstring)
     _compute_row_major_strides,
-    _get_or_declare_constant_global,
     _is_gpu_context,
+    # Cubin-static globals (gmem/cmem) — canonical definitions live in
+    # base_dsl.array; re-exported so `gpu_ops._GlobalVariable` keeps working.
+    _GlobalVariable,
+    _allocate_named_global,
+    _GLOBAL_CONSTANT_VALID_KWARGS,
 )
 
 # CuTe DSL imports
@@ -38,10 +43,8 @@ import cutlass
 from cutlass import dsl_user_op
 import cutlass.cute as cute
 from cutlass.base_dsl.typing import Boolean, Numeric
-
-# ``cutlass.utils`` is imported lazily inside ``_get_smem_allocator()`` (it loads
-# after ``cutlass.cute``; a module-level reference can deadlock during init).
 from cutlass.cutlass_dsl import CutlassBaseDSL
+from cutlass.memory.smem import SmemAllocator
 
 # MLIR imports
 from cutlass._mlir import ir
@@ -55,7 +58,7 @@ from cutlass._mlir.dialects import vector as vector
 import cutlass._mlir.dialects.cute as _cute_ir
 
 
-def _get_smem_allocator() -> "cutlass.utils.SmemAllocator":
+def _get_smem_allocator() -> "cutlass.memory.SmemAllocator":
     """Get shared memory allocator, reusing existing one if available.
 
     This function ensures a single SmemAllocator is used within a kernel context:
@@ -63,7 +66,7 @@ def _get_smem_allocator() -> "cutlass.utils.SmemAllocator":
     2. If not, create a new one - SmemAllocator.__init__() auto-registers via
        track_smem_allocator(), so subsequent calls will find it
 
-    This fixes the issue where mixing cutlass.utils.SmemAllocator() with
+    This fixes the issue where mixing cutlass.memory.SmemAllocator() with
     cutlass.Array(..., space=cutlass.AddressSpace.smem) would cause overlapping allocations because
     each created independent allocators starting from offset 0.
     """
@@ -83,9 +86,7 @@ def _get_smem_allocator() -> "cutlass.utils.SmemAllocator":
 
     # No existing allocator - create new one and register it in the DSL
     # context so subsequent calls reuse it (prevents overlapping allocations).
-    import cutlass.utils  # deferred; see module-level note on the import block
-
-    allocator = cutlass.utils.SmemAllocator()
+    allocator = SmemAllocator()
     if dsl_obj is not None:
         dsl_obj._set_smem_tracking(allocator, lambda a: a.smem_size)
     return allocator
@@ -365,87 +366,6 @@ def _allocate_memory_local(
 
 
 # =============================================================================
-# Static GPU globals: constant memory and global memory
-# =============================================================================
-
-
-def _allocate_named_global(
-    dtype: Type[Numeric],
-    shape: tuple[int, ...] | int,
-    addrspace: int,
-    *,
-    name: str | None,
-    alignment: int | None,
-    storage: Literal["internal", "extern"],
-    constant: bool,
-    init: object | None,
-    bounds_check: bool,
-    loc: ir.Location | None,
-    ip: ir.InsertionPoint | None,
-) -> Array:
-    """Shared body for allocate_memory_constant/global.
-
-    Emits a single llvm.mlir.global into the enclosing gpu.module (deduped by
-    name with a signature check on reuse — anonymous globals do not dedup),
-    addresses-of it at the call site, and wraps the resulting !llvm.ptr in a
-    cutlass.Array carrying the right addrspace so downstream Array operations see
-    the correct memory space.
-    """
-    if isinstance(shape, int):
-        shape = (shape,)
-
-    num_elements = reduce(operator.mul, shape, 1)
-    if num_elements <= 0:
-        raise ValueError(f"shape must be positive; got {shape}")
-
-    element_width_bits = dtype.width if dtype is not Boolean else 8
-    total_bits = num_elements * element_width_bits
-    if total_bits % 8 != 0:
-        raise ValueError(
-            f"global '{name}': {num_elements} elements of {dtype} "
-            f"({element_width_bits} bits each) is not byte-aligned"
-        )
-
-    if alignment is None:
-        alignment = max(1, dtype.width // 8)
-
-    # Build the LLVM payload type: scalar for shape=(1,) / single element,
-    # otherwise wrap in nested !llvm.array<...>.
-    mlir_elem_type = dtype.mlir_type
-    is_wrapped_array = num_elements > 1 or len(shape) > 1
-    payload_type = mlir_elem_type
-    if is_wrapped_array:
-        # Wrap from innermost to outermost so shape=(M, N) becomes
-        # !llvm.array<M x !llvm.array<N x T>>.
-        payload_type = mlir_elem_type
-        for n in reversed(shape):
-            payload_type = ir.Type.parse(f"!llvm.array<{n} x {payload_type}>")
-
-    addr_val, _resolved_name = _get_or_declare_constant_global(
-        name,
-        payload_type,
-        addrspace,
-        alignment=alignment,
-        constant=constant,
-        storage=storage,
-        init=init,
-        init_dtype=dtype,
-        init_shape=shape,
-        init_is_wrapped_array=is_wrapped_array,
-        loc=loc,
-        ip=ip,
-    )
-
-    return Array(
-        addr_val,
-        shape=shape,
-        dtype=dtype,
-        bounds_check=bounds_check,
-        addrspace=addrspace,
-    )
-
-
-# =============================================================================
 # Unified ``cutlass.Array(dtype, shape, space=...)`` factory dispatch.
 # =============================================================================
 #
@@ -481,12 +401,6 @@ def _allocate_named_global(
 # ``loc`` / ``ip`` are infrastructure plumbing and intentionally kept out of
 # the user-visible error message (see ``_check_factory_kwargs``).
 _SMEM_LMEM_VALID_KWARGS = frozenset(("alignment", "bounds_check", "loc", "ip"))
-
-# Kwargs accepted by ``GlobalVariable.__init__``.  ``loc`` / ``ip`` are
-# accepted but unused — ``GlobalVariable`` construction emits no MLIR.
-_GLOBAL_CONSTANT_VALID_KWARGS = frozenset(
-    ("name", "init", "extern", "readonly", "alignment", "loc", "ip")
-)
 
 
 def _check_factory_kwargs(
@@ -525,7 +439,7 @@ def _Array_factory_dispatch(
     either resolves to one downstream call or is rejected with a clear
     message pointing the user at the right alternative.
 
-    :param dtype: CUTLASS numeric type for the allocation.
+    :param dtype: cutlass numeric type for the allocation.
     :param shape: Tuple-of-ints or single int.  Forwarded as-is — each
         downstream allocator normalises shape on its own.
     :param space: Raw ``space=`` argument; normalised here via
@@ -642,353 +556,3 @@ def _Array_factory_dispatch(
     raise ValueError(
         f"space={space.name} not supported via cutlass.Array() at module scope."
     )
-
-
-# =============================================================================
-# Module-scope handle for static cubin globals (host-init friendly).
-# =============================================================================
-#
-# A GlobalVariable is pure Python metadata describing a named static cubin
-# buffer.  Construction emits no MLIR.  The handle is usable in two contexts:
-#
-#   1. Inside @cute.kernel: ``WEIGHTS[tx]`` (read) and, for writable spaces,
-#      ``WEIGHTS[tx] = v`` (store) lazily emit the matching
-#      ``llvm.mlir.global`` into the enclosing gpu.module and return a
-#      ``cutlass.Array`` view in the matching ``AddressSpace``.
-#
-#   2. From eager Python (post-compile): a host write-to-symbol helper
-#      (``compiled_fn, WEIGHTS, src``) resolves the global against the cubin's
-#      loaded ``cudaLibrary_t`` via ``cudaLibraryGetGlobal`` and copies bytes
-#      in via ``cudaMemcpy``.
-#
-# The two orthogonal axes:
-#
-#     addrspace= : where the bytes physically live
-#         cutlass.AddressSpace.gmem    -> .global  (host- and device-mutable)
-#         cutlass.AddressSpace.cmem  -> .const   (host-mutable, device-read-only)
-#
-#     init=      : whether the value is a compile-time literal
-#         init=None    -> LLVM `constant` flag is False; loads respect any
-#                         runtime writes (cuMemcpyToSymbol observable).
-#         init=values  -> LLVM `constant` flag is True; the optimizer is
-#                         told the value never changes and may fold loads
-#                         to the literal.  Use for baked-in lookup tables
-#                         that you NEVER overwrite from host.
-#
-# =============================================================================
-
-
-class _GlobalVariable:
-    """Module-scope handle for a static cubin variable.
-
-    Construction is pure Python; declaration into MLIR happens lazily on
-    first kernel-side use via ``WEIGHTS[idx]``.
-
-    :param dtype: Element CUTLASS numeric type (``cutlass.Float32`` etc.).
-    :param shape: Element-count tuple.  ``(N,)`` is canonical 1-D.
-    :param name: PTX identifier for the global.  Used by
-        ``cudaLibraryGetGlobal`` at host-upload time, so it must be a stable
-        C identifier.  If omitted the constructor generates a unique
-        ``cutedsl_const_sym_<n>`` / ``cutedsl_global_sym_<n>`` name.
-    :param alignment: Bytes; defaults to ``dtype.width // 8``.
-    :param init: Compile-time literal.  Presence of ``init`` flips the LLVM
-        ``constant`` keyword on, which lets the optimizer fold loads to the
-        literal — DO NOT pair with ``write_to_symbol`` if you expect the
-        host upload to be observable.  Omit ``init`` for the standard
-        host-init flow.
-    :param addrspace: :class:`AddressSpace` member (or its int value).
-        Default is ``GLOBAL``.  Only ``GLOBAL`` and ``CONSTANT`` are valid
-        for static cubin variables.
-    :param extern: ``False`` (default) — this cubin defines the body.
-        ``True`` — declaration only; the body lives in another cubin or in
-        C++ code linked into this cubin.  Extern requires an explicit
-        ``name`` (you can't auto-name something that already exists) and
-        rejects ``init=`` (the body is elsewhere).  ``write_to_symbol``
-        rejects extern handles since the storage isn't ours to update.
-    :param readonly: ``False`` (default) — the global is host-mutable; an
-        ``init=`` provides default values that ``write_to_symbol`` may
-        later overwrite (the standard CUDA C++ ``__constant__ float arr[N]
-        = {…};`` pattern).  ``True`` — the LLVM ``constant`` keyword is
-        emitted; the optimizer is free to fold all loads to ``init`` and
-        any later ``write_to_symbol`` will silently not be observed.  Use
-        for compile-time-baked literal tables only.  Requires ``init``.
-    """
-
-    # ---- Class-level constants/helpers ------------------------------------
-
-    # Valid PTX identifier pattern (used to validate explicit ``name=`` args).
-    _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-    @staticmethod
-    def _auto_name(addrspace_int: int) -> str:
-        """Generate a fresh ``cutedsl_<kind>_sym_<hex>`` name when the user
-        didn't pass one.  No global state; uniqueness comes from a
-        UUID4-derived suffix (48 bits → collision-free for any realistic
-        workload).
-        """
-        kind = "const" if addrspace_int == int(cutlass.AddressSpace.cmem) else "global"
-        return f"cutedsl_{kind}_sym_{uuid.uuid4().hex[:12]}"
-
-    __slots__ = (
-        "name",
-        "dtype",
-        "shape",
-        "alignment",
-        "is_extern",
-        "readonly",
-        "_addrspace",
-        "init",
-    )
-
-    name: str
-    dtype: Type[Numeric]
-    shape: "tuple[int, ...]"
-    alignment: int
-    is_extern: bool
-    readonly: bool
-    _addrspace: int
-    init: "Numeric | Sequence | object | None"
-
-    def __init__(
-        self,
-        dtype: Type[Numeric],
-        shape: "tuple[int, ...] | int" = (),
-        *,
-        name: str | None = None,
-        alignment: int | None = None,
-        init: "Numeric | Sequence | object | None" = None,
-        addrspace: "cutlass.AddressSpace | int | None" = None,
-        extern: bool = False,
-        readonly: bool = False,
-    ) -> None:
-        # ---- shape ------------------------------------------------------
-        # Default shape=() means "scalar" (num_elements == 1).  Wrap an
-        # int into a 1-D tuple; otherwise normalise to a tuple of ints.
-        if isinstance(shape, int):
-            shape = (shape,)
-        else:
-            shape = tuple(shape)
-        # Empty tuple = scalar — allowed.  Non-empty must be all positive ints.
-        if any((not isinstance(d, int)) or d <= 0 for d in shape):
-            raise ValueError(f"shape must be positive ints; got {shape!r}")
-
-        # ---- addrspace (resolve first, needed for auto-name) ------------
-        if addrspace is None:
-            addrspace = cutlass.AddressSpace.gmem
-        # AddressSpace is an IntEnum; int() works on either an enum member
-        # or a plain int.
-        addrspace_int = int(addrspace)
-        _allowed = (int(cutlass.AddressSpace.cmem), int(cutlass.AddressSpace.gmem))
-        if addrspace_int not in _allowed:
-            raise ValueError(
-                f"GlobalVariable addrspace must be CONSTANT (4) or GLOBAL (1); "
-                f"got {addrspace_int}.  Use cutlass.Array(space=cutlass.AddressSpace.smem) or "
-                f"cutlass.Array(space=cutlass.AddressSpace.rmem) for per-launch scratch."
-            )
-
-        # ---- name (extern requires explicit; internal auto-generates) ---
-        extern = bool(extern)
-        if name is None:
-            if extern:
-                raise ValueError(
-                    "GlobalVariable(extern=True) requires an explicit `name` "
-                    "— the symbol must already exist in another cubin (or in "
-                    "C++ code linked against this cubin)."
-                )
-            name = _GlobalVariable._auto_name(addrspace_int)
-        elif not isinstance(name, str) or not _GlobalVariable._NAME_RE.match(name):
-            raise ValueError(
-                f"GlobalVariable name must match {_GlobalVariable._NAME_RE.pattern!r}; "
-                f"got {name!r}"
-            )
-
-        if extern and init is not None:
-            raise ValueError(
-                f"GlobalVariable {name!r}: extern=True cannot have init= — "
-                f"the variable's body lives in a different cubin."
-            )
-        if readonly and init is None and not extern:
-            # readonly=True asserts immutability everywhere — without an
-            # init, there's nothing for the optimizer to fold loads to,
-            # which makes the variable functionally useless (every read
-            # would be undef).  Reject early with a clear message.
-            raise ValueError(
-                f"GlobalVariable {name!r}: readonly=True requires an init= "
-                f"value (the optimizer needs a literal to fold loads to)."
-            )
-
-        # ---- dtype ------------------------------------------------------
-        if not isinstance(dtype, type) or not hasattr(dtype, "width"):
-            raise TypeError(f"dtype must be a cutlass.Numeric subclass; got {dtype!r}")
-
-        elem_width_bits = dtype.width if dtype is not Boolean else 8
-        num_elements = reduce(operator.mul, shape, 1)
-        if (num_elements * elem_width_bits) % 8 != 0:
-            raise ValueError(
-                f"GlobalVariable {name!r}: {num_elements} elements of "
-                f"{dtype} ({elem_width_bits} bits each) is not byte-aligned"
-            )
-
-        # ---- alignment --------------------------------------------------
-        if alignment is None:
-            alignment = max(1, dtype.width // 8)
-        if (
-            not isinstance(alignment, int)
-            or alignment <= 0
-            or (alignment & (alignment - 1))
-        ):
-            raise ValueError(
-                f"alignment must be a positive power of two; got {alignment!r}"
-            )
-
-        # __slots__ + frozen-by-convention: store via object.__setattr__.
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "dtype", dtype)
-        object.__setattr__(self, "shape", shape)
-        object.__setattr__(self, "alignment", alignment)
-        object.__setattr__(self, "is_extern", extern)
-        object.__setattr__(self, "readonly", bool(readonly))
-        object.__setattr__(self, "_addrspace", addrspace_int)
-        object.__setattr__(self, "init", init)
-
-    def __setattr__(self, key: str, value: object) -> None:
-        raise AttributeError(f"GlobalVariable is immutable; cannot set {key!r}")
-
-    def __repr__(self) -> str:
-        kind = "extern" if self.is_extern else "internal"
-        return (
-            f"GlobalVariable(name={self.name!r}, dtype={self.dtype.__name__}, "
-            f"shape={self.shape}, alignment={self.alignment}, "
-            f"storage={kind!r}, addrspace={self._addrspace}, "
-            f"init={'<set>' if self.init is not None else None}, "
-            f"readonly={self.readonly})"
-        )
-
-    # ---- public introspection ---------------------------------------------
-
-    @property
-    def num_elements(self) -> int:
-        return reduce(operator.mul, self.shape, 1)
-
-    @property
-    def nbytes(self) -> int:
-        elem_width_bits = self.dtype.width if self.dtype is not Boolean else 8
-        return (self.num_elements * elem_width_bits) // 8
-
-    @property
-    def addrspace(self) -> int:
-        return self._addrspace
-
-    # ---- Device-side use ---------------------------------------------------
-
-    def _materialize(
-        self,
-        *,
-        bounds_check: bool = False,
-        loc: ir.Location | None = None,
-        ip: ir.InsertionPoint | None = None,
-    ) -> Array:
-        """Emit the global declaration (if needed) and return a kernel-side
-        ``cutlass.Array`` view.
-
-        Must be called inside a tracing context (a ``@cute.kernel`` body or
-        any other gpu.module-rooted IR context). Multiple calls in the same
-        kernel re-emit ``llvm.mlir.addressof`` (cheap; LLVM CSE folds);
-        the underlying ``llvm.mlir.global`` is deduped by name.
-
-        Private — users should index the handle directly: ``WEIGHTS[idx]``.
-        """
-        # Pre-flight: GlobalVariable indexing requires a live MLIR tracing
-        # context (the global decl is emitted into the enclosing gpu.module
-        # at first use).  Without that, the underlying MLIR builder errors
-        # with a generic "needs a Context" message that doesn't tell the
-        # user what they actually did wrong.  Catch it up-front.
-        try:
-            ir.InsertionPoint.current  # type: ignore[attr-defined]
-        except (RuntimeError, ValueError):
-            raise RuntimeError(
-                f"GlobalVariable {self.name!r}: indexing is only valid "
-                f"inside an `@cute.kernel` / `@cute.jit` body during MLIR "
-                f"tracing.  To read or write the bytes from host Python, "
-                f"use `cutlass.write_to_symbol(compiled_fn, sym, src)` after "
-                f"`cute.compile(...)`."
-            ) from None
-        return _allocate_named_global(
-            self.dtype,
-            self.shape,
-            addrspace=self._addrspace,
-            name=self.name,
-            alignment=self.alignment,
-            # _get_or_declare_constant_global takes the literal storage
-            # string; map our bool back.
-            storage="extern" if self.is_extern else "internal",
-            # LLVM `constant` flag: only set when readonly=True (compile-time baked
-            # literal).  CONSTANT addrspace is device-read-only by PTX ABI, but the
-            # host can still update the symbol via write_to_symbol(); adding the LLVM
-            # constant keyword would make those updates unobservable to the compiler.
-            constant=self.readonly,
-            init=self.init,
-            bounds_check=bounds_check,
-            loc=loc,
-            ip=ip,
-        )
-
-    def __getitem__(self, idx: object) -> Any:
-        """``WEIGHTS[tx]`` lazily emits the addressof + load."""
-        return self._materialize()[idx]
-
-    def __setitem__(self, idx: object, value: object) -> None:
-        """``COUNTER[tx] = v`` lazily emits the addressof + store.
-
-        Stores into a CONSTANT-addrspace Symbol are rejected by the
-        underlying Array (constant memory is read-only on device).
-        """
-        self._materialize()[idx] = value
-
-    def print_runtime(
-        self,
-        max_elements: int = 16,
-        *,
-        loc: ir.Location | None = None,
-        ip: ir.InsertionPoint | None = None,
-    ) -> None:
-        """Print array contents at runtime; delegates to the materialized Array."""
-        self._materialize(loc=loc, ip=ip).print_runtime(max_elements, loc=loc, ip=ip)
-
-    def subview(
-        self,
-        idx: int | ir.Value = 0,
-        *,
-        loc: ir.Location | None = None,
-        ip: ir.InsertionPoint | None = None,
-    ) -> Array:
-        """Offset Array view: ``global_handle.subview(n)`` → Array from element ``n``.
-
-        Replaces the now-disabled ``global_handle + n`` pointer arithmetic;
-        delegates to the materialized global Array's :meth:`Array.subview`.
-        """
-        return self._materialize(loc=loc, ip=ip).subview(idx, loc=loc, ip=ip)
-
-    def data_ptr(
-        self,
-        idx: int | ir.Value = 0,
-        *,
-        loc: ir.Location | None = None,
-        ip: ir.InsertionPoint | None = None,
-    ) -> Pointer:
-        """Pointer to element ``idx``: ``global_handle.data_ptr(n)`` → Pointer.
-
-        Delegates to the materialized global Array's :meth:`Array.data_ptr`.
-        """
-        return self._materialize(loc=loc, ip=ip).data_ptr(idx, loc=loc, ip=ip)
-
-    def __add__(self, other: object) -> Array:
-        """Pointer arithmetic: global_handle + offset → Array at that offset."""
-        return self._materialize() + other
-
-    def __radd__(self, other: object) -> Array:
-        return other + self._materialize()
-
-    def __sub__(self, other: object) -> Array:
-        """Pointer arithmetic: global_handle - offset → Array at that offset."""
-        return self._materialize() - other

@@ -21,10 +21,11 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from ... import cutlass_dsl as _dsl
 from ..arch.constants import THREADS_PER_WARPGROUP
-from .pipeline import TMAStorePipeline, TMAToUMMAPipeline
+from .accumulator_buffering import AccumulatorDrain
+from .pipeline import GenericPipelineBase, TMAStorePipeline, TMAToUMMAPipeline
 
 if TYPE_CHECKING:
-    from cutlass.utils.layout import LayoutEnum
+    from cutlass.tensor_utils import LayoutEnum
 
 
 def is_preferred_cluster(
@@ -195,7 +196,8 @@ def epilogue_tma_store(
     d_major_mode: Optional["LayoutEnum"] = None,  # type: ignore[name-defined]
     tid_x_in_group: Optional[int] = None,
     amax_out: Optional[cute.Tensor] = None,
-) -> TMAStorePipeline:
+    accumulator_drain: Optional[AccumulatorDrain] = None,
+) -> Union[TMAStorePipeline, tuple[TMAStorePipeline, GenericPipelineBase]]:
     """
     Epilogue phase: copy accumulator from TMEM to GMEM via RMEM and TMA store.
 
@@ -234,14 +236,20 @@ def epilogue_tma_store(
             - per warp, intra-warp reduction
             - per warp, lane 0 does atomic_max into GMEM
             ``None`` (default) disables the AMax codepath at JIT-time.
+        accumulator_drain: Optional drain returned by
+            ``AccumulatorBufferingPlan.consumer_wait_and_get_view``. When supplied,
+            this helper owns exactly one accumulator consumer release/advance,
+            reverses the phase-zero overlap traversal, and returns the updated
+            accumulator pipeline with the TMA-store pipeline.
 
     Returns:
-        tma_store_pipeline: The updated TMAStorePipeline instance
+        The updated TMAStorePipeline instance. When ``accumulator_drain`` is
+        supplied, returns ``(tma_store_pipeline, accumulator_pipeline)``.
     """
     from .algorithm import partition_and_copy
     from .memory import allocate, tma_store
     import cutlass.utils.blackwell_helpers as blackwell_helpers
-    from cutlass import utils as utils
+    from cutlass.tensor_utils import LayoutEnum
 
     if cutlass.const_expr(tid_x_in_group is None):
         tid_x_in_group, _, _ = cute.arch.thread_idx()
@@ -252,7 +260,7 @@ def epilogue_tma_store(
     acc_dtype = tmem_acc_buffer_staged.element_type
     d_dtype = gmem_d.element_type
     if cutlass.const_expr(d_major_mode is None):
-        d_major_mode = utils.LayoutEnum.from_tensor(gmem_d)
+        d_major_mode = LayoutEnum.from_tensor(gmem_d)
 
     epi_tile_shape = blackwell_helpers.compute_epilogue_tile_shape(
         cta_tile_shape_mnk,
@@ -286,6 +294,7 @@ def epilogue_tma_store(
     gmem_d_epi_tma_shape = gmem_d_epi_tma.shape
     assert isinstance(gmem_d_epi_tma_shape, tuple)
     epi_subtile_cnt = gmem_d_epi_tma_shape[3]
+    assert isinstance(epi_subtile_cnt, int)
 
     acc_d_rmem_layout = make_t2r_rmem_layout(
         tiled_copy_t2r,
@@ -321,13 +330,26 @@ def epilogue_tma_store(
     if cutlass.const_expr(amax_out is not None):
         thread_amax = cutlass.Float32(0.0)
 
-    for epi_subtile_idx in range(epi_subtile_cnt):  # type: ignore[arg-type]
+    for epi_subtile_idx in range(epi_subtile_cnt):
+        real_subtile_idx = epi_subtile_idx
+        if cutlass.const_expr(
+            accumulator_drain is not None and accumulator_drain.plan.uses_overlap
+        ):
+            assert accumulator_drain is not None
+            if accumulator_drain.consumer_selector == 0:
+                real_subtile_idx = epi_subtile_cnt - 1 - epi_subtile_idx
+
         # TMEM -> RMEM
         partition_and_copy(
             tiled_copy_t2r.get_slice(tid_x_in_group),
-            acc_epi_div_tiled[None, None, 0, epi_subtile_idx],
+            acc_epi_div_tiled[None, None, 0, real_subtile_idx],
             rmem_acc_buffer,
         )
+
+        if cutlass.const_expr(accumulator_drain is not None):
+            assert accumulator_drain is not None
+            if epi_subtile_idx == accumulator_drain.plan.release_after_t2r_ordinal:
+                accumulator_drain.pipeline.consumer_release_and_advance()
 
         # RMEM -> RMEM and epilogue Op
         acc_vec = rmem_acc_buffer.load()
@@ -367,7 +389,7 @@ def epilogue_tma_store(
         if warp_idx == tma_store_warp_id:
             tma_store(
                 smem_d_buffer[None, None, store_idx],
-                gmem_d_epi_tma[None, None, 0, epi_subtile_idx],
+                gmem_d_epi_tma[None, None, 0, real_subtile_idx],
             )
 
         # release_advance():
@@ -387,6 +409,9 @@ def epilogue_tma_store(
             cute.arch.atomic_fmax(amax_out.iterator, warp_amax, sign_bit=False)
 
     tma_store_pipeline.tail()
+    if cutlass.const_expr(accumulator_drain is not None):
+        assert accumulator_drain is not None
+        return tma_store_pipeline, accumulator_drain.pipeline
     return tma_store_pipeline
 
 

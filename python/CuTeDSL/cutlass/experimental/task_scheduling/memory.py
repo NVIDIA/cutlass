@@ -454,10 +454,6 @@ class SmemAllocator(_LayoutAllocator):
     def add_pipeline_group(self, group: Any) -> None:
         """Register a ``PipelineGroup``'s barrier SMEM requirements.
 
-        The group needs ``(N + 1) × S`` barrier entries (N = number of
-        members, S = pipeline stages): one barrier-set per member on
-        the "many" side, plus one shared barrier-set.
-
         Individual members' data SMEM should still be registered via
         ``add_resource()``.  Their per-resource barrier accounting is
         automatically skipped (see ``add_resource``).
@@ -468,10 +464,10 @@ class SmemAllocator(_LayoutAllocator):
                 "PipelineGroup has no pipeline_config — call "
                 "add_pipeline_group() after the group is constructed."
             )
-        members = getattr(group, "members", [])
-        N = len(members)
         S = cfg.num_stages
-        barrier_size = (N + 1) * S * _MBARRIER_BYTES_PER_STAGE
+        barrier_size = (
+            group.num_barriers_per_stage * S * _MBARRIER_BYTES_PER_STAGE
+        )
         self._barrier_bytes = (
             _align_up(self._barrier_bytes, _MBARRIER_ALIGNMENT) + barrier_size
         )
@@ -656,7 +652,6 @@ class SmemAllocator(_LayoutAllocator):
             barrier_offset += pcfg.num_stages * _MBARRIER_BYTES_PER_STAGE
         for group in self._barrier_groups:
             gcfg = group.pipeline_config
-            N = len(group.members)
             S = gcfg.num_stages
             barrier_offset = _align_up(barrier_offset, _MBARRIER_ALIGNMENT)
             if gcfg.barrier_ptr is None:
@@ -666,7 +661,9 @@ class SmemAllocator(_LayoutAllocator):
                     mem_space=cutlass.AddressSpace.smem,
                 )
                 group.pipeline_config = replace(gcfg, barrier_ptr=ptr)
-            barrier_offset += (N + 1) * S * _MBARRIER_BYTES_PER_STAGE
+            barrier_offset += (
+                group.num_barriers_per_stage * S * _MBARRIER_BYTES_PER_STAGE
+            )
 
 
 class TmemAllocator(_LayoutAllocator):

@@ -295,7 +295,7 @@ def _emit_warpgroup_reduce(
     top-to-bottom regardless of the op being emitted.
 
     The epilogue warpgroup is not assumed to start at warp 0 of
-    the CTA -- ``first_epi_warp_id`` (the operator's
+    the CTA -- ``first_epi_warp_id`` (the operation's
     ``epilogue_warp_id[0]``) is subtracted from the absolute
     ``cute.arch.warp_idx()`` to get an epilogue-relative slot
     index in ``[0, num_epi_warps)``.  ``s_reduce`` is sized to
@@ -343,6 +343,188 @@ def _emit_warpgroup_reduce(
         for i in range(num_epi_warps):
             result = _op_combine(op, dtype, result, s_reduce[i])
         _op_atomic(op, dtype, dest_iter, result)
+
+
+def _count_distinct_offsets(frag):
+    """Number of distinct destination offsets in a per-thread reduce
+    fragment -- i.e. the global atomics ``_emit_axis_reduce`` emits per
+    thread after the intra-thread register fold.
+
+    The fragment's zero-stride layout is static, so each ``crd2idx`` is a
+    compile-time constant and the count is a pure trace-time quantity.
+    The dispatch selector uses it to choose between the direct GMEM
+    scatter and the SMEM-staged fold; it is *not* a ``@cute.jit`` body,
+    so a plain ``range`` (not ``range_constexpr``) is correct here.
+    """
+    flat = cute.group_modes(frag, 0, cute.rank(frag))
+    offsets = {int(cute.crd2idx(j, flat.layout)) for j in range(cute.size(flat))}
+    return len(offsets)
+
+
+@cute.jit
+def _emit_axis_reduce(value, op, dest):
+    """Emit a non-scalar (row / column) reduction by folding each
+    thread's fragment in registers first, then atomic-combining one
+    partial per distinct destination address into the partitioned
+    zero-stride destination view.
+
+    ``dest`` is the reduce target partitioned to the *same* per-thread
+    per-subtile fragment layout as ``value`` (the ``remap_modes``
+    zero-stride-on-folded-axes view, partitioned through the same
+    ``partition_C`` + ``partition_D`` chain as the accumulator).  The
+    folded output axes carry stride 0, so fragment positions that differ
+    only in a folded axis resolve to the *same* destination offset;
+    positions differing in a kept axis resolve to distinct offsets.
+    This is the categorical dual of the broadcast read: there one
+    source element loads into many fragment positions through a
+    zero-stride view; here many fragment positions combine into one
+    destination element.
+
+    Rather than emit one atomic per fragment position, group the
+    positions by their destination offset and fold each group in
+    registers (``_op_combine``), emitting a single atomic per distinct
+    offset (``_op_atomic``).  The offset is the kept-coordinate key,
+    derived purely from ``dest``'s (static) layout -- no TV-layout
+    inspection.  ``crd2idx`` of a static position over that layout is a
+    compile-time constant, so the grouping runs at JIT-trace time and
+    the per-group fold collapses the intra-thread duplicates for free;
+    the surviving cross-thread / cross-CTA duplicates still fold through
+    the hardware atomics.  When the per-thread fragment is entirely
+    folded -- every position shares one offset, the common case where
+    the kept axis lives in the thread/base-pointer dimension -- this
+    reduces the whole fragment to a single atomic per thread.
+
+    Lives at module scope and is ``@cute.jit`` so the DSL preprocesses
+    the unrolled fold/scatter in this lexical body; ``Tensor.reduce``
+    runs at plain Python time and cannot host it directly.
+    """
+    dtype = value.dtype
+    # Materialize the fragment expression into a register tensor so each
+    # position can be paired with its destination offset.
+    frag = cute.make_rmem_tensor(dest.shape, dtype)
+    frag.store(value)
+    frag_flat = cute.group_modes(frag, 0, cute.rank(frag))
+    dest_flat = cute.group_modes(dest, 0, cute.rank(dest))
+    # Group fragment positions by their destination offset.
+    # ``range_constexpr`` unrolls in Python, so ``i`` is a compile-time
+    # constant and ``crd2idx`` folds to a constant offset -- the grouping
+    # is a trace-time dict, not a loop-carried IR value.  A plain
+    # ``range`` here would instead lower to a dynamic ``scf.for`` (making
+    # the offset dynamic and the dict a structure-changing loop carry).
+    # The zero-stride aliasing lives in ``dest``'s layout, so positions
+    # differing only in a folded axis share an offset.
+    groups = {}  # static destination offset -> fragment positions
+    for i in cutlass_dsl.range_constexpr(cute.size(dest_flat)):
+        groups.setdefault(int(cute.crd2idx(i, dest_flat.layout)), []).append(i)
+    # One register-folded atomic per distinct offset: folding the clump
+    # of same-address positions here replaces that many same-address
+    # atomics with a single combined one.
+    items = list(groups.items())
+    for g in cutlass_dsl.range_constexpr(len(items)):
+        offset, positions = items[g]
+        partial = frag_flat[positions[0]]
+        for p in cutlass_dsl.range_constexpr(len(positions) - 1):
+            partial = _op_combine(op, dtype, partial, frag_flat[positions[p + 1]])
+        # The atomic needs the element's *address*, so offset the base
+        # iterator by the (compile-time) layout offset for this group.
+        _op_atomic(op, dtype, dest_flat.iterator + offset, partial)
+
+
+@cute.jit
+def _reduce_smem_stripe(kept_extent, num_epi_warps, first_epi_warp_id):
+    """Cooperative striping over a ``kept_extent`` SMEM buffer: returns
+    ``(epi_tidx, num_epi_threads, n_stripes)`` so epi thread ``epi_tidx``
+    owns slots ``epi_tidx, epi_tidx + num_epi_threads, ...``.  ``n_stripes``
+    is compile-time; plain helper, called from ``@cute.jit`` bodies.
+    """
+    num_epi_threads = num_epi_warps * 32
+    epi_tidx = (cute.arch.warp_idx() - first_epi_warp_id) * 32 + cute.arch.lane_idx()
+    n_stripes = (kept_extent + num_epi_threads - 1) // num_epi_threads
+    return epi_tidx, num_epi_threads, n_stripes
+
+
+# The SMEM-staged kept-axis reduction is split into three phases so the
+# fold can accumulate *across* subtiles in one per-CTA buffer and flush
+# only once -- driven by the operation around the subtile loop
+# (``EFC.Kernel.reduce_smem_init`` / ``reduce_smem_flush``), with the
+# per-subtile fold emitted from ``Tensor.reduce``.  Folding once per CTA
+# instead of once per subtile cuts both the global-atomic count and the
+# warpgroup barriers by ``subtile_cnt``.
+
+
+@cute.jit
+def _emit_axis_reduce_smem_init(
+    op, dtype, smem_buf, kept_extent, barrier, num_epi_warps, first_epi_warp_id
+):
+    """Initialise the per-CTA SMEM fold buffer to the op identity (once,
+    before the subtile loop) and fence so every thread sees it before the
+    first fold."""
+    identity = _op_identity(op, dtype)
+    epi_tidx, num_epi_threads, n_stripes = _reduce_smem_stripe(
+        kept_extent, num_epi_warps, first_epi_warp_id
+    )
+    for s in cutlass_dsl.range_constexpr(n_stripes):
+        slot = epi_tidx + s * num_epi_threads
+        if slot < kept_extent:
+            smem_buf[slot] = identity
+    barrier.arrive_and_wait()
+
+
+@cute.jit
+def _emit_axis_reduce_smem_fold(value, op, smem_frag):
+    """Fold one subtile's contribution into the SMEM buffer: intra-thread
+    register fold (as in ``_emit_axis_reduce``), then one SMEM atomic per
+    distinct slot into ``smem_frag`` -- the mirror of the destination's
+    zero-stride view, so positions and threads sharing a kept coordinate
+    alias the same slot and the shared-memory atomics fold them.
+
+    No barrier here: the buffer persists across subtiles and the atomics
+    are associative, so successive subtiles simply accumulate.  The init
+    fence precedes the first fold and the flush fence follows the last.
+    """
+    dtype = value.dtype
+    frag = cute.make_rmem_tensor(smem_frag.shape, dtype)
+    frag.store(value)
+    frag_flat = cute.group_modes(frag, 0, cute.rank(frag))
+    smem_flat = cute.group_modes(smem_frag, 0, cute.rank(smem_frag))
+    groups = {}
+    for j in cutlass_dsl.range_constexpr(cute.size(smem_flat)):
+        groups.setdefault(int(cute.crd2idx(j, smem_flat.layout)), []).append(j)
+    items = list(groups.items())
+    for g in cutlass_dsl.range_constexpr(len(items)):
+        offset, positions = items[g]
+        partial = frag_flat[positions[0]]
+        for p in cutlass_dsl.range_constexpr(len(positions) - 1):
+            partial = _op_combine(op, dtype, partial, frag_flat[positions[p + 1]])
+        _op_atomic(op, dtype, smem_flat.iterator + offset, partial)
+
+
+@cute.jit
+def _emit_axis_reduce_smem_flush(
+    op,
+    dtype,
+    smem_buf,
+    gmem_base,
+    kept_extent,
+    barrier,
+    num_epi_warps,
+    first_epi_warp_id,
+):
+    """Fence after the last subtile's fold, flush the accumulated SMEM
+    buffer to global memory (one global atomic per kept coordinate,
+    combined onto the destination's existing content; the kept axis is
+    stride-1 contiguous, so coordinate ``k`` lives at ``gmem_base + k``),
+    then fence so a persistent CTA can re-init the buffer for its next
+    output tile without racing this flush's reads."""
+    barrier.arrive_and_wait()
+    epi_tidx, num_epi_threads, n_stripes = _reduce_smem_stripe(
+        kept_extent, num_epi_warps, first_epi_warp_id
+    )
+    for s in cutlass_dsl.range_constexpr(n_stripes):
+        slot = epi_tidx + s * num_epi_threads
+        if slot < kept_extent:
+            _op_atomic(op, dtype, gmem_base + slot, smem_buf[slot])
+    barrier.arrive_and_wait()
 
 
 def _ensure_no_reduce_read_conflict(attributes, name):
@@ -519,6 +701,42 @@ class Tensor:
                 Transport.SYNC_GMEM_STORE,
             )
 
+        @property
+        def reduce_folded_axes(self) -> tuple:
+            """Output-tile axes folded away by a remap reduction: the
+            ``:`` (broadcast / ``True``) entries of ``source_mode_map``,
+            as output-mode indices.
+
+            These are the axes the device collapses when reducing into
+            this destination.  ``degenerate_to_scalar`` is exactly the
+            case where *every* output axis is folded (so
+            ``reduce_kept_axes`` is empty).  Empty when this is not a
+            remapped tensor.
+
+            Derived from ``source_mode_map`` so there is a single source
+            of truth: the remap subscript already encodes fold-vs-keep
+            (``_remap.py`` turns folded axes into zero-stride modes, the
+            categorical dual of the broadcast read).
+            """
+            if self.source_mode_map is None:
+                return ()
+            return tuple(i for i, v in enumerate(self.source_mode_map) if v is True)
+
+        @property
+        def reduce_kept_axes(self) -> tuple:
+            """Output-tile axes preserved by a remap reduction: the
+            integer entries of ``source_mode_map``, in output-mode
+            order.  Empty for the scalar (all-folded) case.
+
+            For a kept-axis reduction (e.g. a column bias keeping N),
+            the device folds ``reduce_folded_axes`` and atomically
+            scatters one reduced value per coordinate of these kept
+            axes into the zero-stride destination view.
+            """
+            if self.source_mode_map is None:
+                return ()
+            return tuple(i for i, v in enumerate(self.source_mode_map) if v is not True)
+
     def __init__(
         self,
         phase: Phase,
@@ -551,6 +769,16 @@ class Tensor:
         self, via: Transport, num_bits_per_copy: int | None
     ) -> None:
         """Stamp the copy options on first call; verify on later calls."""
+        # ``num_bits_per_copy`` sizes a direct (synchronous or async)
+        # GMEM transaction; TMA derives its own transfer width from the
+        # descriptor, so an explicit width with ``via=Transport.TMA`` is
+        # a meaningless config.  Reject it loudly rather than silently
+        # ignore it, matching the runtime-side validation.
+        if via is Transport.TMA and num_bits_per_copy is not None:
+            raise ValueError(
+                f"Tensor {self.name!r}: num_bits_per_copy is only valid "
+                f"for non-TMA transports, not via={via}."
+            )
         # The flags are *per tensor*, not per access -- a tensor that is
         # both read and written must use the same ``via`` for both.
         seen = self.attributes.is_read or self.attributes.is_written
@@ -635,7 +863,7 @@ class Tensor:
                 # follows the same per-subtile pattern as TMA but
                 # through ``cp.async`` -- not yet wired up here.
                 return self.configuration.epilogue_context.load[self.name].to(
-                    self.efc.operator.epi_dtype
+                    self.efc.operation.epi_dtype
                 )
 
             case Phase.PyTorchEvaluation:
@@ -755,19 +983,16 @@ class Tensor:
                         f"call it on '{self.name}.remap_modes[...]' "
                         f"with ':' for the output modes to fold."
                     )
-                # Only the all-``:'' (scalar destination) case is
-                # wired up.  Bail loudly so the user knows the framework
-                # cannot yet handle row / column / mixed reductions
-                # even though the API would naturally extend to them.
-                if not self.attributes.degenerate_to_scalar:
-                    raise NotImplementedError(
-                        f"Tensor.reduce() on '{self.name}' requires an "
-                        f"all-':' remap subscript (single-element "
-                        f"destination).  Row / column / partial "
-                        f"reductions are not yet wired up."
-                    )
+                # Both the scalar (all-``:``) and the non-scalar
+                # (row / column / per-batch, i.e. some kept axes)
+                # destinations are supported.  The scalar case folds the
+                # whole tile to one element via the warpgroup fold; the
+                # non-scalar case atomic-scatters each fragment element
+                # through the zero-stride destination view.  The split
+                # is decided in the ``ThreadOperation`` phase on
+                # ``degenerate_to_scalar``.
                 # Multiple reduce calls onto the same destination must
-                # agree on the operator: there is one atomic op type
+                # agree on the operation: there is one atomic op type
                 # per destination address, not one per call site.
                 if (
                     self.attributes.reduce_op is not None
@@ -788,34 +1013,46 @@ class Tensor:
                 _ensure_no_reduce_read_conflict(self.attributes, self.name)
 
             case Phase.ThreadOperation:
-                # Delegate to the unified ``@cute.jit`` helper at
-                # module scope: the 5-step warpgroup fold needs DSL
-                # preprocessing of its dynamic ``if`` predicates
-                # (``lane_idx() == 0``, ``warp_idx == 0 and ...``),
-                # which only happens for code lexically inside a
-                # JIT-decorated function.  The match block here runs
-                # at plain-Python time and cannot host that body
-                # directly.  ``_emit_warpgroup_reduce`` dispatches
-                # per-op internally through the ``_op_*`` Python
-                # helpers, so adding a new op only requires extending
-                # those four helpers (and ``_SUPPORTED_REDUCE_OPS``).
+                # Both reduction emitters live at module scope and are
+                # ``@cute.jit`` so the DSL preprocesses their dynamic
+                # ``if`` / ``range_constexpr`` bodies; this ``match``
+                # block runs at plain-Python time and cannot host that
+                # code directly.
                 ctx = self.configuration.epilogue_context
-                # The epilogue warpgroup may start at any
-                # warp-aligned offset inside the CTA (e.g. warps
-                # ``[4,5,6,7]``); pass the first epi warp id so
-                # ``_emit_warpgroup_reduce`` can compute an
-                # epilogue-relative slot index for the SMEM
-                # scratch and gate the final atomic on the right
-                # warp.
-                _emit_warpgroup_reduce(
-                    value,
-                    op,
-                    ctx.reduce_smem[self.name],
-                    ctx.reduce_barrier,
-                    ctx.reduce[self.name].iterator,
-                    len(self.efc.operator.epilogue_warp_id),
-                    self.efc.operator.epilogue_warp_id[0],
-                )
+                if self.attributes.degenerate_to_scalar:
+                    # Scalar destination: warpgroup-wide fold to one
+                    # value, then a single cross-CTA atomic.  The
+                    # epilogue warpgroup may start at any warp-aligned
+                    # offset inside the CTA (e.g. warps ``[4,5,6,7]``);
+                    # pass the first epi warp id so the helper computes
+                    # an epilogue-relative SMEM-scratch slot index and
+                    # gates the final atomic on the right warp.
+                    _emit_warpgroup_reduce(
+                        value,
+                        op,
+                        ctx.reduce_smem[self.name],
+                        ctx.reduce_barrier,
+                        ctx.reduce[self.name].iterator,
+                        len(self.efc.operation.epilogue_warp_id),
+                        self.efc.operation.epilogue_warp_id[0],
+                    )
+                else:
+                    # Non-scalar (kept-axis) destination.  ``reduce_use_smem``
+                    # (decided before the subtile loop, layout-derived) picks
+                    # the path: when the folded axis lives in the thread
+                    # dimension (column-style) the SMEM-staged fold pays, so
+                    # emit just *this subtile's* fold into the per-CTA SMEM
+                    # buffer -- the operation runs the init before the loop and
+                    # the flush after, accumulating across subtiles.  Otherwise
+                    # (value-dim fold, row-style: register fold already at the
+                    # ``kept_extent`` floor) the direct scatter avoids the SMEM
+                    # round-trip and the barriers entirely.
+                    if ctx.reduce_use_smem[self.name]:
+                        _emit_axis_reduce_smem_fold(
+                            value, op, ctx.reduce_smem_frag[self.name]
+                        )
+                    else:
+                        _emit_axis_reduce(value, op, ctx.reduce[self.name])
 
             case Phase.PyTorchEvaluation:
                 # Compose the reduced ``value`` on top of the
@@ -833,30 +1070,44 @@ class Tensor:
 
                 source_name = self.attributes.mapped_source
                 dest = self.configuration.args[source_name]
+                # Reduce ``value`` (an output-shaped (m, n, l) tensor)
+                # over the folded output axes only, keeping the kept
+                # axes.  The scalar (all-``:``) case has every axis
+                # folded, so this collapses to a single value -- the
+                # same result the previous ``value.sum()`` / ``.max()``
+                # / ``.min()`` produced.  ``torch.amax`` / ``amin`` are
+                # used (not ``.max()`` / ``.min()``) because they accept
+                # a tuple of dims and return values only (no indices).
+                folded = self.attributes.reduce_folded_axes
+                kept = self.attributes.reduce_kept_axes
                 if op is cute.ReductionOp.ADD:
-                    # ``value.sum()`` collapses across every axis to
-                    # match the all-``:'' (scalar) destination case;
-                    # ``view_as`` keeps the destination's rank-0 or
-                    # rank-1-size-1 shape so ``copy_`` does not
-                    # complain about a shape mismatch.
-                    reduced = value.sum()
-                    dest.copy_(dest + reduced.to(dest.dtype).view_as(dest))
+                    reduced = value.sum(dim=folded) if folded else value
+                    combine = torch.add
                 elif op is cute.ReductionOp.MAX:
-                    reduced = value.max()
-                    dest.copy_(
-                        torch.maximum(dest, reduced.to(dest.dtype).view_as(dest))
-                    )
+                    reduced = torch.amax(value, dim=folded) if folded else value
+                    combine = torch.maximum
                 elif op is cute.ReductionOp.MIN:
-                    reduced = value.min()
-                    dest.copy_(
-                        torch.minimum(dest, reduced.to(dest.dtype).view_as(dest))
-                    )
+                    reduced = torch.amin(value, dim=folded) if folded else value
+                    combine = torch.minimum
                 else:
                     # Defensive: should have been caught by the
                     # _SUPPORTED_REDUCE_OPS gate above.
                     raise NotImplementedError(
                         f"PyTorch reference for op {op!r} not implemented."
                     )
+                # ``reduced`` now carries the kept axes in *output* mode
+                # order; the destination is indexed by *source* axes.
+                # Reorder reduced's axes into source order so it aligns
+                # with ``dest`` (a no-op for a single kept axis).
+                if kept:
+                    kept_src = tuple(self.attributes.source_mode_map[i] for i in kept)
+                    perm = sorted(range(len(kept)), key=lambda j: kept_src[j])
+                    reduced = reduced.permute(perm)
+                # ``view_as`` keeps the destination's exact shape (rank-0
+                # / size-1 for scalar, the kept-axis vector otherwise) so
+                # ``copy_`` does not complain about a shape mismatch.
+                reduced = reduced.to(dest.dtype).view_as(dest)
+                dest.copy_(combine(dest, reduced))
 
             case _:
                 raise NotImplementedError(

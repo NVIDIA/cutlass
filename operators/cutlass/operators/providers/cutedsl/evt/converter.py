@@ -56,7 +56,9 @@ from cutlass.operators.fusion.ir.load_nodes import (
     ScalarBroadcastImpl,
 )
 from cutlass.operators.fusion.ir.store_nodes import (
+    ColumnReductionImpl,
     ReductionImplBase,
+    RowReductionImpl,
     ScalarReductionImpl,
 )
 from cutlass.operators.fusion.library import ActivationOp, FunctionalOp
@@ -127,6 +129,25 @@ def make_scalar_reduce(efc_op_name: str):
     def _op(efc_config, x, y):
         op = getattr(efc_config, efc_op_name)
         x.remap_modes[:, :, :].reduce(y, op=op)
+
+    return _op
+
+
+def make_axis_reduce(efc_op_name: str, key):
+    """Return a reduce op that folds tile ``y`` into a kept-axis vector ``x``.
+
+    ``key`` is the ``remap_modes`` subscript naming the kept output axis:
+    ``(0, slice(None), slice(None))`` keeps M (a column reduction --
+    destination strideMN ``(1, 0)`` -- one value per row), and
+    ``(slice(None), 0, slice(None))`` keeps N (a row reduction --
+    strideMN ``(0, 1)`` -- one value per column).  The folded axes carry
+    ``slice(None)`` (stride 0 in the destination view), so the EFC
+    kept-axis reduction pipeline folds ``y`` into the kept coordinate.
+    """
+
+    def _op(efc_config, x, y):
+        op = getattr(efc_config, efc_op_name)
+        x.remap_modes[key].reduce(y, op=op)
 
     return _op
 
@@ -506,6 +527,24 @@ class EFCConverter:
                     debug_string_ops.append(
                         f"{meta.name}.remap_modes[:,:,:].reduce({child}, op=efc_config.{efc_op_name})"
                     )
+                elif isinstance(
+                    meta.underlying_impl, (ColumnReductionImpl, RowReductionImpl)
+                ):
+                    efc_op_name = _DAGIR_REG_REDUCE_TO_EFC_OP[meta.reg_reduce_fn]
+                    # ColumnReductionImpl keeps M (destination strideMN
+                    # (1, 0)) -> [0, :, :]; RowReductionImpl keeps N
+                    # ((0, 1)) -> [:, 0, :].  The folded axes are broadcast
+                    # (stride 0), matching the EFC kept-axis subscript.
+                    if isinstance(meta.underlying_impl, ColumnReductionImpl):
+                        key, dbg = (0, slice(None), slice(None)), "[0,:,:]"
+                    else:
+                        key, dbg = (slice(None), 0, slice(None)), "[:,0,:]"
+                    ops.append(
+                        (make_axis_reduce(efc_op_name, key), idx(meta.name), idx(child))
+                    )
+                    debug_string_ops.append(
+                        f"{meta.name}.remap_modes{dbg}.reduce({child}, op=efc_config.{efc_op_name})"
+                    )
                 else:
                     via, nbits = _store_via(meta.name)
                     ops.append((make_store(via, nbits), idx(meta.name), idx(child)))
@@ -573,17 +612,19 @@ class EFCConverter:
             if isinstance(meta, TopoVisitorNode):
                 return Status.fail("TopoVisitorNode is not supported")
             if isinstance(meta.underlying_impl, ReductionImplBase) and not isinstance(
-                meta.underlying_impl, ScalarReductionImpl
+                meta.underlying_impl,
+                (ScalarReductionImpl, ColumnReductionImpl, RowReductionImpl),
             ):
                 return Status.fail(
                     f"{type(meta.underlying_impl).__name__} is not supported; "
-                    "only ScalarReductionImpl (all-MNL reduction) is"
+                    "EFC supports scalar, column (keep M), and row (keep N) "
+                    "reductions"
                 )
-            if isinstance(meta.underlying_impl, ScalarReductionImpl):
+            if isinstance(meta.underlying_impl, ReductionImplBase):
                 if meta.reg_reduce_fn not in _DAGIR_REG_REDUCE_TO_EFC_OP:
                     return Status.fail(
-                        f"Scalar reduction operator {meta.reg_reduce_fn!r} is not supported; "
-                        "use sum(), max(), or min()"
+                        f"Reduction operator {meta.reg_reduce_fn!r} is not "
+                        "supported; use sum(), max(), or min()"
                     )
         return Status.success()
 

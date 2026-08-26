@@ -86,9 +86,9 @@ class VariadicParameters:
             return "<UnassignedArgument>"
 
     def __init__(self, efc, parameter_names):
-        # Local shortcuts to the EFC instance and the operator it wraps.
+        # Local shortcuts to the EFC instance and the operation it wraps.
         self.efc = efc
-        self.operator = efc.operator
+        self.operation = efc.operation
         self._create_parameter_class(parameter_names)
         self._init_args_with_unassigned()
         log(f"Initial {self.arg = }")
@@ -417,12 +417,27 @@ class JIT(VariadicParameters):
 class Kernel(VariadicParameters):
     """Handle kernel part and @cute.jit/@cute.kernel boundaries."""
 
+    # These three iterators feed the *generic* tensor machinery
+    # (per-CTA partition, SMEM staging, TMA / direct load-store).  They
+    # skip two kinds of tensor that have their own dedicated paths:
+    #   * degenerate scalar broadcasts (materialized via ``full_like``),
+    #   * reduce destinations (``reduce_op`` set), which the kernel
+    #     handles through the atomic reduce path, not the store path.
+    # A non-scalar reduce target is ``is_written`` and non-degenerate,
+    # so without the ``reduce_op is None`` guard it would wrongly land
+    # in the TMA / direct store path here.  Scalar reduce targets are
+    # already excluded by the degenerate check; normal tensors have
+    # ``reduce_op is None`` and are unaffected.
+    @staticmethod
+    def _is_generic_tensor(attributes) -> bool:
+        return not attributes.degenerate_to_scalar and attributes.reduce_op is None
+
     def foreach_tensor(self, function):
-        """Execute the given function for each supplemental tensor, skipping
-        the degenerate scalar broadcast cases."""
+        """Execute the given function for each generic supplemental tensor
+        (skips degenerate scalar broadcasts and reduce destinations)."""
 
         def wrapper(tensor_name, attributes):
-            if not attributes.degenerate_to_scalar:
+            if self._is_generic_tensor(attributes):
                 function(
                     tensor_name,
                     attributes,
@@ -431,11 +446,12 @@ class Kernel(VariadicParameters):
         self.efc.foreach_tensor(wrapper)
 
     def foreach_read_tensor(self, function):
-        """Execute the given function for each supplemental read tensor,
-        skipping the degenerate scalar broadcast cases."""
+        """Execute the given function for each generic supplemental read
+        tensor (skips degenerate scalar broadcasts and reduce
+        destinations)."""
 
         def wrapper(tensor_name, attributes):
-            if not attributes.degenerate_to_scalar:
+            if self._is_generic_tensor(attributes):
                 function(
                     tensor_name,
                     attributes,
@@ -444,11 +460,12 @@ class Kernel(VariadicParameters):
         self.efc.foreach_read_tensor(wrapper)
 
     def foreach_written_tensor(self, function):
-        """Execute the given function for each supplemental written tensor,
-        skipping the degenerate scalar broadcast cases."""
+        """Execute the given function for each generic supplemental written
+        tensor (skips degenerate scalar broadcasts and reduce
+        destinations)."""
 
         def wrapper(tensor_name, attributes):
-            if not attributes.degenerate_to_scalar:
+            if self._is_generic_tensor(attributes):
                 function(
                     tensor_name,
                     attributes,
@@ -459,7 +476,7 @@ class Kernel(VariadicParameters):
 
 # Type variables that parameterize ``EFC`` over the concrete
 # host-side (``JIT``) and device-side (``Kernel``) companion classes
-# a given operator supplies.  An operator typically annotates its
+# a given operation supplies.  An operation typically annotates its
 # stored ``EFC`` instance with the concrete classes
 # (``common_efc.EFC[_DenseGemmEFCJIT, _DenseGemmEFCKernel]``), which
 # lets static analysers resolve ``self.efc.jit.<method>`` and
@@ -469,7 +486,7 @@ JITT = typing.TypeVar("JITT", bound="JIT")
 KernelT = typing.TypeVar("KernelT", bound="Kernel")
 
 # Covariant variants of the same TypeVars, used as parameters of
-# ``_OperatorProtocol`` below.  Because the Protocol reads its
+# ``_OperationProtocol`` below.  Because the Protocol reads its
 # companion-class slots only through read-only ``@property``
 # getters, declaring covariance here matches the actual usage --
 # while the plain ``JITT`` / ``KernelT`` above remain invariant
@@ -490,26 +507,26 @@ _BaseJIT = JIT
 _BaseKernel = Kernel
 
 
-class _OperatorProtocol(typing.Protocol[JITT_co, KernelT_co]):
-    """The slice of an operator's surface that the EFC framework reads.
+class _OperationProtocol(typing.Protocol[JITT_co, KernelT_co]):
+    """The slice of an operation's surface that the EFC framework reads.
 
-    Concrete operator classes (e.g. ``DenseGemmEFC``) satisfy this
+    Concrete operation classes (e.g. ``DenseGemmEFC``) satisfy this
     structurally -- they expose attributes of the matching shape --
-    so framework code can type ``self.operator.JIT`` /
-    ``self.efc.operator.Kernel`` / ``self.efc.operator.epi_dtype``
-    / ``self.efc.operator.epilogue_warp_id`` precisely instead of
+    so framework code can type ``self.operation.JIT`` /
+    ``self.efc.operation.Kernel`` / ``self.efc.operation.epi_dtype``
+    / ``self.efc.operation.epilogue_warp_id`` precisely instead of
     falling back to ``Any``.
 
-    Every other operator-specific attribute (``mma_tiler``,
+    Every other operation-specific attribute (``mma_tiler``,
     ``d_layout``, etc.) stays outside this contract on purpose: the
-    operator's device-side companions inherit ``self.operator`` from
+    operation's device-side companions inherit ``self.operation`` from
     ``VariadicParameters`` (intentionally left untyped, so it stays
     ``Any``), which means kernel-side accesses such as
-    ``self.operator.mma_tiler`` keep working without having to
-    enumerate the full operator API here.  Add a member below only
-    when a piece of *framework* code (not an operator's device-side
-    method) starts reading it through ``self.operator`` or
-    ``self.efc.operator``.
+    ``self.operation.mma_tiler`` keep working without having to
+    enumerate the full operation API here.  Add a member below only
+    when a piece of *framework* code (not an operation's device-side
+    method) starts reading it through ``self.operation`` or
+    ``self.efc.operation``.
 
     Each member is declared as a read-only ``@property`` rather than
     a plain attribute: in ``typing.Protocol`` a writable attribute is
@@ -520,7 +537,7 @@ class _OperatorProtocol(typing.Protocol[JITT_co, KernelT_co]):
     properties express the framework's actual usage and give the
     matching covariance, while still matching structurally against
     concrete attribute, class attribute, or property implementations
-    on the operator side.
+    on the operation side.
     """
 
     @property
@@ -539,12 +556,12 @@ class _OperatorProtocol(typing.Protocol[JITT_co, KernelT_co]):
 class EFC(typing.Generic[JITT, KernelT]):
     """Epilogue Fusion Configuration.
 
-    Generic over the concrete companion classes the operator
+    Generic over the concrete companion classes the operation
     supplies: ``JITT`` is the host-side ``EFC.JIT`` subclass and
     ``KernelT`` is the device-side ``EFC.Kernel`` subclass.  The
     framework instantiates them lazily during ``compile()`` and
-    kernel codegen via the operator-class lookup
-    (``self.operator.JIT(...)`` / ``self.operator.Kernel(...)``);
+    kernel codegen via the operation-class lookup
+    (``self.operation.JIT(...)`` / ``self.operation.Kernel(...)``);
     annotating the EFC instance with the parameterized form
     (e.g. ``common_efc.EFC[_DenseGemmEFCJIT, _DenseGemmEFCKernel]``)
     is what gives editors a precise type for ``self.efc.jit`` and
@@ -553,7 +570,7 @@ class EFC(typing.Generic[JITT, KernelT]):
 
     # User-facing aliases reachable through the ``EFC`` namespace
     # (``EFC.JIT``, ``EFC.Kernel``, ``EFC.Phase``, ``EFC.Tensor``,
-    # ``EFC._RemapModesAccessor``, ``EFC.Configuration``).  Operator
+    # ``EFC._RemapModesAccessor``, ``EFC.Configuration``).  Operation
     # subclasses inherit through these spellings (for example
     # ``class _DenseGemmEFCJIT(common_efc.EFC.JIT)``); user epilogue
     # code uses ``EFC.Phase.<...>`` etc.
@@ -571,35 +588,35 @@ class EFC(typing.Generic[JITT, KernelT]):
     # Instance attributes set during the EFC lifecycle.  Declared at
     # the class level so type-checkers can follow them even though
     # the actual assignments happen outside ``__init__``:
-    #   * ``operator`` is bound in ``__init__`` below; its declared
+    #   * ``operation`` is bound in ``__init__`` below; its declared
     #     type is the framework-side contract documented on
-    #     ``_OperatorProtocol``, which is what lets calls such as
-    #     ``self.operator.JIT(...)`` and
-    #     ``self.efc.operator.Kernel(...)`` type-check;
+    #     ``_OperationProtocol``, which is what lets calls such as
+    #     ``self.operation.JIT(...)`` and
+    #     ``self.efc.operation.Kernel(...)`` type-check;
     #   * ``jit`` is bound in ``compile()`` (this file);
-    #   * ``kernel`` is bound in the operator's
+    #   * ``kernel`` is bound in the operation's
     #     ``create_supplemental_arguments_for_kernel`` (see the
-    #     concrete operator's ``JIT`` companion).
-    operator: _OperatorProtocol[JITT, KernelT]
+    #     concrete operation's ``JIT`` companion).
+    operation: _OperationProtocol[JITT, KernelT]
     jit: JITT
     kernel: KernelT
 
     def __init__(
         self,
-        operator: _OperatorProtocol[JITT, KernelT],
+        operation: _OperationProtocol[JITT, KernelT],
         epilogue_function_configuration,
     ):
         """Construct an EFC instance.
 
-        :param operator: a concrete operator instance (e.g. a
+        :param operation: a concrete operation instance (e.g. a
             ``DenseGemmEFC``) that exposes nested ``JIT`` and ``Kernel``
             classes specialising the host- and device-side companions of
-            this framework with operator-specific behaviour.  EFC will
+            this framework with operation-specific behaviour.  EFC will
             instantiate them at the right points in the pipeline.
-            ``_OperatorProtocol`` formalises the small slice of the
-            operator's surface the framework actually reads.
+            ``_OperationProtocol`` formalises the small slice of the
+            operation's surface the framework actually reads.
         """
-        self.operator = operator
+        self.operation = operation
         self.epilogue_function_configuration = epilogue_function_configuration
         self.analyze_epilogue(epilogue_function_configuration)
 
@@ -630,10 +647,10 @@ class EFC(typing.Generic[JITT, KernelT]):
             )
         # Update the active epilogue instance to use the new Parameter class
         self.analyze_epilogue_with_arguments(supplemental_arguments)
-        # Pick up the operator's nested ``JIT`` class -- concrete
-        # operators provide their own host-side companion via
-        # ``operator.JIT`` (a subclass of ``EFC.JIT``).
-        self.jit = self.operator.JIT(self, self.epilogue_parameter_names)
+        # Pick up the operation's nested ``JIT`` class -- concrete
+        # operations provide their own host-side companion via
+        # ``operation.JIT`` (a subclass of ``EFC.JIT``).
+        self.jit = self.operation.JIT(self, self.epilogue_parameter_names)
         if not self.written_tensor_names:
             raise NotImplementedError(
                 "The epilogue requires at least one written tensor to do something useful."
@@ -708,14 +725,21 @@ class EFC(typing.Generic[JITT, KernelT]):
                     f"(got {type(source_arg).__name__}); scalar "
                     f"reduction requires a single-element tensor."
                 )
-            source_size = math.prod(source_arg.shape)
-            if source_size != 1:
-                raise ValueError(
-                    f"Tensor.reduce() destination remapped from "
-                    f"'{attributes.mapped_source}' has size "
-                    f"{source_size}; only single-element destinations "
-                    f"are currently supported."
-                )
+            # A scalar (all-``:``) reduction collapses to a single
+            # element, so its source must have exactly one element.  A
+            # non-scalar (kept-axis) reduction scatters into a
+            # kept-shaped vector, so any source size is allowed -- the
+            # per-CTA partition of the zero-stride view validates shape
+            # compatibility downstream.
+            if attributes.degenerate_to_scalar:
+                source_size = math.prod(source_arg.shape)
+                if source_size != 1:
+                    raise ValueError(
+                        f"Tensor.reduce() scalar destination remapped "
+                        f"from '{attributes.mapped_source}' has size "
+                        f"{source_size}; an all-':' reduction requires a "
+                        f"single-element destination."
+                    )
 
     def specialized_epilogue(self, phase: Phase, *args):
         """Construct a configuration of the epilogue specialized for a given

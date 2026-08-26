@@ -99,8 +99,56 @@ class EpilogueArguments:
     * Operations are represented in static single assignment (SSA) form. This means
       that each variable can be assigned exactly once.
 
-    The underlying implementation of the epilogue in
-    the kernel will determine how operands are loaded and stored.
+    **The epilogue is parsed, never executed**
+
+    The function body is a small domain-specific language: its source is
+    parsed (a callable's source is read back with ``inspect.getsource``, so
+    callables and source strings are equivalent) and names are matched
+    against the fixed vocabulary below.  They do not resolve to Python
+    objects -- ``max`` here is not ``builtins.max`` -- and calling arbitrary
+    Python functions is not supported.
+
+    * Arithmetic: ``+``, ``-``, ``*``, ``/`` -- elementwise, with scalar and
+      row/column-vector broadcasting of the non-``accum`` operand.
+    * Elementwise functions: ``relu``, ``tanh``, ``sigmoid``, ``silu``,
+      ``hardswish``, ``gelu``, ``exp``, ``maximum``, ``minimum``,
+      ``multiply_add``, ``identity``.
+    * Layout: ``permute``, ``reshape``.
+    * Reductions: ``sum``, ``max`` and ``min`` (see below).
+
+    **Reductions**
+
+    A returned value may reduce the accumulator instead of storing a tile;
+    the reduction is fused into the same kernel, so the ``M x N`` result is
+    never re-read:
+
+    .. code-block:: python
+
+        def epi_with_reductions(accum):
+            D = accum
+            total = sum(accum)              # scalar: all axes folded
+            col_max = max(accum, dim=[0])   # per-column: destination (N,)
+            row_max = max(accum, dim=[1])   # per-row: column-major (M, 1)
+            return D, total, col_max, row_max
+
+    The folded-vs-kept axes are derived from the *layout* of the destination
+    tensor passed in ``kwargs`` (the ``dim=`` keyword documents intent): a
+    single-element tensor selects the scalar reduction, a 1-D ``(N,)``
+    tensor keeps the columns, and a column-major ``(M, 1)`` tensor keeps the
+    rows -- a contiguous ``(M, 1)`` or a bare ``(M,)`` is ambiguous and
+    rejected.  Reductions combine *onto* the destination with atomics, so
+    initialise it to the operation's identity (``0`` for ``sum``, ``-inf``
+    for ``max``, ``+inf`` for ``min``), or to an existing partial result to
+    accumulate into it.
+    Batch axes are folded into the same destination; per-batch reduction
+    outputs are not supported yet.
+
+    **Choosing data transports**
+
+    By default the kernel decides how each operand is moved between global
+    memory and the compute; wrap a tensor kwarg in :class:`Load` or
+    :class:`Store` (e.g. ``C=Load(C, via=Transport.ASYNC_GMEM_LOAD)``) to
+    select a specific transport.  See those classes below.
 
     **Structure of ``kwargs``**
 
@@ -151,6 +199,24 @@ class EpilogueArguments:
                 )
             value = kwargs[kw]
             if isinstance(value, (Load, Store)):
+                # A ``Load`` describes a read and a ``Store`` a write, so the
+                # descriptor's direction must match the parameter's role.
+                # Reject a mismatch (e.g. ``Store`` on a pure input) rather
+                # than silently applying a transport in the wrong direction.
+                # A name that is both an input and an output (e.g.
+                # ``def epi(accum, D): ... return D``) accepts either.
+                is_input = kw in epilogue_inputs
+                is_output = kw in epilogue_outputs
+                if isinstance(value, Load) and is_output and not is_input:
+                    raise ValueError(
+                        f"Epilogue output {kw!r} was wrapped in Load, but Load "
+                        f"describes a read; use Store for outputs."
+                    )
+                if isinstance(value, Store) and is_input and not is_output:
+                    raise ValueError(
+                        f"Epilogue input {kw!r} was wrapped in Store, but Store "
+                        f"describes a write; use Load for inputs."
+                    )
                 # Record how this tensor is moved, then unwrap to the bare
                 # tensor so tracing, broadcasting and TensorWrapper all keep
                 # seeing a plain tensor regardless of the chosen transport.
@@ -164,7 +230,44 @@ class EpilogueArguments:
                 f"Unexpected keyword arguments for epilogue: {kwargs.keys()}"
             )
 
+        # ``tensors`` is the live mapping every consumer reads (``parameters``,
+        # ``EpilogueMetadata``), and ``to_tensor_wrappers`` rewrites it in
+        # place.  ``_source_tensors`` keeps the caller's originals so that the
+        # conversion is always derived from the pristine input rather than from
+        # its own previous output.  Without it, ``trace`` after
+        # ``to_tensor_wrappers`` re-parses ``TensorWrapper``s that the fusion
+        # frontend cannot type, making the pair one-shot instead of repeatable.
+        self._source_tensors = OrderedDict(self.tensors)
+
         self.epilogue_fn = epilogue_fn
+
+    def copy(self) -> EpilogueArguments:
+        """Return a copy of these arguments. Does not copy the underlying tensors.
+
+        Constructing a ``RuntimeArguments`` traces the epilogue and converts its
+        tensors, both of which mutate the object.  Operating on a copy keeps a
+        caller-supplied ``EpilogueArguments`` reusable across several operations,
+        mirroring how ``GemmArguments`` copies its ``A``/``B``/``out`` operands.
+
+        Returns:
+            EpilogueArguments: An independent, untraced copy.
+        """
+        return self.__copy__()
+
+    def __copy__(self) -> EpilogueArguments:
+        clone = object.__new__(type(self))
+        clone.__dict__.update(self.__dict__)
+        # Give the copy its own containers, so converting it never writes
+        # through to the original, and reset the live mapping to the caller's
+        # tensors in case ``self`` was already converted.
+        clone._source_tensors = OrderedDict(self._source_tensors)
+        clone.tensors = OrderedDict(self._source_tensors)
+        clone.transports = dict(self.transports)
+        # Drop any existing trace: a copy is bound to no problem shape yet, and
+        # a stale ``traced_epilogue`` would let ``to_tensor_wrappers`` run
+        # against another operation's DAG.
+        clone.__dict__.pop("traced_epilogue", None)
+        return clone
 
     @property
     def parameters(self) -> list[cute.Tensor | Numeric]:
@@ -181,8 +284,9 @@ class EpilogueArguments:
 
         These are the ``StoreNode``s whose ``underlying_impl`` is a
         ``ScalarReductionImpl`` (e.g. ``total`` in ``total = sum(accum)``). The
-        EFC kernel folds into them with a cross-CTA atomic and requires a static
-        single-element layout, so they must be wrapped with ``static_layout``.
+        fused kernel folds into them with a cross-CTA atomic and requires a
+        static single-element layout, so they must be wrapped with
+        ``static_layout``.
 
         Returns:
             set[str]: Reduction-destination names (empty if there are none).
@@ -216,7 +320,10 @@ class EpilogueArguments:
         # outputs are forced static -- every other tensor keeps the dynamic
         # layout used for problem-size reuse.
         static_names = self._scalar_reduction_destinations()
-        for k, v in self.tensors.items():
+        # Wrap the caller's originals rather than whatever ``tensors`` holds, so
+        # a second call re-derives the same result instead of re-wrapping its
+        # own output.
+        for k, v in self._source_tensors.items():
             if is_torch_tensor(v):
                 if permute is not None:
                     v = v.permute(permute)
@@ -235,7 +342,11 @@ class EpilogueArguments:
             shape=accumulator_shape,
             layout_tag=LayoutType.RowMajor,
         )
-        tensors_for_tracing = {**self.tensors, "accum": accumulator}
+        # Trace the caller's tensors, not ``self.tensors``: the latter may
+        # already hold ``TensorWrapper``s from an earlier
+        # ``to_tensor_wrappers``, which the fusion frontend cannot map to a
+        # CUTLASS datatype and layout.
+        tensors_for_tracing = {**self._source_tensors, "accum": accumulator}
 
         # Parse the AST of the epilogue_fn again, this time with the set of required
         # tensors. This pass converts the epilogue into an internal representation and
@@ -254,10 +365,10 @@ class EpilogueArguments:
 class Transport(enum.Enum):
     """How a supplemental epilogue tensor moves between GMEM and registers.
 
-    Mirrors the EFC kernel's transport catalog. ``TMA`` stages through shared
-    memory; the ``*_GMEM_*`` variants use direct GMEM addressing, either
-    synchronous to the issuing thread (``SYNC_GMEM_LOAD`` / ``SYNC_GMEM_STORE``)
-    or asynchronous through shared memory via ``cp.async`` (``ASYNC_GMEM_LOAD``).
+    ``TMA`` stages through shared memory; the ``*_GMEM_*`` variants use
+    direct GMEM addressing, either synchronous to the issuing thread
+    (``SYNC_GMEM_LOAD`` / ``SYNC_GMEM_STORE``) or asynchronous through
+    shared memory via ``cp.async`` (``ASYNC_GMEM_LOAD``).
     """
 
     TMA = "tma"
@@ -266,7 +377,8 @@ class Transport(enum.Enum):
     ASYNC_GMEM_LOAD = "async_gmem_load"
 
 
-# Which transports are valid for a read vs. a write, mirroring the EFC kernel.
+# Which transports are valid for a read vs. a write, as supported by the
+# fused kernels.
 _LOAD_TRANSPORTS = (Transport.TMA, Transport.SYNC_GMEM_LOAD, Transport.ASYNC_GMEM_LOAD)
 _STORE_TRANSPORTS = (Transport.TMA, Transport.SYNC_GMEM_STORE)
 

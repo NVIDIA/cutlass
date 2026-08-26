@@ -39,6 +39,8 @@ from cutlass.operators.arguments.base import Operand
 from cutlass.operators.arguments.operand import _operand_or_dense
 from cutlass.operators.metadata import (
     DenseTensorConstraints,
+    GroupedGemmOperandsMetadata,
+    IndexPtrGroupedGemmOperandsMetadata,
     OperandConstraints,
     OperandsMetadata,
 )
@@ -202,3 +204,77 @@ def test_ptr_misaligned(fixture_toggle_tvm_ffi):
     A_offset = torch.as_strided(A[offset:], (rows, cols), (cols, 1))
 
     _check_misaligned_args("align", A=A_offset, B=B, out=out)
+
+
+def _dense_constraints(dtype, stride=None):
+    # Minimal constraints with no alignment requirements, suitable for unit tests.
+    return DenseTensorConstraints(
+        dtype=dtype,
+        stride=stride,
+        divisibility=1,
+        ptr_alignment_bytes=1,
+    )
+
+
+
+class TestIndexPtrGroupedGemmOperandsMetadata:
+    def _metadata(self):
+        # Operator that partitions along M; A and B are plain dense fp16 matrices.
+        return IndexPtrGroupedGemmOperandsMetadata(
+            A=_dense_constraints(cutlass.Float16),
+            B=_dense_constraints(cutlass.Float16),
+            out=_dense_constraints(cutlass.Float16),
+            offsets=_dense_constraints(cutlass.Int32, stride=(1,)),
+            offsets_along="m",
+            accumulator_type=cutlass.Float32,
+        )
+
+    def _args(self, offsets_along):
+        # The packed (varying) axis operand is 2D; the per-group operand is 3D
+        # group-first (group_count=2 from offsets). Shapes are axis-specific.
+        A_shape, B_shape, out_shape = {
+            "m": ((8, 4), (2, 4, 16), (8, 16)),
+            "n": ((2, 8, 4), (4, 16), (8, 16)),
+            "k": ((8, 4), (4, 16), (2, 8, 16)),
+        }[offsets_along]
+        return ops.IndexPtrGroupedGemmArguments(
+            A=torch.empty(A_shape, dtype=torch.float16),
+            B=torch.empty(B_shape, dtype=torch.float16),
+            out=torch.empty(out_shape, dtype=torch.float16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([4, 8], dtype=torch.int32),
+            offsets_along=offsets_along,
+        )
+
+    def test_supports_matching_axis(self, fixture_enable_tvm_ffi):
+        assert self._metadata().supports(self._args("m"))
+
+    def test_rejects_mismatched_axis(self, fixture_enable_tvm_ffi):
+        # offsets_along="n" at runtime doesn't match metadata's "m"; must reject
+        # so the operator isn't invoked with the wrong partitioning axis.
+        status = self._metadata().supports(self._args("n"))
+        assert not status
+        assert "offsets_along" in str(status.error)
+
+    def test_legacy_metadata_and_arguments_delegate_to_m_axis(
+        self, fixture_enable_tvm_ffi
+    ):
+        metadata = GroupedGemmOperandsMetadata(
+            A=_dense_constraints(cutlass.Float16),
+            B=_dense_constraints(cutlass.Float16),
+            out=_dense_constraints(cutlass.Float16),
+            offsets=_dense_constraints(cutlass.Int32, stride=(1,)),
+            accumulator_type=cutlass.Float32,
+        )
+        with pytest.warns(DeprecationWarning):
+            args = ops.GroupedGemmArguments(
+                A=torch.empty((8, 4), dtype=torch.float16),
+                B=torch.empty((2, 4, 16), dtype=torch.float16),
+                out=torch.empty((8, 16), dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+            )
+
+        assert isinstance(metadata, IndexPtrGroupedGemmOperandsMetadata)
+        assert metadata.offsets_along == "m"
+        assert metadata.supports(args)

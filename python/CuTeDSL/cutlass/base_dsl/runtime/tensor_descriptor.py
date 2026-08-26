@@ -10,15 +10,13 @@
 # is strictly prohibited.
 
 # Helpers
-import itertools, operator
-import ctypes
+import math
 from typing import Any
 
 from . import dlpack_types as _dpack
 from .dlpack_runtime import (  # type: ignore[import-not-found]
     dlpack_to_tensor_desc,
     get_tensor_desc_data_ptr,
-    get_tensor_desc_is_in_device,
     get_tensor_desc_element_type,
     get_tensor_desc_shape,
     get_tensor_desc_stride,
@@ -71,18 +69,16 @@ class TensorDescriptor:
             self.device_pointer = None
         else:
             raise DSLRuntimeError(
-                f"DLPack device type is not supported {self.dl_tensor.device.device_type}"  # type: ignore[attr-defined]
+                f"DLPack device type is not supported {self.device_type}"
             )
 
         log().info("TensorDescriptor is created = [%s]", self)
 
     @staticmethod
     def can_transformed_to_dlpack(dl_tensor: object) -> bool:
-        if not hasattr(dl_tensor, "__dlpack__") or not hasattr(
+        return hasattr(dl_tensor, "__dlpack__") and hasattr(
             dl_tensor, "__dlpack_device__"
-        ):
-            return False
-        return True
+        )
 
     @property
     def is_in_device(self) -> bool:
@@ -156,16 +152,10 @@ class TensorDescriptor:
     @property
     def size_in_bytes(self) -> int:
         """Calculate the total size in bytes of the DLPack tensor."""
-        # Calculate the number of elements using the shape
         ndim = get_tensor_desc_ndim(self._capsule)
         shape = get_tensor_desc_shape(self._capsule)
-        num_elements = 1
-        for i in range(ndim):
-            num_elements *= shape[i]
-
-        # Total bytes
-        total_bytes = self.element_size_in_bytes * num_elements
-        return total_bytes
+        num_elements = math.prod(shape[:ndim])
+        return self.element_size_in_bytes * num_elements
 
     def __str__(self) -> str:
         """Return a compact string representation of the device_tensor with a tensor prefix."""

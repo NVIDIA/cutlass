@@ -87,15 +87,6 @@ class DSLTreeFlattenError(DSLBaseError):
         self.type_str = type_str
 
 
-def unzip2(pairs: Iterable[tuple[Any, Any]]) -> tuple[list[Any], list[Any]]:
-    """Unzip a sequence of pairs into two lists."""
-    lst1, lst2 = [], []
-    for x1, x2 in pairs:
-        lst1.append(x1)
-        lst2.append(x2)
-    return lst1, lst2
-
-
 def unzip3(
     triples: Iterable[tuple[Any, Any, Any]],
 ) -> tuple[list[Any], list[Any], list[Any]]:
@@ -204,18 +195,6 @@ def is_constexpr_field(field: dataclasses.Field, owner: Any = None) -> bool:
     return annotation is Constexpr or get_origin(annotation) is Constexpr
 
 
-def _is_static_dynamic_constexpr(v: Any) -> bool:
-    """Return whether ``v`` is dynamic-expression-shaped but statically typed."""
-    if not implements_dynamic_expression(v) or not hasattr(v, "type"):
-        return False
-    try:
-        from ..._mlir.dialects import cute as _cute_ir
-
-        return bool(_cute_ir.is_static(v.type))
-    except Exception:
-        return False
-
-
 # =============================================================================
 # PyTreeDef
 # =============================================================================
@@ -305,7 +284,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[str]]:
             constexpr_fields.append(field.name)
             fields.remove(field.name)
             v = getattr(x, field.name)
-            if implements_dynamic_expression(v) and not _is_static_dynamic_constexpr(v):
+            if implements_dynamic_expression(v):
                 raise DSLTreeFlattenError(
                     f"`{x}` has dynamic expression field `{field.name}` with a Constexpr type annotation `{field.type}`",
                     type_str=get_fully_qualified_class_name(x),
@@ -1008,6 +987,115 @@ def _check_tree_equal(lhs: PyTreeDef | Leaf, rhs: PyTreeDef | Leaf) -> bool:
 
     else:
         return False
+
+
+def _tree_value_description(tree: PyTreeDef | Leaf) -> str:
+    """Format a tree node or leaf for structure-change diagnostics.
+
+    Leaves report ``None``, an IR type, or a scalar value. Lists and tuples
+    report their arity, while metadata-backed containers report their type and
+    fields when available.
+    """
+    if isinstance(tree, Leaf):
+        if tree.is_none:
+            return "`None`"
+        if tree.ir_type_str:
+            return f"type `{tree.ir_type_str}`"
+        return "a scalar value"
+
+    node_name = tree.node_type.name
+    child_count = len(tree.child_treedefs)
+    if node_name == str(list):
+        noun = "item" if child_count == 1 else "items"
+        return f"`list` with {child_count} {noun}"
+    if node_name == str(tuple):
+        noun = "item" if child_count == 1 else "items"
+        return f"`tuple` with {child_count} {noun}"
+
+    metadata = tree.node_metadata
+    type_str = getattr(metadata, "type_str", None)
+    if type_str:
+        type_name = type_str.rsplit(".", 1)[-1]
+        fields = getattr(metadata, "fields", [])
+        if fields:
+            return f"`{type_name}` with fields {fields!r}"
+        return f"`{type_name}`"
+
+    noun = "part" if child_count == 1 else "parts"
+    return f"`{node_name}` with {child_count} {noun}"
+
+
+def _tree_child_path(tree: PyTreeDef, path: str, index: int) -> str:
+    """Build a child path from a named field or positional index.
+
+    Structured fields use attribute notation, dictionary fields use key
+    notation, and nodes without named fields use positional notation.
+    """
+    metadata = tree.node_metadata
+    fields = getattr(metadata, "fields", [])
+    if index < len(fields):
+        field = fields[index]
+        original_obj = getattr(metadata, "original_obj", None)
+        if isinstance(original_obj, dict):
+            return f"{path}[{field!r}]"
+        return f"{path}.{field}"
+    return f"{path}[{index}]"
+
+
+def describe_tree_difference(
+    lhs: PyTreeDef | Leaf,
+    rhs: PyTreeDef | Leaf,
+    path: str,
+) -> str:
+    """Describe the first deterministic structural difference between two trees.
+
+    The returned fragment is suitable for a diagnostic detail, for example
+    ``"`state.pending` changed from `None` to type `i32`"``. An empty string
+    means the trees have the same structure.
+    """
+    if _check_tree_equal(lhs, rhs):
+        return ""
+
+    if isinstance(lhs, Leaf) or isinstance(rhs, Leaf):
+        return (
+            f"`{path}` changed from {_tree_value_description(lhs)} "
+            f"to {_tree_value_description(rhs)}"
+        )
+
+    if lhs.node_type != rhs.node_type:
+        return (
+            f"`{path}` changed from {_tree_value_description(lhs)} "
+            f"to {_tree_value_description(rhs)}"
+        )
+
+    lhs_metadata = lhs.node_metadata
+    rhs_metadata = rhs.node_metadata
+    lhs_fields = getattr(lhs_metadata, "fields", [])
+    rhs_fields = getattr(rhs_metadata, "fields", [])
+    lhs_constexpr_fields = getattr(lhs_metadata, "constexpr_fields", [])
+    rhs_constexpr_fields = getattr(rhs_metadata, "constexpr_fields", [])
+    if (
+        lhs_fields != rhs_fields
+        or lhs_constexpr_fields != rhs_constexpr_fields
+        or len(lhs.child_treedefs) != len(rhs.child_treedefs)
+    ):
+        return (
+            f"`{path}` changed from {_tree_value_description(lhs)} "
+            f"to {_tree_value_description(rhs)}"
+        )
+
+    for index, (lhs_child, rhs_child) in enumerate(
+        zip(lhs.child_treedefs, rhs.child_treedefs)
+    ):
+        if _check_tree_equal(lhs_child, rhs_child):
+            continue
+        child_path = _tree_child_path(lhs, path, index)
+        return describe_tree_difference(lhs_child, rhs_child, child_path)
+
+    return (
+        f"`{path}` changed from {_tree_value_description(lhs)} "
+        f"to {_tree_value_description(rhs)}"
+    )
 
 
 def check_tree_equal(lhs: PyTreeDef, rhs: PyTreeDef) -> int:

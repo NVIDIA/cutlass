@@ -33,10 +33,11 @@ from ...typing import (
     Int64,
 )
 from ... import core
-from ...tensor import recast_tensor
+from ...tensor import make_tensor, recast_tensor
 from ...atom import CopyAtom, TiledCopy
 from .mma import SmemLayoutAtomKind, CtaGroup
 from .copy import (
+    _S2TCopyBase,
     Pack,
     Unpack,
     Ld16x64bOp,
@@ -122,6 +123,79 @@ def make_smem_layout_atom(
     return core.make_composed_layout(sw, 0, outer, loc=loc, ip=ip)
 
 
+@dsl_user_op
+def make_sparse_smem_layout_atom(
+    kind: SmemLayoutAtomKind,
+    element_type: Type[Numeric],
+    sparsity: int = 2,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ComposedLayout:
+    """
+    Makes a sparse SMEM layout Atom.
+
+    This function creates a composed layout in unit of elements consistent with the requested layout
+    Atom kind, element data type, and sparsity factor.
+
+    :param kind:         The kind of layout Atom
+    :type kind:          SmemLayoutAtomKind
+    :param element_type: The element data type to construct the layout for
+    :type element_type:  Type[Numeric]
+    :param sparsity:     The sparsity factor
+    :type sparsity:      int
+    :return:             The sparse SMEM layout atom
+    :rtype:              ComposedLayout
+    """
+    if not isinstance(element_type, NumericMeta):
+        raise TypeError(f"element_type must be a Numeric, but got {element_type}")
+
+    if kind in (SmemLayoutAtomKind.MN_INTER, SmemLayoutAtomKind.K_INTER):
+        num_contiguous_bits = 128
+        sw = core.make_swizzle(0, 4, 3)
+    elif kind in (SmemLayoutAtomKind.MN_SW32, SmemLayoutAtomKind.K_SW32):
+        num_contiguous_bits = 256
+        sw = core.make_swizzle(1, 4, 3)
+    elif kind in (SmemLayoutAtomKind.MN_SW64, SmemLayoutAtomKind.K_SW64):
+        num_contiguous_bits = 512
+        sw = core.make_swizzle(2, 4, 3)
+    elif kind in (SmemLayoutAtomKind.MN_SW128, SmemLayoutAtomKind.K_SW128):
+        num_contiguous_bits = 1024
+        sw = core.make_swizzle(3, 4, 3)
+    elif kind == SmemLayoutAtomKind.MN_SW128_32B:
+        num_contiguous_bits = 1024
+        sw = core.make_swizzle(2, 5, 2)
+    else:
+        raise ValueError("unrecognized SMEM layout atom kind")
+
+    num_contiguous_elems = num_contiguous_bits // element_type.width
+
+    if kind in (
+        SmemLayoutAtomKind.MN_INTER,
+        SmemLayoutAtomKind.MN_SW32,
+        SmemLayoutAtomKind.MN_SW64,
+        SmemLayoutAtomKind.MN_SW128,
+        SmemLayoutAtomKind.MN_SW128_32B,
+    ):
+        dense_inner = core.make_layout(
+            (num_contiguous_elems, 8), stride=(1, num_contiguous_elems), loc=loc, ip=ip
+        )
+    else:
+        dense_inner = core.make_layout(
+            (8, num_contiguous_elems), stride=(num_contiguous_elems, 1), loc=loc, ip=ip
+        )
+
+    sparsity_tiler = core.make_layout((1, sparsity), loc=loc, ip=ip)
+    sparse_inner = core.blocked_product(sparsity_tiler, dense_inner, loc=loc, ip=ip)
+
+    return core.make_composed_layout(
+        sw,
+        0,
+        sparse_inner,
+        loc=loc,
+        ip=ip,
+    )
+
 
 @overload
 def tile_to_mma_shape(
@@ -196,7 +270,7 @@ def commit(
     Perform an arrive operation on a mbarrier upon completion of previous MMA operations.
 
     **Single-Thread Execution Required - DSL Does NOT Handle Automatically**: This operation
-    **must** be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`. Without ``elect_one()``, all 32
+    **must** be wrapped in :func:`cute.arch.elect_one`. Without ``elect_one()``, all 32
     threads in the warp will execute the commit, causing 32x redundant ``tcgen05.commit`` PTX instructions.
 
     .. code-block:: python
@@ -216,8 +290,8 @@ def commit(
     :type cta_group: CtaGroup
 
     .. seealso::
-       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **REQUIRED** wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_arrive <cutlass.cute.arch.mbarrier_arrive>` - General barrier arrive operation
+       - :func:`cute.arch.elect_one` - **REQUIRED** wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_arrive` - General barrier arrive operation
     """
     if cta_group == CtaGroup.ONE:
         group = nvvm.CTAGroupKind.CTA_1
@@ -387,6 +461,75 @@ def make_s2t_copy(
 
 
 @dsl_user_op
+def append_s2t_broadcast_mode(
+    op: _S2TCopyBase,
+    smem_tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """
+    Makes the ``tcgen05.cp`` broadcast explicit in an SMEM operand's layout.
+
+    A broadcasting ``tcgen05.cp`` replicates one SMEM core matrix across
+    ``op.broadcast_factor`` TMEM core matrices, but only TMEM carries that mode.
+    ``make_s2t_copy`` builds its tiler from TMEM, so partitioning SMEM without
+    this mode silently borrows modes outside MMA. This appends a
+    size-``broadcast_factor``, zero-stride mode to the MN part of mode 0
+    (hierarchical ``(MN, K)``). Non-broadcasting ops return ``smem_tensor``
+    unchanged; otherwise the returned tensor aliases it with a new layout.
+
+    :param op: SMEM to TMEM copy Operation being partitioned for
+    :type op: _S2TCopyBase
+    :param smem_tensor: SMEM operand with hierarchical ``(MN, K)`` mode 0
+    :type smem_tensor: Tensor
+    :return: ``smem_tensor`` with the broadcast made explicit in its layout
+    :rtype: Tensor
+    :raises ValueError: If ``op`` is not an S2T copy Operation, or if
+        ``smem_tensor`` lacks the expected hierarchical MMA mode
+    """
+    if not isinstance(op, _S2TCopyBase):
+        raise ValueError(
+            f"expects 'op' to be an SMEM to TMEM copy Operation, but got {type(op)}"
+        )
+
+    if op.broadcast_factor == 1:
+        return smem_tensor
+
+    layout = smem_tensor.layout
+    if core.rank(layout) < 2 or core.rank(layout, mode=[0]) != 2:
+        raise ValueError(
+            "expects the SMEM operand of a broadcasting SMEM to TMEM copy to have a "
+            "hierarchical (MN, K) mode 0 followed by at least one further mode, but got "
+            f"{layout}"
+        )
+
+    # (MN, K) -> ((MN, BCAST), K)
+    mn = core.append(
+        core.get(layout, mode=[0, 0]),
+        core.make_layout(op.broadcast_factor, stride=0, loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
+    mma_mode = core.append(
+        # Regroup MN, whose rank the appended broadcast mode grew by one.
+        core.group_modes(mn, 0, core.rank(layout, mode=[0, 0]) + 1, loc=loc, ip=ip),
+        core.get(layout, mode=[0, 1]),
+        loc=loc,
+        ip=ip,
+    )
+
+    # (((MN, BCAST), K), <modes of the input beyond mode 0>)
+    bcast_layout = core.group_modes(mma_mode, 0, 2, loc=loc, ip=ip)
+    for mode in range(1, core.rank(layout)):
+        bcast_layout = core.append(
+            bcast_layout, core.get(layout, mode=[mode]), loc=loc, ip=ip
+        )
+
+    return make_tensor(smem_tensor.iterator, bcast_layout, loc=loc, ip=ip)
+
+
+@dsl_user_op
 def get_s2t_smem_desc_tensor(
     atom: CopyAtom,
     smem_tensor: Tensor,
@@ -397,6 +540,15 @@ def get_s2t_smem_desc_tensor(
     """
     Returns the SMEM descriptor tensor from a S2T copy atom and a SMEM tensor.
     """
+    from cutlass.cutlass_dsl import CuTeDSL
+    from cutlass import base_dsl
+
+    arch = CuTeDSL._get_dsl().get_arch_enum()
+    if arch.is_family_of(base_dsl.Arch.sm_107):
+        smem_desc_tensor = _cute_nvgpu_ir.atom_sm107_get_copy_s2t_smem_desc_view(
+            atom._trait.value, cast(Any, smem_tensor).value, loc=loc, ip=ip
+        )
+        return smem_desc_tensor
     smem_desc_tensor = _cute_nvgpu_ir.atom_get_copy_s2t_smem_desc_view(
         atom._trait.value, cast(Any, smem_tensor).value, loc=loc, ip=ip
     )
@@ -444,6 +596,20 @@ def make_umma_smem_desc(
     src = cast(Any, src).value
     if next_src is not None:
         next_src = cast(Any, next_src).value
+
+    from cutlass.cutlass_dsl import CuTeDSL
+    from cutlass import base_dsl
+
+    arch = CuTeDSL._get_dsl().get_arch_enum()
+    if arch.is_family_of(base_dsl.Arch.sm_107):
+        return _cute_nvgpu_ir.sm107_make_umma_smem_desc(
+            src=src,
+            layout=layout.type.attribute,
+            major=major,
+            next_src=next_src,
+            loc=loc,
+            ip=ip,
+        )
 
     return _cute_nvgpu_ir.make_umma_smem_desc(
         src=src,

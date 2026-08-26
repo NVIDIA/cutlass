@@ -58,20 +58,24 @@ class MmaInstruction:
 
 
 
+
 class BlackwellTcgen05Mma(MmaInstruction):
     """Models the tcgen05.mma instruction for the Blackwell architecture."""
 
-    @staticmethod
+    # Most tcgen05.mma instructions are supported on the full family; the
+    # exceptions are picked out in supported_targets below.
+    _SUPPORTED_TARGETS = (TargetSm("100f"), TargetSm("110f"))
+
+    @classmethod
     def supported_targets(
+        cls,
         design: DesignMetadata | None = None,
         operands: OperandsMetadata | None = None,
     ) -> list[TargetSm]:
         """See :meth:`MmaInstruction.supported_targets`."""
         # See:
         # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#release-notes-a-spec-f-spec-ptx-feature-release-history
-
-        # Most tcgen05.mma instructions are supported on the full family
-        default_targets = [TargetSm("100f"), TargetSm("110f")]
+        default_targets = [*cls._SUPPORTED_TARGETS]
 
         if operands is None or design is None:
             return default_targets
@@ -130,6 +134,39 @@ class BlackwellTcgen05Mma(MmaInstruction):
             raise NotImplementedError(f"Unsupported operand dtype: {A.dtype}")
 
 
+class RubinTcgen05Mma(MmaInstruction):
+    """Models the Rubin-only FP8 ``tcgen05`` MMA instruction subset."""
+
+    _SUPPORTED_TARGETS = (TargetSm("107f"),)
+
+    @classmethod
+    def supported_targets(
+        cls,
+        design: DesignMetadata | None = None,
+        operands: OperandsMetadata | None = None,
+    ) -> list[TargetSm]:
+        """See :meth:`MmaInstruction.supported_targets`."""
+        return [*cls._SUPPORTED_TARGETS]
+
+    @staticmethod
+    def shape_k(operands: OperandsMetadata) -> int:
+        """Return the K dimension of Rubin's FP8 MMA instruction."""
+        try:
+            a_dtype = operands.A.dtype
+            b_dtype = operands.B.dtype
+        except AttributeError as err:
+            raise AttributeError(
+                f"{type(operands)} does not have GEMM operands `A` and `B`"
+            ) from err
+
+        fp8_dtypes = {cutlass.Float8E4M3FN, cutlass.Float8E5M2}
+        if a_dtype in fp8_dtypes and b_dtype in fp8_dtypes:
+            return 64
+        raise NotImplementedError(
+            f"Unsupported Rubin MMA operand dtypes: {a_dtype} and {b_dtype}"
+        )
+
+
 class BlackwellTcgen05MmaSparse(MmaInstruction):
     """Models the tcgen05.mma.sp instruction for the Blackwell architecture."""
 
@@ -145,22 +182,28 @@ class BlackwellTcgen05MmaSparse(MmaInstruction):
 class HopperWgmma(MmaInstruction):
     """Models the wgmma Tensor Core MMA instruction for the Hopper architecture."""
 
-    @staticmethod
+    _SUPPORTED_TARGETS = (TargetSm("90a"),)
+
+    @classmethod
     def supported_targets(
+        cls,
         design: DesignMetadata | None = None,
         operands: OperandsMetadata | None = None,
     ) -> list[TargetSm]:
         """See :meth:`MmaInstruction.supported_targets`."""
-        return [TargetSm("90a")]
+        return [*cls._SUPPORTED_TARGETS]
 
 
 class AmpereMma(MmaInstruction):
     """Models the Tensor Core MMA instruction for the Ampere architecture."""
 
-    @staticmethod
+    _SUPPORTED_TARGETS = (TargetSm(cc=80),)
+
+    @classmethod
     def supported_targets(
+        cls,
         design: DesignMetadata | None = None,
         operands: OperandsMetadata | None = None,
     ) -> list[TargetSm]:
         """See :meth:`MmaInstruction.supported_targets`."""
-        return [TargetSm(cc=80)]
+        return [*cls._SUPPORTED_TARGETS]

@@ -28,7 +28,7 @@ The operation kinds are:
   transaction byte count (``num_bytes``) rather than a thread arrival count.
 - **Umma** -- a ``tcgen05`` MMA (or UTCCP) writes or reads TMEM/SMEM; the atom
   itself signals the barrier.
-- **ClcFetch** -- a Cluster Launch Control fetch.
+- **Dynamic scheduling** -- a dynamic fetch.
 
 Choosing the right type is kernel developer responsibility
 ----------------------------------------------------------
@@ -65,7 +65,7 @@ Supported pipeline types
      - Factory
    * - ``AsyncAsync``
      - async threads -> async threads
-     - SMEM filled from registers / load from GMEM and read by async threads (no TMA, no MMA).
+     - SMEM filled from registers / cpasync and read by async threads (no TMA, no MMA).
      - ``create_async_async_pipeline_cfg``
    * - ``TmaAsync``
      - TMA -> async threads
@@ -89,11 +89,11 @@ Supported pipeline types
      - ``create_async_umma_pipeline_cfg``
    * - ``UmmaUmma``
      - UMMA / UTCCP -> UMMA
-     - A UTCCP producer feeding a UMMA consumer (both ``tcgen05``).
+     - A TMEM copy producer feeding an MMA consumer.
      - ``create_umma_umma_pipeline_cfg``
    * - ``ClcFetchAsync``
      - CLC fetch -> async threads
-     - The id queue of a CLC dynamic-persistent scheduler.
+     - The dynamic fetch queue of a dynamic-persistent scheduler.
      - ``create_clc_fetch_async_pipeline_cfg``
 
 Common configuration fields
@@ -219,7 +219,7 @@ barrier, via ``async_producer_op`` (on ``AsyncAsync``) or
 
 - ``AsyncThread`` (default) -- regular threads signal completion with an
   ``mbarrier`` arrive *after* they finish writing data.  Use it when the
-  producer is ordinary register/stores to shared memory.
+  producer is ordinary register stores to shared memory.
 - ``AsyncLoad`` -- matches ``cp.async`` producers: the copy itself
   arrives on the local per-CTA full barrier via ``cp.async.mbarrier.arrive``, so
   the barrier completes when the async copies land rather than when the issuing

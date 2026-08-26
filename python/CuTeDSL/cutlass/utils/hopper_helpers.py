@@ -12,7 +12,7 @@
 from typing import Any, Type, Union, Tuple, Optional
 
 from cutlass._mlir import ir
-from cutlass.utils.layout import LayoutEnum
+from cutlass.tensor_utils import LayoutEnum
 from cutlass.cutlass_dsl import (
     Float16,
     BFloat16,

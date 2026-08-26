@@ -318,16 +318,20 @@ def create_scale_factor_tensor(
     k_padded = math.ceil(math.ceil(K / sf_vec_size) / ATOM_K) * ATOM_K
 
     lut = torch.tensor([1.0, 2.0, 4.0])  # subset of numbers supported by all SF dtypes
-    sf_torch = lut[torch.randint(0, lut.numel(), (L, m_padded, k_padded))].to(
-        cutlass_torch.dtype(sf_dtype)
+    sf_f32 = lut[torch.randint(0, lut.numel(), (L, m_padded, k_padded))]
+
+    # Some SF dtypes have no torch storage type, so a direct `.to(torch_dtype)`
+    # can't hold them. Build the values in fp32 and convert to the SF dtype on
+    # device instead, which works for every SF dtype.
+    sf_cute, sf_gpu = cutlass_torch.cute_tensor_like(
+        sf_f32, sf_dtype, True, assumed_align=16
     )
+    sf_cute = cutlass_torch.convert_cute_tensor(
+        sf_f32.cuda(), sf_cute, sf_dtype, is_dynamic_layout=True
+    )
+    sf_ref = unpack_scale_factors(sf_f32, sf_vec_size, MN, K, L)
 
-    sf_gpu = sf_torch.cuda()
-    sf_cute = from_dlpack(sf_gpu.view(dtype=torch.uint8), assumed_align=16)
-    sf_cute.element_type = sf_dtype
-    sf_torch = unpack_scale_factors(sf_torch.to(torch.float32), sf_vec_size, MN, K, L)
-
-    return sf_torch, sf_cute, sf_gpu
+    return sf_ref, sf_cute, sf_gpu
 
 
 def decode_float4e2m1fn(u8: torch.Tensor) -> torch.Tensor:

@@ -67,8 +67,9 @@
 
 
 #if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110A_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121A_ENABLED)\
+     defined(CUTLASS_ARCH_MMA_SM103A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM107A_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM110A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM120A_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM121A_ENABLED)\
     )
 #  define CUDA_PTX_UE8M0_CVT_ENABLED 1
 #  if CUDA_PTX_FP8_BF16_CVT_SUPPORTED
@@ -77,8 +78,9 @@
 #endif
 
 #if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM110F_ENABLED) ||\
-     defined(CUTLASS_ARCH_MMA_SM120F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM121F_ENABLED)\
+     defined(CUTLASS_ARCH_MMA_SM103F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM107F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM110F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM120F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM121F_ENABLED)\
     )
 #  define CUDA_PTX_UE8M0_CVT_ENABLED 1
 #  if CUDA_PTX_FP8_BF16_CVT_SUPPORTED
@@ -1143,6 +1145,69 @@ struct float_ue4m3_t : public float_exmy_base<cutlass::detail::FpEncoding::UE4M3
 template <>
 struct sizeof_bits<float_ue4m3_t> {
   static constexpr int value = sizeof_bits<float_exmy_base<cutlass::detail::FpEncoding::UE4M3, float_ue4m3_t>>::value;
+};
+
+///////////////////////////////////////////////////////////////
+///
+/// floating-point 8 type : UE5M3
+///
+///////////////////////////////////////////////////////////////
+// UE5M3:
+//   5 Exponent bits, 3 Mantissa bits
+//   Range: [0:114688]
+//   has_inf: false
+//   has_NaN: true
+//   has_denorm: true
+//   Exponent bias (exp_bias): 15
+struct float_ue5m3_t : public float_exmy_base<cutlass::detail::FpEncoding::UE5M3, float_ue5m3_t> {
+  using Base = float_exmy_base<cutlass::detail::FpEncoding::UE5M3, float_ue5m3_t>;
+
+  float_ue5m3_t() = default;
+
+  CUTLASS_HOST_DEVICE
+  float_ue5m3_t convert_from_float(float const &flt) const {
+    Base::FP32BitRepresentation::Storage fp32_bits = Base::FP32BitRepresentation::to_bits(flt);
+    return bitcast(BitRepresentation::convert_from(fp32_bits, Base::FP32BitRepresentation{}));
+  }
+
+  CUTLASS_HOST_DEVICE
+  float convert_to_float(float_ue5m3_t const &x) const {
+    Base::FP32BitRepresentation::Storage fp32_bits;
+    fp32_bits = Base::BitRepresentation::convert_to(x.storage, Base::FP32BitRepresentation{});
+    return detail::copy_bits<Base::FP32BitRepresentation::Storage, float>(fp32_bits);
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue5m3_t(double x) : Base(float(x)) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue5m3_t(float x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue5m3_t(int x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue5m3_t(unsigned x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  float_ue5m3_t(Base x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  friend bool isnan(float_ue5m3_t const& x) {
+    return x.storage == uint8_t(0xff);
+  }
+
+};
+
+/// Defines the size of an element in bits - specialized for float_ue5m3_t
+template <>
+struct sizeof_bits<float_ue5m3_t> {
+  static constexpr int value = sizeof_bits<float_exmy_base<cutlass::detail::FpEncoding::UE5M3, float_ue5m3_t>>::value;
 };
 
 

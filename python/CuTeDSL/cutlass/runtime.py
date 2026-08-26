@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional, Type, Union
@@ -88,14 +89,20 @@ def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> list[str]:
         if libs is None:
             return None
 
-        # check if the separator is ; for windows
-        if sys.platform.startswith("win32") and ";" in libs:
-            libs = libs.split(";")  # type: ignore[assignment]
+        # ':' before a path separator is a drive colon, not a separator.
+        if sys.platform.startswith("win32"):
+            libs = [p for p in re.split(r";|:(?![\\/])", libs) if p]  # type: ignore[assignment]
         else:
             libs = libs.split(":")  # type: ignore[assignment]
 
+        # MSVC drops the "lib" prefix.
+        runtime_name = (
+            "cute_dsl_runtime.dll"
+            if sys.platform.startswith("win32")
+            else "libcute_dsl_runtime.so"
+        )
         for path in libs:
-            if path.endswith("libcute_dsl_runtime.so"):
+            if path.endswith(runtime_name):
                 return path
 
         return None

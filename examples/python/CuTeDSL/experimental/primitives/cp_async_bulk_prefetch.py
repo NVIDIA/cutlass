@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -35,6 +35,11 @@ through ``cutlass.experimental.primitives`` and then performs an ordinary
 global-memory copy so ``verify`` has an observable result.
 
 Requires SM90+.
+
+To run::
+
+    python CuTeDSL/experimental/primitives/cp_async_bulk_prefetch.py
+
 """
 
 from functools import lru_cache
@@ -48,9 +53,18 @@ import cutlass.experimental.primitives as prims
 from cutlass.cute.runtime import make_fake_compact_tensor
 
 
+# ---------------------------------------------------------------------------
+# Kernel Configurations
+# ---------------------------------------------------------------------------
+
 _PREFETCH_BYTES: int = 128
 _BLOCK: int = 128
 _DEFAULT_N: int = _BLOCK
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -70,10 +84,20 @@ def kernel(src: cute.Tensor, dst: cute.Tensor) -> None:
     dst[tidx] = src[tidx]
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(src: cute.Tensor, dst: cute.Tensor) -> None:
     """Launch ``kernel`` as one CTA with ``_BLOCK`` threads."""
     kernel(src, dst).launch(grid=(1, 1, 1), block=(_BLOCK, 1, 1))
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -87,6 +111,11 @@ def compile() -> Callable:  # noqa: A001
     fake_src = make_fake_compact_tensor(cutlass.Float32, (_DEFAULT_N,))
     fake_dst = make_fake_compact_tensor(cutlass.Float32, (_DEFAULT_N,))
     return cute.compile(host, fake_src, fake_dst, options="--enable-tvm-ffi")
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 
 def run(compiled_fn: Callable) -> tuple[torch.Tensor, torch.Tensor]:
@@ -118,6 +147,11 @@ def _require_sm90_device() -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify() -> None:
     """Compile, run, and assert that the copied tensor matches the source.
 
@@ -135,6 +169,10 @@ def verify() -> None:
     torch.testing.assert_close(dst, src)
     print(f"verify: PASS  dst[:8] = {dst[:8].tolist()}")
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     verify()

@@ -1,6 +1,31 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 """CTA_2 NVFP4 block-scaled MMA, collective M=128 / 2x2 accumulator mapping.
 
 This direct CUTLASS primitives/tcgen05 example covers the CTA_2 block-scaled shape
@@ -14,8 +39,9 @@ N=256 SMEM image, then the MMA warp issues the
 ``S2T_64x128b_WARPX2_01_23`` UTCCP variant to populate the 2x2 SFB TMEM
 layout directly. The epilogue only direct-stores FP16 C.
 
-Usage::
+To run::
 
+    python CuTeDSL/experimental/primitives/tcgen05/2cta_mma_blockscale_m128.py
     python CuTeDSL/experimental/primitives/tcgen05/2cta_mma_blockscale_m128.py --mnk 128,256,256
 
 """
@@ -34,7 +60,6 @@ import torch
 import cutlass
 import cutlass.experimental.cuda as cuda
 import cutlass.cute as cute
-import cutlass.utils as utils
 import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import from_dlpack, make_ptr
 from cutlass.experimental import primitives as prims
@@ -61,7 +86,7 @@ num_elts_atom_sf_u16 = num_elts_atom_sf_e8 // 2  # 256
 num_tmem_cols_per_sf_atom = 4
 
 # Kernel resource configuration.
-SMEM_CAPACITY = utils.get_smem_capacity_in_bytes("sm_100")
+SMEM_CAPACITY = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
 NUM_MBAR_BYTES = 1024
 NUM_TMEM_ALLOC_COLS = 512
 
@@ -82,8 +107,8 @@ CTA_TILE_N = GROUP_TILE_N // CLUSTER_SX  # 128 — B data is N-split across the 
 
 # MMA tile config: cluster total. mma_inst is also cluster total because
 # tcgen05_mma.cta_group::2 covers the cluster's MN per instruction.
-mma_tiler_mnk = (GROUP_TILE_M, GROUP_TILE_N, K_TILE)
-mma_inst_mnk = (GROUP_TILE_M, GROUP_TILE_N, MMA_K_GRANULE)
+MMA_TILER_MNK = (GROUP_TILE_M, GROUP_TILE_N, K_TILE)
+MMA_INST_MNK = (GROUP_TILE_M, GROUP_TILE_N, MMA_K_GRANULE)
 
 # Warp specialization: 9 warps per CTA.
 # (4 epilog + MMA + TMA-AB + SFA async copy + sync + TMA-SFB).
@@ -154,9 +179,9 @@ def gemm(
     # SF atom counts use cluster-total M/N, not per-CTA M/N.
     sf_atom_mn = num_m0_per_sf_atom * num_m1_per_sf_atom  # 128
     sf_atom_k = num_k_per_sf_atom * sf_vec_size  # 64
-    rest_k_sf_per_ktile = max(1, mma_tiler_mnk[2] // sf_atom_k)
-    rest_m_sf_per_ktile = max(1, mma_tiler_mnk[0] // sf_atom_mn)
-    rest_n_sf_per_ktile = max(1, mma_tiler_mnk[1] // sf_atom_mn)
+    REST_K_SF_PER_KTILE = max(1, MMA_TILER_MNK[2] // sf_atom_k)
+    REST_M_SF_PER_KTILE = max(1, MMA_TILER_MNK[0] // sf_atom_mn)
+    REST_N_SF_PER_KTILE = max(1, MMA_TILER_MNK[1] // sf_atom_mn)
     rest_k_sf_total = cute.ceil_div(problem_size[2], sf_atom_k)
     rest_n_sf_total = cute.ceil_div(problem_size[1], sf_atom_mn)
 
@@ -179,13 +204,13 @@ def gemm(
     )
     tma_sfb_desc = cuda.create_tensor_map_tiled_from_view(
         sfb_tensor_u16,
-        box_dims=(num_elts_atom_sf_u16, rest_n_sf_per_ktile, rest_k_sf_per_ktile),
+        box_dims=(num_elts_atom_sf_u16, REST_N_SF_PER_KTILE, REST_K_SF_PER_KTILE),
         stride_order=(0, 1, 2),
         swizzle=cuda.TensorMapSwizzle.none,
     )
 
-    num_bytes_a_smem_per_cta = CTA_TILE_M * K_TILE * a_dtype.width // 8
-    num_bytes_b_smem_per_cta = CTA_TILE_N * K_TILE * b_dtype.width // 8
+    NUM_BYTES_A_SMEM_PER_CTA = CTA_TILE_M * K_TILE * a_dtype.width // 8
+    NUM_BYTES_B_SMEM_PER_CTA = CTA_TILE_N * K_TILE * b_dtype.width // 8
     # SFA lane packing for UTCCP:
     # A full NVFP4 scale-factor atom is lane-local 32m x (4k x 4m),
     # so each lane owns 16 B. That 16 B lane slot is the 128b in
@@ -206,36 +231,36 @@ def gemm(
     #
     # The packed slot has shape 32m x ((4k x 2m) x 2 r_k positions), filling
     # the same 512 B footprint as one normal 32m x (4k x 4m) atom image.
-    num_bytes_sfa = (
+    NUM_BYTES_SFA = (
         num_elts_atom_sf_e8
-        * rest_k_sf_per_ktile
-        * rest_m_sf_per_ktile
+        * REST_K_SF_PER_KTILE
+        * REST_M_SF_PER_KTILE
         * sf_dtype.width
         // 8
         // 2  # two 4k x 2m slices share each lane's 16 B UTCCP slot
     )
     # Fixed cluster-N=256 SFB SMEM layout: every CTA TMA-loads both 128-N
     # scale atoms. This intentionally differs from B data, which is N-split.
-    num_bytes_sfb = (
+    NUM_BYTES_SFB = (
         num_elts_atom_sf_e8
-        * rest_k_sf_per_ktile
-        * rest_n_sf_per_ktile
+        * REST_K_SF_PER_KTILE
+        * REST_N_SF_PER_KTILE
         * sf_dtype.width
         // 8
     )
     per_stage_bytes = (
-        num_bytes_a_smem_per_cta
-        + num_bytes_b_smem_per_cta
-        + num_bytes_sfa
-        + num_bytes_sfb
+        NUM_BYTES_A_SMEM_PER_CTA
+        + NUM_BYTES_B_SMEM_PER_CTA
+        + NUM_BYTES_SFA
+        + NUM_BYTES_SFB
     )
-    num_ab_stage = (SMEM_CAPACITY - NUM_MBAR_BYTES) // per_stage_bytes
-    num_ab_stage = max(num_ab_stage, 2)
+    NUM_AB_STAGE = (SMEM_CAPACITY - NUM_MBAR_BYTES) // per_stage_bytes
+    NUM_AB_STAGE = max(NUM_AB_STAGE, 2)
 
-    total_smem = NUM_MBAR_BYTES + num_ab_stage * per_stage_bytes
+    total_smem = NUM_MBAR_BYTES + NUM_AB_STAGE * per_stage_bytes
     assert total_smem <= SMEM_CAPACITY, (
         f"SMEM overflow: {total_smem}B > capacity {SMEM_CAPACITY}B"
-        f" (num_ab_stage={num_ab_stage})"
+        f" (NUM_AB_STAGE={NUM_AB_STAGE})"
     )
 
     # ACC TMEM for the 2x2 accumulator mapping. Each CTA represents a logical
@@ -251,17 +276,17 @@ def gemm(
     #   [r_k=2p 4k x 2m][r_k=2p+1 4k x 2m]
     # Hence per-stage SFA TMEM columns are 4 * (rest_k * rest_m / 2).
     sfa_tmem_cols = (
-        rest_k_sf_per_ktile * rest_m_sf_per_ktile // 2
+        REST_K_SF_PER_KTILE * REST_M_SF_PER_KTILE // 2
     ) * num_tmem_cols_per_sf_atom
     # SFB uses the N=256 2x2 UTCCP form. One 64x128b.warpx2::01_23 copy reads
     # two adjacent 128-N SFB atoms for one K-SF block (1024B) and writes a
     # 128-row x 4-column TMEM image. The four columns cover the N=256
     # scale-factor groups consumed by one 64-wide MMA K block.
     sfb_tmem_cols_per_atom = num_tmem_cols_per_sf_atom
-    sfb_tmem_cols_per_stage = rest_k_sf_per_ktile * sfb_tmem_cols_per_atom
-    # SFB TMEM is staged across num_ab_stage to avoid overwriting SFB TMEM for
+    sfb_tmem_cols_per_stage = REST_K_SF_PER_KTILE * sfb_tmem_cols_per_atom
+    # SFB TMEM is staged across NUM_AB_STAGE to avoid overwriting SFB TMEM for
     # one K tile while the MMA is still reading it.
-    sfb_tmem_cols = sfb_tmem_cols_per_stage * num_ab_stage
+    sfb_tmem_cols = sfb_tmem_cols_per_stage * NUM_AB_STAGE
     tmem_needed = acc_tmem_cols + sfa_tmem_cols + sfb_tmem_cols
     assert tmem_needed <= NUM_TMEM_ALLOC_COLS, (
         f"TMEM overflow: need {tmem_needed} cols > {NUM_TMEM_ALLOC_COLS}"
@@ -270,7 +295,7 @@ def gemm(
     # mbar budget
     #   per-stage: ab_full, ab_empty, a_local, sfb_smem_full (= 4 mbars/stage)
     #   global: acc_full, tmem_dealloc (= 2 mbars)
-    mbar_count = num_ab_stage * 4 + 2
+    mbar_count = NUM_AB_STAGE * 4 + 2
     mbar_bytes_used = 8 * mbar_count + 4
     assert mbar_bytes_used <= NUM_MBAR_BYTES, (
         f"mbar overflow: {mbar_bytes_used}B > reserved {NUM_MBAR_BYTES}B"
@@ -289,16 +314,16 @@ def gemm(
         c_tensor,
         sfa_ptr,
         problem_size,
-        mma_tiler_mnk,
-        mma_inst_mnk,
-        num_bytes_a_smem_per_cta,
-        num_bytes_b_smem_per_cta,
-        num_bytes_sfa,
-        num_bytes_sfb,
-        num_ab_stage,
-        rest_k_sf_per_ktile,
-        rest_m_sf_per_ktile,
-        rest_n_sf_per_ktile,
+        MMA_TILER_MNK,
+        MMA_INST_MNK,
+        NUM_BYTES_A_SMEM_PER_CTA,
+        NUM_BYTES_B_SMEM_PER_CTA,
+        NUM_BYTES_SFA,
+        NUM_BYTES_SFB,
+        NUM_AB_STAGE,
+        REST_K_SF_PER_KTILE,
+        REST_M_SF_PER_KTILE,
+        REST_N_SF_PER_KTILE,
     ).launch(
         grid=grid,
         block=[_THREADS, 1, 1],
@@ -330,12 +355,12 @@ def peek_next_k_tile_mbarrier(
     phase_bit,
     k_tile_idx,
     k_tile_cnt,
-    num_stages: cutlass.Constexpr[int],
+    NUM_STAGES: cutlass.Constexpr[int],
 ):
     """TRY-peek the next K-tile stage/phase; last iteration returns ready."""
     peek_ready = cutlass.Boolean(1)
     if k_tile_idx + 1 < k_tile_cnt:
-        next_stage = (k_tile_idx + 1) % num_stages
+        next_stage = (k_tile_idx + 1) % NUM_STAGES
         next_phase = phase_bit
         if next_stage == 0:
             next_phase = phase_bit ^ 1
@@ -355,16 +380,16 @@ def kernel(
     c_tensor: cute.Tensor,
     sfa_ptr: cutlass.Pointer,
     problem_size: tuple,
-    mma_tiler_mnk: cutlass.Constexpr[tuple[int, int, int]],
-    mma_inst_mnk: cutlass.Constexpr[tuple[int, int, int]],
-    num_bytes_a_smem_per_cta: cutlass.Constexpr[int],
-    num_bytes_b_smem_per_cta: cutlass.Constexpr[int],
-    num_bytes_sfa: cutlass.Constexpr[int],
-    num_bytes_sfb: cutlass.Constexpr[int],
-    num_ab_stage: cutlass.Constexpr[int],
-    rest_k_sf_per_ktile: cutlass.Constexpr[int],
-    rest_m_sf_per_ktile: cutlass.Constexpr[int],
-    rest_n_sf_per_ktile: cutlass.Constexpr[int],
+    MMA_TILER_MNK: cutlass.Constexpr[tuple[int, int, int]],
+    MMA_INST_MNK: cutlass.Constexpr[tuple[int, int, int]],
+    NUM_BYTES_A_SMEM_PER_CTA: cutlass.Constexpr[int],
+    NUM_BYTES_B_SMEM_PER_CTA: cutlass.Constexpr[int],
+    NUM_BYTES_SFA: cutlass.Constexpr[int],
+    NUM_BYTES_SFB: cutlass.Constexpr[int],
+    NUM_AB_STAGE: cutlass.Constexpr[int],
+    REST_K_SF_PER_KTILE: cutlass.Constexpr[int],
+    REST_M_SF_PER_KTILE: cutlass.Constexpr[int],
+    REST_N_SF_PER_KTILE: cutlass.Constexpr[int],
 ) -> None:
     """2CTA NVFP4×NVFP4 kernel — collective-M=128 2x2 datapath.
 
@@ -389,39 +414,39 @@ def kernel(
     tile_coord_m = bidx // CLUSTER_SX
     tile_coord_n = bidy
 
-    tile_m: cutlass.Constexpr[int] = mma_tiler_mnk[0]  # cluster M
-    cluster_tile_n: cutlass.Constexpr[int] = mma_tiler_mnk[1]  # cluster N
+    tile_m: cutlass.Constexpr[int] = MMA_TILER_MNK[0]  # cluster M
+    cluster_tile_n: cutlass.Constexpr[int] = MMA_TILER_MNK[1]  # cluster N
     tile_n_per_cta: cutlass.Constexpr[int] = cluster_tile_n // CLUSTER_SX
-    cluster_tile_k: cutlass.Constexpr[int] = mma_tiler_mnk[2]
+    cluster_tile_k: cutlass.Constexpr[int] = MMA_TILER_MNK[2]
     tile_m_per_cta: cutlass.Constexpr[int] = tile_m // CLUSTER_SX  # 64
     # SFB TMEM is ring-buffered by stage. For N=256, one 64x128b.warpx2::01_23
     # UTCCP writes four TMEM columns per 64-wide MMA K block.
     sfb_tmem_cols_per_atom: cutlass.Constexpr[int] = num_tmem_cols_per_sf_atom
     sfb_tmem_cols_per_stage: cutlass.Constexpr[int] = (
-        rest_k_sf_per_ktile * sfb_tmem_cols_per_atom
+        REST_K_SF_PER_KTILE * sfb_tmem_cols_per_atom
     )
 
     # ---------------------------------------------------------------------
-    # SMEM allocations. Mbarriers come first, then num_ab_stage-deep ring
+    # SMEM allocations. Mbarriers come first, then NUM_AB_STAGE-deep ring
     # buffers for A, B, SFA, and SFB.
     # ---------------------------------------------------------------------
     ab_full_mbar_ptr = cutlass.Array(
-        cutlass.Int64, num_ab_stage, space=cutlass.AddressSpace.smem, alignment=8
+        cutlass.Int64, NUM_AB_STAGE, space=cutlass.AddressSpace.smem, alignment=8
     )
     ab_empty_mbar_ptr = cutlass.Array(
-        cutlass.Int64, num_ab_stage, space=cutlass.AddressSpace.smem, alignment=8
+        cutlass.Int64, NUM_AB_STAGE, space=cutlass.AddressSpace.smem, alignment=8
     )
     acc_full_mbar_ptr = cutlass.Array(
         cutlass.Int64, 1, space=cutlass.AddressSpace.smem, alignment=8
     )
     a_local_mbar_ptr = cutlass.Array(
-        cutlass.Int64, num_ab_stage, space=cutlass.AddressSpace.smem, alignment=8
+        cutlass.Int64, NUM_AB_STAGE, space=cutlass.AddressSpace.smem, alignment=8
     )
     # SFB uses a separate TMA mbarrier. The MMA warp waits for SFB in SMEM,
     # issues UTCCP to TMEM, then the normal ab_empty commit releases the
     # shared stage after both UTCCP and MMA have drained it.
     sfb_smem_full_mbar_ptr = cutlass.Array(
-        cutlass.Int64, num_ab_stage, space=cutlass.AddressSpace.smem, alignment=8
+        cutlass.Int64, NUM_AB_STAGE, space=cutlass.AddressSpace.smem, alignment=8
     )
     tmem_dealloc_mbar_ptr = cutlass.Array(
         cutlass.Int64, 1, space=cutlass.AddressSpace.smem, alignment=8
@@ -432,25 +457,25 @@ def kernel(
 
     sA = cutlass.Array(
         cutlass.Int8,
-        num_bytes_a_smem_per_cta * num_ab_stage,
+        NUM_BYTES_A_SMEM_PER_CTA * NUM_AB_STAGE,
         space=cutlass.AddressSpace.smem,
         alignment=1024,
     )
     sB = cutlass.Array(
         cutlass.Int8,
-        num_bytes_b_smem_per_cta * num_ab_stage,
+        NUM_BYTES_B_SMEM_PER_CTA * NUM_AB_STAGE,
         space=cutlass.AddressSpace.smem,
         alignment=1024,
     )
     sSFA = cutlass.Array(
         cutlass.Int8,
-        num_bytes_sfa * num_ab_stage,
+        NUM_BYTES_SFA * NUM_AB_STAGE,
         space=cutlass.AddressSpace.smem,
         alignment=512,
     )
     sSFB = cutlass.Array(
         cutlass.Int8,
-        num_bytes_sfb * num_ab_stage,
+        NUM_BYTES_SFB * NUM_AB_STAGE,
         space=cutlass.AddressSpace.smem,
         alignment=512,
     )
@@ -481,27 +506,27 @@ def kernel(
         # Warp 0: ab_full. Count = 1 (TMA expect_tx) + 2 (sync-relay arrives,
         # one per CTA in the M-pair) = 3 per stage.
         if warp_idx == 0:
-            for i in range((num_ab_stage + 31) // 32):
+            for i in range((NUM_AB_STAGE + 31) // 32):
                 idx = i * 32 + lane_id_init
-                if idx < num_ab_stage:
+                if idx < NUM_AB_STAGE:
                     prims.mbarrier_init(ab_full_mbar_ptr.subview(idx), 3)
         # Warp 1: ab_empty.
         if warp_idx == 1:
-            for i in range((num_ab_stage + 31) // 32):
+            for i in range((NUM_AB_STAGE + 31) // 32):
                 idx = i * 32 + lane_id_init
-                if idx < num_ab_stage:
+                if idx < NUM_AB_STAGE:
                     prims.mbarrier_init(ab_empty_mbar_ptr.subview(idx), 1)
         # Warp 2: a_local (32 SFA-copy lanes arrive once per K-tile).
         if warp_idx == 2:
-            for i in range((num_ab_stage + 31) // 32):
+            for i in range((NUM_AB_STAGE + 31) // 32):
                 idx = i * 32 + lane_id_init
-                if idx < num_ab_stage:
+                if idx < NUM_AB_STAGE:
                     prims.mbarrier_init(a_local_mbar_ptr.subview(idx), 32)
         # Warp 3: sfb_smem_full. Fixed-N example: one TMA completion.
         if warp_idx == 3:
-            for i in range((num_ab_stage + 31) // 32):
+            for i in range((NUM_AB_STAGE + 31) // 32):
                 idx = i * 32 + lane_id_init
-                if idx < num_ab_stage:
+                if idx < NUM_AB_STAGE:
                     prims.mbarrier_init(sfb_smem_full_mbar_ptr.subview(idx), 1)
         # Warp 4: globals (acc_full, tmem_dealloc). Single thread.
         if warp_idx == 4:
@@ -532,7 +557,7 @@ def kernel(
             ab_empty_mbar_ptr, ab_mbar_empty_phase_bit, prims.MBarrierWait.TRY
         )
         for k_tile_idx in cutlass.range(k_tile_cnt, unroll=1):
-            stage = k_tile_idx % num_ab_stage
+            stage = k_tile_idx % NUM_AB_STAGE
             if stage == 0 and k_tile_idx != 0:
                 ab_mbar_empty_phase_bit = ab_mbar_empty_phase_bit ^ 1
             wait_if_peek_failed(
@@ -545,8 +570,8 @@ def kernel(
                 )
 
             coord_k = k_tile_idx * cluster_tile_k
-            sA_staged = sA.subview(num_bytes_a_smem_per_cta * stage)
-            sB_staged = sB.subview(num_bytes_b_smem_per_cta * stage)
+            sA_staged = sA.subview(NUM_BYTES_A_SMEM_PER_CTA * stage)
+            sB_staged = sB.subview(NUM_BYTES_B_SMEM_PER_CTA * stage)
 
             if prims.elect_sync():
                 prims.cp_async_bulk_tensor_shared_cluster_global(
@@ -571,7 +596,7 @@ def kernel(
                 ab_mbar_empty_phase_bit,
                 k_tile_idx,
                 k_tile_cnt,
-                num_ab_stage,
+                NUM_AB_STAGE,
             )
 
     # Warp 6: per-CTA M-half SFA gather with per-thread copies, packed into the
@@ -589,7 +614,7 @@ def kernel(
             ab_empty_mbar_ptr, async_sfa_empty_phase_bit, prims.MBarrierWait.TRY
         )
         for k_tile_idx in cutlass.range(k_tile_cnt, unroll=1):
-            stage = k_tile_idx % num_ab_stage
+            stage = k_tile_idx % NUM_AB_STAGE
             if stage == 0 and k_tile_idx != 0:
                 async_sfa_empty_phase_bit = async_sfa_empty_phase_bit ^ 1
             wait_if_peek_failed(
@@ -598,11 +623,11 @@ def kernel(
                 async_sfa_empty_phase_bit,
             )
 
-            sSFA_staged = sSFA.subview(num_bytes_sfa * stage)
-            coord_k_sf = k_tile_idx * rest_k_sf_per_ktile
+            sSFA_staged = sSFA.subview(NUM_BYTES_SFA * stage)
+            coord_k_sf = k_tile_idx * REST_K_SF_PER_KTILE
             gmem_ktile_base = gmem_l_m_base + coord_k_sf * 512
 
-            for r_k in cutlass.range_constexpr(rest_k_sf_per_ktile):
+            for r_k in cutlass.range_constexpr(REST_K_SF_PER_KTILE):
                 pair_idx = r_k // 2
                 atom_in_pair = r_k % 2
                 smem_off = pair_idx * 512 + lane * 16 + atom_in_pair * 8
@@ -620,7 +645,7 @@ def kernel(
                 async_sfa_empty_phase_bit,
                 k_tile_idx,
                 k_tile_cnt,
-                num_ab_stage,
+                NUM_AB_STAGE,
             )
 
     # Warp 8: fixed cluster-N=256 TMA-SFB, parallel with A/B TMA.
@@ -631,15 +656,15 @@ def kernel(
             ab_empty_mbar_ptr, sfb_phase_bit, prims.MBarrierWait.TRY
         )
         for k_tile_idx in cutlass.range(k_tile_cnt, unroll=1):
-            stage = k_tile_idx % num_ab_stage
+            stage = k_tile_idx % NUM_AB_STAGE
             if stage == 0 and k_tile_idx != 0:
                 sfb_phase_bit = sfb_phase_bit ^ 1
             wait_if_peek_failed(
                 peek_ab_empty_sfb, ab_empty_mbar_ptr.subview(stage), sfb_phase_bit
             )
 
-            sSFB_staged = sSFB.subview(num_bytes_sfb * stage)
-            coord_k_sf = k_tile_idx * rest_k_sf_per_ktile
+            sSFB_staged = sSFB.subview(NUM_BYTES_SFB * stage)
+            coord_k_sf = k_tile_idx * REST_K_SF_PER_KTILE
 
             if prims.elect_sync():
                 prims.mbarrier_arrive_expect_tx(
@@ -660,7 +685,7 @@ def kernel(
                 sfb_phase_bit,
                 k_tile_idx,
                 k_tile_cnt,
-                num_ab_stage,
+                NUM_AB_STAGE,
             )
 
     # Warp 7: wait local SFA-copy completion, then
@@ -668,8 +693,8 @@ def kernel(
     # TMA -> UTCCP path in the MMA warp and does not participate here.
     if warp_idx == sync_warp_id:
         for k_tile_idx in cutlass.range(k_tile_cnt, unroll=1):
-            stage = k_tile_idx % num_ab_stage
-            phase_local = (k_tile_idx // num_ab_stage) & 1
+            stage = k_tile_idx % NUM_AB_STAGE
+            phase_local = (k_tile_idx // NUM_AB_STAGE) & 1
             while not prims.mbarrier_try_wait_parity(
                 a_local_mbar_ptr.subview(stage), phase_local, time_limit=10_000_000
             ):
@@ -701,8 +726,8 @@ def kernel(
                 a_dtype=cutlass.Float4E2M1FN,
                 b_dtype=cutlass.Float4E2M1FN,
                 scale_format=0,
-                n_dim=mma_tiler_mnk[1],
-                m_dim=mma_tiler_mnk[0],
+                n_dim=MMA_TILER_MNK[1],
+                m_dim=MMA_TILER_MNK[0],
             )
             sfa_s2t_shape, sfa_s2t_multicast = prims.S2TCopyMode.S2T_32x128b_WARPX4
             sfb_s2t_shape, sfb_s2t_multicast = (
@@ -714,9 +739,9 @@ def kernel(
             # ACC uses physical 64 columns per CTA. The 2x2 mapping folds
             # cluster-N=256 onto rows 0..63 and 64..127, so SFA starts after
             # the physical per-CTA accumulator column span, not after cluster-N.
-            sfa_col_id = base_col_id + (mma_tiler_mnk[1] // CLUSTER_SX)
+            sfa_col_id = base_col_id + (MMA_TILER_MNK[1] // CLUSTER_SX)
             sfb_col_id = sfa_col_id + (
-                rest_k_sf_per_ktile * rest_m_sf_per_ktile * num_tmem_cols_per_sf_atom
+                REST_K_SF_PER_KTILE * REST_M_SF_PER_KTILE * num_tmem_cols_per_sf_atom
             )
             sfa_tmem_addr_base = (base_row_id << 16) | sfa_col_id
             sfb_tmem_addr_base = (base_row_id << 16) | sfb_col_id
@@ -724,8 +749,8 @@ def kernel(
             # SMEM (= 32 in 16-B desc units) and writes one 4-column TMEM
             # record.
             num_smem_inc_per_sf_pair = num_elts_atom_sf_e8 >> 4  # = 32
-            num_pairs_per_ktile = (rest_m_sf_per_ktile * rest_k_sf_per_ktile) // 2
-            num_kblocks = cute.ceil_div(mma_tiler_mnk[2], mma_inst_mnk[2])
+            num_pairs_per_ktile = (REST_M_SF_PER_KTILE * REST_K_SF_PER_KTILE) // 2
+            num_kblocks = cute.ceil_div(MMA_TILER_MNK[2], MMA_INST_MNK[2])
 
             # Each CTA reads SFA from its local TMEM at the same column offset;
             # the CTA_2 M=128 descriptor selects the local 64-row M-half.
@@ -764,10 +789,10 @@ def kernel(
                 base_offset=0,
                 layout=2,
             )
-            sfa_stage_off_16b = num_bytes_sfa >> 4
-            sfb_stage_off_16b = num_bytes_sfb >> 4
-            a_stage_off_16b = num_bytes_a_smem_per_cta >> 4
-            b_stage_off_16b = num_bytes_b_smem_per_cta >> 4
+            sfa_stage_off_16b = NUM_BYTES_SFA >> 4
+            sfb_stage_off_16b = NUM_BYTES_SFB >> 4
+            a_stage_off_16b = NUM_BYTES_A_SMEM_PER_CTA >> 4
+            b_stage_off_16b = NUM_BYTES_B_SMEM_PER_CTA >> 4
 
             peek_ab_full = prims.mbarrier_wait_parity(
                 ab_full_mbar_ptr, ab_mbar_full_phase_bit, prims.MBarrierWait.TRY
@@ -778,7 +803,7 @@ def kernel(
                 prims.MBarrierWait.TRY,
             )
             for k_tile_idx in cutlass.range(k_tile_cnt, unroll=1):
-                stage = k_tile_idx % num_ab_stage
+                stage = k_tile_idx % NUM_AB_STAGE
                 if stage == 0 and k_tile_idx != 0:
                     ab_mbar_full_phase_bit = ab_mbar_full_phase_bit ^ 1
                 wait_if_peek_failed(
@@ -830,14 +855,14 @@ def kernel(
                     ab_mbar_full_phase_bit,
                     k_tile_idx,
                     k_tile_cnt,
-                    num_ab_stage,
+                    NUM_AB_STAGE,
                 )
                 peek_sfb_smem_full = peek_next_k_tile_mbarrier(
                     sfb_smem_full_mbar_ptr,
                     sfb_smem_full_phase_bit,
                     k_tile_idx,
                     k_tile_cnt,
-                    num_ab_stage,
+                    NUM_AB_STAGE,
                 )
 
                 for kblock_idx in cutlass.range(num_kblocks, unroll_full=True):
@@ -848,7 +873,7 @@ def kernel(
                         sfb_tmem_addr_s2t, 6, cutlass.Int32
                     )
                     sfb_smem_inc = (
-                        (num_elts_atom_sf_e8 * rest_n_sf_per_ktile) >> 4
+                        (num_elts_atom_sf_e8 * REST_N_SF_PER_KTILE) >> 4
                     ) * kblock_idx
                     desc_b_nvvm_s2t = desc_b_nvvm_s2t_base + sfb_smem_inc
                     if prims.elect_sync():
@@ -873,7 +898,7 @@ def kernel(
                         sfb_tmem_addr_mma, 6, cutlass.Int32
                     )
                     increment_mma = (
-                        (mma_inst_mnk[2] * b_dtype.width // 8) >> 4
+                        (MMA_INST_MNK[2] * b_dtype.width // 8) >> 4
                     ) * kblock_idx
                     desc_a_nvvm_mma = desc_a_nvvm_mma_base + increment_mma
                     desc_b_nvvm_mma = desc_b_nvvm_mma_base + increment_mma

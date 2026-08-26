@@ -11,6 +11,7 @@
 
 import importlib.util
 import linecache
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -251,6 +252,23 @@ _CUDA_LAUNCH_VIOLATION_RULES: dict[str, _CudaLaunchViolationRule] = {
     ),
 }
 
+# The renderer table above must cover every violation id that the base_dsl
+# preflight emitter can produce (``_CUDA_LAUNCH_PREFLIGHT_VIOLATIONS`` in
+# ``cutlass.base_dsl.tvm_ffi_builder.tvm_ffi_builder``). The emitter bakes each
+# id into a global symbol and ``address_of``-es it; this table maps that same id
+# to a human-readable reason/suggestion. A missing entry here would render an
+# unhelpful generic error at launch time, so assert coverage at import time to
+# fail loudly on drift instead of silently at runtime.
+from cutlass.base_dsl.tvm_ffi_builder.tvm_ffi_builder import (
+    _CUDA_LAUNCH_PREFLIGHT_VIOLATIONS as _EMITTED_LAUNCH_VIOLATIONS,
+)
+
+_missing = set(_EMITTED_LAUNCH_VIOLATIONS) - set(_CUDA_LAUNCH_VIOLATION_RULES)
+assert not _missing, (
+    "cutlass_dsl launch-violation renderer is missing ids that base_dsl emits: "
+    f"{sorted(_missing)}. Add a matching _CudaLaunchViolationRule entry for each."
+)
+
 
 @tvm_ffi.register_error
 class CUDADialectError(DSLCudaRuntimeError):
@@ -298,7 +316,7 @@ class CUDADialectError(DSLCudaRuntimeError):
         if not message[len(CUDADialectError.PREFIX) :].strip():
             raise ValueError(
                 f"CUDADialectError message has no numeric code: {message!r}"
-        )
+            )
         raise ValueError(
             f"CUDADialectError message has unexpected payload: {message!r}"
         )
@@ -968,7 +986,8 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
                 self.ir_module, format="o", opt_level=3, enable_pic=True
             )
             libs_str = get_prefix_dsl_libs("CUTE_DSL")
-            shared_libs = libs_str.split(":") if libs_str else []
+            # os.pathsep, not ":" -- on Windows ":" tears "C:\\..." apart.
+            shared_libs = libs_str.split(os.pathsep) if libs_str else []
             self.engine = BinaryExecutionEngine(
                 obj,
                 shared_libs,

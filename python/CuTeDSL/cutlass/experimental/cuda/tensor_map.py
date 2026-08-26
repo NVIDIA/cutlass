@@ -45,8 +45,6 @@ from cutlass.base_dsl.typing import (
     Float6E3M2FN,
     Float6E2M3FN,
     Float4E2M1FNx2,
-    Float6E3M2FNx4,
-    Float6E2M3FNx4,
 )
 import cutlass.cute as cute
 from cutlass.cute.core import ScaledBasis, depth, leading_dim
@@ -474,11 +472,6 @@ def _derive_tensormap_stride_dtype(
     if tma_format in {TensorMapDataFormat.B4X16, TensorMapDataFormat.B4X16_P64}:
         if dtype is Float4E2M1FNx2:
             return Float4E2M1FN
-    if tma_format == TensorMapDataFormat.B6X16_P32:
-        if dtype is Float6E3M2FNx4:
-            return Float6E3M2FN
-        if dtype is Float6E2M3FNx4:
-            return Float6E2M3FN
     return dtype
 
 
@@ -498,6 +491,15 @@ _PADDED_SUBBYTE_SWIZZLES = {
     TensorMapSwizzle.s128b,
     TensorMapSwizzle.s128b_atom_32b,
     TensorMapSwizzle.s128b_atom_64b,
+}
+
+_SWIZZLE_SPAN_BYTES = {
+    TensorMapSwizzle.s32b: 32,
+    TensorMapSwizzle.s64b: 64,
+    TensorMapSwizzle.s128b: 128,
+    TensorMapSwizzle.s128b_atom_32b: 128,
+    TensorMapSwizzle.s128b_atom_32b_flip_8b: 128,
+    TensorMapSwizzle.s128b_atom_64b: 128,
 }
 
 
@@ -525,6 +527,7 @@ def _validate_tensormap_constraints(
     global_dims: Sequence[Int32 | int],
     global_strides: Sequence[Int64 | int],
     box_dims: Sequence[Int8 | int],
+    interleave: TensorMapInterleave,
     swizzle: TensorMapSwizzle,
     oob_fill: TensorMapFloatOOBFill,
 ) -> None:
@@ -541,15 +544,29 @@ def _validate_tensormap_constraints(
     ):
         raise ValueError(f"TensorMap format {tma_format} does not support OOB-NaN fill")
 
+    lane_dtype = _derive_tensormap_global_tx_dtype(dtype, tma_format)
+    box_dim0 = _static_int(box_dims[0])
+    swizzle_span_bytes = _SWIZZLE_SPAN_BYTES.get(swizzle)
+    if (
+        interleave == TensorMapInterleave.none
+        and swizzle_span_bytes is not None
+        and box_dim0 is not None
+    ):
+        box_bits = box_dim0 * lane_dtype.width
+        if box_bits > swizzle_span_bytes * 8:
+            raise ValueError(
+                f"TensorMap swizzle {swizzle} requires the bounding-box inner "
+                f"dimension to be at most {swizzle_span_bytes}B, got "
+                f"{_format_byte_count(box_bits)}"
+            )
+
     required_box_bytes = _PADDED_SUBBYTE_BOX_BYTES.get(tma_format)
     if required_box_bytes is None:
         return
 
-    lane_dtype = _derive_tensormap_global_tx_dtype(dtype, tma_format)
     format_name = str(tma_format)
     required_bits = required_box_bytes * 8
 
-    box_dim0 = _static_int(box_dims[0])
     if box_dim0 is not None:
         box_bits = box_dim0 * lane_dtype.width
         if box_bits != required_bits:
@@ -634,9 +651,6 @@ def get_dsl_type_to_tensormap_type(dsl_type: Type[Numeric]) -> TensorMapDataType
         # FP8 is byte-addressed by TMA; tcgen05 interprets the bytes by dtype.
         return TensorMapDataType.uint8
     elif dsl_type is Float4E2M1FN:
-        # 4-bit FP4 defaults to the f4-aligned-to-16B encoding used by
-        # the 16-byte-aligned MMA path. The alternate 8-byte-aligned encoding
-        # cannot be derived from dtype alone; pass tma_format explicitly.
         return TensorMapDataType.f416u4_align16b
     elif dsl_type is Float4E2M1FNx2:
         # Packed fp4x2 tensors are naturally byte-addressed in host layouts:
@@ -644,8 +658,6 @@ def get_dsl_type_to_tensormap_type(dsl_type: Type[Numeric]) -> TensorMapDataType
         return TensorMapDataType.uint8
     elif dsl_type in {Float6E3M2FN, Float6E2M3FN}:
         # 6-bit FP6 — same alignment story as FP4.
-        return TensorMapDataType.f416u6_align16b
-    elif dsl_type in {Float6E3M2FNx4, Float6E2M3FNx4}:
         return TensorMapDataType.f416u6_align16b
     raise ValueError(f"Unsupported type for TensorMap: {dsl_type}")
 
@@ -947,11 +959,11 @@ def create_tensor_map_tiled(
     :param swizzle: Shared-memory swizzle mode, defaults to None (``none``).
         Accepts :class:`TensorMapSwizzle` or a canonical swizzle descriptor that
         can be converted to a tensor-map encoding.
-        For ordinary element formats, ``s128b`` requires
-        ``box_dims[0] * sizeof(elem) == 128``. Padded sub-byte formats have
-        stricter PTX requirements validated at construction: ``B4X16_P64``
-        requires ``Box-Size[0] == 64B`` and ``B6X16_P32`` requires
-        ``Box-Size[0] == 96B``.
+        With no interleave, the bounding-box inner byte width must not exceed
+        the selected swizzle span: 32B for ``s32b``, 64B for ``s64b``, and
+        128B for the ``s128b`` modes. Padded sub-byte formats have stricter
+        requirements validated at construction: ``B4X16_P64`` requires
+        ``Box-Size[0] == 64B`` and ``B6X16_P32`` requires ``Box-Size[0] == 96B``.
     :type swizzle: TensorMapSwizzle or compatible swizzle descriptor, optional
     :param l2_promotion: L2 promotion hint, defaults to None (``none``).
     :type l2_promotion: TensorMapL2Promotion, optional
@@ -1012,6 +1024,7 @@ def create_tensor_map_tiled(
         global_dims=global_dims,
         global_strides=global_strides,
         box_dims=box_dims,
+        interleave=interleave,
         swizzle=swizzle,
         oob_fill=oob_fill,
     )
@@ -1054,8 +1067,6 @@ def create_tensor_map_tiled(
     cuda_result_ty = cuda_dialect.ResultType.get()
     tensor_map_ty = TensorMap._get_mlir_type()
     results = cuda_dialect.tensor_map_encode_tiled(
-        cuda_result_ty,
-        tensor_map_ty,
         Int32(int(tma_format_encoding)).ir_value(),
         Int32(rank).ir_value(),
         global_address_ptr,
@@ -1067,6 +1078,7 @@ def create_tensor_map_tiled(
         Int32(swizzle).ir_value(),
         Int32(l2_promotion).ir_value(),
         Int32(oob_fill).ir_value(),
+        results=[cuda_result_ty, tensor_map_ty],
         loc=loc,
         ip=ip,
     )

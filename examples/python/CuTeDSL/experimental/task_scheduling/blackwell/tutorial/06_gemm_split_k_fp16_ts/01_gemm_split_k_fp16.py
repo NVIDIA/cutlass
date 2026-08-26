@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -181,9 +181,6 @@ class GmemAbResource(MemoryResource):
             default=cutlass.Int32(0),
             docs="N coordinate for the current split-K TMA load tile.",
         )
-        self.cta_rank_in_cluster = cutlass.Int32(0)
-        self.tile_m_idx = cutlass.Int32(0)
-        self.tile_n_idx = cutlass.Int32(0)
 
     @consumer_work(work_attrs=WorkAttr.AUXILIARY)
     @cute.jit
@@ -266,19 +263,6 @@ class SmemAbResource(MemoryResource):
         self._alloc_b = SmemAllocation(
             "smem_b",
             mma_tiler_mnk[1] * mma_tiler_mnk[2] * ab_stages * elem_size,
-        )
-        nullptr = cutlass.inttoptr(0, mem_space=3, dtype=io_dtype)
-        self.shared_smem_a = cutlass.Array(
-            nullptr,
-            dtype=io_dtype,
-            shape=(mma_tiler_mnk[0] * mma_tiler_mnk[2] * ab_stages,),
-            addrspace=3,
-        )
-        self.shared_smem_b = cutlass.Array(
-            nullptr,
-            dtype=io_dtype,
-            shape=(mma_tiler_mnk[1] * mma_tiler_mnk[2] * ab_stages,),
-            addrspace=3,
         )
 
     def get_smem_requirements(self):
@@ -394,9 +378,6 @@ class TmemCResource(MemoryResource):
             default=cutlass.full([self.t2r_inst_repx], 0.0, cutlass.Float32),
             docs="Register-memory subtile loaded from TMEM for the epilogue.",
         )
-        self.idesc = cutlass.Int32(0)
-        self.tmem_raw_addr = cutlass.Int32(0)
-        self.scale_d = cutlass.Boolean(False)
 
     def get_tmem_requirements(self):
         return [self._alloc_acc]
@@ -427,7 +408,7 @@ class TmemCResource(MemoryResource):
     @cute.jit
     def init_work_tile_state(self, stage_info: StageInfo) -> None:
         del stage_info
-        self.scale_d = cutlass.Boolean(False)
+        self.scale_d = False
 
     @consumer_work(returns=t2r_rmem)
     @cute.jit
@@ -550,25 +531,6 @@ class GmemDResource(MemoryResource):
         self._alloc_recv = SmemAllocation(
             "smem_recv",
             split_k_factor * dsmem_chunk_elems * elem_size,
-        )
-        nullptr = cutlass.inttoptr(0, mem_space=3, dtype=io_dtype)
-        self.smem_staging = cutlass.Array(
-            nullptr,
-            dtype=io_dtype,
-            shape=(split_k_factor * dsmem_chunk_elems,),
-            addrspace=3,
-        )
-        self.smem_recv = cutlass.Array(
-            nullptr,
-            dtype=io_dtype,
-            shape=(split_k_factor * dsmem_chunk_elems,),
-            addrspace=3,
-        )
-        self.dsmem_sync_mbar = cutlass.Array(
-            nullptr,
-            dtype=cutlass.Int64,
-            shape=(1,),
-            addrspace=3,
         )
 
     def get_smem_requirements(self):
@@ -1211,7 +1173,7 @@ def prepare_run(
 
     mnk = (m, n, k)
 
-    compiled_fn = cute.compile[cute.GenerateLineInfo(True)](
+    compiled_fn = cute.compile[cute.FrontendNext, cute.GenerateLineInfo(True)](
         callable,
         a_,
         b_,

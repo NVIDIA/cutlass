@@ -10,13 +10,16 @@
 # is strictly prohibited.
 
 """The ``Array`` type, its internal ``_ArrayImpl`` implementation, and the
-low-level memory/MLIR helpers they share with the ``Pointer``.
+low-level memory/MLIR helpers it shares with ``Pointer``.
+
+``Array`` lives in ``base_dsl`` so that ``cutlass.Array`` surfaces the same way
+``cutlass.Float32`` does.
 
 This module also hosts the memory-attribute StrEnums, the
 scalar/gep/print/global MLIR helpers, the alignment/address-space helpers, the
 pointer/array factory hooks, and the global ``llvm.load``/``llvm.store``
 subword-float legalization monkey-patch (which fires at import time). All of
-these are shared by ``_ArrayImpl`` here and by ``_PointerImpl`` in ``DSL``;
+these are shared by ``_ArrayImpl`` here and by the pointer implementation;
 keeping them in this one ``base_dsl`` module (below ``cutlass.cute``) lets both
 import them without a cycle. It MUST NOT import ``cutlass.cute`` at load time.
 
@@ -29,12 +32,18 @@ init + verification) do a function-local ``import cutlass.cute as cute``.
 from __future__ import annotations
 
 # Python import
+import operator
+import re
 import sys
+import uuid
 from dataclasses import dataclass, field
+from functools import reduce
 from types import EllipsisType
 from typing import (
     Generic,
+    Literal,
     NoReturn,
+    Sequence,
     Tuple,
     Union,
     Type,
@@ -46,10 +55,9 @@ from typing import (
     TypeAlias,
     cast,
 )
-from enum import IntEnum
 
 # ``enum.StrEnum`` landed in Python 3.11.  ``backports.strenum`` is a drop-in for
-# 3.10; the conditional keeps DSL compatible with the ``>=3.10`` floor.
+# 3.10; the conditional keeps the DSL compatible with the ``>=3.10`` floor.
 if TYPE_CHECKING:
     # ``backports.strenum`` (the 3.10 runtime import below) ships no type
     # information, so to a type checker its ``StrEnum`` is ``Any``, which would
@@ -469,8 +477,8 @@ def _find_existing_global(
 
 def _get_unique_global_name(gpu_module_op: ir.Operation, prefix: str) -> str:
     """Pick a fresh symbol name with the given prefix that does not collide with
-    any existing symbol inside the gpu.module body. Mirrors the pattern used
-    by _get_unique_format_global_name() for printf format strings.
+    any existing symbol inside the module body. Shared by printf format-string
+    naming (see _get_unique_format_global_name).
     """
     existing: set[str] = set()
     for op in gpu_module_op.regions[0].blocks[0]:
@@ -690,20 +698,7 @@ def _get_or_declare_printf(module_op: ir.Operation) -> str:
 
 def _get_unique_format_global_name(module_op: ir.Operation) -> str:
     """Get a unique global name for a format string (thread-safe)."""
-    # Collect existing symbol names in the module
-    existing_symbols: set[str] = set()
-    for op in module_op.regions[0].blocks[0]:
-        if "sym_name" in op.attributes:
-            name = str(op.attributes["sym_name"]).strip('"')
-            existing_symbols.add(name)
-
-    # Find unique name by incrementing counter
-    counter = 0
-    while True:
-        symbol = f"printfFormat_{counter}"
-        if symbol not in existing_symbols:
-            return symbol
-        counter += 1
+    return _get_unique_global_name(module_op, "printfFormat")
 
 
 def _create_format_string_global(module_op: ir.Operation, format_str: str) -> str:
@@ -752,17 +747,9 @@ def _get_format_string_ptr(
     )
 
 
-# Exotic float types that cannot be directly printed (need upcast to Float32)
-_UNPRINTABLE_FLOAT_TYPES = (
-    Float4E2M1FN,
-    Float6E2M3FN,
-    Float6E3M2FN,
-    Float8E4M3,
-    Float8E4M3FN,
-    Float8E4M3B11FNUZ,
-    Float8E5M2,
-    Float8E8M0FNU,
-)
+# Exotic float types that cannot be directly printed (need upcast to Float32);
+# same set as the sub-word float types above.
+_UNPRINTABLE_FLOAT_TYPES = tuple(_SUBWORD_FLOAT_TYPES)
 
 
 def _to_ir_value(
@@ -1090,6 +1077,11 @@ def _addrspacecast_base(
 # =============================================================================
 # Factory hooks
 # =============================================================================
+# The ``_Array_factory_dispatch`` allocator lives in a layer above ``base_dsl``,
+# which therefore cannot import it at load time; that layer registers it via the
+# array-factory hook below. The concrete ``Pointer`` now lives in base_dsl itself
+# (``base_dsl.typing.Pointer``), so ``data_ptr`` builds it directly.
+
 
 def _make_pointer_from_raw(value: ir.Value, dtype: type[Numeric] | None) -> "Pointer":
     """Build a ``cutlass.Pointer`` from a raw MLIR pointer value.
@@ -1119,7 +1111,7 @@ _array_factory = None
 def register_array_factory(fn: Callable[..., Any]) -> None:
     """Register the ``_Array_factory_dispatch`` allocator.
 
-    Called by ``DSL.typing`` at import time.
+    Called by the owning DSL's typing module at import time.
     """
     global _array_factory
     _array_factory = fn
@@ -1135,7 +1127,7 @@ def _allocate_memory_shared(
     ip: ir.InsertionPoint | None = None,
 ) -> "Array":
     """Allocate CTA shared memory for ``cutlass.Array(..., space=smem)``."""
-    from cutlass.utils import SmemAllocator
+    from cutlass.memory.smem import SmemAllocator
 
     norm_shape = (shape,) if isinstance(shape, int) else tuple(shape)
     num_elements = 1
@@ -1216,12 +1208,416 @@ def _allocate_memory_local(
     )
 
 
+def _allocate_named_global(
+    dtype: Type[Numeric],
+    shape: tuple[int, ...] | int,
+    addrspace: int,
+    *,
+    name: str | None,
+    alignment: int | None,
+    storage: Literal["internal", "extern"],
+    constant: bool,
+    init: object | None,
+    bounds_check: bool,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
+) -> "Array":
+    """Emit (or reuse) a static cubin global and return a kernel-side view.
+
+    Emits a single llvm.mlir.global into the enclosing gpu.module (deduped by
+    name with a signature check on reuse — anonymous globals do not dedup),
+    addresses-of it at the call site, and wraps the resulting !llvm.ptr in a
+    cutlass.Array carrying the right addrspace so downstream Array operations see
+    the correct memory space.
+    """
+    if isinstance(shape, int):
+        shape = (shape,)
+
+    num_elements = reduce(operator.mul, shape, 1)
+    if num_elements <= 0:
+        raise ValueError(f"shape must be positive; got {shape}")
+
+    element_width_bits = dtype.width if dtype is not Boolean else 8
+    total_bits = num_elements * element_width_bits
+    if total_bits % 8 != 0:
+        raise ValueError(
+            f"global '{name}': {num_elements} elements of {dtype} "
+            f"({element_width_bits} bits each) is not byte-aligned"
+        )
+
+    if alignment is None:
+        alignment = max(1, dtype.width // 8)
+
+    # Build the LLVM payload type: scalar for shape=(1,) / single element,
+    # otherwise wrap in nested !llvm.array<...>.
+    mlir_elem_type = dtype.mlir_type
+    is_wrapped_array = num_elements > 1 or len(shape) > 1
+    payload_type = mlir_elem_type
+    if is_wrapped_array:
+        # Wrap from innermost to outermost so shape=(M, N) becomes
+        # !llvm.array<M x !llvm.array<N x T>>.
+        payload_type = mlir_elem_type
+        for n in reversed(shape):
+            payload_type = ir.Type.parse(f"!llvm.array<{n} x {payload_type}>")
+
+    addr_val, _resolved_name = _get_or_declare_constant_global(
+        name,
+        payload_type,
+        addrspace,
+        alignment=alignment,
+        constant=constant,
+        storage=storage,
+        init=init,
+        init_dtype=dtype,
+        init_shape=shape,
+        init_is_wrapped_array=is_wrapped_array,
+        loc=loc,
+        ip=ip,
+    )
+
+    return Array(
+        addr_val,
+        shape=shape,
+        dtype=dtype,
+        bounds_check=bounds_check,
+        addrspace=addrspace,
+    )
+
+
+class _GlobalVariable:
+    """Module-scope handle for a static cubin variable.
+
+    Backs ``cutlass.Array(dtype, shape, space=gmem/cmem)``. Construction is pure
+    Python; declaration into MLIR happens lazily on first kernel-side use via
+    ``WEIGHTS[idx]``.
+
+    :param dtype: Element cutlass numeric type (``cutlass.Float32`` etc.).
+    :param shape: Element-count tuple.  ``(N,)`` is canonical 1-D.
+    :param name: PTX identifier for the global.  Used by
+        ``cudaLibraryGetGlobal`` at host-upload time, so it must be a stable
+        C identifier.  If omitted the constructor generates a unique
+        ``cutedsl_const_sym_<n>`` / ``cutedsl_global_sym_<n>`` name.
+    :param alignment: Bytes; defaults to ``dtype.width // 8``.
+    :param init: Compile-time literal.  Presence of ``init`` flips the LLVM
+        ``constant`` keyword on, which lets the optimizer fold loads to the
+        literal — DO NOT pair with ``write_to_symbol`` if you expect the
+        host upload to be observable.  Omit ``init`` for the standard
+        host-init flow.
+    :param addrspace: :class:`AddressSpace` member (or its int value).
+        Default is ``gmem``.  Only ``gmem`` and ``cmem`` are valid
+        for static cubin variables.
+    :param extern: ``False`` (default) — this cubin defines the body.
+        ``True`` — declaration only; the body lives in another cubin or in
+        C++ code linked into this cubin.  Extern requires an explicit
+        ``name`` (you can't auto-name something that already exists) and
+        rejects ``init=`` (the body is elsewhere).  ``write_to_symbol``
+        rejects extern handles since the storage isn't ours to update.
+    :param readonly: ``False`` (default) — the global is host-mutable; an
+        ``init=`` provides default values that ``write_to_symbol`` may
+        later overwrite (the standard CUDA C++ ``__constant__ float arr[N]
+        = {…};`` pattern).  ``True`` — the LLVM ``constant`` keyword is
+        emitted; the optimizer is free to fold all loads to ``init`` and
+        any later ``write_to_symbol`` will silently not be observed.  Use
+        for compile-time-baked literal tables only.  Requires ``init``.
+    """
+
+    # ---- Class-level constants/helpers ------------------------------------
+
+    # Valid PTX identifier pattern (used to validate explicit ``name=`` args).
+    _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+    @staticmethod
+    def _auto_name(addrspace_int: int) -> str:
+        """Generate a fresh ``cutedsl_<kind>_sym_<hex>`` name when the user
+        didn't pass one.  No global state; uniqueness comes from a
+        UUID4-derived suffix (48 bits → collision-free for any realistic
+        workload).
+        """
+        kind = "const" if addrspace_int == int(AddressSpace.cmem) else "global"
+        return f"cutedsl_{kind}_sym_{uuid.uuid4().hex[:12]}"
+
+    __slots__ = (
+        "name",
+        "dtype",
+        "shape",
+        "alignment",
+        "is_extern",
+        "readonly",
+        "_addrspace",
+        "init",
+    )
+
+    name: str
+    dtype: Type[Numeric]
+    shape: "tuple[int, ...]"
+    alignment: int
+    is_extern: bool
+    readonly: bool
+    _addrspace: int
+    init: "Numeric | Sequence | object | None"
+
+    def __init__(
+        self,
+        dtype: Type[Numeric],
+        shape: "tuple[int, ...] | int" = (),
+        *,
+        name: str | None = None,
+        alignment: int | None = None,
+        init: "Numeric | Sequence | object | None" = None,
+        addrspace: "AddressSpace | int | None" = None,
+        extern: bool = False,
+        readonly: bool = False,
+    ) -> None:
+        # ---- shape ------------------------------------------------------
+        # Default shape=() means "scalar" (num_elements == 1).  Wrap an
+        # int into a 1-D tuple; otherwise normalise to a tuple of ints.
+        if isinstance(shape, int):
+            shape = (shape,)
+        else:
+            shape = tuple(shape)
+        # Empty tuple = scalar — allowed.  Non-empty must be all positive ints.
+        if any((not isinstance(d, int)) or d <= 0 for d in shape):
+            raise ValueError(f"shape must be positive ints; got {shape!r}")
+
+        # ---- addrspace (resolve first, needed for auto-name) ------------
+        if addrspace is None:
+            addrspace = AddressSpace.gmem
+        # AddressSpace is an IntEnum; int() works on either an enum member
+        # or a plain int.
+        addrspace_int = int(addrspace)
+        _allowed = (int(AddressSpace.cmem), int(AddressSpace.gmem))
+        if addrspace_int not in _allowed:
+            raise ValueError(
+                f"GlobalVariable addrspace must be CONSTANT (4) or GLOBAL (1); "
+                f"got {addrspace_int}.  Use "
+                f"cutlass.Array(space=cutlass.AddressSpace.smem) or "
+                f"cutlass.Array(space=cutlass.AddressSpace.rmem) for "
+                f"per-launch scratch."
+            )
+
+        # ---- name (extern requires explicit; internal auto-generates) ---
+        extern = bool(extern)
+        if name is None:
+            if extern:
+                raise ValueError(
+                    "GlobalVariable(extern=True) requires an explicit `name` "
+                    "— the symbol must already exist in another cubin (or in "
+                    "C++ code linked against this cubin)."
+                )
+            name = _GlobalVariable._auto_name(addrspace_int)
+        elif not isinstance(name, str) or not _GlobalVariable._NAME_RE.match(name):
+            raise ValueError(
+                f"GlobalVariable name must match {_GlobalVariable._NAME_RE.pattern!r}; "
+                f"got {name!r}"
+            )
+
+        if extern and init is not None:
+            raise ValueError(
+                f"GlobalVariable {name!r}: extern=True cannot have init= — "
+                f"the variable's body lives in a different cubin."
+            )
+        if readonly and init is None and not extern:
+            # readonly=True asserts immutability everywhere — without an
+            # init, there's nothing for the optimizer to fold loads to,
+            # which makes the variable functionally useless (every read
+            # would be undef).  Reject early with a clear message.
+            raise ValueError(
+                f"GlobalVariable {name!r}: readonly=True requires an init= "
+                f"value (the optimizer needs a literal to fold loads to)."
+            )
+
+        # ---- dtype ------------------------------------------------------
+        if not isinstance(dtype, type) or not hasattr(dtype, "width"):
+            raise TypeError(f"dtype must be a cutlass.Numeric subclass; got {dtype!r}")
+
+        elem_width_bits = dtype.width if dtype is not Boolean else 8
+        num_elements = reduce(operator.mul, shape, 1)
+        if (num_elements * elem_width_bits) % 8 != 0:
+            raise ValueError(
+                f"GlobalVariable {name!r}: {num_elements} elements of "
+                f"{dtype} ({elem_width_bits} bits each) is not byte-aligned"
+            )
+
+        # ---- alignment --------------------------------------------------
+        if alignment is None:
+            alignment = max(1, dtype.width // 8)
+        if (
+            not isinstance(alignment, int)
+            or alignment <= 0
+            or (alignment & (alignment - 1))
+        ):
+            raise ValueError(
+                f"alignment must be a positive power of two; got {alignment!r}"
+            )
+
+        # __slots__ + frozen-by-convention: store via object.__setattr__.
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "dtype", dtype)
+        object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "alignment", alignment)
+        object.__setattr__(self, "is_extern", extern)
+        object.__setattr__(self, "readonly", bool(readonly))
+        object.__setattr__(self, "_addrspace", addrspace_int)
+        object.__setattr__(self, "init", init)
+
+    def __setattr__(self, key: str, value: object) -> None:
+        raise AttributeError(f"GlobalVariable is immutable; cannot set {key!r}")
+
+    def __repr__(self) -> str:
+        kind = "extern" if self.is_extern else "internal"
+        return (
+            f"GlobalVariable(name={self.name!r}, dtype={self.dtype.__name__}, "
+            f"shape={self.shape}, alignment={self.alignment}, "
+            f"storage={kind!r}, addrspace={self._addrspace}, "
+            f"init={'<set>' if self.init is not None else None}, "
+            f"readonly={self.readonly})"
+        )
+
+    # ---- public introspection ---------------------------------------------
+
+    @property
+    def num_elements(self) -> int:
+        return reduce(operator.mul, self.shape, 1)
+
+    @property
+    def nbytes(self) -> int:
+        elem_width_bits = self.dtype.width if self.dtype is not Boolean else 8
+        return (self.num_elements * elem_width_bits) // 8
+
+    @property
+    def addrspace(self) -> int:
+        return self._addrspace
+
+    # ---- Device-side use ---------------------------------------------------
+
+    def _materialize(
+        self,
+        *,
+        bounds_check: bool = False,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Array":
+        """Emit the global declaration (if needed) and return a kernel-side
+        ``cutlass.Array`` view.
+
+        Must be called inside a tracing context (a ``@cute.kernel`` body or
+        any other gpu.module-rooted IR context). Multiple calls in the same
+        kernel re-emit ``llvm.mlir.addressof`` (cheap; LLVM CSE folds);
+        the underlying ``llvm.mlir.global`` is deduped by name.
+
+        Private — users should index the handle directly: ``WEIGHTS[idx]``.
+        """
+        # Pre-flight: GlobalVariable indexing requires a live MLIR tracing
+        # context (the global decl is emitted into the enclosing gpu.module
+        # at first use).  Without that, the underlying MLIR builder errors
+        # with a generic "needs a Context" message that doesn't tell the
+        # user what they actually did wrong.  Catch it up-front.
+        try:
+            ir.InsertionPoint.current  # type: ignore[attr-defined]
+        except (RuntimeError, ValueError):
+            raise RuntimeError(
+                f"GlobalVariable {self.name!r}: indexing is only valid "
+                f"inside an `@cute.kernel` / `@cute.jit` body during MLIR "
+                f"tracing.  To read or write the bytes from host Python, "
+                f"use `write_to_symbol(compiled_fn, sym, src)` after "
+                f"`cute.compile(...)`."
+            ) from None
+        return _allocate_named_global(
+            self.dtype,
+            self.shape,
+            addrspace=self._addrspace,
+            name=self.name,
+            alignment=self.alignment,
+            # _get_or_declare_constant_global takes the literal storage
+            # string; map our bool back.
+            storage="extern" if self.is_extern else "internal",
+            # LLVM `constant` flag: only set when readonly=True (compile-time baked
+            # literal).  CONSTANT addrspace is device-read-only by PTX ABI, but the
+            # host can still update the symbol via write_to_symbol(); adding the LLVM
+            # constant keyword would make those updates unobservable to the compiler.
+            constant=self.readonly,
+            init=self.init,
+            bounds_check=bounds_check,
+            loc=loc,
+            ip=ip,
+        )
+
+    def __getitem__(
+        self, idx: object
+    ) -> Union[Numeric, "Vector", "Array[DSLGenericType]"]:
+        """``WEIGHTS[tx]`` lazily emits the addressof + load."""
+        return self._materialize()[idx]
+
+    def __setitem__(self, idx: object, value: object) -> None:
+        """``COUNTER[tx] = v`` lazily emits the addressof + store.
+
+        Stores into a CONSTANT-addrspace Symbol are rejected by the
+        underlying Array (constant memory is read-only on device).
+        """
+        self._materialize()[idx] = value
+
+    def print_runtime(
+        self,
+        max_elements: int = 16,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        """Print array contents at runtime; delegates to the materialized Array."""
+        self._materialize(loc=loc, ip=ip).print_runtime(max_elements, loc=loc, ip=ip)
+
+    def subview(
+        self,
+        idx: int | ir.Value = 0,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Array":
+        """Offset Array view: ``global_handle.subview(n)`` → Array from element ``n``.
+
+        Replaces the now-disabled ``global_handle + n`` pointer arithmetic;
+        delegates to the materialized global Array's :meth:`Array.subview`.
+        """
+        return self._materialize(loc=loc, ip=ip).subview(idx, loc=loc, ip=ip)
+
+    def data_ptr(
+        self,
+        idx: int | ir.Value = 0,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        """Pointer to element ``idx``: ``global_handle.data_ptr(n)`` → Pointer.
+
+        Delegates to the materialized global Array's :meth:`Array.data_ptr`.
+        """
+        return self._materialize(loc=loc, ip=ip).data_ptr(idx, loc=loc, ip=ip)
+
+    def __add__(self, other: object) -> "Array":
+        """Pointer arithmetic: global_handle + offset → Array at that offset."""
+        return self._materialize() + other
+
+    def __radd__(self, other: object) -> "Array":
+        return other + self._materialize()
+
+    def __sub__(self, other: object) -> "Array":
+        """Pointer arithmetic: global_handle - offset → Array at that offset."""
+        return self._materialize() - other
+
+
+# Kwargs accepted by ``_GlobalVariable.__init__``.  ``loc`` / ``ip`` are
+# accepted but unused — ``_GlobalVariable`` construction emits no MLIR.
+_GLOBAL_CONSTANT_VALID_KWARGS = frozenset(
+    ("name", "init", "extern", "readonly", "alignment", "loc", "ip")
+)
+
+
 def _make_array_via_factory(
     dtype: object,
     shape: Tuple[int, ...] | int | None,
     space: AddressSpace | int,
     kwargs: dict[str, Any],
-) -> "Array":
+) -> "Array | _GlobalVariable":
     """Allocate an Array through cutlass-owned or registered backends.
 
     Host-side rmem/generic scratch is owned directly by this module because
@@ -1236,10 +1632,9 @@ def _make_array_via_factory(
         )
 
     try:
-        in_gpu_ctx = _is_gpu_context()
+        _is_gpu_context()
         in_mlir_ctx = True
     except Exception:
-        in_gpu_ctx = False
         in_mlir_ctx = False
 
     if in_mlir_ctx and space in (
@@ -1292,6 +1687,22 @@ def _make_array_via_factory(
             ip=kwargs.get("ip"),
         )
 
+    # gmem / cmem are cubin statics — a pure-Python handle that emits its
+    # llvm.mlir.global lazily on first kernel-side use, so it is valid both
+    # inside a kernel body and at module scope (``WEIGHTS = cutlass.Array(...)``).
+    if space in (AddressSpace.gmem, AddressSpace.cmem):
+        remaining = set(kwargs) - _GLOBAL_CONSTANT_VALID_KWARGS
+        if remaining:
+            user_visible = sorted(_GLOBAL_CONSTANT_VALID_KWARGS - {"loc", "ip"})
+            raise TypeError(
+                f"keyword argument(s) {sorted(remaining)} are not valid for "
+                f"space={space.name}. Valid kwargs: {user_visible}"
+            )
+        gv_kwargs = {k: v for k, v in kwargs.items() if k not in ("loc", "ip")}
+        return _GlobalVariable(
+            dtype, () if shape is None else shape, addrspace=space, **gv_kwargs
+        )
+
     if _array_factory is None:
         raise RuntimeError(
             "no array allocation backend registered for this cutlass.Array "
@@ -1321,7 +1732,6 @@ class _ArrayImpl(Generic[DSLGenericType]):
     # base/MLIR-value attributes hold untyped MLIR bindings, hence ``Any``.
     _bounds_check: bool
     _base: ir.Value
-    _original_base: ir.Value
     _dtype: Type[Numeric] | None
     _mlir_type: ir.Type
     _addrspace: int
@@ -1340,6 +1750,39 @@ class _ArrayImpl(Generic[DSLGenericType]):
         """Return MLIR attributes for this array argument."""
         return [ir.DictAttr.get({})]
 
+    _CLONE_SENTINEL = object()
+
+    def _clone_with_base(
+        self,
+        new_base: Any,
+        *,
+        addrspace: Any = _CLONE_SENTINEL,
+        alignment: Any = _CLONE_SENTINEL,
+    ) -> "_ArrayImpl[DSLGenericType]":
+        """Create a new _ArrayImpl copying this array's fields but with ``new_base``.
+
+        By default every field (``_bounds_check``, ``_shape``, ``_strides``,
+        ``_dtype``, ``_mlir_type``, ``_addrspace``, ``_alignment``) is copied from
+        ``self``; pass ``addrspace``/``alignment`` to override those. Callers that
+        also change shape/strides set them on the returned impl. Does NOT call
+        ``_verify()`` — callers that need it invoke it explicitly (matching prior
+        per-site behavior).
+        """
+        new_impl = _ArrayImpl.__new__(_ArrayImpl)
+        new_impl._bounds_check = self._bounds_check
+        new_impl._shape = self._shape
+        new_impl._strides = self._strides
+        new_impl._dtype = self._dtype
+        new_impl._mlir_type = self._mlir_type
+        new_impl._addrspace = (
+            self._addrspace if addrspace is self._CLONE_SENTINEL else addrspace
+        )
+        new_impl._alignment = (
+            self._alignment if alignment is self._CLONE_SENTINEL else alignment
+        )
+        new_impl._base = new_base
+        return new_impl
+
     def __new_from_mlir_values__(self, values: list) -> "_ArrayImpl[DSLGenericType]":
         """Create a new _ArrayImpl from MLIR values, preserving current properties."""
         new_base = values[0]
@@ -1348,18 +1791,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
             f"dtype={self._dtype}, shape={self._shape}, addrspace={self._addrspace}"
         )
 
-        new_impl = _ArrayImpl.__new__(_ArrayImpl)
-        new_impl._bounds_check = self._bounds_check
-        new_impl._size_layout = self._size_layout
-        new_impl._shape = self._shape
-        new_impl._strides = self._strides
-        new_impl._dtype = self._dtype
-        new_impl._mlir_type = self._mlir_type
-        new_impl._addrspace = self._addrspace
-        new_impl._alignment = self._alignment  # Preserve alignment
-        new_impl._base = new_base
-        new_impl._original_base = new_base
-
+        new_impl = self._clone_with_base(new_base)
         new_impl._verify()
         return new_impl
 
@@ -1426,18 +1858,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
     ) -> "_ArrayImpl[DSLGenericType]":
         """Address-space-cast this array's base pointer; returns a new _ArrayImpl."""
         res_ptr = _addrspacecast_base(self._base, addrspace, loc=loc, ip=ip)
-        new_impl = _ArrayImpl.__new__(_ArrayImpl)
-        new_impl._bounds_check = self._bounds_check
-        new_impl._size_layout = self._size_layout
-        new_impl._shape = self._shape
-        new_impl._strides = self._strides
-        new_impl._dtype = self._dtype
-        new_impl._mlir_type = self._mlir_type
-        new_impl._addrspace = addrspace
-        new_impl._alignment = self._alignment
-        new_impl._base = res_ptr
-        new_impl._original_base = res_ptr
-        return new_impl
+        return self._clone_with_base(res_ptr, addrspace=addrspace)
 
     # =========================================================================
     # Initialization
@@ -1479,8 +1900,6 @@ class _ArrayImpl(Generic[DSLGenericType]):
             f"addrspace={addrspace}, shape={shape}, strides={strides}"
         )
         self._bounds_check = bounds_check
-        self._size_layout = None
-        self._original_base = None
         self._base = None
         self._dtype = dtype
         self._mlir_type = None
@@ -1548,7 +1967,6 @@ class _ArrayImpl(Generic[DSLGenericType]):
             self._addrspace = base.memspace
 
         self._base = iterator.llvm_ptr
-        self._original_base = self._base
         # Set alignment from tensor (may be overridden by user alignment later)
         self._alignment = iterator.max_alignment
 
@@ -1572,13 +1990,11 @@ class _ArrayImpl(Generic[DSLGenericType]):
             if addrspace is None:
                 self._addrspace = base.memspace.value
             self._base = base.llvm_ptr
-            self._original_base = self._base
         elif isinstance(base, Pointer):
             log().info("cutlass.Pointer")
             if addrspace is None:
                 self._addrspace = base.memspace.value
             self._base = ir.Value(base)
-            self._original_base = self._base
         elif isinstance(base, (Int64, Int32)):
             log().info("Int64 or Int32")
             if addrspace is None:
@@ -1589,7 +2005,6 @@ class _ArrayImpl(Generic[DSLGenericType]):
             ptr_type = llvm.PointerType.get(self._addrspace)
             log().info(f"ptr_type={ptr_type}")
             self._base = llvm.inttoptr(ptr_type, base.ir_value())
-            self._original_base = self._base
         else:
             raise ValueError(f"Unsupported base type for _ArrayImpl: {type(base)}")
 
@@ -1607,7 +2022,6 @@ class _ArrayImpl(Generic[DSLGenericType]):
 
         self._mlir_type = self._dtype.mlir_type
         self._base = base
-        self._original_base = base
 
     def _init_regular_pointer(self, base: object, addrspace: int | None) -> None:
         import cutlass.cute as cute
@@ -1815,20 +2229,58 @@ class _ArrayImpl(Generic[DSLGenericType]):
             ip=ip,
         )
 
-        new_impl = _ArrayImpl.__new__(_ArrayImpl)
-        new_impl._bounds_check = self._bounds_check
-        new_impl._size_layout = self._size_layout
-        new_impl._shape = self._shape
-        new_impl._strides = self._strides
-        new_impl._dtype = self._dtype
-        new_impl._mlir_type = self._mlir_type
-        new_impl._addrspace = self._addrspace
-        new_impl._alignment = None
-        new_impl._base = new_addr
-        new_impl._original_base = new_addr
-
+        new_impl = self._clone_with_base(new_addr, alignment=None)
         new_impl._verify()
         return new_impl
+
+    @staticmethod
+    def _split_alignment_suffix(idx: Any) -> "tuple[Any, int | None]":
+        """Peel a trailing int alignment suffix off a multi-slice tuple index.
+
+        ``arr[..., N]`` uses a trailing int N as an alignment when there is at
+        least one slice among the leading elements. Returns
+        ``(idx_without_align, alignment_or_None)``; alignment is None when no
+        suffix is present (the caller keeps its own default). A single remaining
+        element is unwrapped. Non-tuple indices pass through unchanged. Shared by
+        __getitem__ and __setitem__.
+        """
+        if (
+            isinstance(idx, tuple)
+            and len(idx) >= 2
+            and isinstance(idx[-1], int)
+            and any(isinstance(i, slice) for i in idx[:-1])
+        ):
+            alignment = idx[-1]
+            idx_without_align: Any = idx[:-1]
+            # If only one element left, unwrap it
+            if len(idx_without_align) == 1:
+                idx_without_align = idx_without_align[0]
+            return idx_without_align, alignment
+        return idx, None
+
+    @staticmethod
+    def _accumulate_offset(
+        linear_offset: Union[int, "Int32", "Int64"],
+        term: Union[int, "Int32", "Int64"],
+        dim_stride: int,
+    ) -> Union[int, "Int32", "Int64"]:
+        """Add ``term * dim_stride`` to ``linear_offset``, widening as needed.
+
+        Mirrors the int / Int64 / Int32 promotion ladder previously inlined in both
+        the slice and integer-index branches of ``_subpointer_from_index``: a
+        Python-int term adds in place; an Int64 term widens the running offset to
+        Int64; an Int32 term widens a plain-int running offset to Int32.
+        """
+        if isinstance(term, int):
+            return linear_offset + term * dim_stride
+        elif isinstance(term, Int64):
+            if isinstance(linear_offset, (int, Int32)):
+                linear_offset = Int64(linear_offset)
+            return linear_offset + term * Int64(dim_stride)
+        else:  # Int32
+            if isinstance(linear_offset, int):
+                linear_offset = Int32(linear_offset)
+            return linear_offset + term * Int32(dim_stride)
 
     def _subpointer_from_index(
         self,
@@ -1892,29 +2344,13 @@ class _ArrayImpl(Generic[DSLGenericType]):
                 new_strides.append(dim_stride)
 
                 # Add to linear offset
-                if isinstance(start, int):
-                    linear_offset += start * dim_stride
-                elif isinstance(start, Int64):
-                    if isinstance(linear_offset, (int, Int32)):
-                        linear_offset = Int64(linear_offset)
-                    linear_offset = linear_offset + start * Int64(dim_stride)
-                elif isinstance(start, Int32):
-                    if isinstance(linear_offset, int):
-                        linear_offset = Int32(linear_offset)
-                    linear_offset = linear_offset + start * Int32(dim_stride)
+                linear_offset = self._accumulate_offset(
+                    linear_offset, start, dim_stride
+                )
 
             elif isinstance(idx, (int, Int32, Int64)):
                 # Integer index collapses dimension
-                if isinstance(idx, int):
-                    linear_offset += idx * dim_stride
-                elif isinstance(idx, Int64):
-                    if isinstance(linear_offset, (int, Int32)):
-                        linear_offset = Int64(linear_offset)
-                    linear_offset = linear_offset + idx * Int64(dim_stride)
-                else:
-                    if isinstance(linear_offset, int):
-                        linear_offset = Int32(linear_offset)
-                    linear_offset = linear_offset + idx * Int32(dim_stride)
+                linear_offset = self._accumulate_offset(linear_offset, idx, dim_stride)
                 # Don't add to new_shape/new_strides - dimension is collapsed
 
             else:
@@ -1948,19 +2384,10 @@ class _ArrayImpl(Generic[DSLGenericType]):
                 ip=ip,
             )
 
-        # Create new ArrayImpl with updated shape
-        new_impl = _ArrayImpl.__new__(_ArrayImpl)
-        new_impl._bounds_check = self._bounds_check
-        new_impl._size_layout = self._size_layout
+        # Create new ArrayImpl with updated shape/strides
+        new_impl = self._clone_with_base(new_base, alignment=None)
         new_impl._shape = tuple(new_shape) if new_shape else (1,)
         new_impl._strides = tuple(new_strides) if new_strides else (1,)
-        new_impl._dtype = self._dtype
-        new_impl._mlir_type = self._mlir_type
-        new_impl._addrspace = self._addrspace
-        new_impl._alignment = None
-        new_impl._base = new_base
-        new_impl._original_base = new_base
-
         return new_impl
 
     def _address_space_str(self) -> str:
@@ -2034,6 +2461,22 @@ class _ArrayImpl(Generic[DSLGenericType]):
 
         return (), None
 
+    def _load_vector(
+        self,
+        ptr: "_ArrayImpl",
+        count: int,
+        alignment: int,
+        loc: Optional[ir.Location],
+        ip: Optional[ir.InsertionPoint],
+    ) -> "Vector":
+        """Load ``count`` contiguous elements at ``ptr`` as a register ``Vector``."""
+        vec_type = ir.VectorType.get([count], self._mlir_type)
+        vec_val = llvm.load(vec_type, ptr._base, alignment=alignment, loc=loc, ip=ip)
+        # Unwrap if result got wrapped by value caster
+        if hasattr(vec_val, "ir_value"):
+            vec_val = vec_val.ir_value()
+        return Vector(vec_val, dtype=self._dtype, loc=loc, ip=ip)
+
     def __getitem__(
         self,
         idx: Index,
@@ -2074,7 +2517,6 @@ class _ArrayImpl(Generic[DSLGenericType]):
                 if count <= 0:
                     raise ValueError(f"Invalid vector count: {count}")
                 ptr = self._gep(idx.start, loc=loc, ip=ip)
-                vec_type = ir.VectorType.get([count], self._mlir_type)
                 # Alignment contract: the vectorized slice load claims the array's own
                 # alignment (`self.align`) so it can lower to a single wide (e.g. 128-bit)
                 # transaction. This assumes `start` keeps the offset as-aligned as the base
@@ -2082,15 +2524,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
                 # thread-strided `arr[tid*V : V]` pattern). For an arbitrarily-offset slice
                 # that breaks that, pass an explicit alignment via the `arr[start:count, align]`
                 # form instead of relying on the base alignment here.
-                vec_val = llvm.load(
-                    vec_type, ptr._base, alignment=self.align, loc=loc, ip=ip
-                )
-                # Unwrap if result got wrapped by value caster
-                if hasattr(vec_val, "ir_value"):
-                    vec_val = vec_val.ir_value()
-
-                # Return Vector (REGISTER)
-                return Vector(vec_val, dtype=self._dtype, loc=loc, ip=ip)
+                return self._load_vector(ptr, count, self.align, loc, ip)
 
             # Open-ended slice: arr[start:] - return memory view
             return self._subpointer_from_index((idx,), loc=loc, ip=ip)
@@ -2106,19 +2540,8 @@ class _ArrayImpl(Generic[DSLGenericType]):
 
         if isinstance(idx, tuple):
             # Check for alignment suffix: arr[..., alignment]
-            # If last element is an int and there's at least one slice, it's alignment
-            alignment = self.align
-            idx_without_align: Any = idx
-            if (
-                len(idx) >= 2
-                and isinstance(idx[-1], int)
-                and any(isinstance(i, slice) for i in idx[:-1])
-            ):
-                alignment = idx[-1]
-                idx_without_align = idx[:-1]
-                # If only one element left, unwrap it
-                if len(idx_without_align) == 1:
-                    idx_without_align = idx_without_align[0]
+            idx_without_align, _alignment = self._split_alignment_suffix(idx)
+            alignment = self.align if _alignment is None else _alignment
 
             # Handle unwrapped single slice case: arr[start:count, alignment]
             if isinstance(idx_without_align, slice):
@@ -2138,14 +2561,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
                     ptr = self._gep(
                         self._as_gep_index(idx_without_align.start), loc=loc, ip=ip
                     )
-                    vec_type = ir.VectorType.get([count], self._mlir_type)
-                    vec_val = llvm.load(
-                        vec_type, ptr._base, alignment=alignment, loc=loc, ip=ip
-                    )
-                    # Unwrap if result got wrapped by value caster
-                    if hasattr(vec_val, "ir_value"):
-                        vec_val = vec_val.ir_value()
-                    return Vector(vec_val, dtype=self._dtype, loc=loc, ip=ip)
+                    return self._load_vector(ptr, count, alignment, loc, ip)
 
             # Check for multi-dimensional vector load: arr[row, col:count] or arr[row, col:count, align]
             parse_idx = (
@@ -2179,14 +2595,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
                         ptr = self._gep(
                             self._as_gep_index(slice_idx.start), loc=loc, ip=ip
                         )
-                    vec_type = ir.VectorType.get([count], self._mlir_type)
-                    vec_val = llvm.load(
-                        vec_type, ptr._base, alignment=alignment, loc=loc, ip=ip
-                    )
-                    # Unwrap if result got wrapped by value caster
-                    if hasattr(vec_val, "ir_value"):
-                        vec_val = vec_val.ir_value()
-                    return Vector(vec_val, dtype=self._dtype, loc=loc, ip=ip)
+                    return self._load_vector(ptr, count, alignment, loc, ip)
                 # Open-ended multi-dim slice - return memory view
                 return self._subpointer_from_index(
                     idx_without_align
@@ -2249,20 +2658,8 @@ class _ArrayImpl(Generic[DSLGenericType]):
         # Handle Vector: extract vector value and store directly
         if isinstance(value, Vector):
             # Check for alignment suffix: arr[..., alignment] = vec
-            # If last element is an int and there's at least one slice, it's alignment
-            alignment = self.align
-            idx_without_align: Any = idx
-            if (
-                isinstance(idx, tuple)
-                and len(idx) >= 2
-                and isinstance(idx[-1], int)
-                and any(isinstance(i, slice) for i in idx[:-1])
-            ):
-                alignment = idx[-1]
-                idx_without_align = idx[:-1]
-                # If only one element left, unwrap it
-                if len(idx_without_align) == 1:
-                    idx_without_align = idx_without_align[0]
+            idx_without_align, _alignment = self._split_alignment_suffix(idx)
+            alignment = self.align if _alignment is None else _alignment
 
             # Handle unwrapped single slice case: arr[start:count, alignment] = vec
             if isinstance(idx_without_align, slice):
@@ -2365,13 +2762,10 @@ class _ArrayImpl(Generic[DSLGenericType]):
             llvm.store(ir_value, ptr._base, alignment=elem_align)
             return
 
-        # Convert value to IR value for scalar/vector assignment
-        if hasattr(value, "type"):
-            # Raw MLIR value - convert through DSL type to ensure proper type coercion
-            # (e.g., extend i32 to i64 when storing into Int64 array)
-            ir_value = self._make_scalar_ir(value)
-        else:
-            ir_value = self._make_scalar_ir(value)
+        # Convert value to IR value for scalar/vector assignment.
+        # _make_scalar_ir handles both raw MLIR values (coercing e.g. i32 -> i64
+        # for an Int64 array) and Python/DSL scalars, so no branch is needed.
+        ir_value = self._make_scalar_ir(value)
 
         if isinstance(idx, slice):
             if idx.start is not None and idx.stop is not None and idx.step is None:
@@ -2450,12 +2844,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
             syncscope: Synchronization scope for atomic operations.
         """
         # Get pointer to the element at idx (supports multi-dim tuple)
-        if isinstance(idx, tuple):
-            ptr = self._gep(*idx)._base
-        elif isinstance(idx, int) and idx == 0:
-            ptr = self._base
-        else:
-            ptr = self._gep(idx)._base
+        ptr = self._ptr_impl_at(idx)._base
 
         effective_alignment = self._effective_alignment(alignment)
 
@@ -2519,12 +2908,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
             )
 
         # Get pointer to the element at idx (supports multi-dim tuple)
-        if isinstance(idx, tuple):
-            ptr = self._gep(*idx)._base
-        elif isinstance(idx, int) and idx == 0:
-            ptr = self._base
-        else:
-            ptr = self._gep(idx)._base
+        ptr = self._ptr_impl_at(idx)._base
 
         effective_alignment = self._effective_alignment(alignment)
 
@@ -2538,6 +2922,11 @@ class _ArrayImpl(Generic[DSLGenericType]):
             vec_type = ir.VectorType.get([count], self._mlir_type)
             elements = [self._make_scalar_ir(v) for v in value]
             ir_value = vector.from_elements(vec_type, elements, loc=loc, ip=ip)
+        elif isinstance(value, Numeric):
+            # DSL scalar: coerce to the array element dtype (e.g. store an Int32
+            # into a Float32 array) rather than emitting its own IR type, which
+            # would produce a type-mismatched llvm.store. Mirrors __setitem__.
+            ir_value = self._make_scalar_ir(value)
         elif hasattr(value, "ir_value"):
             ir_value = value.ir_value()
         elif hasattr(value, "type"):
@@ -2570,6 +2959,49 @@ class _ArrayImpl(Generic[DSLGenericType]):
     # =========================================================================
     # Masked Load/Store
     # =========================================================================
+
+    def _ptr_impl_at(self, idx: "ScalarIndex") -> "_ArrayImpl":
+        """Resolve the ``_ArrayImpl`` pointing at ``idx`` (supports multi-dim tuple).
+
+        ``idx == 0`` returns ``self``; otherwise a GEP'd sub-pointer. Callers that
+        want the raw MLIR pointer take ``._base`` of the result.
+        """
+        if isinstance(idx, tuple):
+            return self._gep(*idx)
+        elif isinstance(idx, int) and idx == 0:
+            return self
+        else:
+            return self._gep(idx)
+
+    @staticmethod
+    def _mask_to_vector(
+        mask: "Union[Vector, _ArrayImpl]",
+        count: int,
+        loc: Optional[ir.Location],
+        ip: Optional[ir.InsertionPoint],
+    ) -> Any:
+        """Materialize a mask as a ``vector<count x i1>`` value.
+
+        A ``Vector`` mask already IS the value. An ``_ArrayImpl`` mask stores
+        booleans as individual bytes, so each lane is loaded and packed into a
+        vector.
+        """
+        if isinstance(mask, Vector):
+            # Vector inherits from DSLIRValue, so IS the value
+            return mask
+        elif isinstance(mask, _ArrayImpl):
+            # Load each boolean and build vector<N x i1>
+            # Booleans are stored as individual bytes, so we can't do a packed vector load
+            i1_type = ir.IntegerType.get_signless(1)
+            mask_vec_type = ir.VectorType.get([count], i1_type)
+            mask_scalars = []
+            for i in range(count):
+                elem_ptr = mask._gep(i)
+                elem_val = llvm.load(i1_type, elem_ptr._base, loc=loc, ip=ip)
+                mask_scalars.append(elem_val)
+            return vector.from_elements(mask_vec_type, mask_scalars, loc=loc, ip=ip)
+        else:
+            raise TypeError(f"mask must be a boolean Array or Vector, got {type(mask)}")
 
     def masked_load(
         self,
@@ -2615,32 +3047,12 @@ class _ArrayImpl(Generic[DSLGenericType]):
         )
 
         # Get pointer at idx (supports multi-dim tuple)
-        if isinstance(idx, tuple):
-            ptr = self._gep(*idx)
-        elif isinstance(idx, int) and idx == 0:
-            ptr = self
-        else:
-            ptr = self._gep(idx)
+        ptr = self._ptr_impl_at(idx)
 
         effective_alignment = self._effective_alignment(alignment)
 
         # Get mask IR value - must be a boolean Array or Vector
-        if isinstance(mask, Vector):
-            # Vector inherits from DSLIRValue, so IS the value
-            mask_val = mask
-        elif isinstance(mask, _ArrayImpl):
-            # Load each boolean and build vector<N x i1>
-            # Booleans are stored as individual bytes, so we can't do a packed vector load
-            i1_type = ir.IntegerType.get_signless(1)
-            mask_vec_type = ir.VectorType.get([count], i1_type)
-            mask_scalars = []
-            for i in range(count):
-                elem_ptr = mask._gep(i)
-                elem_val = llvm.load(i1_type, elem_ptr._base, loc=loc, ip=ip)
-                mask_scalars.append(elem_val)
-            mask_val = vector.from_elements(mask_vec_type, mask_scalars, loc=loc, ip=ip)
-        else:
-            raise TypeError(f"mask must be a boolean Array or Vector, got {type(mask)}")
+        mask_val = self._mask_to_vector(mask, count, loc, ip)
 
         # Prepare pass_thru
         vec_type = ir.VectorType.get([count], self._mlir_type)
@@ -2707,12 +3119,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
         log().info(f"_ArrayImpl.masked_store: idx={idx}, dtype={self._dtype}")
 
         # Get pointer at idx (supports multi-dim tuple)
-        if isinstance(idx, tuple):
-            ptr = self._gep(*idx)
-        elif isinstance(idx, int) and idx == 0:
-            ptr = self
-        else:
-            ptr = self._gep(idx)
+        ptr = self._ptr_impl_at(idx)
 
         effective_alignment = self._effective_alignment(alignment)
 
@@ -2731,22 +3138,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
         count = value_vec_type.shape[0]
 
         # Get mask IR value - must be a boolean Array or Vector
-        if isinstance(mask, Vector):
-            # Vector inherits from DSLIRValue, so IS the value
-            mask_val = mask
-        elif isinstance(mask, _ArrayImpl):
-            # Load each boolean and build vector<N x i1>
-            # Booleans are stored as individual bytes, so we can't do a packed vector load
-            i1_type = ir.IntegerType.get_signless(1)
-            mask_vec_type = ir.VectorType.get([count], i1_type)
-            mask_scalars = []
-            for i in range(count):
-                elem_ptr = mask._gep(i)
-                elem_val = llvm.load(i1_type, elem_ptr._base, loc=loc, ip=ip)
-                mask_scalars.append(elem_val)
-            mask_val = vector.from_elements(mask_vec_type, mask_scalars, loc=loc, ip=ip)
-        else:
-            raise TypeError(f"mask must be a boolean Array or Vector, got {type(mask)}")
+        mask_val = self._mask_to_vector(mask, count, loc, ip)
 
         # Call masked store intrinsic
         # Note: LLVM masked_store doesn't support volatile/nontemporal directly,
@@ -2802,7 +3194,7 @@ class _ArrayImpl(Generic[DSLGenericType]):
 class Array(Generic[DSLGenericType]):
     """A GPU memory reference with shape, strides, and element type information.
 
-    Array is the primary data structure for working with GPU memory in DSL.
+    Array is the primary data structure for working with GPU memory in the DSL.
     It provides a NumPy-like interface for accessing and manipulating data in
     local, shared, or global GPU memory.
 
@@ -2869,8 +3261,11 @@ class Array(Generic[DSLGenericType]):
         vec = arr[offset:8, alignment]
         arr[offset:8, alignment] = vec
 
-    Note: User must ensure the address is actually aligned. Incorrect alignment
-    hints cause undefined behavior.
+    .. note::
+
+       The caller must ensure that an explicit alignment hint is valid for the
+       address being accessed. Incorrect alignment hints cause undefined
+       behavior.
 
     Tuple Assignment
     ----------------
@@ -2880,7 +3275,9 @@ class Array(Generic[DSLGenericType]):
         arr[0:4] = (1.0, 2.0, 3.0, 4.0)      # Stores 4 floats as vector
         arr[4:4] = constexpr_tuple          # Constexpr tuples work too
 
-    Note: Lists are NOT supported - use tuples for literal sequences.
+    .. note::
+
+       Lists are not supported. Use tuples for literal sequences.
 
     Offset Views
     ------------
@@ -2901,17 +3298,18 @@ class Array(Generic[DSLGenericType]):
 
     Properties
     ----------
-    - dtype: Element type (Float32, Int32, etc.)
-    - shape: Tuple of dimensions, e.g., (32, 32)
-    - strides: Memory strides for each dimension
-    - space: Memory space (cutlass.AddressSpace.rmem, smem, gmem, cmem)
+    - ``dtype``: Element type, such as ``Float32`` or ``Int32``.
+    - ``shape``: Tuple of dimensions, such as ``(32, 32)``.
+    - ``strides``: Memory strides for each dimension.
+    - ``space``: Memory space, such as ``cutlass.AddressSpace.rmem``,
+      ``smem``, ``gmem``, or ``cmem``.
 
     Memory Spaces
     -------------
-    - cutlass.AddressSpace.rmem: Thread-private stack memory (per-thread)
-    - cutlass.AddressSpace.smem: Block-wide on-chip memory (fast, limited size)
-    - cutlass.AddressSpace.gmem: Device-wide DRAM (large, high latency)
-    - cutlass.AddressSpace.cmem: Read-only cached memory
+    - ``cutlass.AddressSpace.rmem``: Thread-private directly-addressed memory.
+    - ``cutlass.AddressSpace.smem``: Block-wide on-chip memory.
+    - ``cutlass.AddressSpace.gmem``: Device-wide DRAM.
+    - ``cutlass.AddressSpace.cmem``: Read-only cached memory.
 
     Examples
     --------
@@ -2942,7 +3340,7 @@ class Array(Generic[DSLGenericType]):
 
             prims.nvvm.barrier_cta_sync(0)  # Synchronize threads
 
-            # Now threads can read each other's values
+            # Now threads can read neighboring values
             neighbor = tile[(tx + 1) % 32, ty]
 
     Pointer arithmetic for manual offset:
@@ -2981,6 +3379,8 @@ class Array(Generic[DSLGenericType]):
            routes to the registered array factory.  When ``base`` is a DSL
            dtype class and no ``space=`` is given, defaults to
            ``space=AddressSpace.rmem`` inside ``@cute.kernel``.
+           ``space=gmem/cmem`` returns a ``_GlobalVariable`` cubin-static
+           handle, which becomes an ``Array`` on first kernel-side indexing.
 
         2. **Internal mode** — ``Array(_impl=impl)``: wraps an existing
            ``_ArrayImpl`` instance.  Used by ``_from_impl`` and the MLIR
@@ -2991,28 +3391,43 @@ class Array(Generic[DSLGenericType]):
            ``_ArrayImpl``.  Used by the internal allocator implementations
            (``_allocate_memory_smem``, ``_allocate_memory_rmem`` etc.).
 
-        Args:
-            base: Raw MLIR pointer (mode 3), DSL dtype class (mode 1, when
-                ``space=`` is passed), or ``None`` (mode 2).
-            shape: Allocation shape — tuple of ints or a single int.
-                Positional in factory mode; keyword in raw MLIR mode.
-            _impl: Internal implementation instance (mode 2).
-            dtype: Element type for raw MLIR mode.
-            **kwargs: Additional arguments.  ``space=`` triggers factory
-                mode; everything else is forwarded to ``_ArrayImpl``.
-
-        Raises:
-            ValueError: If the call doesn't match one of the three modes.
+        :param base: Raw MLIR pointer for raw-MLIR mode, DSL dtype class for
+            factory mode when ``space=`` is passed, or ``None`` for internal
+            mode.
+        :param shape: Allocation shape. Pass either a tuple of integers or a
+            single integer. The value is positional in factory mode and keyword
+            based in raw-MLIR mode.
+        :param _impl: Internal implementation instance for internal mode.
+        :param dtype: Element type for raw-MLIR mode.
+        :param kwargs: Additional arguments. ``space=`` triggers factory mode;
+            all other values are forwarded to ``_ArrayImpl``.
+        :raises ValueError: If the call does not match one of the supported
+            construction modes.
         """
         # ---- Mode 1: factory dispatch (``space=`` is the discriminator) ----
+        # Routed before the _impl / base checks so users can write the
+        # natural ``cutlass.Array(cutlass.Float16, (128, 64), space=...)`` form
+        # where the first positional is the dtype, not an MLIR value.
+        # Also triggered when ``base`` looks like a DSL dtype class (has a
+        # ``width`` attribute) — inject ``space=cutlass.AddressSpace.rmem`` as
+        # the default.
         if "space" not in kwargs and isinstance(base, type) and hasattr(base, "width"):
             kwargs = dict(kwargs)
             kwargs["space"] = AddressSpace.rmem
         if "space" in kwargs:
             space = kwargs.pop("space")
+            # In factory mode, ``base`` carries the DSL dtype class; fall
+            # back to an explicit ``dtype=`` kwarg if someone passes that
+            # form instead.
             factory_dtype = base if base is not None else dtype
             factory_shape = shape
-            return _make_array_via_factory(factory_dtype, factory_shape, space, kwargs)
+            # ``space=gmem/cmem`` yields a ``_GlobalVariable`` handle rather than
+            # an ``Array`` — it materializes into one lazily, on first indexing
+            # inside a kernel.  Every other space returns an ``Array`` outright.
+            return cast(
+                "Array[DSLGenericType]",
+                _make_array_via_factory(factory_dtype, factory_shape, space, kwargs),
+            )
 
         # ---- Mode 2: _impl is provided directly ----------------------------
         if _impl is not None:
@@ -3271,7 +3686,6 @@ class Array(Generic[DSLGenericType]):
         Returns:
             Single value if vector_size is None, otherwise a Vector.
 
-        Examples:
             arr = cutlass.Array(cutlass.Float32, 8)
 
             # Scalar load
@@ -3339,7 +3753,10 @@ class Array(Generic[DSLGenericType]):
 
         Note: Lists are NOT supported - use tuples for sequences.
 
-        Examples:
+           Lists are not supported. Use tuples for literal sequences.
+
+        .. code-block:: python
+
             arr = cutlass.Array(cutlass.Float32, 8)
 
             # Scalar store
@@ -3668,14 +4085,8 @@ class Array(Generic[DSLGenericType]):
             ptr = arr.data_ptr(n)         # dynamic flat index (n: Int32)
         """
         impl = self._impl
-        if isinstance(idx, tuple):
-            # Multi-dimensional: stride-aware, mirrors arr[i, j] / load((i, j)).
-            ptr = impl._gep(*idx)._base
-        elif isinstance(idx, int) and idx == 0:
-            ptr = impl._base
-        else:
-            # Flat single index, mirrors arr[n] / load(n).
-            ptr = impl._gep(idx)._base
+        # Same tuple / int==0 / flat dispatch as load/store (see _ptr_impl_at).
+        ptr = impl._ptr_impl_at(idx)._base
         return _make_pointer_from_raw(ptr, impl._dtype)
 
     @dsl_user_op
@@ -3705,7 +4116,8 @@ class Array(Generic[DSLGenericType]):
         impl = self._impl
         if isinstance(idx, int) and idx == 0:
             return self
-        new_impl = impl._gep(*idx) if isinstance(idx, tuple) else impl._gep(idx)
+        # Same dispatch as load/store; idx==0 handled above (returns this Array).
+        new_impl = impl._ptr_impl_at(idx)
         return Array._from_impl(new_impl)
 
 

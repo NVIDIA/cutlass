@@ -57,6 +57,7 @@ from ..base_dsl.compiler import (
     LinkLibraries,
     EnableTVMFFI,
     DeviceTarget,
+    DisableCuteExtCompile,
     FrontendNext,
     RDC,
     RemarkFilter,

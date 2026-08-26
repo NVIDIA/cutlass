@@ -468,6 +468,7 @@ def _binary_op(op: Callable[..., "ArithValue"]) -> Callable[..., "ArithValue"]:
 @ir.register_value_caster(ir.Float8E4M3FNType.static_typeid)
 @ir.register_value_caster(ir.Float8E4M3B11FNUZType.static_typeid)
 @ir.register_value_caster(ir.Float8E5M2Type.static_typeid)
+@ir.register_value_caster(ir.FloatNV8E5M3FNUType.static_typeid)
 @ir.register_value_caster(ir.Float8E4M3Type.static_typeid)
 @ir.register_value_caster(ir.Float8E8M0FNUType.static_typeid)
 @ir.register_value_caster(ir.BF16Type.static_typeid)

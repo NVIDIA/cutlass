@@ -55,7 +55,7 @@ struct SM100_2x1x1_F32F32F32F32 {
 #if defined(CUTE_ARCH_FFMA2_SM100_ENABLED)
   cute::fma(d01, a01, make_float2(b0, b0), c01);
 #else
-  CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_2x1x1_F32F32F32F32 without CUTE_ARCH_FLOAT2_MATH_ENABLED");
+  CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_2x1x1_F32F32F32F32 without CUTE_ARCH_FFMA2_SM100_ENABLED");
 #endif
   }
 };

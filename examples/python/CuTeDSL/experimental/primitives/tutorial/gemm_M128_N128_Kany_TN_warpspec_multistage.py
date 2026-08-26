@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -93,7 +93,6 @@ To run::
 import cutlass
 import cutlass.experimental.cuda as cuda
 import cutlass.cute as cute
-import cutlass.utils as utils
 import cuda.bindings.driver as cuda_driver
 
 import torch
@@ -322,6 +321,9 @@ def gemm_kernel(
                     # Advance start_address for next K iteration
                     desc_a = desc_a.advance_start_address(32)
                     desc_b = desc_b.advance_start_address(32)
+                # Keep this commit in the already-elected TC warp path. Nesting
+                # another elect_sync around it can hang on control-dependent
+                # elect.sync.
                 prims.tcgen05_commit(ab_empty_mbar.subview(stage))
 
     # Signal that the accumulator is fully computed
@@ -418,7 +420,7 @@ if __name__ == "__main__":
     TILE_K = 64
     TILE_N = 128
 
-    max_smem_capacity_in_bytes = utils.get_smem_capacity_in_bytes("sm_100")
+    max_smem_capacity_in_bytes = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
     print("Shared memory capacity in bytes: ", max_smem_capacity_in_bytes)
     extra = 4096
     num_ab_stage = (max_smem_capacity_in_bytes - extra) // (

@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -33,7 +33,7 @@ The example uses one parameterized CTA_1 kernel.  Operand dtype,
 ``MMA_SHAPE``, and niche ``tcgen05.mma`` kwargs are compile-time parameters;
 runtime M/N/K stays symbolic and is supplied through ``verify(..., mnk=...)``.
 
-Usage::
+To run::
 
     python CuTeDSL/experimental/primitives/tcgen05/1cta_mma_basic.py
     python CuTeDSL/experimental/primitives/tcgen05/1cta_mma_basic.py --ab_dtype fp8_e4m3
@@ -60,6 +60,10 @@ import cutlass.torch as cutlass_torch
 from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 _TMEM_LD_WARPS = 4
 _DEFAULT_TMEM_LD_WARP_START = 0
@@ -157,6 +161,11 @@ def _desc_lead_for_row_bytes(row_bytes: int) -> int:
     if row_bytes == 128:
         return row_bytes // 16
     raise ValueError(f"Unsupported K-major row byte length: {row_bytes}")
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -437,6 +446,11 @@ def kernel(
         prims.tcgen05_dealloc(tmem_ptr, num_tmem_cols, group="cta_1")
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     a: cute.Tensor,
@@ -502,6 +516,11 @@ def _validate_mnk(mnk: tuple[int, int, int], MMA_SHAPE: tuple[int, int, int]) ->
         raise ValueError(f"N={n} must be a multiple of MMA_SHAPE N={mma_n}")
     if k % mma_k != 0:
         raise ValueError(f"K={k} must be a multiple of MMA_SHAPE K={mma_k}")
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -604,6 +623,11 @@ def _make_inputs(
         )
     c = torch.zeros(m, n, dtype=torch_output_dtype, device="cuda")
     return a, b, c
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 
 def run(
@@ -722,6 +746,11 @@ def _tolerance(AB_DTYPE: type) -> tuple[float, float]:
     return 0.1, 1e-5
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def verify(
     *,
     AB_DTYPE: type = cutlass.Float16,
@@ -819,6 +848,10 @@ def _parse_mnk(value: str) -> tuple[int, int, int]:
         raise argparse.ArgumentTypeError("--mnk must be M,N,K")
     return parts
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

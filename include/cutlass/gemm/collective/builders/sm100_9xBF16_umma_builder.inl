@@ -138,6 +138,7 @@ struct CollectiveBuilder<
     BuilderScheduleTag,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       (not cute::is_tuple<GmemLayoutATag>::value && not cute::is_tuple<GmemLayoutBTag>::value) &&
       (cute::is_base_of_v<KernelScheduleSm100FastFP32Gemm, BuilderScheduleTag>

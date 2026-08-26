@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -79,6 +79,10 @@ from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 import cuda.bindings.driver as cuda_driver
 
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 _WARP_SIZE = 32
 _TMEM_WARPS = 4
 _THREADS = _TMEM_WARPS * _WARP_SIZE
@@ -121,6 +125,11 @@ _TORCH_DTYPE_BY_CUTLASS: dict[type, torch.dtype] = {
 
 def _is_supported_b8_dtype(dtype: type) -> bool:
     return dtype in _B8_DTYPE_BY_NAME.values()
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -255,6 +264,11 @@ def kernel(
         prims.tcgen05_dealloc(tmem_alloc_ptr, _TMEM_COLS, group="cta_1")
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     src: cute.Tensor,
@@ -299,6 +313,11 @@ def _doc_summary() -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
+
+
 @lru_cache(maxsize=None)
 def compile(OUT_DTYPE: type = _DEFAULT_OUT_DTYPE) -> Callable:  # noqa: A001
     """AOT-compile the TMEM -> converted output -> transposed stmatrix example."""
@@ -339,6 +358,11 @@ def compile(OUT_DTYPE: type = _DEFAULT_OUT_DTYPE) -> Callable:  # noqa: A001
     )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(OUT_DTYPE: type = _DEFAULT_OUT_DTYPE) -> tuple[torch.Tensor, torch.Tensor]:
     """Allocate random f32 source/output, run, and return ``(dst, src)``."""
 
@@ -362,6 +386,11 @@ def run(OUT_DTYPE: type = _DEFAULT_OUT_DTYPE) -> tuple[torch.Tensor, torch.Tenso
     compiled(src, dst, stream)
     torch.cuda.synchronize()
     return dst, src
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(OUT_DTYPE: type = _DEFAULT_OUT_DTYPE) -> None:
@@ -389,6 +418,10 @@ def _resolve_out_dtype(name: str) -> type:
         valid = ", ".join(sorted([*_DTYPE_BY_NAME, "all"]))
         raise ValueError(f"Unsupported --out-dtype {name!r}; expected {valid}") from exc
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

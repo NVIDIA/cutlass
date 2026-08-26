@@ -160,7 +160,7 @@ def load_ir(
     """
     assert "mlir" in file
     func_name = file.split(".mlir")[0].split("dsl_")[-1]
-    with ir.Context() as ctx:
+    with ir.Context():
         with open(file, "rb" if asBytecode else "r") as f:
             if bytecode_reader:
                 module = bytecode_reader(f)
@@ -429,9 +429,12 @@ class JitCacheDict:
                 # Provide None to avoid pop throwing a key error
                 self_obj.delete(k)
 
-        assert value != funcBody, (
-            "Value and funcBody cannot be the same object to avoid circular references"
-        )
+        # Explicit check rather than assert: assert is stripped under `python -O`,
+        # which would silently drop this circular-reference guard.
+        if value is funcBody:
+            raise ValueError(
+                "value and funcBody cannot be the same object to avoid circular references"
+            )
         self._dict[key] = (
             value,
             None

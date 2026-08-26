@@ -34,7 +34,7 @@ several phases (parameter analysis, on-device thread operation, CPU
 reference evaluation) to synthesize the CuTe DSL code and a reference
 implementation from one description.
 
-The public API lives here for convenience; operator- and arch-specific
+The public API lives here for convenience; operation- and arch-specific
 realizations live in sibling subpackages (for example, ``dense_gemm.sm100``).
 
 Internal layout (top of import graph last):

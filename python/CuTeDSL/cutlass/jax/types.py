@@ -11,7 +11,7 @@
 
 from dataclasses import dataclass, field
 from numbers import Integral
-from typing import Any, Iterator, Sequence, Union, overload
+from typing import Any, Sequence
 
 
 import jax
@@ -53,6 +53,7 @@ CUTLASS_DTYPE_TO_JAX_DTYPE = {
 
 DEFAULT_CUTLASS_DEVICE_MEMSPACE = AddressSpace.gmem
 DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT = 256
+_CUTE_XLA_FFI_BUFFER_ALIGNMENT = 8
 
 
 def _llvm_pointer_type(address_space: AddressSpace = AddressSpace.generic) -> ir.Type:
@@ -515,22 +516,26 @@ class JaxArray:
 
 
 class JaxArrayValue(JaxArray):
-    """The IR representation of the JaxArray."""
+    """The IR representation of a :class:`JaxArray`.
+
+    Array metadata is copied at construction so the IR value remains an
+    independent snapshot if its source placeholder is later mutated.
+    """
 
     def __init__(
         self,
         ir_value: ir.Value,
-        dtype: type,
-        shape: Sequence[int | Any],
-        mem_space: AddressSpace,
-        assumed_align: int,
-        order: tuple[int, ...],
-        mode: tuple[int, ...],
-        static: bool,
-        divisibility: tuple[int | None, ...] | int | None = None,
+        jax_array: JaxArray,
     ) -> None:
         super().__init__(
-            dtype, shape, mem_space, assumed_align, order, mode, static, divisibility
+            jax_array.dtype,
+            jax_array.shape,
+            jax_array.mem_space,
+            jax_array.assumed_align,
+            jax_array.order,
+            jax_array.mode,
+            jax_array.static,
+            jax_array.divisibility,
         )
         self.value = ir_value
 
@@ -681,86 +686,84 @@ class JaxArrayValue(JaxArray):
         return [self.value]
 
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> "JaxArrayValue":
-        return JaxArrayValue(
-            values[0],
-            self.dtype,
-            self.shape,
-            self.mem_space,
-            self.assumed_align,
-            self.order,
-            self.mode,
-            self.static,
-            self.divisibility,
-        )
+        """Reconstruct this array from exactly one MLIR descriptor pointer."""
+        if len(values) != 1:
+            raise ValueError(
+                "JaxArrayValue reconstruction requires exactly one MLIR value; "
+                f"got {len(values)}."
+            )
+        return JaxArrayValue(values[0], self)
 
 
-class JaxTracedArray(JaxArray):
-    """Represents a traced array value that is used for cute.compile.
+class JaxTracedArray(cute.Pointer):
+    """Host-side JAX buffer placeholder used by ``cute.compile``.
 
-    Traced values are not real tensors or allocated on the device.
+    XLA passes each FFI buffer descriptor as a generic pointer. ``dtype``,
+    ``memspace``, and ``alignment`` describe that ABI pointer. The contained
+    :class:`JaxArray` describes the typed, aligned device pointer loaded from
+    the descriptor.
+
+    Inside the traced function, :meth:`__new_from_mlir_values__` replaces this
+    placeholder with a :class:`JaxArrayValue`, so pointer operations are never
+    exposed on the host placeholder itself.
     """
 
+    def __init__(self, jax_array: JaxArray) -> None:
+        self._jax_array = jax_array
+        self._ffi_buffer_pointer = cute.runtime.nullptr(
+            cutlass.Int8,
+            AddressSpace.generic,
+            assumed_align=_CUTE_XLA_FFI_BUFFER_ALIGNMENT,
+        )
+
     def __str__(self) -> str:
-        return f"JaxTracedArray<{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}:{self.divisibility}>"
+        array = self._jax_array
+        return f"JaxTracedArray<{array.dtype}:{array.shape}:{array.order}:{array.mode}:{array.static}:{array.divisibility}>"
 
     def __repr__(self) -> str:
         return str(self)
 
-    def __get_mlir_types__(self) -> list[ir.Type]:
-        # Struct passed as opaque object.
-        return [_llvm_pointer_type()]
+    @property
+    def dtype(self) -> type:
+        """The element type of the generic XLA FFI descriptor pointer."""
+        return cutlass.Int8
 
-    def __new_from_mlir_values__(self, values: ir.Value) -> JaxArrayValue:
-        return JaxArrayValue(
-            values,
-            self.dtype,
-            self.shape,
-            self.mem_space,
-            self.assumed_align,
-            self.order,
-            self.mode,
-            self.static,
-            self.divisibility,
-        )
+    @property
+    def memspace(self) -> AddressSpace:
+        """The address space of the XLA FFI descriptor pointer."""
+        return AddressSpace.generic
 
-    def __c_pointers__(self) -> list[int]:
-        return [0]
+    @property
+    def alignment(self) -> int:
+        """The alignment encoded in the descriptor pointer's CuTe type."""
+        return _CUTE_XLA_FFI_BUFFER_ALIGNMENT
 
+    @property
+    def max_alignment(self) -> int:
+        return self.alignment
 
-class JaxArrayList:
-    """Holds list of JaxArray or JaxTracedArray.
-    This class facilitates conversion of JaxTracedArray to JaxArray when crossing
-    the jit boundary.
-    """
-
-    def __init__(self, arrays: Sequence[JaxArray]) -> None:
-        self.arrays = tuple(arrays)
-
-    @overload
-    def __getitem__(self, idx: int) -> JaxArray: ...
-    @overload
-    def __getitem__(self, idx: slice) -> tuple[JaxArray, ...]: ...
-    def __getitem__(
-        self, idx: Union[int, slice]
-    ) -> Union[JaxArray, tuple[JaxArray, ...]]:
-        return self.arrays[idx]
-
-    def __len__(self) -> int:
-        return len(self.arrays)
-
-    def __iter__(self) -> Iterator[JaxArray]:
-        return iter(self.arrays)
-
-    def __c_pointers__(self) -> list[int]:
-        return [x.__c_pointers__()[0] for x in self.arrays]  # type: ignore[attr-defined]
+    @property
+    def type(self) -> ir.Type:
+        return self.__get_mlir_types__()[0]
 
     def __get_mlir_types__(self) -> list[ir.Type]:
-        return [x.__get_mlir_types__()[0] for x in self.arrays]  # type: ignore[attr-defined]
+        return self._ffi_buffer_pointer.__get_mlir_types__()  # type: ignore[attr-defined]
 
-    def __extract_mlir_values__(self) -> list[ir.Value]:
-        return [x.__extract_mlir_values__()[0] for x in self.arrays]  # type: ignore[attr-defined]
+    def __c_pointers__(self) -> list[int]:
+        return self._ffi_buffer_pointer.__c_pointers__()  # type: ignore[attr-defined]
 
-    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "JaxArrayList":
-        return JaxArrayList(
-            [x.__new_from_mlir_values__(v) for x, v in zip(self.arrays, values)]  # type: ignore[attr-defined]
-        )
+    def __new_from_mlir_values__(self, values: list[object]) -> JaxArrayValue:
+        if len(values) != 1:
+            raise ValueError(
+                "JaxTracedArray reconstruction requires exactly one MLIR value; "
+                f"got {len(values)}."
+            )
+
+        descriptor = values[0]
+        if not isinstance(descriptor, cute.Pointer):
+            raise TypeError(
+                "JaxTracedArray reconstruction requires a cute.Pointer, "
+                f"got {type(descriptor).__name__}."
+            )
+
+        return JaxArrayValue(descriptor.to_llvm_ptr(), self._jax_array)

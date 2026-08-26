@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -52,6 +52,9 @@ Resource/task flow:
                    +-------------------+
 """
 
+import argparse
+import os
+
 from dataclasses import dataclass
 
 import torch
@@ -88,7 +91,7 @@ class InputGmemResource(MemoryResource):
 
     source_tensor: cute.Tensor
     num_entries: cutlass.Int32
-    num_warps: cutlass.Constexpr[int]
+    num_warps: int
     item: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.uninitialized()
 
     def __post_init__(self) -> None:
@@ -125,7 +128,7 @@ class OutputGmemResource(MemoryResource):
 
     destination_tensor: cute.Tensor
     num_entries: cutlass.Int32
-    num_warps: cutlass.Constexpr[int]
+    num_warps: int
 
     @producer_work
     @cute.jit
@@ -149,6 +152,7 @@ def gmem_copy_kernel(
     source_tensor: cute.Tensor,
     destination_tensor: cute.Tensor,
     num_warps: cutlass.Constexpr,
+    iket_profile_ts: cutlass.Constexpr[bool] = False,
     unroll: cutlass.Constexpr = 1,
 ):
     ########################################################
@@ -213,6 +217,7 @@ def gmem_copy_kernel(
     task_manager = TaskManager(
         tasks=[task],
         resource_dependency_graph=resource_dependency_graph,
+        iket_enable_profiling=iket_profile_ts,
     )
     task_manager.setup_resources_and_tasks()
     task_manager.run()
@@ -230,10 +235,16 @@ def gmem_copy_kernel_host(
     destination_tensor: cute.Tensor,
     num_blocks: cutlass.Int32,
     num_warps: cutlass.Constexpr,
+    iket_profile_ts: cutlass.Constexpr[bool] = False,
     unroll: cutlass.Constexpr = 1,
 ):
     gmem_copy_kernel(
-        num_entries, source_tensor, destination_tensor, num_warps, unroll
+        num_entries,
+        source_tensor,
+        destination_tensor,
+        num_warps,
+        iket_profile_ts,
+        unroll,
     ).launch(
         grid=(num_blocks, 1, 1),
         block=(num_warps * 32, 1, 1),
@@ -271,14 +282,18 @@ def gmem_copy_naive_kernel_host(
     )
 
 
-def run_gmem_copy_kernel_prim(num_blocks: int = 256, num_warps: int = 8):
-    num_entries = 1 << 24
+def run_gmem_copy_kernel_prim(
+    num_entries: int = 1 << 24,
+    num_blocks: int = 256,
+    num_warps: int = 8,
+    iket_profile_ts: bool = False,
+):
     source = torch.randint(-32768, 32768, (num_entries,), dtype=torch.int16).cuda()
     destination = torch.zeros_like(source).cuda()
 
     source_tensor = from_dlpack(source)
     destination_tensor = from_dlpack(destination)
-    naive_func = cute.compile(
+    naive_func = cute.compile[cute.FrontendNext](
         gmem_copy_naive_kernel_host,
         num_entries,
         source_tensor,
@@ -286,14 +301,19 @@ def run_gmem_copy_kernel_prim(num_blocks: int = 256, num_warps: int = 8):
         num_blocks,
         num_warps,
     )
-    ts_func = cute.compile(
+    ts_func = cute.compile[cute.FrontendNext](
         gmem_copy_kernel_host,
         num_entries,
         source_tensor,
         destination_tensor,
         num_blocks,
         num_warps,
+        iket_profile_ts,
     )
+    if naive_func is None or ts_func is None:
+        if os.environ.get("CUTE_DSL_DRYRUN") == "True":
+            return
+        raise RuntimeError("cute.compile returned None outside CUTE_DSL_DRYRUN")
 
     naive_func(num_entries, source_tensor, destination_tensor, num_blocks)
     torch.testing.assert_close(destination, source)
@@ -306,4 +326,19 @@ def run_gmem_copy_kernel_prim(num_blocks: int = 256, num_warps: int = 8):
 
 
 if __name__ == "__main__":
-    run_gmem_copy_kernel_prim()
+    parser = argparse.ArgumentParser(description="Grid-stride GMEM copy with TS")
+    parser.add_argument("--num-entries", type=int, default=1 << 24)
+    parser.add_argument("--num-blocks", type=int, default=256)
+    parser.add_argument("--num-warps", type=int, default=8)
+    parser.add_argument(
+        "--iket-profile-ts",
+        action="store_true",
+        help="Enable IKET ranges for selected task-scheduling entries",
+    )
+    args = parser.parse_args()
+    run_gmem_copy_kernel_prim(
+        num_entries=args.num_entries,
+        num_blocks=args.num_blocks,
+        num_warps=args.num_warps,
+        iket_profile_ts=args.iket_profile_ts,
+    )

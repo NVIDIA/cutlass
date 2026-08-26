@@ -30,6 +30,8 @@
 Unit tests for Provider class and argument type filtering.
 """
 
+import warnings
+
 import pytest
 import torch
 
@@ -51,11 +53,24 @@ def args_for_type(args_type: type[ops.RuntimeArguments]) -> ops.RuntimeArguments
             accumulator_type=torch.float16,
         )
     elif args_type is ops.GroupedGemmArguments:
-        return ops.GroupedGemmArguments(
-            A=torch.empty((1, 1, 1), dtype=torch.float16),
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return ops.GroupedGemmArguments(
+                # M-partitioned: A/out are 2D; B is 3D group-first (one group).
+                A=torch.empty((1, 1), dtype=torch.float16),
+                B=torch.empty((1, 1, 1), dtype=torch.float16),
+                out=torch.empty((1, 1), dtype=torch.float16),
+                offsets=torch.empty((1,), dtype=torch.int32),
+                accumulator_type=torch.float16,
+            )
+    elif args_type is ops.IndexPtrGroupedGemmArguments:
+        # Single-group M-partitioned stub: A/out are 2D, B is 3D group-first.
+        return ops.IndexPtrGroupedGemmArguments(
+            A=torch.empty((1, 1), dtype=torch.float16),
             B=torch.empty((1, 1, 1), dtype=torch.float16),
-            out=torch.empty((1, 1, 1), dtype=torch.float16),
+            out=torch.empty((1, 1), dtype=torch.float16),
             offsets=torch.empty((1,), dtype=torch.int32),
+            offsets_along="m",
             accumulator_type=torch.float16,
         )
     else:
@@ -102,14 +117,16 @@ class TestProviderArgumentTypeFiltering:
                 return ["gemm_operator"]
 
         @TestProvider.register
-        class MockGroupedGemmOperator(ops.Operator):
-            supported_args_type = ops.GroupedGemmArguments
+        class MockIndexPtrGroupedGemmOperator(ops.Operator):
+            # Registered separately from MockGroupedGemmOperator because
+            # IndexPtrGroupedGemmArguments is its own distinct args type.
+            supported_args_type = ops.IndexPtrGroupedGemmArguments
 
             @classmethod
             def generate_operators(
                 cls, metadata_filter, epilogue_args, target_sm, args
             ):
-                return ["grouped_gemm_operator"]
+                return ["index_ptr_grouped_gemm_operator"]
 
         # Filter by GemmArguments - should only get gemm operators
         gemm_operators = TestProvider.generate_operators(
@@ -117,11 +134,19 @@ class TestProviderArgumentTypeFiltering:
         )
         assert gemm_operators == ["gemm_operator"]
 
-        # Filter by GroupedGemmArguments - should only get grouped gemm operators
-        grouped_operators = TestProvider.generate_operators(
-            metadata_filter=None, args=args_for_type(ops.GroupedGemmArguments)
+        # The index-pointer API dispatches independently from pointer arrays
+        index_ptr_operators = TestProvider.generate_operators(
+            metadata_filter=None,
+            args=args_for_type(ops.IndexPtrGroupedGemmArguments),
         )
-        assert grouped_operators == ["grouped_gemm_operator"]
+        assert index_ptr_operators == ["index_ptr_grouped_gemm_operator"]
+
+        # The deprecated M-offset subclass resolves through the registered base type
+        legacy_operators = TestProvider.generate_operators(
+            metadata_filter=None,
+            args=args_for_type(ops.GroupedGemmArguments),
+        )
+        assert legacy_operators == ["index_ptr_grouped_gemm_operator"]
 
     def test_generate_operators_returns_all_when_args_type_is_none(self):
         """generate_operators should return all operators when args_type is None."""
@@ -137,18 +162,21 @@ class TestProviderArgumentTypeFiltering:
                 return ["gemm_operator"]
 
         @TestProvider.register
-        class MockGroupedGemmOperator(ops.Operator):
-            supported_args_type = ops.GroupedGemmArguments
+        class MockIndexPtrGroupedGemmOperator(ops.Operator):
+            supported_args_type = ops.IndexPtrGroupedGemmArguments
 
             @classmethod
             def generate_operators(
                 cls, metadata_filter, epilogue_args, target_sm, args
             ):
-                return ["grouped_gemm_operator"]
+                return ["index_ptr_grouped_gemm_operator"]
 
         # No args filter - should get all operators
         all_operators = TestProvider.generate_operators()
-        assert set(all_operators) == {"gemm_operator", "grouped_gemm_operator"}
+        assert set(all_operators) == {
+            "gemm_operator",
+            "index_ptr_grouped_gemm_operator",
+        }
 
     def test_multiple_operators_same_args_type(self):
         """Multiple Operator classes with the same args_type should all be returned."""

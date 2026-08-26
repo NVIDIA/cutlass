@@ -231,13 +231,13 @@ class PersistentDenseGemmOperator(CuteDslOperator):
             ]:
                 return False
         elif operands.out.dtype == cutlass.Int8 or operands.out.dtype == cutlass.Uint8:
-            if operands.accumulator_type not in [cutlass.Int32]:
+            if operands.accumulator_type != cutlass.Int32:
                 return False
         elif (
             operands.out.dtype == cutlass.Float8E4M3FN
             or operands.out.dtype == cutlass.Float8E5M2
         ):
-            if operands.accumulator_type not in [cutlass.Float32]:
+            if operands.accumulator_type != cutlass.Float32:
                 return False
         else:
             return False
@@ -381,8 +381,6 @@ class PersistentDenseGemmOperator(CuteDslOperator):
             return False
         if cluster_size_n % 2 != 0 and cluster_size_n != 1:
             return False
-        if cluster_size_m * cluster_size_n > 16:
-            return False
 
         tile = design.tile_shape
 
@@ -430,7 +428,10 @@ class PersistentDenseGemmOperator(CuteDslOperator):
                 (M, N, None) for M in [64, 128, 256] for N in [32, 64, 128, 256]
             ],
             "cluster_shape": [
-                (M, N, 1) for M in [1, 2, 4, 8, 16] for N in [1, 2, 4, 8, 16]
+                (m, n, 1)
+                for m in [1, 2, 4, 8, 16]
+                for n in [1, 2, 4, 8, 16]
+                if m * n <= Sm100DesignMetadata.max_cluster_size
             ],
             "use_tma_store": [True],
             "tile_scheduler": [

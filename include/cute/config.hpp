@@ -118,6 +118,8 @@
 #    if __has_include(<cuda/std/__tuple_dir/structured_bindings.h>)
 #      include <cuda/std/__tuple_dir/structured_bindings.h>
 #    elif __has_include(<cuda/std/detail/libcxx/include/__tuple_dir/structured_bindings.h>)
+// The legacy detail header is inert until the wrapper config defines __cuda_std__.
+#      include <cuda/std/detail/__config>
 #      include <cuda/std/detail/libcxx/include/__tuple_dir/structured_bindings.h>
 #    elif __has_include(<cuda/std/tuple>)
 #      include <cuda/std/tuple>

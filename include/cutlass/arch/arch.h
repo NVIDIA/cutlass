@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cute/arch/tmem_capacity_sm100.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -42,8 +43,13 @@ namespace cutlass {
 namespace arch {
 
 constexpr int sm100_smem_capacity_bytes = 232448;  
+constexpr int sm107_smem_capacity_bytes = 334848; 
 constexpr int sm120_smem_capacity_bytes = 101376;
 
+// Per-SM TMEM capacity in uint32_t-addressed columns
+// (each column is 128 datapaths x 32 bits).
+constexpr int sm100_tmem_capacity_columns = cute::TMEM::Sm100TmemCapacityColumns;
+constexpr int sm107_tmem_capacity_columns = cute::TMEM::Sm107TmemCapacityColumns;
 #if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
 
 /// Computes laneId within a warp
@@ -98,13 +104,15 @@ struct Sm90 {
 
 
 struct Sm100 {
-  static int const kMinComputeCapability = 100; 
+  static int const kMinComputeCapability = 100;
   static int const kSharedMemoryCapacityBytes = sm100_smem_capacity_bytes;
+  static int const kTmemCapacityColumns = sm100_tmem_capacity_columns;
 };
 
 struct Sm101 {
-  static int const kMinComputeCapability = 101; 
+  static int const kMinComputeCapability = 101;
   static int const kSharedMemoryCapacityBytes = sm100_smem_capacity_bytes;
+  static int const kTmemCapacityColumns = sm100_tmem_capacity_columns;
 };
 
 struct Sm120 {
@@ -113,8 +121,15 @@ struct Sm120 {
 };
 
 struct Sm103 {
-  static int const kMinComputeCapability = 103; 
+  static int const kMinComputeCapability = 103;
   static int const kSharedMemoryCapacityBytes = sm100_smem_capacity_bytes;
+  static int const kTmemCapacityColumns = sm100_tmem_capacity_columns;
+};
+
+struct Sm107 {
+  static int const kMinComputeCapability = 107;
+  static int const kSharedMemoryCapacityBytes = sm107_smem_capacity_bytes;
+  static int const kTmemCapacityColumns = sm107_tmem_capacity_columns;
 };
 
 /// Triggers a breakpoint on the device

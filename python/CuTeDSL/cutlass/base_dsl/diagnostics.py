@@ -30,7 +30,9 @@ exposes ``.code`` (the name), ``.category`` (the name's prefix), ``.message`` an
     for d in DiagId:                      # group by d.category, emit d.code/
         ...                               # d.message/d.fix
 
-so no separate metadata table is needed.
+so no separate metadata table is needed.  New entries are added here as their
+detection is wired up; the full taxonomy lives in
+``pyirdocs/DSL_DIAGNOSTICS_ARCHITECTURE.md``.
 """
 
 import enum
@@ -112,6 +114,10 @@ _PTXAS_PERF_REMARKS = {
     "RemarkPerfLocalMemoryUsage",
 }
 _PTXAS_KERNEL_RE = re.compile(r"kernel `([^`]+)`")
+# Match ptxas fatal diagnostics while tolerating formatting differences.
+_PTXAS_FATAL_RE = re.compile(r"^\s*ptxas\s+fatal\s*:\s*(?P<text>.+?)\s*$", re.MULTILINE)
+_PTXAS_GENERIC_FATAL = "Ptx assembly aborted due to errors"
+_PTXAS_REGISTER_ALLOCATION_RE = re.compile(r"Register allocation failed")
 
 
 def _nvvm_info(code: str, ptx_ref: str, ptx_anchor: str) -> _CompilerDiagnosticInfo:
@@ -181,11 +187,6 @@ _COMPILER_DIAGNOSTICS: dict[str, _CompilerDiagnosticInfo] = {
         "elect.sync",
         "#parallel-synchronization-and-communication-instructions-elect-sync",
     ),
-    "NvvmDiagNestedMultiLaneElectSync": _nvvm_info(
-        "C16",
-        "elect.sync",
-        "#parallel-synchronization-and-communication-instructions-elect-sync",
-    ),
     _DEVICE_BINARY_SERIALIZATION_DIAGNOSTIC: _CompilerDiagnosticInfo(""),
 }
 
@@ -248,7 +249,7 @@ class CompilerDiagnosticSession:
     ) -> None:
         self.context = context
         self.remark_filter = remark_filter
-        # Checker domains whose warnings the DSL shows (from --warnings{<cat>}).
+        # Checker domains whose warnings the DSL shows (from warnings{<cat>}).
         # Errors always show; warnings are gated to these domains; remarks are
         # gated at collection by the remark filter.
         self.warnings_filter = warnings_filter
@@ -281,13 +282,10 @@ class CompilerDiagnosticSession:
         if not self.collect_diagnostics:
             return ""
         diagnostics = self._collected_diagnostics()
-        # Only a typed error emitted through the structured remark path proves
-        # that this failure is a known user-code diagnostic. A generic MLIR
-        # error may instead be the symptom of a genuine compiler failure, and
-        # warnings/remarks collected before that failure do not change its
-        # classification. Returning an empty string skips the structured
-        # diagnostic path; Compiler.compile() may still render a generic pass
-        # failure, but it must not assign a typed diagnostic identity.
+        # A generic MLIR error may be a backend failure whose detailed
+        # diagnostic was consumed by the scoped collector. Only a typed error
+        # belongs to the structured-diagnostic path; otherwise let Compiler
+        # inspect the collected text and classify the backend failure.
         if not any(
             diag.severity == "error" and diag.name != _GENERIC_MLIR_DIAGNOSTIC
             for diag in diagnostics
@@ -295,11 +293,22 @@ class CompilerDiagnosticSession:
             return ""
         return format_compiler_failure_diagnostics(diagnostics, raw_error)
 
+    def _collected_error_texts(self) -> tuple[str, ...]:
+        """Return MLIR errors consumed by the scoped diagnostic collector."""
+        texts: list[str] = []
+        for diag in self._collector.diagnostics:
+            if diag.severity != "error":
+                continue
+            location = f"{diag.location}: " if diag.location else ""
+            texts.append(f"{location}{diag.message}")
+        return tuple(texts)
+
     def format_backend_failure(
         self,
         *,
         raw_error: str,
         nvvm_error: str = "",
+        ptxas_error: str = "",
         ir_context: str = "",
         arch: str = "",
         location: str = "",
@@ -307,6 +316,7 @@ class CompilerDiagnosticSession:
         return format_compiler_backend_failure(
             raw_error=raw_error,
             nvvm_error=nvvm_error,
+            ptxas_error=ptxas_error,
             ir_context=ir_context,
             arch=arch,
             location=location,
@@ -325,7 +335,7 @@ class CompilerDiagnosticSession:
 
 
 def _warning_domain(name: str) -> str:
-    """Map a warning's name to its checker domain, for --warnings{} gating."""
+    """Map a warning's name to its checker domain, for warnings{} gating."""
     if name.startswith("NvvmDiag"):
         return "nvvm"
     if name.startswith("Ptxas"):
@@ -336,7 +346,7 @@ def _warning_domain(name: str) -> str:
 def _filter_warning_visibility(
     diagnostics: Sequence[CompilerDiagnostic], warnings_filter: str
 ) -> list[CompilerDiagnostic]:
-    """Drop warnings whose checker domain is not enabled via --warnings{<cat>}.
+    """Drop warnings whose checker domain is not enabled via warnings{<cat>}.
 
     Errors and remarks always pass: errors are unconditional, and remarks are
     already gated at collection by the remark filter. A warning is shown only
@@ -350,7 +360,7 @@ def _filter_warning_visibility(
             continue
         domain = _warning_domain(diag.name)
         # Domain-tagged warnings show when their domain is requested; untagged
-        # (generic) warnings show whenever any --warnings{} was passed.
+        # (generic) warnings show whenever any warnings{} was passed.
         if domain in domains or (not domain and domains):
             out.append(diag)
     return out
@@ -359,12 +369,12 @@ def _filter_warning_visibility(
 def _filter_remark_visibility(
     diagnostics: Sequence[CompilerDiagnostic], remark_filter: str
 ) -> list[CompilerDiagnostic]:
-    """Drop opt-in remarks unless --remarks{} requested them.
+    """Drop opt-in remarks unless remarks{} requested them.
 
     Errors and warnings always pass (warnings are already gated by
-    _filter_warning_visibility). Opt-in remarks are shown only when --remarks{}
+    _filter_warning_visibility). Opt-in remarks are shown only when remarks{}
     set a concrete category: the engine then narrowed them to those categories
-    at collection. When no --remarks{} was passed the filter defaults to the
+    at collection. When no remarks{} was passed the filter defaults to the
     match-all sentinel (``.*``) — which the engine cannot use to suppress at
     collection time — so we treat that default as "not requested" and drop the
     remarks here. Errors/warnings (always-on) are unaffected."""
@@ -421,11 +431,11 @@ def enable_compiler_diagnostics(
     if collect_diagnostics:
         # Collecting path (a checker is enabled via warnings{}/remarks{}):
         # errors/warnings are always-on and collected regardless of any filter
-        # (warnings are gated later at display by --warnings{}). A non-empty
+        # (warnings are gated later at display by warnings{}). A non-empty
         # remark filter narrows opt-in remarks to the requested categories, but
         # an empty filter is read as match-all by the engine. So opt-in remarks
         # are gated at display instead (see _filter_remark_visibility): they are
-        # shown only when --remarks{} was passed.
+        # shown only when remarks{} was passed.
         opt_filter = remark_filter or ""
         if opt_filter == "ptxas":
             opt_filter = "ptxas.*"
@@ -1131,9 +1141,9 @@ def _format_compiler_diagnostic_body(diag: CompilerDiagnostic) -> list[str]:
             if diag.severity in ("error", "warning", "remark")
             else "error"
         )
-        lines.extend(_format_labeled_text(reason_label, diag.reason))
+        lines.extend(_format_labeled_multiline_text(reason_label, diag.reason))
     if diag.suggestion:
-        lines.extend(_format_labeled_text("suggestion", diag.suggestion))
+        lines.extend(_format_labeled_multiline_text("suggestion", diag.suggestion))
     for note in diag.notes:
         lines.extend(_format_labeled_text("note", note))
     lines.extend(_format_compiler_ptx_reference(diag.ptx_ref, diag.ptx_url))
@@ -1152,15 +1162,80 @@ def extract_compiler_location(text: str) -> str:
     return loc_match.group(0) if loc_match else ""
 
 
+def _ptxas_headline(ptxas_error: str) -> str:
+    """Promote the first actionable `ptxas fatal` line into the headline.
+
+    ptxas always follows a real diagnostic with the generic "Ptx assembly
+    aborted due to errors" trailer, which carries no information; skip it so the
+    headline names the actual problem.
+    """
+
+    for match in _PTXAS_FATAL_RE.finditer(ptxas_error):
+        text = match.group("text").strip()
+        if text and _PTXAS_GENERIC_FATAL not in text:
+            return f"PTX assembly failed: {text}"
+    return "PTX assembly failed"
+
+
+def _ptxas_suggestion(ptxas_error: str, arch: str) -> str:
+    if _PTXAS_REGISTER_ALLOCATION_RE.search(ptxas_error):
+        return (
+            "the kernel needs more registers than its launch configuration allows; "
+            "reduce register pressure or shorten live ranges, reduce the CTA thread "
+            "count, or, if the kernel uses dynamic warpgroup register redistribution, "
+            "relax or remove `warpgroup_reg_dealloc` or use an appropriate "
+            "`warpgroup_reg_alloc` scheme"
+        )
+    arch_flag = f" -arch={arch}" if arch else ""
+    return (
+        "read the ptxas log above; re-run with CUTE_DSL_KEEP=ptx and assemble the "
+        f"dumped PTX with `ptxas{arch_flag} <dumped>.ptx` to iterate on the failure"
+    )
+
+
+def _format_ptxas_backend_failure(*, ptxas_error: str, arch: str, location: str) -> str:
+    """Render a PTX -> SASS failure using the assembler's own log.
+
+    ptxas is the last device compilation stage, so its log is the only account of
+    what went wrong; reproduce it verbatim rather than summarizing it.
+    """
+
+    ptxas_error = ptxas_error.strip()
+    lines = [
+        _format_compiler_diagnostic_headline("error", _ptxas_headline(ptxas_error))
+    ]
+    lines.extend(_format_compiler_location(location))
+    lines.extend(
+        _format_labeled_text(
+            "error",
+            "ptxas rejected the PTX generated for this kernel while compiling it "
+            "to SASS.",
+        )
+    )
+    if arch:
+        lines.extend(_format_labeled_text("note", f"target architecture: {arch}"))
+    lines.extend(_format_labeled_block("note", "ptxas log:", ptxas_error))
+    lines.extend(
+        _format_labeled_text("suggestion", _ptxas_suggestion(ptxas_error, arch))
+    )
+    return "\n".join(lines)
+
+
 def format_compiler_backend_failure(
     *,
     raw_error: str,
     nvvm_error: str = "",
+    ptxas_error: str = "",
     ir_context: str = "",
     arch: str = "",
     location: str = "",
 ) -> str:
     """Render an unstructured backend failure with compiler diagnostic styling."""
+
+    if ptxas_error:
+        return _format_ptxas_backend_failure(
+            ptxas_error=ptxas_error, arch=arch, location=location
+        )
 
     is_nvvm_failure = bool(nvvm_error)
     concise_nvvm_error = is_nvvm_failure and _is_concise_nvvm_backend_error(nvvm_error)
@@ -1435,6 +1510,21 @@ class DiagId(_DiagMixin, enum.Enum):
             "If it is a fixed setting, set it once before the for/while/if.",
         ),
     )
+    PHASE_PREDICATE_FOLDED_STALE = (
+        "`{var}` (a {meta}, value {value}) already decided {fold_kind} at "
+        "{fold_location} while your code was being traced, but it is modified at "
+        "{mut_location}, inside a run-time for/while/if. That earlier decision was "
+        "made ONCE, from the original value {value}, and cannot re-run when `{var}` "
+        "changes -- the compiled kernel would silently keep the stale decision.",
+        (
+            "Make `{var}` a {staged} BEFORE the run-time for/while/if, e.g. "
+            "`{var} = {type}({var})`, so the decision at {fold_location} becomes a "
+            "run-time branch that sees the updated value.",
+            "If `{var}` is a fixed setting, do not modify it inside the run-time "
+            "for/while/if (keep the update outside, or guard it with "
+            "`const_expr(...)`).",
+        ),
+    )
     PHASE_PYTHON_THEN_TRACKED = (
         "`{var}` was defined as a {meta} (type {old_type}, value {old_value}) but "
         "is being assigned a {staged} inside a for/while/if. Give it a runtime type "
@@ -1459,6 +1549,25 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Set the variable before the for/while/if, or set it on every branch "
             "that can reach this read.",
+        ),
+    )
+    SCOPE_DEL_LOOP_CARRIED = (
+        "`{var}` is removed with `del` inside a for/while/if, but it carries a "
+        "value in from before the block. Deleting it drops that carry, so the "
+        "next read of `{var}` (this pass or the next) has no value to use.",
+        (
+            "Don't `del` a variable carried through the block; assign it a new "
+            "value instead, or move the `del` outside the for/while/if.",
+        ),
+    )
+    UNSUP_WALRUS_TUPLE_REBIND = (
+        "A `:=` inside this tuple assignment rewrites `{var}` while another "
+        "element of the same right-hand side reads it out of order. Under staged "
+        "tracing the walrus's rebind retroactively changes that read, so the "
+        "elements would disagree with plain Python.",
+        (
+            "Assign the walrus result on its own line before the tuple, e.g. "
+            "`{var} = <expr>` and then reference `{var}` in the tuple.",
         ),
     )
     CONTAINER_TUPLE_LENGTH_CHANGED = (
@@ -1493,6 +1602,41 @@ class DiagId(_DiagMixin, enum.Enum):
             "`{var}.field = new_value`.",
         ),
     )
+    CONTAINER_LIST_SHAPE_MUTATED = (
+        "`{var}` is a list whose length changes (e.g. `.append(...)`/`.pop()`) "
+        "inside a for/while/if whose path is decided at run time. The body is "
+        "traced once, so the per-iteration shape change would be silently lost. "
+        "Only a fixed-shape container can be carried through run-time control flow.",
+        (
+            "Build the list before the run-time for/while/if, or accumulate into a "
+            "{staged} container the compiler can track.",
+        ),
+    )
+    CONTAINER_DICT_KEY_SET_MUTATED = (
+        "`{var}` changes its set of keys inside a for/while/if whose path is "
+        "decided at run time (a key created/removed, or a mapping subclass like "
+        "`Counter`/`defaultdict` that materialises keys on access). The body is "
+        "traced once, so the per-iteration key-set change cannot be followed.",
+        (
+            "Seed every key before the run-time for/while/if and only UPDATE "
+            "existing keys inside it; do not add/remove keys or use a "
+            "`__missing__`-backed mapping there.",
+        ),
+    )
+    CONTAINER_SUBSCRIPT_WRITE_UNTRACKED = (
+        "An element of a `{py_type}` is written with `[...] = ...` inside a "
+        "for/while/if whose path is decided at run time, but a `{py_type}` is a "
+        "plain {meta}: the body is traced once, so the per-iteration write would "
+        "be silently lost. Only a dict, a list, or a {staged} container can be "
+        "updated by element there.",
+        (
+            "Use a dict or list for run-time element updates, or a {staged} "
+            "container the compiler can track.",
+            "Or keep the for/while/if fully compile-time with "
+            "`range_constexpr(...)` / `const_expr(...)` so the container can stay "
+            "a {meta}.",
+        ),
+    )
     PHASE_CONVERSION_FAILED = (
         "`{var}` could not be turned into a runtime {new_type} value (its current "
         "value {old_value} is not compatible). Give it a compatible runtime type "
@@ -1506,6 +1650,18 @@ class DiagId(_DiagMixin, enum.Enum):
         "A `for`/`while` loop with an `else:` clause is not supported in compiled "
         "code.",
         ("Remove the `else:` and put its code after the loop.",),
+    )
+    UNSUP_CUTE_EXT_OP_IN_DEVICE_FUNC = (
+        "The device function `{function_name}` uses a cute_ext "
+        "(`cute.experimental`) operation. cute_ext operations are only supported "
+        "in kernels, not in device functions compiled via "
+        "`cute.compile[DeviceTarget]`, which use the standard compilation pipeline "
+        "and cannot lower cute_ext operations.",
+        (
+            "Remove the `cute.experimental` (cute_ext) API call from the device "
+            "function body, or compile the code as a kernel instead of a device "
+            "function.",
+        ),
     )
     # --- AST-preprocessing (compile-time) user errors ---
     UNSUP_EARLY_EXIT = (
@@ -1631,7 +1787,9 @@ class DiagId(_DiagMixin, enum.Enum):
     )
     ARG_POINTER_NEGATIVE = (
         "Pointer address must be non-negative (got {address})",
-        ("Pass a non-negative address, or use nullptr() for null pointers",),
+        (
+            "Pass a non-negative address, or use cute.runtime.nullptr() for null pointers",
+        ),
     )
     ARG_TENSOR_NOT_ON_DEVICE = (
         "The tensor `{arg_name}` must be in GPU memory, but it is currently on the host. Move it to the GPU before passing it to the kernel.",
@@ -1887,9 +2045,9 @@ class DiagId(_DiagMixin, enum.Enum):
         ),
     )
     CONFIG_VERSION_RANGE_INVALID = (
-        "The minimum version cannot be greater than or equal to the maximum version. Swap them or fix the range.",
+        "The minimum version cannot be greater than the maximum version. Swap them or fix the range.",
         (
-            'Ensure min_version < max_version, e.g., min_version="12.0", max_version="13.0"',
+            'Ensure min_version <= max_version, e.g., min_version="12.0", max_version="13.0"',
         ),
     )
     CONFIG_VERSION_REQUIRED = (
@@ -1934,6 +2092,13 @@ class DiagId(_DiagMixin, enum.Enum):
             "Wrap the launch in a host function decorated with @cute.jit and call that host function.",
         ),
     )
+    LAUNCH_NEVER_ISSUED = (
+        "Kernel `{kernel_name}` was called but never launched. Calling a @cute.kernel function only builds a launcher; the kernel does not run until you launch that launcher.",
+        (
+            "Launch the kernel, e.g. `{kernel_name}(...).launch(grid=[...], block=[...])`.",
+            "If you meant to discard the call, remove it.",
+        ),
+    )
     # --- PHASE ---
     PHASE_CONDITIONAL_NOT_DYNAMIC = (
         "The condition must be a {staged} value, not a {meta}.",
@@ -1966,6 +2131,30 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Pass `{var_name}` as an explicit function argument instead of relying on closure capture.",
             "Define the function inside the loop/if, or refactor to avoid the closure.",
+        ),
+    )
+    SCOPE_LAMBDA_CAPTURE = (
+        "A `lambda` invoked inside a staged for/while/if reads captured variable "
+        "`{var_name}` from the enclosing function. The lambda body runs as plain "
+        "Python while your code is read (at trace time), so `{var_name}` is frozen "
+        "at its first-pass value instead of following updates made inside the "
+        "staged region.",
+        (
+            "Wrap the lambda with `@cute.jit`, e.g. `f = cute.jit(lambda ...: ...)`, "
+            "so its body is traced on every pass.",
+            "Or pass `{var_name}` in as a lambda argument instead of capturing it.",
+        ),
+    )
+    SCOPE_CTXMGR_TRACE_ONLY = (
+        "The `with` uses context manager `{ctx_type}`, whose `__enter__`/`__exit__` "
+        "are plain Python and run only once, while your code is read (at trace "
+        "time). Inside a staged for/while/if the block runs on every pass at run "
+        "time, so those effects would be frozen at the first pass and the compiled "
+        "code would not match Python.",
+        (
+            "Decorate both `{ctx_type}.__enter__` and `{ctx_type}.__exit__` with "
+            "`@cute.jit` so they are traced on every pass.",
+            "Or move the `with` out of the staged for/while/if.",
         ),
     )
     # --- TENSOR ---

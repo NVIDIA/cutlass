@@ -1385,6 +1385,14 @@ def _raw(name: str) -> object | None:
     return getattr(_nvvm_raw, name, None)
 
 
+def _raw_nvvm_accepts_keyword(name: str, keyword: str) -> bool:
+    """Return whether a generated raw NVVM op accepts a keyword argument."""
+    raw_op = _raw(name)
+    if raw_op is None or not callable(raw_op):
+        return False
+    return keyword in inspect.signature(raw_op).parameters
+
+
 def _tcgen05_mma_block_scale_dialect() -> Any:
     block_scale = getattr(_nvvm_raw, "Tcgen05MMABlockScale", None)
     if block_scale is None:
@@ -1425,28 +1433,21 @@ def _to_tcgen05_block_scale(
 def _to_tcgen05_scale_vec_size(
     scale_vec_size: _Tcgen05BlockScaleLike | None,
 ) -> Any | None:
-    """Map tcgen05 block-scale selector aliases to the released NVVM enum."""
+    """Map tcgen05 block-scale selector aliases to released ``ScaleVecSize``."""
     if scale_vec_size is None:
         return None
-    tcgen05_scale_vec_size = getattr(_nvvm_raw, "Tcgen05MMAScaleVecSize", None)
-    if tcgen05_scale_vec_size is None:
-        tcgen05_scale_vec_size = ScaleVecSize
     if scale_vec_size is Tcgen05MMAScaleVecSize.X1:
-        return tcgen05_scale_vec_size.X1
+        return ScaleVecSize.X1
     if scale_vec_size is Tcgen05MMAScaleVecSize.X2:
-        return tcgen05_scale_vec_size.X2
+        return ScaleVecSize.X2
     if scale_vec_size is Tcgen05MMAScaleVecSize.X4:
-        return tcgen05_scale_vec_size.X4
+        return ScaleVecSize.X4
     if scale_vec_size is Tcgen05MMABlockScale.DEFAULT:
-        return getattr(
-            tcgen05_scale_vec_size,
-            "DEFAULT",
-            getattr(tcgen05_scale_vec_size, "Default", tcgen05_scale_vec_size.X1),
-        )
+        return ScaleVecSize.X1
     if scale_vec_size is Tcgen05MMABlockScale.BLOCK16:
-        return getattr(tcgen05_scale_vec_size, "BLOCK16", tcgen05_scale_vec_size.X2)
+        return ScaleVecSize.X2
     if scale_vec_size is Tcgen05MMABlockScale.BLOCK32:
-        return getattr(tcgen05_scale_vec_size, "BLOCK32", tcgen05_scale_vec_size.X4)
+        return ScaleVecSize.X4
     raise ValueError(f"unsupported tcgen05 block-scale value: {scale_vec_size!r}")
 
 
@@ -1963,6 +1964,18 @@ def inline_ptx(
 
 
 inline_ptx_hl = inline_ptx
+
+
+def ptx_add_comment(
+    comment: str,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> None:
+    """Emit a PTX comment (``// <comment>``) via inline PTX.
+
+    Handy for annotating generated SASS/PTX when reading disassembly.
+    """
+    inline_ptx("// " + comment, loc=loc, ip=ip)
 
 
 def mma_block_scale(
@@ -2923,28 +2936,6 @@ _TCGEN05_MAX_TOTAL_REGS = 128
 
 _to_ir = DialectAutoConvertProxy._convert_arg
 
-
-def _raw_nvvm_op_requires_explicit_result(op: Callable[..., object]) -> bool:
-    """Return True when a generated raw NVVM op still takes leading ``res``."""
-    try:
-        parameters = tuple(inspect.signature(op).parameters.values())
-    except (TypeError, ValueError):
-        return False
-    return bool(parameters) and parameters[0].name == "res"
-
-
-def _call_nvvm_result_compat(
-    op: Callable[..., object],
-    inferred_result_type: object,
-    *operands: object,
-    **kwargs: object,
-) -> object:
-    """Call raw generated ops from either explicit-result or inferred-result builds."""
-    if _raw_nvvm_op_requires_explicit_result(op):
-        return op(inferred_result_type, *operands, **kwargs)
-    return op(*operands, **kwargs)
-
-
 # Manual wrappers for mbarrier arrive family.
 # Result is Optional<I64>: PTX ISA requires sink symbol '_'
 # for shared::cluster pointers (address space 7), meaning no return value.
@@ -3217,23 +3208,26 @@ def _assert_store_ext_qualifiers(
             )
 
 
-# Valid nCols for tcgen05.alloc / tcgen05.dealloc:
-# must be a power of 2 in [32, 512].
+# Valid nCols for tcgen05.alloc / tcgen05.dealloc. Regular allocations must be
+# a power of 2 in [32, 512]. Rubin exclusive allocations also allow 576 columns.
 _TCGEN05_REGULAR_NCOLS = frozenset({32, 64, 128, 256, 512})
 _TCGEN05_SPECIAL_NCOLS = set()
+_TCGEN05_SPECIAL_NCOLS.update({576})
 _TCGEN05_VALID_NCOLS = frozenset().union(_TCGEN05_REGULAR_NCOLS, _TCGEN05_SPECIAL_NCOLS)
 
 
 def _assert_tcgen05_ncols(n_cols: int | Int32 | Uint32, instruction: str) -> None:
     """Validate ``nCols`` for tcgen05.alloc / dealloc at trace time.
 
-    Statically known ``int`` values are checked against the whitelist
-    ``{32, 64, 128, 256, 512}``. Dynamic IR values pass through — the
-    kernel will fault at runtime if invalid.
+    Statically known ``int`` values are checked against the regular whitelist
+    ``{32, 64, 128, 256, 512}`` plus the Rubin-specific exclusive allocation
+    value ``576``.  Dynamic IR values pass through — the kernel will fault at
+    runtime if invalid.
     """
     if isinstance(n_cols, int) and n_cols not in _TCGEN05_VALID_NCOLS:
         raise ValueError(
-            f"{instruction}: nCols must be a power of 2 in [32, 512], got {n_cols}"
+            f"{instruction}: nCols must be a power of 2 in [32, 512] "
+            f"or Rubin exclusive value 576, got {n_cols}"
         )
 
 
@@ -3482,12 +3476,9 @@ def add_packed_f32x2(
     returns_tuple = isinstance(src_a, tuple)
     vec_a = _packed_f32x2_to_vec(src_a, loc=loc, ip=ip)
     vec_b = _packed_f32x2_to_vec(src_b, loc=loc, ip=ip)
-    vec_a_ir = _to_ir(vec_a, loc, ip)
-    vec_res = _call_nvvm_result_compat(
-        _nvvm_raw.add_packed_f32x2,
-        vec_a_ir.type,
-        vec_a_ir,
-        _to_ir(vec_b, loc, ip),
+    vec_res = _nvvm.add_packed_f32x2(
+        vec_a,
+        vec_b,
         rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
         ftz=ftz,
         loc=loc,
@@ -4189,7 +4180,17 @@ def cp_async_bulk_shared_cluster_shared_cta(
 
     """
     _assert_bulk_size(size, "cp.async.bulk.shared::cluster.shared::cta")
-    mbar = _addrspacecast_to_shared(mbar, loc=loc, ip=ip)
+    # The NVVM dialect verifier requires the mbar operand in shared (AS 3),
+    # but a cluster-scope mbar from mapa() is in shared::cluster (AS 7).
+    # Cast it down to AS 3 to satisfy the verifier.
+    mbar_ir = _to_ir(mbar, loc, ip)
+    if _llvm.PointerType(mbar_ir.type).address_space == _cutlass.AddressSpace.dsmem:
+        mbar = _llvm.addrspacecast(
+            _llvm.PointerType.get(_cutlass.AddressSpace.smem),
+            mbar_ir,
+            loc=loc,
+            ip=ip,
+        )
     _nvvm.cp_async_bulk_shared_cluster_shared_cta(
         dst_mem,
         src_mem,
@@ -5207,13 +5208,10 @@ def fma_packed_f32x2(
     vec_a = _packed_f32x2_to_vec(src_a, loc=loc, ip=ip)
     vec_b = _packed_f32x2_to_vec(src_b, loc=loc, ip=ip)
     vec_c = _packed_f32x2_to_vec(src_c, loc=loc, ip=ip)
-    vec_a_ir = _to_ir(vec_a, loc, ip)
-    vec_res = _call_nvvm_result_compat(
-        _nvvm_raw.fma_packed_f32x2,
-        vec_a_ir.type,
-        vec_a_ir,
-        _to_ir(vec_b, loc, ip),
-        _to_ir(vec_c, loc, ip),
+    vec_res = _nvvm.fma_packed_f32x2(
+        vec_a,
+        vec_b,
+        vec_c,
         rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
         ftz=ftz,
         loc=loc,
@@ -5230,6 +5228,8 @@ _VALID_LDST_MATRIX_NUM = frozenset({1, 2, 4})
 _LDMATRIX_SHAPES_REQUIRING_SRC_FORMAT = frozenset({"m8n16", "m16n16"})
 # .m16n16 must be transposed (`.trans`, i.e. layout=col) per the PTX ISA.
 _LDMATRIX_TRANS_ONLY_SHAPES = frozenset({"m16n16"})
+_LDMATRIX_VALID_NUM_BY_SHAPE = {"m16n16": frozenset({2, 4})}
+_STMATRIX_TRANS_ONLY_SHAPES = frozenset({"m16n8"})
 
 
 @dsl_user_op
@@ -5243,15 +5243,22 @@ def ldmatrix(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Int32 | Vector:
-    """Warp-cooperative load of one to four 8x8 matrix tiles from shared memory.
+    """Load matrix fragments from shared memory cooperatively across a warp.
 
     Emits ``ldmatrix.sync.aligned.{shape}.{num}{.trans}{.ss}.{type} d, [a]``.
-    All 32 lanes of the issuing warp collectively load ``num`` 8x8 tiles whose
-    row starts each lane holds in ``ptr``; the result is the per-thread
-    fragment carried in 32-bit register words as required by subsequent
-    ``mma.sync`` / ``stmatrix`` instructions.
+    All 32 lanes of the issuing warp collectively load matrix fragments whose
+    row starts each lane holds in ``ptr``.  The result is the per-thread
+    fragment carried in 32-bit register words for later ``mma.sync`` or
+    ``stmatrix`` use.
 
-    Lane addressing convention (per ``num``):
+    The ``num`` attribute follows the ``nvvm.ldmatrix`` convention: it counts
+    8x8 16-bit carrier matrices, i.e. the i32 register words per lane in the
+    result. This differs from the PTX ``.xN`` qualifier, which counts matrices
+    of the instruction ``shape``.  For ``m8n8`` and ``m8n16`` the two coincide;
+    for ``m16n16`` each matrix spans two carrier words, so PTX ``.x1`` / ``.x2``
+    correspond to ``num=2`` / ``num=4``.
+
+    Default ``m8n8`` lane addressing convention (per ``num``):
 
     +-------+---------------------+---------------------+----------------------+
     | num   | lanes 0..7          | lanes 8..15         | lanes 16..31         |
@@ -5261,35 +5268,51 @@ def ldmatrix(
     |   4   | rows of tile 0      | rows of tile 1      | rows of tiles 2..3   |
     +-------+---------------------+---------------------+----------------------+
 
+    Narrow shapes are shape-specific.  In particular, ``shape=m16n16`` uses
+    transposed b8 or packed narrow-source carriers and only permits ``num`` in
+    ``{2, 4}``; do not infer public xN tile coverage from that carrier width.
+    For mode-specific lane/address/register-element maps, see
+    ``CuTeDSL/experimental/primitives/ldmatrix_stmatrix.py``.
+
     :param ptr: Pointer/Array into shared memory; per the PTX ISA the address
         space must be ``.shared{::cta}``.
     :type ptr: cutlass.Array or cutlass.Pointer
-    :param num: Number of 8x8 tiles per warp.  Must be one of ``1``, ``2``,
-        ``4`` (the PTX ``.x1`` / ``.x2`` / ``.x4`` qualifiers).
+    :param num: The number of 8x8 16-bit matrices loaded, equal to the i32
+        register words per lane in the result.  Must be one of ``1``, ``2``,
+        ``4``.  For ``shape=m16n16`` only ``2`` (PTX ``.x1``) and ``4``
+        (PTX ``.x2``) are legal, because each 16x16 matrix spans two words.
     :type num: int
     :param layout: ``MMALayout.ROW`` for the default load.  ``MMALayout.COL``
         selects ``.trans``, which transposes the loaded tile inside the lane
         registers without reading from a transposed memory layout.
     :type layout: MMALayout
     :param shape: Tile shape selector.  Defaults to ``m8n8`` (the historical
-        SM75 form).  ``m8n16`` and ``m16n16`` unpack the narrow-float
-        ``.dst_fmt.src_fmt`` forms and require ``src_format`` to be set.
-        ``m16n16`` additionally requires ``layout=MMALayout.COL`` (``.trans``).
+        SM75 form).  ``m8n16`` is the narrow-source unpacking form and accepts
+        packed b6/b4 source formats only.  ``m16n16`` accepts plain b8 source
+        or packed b6/b4 source, requires ``layout=MMALayout.COL`` (``.trans``),
+        and requires ``num`` equal to ``2`` or ``4``.
     :type shape: LoadShape or None
     :param src_format: Source packing for ``m8n16`` / ``m16n16``.
         ``b6x16_p32`` / ``b4x16_p64`` unpack ``e3m2`` / ``e2m1`` matrices into
-        the ``.b8x16`` destination format; ``b8`` is the byte form.
-        Must be paired with one of ``m8n16`` / ``m16n16``.
+        the ``.b8x16`` destination-register container.  ``b8`` is the plain
+        byte source form and is legal only with ``shape=m16n16``; PTX has no
+        plain-b8 source format for ``shape=m8n16``.
     :type src_format: LoadSrcFormat or None
 
     :return: ``Int32`` when ``num=1``; ``Vector[num x Int32]`` when ``num=2``
-        or ``num=4``.  Each element is one 32-bit register word.
+        or ``num=4``.  Each element is one 32-bit register carrier word; for
+        narrow b8 paths that word carries packed byte payload.
     :raises ValueError: ``num`` is not one of ``1`` / ``2`` / ``4``.
     :raises ValueError: ``src_format`` is given without a matching
         ``shape in {m8n16, m16n16}``, or ``shape in {m8n16, m16n16}`` is given
         without a matching ``src_format``.
+    :raises ValueError: ``shape=m8n16`` with ``src_format=b8`` (PTX only
+        defines packed b6/b4 source formats for the ``m8n16`` form).
     :raises ValueError: ``shape=m16n16`` without ``layout=MMALayout.COL``
         (the PTX ISA requires ``.trans`` for the ``m16n16`` form).
+    :raises ValueError: ``shape=m16n16`` with ``num`` not in ``{2, 4}``
+        (PTX ``.x1`` / ``.x2`` map to ``num=2`` / ``num=4``; ``num=1``
+        cannot represent a 16x16 matrix, which spans two carrier words).
 
     .. code-block:: python
 
@@ -5322,6 +5345,19 @@ def ldmatrix(
             f"{instruction}: shape={shape!r} requires a src_format "
             f"({sorted(_LOAD_SRC_FORMAT_TO_DIALECT)}); got src_format=None"
         )
+    if shape_str == "m8n16" and src_format_str == "b8":
+        raise ValueError(
+            f"{instruction}: shape=m8n16 only supports packed b6/b4 "
+            f"src_format values; got src_format={src_format!r}"
+        )
+    valid_num = (
+        _LDMATRIX_VALID_NUM_BY_SHAPE.get(shape_str) if shape_str is not None else None
+    )
+    if valid_num is not None and isinstance(num, int) and num not in valid_num:
+        raise ValueError(
+            f"{instruction}: shape={shape!r} supports num in "
+            f"{sorted(valid_num)}, got {num}"
+        )
     if shape_str in _LDMATRIX_TRANS_ONLY_SHAPES and str(layout) != "col":
         raise ValueError(
             f"{instruction}: shape={shape!r} is only valid as a transposed "
@@ -5330,16 +5366,15 @@ def ldmatrix(
 
     shape_d = _to_dialect(shape, _LOAD_SHAPE_TO_DIALECT)
     src_format_d = _to_dialect(src_format, _LOAD_SRC_FORMAT_TO_DIALECT)
-    layout_d = _to_dialect(layout, _MMA_LAYOUT_TO_DIALECT)
     if num == 1:
         return _cutlass.Int32(
             _nvvm_raw.ldmatrix(
-                _cutlass.Int32.mlir_type,
                 ptr,
                 num,
-                layout_d,
+                _to_dialect(layout, _MMA_LAYOUT_TO_DIALECT),
                 shape=shape_d,
                 src_format=src_format_d,
+                results=[_cutlass.Int32.mlir_type],
                 loc=loc,
                 ip=ip,
             )
@@ -5348,12 +5383,12 @@ def ldmatrix(
     _i32 = ir.IntegerType.get_signless(32)
     struct_ty = _llvm.StructType.get_literal([_i32] * num)
     result = _nvvm_raw.ldmatrix(
-        struct_ty,
         ptr,
         num,
-        layout_d,
+        _to_dialect(layout, _MMA_LAYOUT_TO_DIALECT),
         shape=shape_d,
         src_format=src_format_d,
+        results=[struct_ty],
         loc=loc,
         ip=ip,
     )
@@ -5721,11 +5756,11 @@ def mbarrier_arrive(
         return None
 
     result = _nvvm_raw.mbarrier_arrive(
-        _cutlass.Int64.mlir_type,
         _addr,
         count=_count,
         scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
         relaxed=relaxed,
+        results=[_cutlass.Int64.mlir_type],
         loc=loc,
         ip=ip,
     )
@@ -5756,7 +5791,6 @@ def mbarrier_arrive_drop(
 
     if _is_cluster_ptr(addr):
         op = _nvvm_raw.mbarrier_arrive_drop(
-            None,
             _addr,
             count=_count,
             scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
@@ -5767,11 +5801,11 @@ def mbarrier_arrive_drop(
         op.operation.verify()
         return None
     result = _nvvm_raw.mbarrier_arrive_drop(
-        _cutlass.Int64.mlir_type,
         _addr,
         count=_count,
         scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
         relaxed=relaxed,
+        results=[_cutlass.Int64.mlir_type],
         loc=loc,
         ip=ip,
     )
@@ -5800,7 +5834,6 @@ def mbarrier_arrive_drop_expect_tx(
 
     if _is_cluster_ptr(addr):
         op = _nvvm_raw.mbarrier_arrive_drop_expect_tx(
-            None,
             _addr,
             _txcount,
             scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
@@ -5811,11 +5844,11 @@ def mbarrier_arrive_drop_expect_tx(
         op.operation.verify()
         return None
     result = _nvvm_raw.mbarrier_arrive_drop_expect_tx(
-        _cutlass.Int64.mlir_type,
         _addr,
         _txcount,
         scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
         relaxed=relaxed,
+        results=[_cutlass.Int64.mlir_type],
         loc=loc,
         ip=ip,
     )
@@ -5926,7 +5959,6 @@ def mbarrier_arrive_expect_tx(
 
     if is_cluster:
         op = _nvvm_raw.mbarrier_arrive_expect_tx(
-            None,
             _addr,
             _txcount,
             scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
@@ -5938,11 +5970,11 @@ def mbarrier_arrive_expect_tx(
         return None
 
     result = _nvvm_raw.mbarrier_arrive_expect_tx(
-        _cutlass.Int64.mlir_type,
         _addr,
         _txcount,
         scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
         relaxed=relaxed,
+        results=[_cutlass.Int64.mlir_type],
         loc=loc,
         ip=ip,
     )
@@ -6641,12 +6673,9 @@ def mul_packed_f32x2(
     returns_tuple = isinstance(src_a, tuple)
     vec_a = _packed_f32x2_to_vec(src_a, loc=loc, ip=ip)
     vec_b = _packed_f32x2_to_vec(src_b, loc=loc, ip=ip)
-    vec_a_ir = _to_ir(vec_a, loc, ip)
-    vec_res = _call_nvvm_result_compat(
-        _nvvm_raw.mul_packed_f32x2,
-        vec_a_ir.type,
-        vec_a_ir,
-        _to_ir(vec_b, loc, ip),
+    vec_res = _nvvm.mul_packed_f32x2(
+        vec_a,
+        vec_b,
         rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
         ftz=ftz,
         loc=loc,
@@ -7006,20 +7035,15 @@ def shfl_sync(
     _assert_shfl_kind(kind, "shfl.sync")
     dialect_kind = _SHFL_TO_DIALECT[kind]
     val_type = type(val)
-    shfl_args = (
-        _to_ir(_cutlass.Int32(thread_mask), loc, ip),
-        _to_ir(val, loc, ip),
-        _to_ir(_cutlass.Int32(offset), loc, ip),
-        _to_ir(_cutlass.Int32(mask_and_clamp), loc, ip),
-        dialect_kind,
-    )
     if return_value_and_is_valid:
         _i1 = _cutlass.Boolean.mlir_type
-        result_type = _llvm.StructType.get_literal([val_type.mlir_type, _i1])
-        raw = _nvvm_raw.shfl_sync(
-            result_type,
-            *shfl_args,
-            return_value_and_is_valid=True,
+        raw = _nvvm.shfl_sync(
+            _cutlass.Int32(thread_mask),
+            val,
+            _cutlass.Int32(offset),
+            _cutlass.Int32(mask_and_clamp),
+            dialect_kind,
+            return_value_and_is_valid=return_value_and_is_valid,
             loc=loc,
             ip=ip,
         )
@@ -7027,9 +7051,13 @@ def shfl_sync(
         predicate = _cutlass.Boolean(_llvm.extractvalue(_i1, raw, [1]))
         return result_value, predicate
     return val_type(
-        _nvvm_raw.shfl_sync(
-            val_type.mlir_type,
-            *shfl_args,
+        _nvvm.shfl_sync(
+            _cutlass.Int32(thread_mask),
+            val,
+            _cutlass.Int32(offset),
+            _cutlass.Int32(mask_and_clamp),
+            dialect_kind,
+            return_value_and_is_valid=return_value_and_is_valid,
             loc=loc,
             ip=ip,
         )
@@ -7085,12 +7113,12 @@ def stmatrix(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> None:
-    """Warp-cooperative store of one to four 8x8 (or 16x8) matrix tiles to SMEM.
+    """Store matrix fragments from per-lane register carriers to shared memory.
 
     Emits ``stmatrix.sync.aligned.{shape}.{num}{.trans}{.ss}.{type} [a], d``.
-    All 32 lanes of the issuing warp collectively store ``num`` tiles whose
-    fragment registers they hold; the per-lane row-start address goes through
-    ``ptr`` exactly as for :func:`ldmatrix`.
+    All 32 lanes of the issuing warp collectively store the fragments in
+    ``sources``.  The source count selects the instruction fragment count; it
+    is not necessarily the public logical tile count.
 
     ``sources`` accepts three shapes:
 
@@ -7100,35 +7128,56 @@ def stmatrix(
     * a Python ``list`` / ``tuple`` of scalars -- stores
       ``num=len(sources)``; each element is coerced to ``Int32``.
 
+    ``MMALayout.ROW`` stores the fragment orientation expected by a matching
+    non-transposed :func:`ldmatrix` consumer.  ``MMALayout.COL`` selects the
+    transposed store form.  Source operands are 32-bit register carriers:
+    default ``m8n8`` stores b16 payload, while SM100+ ``m16n8`` stores b8
+    payload and writes 16-byte output rows.  Use ordinary vector stores for
+    true 32-bit output.  For detailed lane/address maps, see
+    ``CuTeDSL/experimental/primitives/ldmatrix_stmatrix.py``.
+
     :param ptr: Pointer/Array into shared memory; per the PTX ISA the address
         space must be ``.shared{::cta}``.
     :type ptr: cutlass.Array or cutlass.Pointer
     :param sources: Per-lane source fragment.  Length (or ``Vector`` shape)
         must be 1, 2, or 4 -- the PTX ``.x1`` / ``.x2`` / ``.x4`` qualifiers.
+        This is an instruction fragment count, not necessarily the public
+        logical tile count.
     :type sources: int or Int32 or Uint32 or Vector or list or tuple
     :param layout: ``MMALayout.ROW`` for the default store.
         ``MMALayout.COL`` selects ``.trans`` (in-register transpose before
         committing to SMEM).
     :type layout: MMALayout
     :param shape: Tile shape selector.  Defaults to ``m8n8``; ``m16n8`` is
-        the new PTX 9.3 ``.b8`` store variant.
+        the new PTX 9.3 ``.b8`` store variant and requires
+        ``layout=MMALayout.COL`` because PTX requires ``.trans`` for this
+        shape.  Do not infer ``stmatrix`` shape support by symmetry with the
+        ``ldmatrix`` wrapper: load shapes include ``m8n16`` / ``m16n16``,
+        while store shapes are ``m8n8`` / ``m16n8``.
     :type shape: StoreShape or None
 
     :return: ``None`` -- ``stmatrix`` writes to SMEM and has no SSA result.
     :raises ValueError: ``sources`` count is statically known and is not in
         ``{1, 2, 4}``.
+    :raises ValueError: ``shape=m16n8`` without ``layout=MMALayout.COL``.
 
     .. code-block:: python
 
-        # Store a Vector[4 x Int32] accumulator fragment to a 4 x 8x8 SMEM tile.
         smem = cutlass.Array(cutlass.Int16, 4 * 8 * 8, space=cutlass.AddressSpace.smem)
-        nvvm.stmatrix(smem, frag, nvvm.MMALayout.ROW)  # frag : Vector[4 x Int32]
+        regs = nvvm.ldmatrix(smem, num=4, layout=nvvm.MMALayout.ROW)
+        nvvm.stmatrix(smem, regs, nvvm.MMALayout.ROW)
     """
     instruction = "stmatrix"
     # See the matching note in :func:`ldmatrix`: address-space enforcement
     # is delegated to the dialect's ``LLVM_PointerShared`` operand type;
     # ``Array.space`` is intentionally a hint, not a contract, and is
     # not checked here.
+    shape_str = str(shape) if shape is not None else None
+    if shape_str in _STMATRIX_TRANS_ONLY_SHAPES and str(layout) != "col":
+        raise ValueError(
+            f"{instruction}: shape={shape!r} is only valid as a transposed "
+            f"store (layout=MMALayout.COL); got layout={layout!r}"
+        )
     shape_d = _to_dialect(shape, _STORE_SHAPE_TO_DIALECT)
     if isinstance(sources, Vector):
         from cutlass._mlir.dialects import vector as _vector_d
@@ -7290,12 +7339,9 @@ def sub_packed_f32x2(
     ip: ir.InsertionPoint | None = None,
 ) -> Vector:
     """Wrapper over ``nvvm.sub_packed_f32x2``."""
-    src_a_ir = _to_ir(src_a, loc, ip)
-    return _call_nvvm_result_compat(
-        _nvvm_raw.sub_packed_f32x2,
-        src_a_ir.type,
-        src_a_ir,
-        _to_ir(src_b, loc, ip),
+    return _nvvm.sub_packed_f32x2(
+        src_a,
+        src_b,
         rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
         ftz=ftz,
         loc=loc,
@@ -7309,6 +7355,7 @@ def tcgen05_alloc(
     addr: Array | Pointer,
     n_cols: int | Int32 | Uint32,
     *,
+    is_exclusive: bool | None = None,
     group: CTAGroup | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -7324,11 +7371,11 @@ def tcgen05_alloc(
         the MLIR verifier.
     :param n_cols: Number of TMEM columns to allocate.  The allocation unit
         is 32 columns and all lanes per column.  Statically known ``int``
-        values must be a power of 2 in ``[32, 512]`` (validated at trace
-        time); dynamic IR values are forwarded as-is and may fault at
-        runtime if out of range.  PTX also requires the number of columns
-        allocated not to increase between any two allocations in CTA
-        execution order.  Standard values:
+        values must be a power of 2 in ``[32, 512]`` or the Rubin exclusive
+        allocation value ``576`` (validated at trace time); dynamic IR values
+        are forwarded as-is and may fault at runtime if out of range.  PTX
+        also requires the number of columns allocated not to increase between
+        any two allocations in CTA execution order.  Standard values:
 
         * **CTA_1**: ``n_cols = (N_TILE // 8) * 32`` where ``N_TILE`` is the
           per-CTA accumulator N.  ``N_TILE=128`` → ``512`` columns (fills
@@ -7346,6 +7393,10 @@ def tcgen05_alloc(
           ``cudaErrorIllegalInstruction``.
     :param group: ``'CTA_1'`` (default) or ``'CTA_2'``.  See :data:`CTAGroup`.
         All ``tcgen05`` instructions within a kernel must use the same group.
+    :param is_exclusive: If ``True``, emit the ``.exclusive`` qualifier.
+        Memory allocated with ``.exclusive`` must be deallocated with
+        ``.exclusive``.  Use ``is_exclusive=True`` for Rubin's 576-column
+        allocation form.
 
     .. code-block:: python
 
@@ -7364,6 +7415,7 @@ def tcgen05_alloc(
     _nvvm.tcgen05_alloc(
         addr,
         _cutlass.Int32(n_cols),
+        is_exclusive=is_exclusive,
         group=_to_dialect(group, _CTAGROUP_TO_DIALECT),
         loc=loc,
         ip=ip,
@@ -7543,6 +7595,7 @@ def tcgen05_dealloc(
     taddr: Array | Pointer,
     n_cols: int | Int32 | Uint32,
     *,
+    is_exclusive: bool | None = None,
     group: CTAGroup | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -7558,10 +7611,14 @@ def tcgen05_dealloc(
         verifier (the dialect operand type is ``LLVM_PointerTensor``).
     :param n_cols: Number of TMEM columns to free; must equal the value passed
         to the paired :func:`tcgen05_alloc`.  Statically known ``int`` values
-        are validated against the same whitelist as :func:`tcgen05_alloc`
-        (``{32, 64, 128, 256, 512}``) at trace time.
+        are validated against the same whitelist as :func:`tcgen05_alloc`:
+        regular values ``{32, 64, 128, 256, 512}`` plus the Rubin exclusive
+        value ``576``.
     :param group: ``'CTA_1'`` (default) or ``'CTA_2'`` — must match the group
         used at alloc time.  See :data:`CTAGroup`.
+    :param is_exclusive: If ``True``, emit the ``.exclusive`` qualifier.
+        Must match the paired :func:`tcgen05_alloc` call, including Rubin's
+        576-column allocation form.
 
     .. code-block:: python
 
@@ -7575,6 +7632,7 @@ def tcgen05_dealloc(
     _nvvm.tcgen05_dealloc(
         taddr,
         _cutlass.Int32(n_cols),
+        is_exclusive=is_exclusive,
         group=_to_dialect(group, _CTAGROUP_TO_DIALECT),
         loc=loc,
         ip=ip,
@@ -7750,8 +7808,11 @@ def tcgen05_ld(
         )
     offset_value = None
     if offset is not None:
+        # The offset operand must be a 64-bit integer.
         offset_obj: Any = (
-            offset if hasattr(offset, "ir_value") else _cutlass.Int64(offset)
+            offset
+            if hasattr(offset, "ir_value") and not isinstance(offset, int)
+            else _cutlass.Int64(offset)
         )
         offset_value = offset_obj.ir_value(loc=loc, ip=ip)
     _out_dtype = tmem_addr.dtype if hasattr(tmem_addr, "dtype") else _cutlass.Int32
@@ -7777,6 +7838,100 @@ def tcgen05_ld(
         res_vec = vector_d.bitcast(target_vec_ty, out, loc=loc, ip=ip)
         return Vector(res_vec, dtype=_out_dtype, loc=loc, ip=ip)
     return out
+
+
+@dsl_user_op
+def tcgen05_ld_red(
+    shape: Tcgen05LdStShape,
+    tmem_addr: Array | Pointer,
+    op: ReductionKind,
+    *,
+    num: int = 2,
+    abs: bool | None = None,
+    nan: bool | None = None,
+    is_signed: bool | None = None,
+    offset: int | Int64 | Uint64 | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Any:
+    """Load from TMEM into registers with a fused per-lane reduction (``tcgen05.ld.red``).
+
+    Like :func:`tcgen05_ld`, but also reduces the loaded columns per lane with
+    *op* (e.g. ``min`` / ``max``), returning both the loaded data vector and the
+    scalar reduction result.  Warp-collective; pair with :func:`tcgen05_wait`
+    (``LOAD``) before reading the results.
+
+    :param shape: Load shape; ``tcgen05.ld.red`` supports only ``"32x32b"`` and
+        ``"16x32bx2"`` (validated at trace time).
+    :type shape: Tcgen05LdStShape
+    :param tmem_addr: Pointer/Array to the TMEM location.  Validated at trace
+        time to reside in tensor memory (dialect operand type
+        ``LLVM_PointerTensor``).
+    :type tmem_addr: cutlass.Array or cutlass.Pointer
+    :param op: Reduction kind (e.g. ``ReductionKind.MIN`` / ``ReductionKind.MAX``).
+    :type op: ReductionKind
+    :param num: Vector repeat factor; a power of 2 in ``[2, 128]`` (validated at
+        trace time).
+    :type num: int
+    :param abs: When ``True``, reduce on absolute values.
+    :type abs: bool, optional
+    :param nan: NaN-propagation flag (relevant for floating-point reductions).
+    :type nan: bool, optional
+    :param is_signed: Treat the elements as signed for the reduction.
+    :type is_signed: bool, optional
+    :param offset: Required (and only valid) for ``"16x32bx2"`` -- column
+        offset added to ``tmem_addr`` at runtime.
+    :type offset: int or cutlass.Int64 or cutlass.Uint64, optional
+    :return: ``(data, red_val)`` -- a ``num``-element data vector and scalar
+        reduction result matching ``tmem_addr.dtype``. Opaque pointers fall
+        back to ``Int32``.
+    :raises ValueError: ``shape`` is not ``"32x32b"`` / ``"16x32bx2"``; ``num``
+        is not a power of 2 in ``[2, 128]``; ``offset`` is set for a shape other
+        than ``"16x32bx2"`` (or missing for ``"16x32bx2"``).
+    :raises TypeError: ``tmem_addr`` exposes a ``.space`` that is not tensor
+        memory (TMEM).
+    """
+    if shape not in ("32x32b", "16x32bx2"):
+        raise ValueError(
+            f"tcgen05.ld.red: shape must be '32x32b' or '16x32bx2', got {shape!r}"
+        )
+    if num not in _VALID_TCGEN05_NUM or num < 2:
+        raise ValueError(
+            f"tcgen05.ld.red: num must be a power of 2 in [2, 128], got {num}"
+        )
+    if shape == "16x32bx2":
+        if offset is None:
+            raise ValueError("tcgen05.ld.red: offset is required for '16x32bx2'")
+    elif offset is not None:
+        raise ValueError(
+            f"tcgen05.ld.red: offset is only valid for '16x32bx2', not {shape!r}"
+        )
+    _assert_tensor_mem(tmem_addr, "tcgen05.ld.red")
+    offset_value = None
+    if offset is not None:
+        # The offset operand must be a 64-bit integer.
+        offset_obj: Any = (
+            offset
+            if hasattr(offset, "ir_value") and not isinstance(offset, int)
+            else _cutlass.Int64(offset)
+        )
+        offset_value = offset_obj.ir_value(loc=loc, ip=ip)
+    out_dtype = tmem_addr.dtype if hasattr(tmem_addr, "dtype") else _cutlass.Int32
+    shape_enum = _TCGEN05_LD_ST_SHAPES[shape]
+    _tmem_addr = tmem_addr.ir_value() if hasattr(tmem_addr, "ir_value") else tmem_addr
+    return _nvvm_raw.tcgen05_ld_red(
+        T.vector(num, out_dtype.mlir_type),
+        out_dtype.mlir_type,
+        shape_enum,
+        op,
+        _tmem_addr,
+        abs=abs,
+        nan=nan,
+        is_signed=is_signed,
+        offset=offset_value,
+        loc=loc,
+        ip=ip,
+    )
 
 
 
@@ -7912,7 +8067,10 @@ def tcgen05_mma(
         Reuse is opportunistic; hardware may reload despite the permission.
         Treat the collector strictly as a performance hint.  The source memory
         for A must not be modified while any MMA using that matrix has not
-        completed, regardless of collector state.
+        completed, regardless of collector state.  This is the right marker
+        for an N-stack / N2 chain that reuses the same physical A operand while
+        B changes across N slices.  Do not use the A collector to describe an
+        M-stack / M2 chain; that reuses B.
     :type collector_op: Tcgen05MMACollectorOp, optional
 
     :param a_shift: When ``True``, emits the ``.ashift`` modifier.  In
@@ -8019,7 +8177,7 @@ def tcgen05_mma(
     _assert_tcgen05_scale_input_d(scale_input_d, mma_kind, "tcgen05.mma")
     _assert_tcgen05_write_disable_mask(write_disable_mask, cta_group, "tcgen05.mma")
     if scale_input_d is not None:
-        scale_input_d = _cutlass.Int32(scale_input_d)
+        scale_input_d = _cutlass.Int64(scale_input_d)
     _nvvm.tcgen05_mma(
         _TCGEN05_MMA_KIND_TO_DIALECT[mma_kind],
         _CTAGROUP_TO_DIALECT[cta_group],
@@ -8031,7 +8189,7 @@ def tcgen05_mma(
         collector_op=_to_dialect(collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT),
         a_shift=a_shift,
         scale_input_d=scale_input_d,
-        write_disable_mask=write_disable_mask,
+        disable_output_lane=write_disable_mask,
         loc=loc,
         ip=ip,
     )
@@ -8051,6 +8209,7 @@ def tcgen05_mma_block_scale(
     *,
     scale_vec_size: _Tcgen05BlockScaleLike | None = None,
     collector_op: Tcgen05MMACollectorOp | None = None,
+    b_collector_op: Tcgen05MMACollectorOp | None = None,
     a_shift: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -8090,6 +8249,15 @@ def tcgen05_mma_block_scale(
         2X / 4X scale-vector packing within each block.  Different
         sizes have different K-dim compatibility tables.
     :param collector_op: A operand reuse policy (see :func:`tcgen05_mma`).
+        This is for N-stack / N2 A reuse, where the A operand and relevant
+        metadata are stable across the marked MMA calls.
+
+    :param b_collector_op: Target-specific B operand reuse policy.  Same values
+        as *collector_op*.  On supported SM107 block-scaled forms, use this for
+        M-stack / M2 B reuse only when the B operand, B scale metadata,
+        scale-vector size, instruction descriptor fields, and other collector
+        key fields stay compatible across the marked MMA calls.
+    :type b_collector_op: Tcgen05MMACollectorOp, optional
 
     :param a_shift: Same semantics as :func:`tcgen05_mma`.
 
@@ -8120,7 +8288,7 @@ def tcgen05_mma_block_scale(
     # Normalize via the member name so the lookup picks the correct dialect
     # enum regardless of which class the caller used.
     _mma_kind_key = mma_kind.name.lower() if hasattr(mma_kind, "name") else mma_kind
-    if getattr(_nvvm_raw, "Tcgen05MMABlockScale", None) is not None:
+    if _raw_nvvm_accepts_keyword("tcgen05_mma_block_scale", "block_scale"):
         block_scale = _to_tcgen05_block_scale(scale_vec_size)
         _nvvm.tcgen05_mma_block_scale(
             _TCGEN05_MMA_KIND_TO_DIALECT[_mma_kind_key],
@@ -8135,6 +8303,9 @@ def tcgen05_mma_block_scale(
             block_scale=block_scale,
             collector_op=_to_dialect(
                 collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+            ),
+            collector_op_b=_to_dialect(
+                b_collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
             ),
             loc=loc,
             ip=ip,
@@ -8336,7 +8507,7 @@ def tcgen05_mma_sp(
     _assert_tcgen05_scale_input_d(scale_input_d, mma_kind, "tcgen05.mma.sp")
     _assert_tcgen05_write_disable_mask(write_disable_mask, cta_group, "tcgen05.mma.sp")
     if scale_input_d is not None:
-        scale_input_d = _cutlass.Int32(scale_input_d)
+        scale_input_d = _cutlass.Int64(scale_input_d)
     _nvvm.tcgen05_mma_sp(
         _TCGEN05_MMA_KIND_TO_DIALECT[mma_kind],
         _CTAGROUP_TO_DIALECT[cta_group],
@@ -8349,7 +8520,7 @@ def tcgen05_mma_sp(
         collector_op=_to_dialect(collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT),
         a_shift=a_shift,
         scale_input_d=scale_input_d,
-        write_disable_mask=write_disable_mask,
+        disable_output_lane=write_disable_mask,
         loc=loc,
         ip=ip,
     )
@@ -8370,6 +8541,7 @@ def tcgen05_mma_sp_block_scale(
     *,
     scale_vec_size: _Tcgen05BlockScaleLike | None = None,
     collector_op: Tcgen05MMACollectorOp | None = None,
+    b_collector_op: Tcgen05MMACollectorOp | None = None,
     a_shift: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -8401,6 +8573,8 @@ def tcgen05_mma_sp_block_scale(
     :param scale_vec_size: 1X / 2X / 4X scale-vector packing
         (see :func:`tcgen05_mma_block_scale`).
     :param collector_op: A-operand collector policy (see :func:`tcgen05_mma`).
+    :param b_collector_op: B-operand collector policy forwarded to raw NVVM
+        bindings that expose ``collector_op_b``.
     """
     _assert_tcgen05_block_scale_kind(mma_kind, "tcgen05.mma.sp.block_scale")
     _assert_tensor_mem(d, "tcgen05.mma.sp.block_scale")
@@ -8409,6 +8583,30 @@ def tcgen05_mma_sp_block_scale(
     _assert_tensor_mem(scale_b, "tcgen05.mma.sp.block_scale")
     # Same upstream rename as tcgen05_mma_block_scale: scale_vec_size ->
     # block_scale, a_shift dropped.
+    if _raw_nvvm_accepts_keyword("tcgen05_mma_sp_block_scale", "block_scale"):
+        block_scale = _to_tcgen05_block_scale(scale_vec_size)
+        _nvvm.tcgen05_mma_sp_block_scale(
+            _TCGEN05_MMA_KIND_TO_DIALECT[mma_kind],
+            _CTAGROUP_TO_DIALECT[cta_group],
+            d,
+            a,
+            _cutlass.Int64(b),
+            _cutlass.Int32(idesc),
+            _cutlass.Boolean(enable_input_d),
+            sparse_metadata,
+            scale_a,
+            scale_b,
+            block_scale=block_scale,
+            collector_op=_to_dialect(
+                collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+            ),
+            collector_op_b=_to_dialect(
+                b_collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+            ),
+            loc=loc,
+            ip=ip,
+        )
+        return
     scale_vec_size = _to_tcgen05_scale_vec_size(scale_vec_size)
     _nvvm.tcgen05_mma_sp_block_scale(
         _TCGEN05_MMA_KIND_TO_DIALECT[mma_kind],
@@ -8755,8 +8953,11 @@ def tcgen05_st(
         )
     offset_value = None
     if offset is not None:
+        # The offset operand must be a 64-bit integer.
         offset_obj: Any = (
-            offset if hasattr(offset, "ir_value") else _cutlass.Int64(offset)
+            offset
+            if hasattr(offset, "ir_value") and not isinstance(offset, int)
+            else _cutlass.Int64(offset)
         )
         offset_value = offset_obj.ir_value(loc=loc, ip=ip)
     _tmem_addr = tmem_addr.ir_value() if hasattr(tmem_addr, "ir_value") else tmem_addr
@@ -8954,7 +9155,6 @@ def vote_sync(
     if dialect_kind == _VoteSyncKindDialect.ballot:
         return _cutlass.Int32(
             _nvvm.vote_sync(
-                _cutlass.Int32.mlir_type,
                 _cutlass.Int32(mask),
                 _cutlass.Boolean(pred),
                 dialect_kind,
@@ -8964,7 +9164,6 @@ def vote_sync(
         )
     return _cutlass.Boolean(
         _nvvm.vote_sync(
-            _cutlass.Boolean.mlir_type,
             _cutlass.Int32(mask),
             _cutlass.Boolean(pred),
             dialect_kind,
@@ -10026,7 +10225,7 @@ def redux_sync(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Int32 | Float32:
-    """Reduce ``val`` across warp lanes selected by ``mask_and_clamp`` (sm_80+).
+    """Reduce ``val`` across warp lanes selected by ``mask_and_clamp``.
 
     Low-level NVVM dialect wrapper for ``redux.sync``.  All participating lanes
     receive the same result (implicit broadcast).  Prefer this over a 5-step
@@ -10040,10 +10239,10 @@ def redux_sync(
     :param mask_and_clamp: 32-bit member mask (``0xFFFFFFFF`` for all lanes).
     :type mask_and_clamp: int or Int32 or Uint32
     :param abs: Apply ``|val|`` before reducing; ``FMIN``/``FMAX`` only,
-        sm_100+, defaults to None (disabled).
+        sm_100a/sm_103a/sm_107a only, defaults to None (disabled).
     :type abs: bool, optional
-    :param nan: Propagate NaN to result; ``FMIN``/``FMAX`` only, sm_100+,
-        defaults to None (NaN inputs are ignored).
+    :param nan: Propagate NaN to result; ``FMIN``/``FMAX`` only,
+        sm_100a/sm_103a/sm_107a only, defaults to None (NaN inputs are ignored).
     :type nan: bool, optional
     :return: Warp-reduced result broadcast to all participating lanes.
     :rtype: Float32 for FMIN/FMAX; Int32 for all other kinds.
@@ -10053,7 +10252,7 @@ def redux_sync(
 
     .. code-block:: python
 
-        # Per-block abs-max for MXFP8 quantization (sm_100+):
+        # Per-block abs-max for MXFP8 quantization (sm_100a/sm_103a/sm_107a only):
         amax = nvvm.redux_sync(gv, ReductionKind.FMAX, 0xFFFFFFFF, abs=True)
     """
     if kind in (ReductionKind.FMIN, ReductionKind.FMAX):
@@ -10281,9 +10480,8 @@ def red(
 
     .. note::
 
-        ``shared_space`` selects the explicit shared-memory PTX spelling. When
-        omitted for a ``mapa``-produced shared-cluster pointer (addrspace 7),
-        the wrapper selects ``SharedSpace.shared_cluster`` automatically.
+        ``shared_space`` was removed from the NVVM dialect's ``RedOp``.
+        Shared-cluster is now detected via the pointer address space (addrspace 7) instead.
 
     :param op: Reduction operation: ``AND``, ``OR``, ``XOR``, ``ADD``,
         ``INC``, ``DEC``, ``MIN``, or ``MAX``.
@@ -10325,10 +10523,8 @@ def red(
     _assert_reduction_type(type_, "red")
     if cache_hint is not None:
         cache_hint = _cutlass.Int64(cache_hint)
-    if shared_space is None and _is_cluster_ptr(a):
-        shared_space = SharedSpace.shared_cluster
     if shared_space is None:
-        # Fast path: NVVM op for global and CTA-shared pointer forms.
+        # Fast path: NVVM op (shared-cluster inferred from pointer addrspace).
         _nvvm.red(
             _REDUCTION_OP_TO_DIALECT[op],
             _REDUCTION_TYPE_TO_DIALECT[type_],
@@ -10347,15 +10543,8 @@ def red(
     scope = f".{MemScope(mem_scope).value}" if mem_scope is not None else ""
     space = _shared_space_ptx(shared_space) if shared_space is not None else ".global"
     noftz = ".noftz" if type_e in _RED_NOFTZ_TYPES else ""
-    a_ir = a.llvm_ptr if hasattr(a, "llvm_ptr") else _to_ir(a, loc, ip)
+    a_ir = a.llvm_ptr if hasattr(a, "llvm_ptr") else a
     b = _coerce_setp_val(type_e.value, b)
-    # LLVM inline asm constraints accept integer carriers for 16-bit floats.
-    if type_e in (ReductionType.F16, ReductionType.BF16) and hasattr(b, "bitcast"):
-        b = b.bitcast(_cutlass.Int16, loc=loc, ip=ip)
-    elif type_e in (ReductionType.F16X2, ReductionType.BF16X2) and hasattr(
-        b, "bitcast"
-    ):
-        b = b.bitcast(_cutlass.Int32, loc=loc, ip=ip)
     ptx = (
         f"red{sem}{scope}{space}.{ReductionOp(op).value}{noftz}.{type_e.value}"
         f" [{{$r0}}], {{$r1}};"
@@ -10844,6 +11033,119 @@ def cvta_to(
 
 
 @dsl_user_op
+def cvt_e4m3x2_to_bf16x2(
+    packed_fp8: Int16,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """``cvt.rn.satfinite.bf16x2.e4m3x2`` — convert packed E4M3x2 to BF16x2."""
+    return _hl_inline_ptx(
+        "cvt.rn.satfinite.bf16x2.e4m3x2 {$w0}, {$r0};",
+        write_only_types=[Int32],
+        read_only_args=[packed_fp8],
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_e4m3x2_word_to_bf16x2(
+    packed_word: Int32,
+    shift: int,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """Extract an E4M3x2 half-word at ``shift`` and convert it to BF16x2."""
+    packed_fp8 = Int16((packed_word >> Int32(shift)) & Int32(0xFFFF))
+    return cvt_e4m3x2_to_bf16x2(packed_fp8, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def cvt_e2m1x2_byte_to_bf16x2(
+    packed_byte: Int32,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """``cvt.rn.bf16x2.e2m1x2`` — convert a packed E2M1x2 byte to BF16x2."""
+    return _hl_inline_ptx(
+        "{ .reg .b8 byte; "
+        "mov.b32 {byte, _, _, _}, {$r0}; "
+        "cvt.rn.bf16x2.e2m1x2 {$w0}, byte; }",
+        write_only_types=[Int32],
+        read_only_args=[packed_byte & Int32(0xFF)],
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_e4m3x2_byte_to_bf16x2(
+    packed_byte: Int32,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """Broadcast one E4M3 byte and convert the resulting pair to BF16x2."""
+    sf_pair = (packed_byte & Int32(0xFF)) | ((packed_byte & Int32(0xFF)) << Int32(8))
+    return _hl_inline_ptx(
+        "{ .reg .b16 sf; mov.b32 {sf, _}, {$r0}; cvt.rn.bf16x2.e4m3x2 {$w0}, sf; }",
+        write_only_types=[Int32],
+        read_only_args=[sf_pair],
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_e2m1_word_to_e4m3_words(
+    packed_word: Int32,
+    sf_byte: Int32,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> tuple[Int32, Int32]:
+    """Scale eight dense-packed E2M1 values and return two E4M3 words.
+
+    ``sf_byte`` is broadcast across all eight values. The result words contain
+    converted values 0–3 and 4–7, respectively.
+    """
+    sf_pair = (sf_byte & Int32(0xFF)) | ((sf_byte & Int32(0xFF)) << Int32(8))
+    return _hl_inline_ptx(
+        "{\n"
+        ".reg .b16 sf;\n"
+        ".reg .b32 sfFp16x2;\n"
+        ".reg .b8 b0, b1, b2, b3;\n"
+        ".reg .b32 h0, h1, h2, h3;\n"
+        ".reg .b16 e0, e1, e2, e3;\n"
+        "mov.b32 {sf, _}, {$r1};\n"
+        "cvt.rn.f16x2.e4m3x2 sfFp16x2, sf;\n"
+        "mov.b32 {b0, b1, b2, b3}, {$r0};\n"
+        "cvt.rn.f16x2.e2m1x2 h0, b0;\n"
+        "cvt.rn.f16x2.e2m1x2 h1, b1;\n"
+        "cvt.rn.f16x2.e2m1x2 h2, b2;\n"
+        "cvt.rn.f16x2.e2m1x2 h3, b3;\n"
+        "mul.rn.f16x2 h0, h0, sfFp16x2;\n"
+        "mul.rn.f16x2 h1, h1, sfFp16x2;\n"
+        "mul.rn.f16x2 h2, h2, sfFp16x2;\n"
+        "mul.rn.f16x2 h3, h3, sfFp16x2;\n"
+        "cvt.rn.satfinite.e4m3x2.f16x2 e0, h0;\n"
+        "cvt.rn.satfinite.e4m3x2.f16x2 e1, h1;\n"
+        "cvt.rn.satfinite.e4m3x2.f16x2 e2, h2;\n"
+        "cvt.rn.satfinite.e4m3x2.f16x2 e3, h3;\n"
+        "mov.b32 {$w0}, {e0, e1};\n"
+        "mov.b32 {$w1}, {e2, e3};\n"
+        "}\n",
+        write_only_types=[Int32, Int32],
+        read_only_args=[packed_word, sf_pair],
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
 def mul_bf16x2(
     a: Int32,
     b: Int32,
@@ -10985,6 +11287,11 @@ __all__ = [
     "cp_async_wait_group",
     "cp_reduce_async_bulk_global_shared_cta",
     "cvta_to",
+    "cvt_e2m1_word_to_e4m3_words",
+    "cvt_e2m1x2_byte_to_bf16x2",
+    "cvt_e4m3x2_byte_to_bf16x2",
+    "cvt_e4m3x2_to_bf16x2",
+    "cvt_e4m3x2_word_to_bf16x2",
     "cvt_f32x2_to_f4x2",
     "cvt_f32x2_to_f8x2",
     "cvt_packfloat",
@@ -11009,6 +11316,7 @@ __all__ = [
     "griddepcontrol",
     "inline_ptx",
     "inline_ptx_hl",
+    "ptx_add_comment",
     "ldmatrix",
     "load_ext",
     "mapa",
@@ -11061,6 +11369,7 @@ __all__ = [
     "tcgen05_dealloc",
     "tcgen05_fence",
     "tcgen05_ld",
+    "tcgen05_ld_red",
     "tcgen05_mma",
     "tcgen05_mma_block_scale",
     "tcgen05_mma_sp",

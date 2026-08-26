@@ -30,12 +30,14 @@ SM100_TMEM_MIN_ALLOC_COLUMNS = (
 
 TMEM_MAX_ALLOC_COLUMNS_MAP = {
     "sm_120": 512,
+    "sm_107": 576,
     "sm_103": 512,
     "sm_100": 512,
 }
 
 TMEM_MIN_ALLOC_COLUMNS_MAP = {
     "sm_120": 32,
+    "sm_107": 32,
     "sm_103": 32,
     "sm_100": 32,
 }
@@ -74,6 +76,29 @@ def get_min_tmem_alloc_cols(compute_capability: str) -> int:
         raise ValueError(f"Unsupported compute capability: {compute_capability}")
     return TMEM_MIN_ALLOC_COLUMNS_MAP[compute_capability]
 
+
+Arch = base_dsl.Arch
+
+
+def is_tmem_allocation_exclusive(num_columns: int, arch: base_dsl.Arch) -> bool:
+    """Determines whether exclusive allocation of TMEM is required
+
+    For certain architectures (e.g., sm_107), there are more than 512 columns
+    available in TMEM (e.g., 576). However, these extra columns can only be
+    used if TMEM is exclusively allocated.
+
+    :param num_columns: Number of columns to be allocated
+    :type num_columns: int
+    :param arch: Architecture
+    :type arch: base_dsl.Arch
+
+    :return: Returns True if all TMEM columns need to be exclusively allocated
+    :rtype: bool
+    """
+
+    return num_columns > 512 and arch in (
+        base_dsl.Arch.sm_107,
+    )
 
 
 @dsl_user_op
@@ -136,16 +161,20 @@ def alloc_tmem(
     """
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
+    exclusive = None
     if isinstance(num_columns, int):
+        exclusive = is_tmem_allocation_exclusive(num_columns, base_dsl.Arch.from_string(arch))
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
             or not (
                 (num_columns & (num_columns - 1) == 0)
+                or exclusive
             )
         ):
             err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
             err_msg += "and must be pow of 2"
+            err_msg += " except for arch-specific exceptions (e.g., exclusive allocation for sm_107)"
             err_msg += f", but got {num_columns}."
             raise ValueError(err_msg)
 
@@ -153,6 +182,7 @@ def alloc_tmem(
         Int32(num_columns).ir_value(loc=loc, ip=ip),
         smem_ptr_to_write_address.value,
         is_two_cta=is_two_cta,
+        exclusive=exclusive,
         loc=loc,
         ip=ip,
     )
@@ -197,16 +227,22 @@ def dealloc_tmem(
     """
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
+    exclusive = None
+
     if isinstance(num_columns, int):
+        exclusive = is_tmem_allocation_exclusive(num_columns, base_dsl.Arch.from_string(arch))
+
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
             or not (
                 (num_columns & (num_columns - 1) == 0)
+                or exclusive
             )
         ):
             err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
             err_msg += "and must be pow of 2"
+            err_msg += " except for arch-specific exceptions (e.g., exclusive allocation for sm_107)"
             err_msg += f", but got {num_columns}."
             raise ValueError(err_msg)
 
@@ -214,6 +250,7 @@ def dealloc_tmem(
         tmem_ptr.value,
         Int32(num_columns).ir_value(loc=loc, ip=ip),
         is_two_cta=is_two_cta,
+        exclusive=exclusive,
         loc=loc,
         ip=ip,
     )

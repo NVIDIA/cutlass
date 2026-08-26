@@ -9,7 +9,119 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from dataclasses import dataclass
 from enum import Enum, IntFlag
+from typing import Hashable
+
+
+_INT32_MAX = (1 << 31) - 1
+
+
+class BlockGuard:
+    """Marker base for conditional block guards in captured schedules.
+
+    Subclasses: :class:`IterationPredicate`, :class:`OpaqueCondition`, and the
+    ``SKIPPABLE`` singleton for work-tile skip regions.
+    """
+
+
+class IterationPredicate(BlockGuard):
+    """Loop guard decidable at trace time from the zero-based iteration count."""
+
+    def fires(self, iter_idx: int, num_iters: int) -> bool:
+        """Return whether the guarded block runs on iteration ``iter_idx``."""
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class _FirstIterPredicate(IterationPredicate):
+    """Singleton first-iteration guard."""
+
+    def fires(self, iter_idx: int, num_iters: int) -> bool:
+        return iter_idx == 0
+
+
+@dataclass(frozen=True)
+class _LastIterPredicate(IterationPredicate):
+    """Singleton last-iteration guard."""
+
+    def fires(self, iter_idx: int, num_iters: int) -> bool:
+        if num_iters <= 0:
+            return False
+        return iter_idx == num_iters - 1
+
+
+FIRST_ITER = _FirstIterPredicate()
+LAST_ITER = _LastIterPredicate()
+
+
+@dataclass(frozen=True)
+class Every(IterationPredicate):
+    """Periodic guard using zero-based iteration counts.
+
+    Fires on counts ``start, start + period, start + 2 * period, ...``.
+    """
+
+    period: int
+    start: int = 0
+
+    def __post_init__(self) -> None:
+        if type(self.period) is not int:
+            raise TypeError(
+                f"Every period must be an int, got {type(self.period).__name__}."
+            )
+        if self.period <= 0:
+            raise ValueError(f"Every period must be positive, got {self.period}.")
+        if self.period > _INT32_MAX:
+            raise ValueError(
+                f"Every period must fit in a signed 32-bit integer, got {self.period}."
+            )
+        if type(self.start) is not int:
+            raise TypeError(
+                f"Every start must be an int, got {type(self.start).__name__}."
+            )
+        if self.start < 0:
+            raise ValueError(f"Every start must be nonnegative, got {self.start}.")
+        if self.start > _INT32_MAX:
+            raise ValueError(
+                f"Every start must fit in a signed 32-bit integer, got {self.start}."
+            )
+
+    def fires(self, iter_idx: int, num_iters: int) -> bool:
+        del num_iters
+        return iter_idx >= self.start and (iter_idx - self.start) % self.period == 0
+
+
+@dataclass(frozen=True)
+class OpaqueCondition(BlockGuard):
+    """Loop guard backed by a runtime value enumerated under ``key``.
+
+    ``negated`` is ``True`` for :func:`when_false` blocks.  Optional
+    ``resource`` / ``method_label`` identify the work-call output that produced
+    the stored guard value; when omitted the verifier still honors ``key``
+    correlation.  ``result_name`` selects that stored output.  Runtime execution
+    reads the stored value instead of re-invoking the producing method;
+    integer-like values are false only when zero.
+    """
+
+    key: Hashable
+    negated: bool = False
+    resource: object | None = None
+    method_label: str | None = None
+    result_name: str | None = None
+
+
+@dataclass(frozen=True)
+class _SkippableGuard(BlockGuard):
+    """Singleton guard for work omitted on skipped work tiles."""
+
+
+SKIPPABLE = _SkippableGuard()
+
+
+def is_skippable_guard(guard: object) -> bool:
+    """Return whether ``guard`` is the work-tile ``SKIPPABLE`` marker."""
+    return guard is SKIPPABLE
 
 
 class PipelineType(Enum):
@@ -76,10 +188,13 @@ class PipelineGroupMode(Enum):
       has a separate consumer task. The producer side is collapsed: member
       pipeline types must have compatible producer kinds, and
       ``producer_group.size`` must match.
+    * ``FusedMerge`` - N-to-1, like ``Merge`` but with a single shared
+      full barrier instead of one per producer.
     """
 
     Merge = "Merge"
     Fork = "Fork"
+    FusedMerge = "FusedMerge"
 
 
 class SignalingThreads(IntFlag):
@@ -269,3 +384,42 @@ class LoopGuard(Enum):
     Always = "Always"
     LastIter = "LastIter"
     FirstIter = "FirstIter"
+
+
+def is_iteration_predicate(guard: object) -> bool:
+    """Return whether ``guard`` is an iteration predicate or legacy enum."""
+    if isinstance(guard, IterationPredicate):
+        return True
+    if isinstance(guard, LoopGuard):
+        return guard in (LoopGuard.Always, LoopGuard.FirstIter, LoopGuard.LastIter)
+    return False
+
+
+def is_loop_guard(guard: object) -> bool:
+    """Return whether ``guard`` is a supported loop-schedule guard."""
+    return isinstance(guard, (LoopGuard, IterationPredicate, OpaqueCondition))
+
+
+def guard_fires(
+    guard: object,
+    iter_idx: int,
+    num_iters: int,
+    *,
+    opaque_assignment: dict[Hashable, bool] | None = None,
+) -> bool:
+    """Evaluate whether a loop guard is active on iteration ``iter_idx``."""
+    if guard == LoopGuard.Always:
+        return True
+    if guard == LoopGuard.FirstIter or guard is FIRST_ITER:
+        return iter_idx == 0
+    if guard == LoopGuard.LastIter or guard is LAST_ITER:
+        if num_iters <= 0:
+            return False
+        return iter_idx == num_iters - 1
+    if isinstance(guard, IterationPredicate):
+        return guard.fires(iter_idx, num_iters)
+    if isinstance(guard, OpaqueCondition):
+        assignment = opaque_assignment or {}
+        active = assignment.get(guard.key, False)
+        return active != guard.negated
+    raise TypeError(f"unsupported loop guard type: {type(guard).__name__}")

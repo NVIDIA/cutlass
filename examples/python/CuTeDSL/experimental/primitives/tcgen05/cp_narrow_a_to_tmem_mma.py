@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -83,6 +83,10 @@ from cutlass.cute.runtime import make_fake_compact_tensor
 from cutlass.experimental import primitives as prims
 
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 AType = Literal["fp4", "fp6"]
 
 _M_TILE = 128
@@ -132,6 +136,11 @@ def _a_row_bytes(a_dtype: AType) -> int:
     if a_dtype == "fp4":
         return _FP4_A_ROW_BYTES
     return _FP6_A_ROW_BYTES
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -387,6 +396,11 @@ def kernel(
         )
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     a_packed: cute.Tensor,
@@ -445,6 +459,11 @@ def host(
         grid=(1, 1, 1),
         block=(_THREADS, 1, 1),
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -516,6 +535,11 @@ def _make_packed_a(a_dtype: AType) -> torch.Tensor:
     return row.unsqueeze(0).repeat(_M_TILE, 1).contiguous()
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(compiled_fn: Callable, a_dtype: str = "fp4"):
     """Allocate packed A, B, scales, and C; return ``(c, a, b, sfa, sfb)``."""
     if not torch.cuda.is_available():
@@ -540,6 +564,11 @@ def run(compiled_fn: Callable, a_dtype: str = "fp4"):
     return c, a, b, sfa, sfb
 
 
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+
 def _reference() -> torch.Tensor:
     return torch.full((_M_TILE, _N_TILE), float(_K_TILE), device="cuda")
 
@@ -556,6 +585,10 @@ def verify(a_dtype: str = "fp4") -> None:
     torch.testing.assert_close(c, _reference(), atol=0.1, rtol=1e-5)
     print(f"verify (a_dtype={a_kind}): PASS", flush=True)
 
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

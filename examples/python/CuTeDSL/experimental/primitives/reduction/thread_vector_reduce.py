@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -70,6 +70,11 @@ import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
 _DEFAULT_ROWS: int = 16
 _DEFAULT_WIDTH: int = 8
 _DEFAULT_REDUCE_OP: Literal["add", "max", "min"] = "add"
@@ -104,6 +109,11 @@ def _normalize_dtype(DTYPE: str) -> DTypeName:
     return cast(DTypeName, DTYPE)
 
 
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
+
+
 @cute.kernel
 def _kernel(
     src: cute.Tensor,  # [rows, WIDTH]
@@ -130,6 +140,11 @@ def _kernel(
         out_ptr.store(values.reduce(REDUCE_OP))
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def _host(
     src: cute.Tensor,
@@ -146,6 +161,11 @@ def _host(
         block=(1, 1, 1),
         stream=stream,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -182,6 +202,11 @@ def compile(
     )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
     rows: int = _DEFAULT_ROWS,
@@ -204,6 +229,11 @@ def run(
     compiled_fn(src, out, stream)
     torch.cuda.synchronize()
     return out, src
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(
@@ -241,6 +271,11 @@ def verify(
         f"(rows={rows}, WIDTH={WIDTH}, REDUCE_OP={REDUCE_OP}, "
         f"DTYPE={DTYPE}): PASS"
     )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:

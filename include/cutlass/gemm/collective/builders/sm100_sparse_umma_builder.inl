@@ -300,6 +300,7 @@ struct CollectiveBuilder<
     BuilderScheduleTag,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       (not cute::is_tuple_v<ElementA>   && not cute::is_tuple_v<ElementB> &&
        not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&

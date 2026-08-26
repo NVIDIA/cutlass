@@ -21,7 +21,9 @@ Notable unsupported features
 - preferred clusters
 - Windows support
 
+
 - Task Scheduling support for existing CuTe DSL and extension (``cute_ext``) kernels
+
 
 Programming Model
 ---------------------
@@ -55,6 +57,10 @@ Programming Model
           - ``bool`` → ``Bool``
           - ``float`` → ``Float32`` (may be updated to ``Float64`` in future releases)
 
+        This is *implicit conversion*; it differs from explicitly constructing a
+        type (``Int32(x)``), which narrows and can silently truncate. See
+        **Numeric Type Conversion** below.
+
     The JIT compiler processes Python native types analogously to C++ template parameters.
     The compiled code cannot manipulate dynamic values of composite types
     such as lists, tuples, or dictionaries.
@@ -79,8 +85,70 @@ Programming Model
                 # as loop doesn't unroll at compile-time
                 xs.append(Float32(1.0))
 
+**Numeric Type Conversion**
+    A Python ``int``/``float`` scalar becomes a DSL ``Numeric`` value in two
+    distinct ways, and they follow *opposite* rules. Knowing which one applies
+    is the difference between a value that is preserved and one that is silently
+    lost.
+
+    *Implicit conversion* — mixing a Python scalar with a DSL value in an
+    expression, or passing it as a JIT argument. Here the DSL chooses a result
+    type that can **hold** the value, widening/promoting as needed, so no
+    magnitude is lost:
+
+    .. code:: python
+
+        @cute.jit
+        def foo():
+            x = (1 << 34) + cutlass.Int32(3)  # promotes to Int64 -> value kept
+            y = 1.5 + cutlass.Int32(2)        # promotes to Float32
+            z = cutlass.Int8(1) + (1 << 34)   # promotes to Int64
+
+    The default type of a converted JIT *argument* and the promotion rules for
+    mixed-type expressions are covered under **Python Native Data Types**
+    (``int`` → ``Int32``, ``bool`` → ``Bool``, ``float`` → ``Float32``) and
+    **Expression or Statement with Dependent Type** below.
+
+    *Explicit construction* — calling a type constructor such as ``Int32(...)``
+    or ``Float32(...)``. Here the value is **narrowed to the named type
+    regardless of fit**, so a value out of range is *silently* mangled rather
+    than promoted or rejected:
+
+    - An ``int`` outside the type's range **wraps**, dropping the high bits.
+      For example, ``Int32(1 << 34)`` yields ``0`` and ``Int32(2**31)`` yields
+      ``-2147483648``.
+    - A ``float`` whose magnitude is too large **overflows to** ``±inf``, and one
+      too small **underflows to** ``0``. For example, ``Float32(1e40)`` yields
+      ``inf`` and ``Float32(1e-50)`` yields ``0.0``.
+
+    Note the contrast: ``(1 << 34) + Int32(3)`` promotes to ``Int64`` and keeps
+    the value, whereas the explicit ``Int32(1 << 34)`` wraps to ``0``.
+
+    To surface this loss, the DSL emits a compiler **warning** for these
+    catastrophic construction cases (``TYPE_INT_LITERAL_OUT_OF_RANGE``,
+    ``TYPE_FLOAT_LITERAL_OVERFLOW``, ``TYPE_FLOAT_LITERAL_UNDERFLOW``), pointing at
+    the exact source location and suggesting a wider type. Note that ordinary
+    precision/rounding loss is *not* flagged, since it is inherent to every
+    float literal and would be too noisy. For example, ``Float32(0.1)`` is
+    silent even though it rounds to ``0.10000000149...``. Precision loss in
+    later arithmetic (for example, ``big + Float32(0.1)``) is outside these
+    literal-range warnings.
+
+    .. code:: python
+
+        @cute.jit
+        def foo():
+            a = cutlass.Int32(1 << 34)    # warns: wraps to 0
+            b = cutlass.Float32(1e40)     # warns: overflows to inf
+            c = cutlass.Float32(1e-50)    # warns: underflows to 0.0
+            d = cutlass.Float32(0.1)      # no warning: ordinary rounding
+
+    Prefer a wider type (e.g. ``Int64`` / ``Float64``) when the value does not
+    fit the constructor's type, or mask an ``int`` to the type width to make an
+    intentional wrap explicit.
+
 **Python Function**
-    The DSL currently has **limited support for return values** from Python functions.  
+    The DSL currently has **limited support for return values** from Python functions.
     At the moment, only ``constexpr`` values can be returned, while returning **dynamic values** is **not yet supported**.  
     This capability is planned for a future release.
 
@@ -125,6 +193,10 @@ Programming Model
         @cute.jit
         def foo(a: Int32, b: Float32, res: cute.Tensor):
             res[0] = max(a, b)  # Type is automatically promoted to Float32
+
+    This promotion is the *implicit conversion* path — it widens to a type that
+    can hold the result, unlike an explicit constructor which narrows. See
+    **Numeric Type Conversion** above.
 
     Following code using inlined if-else expression with dependent types
     is not supported in CuTe DSL:
@@ -254,6 +326,7 @@ Programming Model
 
     Existing CuTe DSL and extension (``cute_ext``) kernels are not supported with
     FrontendNext compile flow in this release.
+
 
 **Global variables**
     CuTe DSL does not support global variables.

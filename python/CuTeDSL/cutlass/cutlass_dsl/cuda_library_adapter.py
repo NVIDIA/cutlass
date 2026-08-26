@@ -12,6 +12,14 @@
 """Pass a CUDA library handle (``cudaLibrary_t``) into a ``@cute.jit`` body
 as a typed MLIR ``!cuda.library`` argument.
 
+This is the bridge the in-trace symbol-store path needs:
+
+* The user has a compiled kernel cubin (its loaded ``cudaLibrary_t`` is on
+  ``compiled.library``).
+* They want to store into a device global *inside* another ``@cute.jit`` body
+  — emitting ``cuda.runtime.library.get_global`` + ``cuda.memory.copy``
+  against ``target``.
+
 Without this adapter ``cute.compile`` rejects the library handle because
 it doesn't know how to marshal it through the ABI or what MLIR type to
 use for the corresponding block argument.  The adapter mirrors the
@@ -19,7 +27,6 @@ existing ``CudaDialectStreamAdapter`` (``cuda.stream``) one-for-one — it
 exposes ``getPtr()`` to the C ABI and ``!cuda.library`` to MLIR.
 """
 
-import ctypes
 from typing import List
 
 import cuda.bindings.runtime as cuda_runtime
@@ -29,11 +36,14 @@ from .._mlir import ir
 from .._mlir.dialects import cuda
 
 # Local module imports
+from ..base_dsl.runtime.cuda_handle_adapter import CudaHandleAdapter
 from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
 
 
-@JitArgAdapterRegistry.register_jit_arg_adapter(cuda_runtime.cudaLibrary_t)
-class CudaDialectLibraryAdapter:
+@JitArgAdapterRegistry.register_jit_arg_adapter(
+    cuda_runtime.cudaLibrary_t, scope=JitArgAdapterRegistry.CUDA_DIALECT_SCOPE
+)
+class CudaDialectLibraryAdapter(CudaHandleAdapter):
     """Convert a ``cudaLibrary_t`` into a ``!cuda.library`` JIT argument.
 
     Same shape as :class:`CudaDialectStreamAdapter` — the runtime handle
@@ -41,17 +51,6 @@ class CudaDialectLibraryAdapter:
     ``!cuda.library``.  Lifetime is the caller's responsibility — we do
     not own the library, ``cuda.compile``/the user does.
     """
-
-    def __init__(self, arg: "cuda_runtime.cudaLibrary_t") -> None:
-        self._arg = arg
-        self._c_pointer = self._arg.getPtr()
-
-    def __new_from_mlir_values__(self, values: List[ir.Value]) -> ir.Value:
-        assert len(values) == 1
-        return values[0]
-
-    def __c_pointers__(self) -> List[ctypes.c_void_p]:
-        return [self._c_pointer]
 
     def __get_mlir_types__(self) -> List[ir.Type]:
         return [cuda.LibraryType.get()]

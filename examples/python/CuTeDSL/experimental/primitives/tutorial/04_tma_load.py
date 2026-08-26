@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -64,24 +64,27 @@ def gemm_kernel(tma_desc_a: cutlass.GridConstant[cuda.TensorMap]):
     prims.fence_mbarrier_init()
     prims.barrier_cta_sync(0)
 
-    # Step 6. Async TMA Load
+    # Step 6. (Optional) Set max register
+    prims.setmaxregister(40, prims.SetMaxRegisterAction.DECREASE)
+
+    # Step 7. Async TMA Load
     if prims.elect_sync():
-        # Step 7. Arrive and expect transaction
+        # Step 8. Arrive and expect transaction
         sz = tma_desc_a.global_tx_bytes()
         prims.mbarrier_arrive_expect_tx(mbar, sz)
 
-        # Step 8. Async TMA Load
+        # Step 9. Async TMA Load
         prims.cp_async_bulk_tensor_shared_cta_global(
             smem_matrix_a, tma_desc_a.get_ptr(), (0, 0), mbar
         )
 
-    # Step 9. All threads wait on mbarrier. Spin on the timelimit variant so
+    # Step 10. All threads wait on mbarrier. Spin on the timelimit variant so
     # we retry on a tick-timeout and use the stronger `.acquire.cta` ordering
     # (TMA writes are guaranteed visible after the wait returns).
     while not prims.mbarrier_try_wait_parity(mbar, 0, time_limit=10000000):
         pass
 
-    # Step 10. Thread 0 prints the memory matrix from shared memory
+    # Step 11. Thread 0 prints the memory matrix from shared memory
     if tx == 0:
         smem_matrix_a.print_runtime()
 

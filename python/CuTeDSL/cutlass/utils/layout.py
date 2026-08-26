@@ -9,62 +9,28 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from enum import Enum
-
-import cutlass.cute as cute
-from cutlass.cute.nvgpu import OperandMajorMode
+import warnings
+from typing import Any
 
 
-class LayoutEnum(Enum):
-    ROW_MAJOR = "row_major"
-    COL_MAJOR = "col_major"
-
-    def mma_major_mode(self) -> OperandMajorMode:
-        return (
-            OperandMajorMode.K if self == LayoutEnum.ROW_MAJOR else OperandMajorMode.MN
+# Enum members compare by object identity, so the canonical class itself must
+# be handed out rather than a deprecated subclass copy. A module-level
+# __getattr__ (PEP 562) adds the deprecation warning a wrapper class cannot.
+def __getattr__(name: str) -> Any:
+    if name == "LayoutEnum":
+        warnings.warn(
+            "cutlass.utils.layout.LayoutEnum is deprecated; use "
+            "cutlass.tensor_utils.LayoutEnum instead. It will be removed in a "
+            "future release.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        from cutlass.tensor_utils.layout import LayoutEnum
 
-    def sm90_mma_major_mode(self) -> OperandMajorMode:
-        return (
-            OperandMajorMode.K if self == LayoutEnum.ROW_MAJOR else OperandMajorMode.MN
-        )
-
-    def is_k_major_a(self) -> bool:
-        return self == LayoutEnum.ROW_MAJOR
-
-    def is_m_major_a(self) -> bool:
-        return self == LayoutEnum.COL_MAJOR
-
-    def is_n_major_b(self) -> bool:
-        return self == LayoutEnum.COL_MAJOR
-
-    def is_k_major_b(self) -> bool:
-        return self == LayoutEnum.ROW_MAJOR
-
-    def is_n_major_c(self) -> bool:
-        return self == LayoutEnum.ROW_MAJOR
-
-    def is_m_major_c(self) -> bool:
-        return self == LayoutEnum.COL_MAJOR
-
-    @staticmethod
-    def from_tensor(tensor: cute.Tensor) -> "LayoutEnum":
-        ret = None
-        if isinstance(tensor.leading_dim, tuple):
-            if tensor.leading_dim[0] == 1:
-                ret = LayoutEnum.ROW_MAJOR
-            elif tensor.leading_dim[0] == 0:
-                ret = LayoutEnum.COL_MAJOR
-            else:
-                raise ValueError(f"Invalid leading dimension: {tensor.leading_dim}")
-        elif tensor.leading_dim == 1:
-            ret = LayoutEnum.ROW_MAJOR
-        elif tensor.leading_dim == 0:
-            ret = LayoutEnum.COL_MAJOR
-        else:
-            raise ValueError(f"Invalid leading dimension: {tensor.leading_dim}")
-
-        return ret
+        return LayoutEnum
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["LayoutEnum"]
+__all__ = [
+    "LayoutEnum",  # noqa: F822  # provided by module __getattr__
+]

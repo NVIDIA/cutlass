@@ -373,6 +373,7 @@ cvt_i8_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
 cvt_i8_bf16_intrinsic.s26_bf16_supported_archs = (  # type: ignore[attr-defined]
     base_dsl.Arch.sm_100a,
     base_dsl.Arch.sm_103a,
+    base_dsl.Arch.sm_107a,
     base_dsl.Arch.sm_110a,
     base_dsl.Arch.sm_120a,
     base_dsl.Arch.sm_121a,
@@ -380,6 +381,7 @@ cvt_i8_bf16_intrinsic.s26_bf16_supported_archs = (  # type: ignore[attr-defined]
 cvt_i4_bf16_intrinsic.supported_archs = (  # type: ignore[attr-defined]
     base_dsl.Arch.sm_100a,
     base_dsl.Arch.sm_103a,
+    base_dsl.Arch.sm_107a,
     base_dsl.Arch.sm_110a,
     base_dsl.Arch.sm_120a,
     base_dsl.Arch.sm_121a,

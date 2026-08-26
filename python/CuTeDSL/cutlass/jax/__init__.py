@@ -11,6 +11,9 @@
 
 from functools import cache
 import logging
+import sys
+import warnings
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,12 @@ logger = logging.getLogger(__name__)
 # See the following pages for details on JAX versioning:
 #   - https://docs.jax.dev/en/latest/jep/25516-effver.html
 #   - https://docs.jax.dev/en/latest/jep/9419-jax-versioning.html
-CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 5, 0)
+CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 6, 0)
+
+# This is the minimum Python version officially supported by the CuTeDSL JAX
+# integration. Earlier versions may continue to work, but users are warned to
+# upgrade.
+CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION = (3, 11)
 
 
 @cache
@@ -44,10 +52,29 @@ def is_available() -> bool:
         )
         return False
 
+    from pathlib import Path
+
+    if not (Path(__file__).parent / "primitive.py").is_file():
+        logger.debug(
+            "CuTeDSL JAX extensions are not available because they were not "
+            "built for this platform."
+        )
+        return False
+
     return True
 
 
 if is_available():
+    if sys.version_info[:2] < CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION:
+        minimum_version = ".".join(map(str, CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION))
+        current_version = ".".join(map(str, sys.version_info[:3]))
+        warnings.warn(
+            f"cutlass.jax requires Python {minimum_version} or newer, but "
+            f"Python {current_version} is in use. Please upgrade Python.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     from .primitive import cutlass_call
     from .types import (
         jax_to_cutlass_dtype,
@@ -78,6 +105,7 @@ if is_available():
 
     __all__ = [
         "CUTE_DSL_MIN_SUPPORTED_JAX_VERSION",
+        "CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION",
         "cutlass_call",
         "jax_to_cutlass_dtype",
         "cutlass_to_jax_dtype",
@@ -100,4 +128,8 @@ if is_available():
     ]
 else:
     # export is_available check for callers or tests.
-    __all__ = ["CUTE_DSL_MIN_SUPPORTED_JAX_VERSION", "is_available"]
+    __all__ = [
+        "CUTE_DSL_MIN_SUPPORTED_JAX_VERSION",
+        "CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION",
+        "is_available",
+    ]

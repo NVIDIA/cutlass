@@ -1,20 +1,20 @@
 # Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-#
+
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-#
+
 # 1. Redistributions of source code must retain the above copyright notice, this
 # list of conditions and the following disclaimer.
-#
+
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
 # and/or other materials provided with the distribution.
-#
+
 # 3. Neither the name of the copyright holder nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-#
+
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -55,8 +55,17 @@ from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 from cutlass.experimental import primitives as prims
 
 
+# ---------------------------------------------------------------------------
+# Kernel Configurations
+# ---------------------------------------------------------------------------
+
 _DEFAULT_THREADS: int = 64
 _OUT_ELEMS: int = 3
+
+
+# ---------------------------------------------------------------------------
+# Device kernel
+# ---------------------------------------------------------------------------
 
 
 @cute.kernel
@@ -92,6 +101,11 @@ def kernel(
         out_arr[2] = all_nonzero
 
 
+# ---------------------------------------------------------------------------
+# Host launcher
+# ---------------------------------------------------------------------------
+
+
 @cute.jit
 def host(
     out: cutlass.Array,
@@ -104,6 +118,11 @@ def host(
         block=(THREADS, 1, 1),
         stream=stream,
     )
+
+
+# ---------------------------------------------------------------------------
+# Compile factory
+# ---------------------------------------------------------------------------
 
 
 @lru_cache(maxsize=None)
@@ -119,6 +138,11 @@ def compile(THREADS: int = _DEFAULT_THREADS) -> Callable:
     )
 
 
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+
 def run(
     compiled_fn: Callable,
 ) -> torch.Tensor:
@@ -131,6 +155,11 @@ def run(
     compiled_fn(out, stream)
     torch.cuda.synchronize()
     return out
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
 
 
 def verify(
@@ -148,6 +177,11 @@ def verify(
     expected = torch.tensor([1, 1, 0], dtype=torch.int32, device="cuda")
     torch.testing.assert_close(out, expected, rtol=0, atol=0)
     print(f"verify (THREADS={THREADS}): PASS")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:

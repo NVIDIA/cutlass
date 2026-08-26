@@ -789,7 +789,6 @@ public:
     if (!ScatterD && !PermuteD) {
       store_byte_pointer_ += (params_.advance_tile * increment_cluster);
     }
-
     thread_start_row_ +=
         ThreadMap::Shape::kGroup *
         ThreadMap::Shape::kRow *

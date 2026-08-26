@@ -15,11 +15,10 @@ This module provides CUDA Python helper functions
 
 from functools import lru_cache
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 from enum import IntEnum
 import numpy as np
 import os
-import ctypes
 
 import cuda.bindings.driver as cuda
 import cuda.bindings.runtime as cudart
@@ -134,6 +133,7 @@ def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
         (10, 0): ("Blackwell", "sm_100a", ["sm_100a"]),  # B200
         (10, 1): ("Thor", "sm_101a", ["sm_101a"]),  # Thor (pre 13.0)
         (10, 3): ("Blackwell", "sm_103a", ["sm_103a"]),
+        (10, 7): ("Rubin", "sm_107a", ["sm_107a"]),
         (11, 0): ("Thor", "sm_110a", ["sm_110a"]),  # Thor (post 13.0)
         (12, 0): (
             "Blackwell",
@@ -161,18 +161,13 @@ def get_compute_capability_major_minor(
     """
     try:
         checkCudaErrors(cuda.cuInit(0))
-        device = checkCudaErrors(cuda.cuDeviceGet(device_id))
-        major = checkCudaErrors(
-            cuda.cuDeviceGetAttribute(
-                cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-                device,
-            )
+        major = get_device_attribute(
+            cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+            device_id,
         )
-        minor = checkCudaErrors(
-            cuda.cuDeviceGetAttribute(
-                cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
-                device,
-            )
+        minor = get_device_attribute(
+            cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+            device_id,
         )
         return major, minor
     except RuntimeError as e:
@@ -340,7 +335,7 @@ def get_device_info() -> DeviceInfo:
                     except:
                         pass
 
-            except Exception as e:
+            except Exception:
                 pass  # Compute capability info will remain None
 
     except Exception as e:
@@ -519,16 +514,12 @@ def load_cubin_module(cubin_file: str) -> Any:
     :rtype: cuda.CUmodule
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
-    # Load CUBIN file as binary data
+    # Load CUBIN file as binary data, then delegate to the data loader
+    # (mirrors load_library delegating to load_library_data).
     _log().info(f"read cubin {cubin_file}")
     with open(cubin_file, "rb") as f:
         cubin_data = f.read()
-    # Load module data
-    _log().info(f"cuModuleLoadData {np.char.array(cubin_data).ctypes.data}")
-    module = checkCudaErrors(
-        cuda.cuModuleLoadData(np.char.array(cubin_data).ctypes.data)
-    )
-    return module
+    return load_cubin_module_data(cubin_data)
 
 
 def unload_cubin_module(module: Any) -> None:
@@ -616,8 +607,14 @@ def load_library_data(cubin_data: bytes | int) -> Any:
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
     # Load module data
+    # Keep the numpy array alive in a local (`_cubin_arr`) across the
+    # cuLibraryLoadData call: `.ctypes.data` is only a raw address into the
+    # array's buffer, so if the array were a bare temporary it could be
+    # garbage-collected before the driver reads the address (use-after-free).
+    _cubin_arr = None
     if isinstance(cubin_data, bytes):
-        cubin_data = np.char.array(cubin_data).ctypes.data
+        _cubin_arr = np.char.array(cubin_data)
+        cubin_data = _cubin_arr.ctypes.data
     _log().info(f"cuLibraryLoadData {cubin_data!r}")
 
     library = checkCudaErrors(

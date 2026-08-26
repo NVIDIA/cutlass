@@ -1,3 +1,4 @@
+
 These kernels are intended only for TS educational purposes. State-of-the-art performance is not guaranteed.
 
 # Tutorial 01: Copy Basics
@@ -7,6 +8,7 @@ These kernels are intended only for TS educational purposes. State-of-the-art pe
 - [The Mental Model](#the-mental-model)
 - [Kernel 01: GMEM Grid-Stride Copy](#kernel-01-gmem-grid-stride-copy)
 - [Kernel 02: TMA Copy](#kernel-02-tma-copy)
+- [Kernel 03: Conditional Schedule Guards](#kernel-03-conditional-schedule-guards)
 - [PipelineConfig](#pipelineconfig)
 - [SMEM Allocation](#smem-allocation)
 - [`try_*` Versus Blocking Calls](#try_-versus-blocking-calls)
@@ -19,17 +21,18 @@ This is the first TS tutorial. It is written for someone who can already read
 CUDA, CuTe DSL or CUTLASS Primitives kernels, including warp-specialized kernels, but has
 not used TS before.
 
-The purpose of TS is not to hide GPU programming behind the abstractions. The kernel developer
-still writes the actual memory loading logic, calls tensor cores, etc.
+The purpose of TS is not to hide GPU programming behind the abstractions. The kernel developer 
+still writes the actual memory loading logic, calls tensor cores, etc. 
 TS provides a structured way to express the asynchronous schedule in warp-specialized kernels
 that can be statically verified for correctness.
 
-This tutorial has two kernels:
+This tutorial has three kernels:
 
 | # | File | Why it exists |
 |---:|---|---|
 | 01 | [01_copy_grid_stride.py](01_copy_grid_stride.py) | The smallest useful TS shape: two GMEM resources, one task. |
 | 02 | [02_copy_tma.py](02_copy_tma.py) | The first real producer/consumer pipeline: a TMA load task asynchronously loads from global memory to shared memory, a store task reads from shared memory and stores to global, and TS validates the pipeline ordering. |
+| 03 | [03_copy_tma_conditional.py](03_copy_tma_conditional.py) | Same TMA pipeline as kernel 02, plus guarded schedule blocks: ``d.first_iter()``, ``d.every()``, ``when_true(aux-work-token)``, and ``d.last_iter()``. |
 
 Read kernel 01 first even if it looks trivial. It introduces the vocabulary used
 by every GEMM, FMHA, MoE, etc. kernel later.
@@ -106,7 +109,7 @@ flowchart TD
 For this copy, there are two separate physical resources:
 the source global memory and the destination global memory. So we declare one resource for
 each. Neither owns SMEM or a pipeline here; they only own a tensor handle and the
-logic to read an element from resource or write an element to the resource.
+logic to read an element from resource or write an element to the resource. 
 
 ```python
 @dataclass(kw_only=True)
@@ -126,8 +129,8 @@ class OutputGmemResource(MemoryResource):
 
 ### Step 2: How to define the work on each resource (producer vs consumer)
 
-The kernel developer is still responsible for providing the logic
-how the data is written to resource (producer work) and
+The kernel developer is still responsible for providing the logic 
+how the data is written to resource (producer work) and 
 how it is read from the resource (consumer work).
 
 The work each resource does is declared as methods decorated with
@@ -214,7 +217,7 @@ up next.
 
 ### Step 4: How to define the schedule
 
-The schedule is the explicit set of operations specified for each asynchronous task.
+The schedule is the explicit set of operations specified for each asynchronous task. 
 It is specified as a function decorated with
 `@schedule` that calls resource work methods in order. This is the TS version of
 the grid-stride loop:
@@ -475,10 +478,10 @@ def store_schedule(smem: MemoryResource, output_gmem: MemoryResource) -> None:
         output_gmem.store(smem_val=smem_val)
 ```
 
-I.e. calling `smem.release()` before `output_gmem.store` is also a valid schedule and is allowed by the TS verifier.
-Releasing before the `store` provides potentially better performance --
-SMEM resource becomes available earlier so loading data in load task can happen in
-parallel to storing to GMEM in store task.
+I.e. calling `smem.release()` before `output_gmem.store` is also a valid schedule and is allowed by the TS verifier. 
+Releasing before the `store` provides potentially better performance -- 
+SMEM resource becomes available earlier so loading data in load task can happen in 
+parallel to storing to GMEM in store task. 
 
 We can do that because the data consumed from shared memory is read into registers.
 So the resource can be released after the consumer work. However, it is not always possible,
@@ -513,8 +516,8 @@ producer `commit` arms the mbarrier with an expected byte count, and the consume
 `wait` blocks until the hardware reports that many bytes have landed. The `async`
 suffix is the consumer side: the consumer is asynchronous threads, so its `release` is
 ordered through the mbarrier. A different producer or consumer (for example warps that write
-SMEM directly, or an async `cp.async` copy, or tensor cores as consumer of the data)
-would use a different factory, because the way "the stage is full" or "the stage is free"
+SMEM directly, or an async `cp.async` copy, or tensor cores as consumer of the data) 
+would use a different factory, because the way "the stage is full" or "the stage is free" 
 is signalled is different. We will cover this in the next tutorials.
 
 The arguments tell TS what guards the SMEM storage:
@@ -579,9 +582,9 @@ def init_read_state(...):
     ...
 ```
 
-Auxiliary work is special type of producer and consumer works. They are still captured in the schedule,
+Auxiliary work is special type of producer and consumer works. They are still captured in the schedule, 
 but their order in the schedule is not verified against dependency graph, waits/releases/acquires/commits
-etc. Auxiliary work is only used for helper code that does not touch the actual resource data, e.g. to hoist pointer setup code from the loop.
+etc. Auxiliary work is only used for helper code that does not touch the actual resource data, e.g. to hoist pointer setup code from the loop. 
 Do not mark work as auxiliary if it reads or writes the resource payload. TMA loads,
 SMEM reads, MMA, GMEM stores, and etc. should stay as normal producer or
 consumer work so TS can validate their ordering.
@@ -655,6 +658,80 @@ barrier protocol through:
 That is the reason TS exists: the low-level work remains explicit, but the
 schedule is now a checked object instead of scattered control flow.
 
+## Kernel 03: Conditional Schedule Guards
+
+[03_copy_tma_conditional.py](03_copy_tma_conditional.py) extends kernel 02 with
+guarded regions inside ``domain_loop``. The TMA load/store pipeline is
+unchanged; a side ``trace`` tensor records when each guard fires so the host can
+verify the schedule after launch.
+
+The copy grid launches one CTA per 128-column tile. Trace markers are global
+schedule evidence rather than per-column-tile data, so only CTA ``blockIdx.x ==
+0`` writes them. Store-side trace calls run in a four-warp store task, so those
+markers are further gated to the first store warp before ``elect_sync()``
+elects one active lane for the scalar marker store.
+
+| Guard kind | Syntax | Task | Purpose |
+|---|---|---|---|
+| First iteration | ``with d.first_iter():`` | Load | Write a begin marker on row 0 |
+| Periodic | ``with d.every(4, start=0):`` | Load | Heartbeat marker every four rows |
+| Opaque runtime | ``with when_true(smem.is_highlight_tile()):`` | Store | Tag the host-selected ``highlight_row`` |
+| Last iteration | ``with d.last_iter():`` | Store | Write an end marker on the final row |
+
+The opaque guard uses ordinary auxiliary consumer work on ``SmemResource``, a
+source resource of the store task. ``TraceGmemResource`` owns only the marker
+writes:
+
+```python
+is_highlight: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.uninitialized()
+
+@consumer_work(work_attrs=WorkAttr.AUXILIARY, returns=is_highlight)
+@cute.jit
+def is_highlight_tile(self, stage_info: StageInfo) -> cutlass.Boolean:
+    return stage_info.loop_offset == cutlass.Int32(self.highlight_row)
+```
+
+During capture, ``smem.is_highlight_tile()`` returns the work-call token backed
+by the ``is_highlight`` task-local slot; at runtime TS evaluates the method
+once, stores the result, and runs the guarded block only when that stored value
+is true. The verifier enumerates opaque
+assignments (here a single key, so two schedule variants) in addition to
+unrolling iteration predicates exactly.
+
+Load schedule (iteration guards):
+
+```python
+with domain_loop(0, num_rows, box_dim[1]) as d:
+    with d.first_iter():
+        trace.mark_begin()
+    with d.every(4, start=0):
+        trace.record_heartbeat()
+    gmem_idx = input_gmem.compute_coords()
+    smem.try_acquire()
+    smem.acquire()
+    smem.tma_load(gmem_idx=gmem_idx)
+    smem.commit()
+```
+
+Store schedule (opaque + last iteration):
+
+```python
+with domain_loop(0, num_rows, box_dim[1]) as d:
+    smem.try_wait()
+    smem.wait()
+    smem_val = smem.read_smem()
+    smem.release()
+    is_highlight = smem.is_highlight_tile()
+    with when_true(is_highlight):
+        trace.mark_highlight()
+    output_gmem.store(smem_val=smem_val)
+    with d.last_iter():
+        trace.mark_end()
+```
+
+When ``num_rows == 1``, the first and last iteration coincide, so both
+``d.first_iter()`` and ``d.last_iter()`` blocks run on that single iteration.
+
 ## What To Remember
 
 - A resource is the unit of ownership. It may own physical storage, a pipeline,
@@ -678,4 +755,5 @@ schedule is now a checked object instead of scattered control flow.
 python 01_copy_grid_stride.py
 python 02_copy_tma.py --rows_cols 256,512
 python 02_copy_tma.py --rows_cols 256,512 --run-raw-kernel
+python 03_copy_tma_conditional.py --rows_cols 256,512 --highlight-row 128
 ```

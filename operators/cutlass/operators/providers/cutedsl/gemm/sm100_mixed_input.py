@@ -885,7 +885,7 @@ class MixedInputGemmOperator(CuteDslOperator):
                 layout = strides_to_layout_string(a_stride, b_stride, out_stride)
 
                 operator_name = (
-                    f"cutedsl.MixedInputGemmOperator_sm100_{scale_mode}_{layout}"
+                    f"cutedsl.MixedInputGemmOperator_sm100_{scale_mode}_{layout}_"
                     f"A{a_dtype}_B{b_dtype}_out{out_dtype}_"
                     f"acc{operands.accumulator_type}_"
                     f"{'2cta' if design.use_2cta_mma else '1cta'}_"

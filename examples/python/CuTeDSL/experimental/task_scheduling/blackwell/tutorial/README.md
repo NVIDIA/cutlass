@@ -73,7 +73,7 @@ flowchart TD
 
 The first tutorials are meant to teach that shift gradually. Do not start by
 reading all the reference material. Run a [small copy example](01_copy_basics_ts/01_copy_grid_stride.py), read how TS expresses it,
-then move to [TMA](01_copy_basics_ts/02_copy_tma.py), [GEMM](02_gemm_simple_ts/01_fp16_bf16_gemm_3.py), and [persistent scheduling](03_persistent_scheduling_dynamic_domain_ts/01_copy_persistent_skip_tile.py).
+then move to [TMA](01_copy_basics_ts/02_copy_tma.py), [conditional guards](01_copy_basics_ts/03_copy_tma_conditional.py), [GEMM](02_gemm_simple_ts/01_fp16_bf16_gemm_3.py), and [persistent scheduling](03_persistent_scheduling_dynamic_domain_ts/01_copy_persistent_skip_tile.py).
 
 ## First Path
 
@@ -82,6 +82,7 @@ Run these examples first:
 ```bash
 python 01_copy_basics_ts/01_copy_grid_stride.py
 python 01_copy_basics_ts/02_copy_tma.py --rows_cols 256,512
+python 01_copy_basics_ts/03_copy_tma_conditional.py --rows_cols 256,512 --highlight-row 128
 python 02_gemm_simple_ts/01_fp16_bf16_gemm_3.py --mnk 128,256,64 --dtype fp16 --tolerance 1e-4
 python 03_persistent_scheduling_dynamic_domain_ts/01_copy_persistent_skip_tile.py --rows_cols 256,512 --overlaunch-tiles 4
 ```
@@ -101,7 +102,7 @@ runtime loop bounds.
 
 | Step | Tutorial | What it teaches |
 |---:|---|---|
-| 01 | [Copy basics](01_copy_basics_ts/) | The TS mental model. Starts with one GMEM copy task, then adds TMA, SMEM allocation, pipeline brackets, and warp specialization. |
+| 01 | [Copy basics](01_copy_basics_ts/) | The TS mental model. Starts with one GMEM copy task, then adds TMA, SMEM allocation, pipeline brackets, warp specialization, and conditional schedule guards (`first_iter` / `every` / `when_true`). |
 | 02 | [Simple FP16/BF16 GEMM](02_gemm_simple_ts/) | A real resource chain: GMEM coordinates -> SMEM A/B tiles -> TMEM accumulator -> GMEM output. Introduces TMEM ownership and a deeper dependency graph. |
 | 03 | [Persistent scheduling and dynamic domains](03_persistent_scheduling_dynamic_domain_ts/) | Persistent scheduling and dynamically specified domain loops. |
 | 04 | [Advanced FP16/BF16 GEMM](04_gemm_bf16_advanced_ts/) | Persistent GEMM, CLC scheduler, PDL, bias, clusters, multicast, split A/B resources, and benchmark sweeps. |

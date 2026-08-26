@@ -48,10 +48,16 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .enums import LoopGuard, ScheduleStage, ScheduleStageType
+from .enums import (
+    IterationPredicate,
+    LoopGuard,
+    OpaqueCondition,
+    SKIPPABLE,
+    ScheduleStage,
+    ScheduleStageType,
+)
 from .resources import MemoryResource
 from .schedule_builder import (
-    BlockCondition,
     ConditionalBlock,
     DomainLoop,
     Node,
@@ -61,6 +67,8 @@ from .schedule_builder import (
     Step,
     WorkTileLoop,
 )
+
+LoopScheduleGuard = LoopGuard | IterationPredicate | OpaqueCondition
 
 # A writer/per-step slot key: keys on the resource *id*.
 _Slot = tuple[int, ScheduleStage, ScheduleStageType, int]
@@ -82,7 +90,7 @@ def _build_entry(
     resource: object,
     stage: ScheduleStage,
     stage_type: ScheduleStageType,
-    guard: LoopGuard,
+    guard: LoopScheduleGuard,
     label: object,
 ) -> tuple:
     """Shortest schedule tuple the legacy normaliser accepts (mirrors old builder).
@@ -145,7 +153,7 @@ class _Lowerer:
         step: Step,
         *,
         stage_type: ScheduleStageType,
-        guard: LoopGuard,
+        guard: LoopScheduleGuard,
         in_skippable: bool,
         outside_wtl: bool,
     ) -> None:
@@ -197,7 +205,7 @@ class _Lowerer:
         nodes: list[Node],
         *,
         stage_type: ScheduleStageType,
-        guard: LoopGuard,
+        guard: LoopScheduleGuard,
         in_skippable: bool,
         in_wtl: bool,
         outside_wtl: bool,
@@ -250,12 +258,10 @@ class _Lowerer:
                 case ConditionalBlock(condition=condition, body=body):
                     nf = guard
                     nskip = in_skippable
-                    if condition is BlockCondition.FirstIter:
-                        nf = LoopGuard.FirstIter
-                    elif condition is BlockCondition.LastIter:
-                        nf = LoopGuard.LastIter
-                    elif condition is BlockCondition.Skippable:
+                    if condition is SKIPPABLE:
                         nskip = True
+                    elif isinstance(condition, (IterationPredicate, OpaqueCondition)):
+                        nf = condition
                     self.walk(
                         body,
                         stage_type=stage_type,

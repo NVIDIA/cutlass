@@ -432,7 +432,8 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
                 (M, N, None) for M in [64, 128, 256] for N in [32, 64, 128, 256]
             ],
             "cluster_shape": [
-                (M, N, 1) for M in [1, 2, 4, 8, 16] for N in [1, 2, 4, 8, 16]
+                (m, n, 1) for m in [1, 2, 4, 8, 16] for n in [1, 2, 4, 8, 16]
+                if m * n <= Sm100DesignMetadata.max_cluster_size
             ],
             "use_tma_store": [True],
         }

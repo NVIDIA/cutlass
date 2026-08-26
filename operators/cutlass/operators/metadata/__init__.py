@@ -31,6 +31,7 @@ from .design import (
     BLASDesignMetadata,
     DesignMetadata,
     Sm100DesignMetadata,
+    Sm107DesignMetadata,
 )
 from .design.tile_scheduler import (
     CLCDynamicPersistentTileSchedulerMetadata,
@@ -46,6 +47,7 @@ from .operand_constraints import (
 from .operands import (
     GemmOperandsMetadata,
     GroupedGemmOperandsMetadata,
+    IndexPtrGroupedGemmOperandsMetadata,
     OperandsMetadata,
 )
 
@@ -55,10 +57,10 @@ __all__ = [
     "OperandsMetadata",
     "DesignMetadata",
     "EpilogueMetadata",
-
     # OperandsMetadata variants
     "GemmOperandsMetadata",
     "GroupedGemmOperandsMetadata",
+    "IndexPtrGroupedGemmOperandsMetadata",
     # Operand constraints
     "OperandConstraints",
     "DenseTensorConstraints",
@@ -66,6 +68,7 @@ __all__ = [
     # Design metadata variants
     "BLASDesignMetadata",
     "Sm100DesignMetadata",
+    "Sm107DesignMetadata",
     # Tile scheduler metadata
     "TileSchedulerMetadata",
     "CLCDynamicPersistentTileSchedulerMetadata",
