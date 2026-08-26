@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import ctypes
+import math
 from abc import abstractmethod
 from itertools import chain
 import numpy as np
@@ -551,6 +552,9 @@ class IntegerMeta(NumericMeta):
     """
 
     signed: bool
+    # Value range that ``_np_dtype`` stores exactly, or None when there is no
+    # numpy dtype to store into. See ``Integer.__init__``.
+    _exact_range: Optional[tuple[int, int]]
 
     def __new__(
         cls,
@@ -590,6 +594,19 @@ class IntegerMeta(NumericMeta):
             cls, name, bases, attrs | new_attrs, width, np_dtype, mlir_type, is_abstract
         )
         new_cls.signed = signed
+        # Precomputed once per type so ``Integer.__init__`` can range-check without
+        # rebuilding the bounds on every construction. These track ``np_dtype``
+        # rather than ``width``, because the numpy cast is what they must agree
+        # with, and a few subclasses patch ``width`` afterwards.
+        if np_dtype is None:
+            new_cls._exact_range = None
+        elif width == 1:
+            # np.bool_ folds everything nonzero to True, so only 0 and 1 survive
+            # the cast unchanged.
+            new_cls._exact_range = (0, 1)
+        else:
+            info = np.iinfo(np_dtype)  # type: ignore[type-var]
+            new_cls._exact_range = (int(info.min), int(info.max))
         return new_cls
 
     def __str__(cls) -> str:
@@ -1718,6 +1735,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
 
     # Injected by IntegerMeta.__new__ on every concrete subclass.
     signed: ClassVar[bool]
+    _exact_range: ClassVar[Optional[tuple[int, int]]]
 
     def __init__(
         self,
@@ -1736,14 +1754,25 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         if isinstance(x, (bool, int, float)):
             # Add check for NaN before numpy conversion
             if isinstance(x, float):
-                if np.isnan(x):
+                if math.isnan(x):
                     raise ValueError("Cannot convert float NaN to integer")
-                elif np.isinf(x):
+                elif math.isinf(x):
                     raise OverflowError("Cannot convert float infinity to integer")
 
-            np_dtype = ty.numpy_dtype
-            assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
-            x_val = int(np.array(x).astype(np_dtype))
+            exact_range = ty._exact_range
+            if exact_range is not None and exact_range[0] <= x <= exact_range[1]:
+                # Already representable, so the cast below would round-trip the
+                # value unchanged. int() truncates floats toward zero and folds
+                # bools to 0/1, which is what astype does for this range too.
+                x_val = int(x)
+            else:
+                # Out of range: defer to numpy for the wrap-around (or the
+                # overflow it raises on values wider than the dtype). _exact_range
+                # is None exactly when there is no dtype to cast to, so this is
+                # still where an unsupported width is rejected.
+                np_dtype = ty.numpy_dtype
+                assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
+                x_val = int(np.array(x).astype(np_dtype))
         elif type(x) == ty:
             x_val = x.value  # type: ignore[assignment]
         elif isinstance(x, ir.Value):

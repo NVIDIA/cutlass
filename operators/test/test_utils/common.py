@@ -46,6 +46,11 @@ if TYPE_CHECKING:
 _TEST_LEVEL_ENV_VAR = "CUTLASS_OPERATORS_TEST_LEVEL"
 
 
+def reference_device() -> str:
+    """Return the device reference computation and comparison should run on."""
+    return "cuda"
+
+
 def get_test_level() -> str:
     """Return the test level set via ``CUTLASS_OPERATORS_TEST_LEVEL`` (defaults to ``"L0"``)."""
     return os.environ.get(_TEST_LEVEL_ENV_VAR, "L0")

@@ -34,10 +34,10 @@ from cutlass.utils.gemm.tensor_utils import decode_float4e2m1fn, unpack_scale_fa
 
 import cutlass.operators as ops
 from cutlass.operators.utils.common import ceil_div
-from cutlass.operators.utils.device import device_or_env_target_sm
 from cutlass.operators.utils.dtype import torch_storage_packing_factor
 
 from . import reference_check
+from .common import reference_device
 
 ################################################################################
 # Reference computation
@@ -84,7 +84,10 @@ def dense_gemm_reference(
         case torch.Tensor():
             B_tensor = args.B.tensor.runtime_tensor
             assert isinstance(B_tensor, torch.Tensor)
-            reference = A_tensor.to(torch.float32) @ B_tensor.to(torch.float32)
+            device = reference_device()
+            reference = A_tensor.to(device).to(torch.float32) @ B_tensor.to(device).to(
+                torch.float32
+            )
             if not ref_as_acc_dtype:
                 # pytorch and numpy, following the IEEE standard, converts to Inf or NaN
                 # but our kernels use satfinite. To make them the same output we have to
@@ -150,8 +153,16 @@ def _emulated_scaled_dense_gemm_reference(
     """
     A = args.A.quantized.tensor.runtime_tensor
     B = args.B.quantized.tensor.runtime_tensor
-    scale_A = args.A.scale.tensor.runtime_tensor
-    scale_B = args.B.scale.tensor.runtime_tensor
+
+    # Everything below runs on `device`, so move the operands there first.
+    # Sub-byte and 8-bit dtypes copy across devices fine (it is a memcpy); it is
+    # the *casts* that are unimplemented on CPU for float4_e2m1fn_x2, which the
+    # _decode_fp4_packed branch below already avoids.
+    device = reference_device()
+    A = A.to(device)
+    B = B.to(device)
+    scale_A = args.A.scale.tensor.runtime_tensor.to(device)
+    scale_B = args.B.scale.tensor.runtime_tensor.to(device)
     out_dtype = cutlass.torch.dtype(args.out.dtype)
 
     M, N = args.out.shape[-2:]
@@ -185,17 +196,14 @@ def _emulated_scaled_dense_gemm_reference(
     # unpack_scale_factors inverts the Swizzle32x4x4 layout directly from
     # the scale tensor in args, returning (MN, K, L) float32.
     # Permute to (L, MN, K) to match our (L, M, K) / (L, K, N) convention.
-    device = A_f32.device
-    sfa_expanded = (
-        unpack_scale_factors(scale_A.to(torch.float32), sf_vec_size, M, K, L)
-        .to(device)
-        .permute(2, 0, 1)[:, :M, :K]
-    )  # (L, M, K)
-    sfb_expanded = (
-        unpack_scale_factors(scale_B.to(torch.float32), sf_vec_size, N, K, L)
-        .to(device)
-        .permute(2, 0, 1)[:, :N, :K]
-    )  # (L, N, K)
+    # unpack_scale_factors builds its index on scale_A/scale_B's device, which
+    # is already `device`.
+    sfa_expanded = unpack_scale_factors(
+        scale_A.to(torch.float32), sf_vec_size, M, K, L
+    ).permute(2, 0, 1)[:, :M, :K]  # (L, M, K)
+    sfb_expanded = unpack_scale_factors(
+        scale_B.to(torch.float32), sf_vec_size, N, K, L
+    ).permute(2, 0, 1)[:, :N, :K]  # (L, N, K)
 
     # --- apply scale factors and matmul ---
     A_scaled = A_f32 * sfa_expanded  # (L, M, K)
@@ -309,11 +317,11 @@ def scaled_dense_gemm_reference(
     scale_B = scale_B.view(L, -1).contiguous()
     reference = torch.empty((L, M, padded_N), device=A.device, dtype=acc_dtype)
 
-    for l_idx in range(L):
-        # Use out type of F32 and then convert to out_dtype due to cuBLAS
-        # errors occasionally thrown with F8 types.
-        # See https://github.com/pytorch/pytorch/issues/160816
-        try:
+    # Use out type of F32 and then convert to out_dtype due to cuBLAS
+    # errors occasionally thrown with F8 types.
+    # See https://github.com/pytorch/pytorch/issues/160816
+    try:
+        for l_idx in range(L):
             reference[l_idx, :, :] = torch._scaled_mm(
                 A[l_idx, :, :],
                 B_padded[l_idx, :, :],
@@ -321,10 +329,11 @@ def scaled_dense_gemm_reference(
                 scale_b=scale_B[l_idx, :],
                 out_dtype=acc_dtype,
             )
-        except RuntimeError:
-            # cuBLAS may not have an algorithm for this configuration;
-            # fall back to emulated reference.
-            return _emulated_scaled_dense_gemm_reference(args, ref_as_acc_dtype)
+    except (RuntimeError, ValueError):
+        # torch cannot compute this configuration: cuBLAS may have no algorithm
+        # for it (RuntimeError), and torch CPU rejects blockwise scaling (ValueError)
+        # Either way, use the emulated path if torch failed.
+        return _emulated_scaled_dense_gemm_reference(args, ref_as_acc_dtype)
 
     if not ref_as_acc_dtype:
         reference = clamp_to_finite_range(reference, out_dtype).to(out_dtype)
@@ -373,9 +382,9 @@ def make_mxfp4_kmajor(rows: int, k: int) -> torch.Tensor:
 
     Returns a ``(rows, k // 2)`` ``torch.float4_e2m1fn_x2`` CUDA tensor (logical
     ``(rows, k)``, K-major). With integer operands and power-of-two scales (see
-    make_random_pow2_scale every dequantized product and partial sum is
-    an exact integer in float32, so the kernel and scaled_dense_gemm_reference
-    accumulate bit-identically.
+    make_random_pow2_scale) every dequantized product and partial sum is an exact
+    integer in float32, so the kernel and scaled_dense_gemm_reference accumulate
+    bit-identically.
 
     Args:
         rows (int): The non-K (M or N) dimension size.
@@ -386,9 +395,10 @@ def make_mxfp4_kmajor(rows: int, k: int) -> torch.Tensor:
     """
     if k % 2 != 0:
         raise ValueError(f"K must be even to tightly pack FP4, got {k}")
-    patterns = torch.tensor(_FP4_INT_BYTE_PATTERNS, dtype=torch.uint8, device="cuda")
-    idx = torch.randint(0, patterns.numel(), (rows, k // 2), device="cuda")
-    return patterns[idx].view(torch.float4_e2m1fn_x2)
+    device = reference_device()
+    patterns = torch.tensor(_FP4_INT_BYTE_PATTERNS, dtype=torch.uint8, device=device)
+    idx = torch.randint(0, patterns.numel(), (rows, k // 2), device=device)
+    return patterns[idx].view(torch.float4_e2m1fn_x2).cuda()
 
 
 def make_random_pow2_scale(numel: int) -> torch.Tensor:
@@ -398,6 +408,7 @@ def make_random_pow2_scale(numel: int) -> torch.Tensor:
     every product and partial sum an exact integer in float32. Accumulation is
     then order-independent.
     """
-    lut = torch.tensor([1.0, 2.0, 4.0], device="cuda")
-    idx = torch.randint(0, lut.numel(), (numel,), device="cuda")
-    return lut[idx].to(torch.float8_e8m0fnu)
+    device = reference_device()
+    lut = torch.tensor([1.0, 2.0, 4.0], device=device)
+    idx = torch.randint(0, lut.numel(), (numel,), device=device)
+    return lut[idx].to(torch.float8_e8m0fnu).cuda()

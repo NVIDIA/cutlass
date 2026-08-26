@@ -40,6 +40,16 @@ from .._mlir import ir
 # Compiler Class
 # =============================================================================
 
+# Each entry is (marker, separator preceding the log, backend). Match ptxas
+# before libNVVM so a PTX-to-SASS failure is attributed to the correct stage.
+_BACKEND_FAILURE_MARKERS: tuple[tuple[str, str, str], ...] = (
+    # Normalized CudaToBinaryPass diagnostic.
+    ("PTXAS_ERROR", "ptxas log:", "ptxas"),
+    # The public chip-specific helper names its target in the diagnostic.
+    ("NVPTX compiler invocation failed for chip", ", error log:", "ptxas"),
+    ("NVVM_ERROR", "libNVVM extra log:", "nvvm"),
+)
+
 
 class CompilerDiagnosticError(DSLBaseError):
     """Compilation failed with Python-rendered compiler diagnostics."""
@@ -51,6 +61,7 @@ class CompilerDiagnosticError(DSLBaseError):
         *,
         backend: str = "",
         nvvm_error: str = "",
+        ptxas_error: str = "",
         ir_context: str = "",
         arch: str = "",
     ) -> None:
@@ -58,6 +69,7 @@ class CompilerDiagnosticError(DSLBaseError):
         self.raw_error = raw_error
         self.backend = backend
         self.nvvm_error = nvvm_error
+        self.ptxas_error = ptxas_error
         self.ir_context = ir_context
         self.arch = arch
         super().__init__(formatted)
@@ -69,6 +81,20 @@ class CompilerDiagnosticError(DSLBaseError):
         return self.formatted
 
 
+def _strip_mlir_continuation_indent(text: str) -> str:
+    """Remove MLIR's continuation indent from a multi-line diagnostic."""
+    continuation_indent = "  "
+    first, separator, rest = text.partition("\n")
+    if not separator:
+        return text
+    lines = rest.split("\n")
+    if not all(
+        line.startswith(continuation_indent) or not line.strip() for line in lines
+    ):
+        return text
+    return "\n".join([first, *(line[len(continuation_indent) :] for line in lines)])
+
+
 class Compiler:
     """Compiler class for compiling and building MLIR modules."""
 
@@ -77,21 +103,34 @@ class Compiler:
         self.execution_engine = execution_engine
         self._post_compile_hook: collections.abc.Callable[[Any], None] | None = None
 
-    def _process_error(self, error_msg: str) -> tuple[str | None, str | None, str]:
-        """Process error message to extract NVVM error and IR context"""
-        nvvm_error = None
-        ir_msg = ""
+    def _process_error(self, error_msg: str) -> tuple[str, str, str, str]:
+        """Split a backend failure into (compiler log, IR context, location, backend).
+
+        The backend is "" when `error_msg` is not a backend failure at all.
+        """
         location = _diagnostics.extract_compiler_location(error_msg)
 
-        if "NVVM_ERROR" in error_msg:
-            # Extract the specific NVVM error
-            nvvm_error = (
-                error_msg.split("libNVVM extra log:")[1].strip()
-                if "libNVVM extra log:" in error_msg
-                else error_msg
-            )
+        for marker, separator, backend in _BACKEND_FAILURE_MARKERS:
+            if marker not in error_msg:
+                continue
+
+            # maxsplit=1: the compiler log can contain the separator itself (a
+            # libNVVM failure whose text already quotes its own log, say), and
+            # splitting on every occurrence would keep only the part before the
+            # second one and drop the log we are trying to surface.
+            if separator in error_msg:
+                backend_error = error_msg.split(separator, 1)[1].strip()
+            else:
+                # Marker-only C++ patterns carry no dedicated log separator.
+                # Keep the payload after the marker without the surrounding
+                # MLIR diagnostic prefix (for example, "error: unknown:").
+                backend_error = error_msg.split(marker, 1)[1].lstrip(" ,:").strip()
+                if not backend_error:
+                    backend_error = marker
+            backend_error = _strip_mlir_continuation_indent(backend_error)
 
             # Extract IR context
+            ir_msg = ""
             if "see current operation:" in error_msg:
                 # Get the IR section
                 ir_section = error_msg.split("see current operation:")[1].strip()
@@ -107,7 +146,9 @@ class Compiler:
                 else:
                     ir_msg = ir_section
 
-        return nvvm_error, ir_msg, location
+            return backend_error, ir_msg, location, backend
+
+        return "", "", location, ""
 
     def compile(
         self,
@@ -151,13 +192,31 @@ class Compiler:
                 if formatted:
                     raise CompilerDiagnosticError(formatted, raw_error=str(e)) from e
             error_msg = str(e)
-            nvvm_error, ir_msg, location = self._process_error(error_msg)
+            backend_error = ir_msg = location = backend = ""
+            # When warnings/remarks are enabled, the scoped MLIR diagnostic
+            # collector consumes regular error diagnostics. MLIRError then only
+            # contains the generic pass-failure text, so also inspect the
+            # collected messages for a backend marker and its original log.
+            error_candidates = (
+                error_msg,
+                *diagnostic_session._collected_error_texts(),
+            )
+            for candidate in error_candidates:
+                processed = self._process_error(candidate)
+                if processed[3]:
+                    backend_error, ir_msg, location, backend = processed
+                    error_msg = candidate
+                    break
 
-            if nvvm_error:
+            if backend_error:
                 ir_context = ir_msg or ""
+                is_ptxas = backend == "ptxas"
+                nvvm_error = "" if is_ptxas else backend_error
+                ptxas_error = backend_error if is_ptxas else ""
                 formatted = diagnostic_session.format_backend_failure(
                     raw_error=error_msg,
                     nvvm_error=nvvm_error,
+                    ptxas_error=ptxas_error,
                     ir_context=ir_context,
                     arch=arch,
                     location=location,
@@ -165,8 +224,9 @@ class Compiler:
                 raise CompilerDiagnosticError(
                     formatted,
                     raw_error=error_msg,
-                    backend="nvvm",
+                    backend=backend,
                     nvvm_error=nvvm_error,
+                    ptxas_error=ptxas_error,
                     ir_context=ir_context,
                     arch=arch,
                 ) from e

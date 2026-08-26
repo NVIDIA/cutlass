@@ -1619,9 +1619,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         # with ``payload_kind`` so the display value tracks the Python type
         # (e.g. bool → True/False) rather than the wire value (int 1/0).
         accepted: tuple[TVMFFITypeIndex, ...]
-        payload_kind: (
-            tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
-        )
+        payload_kind: tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
         expected_repr: bool | int | float
         if isinstance(param, spec.ConstNone):
             accepted = (TVMFFITypeIndex.kTVMFFINone,)
@@ -1657,9 +1655,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
             type_ok: ir.Value = self.equal(type_index, self.i32(accepted[0]))
             for tx in accepted[1:]:
-                type_ok = self.or_(
-                    type_ok, self.equal(type_index, self.i32(tx))
-                )
+                type_ok = self.or_(type_ok, self.equal(type_index, self.i32(tx)))
         current_block = self.check_condition(
             current_block,
             lambda: type_ok,
@@ -1692,9 +1688,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     self.f64_type,
                     ir.FloatAttr.get(self.f64_type, expected_float),
                 ).res
-                value_ok = llvm.fcmp(
-                    llvm.FCmpPredicate.oeq, v_float64, expected_const
-                )
+                value_ok = llvm.fcmp(llvm.FCmpPredicate.oeq, v_float64, expected_const)
         return self.check_condition(
             current_block,
             lambda: value_ok,
@@ -2198,6 +2192,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             device_id = self.load_dltensor_device_id(dl_tensor_ptr)
             ndim = self.load_dltensor_ndim(dl_tensor_ptr)
             byte_offset = self.load_dltensor_byte_offset(dl_tensor_ptr)
+            data = self.offset_ptr_bytes(data, byte_offset)
 
         # check data alignment if specified
         if param.data_alignment is not None:
@@ -2307,19 +2302,6 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 f", expected dtype={param.dtype}",
             ],
         )
-        # check byte_offset
-        # Break error message into reusable parts for better string deduplication
-        current_block = self.check_condition(
-            current_block,
-            lambda: self.equal(byte_offset, self.i64(0)),
-            "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected byte_offset=0",
-            ],
-        )
 
         with ir.InsertionPoint(current_block):
             shape = self.load_dltensor_shape(dl_tensor_ptr)
@@ -2427,7 +2409,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             The working stream.
         """
         for param in params:
-            if (
+            if isinstance(param, spec.TupleParam):
+                # Recursively check tuples
+                result = self.find_env_stream(param.params)
+                if result is not None:
+                    return result
+            elif (
                 isinstance(param, spec.Tensor)
                 and param.dlpack_device_type != tvm_ffi.DLDeviceType.kDLCPU
             ):
