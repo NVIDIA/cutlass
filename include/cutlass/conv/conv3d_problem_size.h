@@ -193,7 +193,8 @@ public:
     pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0])
     {
       // set output Z
-      Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;
+      auto num_d = int(D + pad_d * 2 - T * dilation_d);
+      Z = (num_d < 0) ? 0 : (num_d / stride_d + 1);
     }
 
   /// Constructs convolution problem size from cutlass Tensor5DCoord, Coord3D
@@ -221,7 +222,8 @@ public:
     pad_d(CUTLASS_STL_NAMESPACE::get<0>(padding)[0]), stride_d(stride[0]), dilation_d(dilation[0])
     {
       // set output Z
-      Z = ((D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+      auto num_d = int(D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding)[0] - T * dilation_d);
+      Z = (num_d < 0) ? 0 : (num_d / stride_d + 1);
     }
 
   /// Equality operator (ignores mode and split_k_slice)
@@ -270,8 +272,8 @@ public:
   CUTLASS_HOST_DEVICE
   cutlass::Tensor5DCoord filter_extent(bool is_deconv = false) const {
 
-    return is_deconv ? cutlass::Tensor5DCoord ({C, T, R, S, K})
-        : cutlass::Tensor5DCoord ({K, T, R, S, C});
+    return is_deconv ? cutlass::Tensor5DCoord ({C, T, R, S, K / groups})
+        : cutlass::Tensor5DCoord ({K, T, R, S, C / groups});
   }
 
   /// Returns output extent as Tensor5DCoord
@@ -296,7 +298,7 @@ public:
 
     return static_cast<int64_t>(K) * static_cast<int64_t>(T) *
            static_cast<int64_t>(R) * static_cast<int64_t>(S) *
-           static_cast<int64_t>(C);
+           static_cast<int64_t>(C) / static_cast<int64_t>(groups);
   }
 
   /// Returns output size in number of elements
