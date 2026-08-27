@@ -156,7 +156,7 @@ struct Testbed {
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
       cutlass::reference::host::BlockFillSequential(
-        view.data(), view.capacity());
+        view.data(), int64_t(view.capacity()));
     } 
     else {
       EXPECT_TRUE(false) << "Not implemented";
