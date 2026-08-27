@@ -274,7 +274,7 @@ class GemmOperation:
     if is_blockwise(self.gemm_kind):
       d_type_names = DataTypeNames[self.D.element]
 
-      extended_name = "{core_name}_{sfvec_m_size}x{sfvec_k_size}{element_sfa}x{element_a}_{sfvec_n_size}x{sfvec_k_size}{element_sfb}x{element_b}_{element_acc}_{element_c}_{element_d}".format(
+      extended_name = "{core_name}_{sfvec_m_size}x{sfvec_k_size}{element_sfa}x{element_a}_{sfvec_k_size}x{sfvec_n_size}{element_sfb}x{element_b}_{element_acc}_{element_c}_{element_d}".format(
         element_sfa = DataTypeNames[self.accumulator_type()],
         element_a = DataTypeNames[self.A.element],
         element_sfb = DataTypeNames[self.accumulator_type()],
