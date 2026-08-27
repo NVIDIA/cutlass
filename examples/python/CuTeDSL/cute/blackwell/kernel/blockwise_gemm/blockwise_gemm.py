@@ -2716,7 +2716,11 @@ def run(
         sfb_tensor,
         max_active_clusters,
         current_stream,
-        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
+        options=(
+            "--opt-level=2"
+            if tuple(map(int, cutlass.__version__.split(".")[:2])) >= (4, 6)
+            else ""
+        ),
     )
 
     # Execution
