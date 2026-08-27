@@ -1459,8 +1459,8 @@ ${operation_name}(${operation_name}${operation_suffix}::Params params) {
         self.argtype = [ctypes.POINTER(self.argument_type), ctypes.c_int, ctypes.c_void_p]
 
     def host_precompute(self, arguments, workspace_bytes):
-        self.precompute.argtype = [
-            self.argtype[0], ctypes.c_int, ctypes.c_longlong]
+        self.precompute.argtypes = [
+            self.argtype[0], ctypes.c_int, ctypes.c_size_t]
         self.precompute.restype = ctypes.POINTER(ctypes.c_byte * workspace_bytes)
 
         problem_info = self.precompute(
