@@ -202,7 +202,7 @@ int main() {
     &run_fused_gemm_f16_rf_res
   };
 
-  return testRun(75, funcs, "gemm f16 RF residency");
+  return testRun(getDefaultSmArch(), funcs, "gemm f16 RF residency");
 
 
 }

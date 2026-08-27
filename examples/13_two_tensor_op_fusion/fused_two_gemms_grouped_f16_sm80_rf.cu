@@ -288,7 +288,7 @@ int main(int argc, char const **args) {
     &run_fused_grouped_gemm_f16_sm80_rf_res
   };
 
-  return testRun(80, funcs, "grouped gemm f16 RF residency");
+  return testRun(getDefaultSmArch(), funcs, "grouped gemm f16 RF residency");
 }
 
 

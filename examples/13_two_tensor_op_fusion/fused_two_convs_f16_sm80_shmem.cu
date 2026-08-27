@@ -227,7 +227,7 @@ int main() {
     &run_fused_conv2d_fprop_optimized_f16_sm80_shmem
   };
 
-  return testRun(80, funcs, "conv f16 shmem staging");
+  return testRun(getDefaultSmArch(), funcs, "conv f16 shmem staging");
 
 }
 
