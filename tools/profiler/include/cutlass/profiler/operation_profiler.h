@@ -201,6 +201,13 @@ public:
     DeviceAllocation &reference,
     int64_t count = 0);
 
+  /// Compares consecutive tensor batches for equality
+  static Disposition compare_tensor_batches(
+    Options const &options,
+    DeviceAllocation &experimental,
+    DeviceAllocation &reference,
+    int logical_batch_count);
+
   static void save_workspace(
     DeviceContext &device_context,
     Options const &options,
