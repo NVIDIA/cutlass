@@ -256,7 +256,7 @@ size_t DeviceAllocation::construct_layout(
       return construct_layout_<cutlass::layout::RowMajorInterleaved<64>>(bytes, layout_id, extent, stride);
 
     case library::LayoutTypeID::kTensorNCHW:
-      return construct_layout_<cutlass::layout::TensorNHWC>(bytes, layout_id, extent, stride);
+      return construct_layout_<cutlass::layout::TensorNCHW>(bytes, layout_id, extent, stride);
 
     case library::LayoutTypeID::kTensorNHWC:
       return construct_layout_<cutlass::layout::TensorNHWC>(bytes, layout_id, extent, stride);
@@ -1633,6 +1633,7 @@ void DeviceAllocation::initialize_random_sparsemeta_device(int seed, int MetaSiz
   // this reason.
 
   switch (type_) {
+  case library::NumericTypeID::kS16:
   case library::NumericTypeID::kU16:
     cutlass::reference::device::BlockFillRandomSparseMeta<uint16_t>(
       reinterpret_cast<uint16_t *>(pointer_),
@@ -1641,6 +1642,7 @@ void DeviceAllocation::initialize_random_sparsemeta_device(int seed, int MetaSiz
       MetaSizeInBits
     );
     break;
+  case library::NumericTypeID::kS32:
   case library::NumericTypeID::kU32:
     cutlass::reference::device::BlockFillRandomSparseMeta<uint32_t>(
       reinterpret_cast<uint32_t *>(pointer_),
@@ -1670,6 +1672,7 @@ void DeviceAllocation::initialize_random_sparsemeta_host(int seed, int MetaSizeI
 
   switch (type_) {
   case library::NumericTypeID::kS16:
+  case library::NumericTypeID::kU16:
     cutlass::reference::host::BlockFillRandomSparseMeta<uint16_t>(
       reinterpret_cast<uint16_t *>(host_data.data()),
       capacity_,
@@ -1678,6 +1681,7 @@ void DeviceAllocation::initialize_random_sparsemeta_host(int seed, int MetaSizeI
     );
     break;
   case library::NumericTypeID::kS32:
+  case library::NumericTypeID::kU32:
     cutlass::reference::host::BlockFillRandomSparseMeta<uint32_t>(
       reinterpret_cast<uint32_t *>(host_data.data()),
       capacity_,

@@ -80,7 +80,7 @@ Options::Device::Device(cutlass::CommandLine const &cmdline) {
         if (!res.second) {
           throw std::runtime_error("Duplicate device specified: " +
                                    std::to_string(device));
-        } else if (device > num_devices) {
+        } else if (device >= num_devices) {
           throw std::runtime_error("Bad device ID: " +
                                    std::to_string(device));
         } else {
