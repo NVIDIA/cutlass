@@ -28,9 +28,28 @@
 
 if (NOT MSVC)
 
+# Cover exact, partial-stage, and stage-boundary K tails.
+set(TEST_K_288  --m=256 --k=288  --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_1024 --m=256 --k=1024 --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_1056 --m=256 --k=1056 --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_1152 --m=256 --k=1152 --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_1280 --m=256 --k=1280 --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_1312 --m=256 --k=1312 --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_2048 --m=256 --k=2048 --batch=1 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_2176 --m=256 --k=2176 --batch=1 --epilogue_st=1.0 --profiling=false)
+
 cutlass_example_add_executable(
   91_fp4_gemv
   91_fp4_gemv.cu
+  TEST_COMMAND_OPTIONS
+  TEST_K_288
+  TEST_K_1024
+  TEST_K_1056
+  TEST_K_1152
+  TEST_K_1280
+  TEST_K_1312
+  TEST_K_2048
+  TEST_K_2176
 )
 
 endif()
