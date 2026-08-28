@@ -81,7 +81,24 @@ def cuda_install_path():
         _CUDA_INSTALL_PATH = os.getenv("CUDA_INSTALL_PATH", _cuda_install_path_from_nvcc())
     return _CUDA_INSTALL_PATH
 
-CACHE_FILE = "compiled_cache.db"
+def _cache_path() -> str:
+    """Return the per-user path used for compiled operation artifacts."""
+    cache_root = os.environ.get("CUTLASS_CPPGEN_CACHE") or os.environ.get("XDG_CACHE_HOME")
+    if not cache_root:
+        cache_root = os.path.join(os.path.expanduser("~"), ".cache")
+
+    cache_dir = os.path.join(os.path.expanduser(cache_root), "cutlass_cppgen")
+    os.makedirs(cache_dir, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(cache_dir, 0o700)
+    except OSError:
+        # Some platforms do not support POSIX permission bits.
+        pass
+
+    return os.path.join(cache_dir, "compiled_cache.db")
+
+
+CACHE_FILE = _cache_path()
 
 from cutlass_library import (
     DataType,
