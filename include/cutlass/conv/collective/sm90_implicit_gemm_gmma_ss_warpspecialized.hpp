@@ -370,6 +370,16 @@ public:
       return false;
     }
 
+    // Check output spatial extents are strictly positive
+    auto out_data = (ConvOp == conv::Operator::kFprop) ? problem_shape.shape_C : problem_shape.shape_A;
+    for (int i = 0; i < problem_shape.RankS; ++i) {
+      implementable = implementable && (out_data[i+1] > 0);
+    }
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Output spatial extents must be strictly positive.\n");
+      return false;
+    }
+
     if (is_im2col_A || is_im2col_B) {
       // Check valid corner values for TMA_LOAD_IM2COL, signed int ranging from [-corner_limit, corner_limit - 1]
       constexpr int32_t corner_limit = 1 << (16 / NumSpatialDimensions - 1);
