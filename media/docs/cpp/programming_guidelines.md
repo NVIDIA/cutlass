@@ -1108,7 +1108,7 @@ Some compilers may emit spurious unused warnings for some variable declarations,
 Avoid direct access to CUDA built-in variables `threadIdx`, `blockIdx`, `blockDim`, and `gridDim` within
 CUTLASS components except in special circumstances.
 
-Using built-in global variables directly within resuable components necessitates that all components
+Using built-in global variables directly within reusable components necessitates that all components
 use them consistently which may not be possible if CUTLASS components are used in other contexts.
 
 Instead, components should accept a linear ID identifying threads, warps, and threadblocks from calling

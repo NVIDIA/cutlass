@@ -206,7 +206,7 @@ The warp-level GEMM API is a generalization of CUDA's WMMA API to achieve the fo
 
 - native matrix multiply sizes of Tensor Cores
 - permuted shared memory layouts to ensure conflict-free accesses
-- pointer initilization outside of the mainloop
+- pointer initialization outside of the mainloop
 - efficient traversal
 
 Defining a warp-level matrix multiply in CUTLASS is similar to WMMA as shown below.
@@ -523,7 +523,7 @@ For column-major source (C) matrix, Transpose(C) is row-major, and efficient epi
 row-major.
 
 Note that cuBLAS typically expects a column-major source (C) and output matrix (D). Thus,
-CUTLASS library only instantiates and generates GEMM operatos with column-major layout. However, 
+CUTLASS library only instantiates and generates GEMM operators with column-major layout. However, 
 CUTLASS by itself can run both row-major and column-major output layouts for all combinations 
 of input layouts. Thus, CUTLASS supports the following layout combinations for input and output layouts: 
 

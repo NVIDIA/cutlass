@@ -93,7 +93,7 @@ Array<T, kN> elements;
 
 CUTLASS_PRAGMA_UNROLL                        // required to ensure array remains in registers
 for (auto x : elements) {
-  printf("%d, %f", int64_t(x), double(x));   // explictly convert to int64_t or double
+  printf("%d, %f", int64_t(x), double(x));   // explicitly convert to int64_t or double
 }
 ```
 

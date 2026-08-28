@@ -418,7 +418,7 @@ Consider tiling the 1-D layout `A = (4,2,3):(2,1,8)` with the tiler `B = 4:2`. I
 
 This is computed in the three steps described in the implementation above.
 * Complement of `B = 4:2` under `size(A) = 24` is `B* = (2,3):(1,8)`.
-* Concantenation of `(B,B*) = (4,(2,3)):(2,(1,8))`.
+* Concatenation of `(B,B*) = (4,(2,3)):(2,(1,8))`.
 * Composition of `A = (4,2,3):(2,1,8)` with `(B,B*)` is then `((2,2),(2,3)):((4,1),(2,8))`.
 
 ![divide1.png](../../../images/cute/divide1.png)
@@ -538,7 +538,7 @@ We can use the by-mode `tiler` strategies previously developed to write multidim
 
 ![product2d.png](../../../images/cute/product2d.png)
 
-The above image demonstates the use of a `tiler` to apply `logical_product` by-mode. Despite this **not being the recommended approach**, the result is a rank-2 layout consisting of 2x5 row-major block that is tiled across a 3x4 column-major arrangement.
+The above image demonstrates the use of a `tiler` to apply `logical_product` by-mode. Despite this **not being the recommended approach**, the result is a rank-2 layout consisting of 2x5 row-major block that is tiled across a 3x4 column-major arrangement.
 
 The reason **this is not the recommended approach** is that the `tiler B` in the above expression is highly unintuitive. In fact, it requires perfect knowledge of the shape and strides of `A` in order to construct. We would like to express "Tile Layout `A` according to Layout `B`" in a way that makes `A` and `B` independent and is much more intuitive.
 
