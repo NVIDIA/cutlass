@@ -888,6 +888,7 @@ class CompileOptions:
         }
         self._ptxas_diagnostics_enabled = False
         self._debug_selectors: set[str] = set()
+        self._last_raw_opt_batch: "str | None" = None
 
         if options is not None:
             self._update(options)
@@ -1087,9 +1088,30 @@ class CompileOptions:
                 self._parse_named_option_token(name, val_str, opt_name_map, raw_opts)
 
         if raw_opts:
-            existing = self.options[ExtraCompilerOpts].value
-            combined = (existing + " " + " ".join(raw_opts)).strip()
-            self.options[ExtraCompilerOpts].value = combined
+            # Skip consecutive re-emissions of the same fragment batch.
+            # CUTE_DSL_COMPILER_OPT is re-applied on EVERY compilation
+            # (``apply_envar_settings``), and the public ``cute.compile``
+            # entrypoint is a long-lived CompileCallable whose CompileOptions
+            # outlives individual compiles (``post_compilation_cleanup`` only
+            # swaps the DSL attribute reference), so an unconditional append
+            # grows the serialized pipeline string on every compile and,
+            # since ``to_str`` feeds the module cache key, the same kernel
+            # can hash differently at different points in the process
+            # lifetime.  Re-appending a batch is only semantically meaningful
+            # if a DIFFERENT batch landed after it (pipeline options are
+            # last-wins), which is exactly when the incoming batch differs
+            # from the last one applied: a single application stays
+            # byte-identical (including order-sensitive repeats such as
+            # ``foo=1 foo=2 foo=1``), alternating batches keep re-asserting
+            # last-wins exactly as before, and named options above remain
+            # re-applied per compile (their per-compile reset is
+            # load-bearing, e.g. ``link-libraries``).
+            batch = " ".join(raw_opts)
+            if batch != self._last_raw_opt_batch:
+                self._last_raw_opt_batch = batch
+                existing = self.options[ExtraCompilerOpts].value
+                combined = (existing + " " + batch).strip()
+                self.options[ExtraCompilerOpts].value = combined
 
     @staticmethod
     def _set_artifact_dump_paths(
