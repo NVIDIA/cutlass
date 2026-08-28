@@ -2124,8 +2124,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 continue
             if gpu_module is not None:
                 link_libraries = self.compile_options.options[LinkLibraries].value
-                sources = set(
-                    x.value for x in gpu_module.attributes.get("link-libraries", set())
+                sources = dict.fromkeys(
+                    x.value for x in gpu_module.attributes.get("link-libraries", ())
                 )
                 link_libraries = (
                     link_libraries
