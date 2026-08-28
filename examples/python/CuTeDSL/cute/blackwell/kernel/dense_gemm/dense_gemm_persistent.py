@@ -27,18 +27,20 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-from typing import Optional, Tuple, Type, Union
+from typing import Optional, Tuple, Type, Union, Literal
 from functools import lru_cache
 import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.cute.testing as testing
+from cutlass import testing
 import cutlass.utils as utils
 from cutlass.utils import is_fp8_dtype, create_cute_tensor_for_fp8
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
+import cutlass.utils.blackwell_helpers as sm100_utils
+
 
 """
 A high-performance persistent batched dense GEMM example for the NVIDIA Blackwell SM100 architecture
@@ -75,7 +77,7 @@ Input arguments to this example is same as dense_gemm.py.
 
 .. code-block:: bash
 
-    python examples/blackwell/dense_gemm_persistent.py                          \
+    python examples/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py                          \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                  \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                             \
       --mnkl 8192,8192,8192,1                                                   \
@@ -85,7 +87,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/dense_gemm_persistent.py                     \
+    ncu python examples/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py                     \
       --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                 \
       --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
       --mnkl 8192,8192,8192,1                                                  \
@@ -218,7 +220,7 @@ class PersistentDenseGemmKernel:
     :note: Supported C data types:
         - Float32 (for float32 and int32 accumulator data types)
         - Int32 (for float32 and int32 accumulator data types)
-        - Float16/BFloat16 (for fp16 and fp8 accumulator data types)
+        - Float16/BFloat16 (for fp32, fp16, and fp8 accumulator data types)
         - Int8/Uint8 (for uint8/int8 accumulator data types)
         - Float8E4M3FN/Float8E5M2 (for float32 accumulator data types)
 
@@ -233,9 +235,10 @@ class PersistentDenseGemmKernel:
             acc_dtype=cutlass.Float32,
             use_2cta_instrs=True,
             mma_tiler_mn=(128, 128),
-            cluster_shape_mn=(2, 2)
+            cluster_shape_mn=(2, 2),
+            use_tma_store=True
         )
-        gemm(a, b, c, max_active_clusters, stream)
+        gemm(a, b, c, max_active_clusters, stream, epilogue_op)
     """
 
     def __init__(
@@ -245,6 +248,8 @@ class PersistentDenseGemmKernel:
         mma_tiler_mn: Tuple[int, int],
         cluster_shape_mn: Tuple[int, int],
         use_tma_store: bool,
+        swizzle_size: int = 1,
+        raster_along: Literal["m", "n"] = "m",
     ):
         """Initializes the configuration for a Blackwell dense GEMM kernel.
 
@@ -277,6 +282,8 @@ class PersistentDenseGemmKernel:
         self.acc_dtype: Type[cutlass.Numeric] = acc_dtype
         self.use_2cta_instrs = use_2cta_instrs
         self.cluster_shape_mn = cluster_shape_mn
+        self.swizzle_size = swizzle_size
+        self.raster_along = raster_along
         # K dimension is deferred in _setup_attributes
         self.mma_tiler_mn = mma_tiler_mn
         self.mma_tiler = (*mma_tiler_mn, 1)
@@ -303,6 +310,7 @@ class PersistentDenseGemmKernel:
     def _create_tiled_mma(self):
         return utils.sm100.make_trivial_tiled_mma(
             self.a_dtype,
+            self.b_dtype,
             self.a_major_mode,
             self.b_major_mode,
             self.acc_dtype,
@@ -370,7 +378,7 @@ class PersistentDenseGemmKernel:
                 self.c_dtype, self.c_layout, self.epi_tile, 1
             )
 
-        self.smem_capacity = utils.get_smem_capacity_in_bytes()
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes()
 
         # Setup A/B/C stage count in shared memory and ACC stage count in tensor memory
         self.num_acc_stage, self.num_ab_stage, self.num_c_stage = _compute_stages(
@@ -440,9 +448,13 @@ class PersistentDenseGemmKernel:
         self.a_dtype: Type[cutlass.Numeric] = a.element_type
         self.b_dtype: Type[cutlass.Numeric] = b.element_type
         self.c_dtype: Type[cutlass.Numeric] = c.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # Check if input data types are compatible with MMA instruction
         if cutlass.const_expr(self.a_dtype != self.b_dtype):
@@ -459,7 +471,10 @@ class PersistentDenseGemmKernel:
         a_op = utils.sm100.cluster_shape_to_tma_atom_A(
             self.cluster_shape_mn, tiled_mma.thr_id
         )
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
+        a_smem_layout = cute.select(
+            self.a_smem_layout_staged,
+            mode=list(range(cute.rank(self.a_smem_layout_staged) - 1)),
+        )
         tma_atom_a, tma_tensor_a = cute.nvgpu.make_tiled_tma_atom_A(
             a_op,
             a,
@@ -476,7 +491,10 @@ class PersistentDenseGemmKernel:
         b_op = utils.sm100.cluster_shape_to_tma_atom_B(
             self.cluster_shape_mn, tiled_mma.thr_id
         )
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        b_smem_layout = cute.select(
+            self.b_smem_layout_staged,
+            mode=list(range(cute.rank(self.b_smem_layout_staged) - 1)),
+        )
         tma_atom_b, tma_tensor_b = cute.nvgpu.make_tiled_tma_atom_B(
             b_op,
             b,
@@ -504,7 +522,12 @@ class PersistentDenseGemmKernel:
 
         # Compute grid size
         self.tile_sched_params, grid = self._compute_grid(
-            c, self.cta_tile_shape_mnk, self.cluster_shape_mn, max_active_clusters
+            c,
+            self.cta_tile_shape_mnk,
+            self.cluster_shape_mn,
+            self.swizzle_size,
+            self.raster_along,
+            max_active_clusters,
         )
 
         # Launch the kernel synchronously
@@ -596,15 +619,12 @@ class PersistentDenseGemmKernel:
             tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(SharedStorage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_tma_producer = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_tma_producer
-        )
+        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Warp)
         ab_producer, ab_consumer = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
@@ -612,6 +632,7 @@ class PersistentDenseGemmKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
+            enable_multicast_signaling=True,
             defer_sync=True,
         ).make_participants()
 
@@ -643,7 +664,7 @@ class PersistentDenseGemmKernel:
                 num_threads=32 * len(self.epilogue_warp_id),
             )
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
@@ -652,7 +673,7 @@ class PersistentDenseGemmKernel:
         )
 
         # Cluster arrive after barrier init
-        pipeline_init_arrive(cluster_shape_mn=cluster_layout_vmnk, is_relaxed=True)
+        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
 
         #
         # Setup smem tensor A/B/C
@@ -713,6 +734,13 @@ class PersistentDenseGemmKernel:
         # (MMA, MMA_M, MMA_N, RestM, RestN, RestL)
         tCgC = thr_mma.partition_C(gC_mnl)
 
+        # Coordinate tensor used to predicate SIMT stores from partial clusters.
+        idC = cute.make_identity_tensor(mC_mnl.shape)
+        cC_mnl = cute.local_tile(
+            idC, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
+        )
+        tCcC = thr_mma.partition_C(cC_mnl)
+
         #
         # Partition global/shared tensor for TMA load A/B
         #
@@ -760,7 +788,7 @@ class PersistentDenseGemmKernel:
         #
         # Cluster wait before tensor memory alloc
         #
-        pipeline_init_wait(cluster_shape_mn=cluster_layout_vmnk)
+        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
 
         #
         # Construct the scheduler
@@ -780,7 +808,6 @@ class PersistentDenseGemmKernel:
             #
             # Persistent tile scheduling loop
             #
-
             while work_tile.is_valid_tile:
                 # Get tile coord from tile scheduler
                 cur_tile_coord = work_tile.tile_idx
@@ -860,7 +887,6 @@ class PersistentDenseGemmKernel:
             #
             # Persistent tile scheduling loop
             #
-
             acc_producer_state = pipeline.make_pipeline_state(
                 pipeline.PipelineUserType.Producer, self.num_acc_stage
             )
@@ -891,11 +917,6 @@ class PersistentDenseGemmKernel:
                     acc_pipeline.producer_acquire(acc_producer_state)
 
                 #
-                # Reset the ACCUMULATE field for each tile
-                #
-                tiled_mma.set(tcgen05.Field.ACCUMULATE, False)
-
-                #
                 # Mma mainloop
                 #
                 for k_tile in range(k_tile_cnt):
@@ -904,19 +925,11 @@ class PersistentDenseGemmKernel:
                         handle = ab_consumer.wait_and_advance(peek_ab_full_status)
 
                         # tCtAcc += tCrA * tCrB
-                        num_kblocks = cute.size(tCrA, mode=[2])
-                        for kblk_idx in cutlass.range(num_kblocks, unroll_full=True):
-                            kblk_crd = (None, None, kblk_idx, handle.index)
-
-                            cute.gemm(
-                                tiled_mma,
-                                tCtAcc,
-                                tCrA[kblk_crd],
-                                tCrB[kblk_crd],
-                                tCtAcc,
-                            )
-                            # Enable accumulate on tCtAcc after first kblock
-                            tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
+                        tiled_mma.set(tcgen05.Field.ACCUMULATE, k_tile != 0)
+                        tile_crd = (None, None, None, handle.index)
+                        cute.gemm(
+                            tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc
+                        )
 
                         # Async arrive AB buffer empty
                         handle.release()
@@ -977,7 +990,6 @@ class PersistentDenseGemmKernel:
             acc_consumer_state = pipeline.make_pipeline_state(
                 pipeline.PipelineUserType.Consumer, self.num_acc_stage
             )
-
             if cutlass.const_expr(self.use_tma_store):
                 assert tma_atom_c is not None and sC is not None
                 c_producer_group = pipeline.CooperativeGroup(
@@ -1030,6 +1042,8 @@ class PersistentDenseGemmKernel:
                         mma_tile_coord_mnl,
                         acc_consumer_state,
                         acc_pipeline,
+                        tCcC_base=tCcC,
+                        mC_mnl=mC_mnl,
                     )
 
             if cutlass.const_expr(self.use_tma_store):
@@ -1050,6 +1064,8 @@ class PersistentDenseGemmKernel:
         c: cute.Tensor,
         cta_tile_shape_mnk: Tuple[int, int, int],
         cluster_shape_mn: Tuple[int, int],
+        swizzle_size: int,
+        raster_along: Literal["m", "n"],
         max_active_clusters: cutlass.Constexpr,
     ) -> Tuple[utils.PersistentTileSchedulerParams, Tuple[int, int, int]]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C.
@@ -1060,7 +1076,7 @@ class PersistentDenseGemmKernel:
         :type cta_tile_shape_mnk: tuple[int, int, int]
         :param cluster_shape_mn: Shape of each cluster in M, N dimensions.
         :type cluster_shape_mn: tuple[int, int]
-        :param max_active_clusters: Maximum number of active clusters.
+        :param max_active_clusters: Maximum number of hardware clusters to launch
         :type max_active_clusters: cutlass.Constexpr
 
         :return: A tuple containing:
@@ -1074,7 +1090,7 @@ class PersistentDenseGemmKernel:
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
         tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, cluster_shape_mnl
+            num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_along == "m"
         )
         grid = utils.StaticPersistentTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters
@@ -1104,7 +1120,9 @@ class PersistentDenseGemmKernel:
         """
         acc_shape = tiled_mma.partition_shape_C(mma_tiler[:2])
         tCtAcc_fake = tiled_mma.make_fragment_C(cute.append(acc_shape, num_acc_stage))
-        num_tmem_alloc_cols = utils.get_num_tmem_alloc_cols(tCtAcc_fake, arch=arch)
+        num_tmem_alloc_cols = cutlass.memory.get_num_tmem_alloc_cols(
+            tCtAcc_fake, arch=arch
+        )
 
         return num_tmem_alloc_cols
 
@@ -1117,10 +1135,8 @@ class PersistentDenseGemmKernel:
         """
         Check if the dtypes are valid
 
-        :param a_dtype: The data type of the A operands
-        :type a_dtype: Type[cutlass.Numeric]
-        :param b_dtype: The data type of the B operands
-        :type b_dtype: Type[cutlass.Numeric]
+        :param ab_dtype: The data type of the A and B operands
+        :type ab_dtype: Type[cutlass.Numeric]
         :param acc_dtype: The data type of the accumulator
         :type acc_dtype: Type[cutlass.Numeric]
         :param c_dtype: The data type of the output tensor
@@ -1128,6 +1144,9 @@ class PersistentDenseGemmKernel:
 
         :raises testing.CantImplementError: If the dtypes are invalid
         """
+        sm100_utils.check_int8_mma_arch(a_dtype)
+        sm100_utils.check_int8_mma_arch(b_dtype)
+
         valid_ab_dtypes = {
             cutlass.Float16,
             cutlass.BFloat16,
@@ -1262,9 +1281,9 @@ class PersistentDenseGemmKernel:
         :type k: int
         :param l: The number of columns in the C tensor
         :type l: int
-        :param a_dtype: The data type of the A operands
+        :param a_dtype: The data type of the A operand
         :type a_dtype: Type[cutlass.Numeric]
-        :param b_dtype: The data type of the B operands
+        :param b_dtype: The data type of the B operand
         :type b_dtype: Type[cutlass.Numeric]
         :param c_dtype: The data type of the output tensor
         :type c_dtype: Type[cutlass.Numeric]
@@ -1305,7 +1324,8 @@ class PersistentDenseGemmKernel:
 
         :raises testing.CantImplementError: If the epilogue store option is invalid
         """
-        # None TMA store version does not have predication, can not support OOB tiles
+
+        # Non TMA store version does not have predication, can not support OOB tiles
         cta_tile_shape_mn = (
             self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1),
             self.mma_tiler_mn[1],
@@ -1313,7 +1333,16 @@ class PersistentDenseGemmKernel:
         if not self.use_tma_store:
             if not (m % cta_tile_shape_mn[0] == 0 and n % cta_tile_shape_mn[1] == 0):
                 raise testing.CantImplementError(
-                    f"Invalid epilog store option: {m}, {n}"
+                    f"Problem shape {m}, {n} must be divisible by cta tile shape {cta_tile_shape_mn} for non TMA store"
+                )
+            # CTA swizzling improves the L2 cache utilization and reduces the number of cache misses.
+            m_per_swizzle = (m // cta_tile_shape_mn[0]) // self.cluster_shape_mn[0]
+            n_per_swizzle = (n // cta_tile_shape_mn[1]) // self.cluster_shape_mn[1]
+            if (m_per_swizzle % self.swizzle_size != 0) or (
+                n_per_swizzle % self.swizzle_size != 0
+            ):
+                raise testing.CantImplementError(
+                    f"Problem shape {m}, {n} must be divisible by swizzle size {self.swizzle_size} for non TMA store"
                 )
 
     def can_implement(
@@ -1331,9 +1360,9 @@ class PersistentDenseGemmKernel:
 
         :param mnkl: Problem size as a tuple (M, N, K, L).
         :type mnkl: Tuple[int, int, int, int]
-        :param a_dtype: Data type for input tensors A.
+        :param a_dtype: Data type for input tensors A and B.
         :type a_dtype: Type[cutlass.Numeric]
-        :param b_dtype: Data type for input tensors B.
+        :param b_dtype: Data type for input tensors B and B.
         :type b_dtype: Type[cutlass.Numeric]
         :param c_dtype: Data type for output tensor C.
         :type c_dtype: Type[cutlass.Numeric]
@@ -1451,17 +1480,12 @@ def prepare_tensors(
             0, 2, 1
         )
 
-    if init_random:
-        # Uniform random initialization in range [-2, 3)
-        a_f32.random_(-2, 3)
-        b_f32.random_(-2, 3)
-        c_f32.random_(-2, 3)
-
-    else:
-        # Normal (Gaussian) initialization with user-specified mean and std
-        a_f32.normal_(mean=normal_mean, std=normal_std)
-        b_f32.normal_(mean=normal_mean, std=normal_std)
-        c_f32.normal_(mean=normal_mean, std=normal_std)
+    # Initialize tensors with either uniform random or normal distribution
+    for tensor in [a_f32, b_f32, c_f32]:
+        if init_random:
+            tensor.random_(-2, 3)
+        else:
+            tensor.normal_(mean=normal_mean, std=normal_std)
 
     # For float8 types, use uint8 as storage type to avoid dlpack limitation
     # (dlpack doesn't support float8 types)
@@ -1487,22 +1511,34 @@ def compile_bmm(
     a_major: str,
     b_major: str,
     c_major: str,
-    mma_tiler_mn: Tuple[int, int] = (256, 256),
+    mma_tiler: Union[Tuple[int, int], Tuple[int, int, int]] = (256, 256),
     cluster_shape_mn: Tuple[int, int] = (2, 1),
     max_active_clusters: cutlass.Constexpr = None,
     use_2cta_instrs: bool = True,
     use_tma_store: bool = True,
+    swizzle_size: int = 1,
+    raster_along: Literal["m", "n"] = "m",
     epilogue_op: cutlass.Constexpr = lambda x: x,
+    kernel_class: cutlass.Constexpr = None,
 ):
     from cutlass.cute.runtime import make_fake_stream
 
-    gemm = PersistentDenseGemmKernel(
+    # Use provided kernel class or default to PersistentDenseGemmKernel
+    KernelClass = (
+        kernel_class if kernel_class is not None else PersistentDenseGemmKernel
+    )
+
+    # Build GEMM object
+    gemm = KernelClass(
         acc_dtype,
         use_2cta_instrs,
-        mma_tiler_mn,
+        mma_tiler,
         cluster_shape_mn,
         use_tma_store,
+        swizzle_size,
+        raster_along,
     )
+
     # Check if configuration can be implemented
     can_implement = gemm.can_implement(
         mnkl, a.element_type, b.element_type, c.element_type, a_major, b_major, c_major
@@ -1510,8 +1546,10 @@ def compile_bmm(
     if not can_implement:
         raise testing.CantImplementError(
             f"The current config which is invalid/unsupported: use_2cta_instrs = {use_2cta_instrs}, "
-            f"mma_tiler_mn = {mma_tiler_mn}, cluster_shape_mn = {cluster_shape_mn}, "
-            f"use_tma_store = {use_tma_store}"
+            f"mma_tiler = {mma_tiler}, cluster_shape_mn = {cluster_shape_mn}, "
+            f"use_tma_store = {use_tma_store}, "
+            f"swizzle_size = {swizzle_size}, "
+            f"raster_along = {raster_along}"
         )
 
     stream = make_fake_stream()
@@ -1528,6 +1566,8 @@ def run(
     c_major: str,
     mma_tiler_mn: Tuple[int, int] = (256, 256),
     cluster_shape_mn: Tuple[int, int] = (2, 1),
+    swizzle_size: int = 1,
+    raster_along: Literal["m", "n"] = "m",
     use_2cta_instrs: bool = True,
     use_tma_store: bool = True,
     tolerance: float = 1e-01,
@@ -1535,7 +1575,10 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
-    benchmark: bool = False,
+    benchmark: str = "default",
+    init_normal: bool = False,
+    normal_mean: float = 0.0,
+    normal_std: float = 1.0,
     **kwargs,
 ):
     """
@@ -1576,8 +1619,17 @@ def run(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
     :type use_cold_l2: bool, optional
-    :param benchmark: Whether to only benchmark the kernel, defaults to False.
-    :type benchmark: bool, optional
+    :param benchmark: Benchmark mode - "default" uses CUDA events, "cupti" uses CUPTI profiler, defaults to "default".
+    :type benchmark: str, optional
+    :param init_normal: Whether to initialize tensors using normal distribution
+        instead of uniform random, defaults to False.
+    :type init_normal: bool, optional
+    :param normal_mean: Mean for normal distribution initialization, defaults to 0.0.
+    :type normal_mean: float, optional
+    :param normal_std: Standard deviation for normal distribution initialization,
+        defaults to 1.0.
+    :type normal_std: float, optional
+
     :raises RuntimeError: If CUDA GPU is not available.
     :raises ValueError: If the configuration is invalid or unsupported by the kernel.
     :return: Execution time of the GEMM kernel.
@@ -1601,7 +1653,16 @@ def run(
 
     # Run and verify BMM with torch
     a_f32, b_f32, c_f32, a_storage, b_storage, c_storage = prepare_tensors(
-        mnkl, ab_dtype, ab_dtype, c_dtype, a_major, b_major, c_major
+        mnkl,
+        ab_dtype,
+        ab_dtype,
+        c_dtype,
+        a_major,
+        b_major,
+        c_major,
+        init_random=not init_normal,
+        normal_mean=normal_mean,
+        normal_std=normal_std,
     )
 
     leading_dim_a = 2 if a_major == "k" else 1
@@ -1619,6 +1680,13 @@ def run(
         c_storage, c_dtype, leading_dim_c, source_f32_tensor=c_f32
     )
 
+    print("Compile Blackwell Persistent Dense GEMM with:")
+    print(f"ab_dtype: {ab_dtype}, c_dtype: {c_dtype}, acc_dtype: {acc_dtype}")
+    print(f"a_major: {a_major}, b_major: {b_major}, c_major: {c_major}")
+    print(f"mma_tiler_mn: {mma_tiler_mn}, cluster_shape_mn: {cluster_shape_mn}")
+    print(f"use_2cta_instrs: {use_2cta_instrs}, use_tma_store: {use_tma_store}")
+    print(f"swizzle_size: {swizzle_size}, raster_along: {raster_along}")
+
     compiled_fn = compile_bmm(
         mnkl,
         a_,
@@ -1634,6 +1702,8 @@ def run(
         use_2cta_instrs,
         use_tma_store,
         epilogue_op=lambda x: x,
+        swizzle_size=swizzle_size,
+        raster_along=raster_along,
     )
 
     print("Running Blackwell Persistent Dense GEMM test with:")
@@ -1649,7 +1719,6 @@ def run(
         compiled_fn(a_, b_, c_, current_stream)
 
         # Manually quantize to be comparable
-        # Use float32 source data for reference calculation
         ref = (
             torch.bmm(a_f32, b_f32)
             .to(dtype=torch_dtype(c_dtype))
@@ -1662,10 +1731,14 @@ def run(
             rtol=1e-03,
         )
 
-    if not benchmark:
+    if benchmark == "none":
         return 0
 
     def generate_tensors():
+        # Use init_normal from outer scope, but force random init for Int8/Uint8 types
+        use_normal_init = init_normal and (
+            ab_dtype not in [cutlass.Int8, cutlass.Uint8]
+        )
         a_f32, b_f32, c_f32, a_st, b_st, c_st = prepare_tensors(
             mnkl,
             ab_dtype,
@@ -1674,6 +1747,9 @@ def run(
             a_major,
             b_major,
             c_major,
+            init_random=not use_normal_init,
+            normal_mean=normal_mean,
+            normal_std=normal_std,
         )
         a_ = create_cute_tensor_for_fp8(
             a_st, ab_dtype, leading_dim_a, source_f32_tensor=a_f32
@@ -1698,18 +1774,17 @@ def run(
         )
 
     # Return execution time in microseconds
-    return testing.benchmark(
+    exec_time = testing.benchmark(
         compiled_fn,
         workspace_generator=generate_tensors,
         workspace_count=workspace_count,
         stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
-
-
-def compute_tflops(time_ns, m, n, k):
-    return 2.0 * m * n * k / time_ns / 1000.0
+    print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
+    return exec_time
 
 
 
@@ -1733,26 +1808,13 @@ def prepare_parser():
         default=(256, 256, 512, 1),
         help="mnkl dimensions (comma-separated)",
     )
-    parser.add_argument(
-        "--cluster_shape_mn",
-        type=_parse_comma_separated_ints,
-        default=(1, 1),
-        help="Cluster shape (comma-separated)",
-    )
     parser.add_argument("--ab_dtype", type=cutlass.dtype, default=cutlass.TFloat32)
     parser.add_argument("--c_dtype", type=cutlass.dtype, default=cutlass.Float32)
     parser.add_argument("--acc_dtype", type=cutlass.dtype, default=cutlass.Float32)
-    parser.add_argument(
-        "--use_2cta_instrs",
-        action="store_true",
-        help="Enable 2CTA MMA instructions feature",
-    )
+
     parser.add_argument("--a_major", choices=["k", "m"], type=str, default="k")
     parser.add_argument("--b_major", choices=["k", "n"], type=str, default="k")
     parser.add_argument("--c_major", choices=["n", "m"], type=str, default="n")
-    parser.add_argument(
-        "--use_tma_store", action="store_true", help="Use tma store or not"
-    )
     parser.add_argument(
         "--tolerance", type=float, default=1e-01, help="Tolerance for validation"
     )
@@ -1761,10 +1823,14 @@ def prepare_parser():
         type=str,
         default="default",
         choices=[
+            "cupti",
             "default",
             "none",
         ],
-        help="Benchmark the kernel with nsight or default (cute.testing.benchmark) or none",
+        help="Benchmark the kernel with nsight or default (cutlass.testing.benchmark) or none",
+    )
+    parser.add_argument(
+        "--skip_ref_check", action="store_true", help="Skip reference checking"
     )
     parser.add_argument(
         "--warmup_iterations", type=int, default=0, help="Warmup iterations"
@@ -1776,20 +1842,42 @@ def prepare_parser():
         help="Number of iterations to run the kernel",
     )
     parser.add_argument(
-        "--skip_ref_check", action="store_true", help="Skip reference checking"
-    )
-    parser.add_argument(
         "--use_cold_l2",
         action="store_true",
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
+    parser.add_argument(
+        "--use_cupti",
+        action="store_true",
+        default=False,
+        help="Use cupti to measure the performance",
+    )
+    testing.add_tensor_init_args(parser, supports_int_dtypes=True)
 
     return parser
 
 
 if __name__ == "__main__":
     parser = prepare_parser()
+
+    # Kernel Configurations
+    parser.add_argument(
+        "--use_tma_store", action="store_true", help="Use tma store or not"
+    )
+    parser.add_argument(
+        "--cluster_shape_mn",
+        type=_parse_comma_separated_ints,
+        default=(1, 1),
+        help="Cluster shape (comma-separated)",
+    )
+
+    parser.add_argument(
+        "--use_2cta_instrs",
+        action="store_true",
+        help="Enable 2CTA MMA instructions feature",
+    )
+
     parser.add_argument(
         "--mma_tiler_mn",
         type=_parse_comma_separated_ints,
@@ -1797,7 +1885,23 @@ if __name__ == "__main__":
         help="Mma tile shape (comma-separated)",
     )
 
+    parser.add_argument(
+        "--swizzle_size",
+        type=int,
+        default=1,
+        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
+    )
+    parser.add_argument(
+        "--raster_order",
+        type=str,
+        choices=["m", "n"],
+        default="m",
+        help="Rasterization order of clusters",
+    )
+
     args = parser.parse_args()
+
+    testing.validate_tensor_init_args(args, parser)
 
     if len(args.mnkl) != 4:
         parser.error("--mnkl must contain exactly 4 values")
@@ -1808,7 +1912,7 @@ if __name__ == "__main__":
     if len(args.cluster_shape_mn) != 2:
         parser.error("--cluster_shape_mn must contain exactly 2 values")
 
-    print(f"[DSL INFO] Compiling Blackwell Persistent Dense GEMM with:")
+    print("[DSL INFO] Compiling Blackwell Persistent Dense GEMM with:")
     print(
         f"[DSL INFO] A dtype: {args.ab_dtype}, B dtype: {args.c_dtype}, C dtype: {args.acc_dtype}, Acc dtype: {args.acc_dtype}"
     )
@@ -1832,6 +1936,8 @@ if __name__ == "__main__":
         args.c_major,
         args.mma_tiler_mn,
         args.cluster_shape_mn,
+        args.swizzle_size,
+        args.raster_order,
         args.use_2cta_instrs,
         args.use_tma_store,
         args.tolerance,
@@ -1839,6 +1945,9 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
-        args.benchmark == "default",
+        args.benchmark,
+        args.init_normal,
+        args.normal_mean,
+        args.normal_std,
     )
     print("PASS")
