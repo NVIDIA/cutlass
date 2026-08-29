@@ -29,22 +29,34 @@
  *
  **************************************************************************************************/
 
-#include <gtest/gtest.h>
+#include "cutlass_unit_test.h"
 
 #include "cutlass/detail/blockwise_scale_layout.hpp"
 
-TEST(CuTe_core, BlockwiseScaleLayoutSFBUsesOwnMajor) {
+template <cute::UMMA::Major MajorSFA, cute::UMMA::Major MajorSFB>
+constexpr bool
+sfb_smem_strides_match_global_layout()
+{
   using namespace cute;
+  using Config = cutlass::detail::Sm1xxBlockwiseScaleConfig<
+      64, 128, 128, MajorSFA, MajorSFB>;
+  // A CTA-sized problem makes the global SFB tile directly comparable to its
+  // shared-memory atom.
+  constexpr auto cta_shape = Shape<_128, _256, _512>{};
+  constexpr auto smem_layout = Config::smem_atom_layoutSFB(cta_shape);
+  constexpr auto global_layout = Config::tile_atom_to_shape_SFB(cta_shape);
+  return stride<0, 1>(smem_layout) == stride<0, 1>(global_layout) &&
+         stride<1, 1>(smem_layout) == stride<1, 1>(global_layout);
+}
 
-  using KMajorSfa = cutlass::detail::Sm1xxBlockwiseScaleConfig<
-      64, 128, 128, UMMA::Major::K, UMMA::Major::MN>;
-  auto sfb_mn = KMajorSfa::smem_atom_layoutSFB(Shape<_128, _256, _512>{});
-  EXPECT_EQ(int(stride<0, 1>(sfb_mn)), 1);
-  EXPECT_EQ(int(stride<1, 1>(sfb_mn)), 2);
-
-  using MnMajorSfa = cutlass::detail::Sm1xxBlockwiseScaleConfig<
-      64, 128, 128, UMMA::Major::MN, UMMA::Major::K>;
-  auto sfb_k = MnMajorSfa::smem_atom_layoutSFB(Shape<_128, _256, _512>{});
-  EXPECT_EQ(int(stride<0, 1>(sfb_k)), 4);
-  EXPECT_EQ(int(stride<1, 1>(sfb_k)), 1);
+TEST(CuTe_core, BlockwiseScaleLayoutSFBUsesOwnMajor)
+{
+  static_assert(sfb_smem_strides_match_global_layout<cute::UMMA::Major::MN,
+                                                      cute::UMMA::Major::MN>());
+  static_assert(sfb_smem_strides_match_global_layout<cute::UMMA::Major::K,
+                                                      cute::UMMA::Major::MN>());
+  static_assert(sfb_smem_strides_match_global_layout<cute::UMMA::Major::MN,
+                                                      cute::UMMA::Major::K>());
+  static_assert(sfb_smem_strides_match_global_layout<cute::UMMA::Major::K,
+                                                      cute::UMMA::Major::K>());
 }
