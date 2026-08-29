@@ -312,7 +312,7 @@ struct Array<T, N, false> {
     const_iterator(Storage const *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
 
     CUTLASS_HOST_DEVICE
-    iterator &operator++() {
+    const_iterator &operator++() {
       ++idx_;
       if (idx_ == kElementsPerStoredItem) {
         ++ptr_;
@@ -322,7 +322,7 @@ struct Array<T, N, false> {
     }
 
     CUTLASS_HOST_DEVICE
-    iterator &operator--() {
+    const_iterator &operator--() {
       if (!idx_) {
         --ptr_;
         idx_ = kElementsPerStoredItem - 1;
@@ -334,8 +334,8 @@ struct Array<T, N, false> {
     }
 
     CUTLASS_HOST_DEVICE
-    iterator operator++(int) {
-      iterator ret(*this);
+    const_iterator operator++(int) {
+      const_iterator ret(*this);
       ++idx_;
       if (idx_ == kElementsPerStoredItem) {
         ++ptr_;
@@ -345,8 +345,8 @@ struct Array<T, N, false> {
     }
 
     CUTLASS_HOST_DEVICE
-    iterator operator--(int) {
-      iterator ret(*this);
+    const_iterator operator--(int) {
+      const_iterator ret(*this);
       if (!idx_) {
         --ptr_;
         idx_ = kElementsPerStoredItem - 1;
@@ -363,12 +363,12 @@ struct Array<T, N, false> {
     }
 
     CUTLASS_HOST_DEVICE
-    bool operator==(iterator const &other) const {
+    bool operator==(const_iterator const &other) const {
       return ptr_ == other.ptr_ && idx_ == other.idx_;
     }
 
     CUTLASS_HOST_DEVICE
-    bool operator!=(iterator const &other) const {
+    bool operator!=(const_iterator const &other) const {
       return !(*this == other);
     }
   };
@@ -449,12 +449,12 @@ struct Array<T, N, false> {
 
   CUTLASS_HOST_DEVICE
   reference back() {
-    return reference(storage + kStorageElements - 1, kElementsPerStoredItem - 1);
+    return at(N - 1);
   }
 
   CUTLASS_HOST_DEVICE
   const_reference back() const {
-    return const_reference(storage + kStorageElements - 1, kElementsPerStoredItem - 1);
+    return at(N - 1);
   }
 
   CUTLASS_HOST_DEVICE
@@ -513,18 +513,28 @@ struct Array<T, N, false> {
   }
 
   CUTLASS_HOST_DEVICE
+  const_iterator begin() const {
+    return cbegin();
+  }
+
+  CUTLASS_HOST_DEVICE
   const_iterator cbegin() const {
     return const_iterator(storage);
   }
 
   CUTLASS_HOST_DEVICE
   iterator end() {
-    return iterator(storage + kStorageElements);
+    return iterator(storage + N / kElementsPerStoredItem, N % kElementsPerStoredItem);
+  }
+
+  CUTLASS_HOST_DEVICE
+  const_iterator end() const {
+    return cend();
   }
 
   CUTLASS_HOST_DEVICE
   const_iterator cend() const {
-    return const_iterator(storage + kStorageElements);
+    return const_iterator(storage + N / kElementsPerStoredItem, N % kElementsPerStoredItem);
   }
 
   CUTLASS_HOST_DEVICE
