@@ -24,7 +24,7 @@ class _ReverseSet(set):
 
 class TestLinkLibrariesOrder(unittest.TestCase):
     def test_preserves_attribute_order_and_deduplicates(self):
-        paths = ["device.bc", "math.bc", "user.bc", "math.bc"]
+        paths = ["user.bc", "device.bc", "math.bc", "device.bc"]
         gpu_module = SimpleNamespace(
             name="gpu.module",
             attributes={
@@ -44,7 +44,7 @@ class TestLinkLibrariesOrder(unittest.TestCase):
 
         self.assertEqual(
             compile_options.options[LinkLibraries].value,
-            "existing.bc,device.bc,math.bc,user.bc",
+            "existing.bc,user.bc,device.bc,math.bc",
         )
 
 
