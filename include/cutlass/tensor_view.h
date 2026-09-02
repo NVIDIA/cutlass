@@ -133,7 +133,7 @@ class TensorView : public TensorRef<Element_, Layout_> {
     TensorCoord const &extent             ///< size of the view in logical coordinates
   ):
     Base(ptr, layout), extent_(extent) {
-  
+
   }
 
   /// Constructs a TensorView object
@@ -143,7 +143,7 @@ class TensorView : public TensorRef<Element_, Layout_> {
     TensorCoord const &extent             ///< logical size of tensor
   ):
     Base(ref), extent_(extent) {
-  
+
   }
 
   /// Converting constructor from TensorRef to non-constant data.
@@ -261,7 +261,7 @@ class TensorView : public TensorRef<Element_, Layout_> {
     TensorCoord const& b            ///< offset in the logical coordinate space of the tensor
   ) const {
 
-    TensorRef result(*this);
+    TensorView result(*this);
     result.add_pointer_offset(-this->offset(b));
     return result;
   }
@@ -285,7 +285,7 @@ template <
   typename Layout
 >
 CUTLASS_HOST_DEVICE TensorView<Element, Layout> make_TensorView(
-  Element *ptr, 
+  Element *ptr,
   Layout const &layout,
   typename Layout::TensorCoord const &extent) {
 
