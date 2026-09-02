@@ -300,6 +300,14 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   // Step 3: The Epilogue.
 
   // Create the tiled copy operation for the accumulator (TMEM -> RMEM)
+  // PERF NOTE: 32dp32b1x is the simplest TMEM_LOAD atom but issues one
+  // tcgen05.ld per accumulator column; ptxas (CUDA 13.x) lowers each load
+  // through a per-load convergence-helper call, so the t2r phase can
+  // dominate small/medium kernels. Prefer a wider atom (e.g.
+  // SM100_TMEM_LOAD_32dp32b32x: 32 columns per instruction) in real
+  // epilogues; on sm_103 we measured 1.49x on the whole kernel from this
+  // one line. Very wide atoms (x128) can regress on register-writeback
+  // serialization -- sweep the width for your tile shape.
   TiledCopy tiled_t2r_copy = make_tmem_copy(SM100_TMEM_LOAD_32dp32b1x{}, tCtAcc);
   ThrCopy   thr_t2r_copy   = tiled_t2r_copy.get_slice(threadIdx.x);
 
