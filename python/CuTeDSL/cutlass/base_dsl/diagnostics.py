@@ -1710,6 +1710,11 @@ class DiagId(_DiagMixin, enum.Enum):
         "single line is not supported here.",
         ("Split it into separate assignment statements, one kind of target per line.",),
     )
+    UNSUP_NO_SOURCE = (
+        "The source of `{func}` is not available (e.g. defined in the REPL or "
+        "via exec()), so it cannot be compiled.",
+        ("Save the function to a .py file and import it from there.",),
+    )
 
     # =====================================================================
     # Migrated from raw DSLRuntimeError raises across the DSL (author
