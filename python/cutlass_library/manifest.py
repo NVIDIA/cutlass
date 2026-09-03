@@ -366,6 +366,14 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
           }))
 
       subclass_file.write(self.epilogue_template)
+
+      # Append extern "C" entry point for dlopen-based dynamic loading
+      extern_c_template = """
+      extern "C" void cutlass_register_operations(cutlass::library::Manifest &manifest) {
+        cutlass::library::initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(manifest);
+      }
+      """
+      subclass_file.write(SubstituteTemplate(extern_c_template, subclass_cfg))
       subclass_file.close()
 
       # Write the call to initialize_all for this subclass to the top-level file
