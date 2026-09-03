@@ -50,6 +50,7 @@ from itertools import chain
 
 from .common import *
 from .diagnostics import DiagId
+from .runtime.jit_arg_adapters import is_arg_annotation_constexpr
 from .utils.logger import log
 
 
@@ -333,6 +334,7 @@ class SessionData:
     region_stack: list[Region] = field(default_factory=list)
     generator_targets: list[str] = field(default_factory=list)
     lambda_args: list[str] = field(default_factory=list)
+    constexpr_param_names: set[str] = field(default_factory=set)
 
     @contextlib.contextmanager
     def _set_attr(self, attr: str, value: str) -> Generator[None, None, None]:
@@ -647,6 +649,15 @@ class DSLPreprocessor(ast.NodeTransformer):
             function_pointer, self._default_arg_source_names(func_def)
         )
 
+        sig = inspect.signature(function_pointer, eval_str=True)
+        self.session_data.constexpr_param_names = {
+            name
+            for index, (name, param) in enumerate(sig.parameters.items())
+            if is_arg_annotation_constexpr(
+                param.annotation, name, index, function_pointer
+            )
+        }
+
         # Step 2. Transform the function
         transformed_tree = self.visit(tree)
 
@@ -872,6 +883,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         write_args = OrderedSet()
         invoked_args = OrderedSet()
         called_functions = OrderedSet()
+        constexpr_param_names = self.session_data.constexpr_param_names
 
         class RegionAnalyzer(ast.NodeVisitor):
             force_store = False
@@ -926,7 +938,11 @@ class DSLPreprocessor(ast.NodeTransformer):
 
                 # Classes are mutable by default. Mark them as write. If they are
                 # dataclass(frozen=True), treat them as read in runtime.
-                if base_name is not None and base_name not in ("self",):
+                if (
+                    base_name is not None
+                    and base_name not in ("self",)
+                    and base_name not in constexpr_param_names
+                ):
                     invoked_args.add(base_name)
 
                 self.generic_visit(node)
