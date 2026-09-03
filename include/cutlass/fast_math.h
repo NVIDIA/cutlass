@@ -45,6 +45,7 @@
 #include "cutlass/uint128.h"
 #include "cutlass/coord.h"
 #include "cutlass/half.h"
+#include "cutlass/bfloat16.h"
 
 /**
  * \file
@@ -901,6 +902,15 @@ half_t fast_exp(half_t x) {
 }
 
 CUTLASS_HOST_DEVICE
+bfloat16_t fast_exp(bfloat16_t x) {
+  #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11) && (__CUDA_ARCH__ >= 800)
+      return bfloat16_t(::hexp(reinterpret_cast<__nv_bfloat16 const &>(x.storage)));
+  #else
+      return bfloat16_t(fast_exp(float(x)));
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
 float fast_log(float x) {
   #if defined(__CUDA_ARCH__)
   return ::logf(x);
@@ -954,6 +964,17 @@ half_t fast_tanh(half_t x) {
   #endif
 }
 
+CUTLASS_HOST_DEVICE
+bfloat16_t fast_tanh(bfloat16_t x) {
+  #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDA_ARCH__ >= 900)
+  uint16_t bits = x.storage;
+  asm volatile("tanh.approx.bf16 %0, %1;" : "=h"(bits) : "h"(bits));
+  return bfloat16_t::bitcast(bits);
+  #else
+  return bfloat16_t(fast_tanh(float(x)));
+  #endif
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
@@ -985,6 +1006,34 @@ struct fast_exp_op<Array<half_t, N>> {
     if (N % 2) {
       half_t last = rhs[N - 1];
       result[N - 1] = half_t(::hexp(last.to_half()));
+    }
+
+    return result;
+  }
+};
+#endif // #if defined(__CUDA_ARCH__)
+
+#if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11) && (__CUDA_ARCH__ >= 800)
+template <int N>
+struct fast_exp_op<Array<bfloat16_t, N>> {
+  CUTLASS_DEVICE
+  Array<bfloat16_t, N> operator()(Array<bfloat16_t, N> const &rhs) const {
+
+    Array<bfloat16_t, N> result;
+
+    // use x2 specialization
+    __nv_bfloat162 const *in  = reinterpret_cast<__nv_bfloat162 const *>(&rhs);
+    __nv_bfloat162       *out = reinterpret_cast<__nv_bfloat162 *>(&result);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      out[i] = ::h2exp(in[i]);
+    }
+
+    // residual
+    if (N % 2) {
+      bfloat16_t last = rhs[N - 1];
+      result[N - 1] = bfloat16_t(::hexp(last.to_nv_bfloat16()));
     }
 
     return result;
@@ -1041,6 +1090,35 @@ struct fast_tanh_op<Array<half_t, N>> {
       uint16_t const *in = reinterpret_cast<uint16_t const *>(&rhs);
       uint16_t *out = reinterpret_cast<uint16_t *>(&result);
       asm volatile ("tanh.approx.f16 %0, %1;" : "=h"(out[N - 1]) : "h"(in[N - 1]));
+    }
+
+    return result;
+  }
+};
+#endif // #if defined(__CUDA_ARCH__)
+
+#if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDA_ARCH__ >= 900)
+template <int N>
+struct fast_tanh_op<Array<bfloat16_t, N>> {
+  CUTLASS_DEVICE
+  Array<bfloat16_t, N> operator()(Array<bfloat16_t, N> const &rhs) const {
+
+    Array<bfloat16_t, N> result;
+
+    // use x2 specialization
+    uint32_t const *in  = reinterpret_cast<uint32_t const *>(&rhs);
+    uint32_t       *out = reinterpret_cast<uint32_t *>(&result);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      asm volatile("tanh.approx.bf16x2 %0, %1;" : "=r"(out[i]) : "r"(in[i]));
+    }
+
+    // residual — use distinct names (in_raw, out_raw) to avoid shadowing the uint32_t pointers above
+    if (N % 2) {
+      uint16_t const *in_raw  = reinterpret_cast<uint16_t const *>(&rhs);
+      uint16_t       *out_raw = reinterpret_cast<uint16_t *>(&result);
+      asm volatile("tanh.approx.bf16 %0, %1;" : "=h"(out_raw[N - 1]) : "h"(in_raw[N - 1]));
     }
 
     return result;
