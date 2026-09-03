@@ -452,7 +452,12 @@ recast_layout(Swizzle<B,M,S> const& swizzle)
     return upcast<scale::num>(swizzle);
   }
   else {
-    return downcast<scale::den>(upcast<scale::num>(layout));
+    // A Swizzle addresses power-of-two bit fields only. Thus a ratio between
+    // the two type sizes that is not a power of two, for example the 3/4 that
+    // an 8-bit type and a 6-bit type give, has no Swizzle that represents it.
+    static_assert(dependent_false<Swizzle<B,M,S>>,
+                  "recast_layout of a Swizzle needs a power-of-two ratio between the two type sizes.");
+    return swizzle;                 // Never reached. It keeps the return type deducible.
   }
   CUTE_GCC_UNREACHABLE;
 }
