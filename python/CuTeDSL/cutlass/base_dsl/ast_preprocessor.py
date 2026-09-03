@@ -627,11 +627,21 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Step 1.2 Check the decorator (legacy Python backend)
         if not self.check_decorator(tree.body[0]):
-            log().info(
-                "[%s] - Skipping function due to missing decorator",
-                func_name,
+            # The source is read from disk at first compile, so a module that
+            # changed since import (e.g. an in-place upgrade while this
+            # process kept the old modules loaded) yields a misaligned slice
+            # whose first statement is not the decorated definition. Running
+            # the stale text or silently skipping staging would produce
+            # confusing errors far away from the cause.
+            raise DSLUserCodeError(
+                f"Source of function {func_name} does not start with a DSL "
+                "decorator, because the file on disk changed after it was "
+                "imported or the function was decorated programmatically "
+                "and its source has no decorator.",
+                filename=self.session_data.file_name,
+                suggestion="Restart the Python process so the source matches "
+                "the running code.",
             )
-            return []
 
         self.processed_functions.add(function_pointer)
         log().info("ASTPreprocessor Transforming function [%s]", func_name)
