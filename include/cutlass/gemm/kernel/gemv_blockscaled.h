@@ -319,7 +319,7 @@ public:
         const int tileA_k_local = kThreadsPerRow * kElementsPerAccess;
         const int total_tiles   = gemm_k / tileA_k_local;
 
-        int unroll_col_k = 0; // total K elements consumed so far by this thread
+        int unroll_col_k = 0; // next K offset issued to gmem prefetch, not the K accumulated so far
         const int thread_id = threadIdx.y * kThreadsPerRow + threadIdx.x;
         const bool is_even_thread = (threadIdx.x % 2 == 0);
         const bool load_b = (threadIdx.y == 0);
@@ -485,8 +485,9 @@ public:
           __syncthreads();
 
           // Tail elements that don't fill a full tile
-          if (unroll_col_k + idx_col_k * kPackedElementsA < gemm_k) {
-            accum += process_tail_elements(unroll_col_k, idx_col_k, gemm_k,
+          const int tail_col_k = tile_idx * tileA_k_local;
+          if (tail_col_k + idx_col_k * kPackedElementsA < gemm_k) {
+            accum += process_tail_elements(tail_col_k, idx_col_k, gemm_k,
                                            ptr_A, ptr_B,
                                            ptr_SF_A, ptr_SF_B,
                                            A_converter, B_converter,
