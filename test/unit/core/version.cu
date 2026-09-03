@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,61 +28,44 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief Unit tests for cutlass/version.h.
+*/
 
-#pragma once
+#include "../common/cutlass_unit_test.h"
 
-#if defined(__CUDACC_RTC__)
-#include CUDA_STD_HEADER(cstdint)
-#else
-#include <cstdint>
+#include "cutlass/version.h"
+
 #include <string>
-#endif
 
-#define CUTLASS_MAJOR 4
-#define CUTLASS_MINOR 8
-#define CUTLASS_PATCH 0
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifdef CUTLASS_VERSIONS_GENERATED
-#include "cutlass/version_extended.h"
-#else
-#define CUTLASS_BUILD 0
-#define CUTLASS_REVISION ""
-#endif
+TEST(Version, numeric_version) {
+  EXPECT_EQ(cutlass::getVersion(), CUTLASS_VERSION);
+  EXPECT_EQ(cutlass::getVersionMajor(), uint32_t(CUTLASS_MAJOR));
+  EXPECT_EQ(cutlass::getVersionMinor(), uint32_t(CUTLASS_MINOR));
+  EXPECT_EQ(cutlass::getVersionPatch(), uint32_t(CUTLASS_PATCH));
+  EXPECT_EQ(cutlass::getVersionBuild(), uint32_t(CUTLASS_BUILD + 0));
+}
 
-#define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
+// getVersionString() and getGitRevision() must be derived from the version
+// macros (or version_extended.h) rather than unsubstituted "@...@" placeholders.
+TEST(Version, version_string_matches_macros) {
+  std::string const expected = std::to_string(CUTLASS_MAJOR) + "." +
+                               std::to_string(CUTLASS_MINOR) + "." +
+                               std::to_string(CUTLASS_PATCH);
 
-namespace cutlass {
+  std::string const actual = cutlass::getVersionString();
 
-  inline constexpr uint32_t getVersion() {
-    return CUTLASS_VERSION;
+  EXPECT_EQ(actual.substr(0, expected.size()), expected);
+  EXPECT_EQ(actual.find('@'), std::string::npos);
+  if (cutlass::getVersionBuild()) {
+    EXPECT_EQ(actual, expected + "." + std::to_string(cutlass::getVersionBuild()));
   }
-  inline constexpr uint32_t getVersionMajor() {
-    return CUTLASS_MAJOR;
-  }
-  inline constexpr uint32_t getVersionMinor() {
-    return CUTLASS_MINOR;
-  }
-  inline constexpr uint32_t getVersionPatch() {
-    return CUTLASS_PATCH;
-  }
-  inline constexpr uint32_t getVersionBuild() {
-    return CUTLASS_BUILD + 0;
-  }
+}
 
-#if !defined(__CUDACC_RTC__)
-  inline std::string getVersionString() {
-    std::string version = std::to_string(CUTLASS_MAJOR) + "." +
-                          std::to_string(CUTLASS_MINOR) + "." +
-                          std::to_string(CUTLASS_PATCH);
-    if (getVersionBuild()) {
-      version += "." + std::to_string(getVersionBuild());
-    }
-    return version;
-  }
+TEST(Version, git_revision_has_no_placeholders) {
+  EXPECT_EQ(cutlass::getGitRevision().find('@'), std::string::npos);
+}
 
-  inline std::string getGitRevision() {
-    return CUTLASS_REVISION;
-  }
-#endif // !defined(__CUDACC_RTC__)
-
-} // namespace cutlass
+/////////////////////////////////////////////////////////////////////////////////////////////////
