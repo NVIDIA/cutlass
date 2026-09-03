@@ -243,26 +243,39 @@ protected:
       operator_args.mainloop.ptr_A = static_cast<ArrayElementA const *>(arguments->A);
       operator_args.mainloop.ptr_B = static_cast<ArrayElementB const *>(arguments->B);
 
-      std::unordered_map<RuntimeDatatype, cute::UMMA::MXF8F6F4Format> mapping = {
-          {RuntimeDatatype::kE4M3, cute::UMMA::MXF8F6F4Format::E4M3},
-          {RuntimeDatatype::kE5M2, cute::UMMA::MXF8F6F4Format::E5M2}, 
-          {RuntimeDatatype::kE3M2, cute::UMMA::MXF8F6F4Format::E3M2},
-          {RuntimeDatatype::kE2M1, cute::UMMA::MXF8F6F4Format::E2M1}
-      };
+      auto runtime_datatype_to_mxf8f6f4 =
+        [](RuntimeDatatype type, cute::UMMA::MXF8F6F4Format& format) -> Status {
+          switch (type) {
+            case RuntimeDatatype::kE4M3:
+              format = cute::UMMA::MXF8F6F4Format::E4M3;
+              return Status::kSuccess;
+            case RuntimeDatatype::kE5M2:
+              format = cute::UMMA::MXF8F6F4Format::E5M2;
+              return Status::kSuccess;
+            case RuntimeDatatype::kE3M2:
+              format = cute::UMMA::MXF8F6F4Format::E3M2;
+              return Status::kSuccess;
+            case RuntimeDatatype::kE2M1:
+              format = cute::UMMA::MXF8F6F4Format::E2M1;
+              return Status::kSuccess;
+            default:
+              assert(false && "invalid runtime argument for datatype!");
+              return Status::kErrorInvalidProblem;
+          }
+        };
 
-      auto iter_runtime_a = mapping.find(arguments->runtime_input_datatype_a);
-      auto iter_runtime_b = mapping.find(arguments->runtime_input_datatype_b);
-
-      if (iter_runtime_a != mapping.end()) {
-          operator_args.mainloop.runtime_data_type_a = iter_runtime_a->second;
-      } else {
-        assert("invalid runtime argument for datatype A!");
+      status = runtime_datatype_to_mxf8f6f4(
+        arguments->runtime_input_datatype_a,
+        operator_args.mainloop.runtime_data_type_a);
+      if (status != Status::kSuccess) {
+        return status;
       }
 
-      if (iter_runtime_b != mapping.end()) {
-          operator_args.mainloop.runtime_data_type_b = iter_runtime_b->second;
-      } else {
-        assert("invalid runtime argument for datatype B!");
+      status = runtime_datatype_to_mxf8f6f4(
+        arguments->runtime_input_datatype_b,
+        operator_args.mainloop.runtime_data_type_b);
+      if (status != Status::kSuccess) {
+        return status;
       }
 
    }
