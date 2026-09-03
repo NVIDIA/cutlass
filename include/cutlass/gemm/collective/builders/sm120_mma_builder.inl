@@ -147,7 +147,7 @@ struct CollectiveBuilder<
                 "Unsupported kernel schedule by this collective mainloop dispatch policy.");                                                                    
 
   using SmemCopyAtomA = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_A<ElementA, ElementB, UseF8f6f4>()), SmemAllocTypeA>;
-  using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA, ElementB, UseF8f6f4>()), SmemAllocTypeB>;
+  using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA, ElementB, UseF8f6f4, size<1>(TileShape_MNK{})>()), SmemAllocTypeB>;
 
   using CollectiveOp = CollectiveMma<
       DispatchPolicy,
