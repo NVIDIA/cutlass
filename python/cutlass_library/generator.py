@@ -11245,18 +11245,18 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
   # Pingpong uses AtomLayout Shape<_2,_2,_1>, giving a natural TiledMma N of 16,
   # so pingpong tiles start at N = 16.
   tile_sizes_cooperative = [
-    [128,   8, 128],
-    [128,  16, 128],
-    [128,  32, 128],
+    [128, 128, 128],
     [128,  64, 128],
-    [128, 128, 128]
+    [128,  32, 128],
+    [128,  16, 128],
+    [128,   8, 128]
   ]
 
   tile_sizes_pingpong = [
-    [128,  16, 128],
-    [128,  32, 128],
+    [128, 128, 128],
     [128,  64, 128],
-    [128, 128, 128]
+    [128,  32, 128],
+    [128,  16, 128]
   ]
 
   cluster_shape = [1,1,1]
@@ -11392,28 +11392,28 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
   # Pingpong uses AtomLayout Shape<_2,_2,_1>, giving a natural TiledMma N of 16,
   # so pingpong tiles start at N = 16.
   tile_sizes_cooperative = [
-    [128,   8, 128],
-    [128,   8, 256],
-    [128,  16, 128],
-    [128,  16, 256],
-    [128,  32, 128],
-    [128,  32, 256],
-    [128,  64, 128],
-    [128,  64, 256],
     [128, 128, 128],
     [128, 128, 256],
-    [256, 128, 128]
+    [256, 128, 128],
+    [128,  64, 128],
+    [128,  64, 256],
+    [128,  32, 128],
+    [128,  32, 256],
+    [128,  16, 128],
+    [128,  16, 256],
+    [128,   8, 128],
+    [128,   8, 256]
   ]
 
   tile_sizes_pingpong = [
-    [128,  16, 128],
-    [128,  16, 256],
-    [128,  32, 128],
-    [128,  32, 256],
+    [128, 128, 128],
+    [128, 128, 256],
     [128,  64, 128],
     [128,  64, 256],
-    [128, 128, 128],
-    [128, 128, 256]
+    [128,  32, 128],
+    [128,  32, 256],
+    [128,  16, 128],
+    [128,  16, 256]
   ]
 
   cluster_shape = [1,1,1]
