@@ -625,6 +625,43 @@ void OperationProfiler::sleep(int sleep_duration) {
   }
 }
 
+namespace {
+
+Disposition compare_tensor_data(
+  Options const &options,
+  library::NumericTypeID type,
+  void const *experimental,
+  void const *reference,
+  int64_t count) {
+
+  bool passed = false;
+
+  if (options.verification.epsilon == 0) {
+
+    // bit-level equality
+    passed = DeviceAllocation::block_compare_equal(
+      type,
+      experimental,
+      reference,
+      count);
+  }
+  else {
+
+    // relative error function
+    passed = DeviceAllocation::block_compare_relatively_equal(
+      type,
+      experimental,
+      reference,
+      count,
+      options.verification.epsilon,
+      options.verification.nonzero_floor);
+  }
+
+  return passed ? Disposition::kPassed : Disposition::kIncorrect;
+}
+
+} // namespace
+
 
 /// Compares tensors for equality
 Disposition OperationProfiler::compare_tensors(
@@ -637,34 +674,48 @@ Disposition OperationProfiler::compare_tensors(
     return Disposition::kIncorrect;
   }
 
-  bool passed = false;
-
   if (count == 0) {
     count = reference.capacity();
   }
 
-  if (options.verification.epsilon == 0) {
+  return compare_tensor_data(
+    options,
+    experimental.type(),
+    experimental.data(),
+    reference.data(),
+    count);
+}
 
-    // bit-level equality
-    passed = DeviceAllocation::block_compare_equal(
-      experimental.type(),
-      experimental.data(),
-      reference.data(),
-      count);
+/// Compares consecutive tensor batches for equality
+Disposition OperationProfiler::compare_tensor_batches(
+  Options const &options,
+  DeviceAllocation &experimental,
+  DeviceAllocation &reference,
+  int logical_batch_count) {
+
+  if (experimental.type() != reference.type() ||
+      experimental.batch_stride() != reference.batch_stride() ||
+      experimental.batch_stride() <= 0 ||
+      logical_batch_count <= 0 ||
+      logical_batch_count > experimental.batch_count() ||
+      logical_batch_count > reference.batch_count()) {
+    return Disposition::kIncorrect;
   }
-  else {
 
-    // relative error function
-    passed = DeviceAllocation::block_compare_relatively_equal(
+  for (int batch_idx = 0; batch_idx < logical_batch_count; ++batch_idx) {
+    Disposition disposition = compare_tensor_data(
+      options,
       experimental.type(),
-      experimental.data(),
-      reference.data(),
-      count,
-      options.verification.epsilon,
-      options.verification.nonzero_floor);
+      experimental.batch_data(batch_idx),
+      reference.batch_data(batch_idx),
+      experimental.batch_stride());
+
+    if (disposition != Disposition::kPassed) {
+      return disposition;
+    }
   }
 
-  return passed ? Disposition::kPassed : Disposition::kIncorrect;
+  return Disposition::kPassed;
 }
 
 /// Saves the workspace
