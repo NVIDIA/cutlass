@@ -36,6 +36,42 @@ and you might see faster responses and more stable performance with clangd.
    them according to your target architecture.
 1. ...and possible edit any other fields for your specific setup.
 
+Here is an example `c_cpp_properties.json` for SM90 development:
+```json
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/tools/util/include",
+                "${workspaceFolder}/examples/common",
+                "/usr/local/cuda/include"
+            ],
+            "defines": [
+                "__CUDACC__",
+                "__CUDACC_VER_MAJOR__=12",
+                "__CUDACC_VER_MINOR__=8",
+                "__CUDA_ARCH__=900",
+                "__CUDA_ARCH_FEAT_SM90_ALL",
+                "CUDA_12_0_SM90_FEATURES_SUPPORTED",
+                "CUTLASS_ARCH_MMA_SM90_SUPPORTED=1"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
+```
+
+**Note:** Use `g++` or `clang++` as the `compilerPath`, not `nvcc`. The VS Code
+C/C++ IntelliSense engine does not understand `nvcc`, which will cause go-to-definition
+to fail inside `__device__` functions. Adjust the CUDA version defines and `__CUDA_ARCH__`
+to match your local CUDA toolkit and target GPU architecture.
+
 ## clangd Setup
 
 `clangd` is a C++ language server that is part of the LLVM project. You must first set it up your specific IDE:
@@ -54,7 +90,7 @@ The key settings here are the preprocessor vars (`-D__CUDACC_VER_MAJOR__` , `-D_
 
 ```
 CompileFlags:
-  Compiler: /usr/local/cuda/bin/nvcc
+  Compiler: clang++
   Add:
     - --cuda-path=/usr/local/cuda
     - --cuda-gpu-arch=sm_90a
@@ -62,7 +98,6 @@ CompileFlags:
     - "-xcuda"
     # report all errors
     - "-ferror-limit=0"
-    - --cuda-gpu-arch=sm_90a
     - --std=c++17
     - "-D__INTELLISENSE__"
     - "-D__CLANGD__"
@@ -104,7 +139,7 @@ CompileFlags:
   Add:
     - -I</absolute/path/to/cutlass>/include/
     - -I</absolute/path/to/cutlass>/tools/util/include/
-    - -I</absolute/path/to/cutlass>/cutlass/examples/common/
+    - -I</absolute/path/to/cutlass>/examples/common/
 ```
 
 Note that absolute paths are needed since clangd doesn't support relative paths.
