@@ -29,8 +29,9 @@
 // RUN: cute-opt -cute-expand-ops --split-input-file %s | FileCheck %s
 
 // Tests `cute-expand-ops` lowering for `cute.left_inverse`. Like
-// `right_inverse`, the op requires a fully-static input — the result is
-// always static and the static-fold shortcut always fires.
+// The op requires a fully-static input — the result is always static and the
+// static-fold shortcut always fires. `right_inverse` additionally supports
+// the bounded dynamic-shape path covered by its own test.
 
 // -----
 

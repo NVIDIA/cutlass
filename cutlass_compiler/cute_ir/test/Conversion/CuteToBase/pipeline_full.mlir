@@ -212,6 +212,47 @@ func.func @layout_algebra_composition(%a: !cute.layout<"(4,8):(1,4)">,
 
 // -----
 
+// LayoutAlgebra — dynamic right_inverse keeps the runtime extent through the
+// complete expansion and base-lowering pipeline.
+// CHECK-LABEL: func.func @layout_algebra_right_inverse_dynamic_shape
+// CHECK-SAME:    (%[[SRC:.+]]: !llvm.struct<(i32, struct<()>)>) -> i32
+// CHECK-NOT:     cute.
+// CHECK:         %[[N:.+]] = llvm.extractvalue %[[SRC]][0]
+// CHECK:         %[[WITH_N:.+]] = llvm.insertvalue %[[N]], %{{.+}}[0]
+// CHECK:         %[[OUT:.+]] = llvm.insertvalue %{{.+}}, %[[WITH_N]][1]
+// CHECK:         %[[RESULT_N:.+]] = llvm.extractvalue %[[OUT]][0]
+// CHECK:         return %[[RESULT_N]] : i32
+func.func @layout_algebra_right_inverse_dynamic_shape(
+    %src: !cute.layout<"(16,?):(1,16)">) -> i32 {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)">
+  %n = cute.get_scalars<{only_dynamic}> (%r)
+         : !cute.layout<"(16,?):(1,16)">
+  return %n : i32
+}
+
+// -----
+
+// LayoutAlgebra — a runtime shape extent becomes the inverse's runtime stride
+// after a static zero-stride mode is skipped.
+// CHECK-LABEL: func.func @layout_algebra_right_inverse_zero_stride
+// CHECK-SAME:    (%[[SRC:.+]]: !llvm.struct<(i32, struct<()>)>) -> i32
+// CHECK-NOT:     cute.
+// CHECK:         %[[N:.+]] = llvm.extractvalue %[[SRC]][0]
+// CHECK:         %[[BASE:.+]] = llvm.insertvalue %{{.+}}, %{{.+}}[0]
+// CHECK:         %[[WITH_N:.+]] = llvm.insertvalue %[[N]], %[[BASE]][1]
+// CHECK:         %[[RESULT_N:.+]] = llvm.extractvalue %[[WITH_N]][1]
+// CHECK:         return %[[RESULT_N]] : i32
+func.func @layout_algebra_right_inverse_zero_stride(
+    %src: !cute.layout<"(?,4):(0,1)">) -> i32 {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(?,4):(0,1)">) -> !cute.layout<"4:?">
+  %n = cute.get_scalars<{only_dynamic}> (%r) : !cute.layout<"4:?">
+  return %n : i32
+}
+
+// -----
+
 // Arithmetic — tuple_sub on dynamic operands, then print.
 // CHECK-LABEL: func.func @arith_tuple_sub_print
 // CHECK-NOT:     cute.
