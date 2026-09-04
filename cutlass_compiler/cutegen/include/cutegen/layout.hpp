@@ -828,7 +828,9 @@ auto composition(const layout_t<TDynTraits>& lhs, const cute_tile_t<TDynTraits>&
  * with this function returning `1:0` for layouts with modes of shape extent greater than 1 and 0
  * stride extent. `1:0` trivially satisfies the above conditions.
  *
- * @pre `layout` is static (cf. CuTe-C++)
+ * @pre `layout` has a static shape, or has a dynamic shape with fully static
+ *      plain-integer strides. Static-shape layouts may use the supported
+ *      integer or non-ratio scaled-basis stride forms.
  */
 template <class TDynTraits>
 layout_t<TDynTraits> right_inverse(const layout_t<TDynTraits>& layout);
@@ -3769,16 +3771,17 @@ layout_t<TDynTraits> right_inverse(const layout_t<TDynTraits>& layout)
                std::holds_alternative<ratio>(std::get<sb_t>(l).value());
     };
 
-    // Shape and stride must be static valid (no cg_error_t or dynamic values).
-    // The stride must only have scaled basis and static integer values.
+    // The shape may be dynamic only for the bounded plain-integer-stride
+    // path. Dynamic shape combined with dynamic or scaled-basis strides is
+    // not safe to infer here.
     if(!is_valid(layout.shape()) ||
-       !is_static(layout.shape()) ||
+       (!is_static(layout.shape()) && !is_integral_only(layout.stride())) ||
        !is_valid(layout.stride()) ||
        !has_only_leaves_of_type<int_t, dyn_t, sb_t>(layout.stride()) ||
        any_leaf_is(layout.stride(), is_sb_with_ratio_value))
     {
 #if defined(__cpp_exceptions) && !defined(CUTEGEN_DISALLOW_EXCEPTIONS)
-        throw std::runtime_error("right inverse input layout must be valid with static shapes and only integer or non-ratio scaled basis strides");
+        throw std::runtime_error("right inverse input layout must be valid with a static shape, or a dynamic shape with fully static integer strides, and only integer or non-ratio scaled basis strides");
 #else
         return cg_error_t{};
 #endif
@@ -3872,9 +3875,10 @@ layout_t<TDynTraits> right_inverse(const layout_t<TDynTraits>& layout)
         {
             continue;
         }
-        if(holds_int(curr_d) &&
-           holds_int(d) &&
-           (curr_d.as_int() != d.as_int()))
+        // Only retain a mode when continuity is provably equal. In
+        // particular, an undecidable dynamic equality must truncate the
+        // inverse rather than being treated as equal.
+        if(!eq_op_can_fold(curr_d, d).value_or(false))
         {
             continue;
         }
