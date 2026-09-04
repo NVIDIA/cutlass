@@ -123,7 +123,7 @@ struct TensorMREFunc {
     Element lhs_ = lhs.at(coord);
     Element rhs_ = rhs.at(coord);
 
-    sum += std::abs(double(lhs_) - double(rhs_) / (double(rhs_) + epsilon));
+    sum += std::abs(double(lhs_) - double(rhs_)) / (std::abs(double(rhs_)) + epsilon);
     ++count;
   }
 
