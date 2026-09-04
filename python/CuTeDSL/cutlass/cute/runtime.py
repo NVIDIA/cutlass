@@ -235,6 +235,12 @@ class _Tensor(Tensor):
         :rtype: _Tensor
         """
         self.load_dltensor()
+        if leading_dim is None and self.shape and all(s <= 1 for s in self.shape):
+            leading_dim = len(self.shape) - 1
+            for dim in reversed(range(len(self.shape))):
+                if self.stride[dim] == 1:
+                    leading_dim = dim
+                    break
         self._dltensor_wrapper.mark_layout_dynamic(leading_dim)
         return self
 
