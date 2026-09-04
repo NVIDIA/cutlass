@@ -937,11 +937,23 @@ class TensorAdapter:
 
 
 # -------------------------------------------------------------------------
-# Register TensorAdapter for numpy/torch tensors lazily by type name, so
-# importing this module never pays for importing numpy or torch itself.
+# Register TensorAdapter for numpy/torch/jax tensors lazily by type name, so
+# importing this module never pays for importing numpy, torch, or jax itself.
 # -------------------------------------------------------------------------
 
 JitArgAdapterRegistry.register_jit_arg_adapter("numpy.ndarray", lazy=True)(
     TensorAdapter
 )
 JitArgAdapterRegistry.register_jit_arg_adapter("torch.Tensor", lazy=True)(TensorAdapter)
+
+# Register JAX array implementation classes
+for qualname in (
+    "jaxlib._jax.ArrayImpl",
+    "jax.jaxlib._jax.ArrayImpl",
+    "jaxlib.xla_extension.ArrayImpl",
+    "jax._src.array.ArrayImpl",
+):
+    JitArgAdapterRegistry.register_jit_arg_adapter(qualname, lazy=True)(
+        TensorAdapter
+    )
+
