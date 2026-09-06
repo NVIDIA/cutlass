@@ -61,6 +61,7 @@ To maximize performance benefits, we recommend setting up your workflow as follo
 - **Use the environment stream flag** to implicitly pass the current PyTorch stream.
 - **Rely on compiled argument validation** instead of Python-side attribute validation,
   as TVM FFI functions perform fast compiled checks.
+- **Use positional-only arguments (`def func(a, b, c, /)`)** when defining `@cute.jit` functions to bypass Python wrapper overhead completely and allow direct execution via `tvm_ffi.Function`.
 
 Following these steps can significantly reduce the host-side overhead of eager kernel execution.
 The sections below provide detailed examples and explanations for each step.

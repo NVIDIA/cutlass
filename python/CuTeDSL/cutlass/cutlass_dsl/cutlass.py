@@ -1024,7 +1024,7 @@ class CutlassBaseDSL(BaseDSL):
                 if (
                     kwargs_wrapper_spec.kwonly_names
                     or kwargs_wrapper_spec.arg_defaults
-                    or kwargs_wrapper_spec.arg_names
+                    or kwargs_wrapper_spec.has_pos_or_kw
                     or map_dataclass_to_tuple
                 ):
                     return TVMFFIJitCompiledFunctionWithKwargs(

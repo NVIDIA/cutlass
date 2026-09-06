@@ -215,6 +215,7 @@ class KwargsWrapperSpec(NamedTuple):
     arg_defaults: tuple[Any, ...]
     kwonly_names: list[str]
     kwonly_defaults: dict[str, Any]
+    has_pos_or_kw: bool = True
 
 
 def _validate_pointer_address(address: int) -> None:
@@ -821,6 +822,7 @@ class ExecutionArgs:
         arg_defaults = []
         kwonly_names = []
         kwonly_defaults = {}
+        has_pos_or_kw = False
 
         for i, (name, param) in enumerate(sig.parameters.items()):
             # We don't want *args or **kwargs to be included in the
@@ -832,12 +834,15 @@ class ExecutionArgs:
             ):
                 continue
             is_kwonly = param.kind == inspect.Parameter.KEYWORD_ONLY
+            is_pos_or_kw = param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
             annotation = param.annotation
             if (
                 is_arg_annotation_constexpr(annotation, name, i, None)
                 or name in excluded_arg_names
             ):
                 continue
+            if is_pos_or_kw:
+                has_pos_or_kw = True
             arg_names.append(name) if not is_kwonly else kwonly_names.append(name)
             if param.default is not inspect.Parameter.empty:
                 if is_kwonly:
@@ -850,6 +855,7 @@ class ExecutionArgs:
             arg_defaults=tuple(arg_defaults),
             kwonly_names=kwonly_names,
             kwonly_defaults=kwonly_defaults,
+            has_pos_or_kw=has_pos_or_kw,
         )
 
     def get_rectified_args_from_original_args(
