@@ -2,7 +2,70 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import inspect
-from cutlass.base_dsl.jit_executor import ExecutionArgs, KwargsWrapperSpec
+import pytest
+
+import cutlass.cute as cute
+from cutlass import Int32
+from cutlass.base_dsl.jit_executor import ExecutionArgs
+from cutlass.cutlass_dsl.tvm_ffi_provider import (
+    TVMFFIJitCompiledFunction,
+    TVMFFIJitCompiledFunctionWithKwargs,
+)
+
+
+pytest.importorskip("tvm_ffi")
+
+
+@cute.jit
+def _positional_only(a: Int32, b: Int32, /):
+    pass
+
+
+@cute.jit
+def _positional_or_keyword(a: Int32, b: Int32):
+    pass
+
+
+@cute.jit
+def _positional_default(a: Int32, b: Int32 = Int32(2), /):
+    pass
+
+
+@cute.jit
+def _keyword_only(a: Int32, /, *, k: Int32 = Int32(2)):
+    pass
+
+
+def _compile(func, *args):
+    return cute.compile(func, *args, options="--enable-tvm-ffi")
+
+
+def test_tvm_ffi_routes_positional_only_signature_to_native_function():
+    compiled = _compile(_positional_only, Int32(1), Int32(2))
+
+    assert isinstance(compiled, TVMFFIJitCompiledFunction)
+    compiled(1, 2)
+
+
+def test_tvm_ffi_routes_positional_or_keyword_signature_to_kwargs_wrapper():
+    compiled = _compile(_positional_or_keyword, Int32(1), Int32(2))
+
+    assert isinstance(compiled, TVMFFIJitCompiledFunctionWithKwargs)
+    compiled(a=1, b=2)
+
+
+def test_tvm_ffi_routes_positional_default_signature_to_kwargs_wrapper():
+    compiled = _compile(_positional_default, Int32(1))
+
+    assert isinstance(compiled, TVMFFIJitCompiledFunctionWithKwargs)
+    compiled(1)
+
+
+def test_tvm_ffi_routes_keyword_only_signature_to_kwargs_wrapper():
+    compiled = _compile(_keyword_only, Int32(1))
+
+    assert isinstance(compiled, TVMFFIJitCompiledFunctionWithKwargs)
+    compiled(1, k=2)
 
 
 def test_kwargs_wrapper_spec_positional_only():

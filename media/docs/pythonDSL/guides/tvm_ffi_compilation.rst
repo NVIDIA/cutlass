@@ -61,11 +61,37 @@ To maximize performance benefits, we recommend setting up your workflow as follo
 - **Use the environment stream flag** to implicitly pass the current PyTorch stream.
 - **Rely on compiled argument validation** instead of Python-side attribute validation,
   as TVM FFI functions perform fast compiled checks.
-- **Use positional-only arguments (`def func(a, b, c, /)`)** when defining `@cute.jit` functions to bypass Python wrapper overhead completely and allow direct execution via `tvm_ffi.Function`.
+- **Use the positional-only TVM FFI fast path** when its signature restrictions fit your API.
 
 Following these steps can significantly reduce the host-side overhead of eager kernel execution.
 The sections below provide detailed examples and explanations for each step.
 You may find it helpful to refer back to this summary after you review the implementation details.
+
+
+Use the positional-only TVM FFI fast path
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+TVM FFI's native ABI accepts positional arguments only. CuTe DSL therefore
+returns a direct ``tvm_ffi.Function`` for a ``@cute.jit`` function whose
+runtime arguments are all positional-only and have no defaults. This avoids
+the Python keyword/defaults wrapper and its GIL overhead for both Python and
+C++ callers.
+
+For example, this signature uses the direct path:
+
+.. code-block:: python
+
+   @cute.jit
+   def add_one(a: cute.Tensor, b: cute.Tensor, /):
+      ...
+
+The direct path cannot accept keyword arguments. CuTe DSL uses
+``TVMFFIJitCompiledFunctionWithKwargs`` instead when a signature has a
+positional-or-keyword parameter, a default value, a keyword-only parameter,
+or a top-level dataclass argument. The wrapper preserves Python calls such as
+``compiled_add_one(a=a_torch, b=b_torch)`` and default-value handling, but has
+Python wrapper overhead. In particular, a positional-only signature with a
+default (``def func(a, b=1, /)``) still uses the wrapper.
 
 
 Fake tensor for compilation
@@ -91,7 +117,7 @@ To clearly distinguish between the compilation phase and runtime,
          b[tid] = a[tid] + 1.0
 
    @cute.jit
-   def add_one(a: cute.Tensor, b: cute.Tensor):
+   def add_one(a: cute.Tensor, b: cute.Tensor, /):
       n = a.shape[0]
       threads_per_block = 128
       blocks = (n + threads_per_block - 1) // threads_per_block
