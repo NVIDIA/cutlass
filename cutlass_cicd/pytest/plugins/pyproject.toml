@@ -1,0 +1,38 @@
+# =============================================================================
+# CUTLASS test-sharding Plugin Package Configuration
+# =============================================================================
+# Packages test_sharding.py and its device_info helper as an installable
+# distribution so pytest can pick the plugin up through entry-point discovery.
+#
+# Setup:
+#   pip install .
+#
+# Loading:
+#   pytest                        # autoloads test_sharding
+#   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p test_sharding ...
+# =============================================================================
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cutlass-pytest-plugins"
+version = "0.1.2"
+description = "Pytest test-sharding plugin for the CUTLASS CuTeDSL test suite"
+requires-python = ">=3.9"
+
+dependencies = [
+    "pytest>=9.0",
+]
+
+# Entry-point keys are pluggy's internal slot names; values are import
+# paths.  Listing a plugin here lets pytest auto-discover it after
+# `pip install`, so callers don't need to thread `-p <name>` through
+# every invocation.  Honors PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 to opt out.
+#
+[project.entry-points.pytest11]
+test_sharding = "test_sharding"
+
+[tool.setuptools]
+py-modules = ["device_info", "test_sharding"]

@@ -28,4 +28,5 @@
 
 
 def pytest_configure(config):
-    config.default_SMs[__file__] = "100f"
+    if hasattr(config, "default_SMs"):
+        config.default_SMs[__file__] = "100f"

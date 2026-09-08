@@ -10,23 +10,28 @@
 
 
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools>=64.0"]
+build-backend = "_editable_backend"
+backend-path = ["."]
 
 [project]
-name = "nvidia-cutlass-dsl"
-dynamic = ["version"]
+name = "nvidia-cutlass-dsl-libs-core"
+dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "NVIDIA CUTLASS Python DSL"
+# This intentionally closes the development dependency cycle: the editable
+# project itself satisfies the metapackage's indirect exact core requirement.
 authors = [
     {name = "NVIDIA Corporation"},
 ]
 
 [tool.setuptools]
+package-dir = {"" = "."}
 packages = ["cutlass"]
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = {file = "VERSION.EDITABLE"}
+version = {attr = "_editable_backend.EDITABLE_VERSION"}
+dependencies = {file = ["requirements.txt"]}
 
-[tool.setuptools.package-data]
-nvidia_cutlass_dsl = ["lib/**/*"]
+[tool.setuptools.dynamic.optional-dependencies]
+cu13 = {file = ["requirements-cu13.txt"]}
