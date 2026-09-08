@@ -462,6 +462,8 @@ cta_reduce(
     acc = __shfl_sync(0xffffffff, acc, 0, 32);
     out(i) = acc;
   }
+  // Complete all scratch reads before another reduction reuses the storage.
+  warp_reduce_barrier.arrive_and_wait();
 }
 
 // this function acts on the transposed tensor of the above cta_reduce function
