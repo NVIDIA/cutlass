@@ -986,6 +986,23 @@ struct atomic_add<half2>
   }
 };
 
+template<>
+struct atomic_add<__nv_bfloat162>
+{
+  CUTLASS_DEVICE
+  void operator()(__nv_bfloat162 *ptr, const __nv_bfloat162)
+  {
+#if !defined(__CUDA_ARCH__) || (defined(__CUDA_ARCH__)  && (__CUDA_ARCH__ < 900))
+      CUTLASS_UNUSED(ptr);
+      CUTLASS_UNUSED(data);
+#else
+    // Vector-2 bf16 atomic reduction requires .target sm_90 or higher
+    uint32_t word = reinterpret_cast<const uint32_t&>(data);
+    asm volatile ("red.gpu.global.add.noftz.bf16x2 [%0], %1;\n" : : "l"(ptr), "r"(word));
+#endif // (__CUDA_ARCH__ >= 900)
+  }
+};
+
 template <typename T>
 using red [[deprecated("use atomic_add instead")]] = atomic_add<T>;
 
