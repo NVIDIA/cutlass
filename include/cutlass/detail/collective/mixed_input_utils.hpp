@@ -491,9 +491,10 @@ void LayoutAwareConvert(
 namespace cutlass {
   namespace detail {
     enum class ConversionMode {
-      DirectConvert,              // A * B
-      ConvertAndScale,            // (scale * A) * B
-      ConvertAndScaleWithZero     // (scale * A + zeros) * B
+      DirectConvert,               // A * B
+      ConvertAndScale,             // (scale * A) * B
+      ConvertAndScaleWithZero,     // (scale * A + zeros) * B
+      ConvertAndScaleWithZeroGptq, // (A - zeros) * scale * B
     };
   } // namespace detail
 } //namespace cutlass
@@ -574,7 +575,7 @@ public:
                   KernelConversionMode == ConversionMode::ConvertAndScale ) {
       return 0;
     }
-    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
       return cute::cosize_v<SmemLayoutScale>;
     }
     else {
@@ -604,7 +605,7 @@ public:
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return scale_tx_bytes;
       }
-      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
         // Scale and zero share smem layout
         constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutScale{}) * size<1>(SmemLayoutScale{}) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
         static_assert(zero_tx_bytes % 128 == 0, "Each zero stage must be 128B aligned."); // required by TMA
@@ -676,7 +677,7 @@ public:
         copy(smem_tiled_copy_S, tCsS(_,_,k_block,read_stage), tCrS_copy_view(_,_,k_block));
         if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
           // Nothing extra to do
-        } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+        } else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
           auto tCsZ              = cute::get<2>(partitioned_mma_extra_info);
           auto tCrZ_copy_view    = cute::get<2>(tiled_copy_and_views);
           copy(smem_tiled_copy_S, tCsZ(_,_,k_block,read_stage), tCrZ_copy_view(_,_,k_block));
@@ -978,6 +979,38 @@ public:
         }
       }
     }
+    else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
+      static_assert(is_same_v<ElementScale, ElementZero>, "ElementScale and ElementZero must be the same.");
+      Tensor scales = cute::get<1>(partitioned_extra_info)(_, _, k_block);
+      Tensor zeros  = cute::get<3>(partitioned_extra_info)(_, _, k_block);
+      CUTE_STATIC_ASSERT_V(size(src) == size(scales));
+      CUTE_STATIC_ASSERT_V(size(src) == size(zeros));
+      Tensor scales_vm = cute::group_modes<1,-1>(cute::zipped_divide(scales, Int<NumValPerSrcReg>{}));
+      Tensor zeros_vm = cute::group_modes<1,-1>(cute::zipped_divide(zeros, Int<NumValPerSrcReg>{}));
+
+      if constexpr (is_same_v<DstType, ElementScale>) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size<1>(dst_vm); ++i) {
+          LayoutAwareConvert(src_vm(_, i), dst_vm(_, i));
+          CUTLASS_PRAGMA_UNROLL
+          for (int j = 0; j < size<0>(dst_vm); ++j) {
+            dst_vm(j, i) = (dst_vm(j, i) -  zeros_vm(j, i)) * scales_vm(j, i);
+          }
+        }
+      }
+      else {
+        auto stage = make_tensor_like<ElementScale>(src_vm(_, 0));
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size<1>(dst_vm); ++i) {
+          LayoutAwareConvert(src_vm(_, i), stage);
+          CUTLASS_PRAGMA_UNROLL
+          for (int j = 0; j < size<0>(dst_vm); ++j) {
+            stage(j) = (stage(j)  - zeros_vm(j, i)) * scales_vm(j, i);
+          }
+          LayoutAwareConvert(stage, dst_vm(_, i));
+        }
+      }
+    }
     else {
       static_assert(cutlass::detail::dependent_false<KernelSchedule>, "No A data is loaded.");
     }
@@ -1120,7 +1153,7 @@ public:
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(tSgS, tSsS);
       }
-      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
         Tensor sZ  = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{}); // (BLK_M,BLK_K,PIPE)
         Tensor gZ_mkl = get<3>(load_inputs);
         auto block_tma_z = mainloop_params.tma_load_zero.get_slice(cluster_local_block_id.y);
@@ -1171,7 +1204,7 @@ public:
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(tCsS, tCrS);
       }
-      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
         Tensor sZ = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
         Tensor tCsZ = mma_thread_slice.partition_A(sZ);
         Tensor tCrZ = make_tensor<ElementZero>(mma_thread_slice.partition_fragment_A(sZ(_,_,Int<0>{})).layout());
@@ -1247,7 +1280,7 @@ public:
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(smem_tiled_copy_S, tCrS_copy_view);
       }
-      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+      else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero || KernelConversionMode == ConversionMode::ConvertAndScaleWithZeroGptq) {
         Tensor tCrZ_copy_view  = smem_thr_copy_S.retile_D(cute::get<3>(partitioned_extra_info));      // (CPY,CPY_M,CPY_K)
         return cute::make_tuple(smem_tiled_copy_S, tCrS_copy_view, tCrZ_copy_view);
       }
