@@ -2632,15 +2632,24 @@ class BlackwellFusedMultiHeadAttentionBackward:
     def _get_workspace_size(
         q: int, k: int, d: int, h: int, b: int, acc_dtype: Type[cutlass.Numeric]
     ):
-        d = (d + 7) // 8 * 8  # round up to 8
-        q = (q + 7) // 8 * 8  # round up to 8
+        q = int((q + 7) // 8 * 8)  # round up to 8
+        d = int((d + 7) // 8 * 8)  # round up to 8
         workspace_bytes = 0
+        q_i32 = int(q)
+        d_i32 = int(d)
+        h_i32 = int(h)
+        b_i32 = int(b)
+        acc_bytes = int(acc_dtype.width // 8)
         # OdO vector
-        workspace_bytes += b * h * q * acc_dtype.width // 8
+        workspace_bytes += b_i32 * h_i32 * q_i32 * acc_bytes
         # scaled LSE vector
-        workspace_bytes += b * h * q * acc_dtype.width // 8
+        workspace_bytes += b_i32 * h_i32 * q_i32 * acc_bytes
         # FP32 versions of outputs that are churned (start off with Q only)
-        workspace_bytes += b * h * q * d * acc_dtype.width // 8
+        workspace_bytes += b_i32 * h_i32 * q_i32 * d_i32 * acc_bytes
+        if workspace_bytes < 0:
+            raise OverflowError(
+                f"workspace size overflow: q={q_i32}, d={d_i32}, h={h_i32}, b={b_i32}"
+            )
         return workspace_bytes
 
     def make_and_init_load_mma_Q_pipeline(self, load_mma_Q_mbar_ptr):
@@ -3629,4 +3638,3 @@ if __name__ == "__main__":
     )
 
     print("PASS")
-
