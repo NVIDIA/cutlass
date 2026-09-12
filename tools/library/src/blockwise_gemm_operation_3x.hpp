@@ -158,6 +158,8 @@ public:
     description_.element_epilogue = NumericTypeMap<ElementCompute>::kId;
 
     description_.split_k_mode = SplitKMode::kNone;
+
+    initialize_gemm_schedule_description<Operator>(description_);
   }
 
   /// Returns the description of the GEMM operation

@@ -288,6 +288,45 @@ enum class RasterOrder {
   kInvalid
 };
 
+/// Mainloop execution strategy. Unknown is used for unrecognized/custom schedules.
+enum class MainloopScheduleKind {
+  kUnknown,
+  kMultistage,
+  kTma,
+  kWarpSpecialized,
+  kWarpSpecializedPingpong,
+  kWarpSpecializedCooperative,
+  kWarpSpecialized1Sm,
+  kWarpSpecialized2Sm,
+  kInvalid
+};
+
+/// Instructions used to move the mainloop operands from global memory.
+enum class MainloopLoadKind {
+  kUnknown,
+  kCpAsync,
+  kTma,
+  kMixedTmaCpAsync,
+  kInvalid
+};
+
+/// Epilogue data movement strategy (including stores).
+enum class EpilogueScheduleKind {
+  kUnknown,
+  kNoSmem,
+  kTma,
+  kInvalid
+};
+
+/// Distinguishes the opt-in Hopper FP8 fast-accumulation mainloops.
+enum class AccumulationKind {
+  kUnknown,
+  kDefault,
+  kFastAccum,
+  kInvalid
+};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library
