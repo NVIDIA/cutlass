@@ -269,7 +269,8 @@ struct GemmUniversalBlockwise {
       // Compute threadblock-scoped matrix multiply-add
       mma(gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators,
           params.scale_A, params.scale_B, threadblock_tile_offset.m(),
-          threadblock_tile_offset.n());
+          threadblock_tile_offset.n(),
+          threadblock_tile_offset.k() * params.gemm_k_size / Mma::Shape::kK);
     }
 
     //
