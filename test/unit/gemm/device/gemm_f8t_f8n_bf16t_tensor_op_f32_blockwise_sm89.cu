@@ -60,7 +60,7 @@ using LayoutScale = cutlass::layout::RowMajor;
 
 int const kM = 256;
 int const kN = 256;
-int const kK = 128;
+int const kK = 512;
 int const kScaleBlock = 128;
 
 using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
@@ -73,19 +73,19 @@ using Gemm = cutlass::gemm::device::GemmBlockwise<
     cutlass::gemm::GemmShape<64, 128, 128>,
     cutlass::gemm::GemmShape<64, 64, 128>,
     cutlass::gemm::GemmShape<16, 8, 32>, float, LayoutScale, kScaleBlock,
-    EpilogueOutputOp, ThreadblockSwizzle, 3, 16, 16, false,
+    EpilogueOutputOp, ThreadblockSwizzle, 3, 16, 16, true,
     cutlass::arch::OpMultiplyAdd>;
 
 template <typename ThreadblockSwizzle>
-::testing::AssertionResult run_blockwise_gemm() {
+::testing::AssertionResult run_blockwise_gemm(int split_k_slices) {
   using Operator = Gemm<ThreadblockSwizzle>;
 
   cutlass::HostTensor<ElementA, LayoutA> tensor_a({kM, kK});
   cutlass::HostTensor<ElementB, LayoutB> tensor_b({kK, kN});
   cutlass::HostTensor<ElementOutput, LayoutC> tensor_c({kM, kN});
   cutlass::HostTensor<ElementOutput, LayoutC> tensor_d({kM, kN});
-  cutlass::HostTensor<float, LayoutScale> scale_a({kM / kScaleBlock, 1});
-  cutlass::HostTensor<float, LayoutScale> scale_b({kN / kScaleBlock, 1});
+  cutlass::HostTensor<float, LayoutScale> scale_a({kM / kScaleBlock, kK / kScaleBlock});
+  cutlass::HostTensor<float, LayoutScale> scale_b({kN / kScaleBlock, kK / kScaleBlock});
 
   cutlass::reference::host::TensorFill(tensor_a.host_view(), ElementA(1));
   cutlass::reference::host::TensorFill(tensor_b.host_view(), ElementB(1));
@@ -93,10 +93,27 @@ template <typename ThreadblockSwizzle>
   cutlass::reference::host::TensorFill(tensor_d.host_view(), ElementOutput(0));
 
   // Powers-of-two scales keep the expected BF16 outputs exactly representable.
+  // scale_a: 2 M-block rows × 4 K-block columns
   scale_a.host_view().at({0, 0}) = 1.0f;
-  scale_a.host_view().at({1, 0}) = 4.0f;
-  scale_b.host_view().at({0, 0}) = 2.0f;
-  scale_b.host_view().at({1, 0}) = 8.0f;
+  scale_a.host_view().at({0, 1}) = 2.0f;
+  scale_a.host_view().at({0, 2}) = 4.0f;
+  scale_a.host_view().at({0, 3}) = 8.0f;
+
+  scale_a.host_view().at({1, 0}) = 2.0f;
+  scale_a.host_view().at({1, 1}) = 4.0f;
+  scale_a.host_view().at({1, 2}) = 8.0f;
+  scale_a.host_view().at({1, 3}) = 16.0f;
+
+  // scale_b: 2 N-block rows × 4 K-block columns
+  scale_b.host_view().at({0, 0}) = 1.0f;
+  scale_b.host_view().at({0, 1}) = 2.0f;
+  scale_b.host_view().at({0, 2}) = 4.0f;
+  scale_b.host_view().at({0, 3}) = 8.0f;
+
+  scale_b.host_view().at({1, 0}) = 2.0f;
+  scale_b.host_view().at({1, 1}) = 4.0f;
+  scale_b.host_view().at({1, 2}) = 8.0f;
+  scale_b.host_view().at({1, 3}) = 16.0f;
 
   tensor_a.sync_device();
   tensor_b.sync_device();
@@ -106,14 +123,14 @@ template <typename ThreadblockSwizzle>
   scale_b.sync_device();
 
   typename Operator::TensorRefScale scale_a_ref(
-      scale_a.device_data(), LayoutScale(1));
+      scale_a.device_data(), LayoutScale(kK / kScaleBlock));
   typename Operator::TensorRefScale scale_b_ref(
-      scale_b.device_data(), LayoutScale(1));
+      scale_b.device_data(), LayoutScale(kK / kScaleBlock));
   typename Operator::Arguments arguments(
       {kM, kN, kK}, {tensor_a.device_data(), kK},
       {tensor_b.device_data(), kK}, {tensor_c.device_data(), kN},
       {tensor_d.device_data(), kN}, scale_a_ref, scale_b_ref,
-      typename Operator::EpilogueOutputOp::Params(1.0f, 0.0f));
+      typename Operator::EpilogueOutputOp::Params(1.0f, 0.0f), split_k_slices);
 
   cutlass::Status status = Operator::can_implement(arguments);
   if (status != cutlass::Status::kSuccess) {
@@ -122,20 +139,30 @@ template <typename ThreadblockSwizzle>
   }
 
   Operator gemm;
-  status = gemm.initialize(arguments, nullptr);
+  size_t workspace_size = Operator::get_workspace_size(arguments);
+  void *workspace = nullptr;
+  if (workspace_size > 0) {
+    if (cudaMalloc(&workspace, workspace_size) != cudaSuccess) {
+      return ::testing::AssertionFailure() << "cudaMalloc failed";
+    }
+  }
+  status = gemm.initialize(arguments, workspace);
   if (status != cutlass::Status::kSuccess) {
+    cudaFree(workspace);
     return ::testing::AssertionFailure()
            << "initialize failed with status " << int(status);
   }
 
   status = gemm();
   if (status != cutlass::Status::kSuccess) {
+    cudaFree(workspace);
     return ::testing::AssertionFailure()
            << "launch failed with status " << int(status);
   }
 
   cudaError_t cuda_status = cudaDeviceSynchronize();
   if (cuda_status != cudaSuccess) {
+    cudaFree(workspace);
     return ::testing::AssertionFailure()
            << "synchronize failed: " << cudaGetErrorString(cuda_status);
   }
@@ -147,14 +174,28 @@ template <typename ThreadblockSwizzle>
   int first_n = -1;
   float first_expected = 0;
   float first_observed = 0;
-  float const scale_a_values[] = {1.0f, 4.0f};
-  float const scale_b_values[] = {2.0f, 8.0f};
+  float const scale_a_values[2][4] = {
+    {1.0f, 2.0f, 4.0f, 8.0f},
+    {2.0f, 4.0f, 8.0f, 16.0f}
+  };
+
+  float const scale_b_values[2][4] = {
+    {1.0f, 2.0f, 4.0f, 8.0f},
+    {2.0f, 4.0f, 8.0f, 16.0f}
+  };
 
   for (int m = 0; m < kM; ++m) {
     for (int n = 0; n < kN; ++n) {
-      float expected = float(kK) * scale_a_values[m / kScaleBlock] *
-                       scale_b_values[n / kScaleBlock];
+      float expected = 0.0f;
+
+      for (int k = 0; k < kK / kScaleBlock; ++k) {
+        expected += float(kScaleBlock) *
+                    scale_a_values[m / kScaleBlock][k] *
+                    scale_b_values[n / kScaleBlock][k];
+      }
+
       float observed = float(tensor_d.host_view().at({m, n}));
+
       if (observed != expected) {
         if (!mismatches) {
           first_m = m;
@@ -168,30 +209,35 @@ template <typename ThreadblockSwizzle>
   }
 
   if (mismatches) {
+    cudaFree(workspace);
     return ::testing::AssertionFailure()
            << mismatches << " mismatches; first at (" << first_m << ", "
            << first_n << "): expected " << first_expected << ", observed "
            << first_observed;
   }
-
+  cudaFree(workspace);
   return ::testing::AssertionSuccess();
 }
 
 }  // namespace
 
 TEST(SM89_Device_GemmBlockwise_fe4m3t_fe4m3n_bf16t_tensor_op_f32,
-     identity_1_256x256x128_64x128x128) {
+     splitk_1_2_4_256x256x512) {
   using Swizzle =
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>;
-  EXPECT_TRUE(run_blockwise_gemm<Swizzle>());
+  EXPECT_TRUE(run_blockwise_gemm<Swizzle>(1));
+  EXPECT_TRUE(run_blockwise_gemm<Swizzle>(2));
+  EXPECT_TRUE(run_blockwise_gemm<Swizzle>(4));
 }
 
 // Identity<2> exercises a nontrivial physical-to-logical CTA mapping.
 TEST(SM89_Device_GemmBlockwise_fe4m3t_fe4m3n_bf16t_tensor_op_f32,
-     identity_2_256x256x128_64x128x128) {
+     splitk_1_2_4_swizzle2_256x256x512) {
   using Swizzle =
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>;
-  EXPECT_TRUE(run_blockwise_gemm<Swizzle>());
+  EXPECT_TRUE(run_blockwise_gemm<Swizzle>(1));
+  EXPECT_TRUE(run_blockwise_gemm<Swizzle>(2));
+  EXPECT_TRUE(run_blockwise_gemm<Swizzle>(4));
 }
 
 #endif  // CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED
