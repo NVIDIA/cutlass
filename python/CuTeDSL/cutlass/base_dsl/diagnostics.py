@@ -1876,6 +1876,12 @@ class DiagId(_DiagMixin, enum.Enum):
         "No function was provided to compile. Pass a callable decorated with @cute.jit.",
         ("Ensure you pass a valid @cute.jit-decorated function to cute.compile().",),
     )
+    CALL_KERNEL_DIRECT_COMPILE_UNSUPPORTED = (
+        "Functions decorated with @cute.kernel cannot be passed directly to cute.compile().",
+        (
+            "Wrap the kernel launch in a @cute.jit function and pass that function to cute.compile().",
+        ),
+    )
     CALL_MISSING_ARG = (
         "Required argument `{name}` is missing in the call to `{function_name}`.",
         ("Pass a value for `{name}`.",),

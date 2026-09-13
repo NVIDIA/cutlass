@@ -1595,6 +1595,11 @@ class CompileCallable:
         else:
             raise DSLUserCodeError(_diagnostics.DiagId.CALL_UNSUPPORTED_CALLABLE_TYPE)
 
+        if getattr(func, "_dsl_handler", None) == "_kernel_helper":
+            raise DSLUserCodeError(
+                _diagnostics.DiagId.CALL_KERNEL_DIRECT_COMPILE_UNSUPPORTED
+            )
+
         # If it's a wrapped function created by decorators, get the original function
         while hasattr(func, "__wrapped__"):
             func = func.__wrapped__

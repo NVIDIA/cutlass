@@ -621,6 +621,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 )
 
             jit_wrapper.set_name_prefix = set_name_prefix  # type: ignore[attr-defined]
+            # Preserve which DSL entry point created the wrapper so public APIs
+            # can distinguish host JIT functions from GPU kernels without
+            # depending on closure cell ordering.
+            jit_wrapper._dsl_handler = executor_name  # type: ignore[attr-defined]
 
             return jit_wrapper
 
