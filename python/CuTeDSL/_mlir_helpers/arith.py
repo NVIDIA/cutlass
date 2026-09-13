@@ -144,6 +144,49 @@ def bitcast(
     return arith.bitcast(res_type, src, loc=loc, ip=ip)
 
 
+def _cvt_fnv8e5m3fnu_to_f32(
+    src: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Decode a scalar UE5M3 value without IEEE E5M2 infinity semantics."""
+    code_i8 = bitcast(src, T.i8(), loc=loc, ip=ip)
+    code = arith.extui(T.i32(), code_i8, loc=loc, ip=ip)
+
+    def i32(value: int) -> ir.Value:
+        return arith.constant(T.i32(), value, loc=loc, ip=ip)
+
+    exponent = arith.shrui(code, i32(3), loc=loc, ip=ip)
+    mantissa = arith.andi(code, i32(7), loc=loc, ip=ip)
+    normal_bits = arith.ori(
+        arith.shli(
+            arith.addi(exponent, i32(112), loc=loc, ip=ip),
+            i32(23),
+            loc=loc,
+            ip=ip,
+        ),
+        arith.shli(mantissa, i32(20), loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
+    normal = bitcast(normal_bits, T.f32(), loc=loc, ip=ip)
+    subnormal = arith.mulf(
+        arith.uitofp(T.f32(), mantissa, loc=loc, ip=ip),
+        arith.constant(T.f32(), 2.0**-17, loc=loc, ip=ip),
+        loc=loc,
+        ip=ip,
+    )
+    is_subnormal = arith.cmpi(arith.CmpIPredicate.eq, exponent, i32(0), loc=loc, ip=ip)
+    decoded = arith.select(is_subnormal, subnormal, normal, loc=loc, ip=ip)
+
+    # UE5M3 is finite-only: 0xff is its sole NaN encoding. IntegerAttr expects
+    # the signed storage representation of canonical f32 NaN 0x7fc00000.
+    canonical_nan = bitcast(i32(-4194304), T.f32(), loc=loc, ip=ip)
+    is_nan = arith.cmpi(arith.CmpIPredicate.eq, code, i32(255), loc=loc, ip=ip)
+    return arith.select(is_nan, canonical_nan, decoded, loc=loc, ip=ip)
+
+
 def cvtf(
     src: ir.Value,
     res_elem_type: ir.Type,
@@ -155,6 +198,13 @@ def cvtf(
 
     if res_elem_type == src_elem_type:
         return src
+
+    if (
+        is_scalar(src.type)
+        and src_elem_type == T.fnv8E5M3FNU()
+        and res_elem_type == T.f32()
+    ):
+        return _cvt_fnv8e5m3fnu_to_f32(src, loc=loc, ip=ip)
 
     res_type = recast_type(src.type, res_elem_type)
 
