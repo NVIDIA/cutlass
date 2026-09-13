@@ -791,11 +791,16 @@ class FormattedValue:
                     DiagId.UNSUP_FSTRING_FORMAT,
                 )
             if self.format_spec is not None:
-                if self.format_spec[0].startswith(("<", ">", "^")):
+                format_spec = self.format_spec[0]
+                if format_spec.startswith(("<", ">", "^")):
                     raise DSLUserCodeError(
                         DiagId.UNSUP_FSTRING_ALIGN,
                     )
-                return f"%{self.format_spec[0]}", self.value
+                if not format_spec or format_spec[-1] not in "diouxXfFeEgGaAcsp":
+                    raise DSLUserCodeError(
+                        DiagId.UNSUP_FSTRING_FORMAT,
+                    )
+                return f"%{format_spec}", self.value
             return "{}", self.value
         else:
             conversion_str = ""
