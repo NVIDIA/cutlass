@@ -195,7 +195,11 @@ class BlockwiseContiguousGroupedGemmKernel:
         self.acc_dtype: Type[cutlass.Numeric] = acc_dtype
         self.use_2cta_instrs = use_2cta_instrs
         self.cluster_shape_mn = cluster_shape_mn
-        self.use_newer_backend_codegen = cutlass.target_version(min_version="13.1")
+        # CUDA 12.9 favors vectorized RMEM/O2 for 2CTA, but
+        # scalar RMEM/O3 for 1CTA. Keep this choice shared with compilation.
+        self.use_newer_backend_codegen = cutlass.target_version(min_version="13.1") or (
+            use_2cta_instrs and cutlass.target_version(exact_version="12.9")
+        )
         # K dimension is deferred in _setup_attributes
         self.mma_tiler = (*mma_tiler_mn, 1)
 
