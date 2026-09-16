@@ -49,25 +49,63 @@ def test_incorrect_offset_length():
 
     problem_count, m, n, k = 12, 8192, 128, 512
 
-    A = torch.empty((1, m, k), device="cuda", dtype=torch.float16)
-    B = torch.empty((problem_count, n, k), device="cuda", dtype=torch.float16).permute(
-        0, 2, 1
-    )
-    out = torch.empty((1, m, n), device="cuda", dtype=torch.float32)
+    A = torch.empty((m, k), device="cuda", dtype=torch.float16)
 
     # Incorrect: should have `problem_count` elements
-    offsets = torch.empty((problem_count + 1,), device="cuda", dtype=torch.int32)
+    B = torch.empty(
+        (problem_count + 1, n, k), device="cuda", dtype=torch.float16
+    ).permute(0, 2, 1)
+    out = torch.empty((m, n), device="cuda", dtype=torch.float32)
 
-    args = ops.GroupedGemmArguments(
+    offsets = torch.empty((problem_count,), device="cuda", dtype=torch.int32)
+
+    with pytest.raises(
+        ValueError,
+        match=r"B is a 3D operand and must be laid out as .* with group_count=12",
+    ):
+        ops.IndexPtrGroupedGemmArguments(
+            A=A,
+            B=B,
+            out=out,
+            accumulator_type=torch.float32,
+            offsets=offsets,
+            offsets_along="m",
+        )
+
+
+def test_deprecated_grouped_arguments_discover_index_ptr_operators():
+    group_count, m, n, k = 2, 256, 128, 128
+    A = torch.empty((m, k), device="cuda", dtype=torch.float16)
+    B = torch.empty((group_count, n, k), device="cuda", dtype=torch.float16).permute(
+        0, 2, 1
+    )
+    out = torch.empty((m, n), device="cuda", dtype=torch.float16)
+    offsets = torch.tensor([m // 2, m], device="cuda", dtype=torch.int32)
+
+    index_args = ops.IndexPtrGroupedGemmArguments(
         A=A,
         B=B,
         out=out,
         accumulator_type=torch.float32,
         offsets=offsets,
+        offsets_along="m",
     )
+    with pytest.warns(DeprecationWarning, match="GroupedGemmArguments is deprecated"):
+        legacy_args = ops.GroupedGemmArguments(
+            A=A,
+            B=B,
+            out=out,
+            accumulator_type=torch.float32,
+            offsets=offsets,
+        )
 
-    operators = ops.get_operators(args, target_sm="100a")
-    assert len(operators) == 0
+    index_operators = ops.get_operators(index_args, target_sm="100a")
+    legacy_operators = ops.get_operators(legacy_args, target_sm="100a")
+
+    assert index_operators
+    assert [op.metadata for op in legacy_operators] == [
+        op.metadata for op in index_operators
+    ]
 
 
 @pytest.mark.skipif(
@@ -92,8 +130,13 @@ def test_contiguous_offset_dense_gemm_2d3d_fake_tensor(fixture_toggle_tvm_ffi):
         out = torch.empty((M, N), device="cuda", dtype=c_dtype)
         offsets = torch.empty((L,), device="cuda", dtype=torch.int32)
 
-    fake_args = ops.GroupedGemmArguments(
-        A=A, B=B, out=out, accumulator_type=accumulator_type, offsets=offsets
+    fake_args = ops.IndexPtrGroupedGemmArguments(
+        A=A,
+        B=B,
+        out=out,
+        accumulator_type=accumulator_type,
+        offsets=offsets,
+        offsets_along="m",
     )
     operators = ops.get_operators(fake_args, target_sm="100a")
 
@@ -107,12 +150,13 @@ def test_contiguous_offset_dense_gemm_2d3d_fake_tensor(fixture_toggle_tvm_ffi):
     )
     out_real = torch.empty((M, N), device="cuda", dtype=c_dtype)
     offsets_real = torch.Tensor([128, 256]).to("cuda").to(torch.int32)
-    args = ops.GroupedGemmArguments(
+    args = ops.IndexPtrGroupedGemmArguments(
         A=A_real,
         B=B_real,
         out=out_real,
         accumulator_type=accumulator_type,
         offsets=offsets_real,
+        offsets_along="m",
     )
     operator.run(args, compiled_artifact=compiled_artifact)
 

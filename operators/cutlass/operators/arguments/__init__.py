@@ -32,9 +32,18 @@ from .base import (
     PerformanceControls,
     RuntimeArguments,
 )
-from .epilogue import EpilogueArguments
+from .epilogue import (
+    EpilogueArguments,
+    Load,
+    Store,
+    Transport,
+)
 from .gemm import GemmArguments, GemmProblemSize
-from .grouped_gemm import GroupedGemmArguments
+from .grouped_gemm import (
+    GroupedGemmArguments,
+    IndexPtrGroupedGemmArguments,
+    IndexPtrGroupedGemmProblemSize,
+)
 from .operand import (
     DenseTensor,
     ScaledOperand,
@@ -51,10 +60,15 @@ __all__ = [
     "GemmArguments",
     "GemmProblemSize",
     "GroupedGemmArguments",
+    "IndexPtrGroupedGemmArguments",
+    "IndexPtrGroupedGemmProblemSize",
     # Operands & related classes
     "Operand",
     "DenseTensor",
     "ScaledOperand",
     "ScaleMode",
     "ScaleSwizzleMode",
+    "Load",
+    "Store",
+    "Transport",
 ]

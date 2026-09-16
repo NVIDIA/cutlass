@@ -95,6 +95,12 @@ int CutlassUnitTestProblemCount();
   #define CUDA_12_0_SM90_FEATURES_SUPPORTED false
 #endif
 
+#if (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 4))
+  #define CUDA_13_4_SM107_FEATURES_SUPPORTED true
+#else
+  #define CUDA_13_4_SM107_FEATURES_SUPPORTED false
+#endif
+
 #include <cutlass/cutlass.h>
 #include <cutlass/numeric_types.h>
 #include <cutlass/trace.h>

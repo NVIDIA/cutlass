@@ -10,10 +10,8 @@
 # is strictly prohibited.
 
 import inspect
-import io
-import os
 
-from ..common import DSLRuntimeError, DSLUserCodeError
+from ..common import DSLUserCodeError
 from ..diagnostics import DiagId
 from ..._mlir import ir
 from ..._mlir.dialects import llvm
@@ -162,13 +160,13 @@ def encode_metadata_into_ir_module(
     )
     with ir_module.context, ir.Location.unknown():
         with ir.InsertionPoint(ir_module.body):
-            args_spec_op = llvm.GlobalOp(
+            llvm.GlobalOp(
                 sym_name="_".join([prefix, args_spec_suffix]),
                 global_type=ir.Type.parse(f"!llvm.array<{len(signature_str)} x i8>"),
                 linkage=ir.Attribute.parse("#llvm.linkage<external>"),
                 value=ir.StringAttr.get(signature_str),
             )
-            function_name_op = llvm.GlobalOp(
+            llvm.GlobalOp(
                 sym_name="_".join([prefix, function_name_suffix]),
                 global_type=ir.Type.parse(
                     f"!llvm.array<{len(packed_function_name)} x i8>"
@@ -178,13 +176,13 @@ def encode_metadata_into_ir_module(
             )
             # pack the kernel_info from a dict to a global op.
             kernel_info = json.dumps(kernel_info) + c_string_suffix  # type: ignore[assignment]
-            kernel_info_op = llvm.GlobalOp(
+            llvm.GlobalOp(
                 sym_name="_".join([prefix, kernel_info_suffix]),
                 global_type=ir.Type.parse(f"!llvm.array<{len(kernel_info)} x i8>"),
                 linkage=ir.Attribute.parse("#llvm.linkage<external>"),
                 value=ir.StringAttr.get(kernel_info),
             )
-            version_op = llvm.GlobalOp(
+            llvm.GlobalOp(
                 sym_name="_".join([prefix, version_suffix]),
                 global_type=ir.Type.parse(f"!llvm.array<{len(version)} x i8>"),
                 linkage=ir.Attribute.parse("#llvm.linkage<external>"),
@@ -216,23 +214,15 @@ def decode_metadata_from_execution_engine(
     )
     kernel_info_str_p = execution_engine.lookup("_".join([prefix, kernel_info_suffix]))
     version_str_p = execution_engine.lookup("_".join([prefix, version_suffix]))
-    if args_spec_str_p:
-        args_spec_str = ctypes.c_char_p(args_spec_str_p).value.decode("utf-8")  # type: ignore[union-attr]
-    else:
-        args_spec_str = None
-    # The StringAttr encodes the string as utf-8 format.
-    if function_name_str_p:
-        function_name_str = ctypes.c_char_p(function_name_str_p).value.decode("utf-8")  # type: ignore[union-attr]
-    else:
-        function_name_str = None
-    if kernel_info_str_p:
-        kernel_info_str = ctypes.c_char_p(kernel_info_str_p).value.decode("utf-8")  # type: ignore[union-attr]
-    else:
-        kernel_info_str = None
-    if version_str_p:
-        version_str = ctypes.c_char_p(version_str_p).value.decode("utf-8")  # type: ignore[union-attr]
-    else:
-        version_str = None
+
+    # The StringAttr encodes each string as utf-8; a null lookup decodes to None.
+    def _decode(p: object) -> str | None:
+        return ctypes.c_char_p(p).value.decode("utf-8") if p else None  # type: ignore[union-attr,arg-type]
+
+    args_spec_str = _decode(args_spec_str_p)
+    function_name_str = _decode(function_name_str_p)
+    kernel_info_str = _decode(kernel_info_str_p)
+    version_str = _decode(version_str_p)
     args_spec_bytes = base64.b64decode(args_spec_str)  # type: ignore[arg-type]
     args_spec = signature_processor.loads(args_spec_bytes)
     function_name = function_name_str

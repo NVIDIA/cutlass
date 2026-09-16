@@ -50,13 +50,17 @@ from cutlass.base_dsl.typing import (
     Float8E5M2,
     Float8E4M3FN,
     Float8E4M3B11FNUZ,
+    FloatNV8E5M3FNU,
     Float8E4M3,
     Float8E8M0FNU,
     Float4E2M1FN,
     Float6E2M3FN,
     Float6E3M2FN,
     Float4E2M1FNx2,
+    Float6E2M3FNx4,
+    Float6E3M2FNx4,
     as_numeric,
+    Array,
 )
 
 _element_precision_width = _base_typing._element_precision_width
@@ -64,7 +68,7 @@ _element_precision_width = _base_typing._element_precision_width
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 from cutlass._mlir.dialects.cute import ConstrainedIntType
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 
 if TYPE_CHECKING:
     from cutlass.cute.core import ScaledBasis, Swizzle
@@ -991,12 +995,15 @@ __all__ = [
     "Float8E5M2",
     "Float8E4M3FN",
     "Float8E4M3B11FNUZ",
+    "FloatNV8E5M3FNU",
     "Float8E4M3",
     "Float8E8M0FNU",
     "Float4E2M1FN",
     "Float6E2M3FN",
     "Float6E3M2FN",
     "Float4E2M1FNx2",
+    "Float6E2M3FNx4",
+    "Float6E3M2FNx4",
     "IntTuple",
     "ScaledBasis",
     "Coord",
@@ -1014,4 +1021,5 @@ __all__ = [
     "is_integer",
     "is_int_tuple",
     "is_int_tuple_type",
+    "Array",
 ]

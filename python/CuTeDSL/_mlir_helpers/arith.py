@@ -358,6 +358,17 @@ def const(
     from ..base_dsl.dsl import is_dynamic_expression
     from ..base_dsl.utils.numpy import _numpy_type_to_mlir_type
 
+    # D1: ``_WatchedM`` is the PyIR meta-promotion wrapper.  When fed into
+    # ``arith.const`` we ask the wrapper to bake its leaf (records the
+    # constant under the slot so a later mutation can rewrite it via
+    # pyir.load %ref).  Lazy-import to keep PyIR-disabled builds clean.
+    try:
+        from ..base_dsl.pyir_runtime import _WatchedM
+    except ImportError:
+        _WatchedM = None  # type: ignore[misc,assignment]
+    if _WatchedM is not None and isinstance(value, _WatchedM):
+        return value.ir_value()
+
     if isinstance(value, Numeric):
         value = value.value
 
@@ -457,6 +468,7 @@ def _binary_op(op: Callable[..., "ArithValue"]) -> Callable[..., "ArithValue"]:
 @ir.register_value_caster(ir.Float8E4M3FNType.static_typeid)
 @ir.register_value_caster(ir.Float8E4M3B11FNUZType.static_typeid)
 @ir.register_value_caster(ir.Float8E5M2Type.static_typeid)
+@ir.register_value_caster(ir.FloatNV8E5M3FNUType.static_typeid)
 @ir.register_value_caster(ir.Float8E4M3Type.static_typeid)
 @ir.register_value_caster(ir.Float8E8M0FNUType.static_typeid)
 @ir.register_value_caster(ir.BF16Type.static_typeid)

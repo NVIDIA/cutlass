@@ -54,14 +54,6 @@ class MLIRTypeBuilder:
         """Convert the type to a type attribute."""
         return ir.TypeAttr.get(tp)
 
-    def int_type(self, bits: int) -> ir.Type:
-        """Get the `i<bits>` type."""
-        return ir.IntegerType.get_signless(bits)
-
-    def uint_type(self, bits: int) -> ir.Type:
-        """Get the `ui<bits>` type."""
-        return ir.IntegerType.get_unsigned(bits)
-
     def struct_type(
         self,
         *,
@@ -93,10 +85,6 @@ class MLIRTypeBuilder:
         else:
             return llvm.StructType.new_identified(name, fields, packed=packed)
 
-    def identified_struct_type(self, name: str) -> ir.Type:
-        """Get a previously created identified struct type by its name."""
-        return llvm.StructType.get_identified(name)
-
     def func_type(self, *, params: Sequence[ir.Type] = (), ret: ir.Type) -> ir.Type:
         """Get a function type.
 
@@ -116,15 +104,6 @@ class MLIRTypeBuilder:
             "!llvm.func<{} ({})>".format(str(ret), ", ".join(map(str, params)))
         )  # did not find a programmatic way to get the function type
 
-    def global_dtor_entry_type(self) -> ir.Type:
-        """Get the type of the global destructor entry.
-
-        See Also:
-        - https://llvm.org/docs/LangRef.html#the-llvm-global-dtors-global-variable
-        - https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirglobal_dtors-llvmglobaldtorsop
-        """
-        return self.struct_type(fields=[self.i32_type, self.ptr_type, self.ptr_type])
-
 
 class MLIRBuilder(MLIRTypeBuilder):
     """A builder for MLIR related types and operations.
@@ -139,7 +118,7 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Initialize the MLIR builder."""
         super().__init__()
         self.module: Optional[ir.Module] = None
-        self.const_str_table: dict[str, ir.Value] = {}
+        self.const_str_table: dict[str, str] = {}
 
         self.get_element_extra_kwargs: dict[str, Any] = {}
 
@@ -383,7 +362,13 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Define a global string symbol with the given content using standard MLIR APIs."""
         if content in self.const_str_table:
             return self.const_str_table[content]
-        symbol = f"__tvm_ffi__str_{len(self.const_str_table)}"
+        symbol_index = len(self.const_str_table)
+        symbol = f"__tvm_ffi__str_{symbol_index}"
+        module = self.module
+        if module is not None:
+            while self._module_symbol_exists(module, symbol):
+                symbol_index += 1
+                symbol = f"__tvm_ffi__str_{symbol_index}"
 
         # The string_attr.value gives us the original string, but we need to escape it for
         # MLIR parsing. Let's use a simple approach: escape quotes and backslashes
@@ -398,6 +383,15 @@ class MLIRBuilder(MLIRTypeBuilder):
             module_body.append(parsed_op)
             self.const_str_table[content] = symbol
         return symbol
+
+    def _module_symbol_exists(self, module: ir.Module, symbol: str) -> bool:
+        """Return whether a top-level module symbol already exists."""
+        for op in module.body:
+            if "sym_name" not in op.attributes:
+                continue
+            if str(op.attributes["sym_name"]).strip('"') == symbol:
+                return True
+        return False
 
     # function
     def function(

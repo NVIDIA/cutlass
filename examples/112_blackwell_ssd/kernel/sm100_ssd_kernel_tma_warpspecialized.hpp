@@ -369,7 +369,7 @@ struct SsdKernelTmaWarpSpecialized {
     arch::NamedBarrier tmem_allocation_result_barrier(NumMmaThreads + NumMmaThreads + NumEpilogueThreads + NumEpilogueThreads,
                                                       cutlass::arch::ReservedNamedBarriers::TmemAllocBarrier);
     if (warp_category == WarpCategory::MMAIntra) {
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &storage.tmem_base_ptr);
       __syncwarp();
       tmem_allocation_result_barrier.arrive();
     }
@@ -489,7 +489,7 @@ struct SsdKernelTmaWarpSpecialized {
         }
       }
       uint32_t free_stage_ptr = storage.tmem_base_ptr;
-      tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+      tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
     }
     else if (warp_category == WarpCategory::PreInter) {
       for (; tile_scheduler.is_valid(); ++tile_scheduler) {

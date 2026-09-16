@@ -88,6 +88,7 @@ class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
             "multiply_add": FunctionalOp.MultiplyAdd,
             "sum": (FunctionalOp.Plus, FunctionalOp.AtomicAdd),
             "max": (FunctionalOp.Maximum, FunctionalOp.AtomicMaximum),
+            "min": (FunctionalOp.Minimum, FunctionalOp.AtomicMinimum),
             "exp": FunctionalOp.Exp,
         }
         return mapping[op]

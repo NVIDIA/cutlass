@@ -93,7 +93,7 @@ class DenseTensorConstraints(OperandConstraints):
     def __init__(
         self,
         dtype: Numeric,
-        stride: tuple[int, ...],
+        stride: tuple[int, ...] | None,
         divisibility: int,
         ptr_alignment_bytes: int | None = None,
     ):
@@ -198,6 +198,7 @@ class DenseTensorConstraints(OperandConstraints):
         return all(
             t % divisibility == 0 for dim, t in enumerate(tup) if dim != contiguous_dim
         )
+
 
 
 @dataclass

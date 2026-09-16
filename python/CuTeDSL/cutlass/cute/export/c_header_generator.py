@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.cute.typing import NumericMeta, Integer
+from cutlass.cute.typing import NumericMeta, Integer, SymInt
 from cutlass.base_dsl.export import CHeaderGenerator, CHeaderArguments
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.jit_executor import ExecutionArgs
@@ -73,6 +73,30 @@ class CuteCHeaderGenerator(CHeaderGenerator):
         if dyn_type is None:
             return "int32_t "
         return self.numeric_to_c_type[dyn_type]
+
+    def _get_dynamic_shape_c_type(self, arg: Tensor, arg_name: str) -> str:
+        """Judge the C type of the dynamic shape slots of a tensor descriptor.
+
+        A dynamic dimension is passed at the width the calling convention gave
+        it: a `SymInt` dimension keeps its declared width, any other dynamic
+        dimension is 32-bit. The descriptor holds the dimensions in a single
+        array, so a tensor whose dynamic dimensions disagree on width cannot be
+        described here and is refused rather than truncated.
+        """
+        shape = arg.shape
+        assert isinstance(shape, tuple)
+        widths = set()
+        for i, dynamic in enumerate(arg.dynamic_shapes_mask):
+            if not dynamic:
+                continue
+            dim = shape[i]
+            widths.add(dim.width if isinstance(dim, SymInt) else 32)
+        if len(widths) > 1:
+            raise DSLRuntimeError(
+                f"Expects all dynamic shape dimensions of tensor argument {arg_name} "
+                f"to be of the same width, but got {sorted(widths)}"
+            )
+        return "int64_t" if widths == {64} else "int32_t"
 
     def _generate_binary_declaration(self, symbol_prefix: str) -> str:
         """
@@ -177,7 +201,7 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
                         sum(arg.dynamic_shapes_mask),
                         sum(arg.dynamic_strides_mask),
                         stride_type,
-                        shape_type="int32_t",
+                        shape_type=self._get_dynamic_shape_c_type(arg, arg_name),
                     )
                 )
                 arguments.append(f"{symbol_prefix}_Tensor_{arg_name}_t *{arg_name}")
@@ -188,16 +212,18 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
                 and all(isinstance(e, Tensor) for e in arg)
             ):
                 first = arg[0]
+                shape_type = self._get_dynamic_shape_c_type(first, arg_name)
                 for e in arg[1:]:
                     if (
                         e.dynamic_shapes_mask != first.dynamic_shapes_mask
                         or e.dynamic_strides_mask != first.dynamic_strides_mask
                         or e._use_32bit_stride != first._use_32bit_stride  # type: ignore[attr-defined]
+                        or self._get_dynamic_shape_c_type(e, arg_name) != shape_type
                     ):
                         raise DSLRuntimeError(
                             f"Inconsistent tensor descriptors in list/tuple argument {arg_name}: "
                             f"every element must share the same dynamic_shapes_mask, "
-                            f"dynamic_strides_mask, and _use_32bit_stride"
+                            f"dynamic_strides_mask, _use_32bit_stride, and dynamic shape width"
                         )
                 stride_type = "int32_t" if first._use_32bit_stride else "int64_t"  # type: ignore[attr-defined]
                 declarations.append(
@@ -207,7 +233,7 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
                         sum(first.dynamic_shapes_mask),
                         sum(first.dynamic_strides_mask),
                         stride_type,
-                        shape_type="int32_t",
+                        shape_type=shape_type,
                     )
                 )
                 n = len(arg)

@@ -515,7 +515,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
 
         if (has_valid) {
           uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-          tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+          tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
         }
       }
 
@@ -537,7 +537,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
         }
 
         if (!allocated) {
-          tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+          tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
           __syncwarp();
           allocated = true;
         }
@@ -623,7 +623,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
       if constexpr (NumWarpsEpilogue == 1) {
         if(has_valid) {
           uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-          tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+          tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
         }
       }
 

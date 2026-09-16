@@ -39,9 +39,9 @@ from .typing import (
     Integer,
     Boolean,
     Int4,
-    Uint8,
     Int8,
     Int32,
+    FloatNV8E5M3FNU,
     BFloat16,
     Float32,
     IntTuple,
@@ -91,6 +91,7 @@ from .tuple import transform_leaf, product, product_like, flatten_to_tuple
 from .arch import (
     cvt_i8_bf16_intrinsic,
     cvt_i4_bf16_intrinsic,
+    cvt_f32x4_to_fnv8e5m3x4,
 )
 
 
@@ -149,6 +150,22 @@ class _Tensor(Tensor):
     """
 
     _dtype: Union[Type[Numeric], Type[IntTuple], None]
+
+    # A ``_Tensor`` is a compound value with a single MLIR leaf (its memref
+    # ``value``).  Setting this flag lets the staged-tracking layer's
+    # ``_can_create_ref`` accept it, so a whole-object reassignment inside
+    # staged control flow is threaded through ref/store/load (and lowered to an
+    # scf result / iter_arg) instead of being rejected as an opaque container
+    # replacement.
+    _pyir_ref_supported = True
+
+    # A ``_Tensor`` is a *descriptor* over memory (an iterator/pointer +
+    # layout), recomputable wherever its SSA value dominates.  This flag tells
+    # the staged-tracking layer to rematerialize its ref at the use site inside
+    # a nested region rather than routing it through an entry-block poison
+    # (which leaks for cross-region reads).  Declared here so the lower DSL
+    # layer stays decoupled from the cute dialect's MLIR type classes.
+    _pyir_memref_backed = True
 
     @dsl_user_op
     def __init__(
@@ -212,6 +229,21 @@ class _Tensor(Tensor):
         from .core import pretty_str
 
         return f"tensor<{pretty_str(self.iterator)} o {pretty_str(self.layout)}>"
+
+    def ir_value(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> ir.Value:
+        """Return the single MLIR memref value backing this tensor.
+
+        Defining ``ir_value`` makes the staged-tracking layer treat a
+        ``_Tensor`` as a staged value, so a whole-object reassignment inside
+        staged CF is routed through the ref-threading path (a store of this
+        memref) rather than the compound-replacement reject branch.
+        """
+        return self.value
 
     def __extract_mlir_values__(self) -> List[ir.Value]:
         return [self.value]
@@ -827,6 +859,14 @@ def make_tensor(
     ):
         # SmemDescType requires specific vec_mode layout configuration
         res_ty = _cute_nvgpu_ir.SmemDescViewType.get(layout.type)  # type: ignore[union-attr]
+    # Handle SM107 SmemDesc type
+    elif isinstance(iterator, ir.Value) and isinstance(
+        iterator.type, _cute_nvgpu_ir.SmemDescSM107Type
+    ):
+        res_ty = _cute_nvgpu_ir.SmemDescViewType.get_with_smem_desc(
+            iterator.type,
+            layout.type,  # type: ignore[union-attr]
+        )
     else:
         raise TypeError(f"unsupported iterator type, got {type(iterator)}")
 
@@ -1125,6 +1165,8 @@ def recast_tensor(
         # Both tensors share the same memory, but interpret it differently
     """
     dst_width = None
+    if isinstance(dtype, _SparseElemType):
+        dst_width = dtype.width
     if dst_width is None:
         if not isclass(dtype) or not issubclass(dtype, Numeric):
             raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
@@ -2261,8 +2303,13 @@ class TensorSSA(Vector):
         :return: The element-wise negation of the tensor
         :rtype: TensorSSA
         """
-
-        return self._apply_op(operator.sub, 0, flip=True, loc=loc, ip=ip)
+        if self.dtype.is_float:
+            # Exact sign flip: -(+0.0) == -0.0. `0 - x` would give +0.0
+            # and cannot fold into a SASS negation modifier.
+            res_vect = arith.negf(self.maybe_downcast(), loc=loc, ip=ip)
+            return TensorSSA(res_vect, self._shape, self.dtype)
+        # No integer negf; use 0 - x with a typed zero to avoid promotion.
+        return self._apply_op(operator.sub, self.dtype(0), flip=True, loc=loc, ip=ip)
 
     @dsl_user_op
     def __abs__(
@@ -2482,6 +2529,12 @@ class TensorSSA(Vector):
                 loc: Optional[ir.Location],
                 ip: Optional[ir.InsertionPoint],
             ) -> ir.Value:
+                if (
+                    size(self.shape) == 4
+                    and self.dtype == Float32
+                    and dst_dtype == FloatNV8E5M3FNU
+                ):
+                    return cvt_f32x4_to_fnv8e5m3x4(src, loc=loc, ip=ip)
                 return cutlass_arith.cvtf(src, dst_dtype.mlir_type, loc=loc, ip=ip)
 
             res_vect = convert_fp_to_fp(src, dtype, loc, ip)
@@ -2492,7 +2545,11 @@ class TensorSSA(Vector):
         elif issubclass(src_dtype, Integer) and dtype.is_float:
             # check if there is a fast conversion path for given data types and arch
             fast_cvt_func = None
-            if src_dtype in (Int8, Uint8) and dtype == BFloat16:
+            # cvt_i8_bf16_intrinsic is signed-only (cvt.rn.bf16.s8 / dp4a.s32.s32
+            # / scaled s2f6), so it is restricted to signed Int8. Uint8 falls
+            # through to the signedness-aware itofp path below; using the signed
+            # intrinsic would mis-convert Uint8 values >= 128 (e.g. 128 -> -128).
+            if src_dtype == Int8 and dtype == BFloat16:
                 fast_cvt_func = cvt_i8_bf16_intrinsic
             elif src_dtype == Int4 and dtype == BFloat16:
                 fast_cvt_func = cvt_i4_bf16_intrinsic

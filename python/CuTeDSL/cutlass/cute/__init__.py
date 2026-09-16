@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 # Keep AddressSpace aligned with the public cutlass namespace.
-from cutlass.address_space import AddressSpace as _AddressSpace
+from cutlass import AddressSpace as _AddressSpace
 from cutlass._mlir.dialects.cute_nvgpu import CacheEvictionPriority
 
 # Keep ``cute.AddressSpace`` as a quiet compatibility alias. Documentation marks
@@ -69,6 +69,8 @@ from .core import (
     make_composed_layout,
     make_layout_tv,
     make_swizzle,
+    make_sparse_elem,
+    get_sparse_elem_type,
     recast_ptr,
     get,
     select,
@@ -233,6 +235,8 @@ compile = _dsl.CompileCallable()
 compile_to = compile.compile_to
 OptLevel = _dsl.OptLevel
 
+
+
 PtxasOptions = _dsl.PtxasOptions
 EnableAssertions = _dsl.EnableAssertions
 GenerateLineInfo = _dsl.GenerateLineInfo
@@ -244,17 +248,22 @@ GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
 DeviceTarget = _dsl.DeviceTarget
+DisableCuteExtCompile = _dsl.DisableCuteExtCompile
+FrontendNext = _dsl.FrontendNext
 RDC = _dsl.RDC
+RemarkFilter = _dsl.RemarkFilter
+RemarkOutput = _dsl.RemarkOutput
+
 native_struct = _dsl.native_struct
 make_native_struct = _dsl.make_native_struct  # factory for dynamic struct types
 
-# attach the TVM FFI ABI interface postprocessor to the DSL
-from . import _tvm_ffi_args_spec_converter
+# Environment options are snapshotted when a DSL singleton is constructed;
+# build both singletons at import so os.environ mutations after import
+# cannot change DSL behavior. GPU-arch detection stays deferred to first use.
+_dsl.CuTeDSL._get_dsl()
+_dsl.CuteExperimentalDSL._get_dsl()
 
-_tvm_ffi_args_spec_converter.attach_args_spec_converter(_dsl.CuTeDSL._get_dsl())
-_tvm_ffi_args_spec_converter.attach_args_spec_converter(
-    _dsl.CuteExperimentalDSL._get_dsl()
-)
+from . import viz
 
 # Explicitly export all symbols for documentation generation
 __all__ = [
@@ -433,6 +442,7 @@ __all__ = [
     "nvgpu",
     "testing",
     "runtime",
+    "viz",
     # Math utils
     *math.__all__,
     # Decorators and code generation
@@ -441,6 +451,7 @@ __all__ = [
     "register_jit_arg_adapter",
     "compile",
     "compile_to",
+    "DisableCuteExtCompile",
     "ArtifactType",
     "PreCompiledMlirArtifact",
     # Foreign function interface

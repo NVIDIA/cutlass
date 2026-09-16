@@ -36,13 +36,14 @@ from cutlass.operators.arch import TargetSm
 from cutlass.operators.arguments import (
     DenseTensor,
     EpilogueArguments,
-    GroupedGemmArguments,
+    IndexPtrGroupedGemmArguments,
 )
 from cutlass.operators.metadata import (
     DenseTensorConstraints,
     DesignMetadata,
     EpilogueMetadata,
     GroupedGemmOperandsMetadata,
+    IndexPtrGroupedGemmOperandsMetadata,
     OperatorMetadata,
     Sm100DesignMetadata,
 )
@@ -76,7 +77,7 @@ if TYPE_CHECKING:
 
 @CuTeDSLProvider.register
 class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
-    supported_args_type = GroupedGemmArguments
+    supported_args_type = IndexPtrGroupedGemmArguments
     designed_for_min_cc = 100
 
     def __init__(self, metadata: OperatorMetadata):
@@ -94,8 +95,13 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
         )
 
     def _supports(
-        self, args: GroupedGemmArguments, target_sm: TargetSm | None = None
+        self, args: IndexPtrGroupedGemmArguments, target_sm: TargetSm | None = None
     ) -> Status:
+        if args.offsets_along != "m":
+            return Status.fail(
+                "ContiguousOffset2D3DGemmDenseOperator requires offsets_along='m'."
+            )
+
         if not (status := tensor_reduction_mode_matches(args)):
             return status
 
@@ -137,7 +143,9 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
         return Status.success()
 
     def _compile(
-        self, args: GroupedGemmArguments, target_sm: TargetSm | None = None
+        self,
+        args: IndexPtrGroupedGemmArguments,
+        target_sm: TargetSm | None = None,
     ) -> CompiledArtifact:
         stream = cutlass.cute.runtime.make_fake_stream()
         max_active_clusters = get_max_active_clusters(self.impl.cluster_shape_mn)
@@ -155,7 +163,7 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
 
     def _run(
         self,
-        args: GroupedGemmArguments,
+        args: IndexPtrGroupedGemmArguments,
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
@@ -172,7 +180,7 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
         )
 
     @staticmethod
-    def _valid_operands(operands: GroupedGemmOperandsMetadata) -> bool:
+    def _valid_operands(operands: IndexPtrGroupedGemmOperandsMetadata) -> bool:
         if operands.accumulator_type != cutlass.Float32:
             return False
 
@@ -204,9 +212,7 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
 
     @staticmethod
     def _valid_metadata(metadata: OperatorMetadata) -> bool:
-        if not ContiguousOffset2D3DGemmDenseOperator._valid_operands(
-            metadata.operands
-        ):
+        if not ContiguousOffset2D3DGemmDenseOperator._valid_operands(metadata.operands):
             return False
         if not ContiguousOffset2D3DGemmDenseOperator._valid_design_metadata(
             metadata.design
@@ -264,18 +270,21 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
 
     @staticmethod
     def _metadata_operands_from_args(
-        args: GroupedGemmArguments,
-    ) -> Generator[GroupedGemmOperandsMetadata, None, None]:
-        """Generator that yields all valid GroupedGemmOperandsMetadata that correspond to `args` and
+        args: IndexPtrGroupedGemmArguments,
+    ) -> Generator[IndexPtrGroupedGemmOperandsMetadata, None, None]:
+        """Generator that yields all valid IndexPtrGroupedGemmOperandsMetadata that correspond to `args` and
         that are supported by this Operator.
 
         Args:
-            args (GroupedGemmArguments): The arguments to generate operands from.
+            args (IndexPtrGroupedGemmArguments): The arguments to generate operands from.
 
         Returns:
-            Generator[GroupedGemmOperandsMetadata, None, None]: A generator of valid GroupedGemmOperandsMetadata that correspond to `args` and
+            Generator[IndexPtrGroupedGemmOperandsMetadata, None, None]: A generator of valid IndexPtrGroupedGemmOperandsMetadata that correspond to `args` and
             that are supported by this Operator.
         """
+        if args.offsets_along != "m":
+            return
+
         if not all(
             isinstance(arg, DenseTensor)
             for arg in [args.A, args.B, args.out, args.offsets]
@@ -323,9 +332,9 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
 
     @staticmethod
     def _metadata_operand_combinations() -> Generator[
-        tuple[GroupedGemmOperandsMetadata, int], None, None
+        IndexPtrGroupedGemmOperandsMetadata, None, None
     ]:
-        """Generator that yields all valid (GroupedGemmOperandsMetadata, sf_vec_size) combinations
+        """Generator that yields all valid IndexPtrGroupedGemmOperandsMetadata combinations
         based on the validation rules in _valid_operands.
         """
         # Supported A/B data types (must be the same)
@@ -372,7 +381,7 @@ class ContiguousOffset2D3DGemmDenseOperator(CuteDslOperator):
         metadata_filter: Callable[[OperatorMetadata], bool],
         epilogue_args: EpilogueArguments = None,
         target_sm: TargetSm | None = None,
-        args: GroupedGemmArguments = None,
+        args: IndexPtrGroupedGemmArguments = None,
     ) -> list[ContiguousOffset2D3DGemmDenseOperator]:
         """Returns a list of all possible configurations of ContiguousOffset2D3DGemmDenseOperator that
         adhere to constraints passed in under kwargs.

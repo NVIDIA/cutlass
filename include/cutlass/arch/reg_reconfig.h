@@ -64,6 +64,13 @@
     #define CUDA_CTA_RECONFIG_ACTIVATED 1
   #endif
 
+  #if defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ >= 12 && (          \
+         (__CUDA_ARCH__ == 1070 && CUDA_ARCH_FAMILY(1070))  \
+      || (__CUDA_ARCH__ == 1070 && defined(__CUDA_ARCH_FEAT_SM107_ALL))  \
+    )
+    #define CUDA_CTA_RECONFIG_ACTIVATED 1
+  #endif
+
 #endif
 
 namespace cutlass {

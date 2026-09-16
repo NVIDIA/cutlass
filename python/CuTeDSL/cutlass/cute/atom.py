@@ -1489,8 +1489,8 @@ def copy_atom_call(
 
       - For static load to tensor memory, ``dst`` = [data, stat].
       - For SPARSIFY, ``dst`` = [data, metadata].
-      - For TMA gather4, ``src`` = [coord0, coord1, coord2, coord3] (four 2D coordinate tensors).
-      - For TMA scatter4, ``dst`` = [coord0, coord1, coord2, coord3] (four 2D coordinate tensors).
+      - For TMA gather4, ``src`` = [data_coord_tensor, index_tensor].
+      - For TMA scatter4, ``dst`` = [dst_coord_tensor, index_tensor].
 
     :param atom: Copy atom specifying the transfer operation
     :type atom: CopyAtom
@@ -1525,8 +1525,8 @@ def copy_atom_call(
         # Static load to tensor memory: load with row-wise reduction (MAX, MIN, MAXABS, MINABS)
         cute.copy_atom_call(loadtm_stat_atom, src, [data, stat])
 
-        # TMA gather4: combine four 2D coordinate tensors into single destination
-        cute.copy_atom_call(tma_gather4_atom, [coord0, coord1, coord2, coord3], dst)
+        # TMA gather4: coord tensor plus four gather indices from index tensor
+        cute.copy_atom_call(tma_gather4_atom, [data_coord_tensor, index_tensor], dst)
 
     """
     # Normalize src/dst to lists for variadic IR operands, while keeping old API working.

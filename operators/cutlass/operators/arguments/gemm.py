@@ -38,9 +38,8 @@ from cutlass.operators.typing import NumericLike, TensorLike
 
 
 def _logical_contraction_extent(operand: Operand, k_axis: int) -> int:
-    """Logical K extent of ``operand`` along ``k_axis``.
+    """Logical extent of ``operand`` along its contraction axis ``k_axis``.
 
-    ``_validate`` runs before ``TensorWrapper`` conversion, so PyTorch-backed
     operands report physical shapes; sub-byte dtypes (e.g. ``float4_e2m1fn_x2``)
     pack their K dimension, so scale by the storage packing factor. Falls back to
     the physical extent for non-PyTorch operands (cute tensors are already
@@ -147,7 +146,12 @@ class GemmArguments(RuntimeArguments):
         self.out = _operand_or_dense(out).copy()
 
         self.accumulator_type = accumulator_type
-        self.epilogue = epilogue
+        # Copy for the same reason as A/B/out: ``_convert_epilogue`` traces the
+        # epilogue against *this* accumulator and converts its tensors in place.
+        # Two GEMMs may legitimately share an epilogue while differing in
+        # ``accumulator_type``, which the trace records, so sharing the object
+        # would let the second construction overwrite the first's trace.
+        self.epilogue = None if epilogue is None else epilogue.copy()
         super().__init__()
 
     @property

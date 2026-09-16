@@ -117,6 +117,16 @@ _NUMERIC_TO_DTYPE_FACTORY = {
     Float4E2M1FN: DType.float4_e2m1fn,
 }
 
+# Packed dtypes whose DSL storage width intentionally differs from the unpacked
+# element bits emitted above, so they are excluded from the width drift guard.
+_PACKED_NUMERIC_DTYPES: frozenset[type[Numeric]] = frozenset(
+)
+
+# Dtypes with no metadata representation yet; fail fast rather than silently
+# aliasing to a scalar element form.
+_UNSUPPORTED_NUMERIC_DTYPES: frozenset[type[Numeric]] = frozenset(
+)
+
 # Numeric subclasses accepted as a plain scalar parameter: standard integer and
 # float widths only -- sub-byte and narrow-float types appear only as tensor
 # element types, never as scalar args.
@@ -149,6 +159,10 @@ def _numeric_to_dtype(dtype: Type[Numeric]) -> DType:
     either side's dtype set changes (skipped for packed dtypes, whose storage
     width differs from the unpacked element bits by design).
     """
+    if dtype in _UNSUPPORTED_NUMERIC_DTYPES:
+        raise DSLRuntimeError(
+            f"Metadata does not support packed tensor dtype {dtype.__name__}."
+        )
     try:
         factory = _NUMERIC_TO_DTYPE_FACTORY[dtype]
     except KeyError as exc:
@@ -157,6 +171,12 @@ def _numeric_to_dtype(dtype: Type[Numeric]) -> DType:
         ) from exc
 
     result = factory()
+    if dtype not in _PACKED_NUMERIC_DTYPES and result.bits != dtype.width:
+        raise DSLRuntimeError(
+            f"Internal dtype mapping drift: {dtype.__name__} has width "
+            f"{dtype.width} but mapped DType has bits={result.bits}; "
+            "update _NUMERIC_TO_DTYPE_FACTORY."
+        )
     return result
 
 

@@ -287,8 +287,13 @@ def test_grouped_gemm_args_for_cute_tensor(fixture_toggle_tvm_ffi):
 
     accumulator_type = cutlass.Float32
 
-    args = ops.GroupedGemmArguments(
-        A=A, B=B, out=out, offsets=offsets, accumulator_type=accumulator_type
+    args = ops.IndexPtrGroupedGemmArguments(
+        A=A,
+        B=B,
+        out=out,
+        offsets=offsets,
+        offsets_along="m",
+        accumulator_type=accumulator_type,
     )
 
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())

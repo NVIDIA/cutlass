@@ -13,13 +13,11 @@ import enum
 from dataclasses import dataclass
 from typing import Any, Optional, Type
 
-from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL
+from cutlass import base_dsl
+from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
-
-from ..common import OpError
 from ...atom import CopyOp, Trait, make_atom
 from ...typing import Numeric
 
@@ -107,14 +105,17 @@ class _LdBase(CopyOp):
     :type repeat: Repetition, optional
     :param pack: Packing pattern for TMEM to RMEM copies, defaults to Pack.NONE
     :type pack: Pack, optional
-    :raises OpError: If the current architecture is not supported or if invalid parameters are provided
+    :raises DSLUserCodeError: If the current architecture is not supported or if invalid parameters are provided
     """
 
     repeat: Repetition = Repetition.x1
     pack: Pack = Pack.NONE
 
-    admissible_archs = Arch.filter(
-        lambda arch: arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)
+    admissible_archs = base_dsl.Arch.filter(
+        lambda arch: (
+            arch.is_family_of(base_dsl.Arch.sm_100f)
+            or arch.is_family_of(base_dsl.Arch.sm_110f)
+        )
     )
 
     def __post_init__(self) -> None:
@@ -124,27 +125,24 @@ class _LdBase(CopyOp):
         Performs comprehensive validation of operation parameters and architecture compatibility.
         This method is automatically called after object creation to ensure all constraints are met.
 
-        :raises OpError: If architecture is not supported
-        :raises OpError: If repeat parameter is not a Repetition instance
-        :raises OpError: If pack parameter is not a Pack instance
+        :raises DSLUserCodeError: If architecture is not supported
+        :raises DSLUserCodeError: If repeat parameter is not a Repetition instance
+        :raises DSLUserCodeError: If pack parameter is not a Pack instance
         """
-        # Arch verification
+        # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
         if not isinstance(self.repeat, Repetition):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'repeat' Op parameter to be a tcgen05.Repetition instance",
             )
         if not isinstance(self.pack, Pack):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'pack' Op parameter to be a tcgen05.Pack instance",
             )
 
@@ -233,12 +231,11 @@ class Ld16x128bOp(_LdBase):
         The 16x128b operation has limitations on the maximum repetition count due to
         hardware register and bandwidth constraints.
 
-        :raises OpError: If x128 repetition is specified
+        :raises DSLUserCodeError: If x128 repetition is specified
         """
         super().__post_init__()
         if self.repeat == Repetition.x128:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "x128 repetition is not supported",
                 suggestion="choose one of x1, x2, x4, x8, x16, x32, x64",
             )
@@ -296,12 +293,11 @@ class Ld16x256bOp(_LdBase):
         The 16x256b operation has more restrictive limitations on repetition count due to
         the larger data size per operation requiring more hardware resources.
 
-        :raises OpError: If x64 or x128 repetition is specified
+        :raises DSLUserCodeError: If x64 or x128 repetition is specified
         """
         super().__post_init__()
         if self.repeat in (Repetition.x128, Repetition.x64):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "x64 and x128 repetition is not supported",
                 suggestion="choose one of x1, x2, x4, x8, x16, x32",
             )
@@ -533,6 +529,104 @@ class LdRed32x32bTrait(Trait):
     pass
 
 
+@dataclass(frozen=True)
+class LdSPCompress32x32bOp(_LdBase):
+    """
+    32x32b TMEM load Sparse Compression Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-instructions-tcgen05-ld>`__.
+    This Operation corresponds to the ``spcompress`` and ``.32x32`` qualifiers.
+    """
+
+    redOp: TmemLoadRedOp = TmemLoadRedOp.MAX
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "LdSPCompress32x32bTrait":
+        """
+        Create a trait object for the 32x32b TMEM load Sparse Compression operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: LdSPCompress32x32bTrait
+        """
+        ty = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType.get(
+            copy_internal_type.mlir_type,
+            32,
+            32,
+            self.repeat.value,
+            self.redOp.value,
+            None,
+            None,
+        )
+        return LdSPCompress32x32bTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdSPCompress32x32bTrait(Trait):
+    pass
+
+
+@dataclass(frozen=True)
+class LdRedSPCompress32x32bOp(_LdBase):
+    """
+    32x32b TMEM load Reduce and Sparse Compression Operation.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-instructions-tcgen05-ld>`__.
+    This Operation corresponds to the ``.red.spcompress`` and ``.32x32`` qualifiers.
+    """
+
+    redOp: TmemLoadRedOp = TmemLoadRedOp.MAX
+    nan: bool = False
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "LdRedSPCompress32x32bTrait":
+        """
+        Create a trait object for the 32x32b TMEM load Reduce and Sparse Compression operation.
+
+        :param copy_internal_type: The data type for the copy operation
+        :type copy_internal_type: Type[Numeric]
+        :param loc: MLIR location information for debugging, defaults to None
+        :type loc: optional
+        :param ip: MLIR insertion point for code generation, defaults to None
+        :type ip: optional
+        :param kwargs: Additional keyword arguments
+        :type kwargs: dict
+        :return: A trait object for this load operation
+        :rtype: LdRedSPCompress32x32bTrait
+        """
+        ty = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType.get(
+            copy_internal_type.mlir_type,
+            32,
+            32,
+            self.repeat.value,
+            self.redOp.value,
+            ir.UnitAttr.get(),
+            ir.UnitAttr.get() if self.nan else None,
+        )
+        return LdRedSPCompress32x32bTrait(make_atom(ty, loc=loc, ip=ip))
+
+
+class LdRedSPCompress32x32bTrait(Trait):
+    pass
+
 
 @dataclass(frozen=True)
 class _StBase(CopyOp):
@@ -547,34 +641,34 @@ class _StBase(CopyOp):
     :type repeat: Repetition
     :param unpack: Unpacking pattern for RMEM to TMEM copies, defaults to Unpack.NONE
     :type unpack: Unpack, optional
-    :raises OpError: If the current architecture is not supported or if invalid parameters are provided
+    :raises DSLUserCodeError: If the current architecture is not supported or if invalid parameters are provided
     """
 
     repeat: Repetition
     unpack: Unpack = Unpack.NONE
 
-    admissible_archs = Arch.filter(
-        lambda arch: arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)
+    admissible_archs = base_dsl.Arch.filter(
+        lambda arch: (
+            arch.is_family_of(base_dsl.Arch.sm_100f)
+            or arch.is_family_of(base_dsl.Arch.sm_110f)
+        )
     )
 
     def __post_init__(self) -> None:
-        # Arch verification
+        # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
         if arch not in self.admissible_archs:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects arch to be one of {self.admissible_archs}, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
         if not isinstance(self.repeat, Repetition):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'repeat' Op parameter to be a tcgen05.Repetition instance",
             )
         if not isinstance(self.unpack, Unpack):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'unpack' Op parameter to be a tcgen05.Unpack instance",
             )
 
@@ -645,8 +739,7 @@ class St16x128bOp(_StBase):
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.repeat == Repetition.x128:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "x128 repetition is not supported",
                 suggestion="choose one of x1, x2, x4, x8, x16, x32, x64",
             )
@@ -685,8 +778,7 @@ class St16x256bOp(_StBase):
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.repeat in (Repetition.x128, Repetition.x64):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "x64 and x128 repetition is not supported",
                 suggestion="choose one of x1, x2, x4, x8, x16, x32",
             )
@@ -786,31 +878,53 @@ class _S2TCopyBase(CopyOp):
 
     :param cta_group: Cooperative Thread Array (CTA) group configuration
     :type cta_group: CtaGroup
-    :raises OpError: If the current architecture is not SM100f or SM110f
+    :raises DSLUserCodeError: If the current architecture is not SM100f or SM110f
         family or if invalid parameters are provided
     """
 
     cta_group: CtaGroup
 
     def __post_init__(self) -> None:
-        # Arch verification
+        # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
         # S2T tcgen05 copy encodings are valid on both SM100 and Thor SM110.
-        if not (arch.is_family_of(Arch.sm_100f) or arch.is_family_of(Arch.sm_110f)):
-            supported = Arch.filter(
-                lambda a: a.is_family_of(Arch.sm_100f) or a.is_family_of(Arch.sm_110f)
+        if not (
+            arch.is_family_of(base_dsl.Arch.sm_100f)
+            or arch.is_family_of(base_dsl.Arch.sm_110f)
+        ):
+            supported = base_dsl.Arch.filter(
+                lambda a: (
+                    a.is_family_of(base_dsl.Arch.sm_100f)
+                    or a.is_family_of(base_dsl.Arch.sm_110f)
+                )
             )
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects arch to be one of {supported}, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
         # Verify that the user provided enum values
         if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'cta_group' Op parameter to be a tcgen05.CtaGroup instance",
             )
+
+    @property
+    def broadcast_factor(self) -> int:
+        """
+        Number of TMEM core matrices this Operation writes per core matrix read from SMEM.
+
+        The ``tcgen05.cp`` variants that carry a broadcast qualifier replicate the
+        single core matrix they read from SMEM across several TMEM destinations, so
+        their TMEM footprint is this factor times their SMEM footprint. Variants
+        without a broadcast qualifier read and write one core matrix, hence a factor
+        of one.
+
+        The broadcast is only representable on the TMEM side of a copy: the SMEM
+        operand holds one core matrix no matter how many times it is replicated.
+        Partitioning an SMEM operand for such a copy therefore needs this factor to
+        reconcile the two sides, see ``append_s2t_broadcast_mode``.
+        """
+        return 1
 
     def __str__(self) -> str:
         res = (
@@ -1018,6 +1132,10 @@ class Cp4x32x128bOp(_S2TCopyBase):
         )
         return Cp4x32x128bTrait(make_atom(ty, loc=loc, ip=ip))
 
+    @property
+    def broadcast_factor(self) -> int:
+        return 4
+
 
 class Cp4x32x128bTrait(Trait):
     pass
@@ -1064,6 +1182,10 @@ class Cp2x64x128b0213Op(_S2TCopyBase):
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0213,
         )
         return Cp2x64x128b0213Trait(make_atom(ty, loc=loc, ip=ip))
+
+    @property
+    def broadcast_factor(self) -> int:
+        return 2
 
 
 class Cp2x64x128b0213Trait(Trait):
@@ -1112,6 +1234,10 @@ class Cp2x64x128b0123Op(_S2TCopyBase):
             _cute_nvgpu_ir.CopyS2TBroadcast.lw_0123,
         )
         return Cp2x64x128b0123Trait(make_atom(ty, loc=loc, ip=ip))
+
+    @property
+    def broadcast_factor(self) -> int:
+        return 2
 
 
 class Cp2x64x128b0123Trait(Trait):

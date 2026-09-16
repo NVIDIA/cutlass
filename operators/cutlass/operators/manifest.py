@@ -56,7 +56,7 @@ class Manifest:
         args: RuntimeArguments = None,
         metadata_filter: Callable[[OperatorMetadata], bool] | None = None,
         target_sm: TargetSm | str | None = None,
-        providers: list[Provider] = None,
+        providers: list[Provider | type[Provider]] = None,
     ) -> list[Operator]:
         """Get the operators that match the given arguments, metadata filter, compute capability and available providers.
 

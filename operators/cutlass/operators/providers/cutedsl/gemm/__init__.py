@@ -32,6 +32,10 @@
 # E402: False warning about module-level imports not at top of file
 # ruff: noqa: F401, I001, E402
 
+
+import cutlass.operators.providers.cutedsl.gemm.sm107_dense_gemm
+import cutlass.operators.providers.cutedsl.gemm.sm107_dense_blockscaled_gemm
+
 import cutlass.operators.providers.cutedsl.gemm.sm100_persistent
 import cutlass.operators.providers.cutedsl.gemm.sm100_static_persistent_efc
 import cutlass.operators.providers.cutedsl.gemm.sm100_tgv_gemm

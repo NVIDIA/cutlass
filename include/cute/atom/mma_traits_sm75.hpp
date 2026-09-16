@@ -59,6 +59,26 @@ struct MMA_Traits<SM75_16x8x8_F32F16F16F32_TN>
 ///////////////////////////////////////////////////////////////////////////////
 
 template <>
+struct MMA_Traits<SM75_16x8x8_F16F16F16F16_TN>
+{
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
+
+  using Shape_MNK = Shape<_16,_8,_8>;
+  using ThrID   = Layout<_32>;
+  using ALayout = Layout<Shape <Shape < _4,_8>,Shape < _2,_2>>,
+                         Stride<Stride<_32,_1>,Stride<_16,_8>>>;
+  using BLayout = Layout<Shape <Shape < _4,_8>,_2>,
+                         Stride<Stride<_16,_1>,_8>>;
+  using CLayout = Layout<Shape <Shape < _4,_8>,Shape < _2,_2>>,
+                         Stride<Stride<_32,_1>,Stride<_16,_8>>>;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+template <>
 struct MMA_Traits<SM75_8x8x16_S32S8S8S32_TN>
 {
   using ValTypeD = int32_t;

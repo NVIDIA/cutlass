@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import ctypes
+import math
 from abc import abstractmethod
 from itertools import chain
 import numpy as np
@@ -26,6 +27,7 @@ from typing import (
     TypeAlias,
     Union,
     Any,
+    cast as tcast,
     Type,
     TypeVar,
     overload,
@@ -44,7 +46,9 @@ from .._mlir import ir
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith, llvm, nvvm, vector
 
-from .address_space import AddressSpace
+from . import AddressSpace
+
+from .pyir_runtime import _WatchedM
 
 # =============================================================================
 # Dynamic Expression Protocol
@@ -242,6 +246,21 @@ def get_c_pointers(obj: Any) -> list[ctypes.c_void_p]:
             DiagId.ARG_UNORDERED_CONTAINER,
         )
     return []
+
+
+def _make_owning_c_pointer(c_value: Any) -> ctypes.c_void_p:
+    """Return a pointer that keeps its backing ctypes value alive.
+
+    ``ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)`` makes the
+    intermediate pointer reference itself through its ``_objects`` dictionary.
+    Those cycles accumulate when cyclic garbage collection is disabled.  A
+    direct address does not create that cycle, while the private keepalive
+    attribute preserves the backing value for the lifetime of the returned
+    pointer.
+    """
+    c_pointer = ctypes.c_void_p(ctypes.addressof(c_value))
+    c_pointer._cutlass_keepalive = c_value  # type: ignore[attr-defined]
+    return c_pointer
 
 
 def get_mlir_types(obj: Any) -> list[ir.Type]:
@@ -534,6 +553,9 @@ class IntegerMeta(NumericMeta):
     """
 
     signed: bool
+    # Value range that ``_np_dtype`` stores exactly, or None when there is no
+    # numpy dtype to store into. See ``Integer.__init__``.
+    _exact_range: Optional[tuple[int, int]]
 
     def __new__(
         cls,
@@ -564,7 +586,7 @@ class IntegerMeta(NumericMeta):
             else:
                 c_value = getattr(ctypes, f"c_uint{width}")(self.value)
 
-            return [ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)]
+            return [_make_owning_c_pointer(c_value)]
 
         new_attrs = {
             "__c_pointers__": _c_pointers,
@@ -573,6 +595,19 @@ class IntegerMeta(NumericMeta):
             cls, name, bases, attrs | new_attrs, width, np_dtype, mlir_type, is_abstract
         )
         new_cls.signed = signed
+        # Precomputed once per type so ``Integer.__init__`` can range-check without
+        # rebuilding the bounds on every construction. These track ``np_dtype``
+        # rather than ``width``, because the numpy cast is what they must agree
+        # with, and a few subclasses patch ``width`` afterwards.
+        if np_dtype is None:
+            new_cls._exact_range = None
+        elif width == 1:
+            # np.bool_ folds everything nonzero to True, so only 0 and 1 survive
+            # the cast unchanged.
+            new_cls._exact_range = (0, 1)
+        else:
+            info = np.iinfo(np_dtype)  # type: ignore[type-var]
+            new_cls._exact_range = (int(info.min), int(info.max))
         return new_cls
 
     def __str__(cls) -> str:
@@ -775,42 +810,7 @@ def _binary_op_type_promote(
 
     # Handle floating point promotions
     if a_type.is_float or b_type.is_float:
-        # Get highest precision float type based on bitwidth
-        a_width = getattr(a_type, "width", 0)
-        b_width = getattr(b_type, "width", 0)
-
-        # If one type is integer, convert it to the float type
-        if a_type.is_float and not b_type.is_float:
-            b_type = a_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
-        elif b_type.is_float and not a_type.is_float:
-            a_type = b_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
-
-        # Both are float types - handle precision promotion
-        if a_width > b_width and a_width >= 16:
-            res_type = a_type
-        elif b_width > a_width and b_width >= 16:
-            res_type = b_type
-        elif a_width == b_width:
-            # Same bitwidth - handle special cases like TFloat32 -> Float32 and BFloat16 -> Float16
-            if a_type is Float64 or b_type is Float64:
-                res_type = Float64
-            elif a_type is Float32 or b_type is Float32:
-                res_type = Float32
-            elif a_type is Float16 or b_type is Float16:
-                res_type = Float16
-            else:
-                raise ValueError(
-                    f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
-                )
-        else:
-            raise ValueError(
-                f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
-            )
-
-        # Only convert if type is different
-        new_a = a.to(res_type) if a.dtype != res_type else a
-        new_b = b.to(res_type) if b.dtype != res_type else b
-        return new_a, new_b, res_type
+        return _promote_float(a, b, a_type, b_type)
 
     # Handle bool promotion for arithmetic operations
     if promote_bool:
@@ -820,16 +820,74 @@ def _binary_op_type_promote(
             b = b.to(Int32)
             a_type = b_type = a.dtype
 
-        # If both were bools, they're now same type (Int32)
-        if a_type == b_type:
-            return a, b, a_type
-
-    # Same type, no promotion needed
+    # Same type, no promotion needed (also covers both-bool -> Int32 above)
     if a_type == b_type:
         return a, b, a_type
 
     # At this point both must be Integer subclasses (float branch above already returned).
     assert issubclass(a_type, Integer) and issubclass(b_type, Integer)
+    return _promote_integer(
+        a, b, tcast("Type[Integer]", a_type), tcast("Type[Integer]", b_type)
+    )
+
+
+def _apply_promotion(
+    a: "Numeric", b: "Numeric", res_type: Type["Numeric"]
+) -> tuple["Numeric", "Numeric", Type["Numeric"]]:
+    """Cast each operand to ``res_type`` (only when its dtype differs)."""
+    new_a = a.to(res_type) if a.dtype != res_type else a
+    new_b = b.to(res_type) if b.dtype != res_type else b
+    return new_a, new_b, res_type
+
+
+def _promote_float(
+    a: "Numeric", b: "Numeric", a_type: Type["Numeric"], b_type: Type["Numeric"]
+) -> tuple["Numeric", "Numeric", Type["Numeric"]]:
+    """Promotion policy when at least one operand is a float type."""
+    # Get highest precision float type based on bitwidth
+    a_width = getattr(a_type, "width", 0)
+    b_width = getattr(b_type, "width", 0)
+
+    # If one type is integer, convert it to the float type
+    if a_type.is_float and not b_type.is_float:
+        b_type = a_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
+    elif b_type.is_float and not a_type.is_float:
+        a_type = b_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
+
+    # Both are float types - handle precision promotion
+    if a_width > b_width and a_width >= 16:
+        res_type = a_type
+    elif b_width > a_width and b_width >= 16:
+        res_type = b_type
+    elif a_width == b_width:
+        # Same bitwidth - handle special cases like TFloat32 -> Float32 and BFloat16 -> Float16
+        if a_type is Float64 or b_type is Float64:
+            res_type = Float64
+        elif a_type is Float32 or b_type is Float32:
+            res_type = Float32
+        elif a_type is Float16 or b_type is Float16:
+            res_type = Float16
+        else:
+            raise ValueError(
+                f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
+            )
+    else:
+        raise ValueError(
+            f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
+        )
+
+    return _apply_promotion(a, b, res_type)
+
+
+def _promote_integer(
+    a: "Numeric", b: "Numeric", a_type: Type["Integer"], b_type: Type["Integer"]
+) -> tuple["Numeric", "Numeric", Type["Numeric"]]:
+    """Promotion policy when both operands are integers (same dtype already handled).
+
+    ``a_type``/``b_type`` are ``Type[Integer]`` (IntegerMeta exposes ``signed``;
+    ``width`` is inherited from NumericMeta). Only called when both operands are
+    integers, so the narrowing from ``Type[Numeric]`` is sound.
+    """
     a_signed = a_type.signed
     b_signed = b_type.signed
     a_width = a_type.width
@@ -848,9 +906,7 @@ def _binary_op_type_promote(
             # Promote both to signed of larger width
             res_type = signed_type
 
-        new_a = a.to(res_type) if a.dtype != res_type else a
-        new_b = b.to(res_type) if b.dtype != res_type else b
-        return new_a, new_b, res_type
+        return _apply_promotion(a, b, res_type)
 
     # Same signedness, different width - promote to larger width
     if a_width >= b_width:
@@ -976,6 +1032,12 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     bytes: ClassVar[int]
     _np_dtype: ClassVar[Optional[type]]
 
+    # TODO: Consider implementing MLIR style interface for PyIR mutable values.
+    # Marker: MutableValue can track this type via pyir.ref/load/store.
+    # Type(ir_value) must be a valid single-arg constructor.
+    # Non-scalar DSL types (Array, Tensor) do NOT set this.
+    _pyir_ref_supported = True
+
     def __init__(
         self,
         value: Union[bool, int, float, Value],
@@ -1065,7 +1127,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         :type dtype: Union[Type["Numeric"], Type[int], Type[float], Type[bool]]
         :return: A new instance of the target type, or self if types match
         :rtype: Numeric
-        :raises TypeError: If trying to convert an MLIR value to a static Python type
+        :raises ValueError: If trying to convert an MLIR value to a static Python type
         :raises TypeError: If trying to convert to unsupported float types like Float8E4M3,
                           Float8E4M3B11FNUZ, Float4E2M1FN, Float6E3M2FN, or Float6E2M3FN
 
@@ -1078,28 +1140,28 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
                 - Float6E3M2FN
                 - Float6E2M3FN
 
-        Example::
+        Example:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                # Convert between DSL numeric types
-                x = Int32(5)
-                y = x.to(Float32)  # Converts to Float32(5.0)
+            # Convert between DSL numeric types.
+            x = Int32(5)
+            y = x.to(Float32)  # Converts to Float32(5.0)
 
-                # Convert to Python primitive types
-                # They are considered as static values at JIT time
-                z = x.to(int)      # Returns Python int 5
-                w = y.to(float)    # Returns Python float 5.0
+            # Convert to Python primitive types.
+            # They are considered static values at JIT time.
+            z = x.to(int)      # Returns Python int 5.
+            w = y.to(float)    # Returns Python float 5.0.
 
-                # This will raise a ValueError
-                mlir_val = arith.constant(T.i32(), 42)
-                num = Int32(mlir_val)
-                num.to(int)        # ValueError: unable to convert MLIR value to static type: <class 'int'>
+            # This raises ValueError because MLIR values are not static.
+            mlir_val = arith.constant(T.i32(), 42)
+            num = Int32(mlir_val)
+            num.to(int)
         """
         if dtype in _unsupported_dst_float_types:
             raise TypeError(f"Unsupported destination float type: {dtype}")
 
-        if isinstance(dtype, type(self)):
+        if dtype is type(self):
             return self
         elif isinstance(dtype, NumericMeta):
             return dtype(self)
@@ -1604,6 +1666,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             T.f8E4M3(): Float8E4M3,
             T.f8E4M3FN(): Float8E4M3FN,
             T.f8E4M3B11FNUZ(): Float8E4M3B11FNUZ,
+            T.fnv8E5M3FNU(): FloatNV8E5M3FNU,
             T.f4E2M1FN(): Float4E2M1FN,
             T.f6E2M3FN(): Float6E2M3FN,
             T.f6E3M2FN(): Float6E3M2FN,
@@ -1630,6 +1693,10 @@ def as_numeric(obj: Union[bool, int, float, ir.Value, Numeric]) -> Numeric:
             y = as_numeric(3.14)  # Converts to Float32
             z = as_numeric(True)  # Converts to Boolean
     """
+    if isinstance(obj, _WatchedM):
+        obj = (
+            obj.ir_value()
+        )  # bake arith.constant + record leaf for D1 retroactive rewrite
     if isinstance(obj, Numeric):
         return obj
     return Numeric._from_python_value(obj)
@@ -1691,6 +1758,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
 
     # Injected by IntegerMeta.__new__ on every concrete subclass.
     signed: ClassVar[bool]
+    _exact_range: ClassVar[Optional[tuple[int, int]]]
 
     def __init__(
         self,
@@ -1700,17 +1768,34 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
+        # D1: if x is a _WatchedM, ir_value() emits arith.constant AND records
+        # the leaf under its slot so a later mutation can rewrite the use via
+        # replaceAllUsesWith.
+        if isinstance(x, _WatchedM):
+            x = x.ir_value()
+
         if isinstance(x, (bool, int, float)):
             # Add check for NaN before numpy conversion
             if isinstance(x, float):
-                if np.isnan(x):
+                if math.isnan(x):
                     raise ValueError("Cannot convert float NaN to integer")
-                elif np.isinf(x):
+                elif math.isinf(x):
                     raise OverflowError("Cannot convert float infinity to integer")
 
-            np_dtype = ty.numpy_dtype
-            assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
-            x_val = int(np.array(x).astype(np_dtype))
+            exact_range = ty._exact_range
+            if exact_range is not None and exact_range[0] <= x <= exact_range[1]:
+                # Already representable, so the cast below would round-trip the
+                # value unchanged. int() truncates floats toward zero and folds
+                # bools to 0/1, which is what astype does for this range too.
+                x_val = int(x)
+            else:
+                # Out of range: defer to numpy for the wrap-around (or the
+                # overflow it raises on values wider than the dtype). _exact_range
+                # is None exactly when there is no dtype to cast to, so this is
+                # still where an unsupported width is rejected.
+                np_dtype = ty.numpy_dtype
+                assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
+                x_val = int(np.array(x).astype(np_dtype))
         elif type(x) == ty:
             x_val = x.value  # type: ignore[assignment]
         elif isinstance(x, ir.Value):
@@ -1905,6 +1990,18 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
+        # D1: if x is a _WatchedM, ir_value() emits arith.constant AND records
+        # the leaf under its slot so a later mutation can rewrite the use via
+        # replaceAllUsesWith. Watched Python integers use their Python signedness
+        # to select the integer-to-float conversion before the wrapper is erased.
+        if isinstance(x, _WatchedM):
+            watched = x
+            x = watched.ir_value()
+            if isinstance(watched.python_value, bool):
+                x = Boolean(x)
+            elif isinstance(watched.python_value, int):
+                x = Int32(x)
+
         if isinstance(x, (bool, int, float)):
             # Why we need to convert x to with numpy?
             # np_dtype = ty.numpy_dtype
@@ -1974,6 +2071,11 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
+        # D1: if a is a _WatchedM, ir_value() emits arith.constant AND records
+        # the leaf under its slot so a later mutation can rewrite the use via
+        # replaceAllUsesWith.
+        if isinstance(a, _WatchedM):
+            a = a.ir_value()
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
@@ -2084,15 +2186,13 @@ class Float64(Float, metaclass=FloatMeta, width=64, mlir_type=T.f64):
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
 
-        return [
-            ctypes.cast(ctypes.pointer(ctypes.c_double(self.value)), ctypes.c_void_p)
-        ]
+        return [_make_owning_c_pointer(ctypes.c_double(self.value))]
 
 
 class Float32(Float, metaclass=FloatMeta, width=32, mlir_type=T.f32):
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
-        return ctypes.cast(ctypes.pointer(ctypes.c_float(value)), ctypes.c_void_p)
+        return _make_owning_c_pointer(ctypes.c_float(value))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2118,7 +2218,7 @@ class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
         bits: int = int(f16_val.view(np.uint16))
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(int(bits))
-        return ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        return _make_owning_c_pointer(c_val)
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2139,7 +2239,7 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
         bf16_bits = np.uint16(bits >> 16)
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(bf16_bits)  # type: ignore[arg-type]
-        c_pointer = ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        c_pointer = _make_owning_c_pointer(c_val)
         return [c_pointer]
 
 
@@ -2153,6 +2253,9 @@ class Float8E4M3B11FNUZ(
     Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E4M3B11FNUZ
 ): ...
 
+
+
+class FloatNV8E5M3FNU(Float, metaclass=FloatMeta, width=8, mlir_type=T.fnv8E5M3FNU): ...
 
 
 # Added missing float types
@@ -2186,7 +2289,7 @@ class Float4E2M1FNx2(
 
     Shape and strides on any layout carrying this dtype are interpreted
     in **fp4x2 tensor-element units**. One tensor element is already one
-    packed storage unit, so ``create_tensor_map_tiled_from_tensor`` uses
+    packed storage unit, so ``create_tensor_map_tiled_from_view`` uses
     ``width == 8`` directly when converting stride units for TMA.
 
     ``width`` is the packed 8-bit tensor-element width and ``mlir_type`` is
@@ -2201,23 +2304,64 @@ class Float4E2M1FNx2(
     """
 
 
+# FP6x4 still carries the unpacked scalar FP6 MLIR element type for now; its
+# packed storage handling remains in specialized helpers.
+class Float6E3M2FNx4(
+    Float,
+    metaclass=FloatMeta,
+    width=24,
+    mlir_type=T.f6E3M2FN,
+):
+    """Packed FP6 E3M2 — 4 elements per 3 bytes.
+
+    See :class:`Float4E2M1FNx2` for the shape / stride invariant; one
+    tensor element is one packed fp6x4 storage unit.
+
+    ``width`` is the 24-bit packed tensor-element width.
+
+    """
+
+
+class Float6E2M3FNx4(
+    Float,
+    metaclass=FloatMeta,
+    width=24,
+    mlir_type=T.f6E2M3FN,
+):
+    """Packed FP6 E2M3 — 4 elements per 3 bytes.
+
+    See :class:`Float4E2M1FNx2` for the shape / stride invariant; one
+    tensor element is one packed fp6x4 storage unit.
+
+    ``width`` is the 24-bit packed tensor-element width.
+
+    """
+
 
 def _element_precision_width(dtype: Type["Numeric"]) -> int:
     """Return scalar lane precision for packed narrow-float view dtypes."""
 
     if dtype is Float4E2M1FNx2:
         return 4
+    if dtype in {Float6E3M2FNx4, Float6E2M3FNx4}:
+        return 6
     return dtype.width
 
 
-_unsupported_dst_float_types = [
-    Float8E4M3,
-    Float8E4M3B11FNUZ,
-    Float4E2M1FN,
-    Float6E3M2FN,
-    Float6E2M3FN,
-    Float4E2M1FNx2,
-]
+# frozenset for O(1) membership: Numeric.to() tests `dtype in` this on every
+# numeric coercion/promotion during tracing.
+_unsupported_dst_float_types = frozenset(
+    {
+        Float8E4M3,
+        Float8E4M3B11FNUZ,
+        Float4E2M1FN,
+        Float6E3M2FN,
+        Float6E2M3FN,
+        Float4E2M1FNx2,
+        Float6E3M2FNx4,
+        Float6E2M3FNx4,
+    }
+)
 
 
 ALL_DTYPES = {
@@ -2246,6 +2390,8 @@ ALL_DTYPES = {
     Float6E2M3FN,
     Float6E3M2FN,
     Float4E2M1FNx2,
+    Float6E2M3FNx4,
+    Float6E3M2FNx4,
 }
 __STR_TO_DTYPE__ = {dt.__name__: dt for dt in ALL_DTYPES}
 
@@ -2258,37 +2404,6 @@ def dtype(dtype_: str) -> Type[Numeric]:
         raise TypeError(f"can't interpret {dtype_} as data type")
 
     return t
-
-
-##############################################################
-# Tensor
-##############################################################
-
-
-class TensorMeta(DslType):
-    _element_type = Any
-    _shape = Any
-
-    """
-    Examples:
-        >>> Tensor[Int32, (3,)]
-        >>> Tensor[Float32, (3, 4)]
-        >>> T = TypeVar("T")
-        >>> Tensor[T, (3, 4, 5)]
-    """
-
-    def __new__(
-        cls,
-        name: str,
-        bases: tuple,
-        attrs: dict,
-        element_type: Any = Any,
-        shape: Any = Any,
-    ) -> Any:
-        new_cls = super().__new__(cls, name, bases, attrs)
-        new_cls._element_type = element_type
-        new_cls._shape = shape
-        return new_cls
 
 
 # Generic type
@@ -2329,6 +2444,62 @@ class align(int):
     def __str__(self) -> str:
         return f"align({super().__str__()})"
 
+
+class PointerMeta(DslType):
+    """Legacy subscriptable annotation metaclass."""
+
+    _value_type: Any
+    _align: Any
+
+    def __new__(
+        cls,
+        name: str,
+        bases: tuple,
+        attrs: dict,
+        value_type: Any = Int32,
+        align_: Any = align(1),
+    ) -> Any:
+        new_cls = super().__new__(
+            cls,
+            name,
+            bases,
+            attrs,
+            mlir_type=lambda: getattr(ir, "UnrankedMemRefType").get(
+                value_type.mlir_type, getattr(ir, "Attribute").parse("0")
+            ),
+        )
+        new_cls._value_type = value_type
+        new_cls._align = align_
+        return new_cls
+
+    def __eq__(cls, other: Any) -> bool:
+        if not isinstance(other, PointerMeta):
+            return False
+        return cls._value_type == other._value_type and int(cls._align) == int(
+            other._align
+        )  # Compare alignment values
+
+    def __hash__(cls) -> int:
+        return hash((cls._value_type, int(cls._align)))  # Hash alignment value
+
+    def __getitem__(cls, params: Any) -> Type[Any]:
+        value_type, align_ = params
+
+        if not isinstance(align_, align):
+            raise DSLUserCodeError(DiagId.ARG_TYPE_MISMATCH)
+
+        # Create new class with proper name and parameters
+        new_cls = type(
+            f"{cls.__name__}[{value_type.__name__}, {align_}]",
+            (cls,),
+            {},
+            value_type=value_type,
+            align_=align_,  # Pass alignment to __new__
+        )
+        return new_cls
+
+    def __str__(cls) -> str:
+        return f"ptr<{cls._value_type}, {cls._align}>"
 
 
 class TypedPointer:
@@ -2705,6 +2876,62 @@ class Pointer(ir.Value):
         return dtype(llvm.ptrtoint(dtype.mlir_type, self._base, loc=loc, ip=ip))
 
     @dsl_user_op
+    def load_swizzled(
+        self,
+        swizzle: Any,
+        alignment: Optional[int] = None,
+        *,
+        count: Optional[int] = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        from .swizzle import load_swizzled  # noqa: PLC0415
+
+        return load_swizzled(self, swizzle, alignment, count=count, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def store_swizzled(
+        self,
+        value: Any,
+        swizzle: Any,
+        alignment: Optional[int] = None,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        from .swizzle import store_swizzled  # noqa: PLC0415
+
+        return store_swizzled(self, value, swizzle, alignment, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def apply_swizzle(
+        self,
+        swizzle: Any,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        from .swizzle import apply_swizzle  # noqa: PLC0415
+
+        return apply_swizzle(self, swizzle, loc=loc, ip=ip)
+
+    @staticmethod
+    def _validate_i1_mask(mask: Any) -> None:
+        """Validate that ``mask`` is a Vector whose element type is ``i1``."""
+        from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
+
+        if not isinstance(mask, Vector):
+            raise TypeError(f"mask must be a Vector, got {type(mask)}")
+        mask_elem_type = mask._mlir_type
+        if not (
+            ir.IntegerType.isinstance(mask_elem_type)
+            and ir.IntegerType(mask_elem_type).width == 1
+        ):
+            raise TypeError(
+                f"mask must be a vector of i1, got vector of {mask_elem_type}"
+            )
+
+    @dsl_user_op
     def load(
         self,
         alignment: Optional[int] = None,
@@ -2745,6 +2972,35 @@ class Pointer(ir.Value):
             res = res.ir_value()
         return Vector(res, dtype=self._dtype)
 
+    @staticmethod
+    def _resolve_nvvm_mem_kwargs(
+        cache_modifier: Any | None,
+        evict: Any | None,
+        scope: Any | None,
+        *,
+        cache_kind: Any,
+    ) -> dict:
+        """Build the nvvm load/store-ext memory kwargs from str-or-enum inputs.
+
+        Each argument is accepted as either a string or an enum member; the name
+        is upper-cased and resolved against the relevant nvvm enum. ``cache_kind``
+        selects the cache-modifier enum (LoadCacheModifierExtKind for loads,
+        StoreCacheModifierKind for stores); evict/scope enums are shared.
+        """
+
+        def _resolve(value: Any, enum_kind: Any) -> Any:
+            name = value if isinstance(value, str) else value.name
+            return getattr(enum_kind, name.upper())
+
+        kwargs: dict = {}
+        if cache_modifier is not None:
+            kwargs["cache_modifier"] = _resolve(cache_modifier, cache_kind)
+        if evict is not None:
+            kwargs["evict"] = _resolve(evict, nvvm.EvictKind)
+        if scope is not None:
+            kwargs["scope"] = _resolve(scope, nvvm.MemScopeKind)
+        return kwargs
+
     def nvvm_load_ext(
         self,
         *,
@@ -2760,22 +3016,9 @@ class Pointer(ir.Value):
         else:
             res_ty = ir.VectorType.get([count], self._mlir_type)
 
-        kwargs: dict = {}
-        if cache_modifier is not None:
-            name = (
-                cache_modifier
-                if isinstance(cache_modifier, str)
-                else cache_modifier.name
-            )
-            kwargs["cache_modifier"] = getattr(
-                nvvm.LoadCacheModifierExtKind, name.upper()
-            )
-        if evict is not None:
-            name = evict if isinstance(evict, str) else evict.name
-            kwargs["evict"] = getattr(nvvm.EvictKind, name.upper())
-        if scope is not None:
-            name = scope if isinstance(scope, str) else scope.name
-            kwargs["scope"] = getattr(nvvm.MemScopeKind, name.upper())
+        kwargs = self._resolve_nvvm_mem_kwargs(
+            cache_modifier, evict, scope, cache_kind=nvvm.LoadCacheModifierExtKind
+        )
 
         res = nvvm.load_ext(res_ty, self._base, **kwargs, loc=loc, ip=ip)
         if count is None:
@@ -2824,22 +3067,9 @@ class Pointer(ir.Value):
         ip: ir.InsertionPoint | None = None,
     ) -> None:
         ir_value = self._prepare_store_value(value, loc=loc, ip=ip)
-        kwargs: dict = {}
-        if cache_modifier is not None:
-            name = (
-                cache_modifier
-                if isinstance(cache_modifier, str)
-                else cache_modifier.name
-            )
-            kwargs["cache_modifier"] = getattr(
-                nvvm.StoreCacheModifierKind, name.upper()
-            )
-        if evict is not None:
-            name = evict if isinstance(evict, str) else evict.name
-            kwargs["evict"] = getattr(nvvm.EvictKind, name.upper())
-        if scope is not None:
-            name = scope if isinstance(scope, str) else scope.name
-            kwargs["scope"] = getattr(nvvm.MemScopeKind, name.upper())
+        kwargs = self._resolve_nvvm_mem_kwargs(
+            cache_modifier, evict, scope, cache_kind=nvvm.StoreCacheModifierKind
+        )
 
         return nvvm.store_ext(ir_value, self._base, **kwargs, loc=loc, ip=ip)
 
@@ -2855,16 +3085,7 @@ class Pointer(ir.Value):
     ) -> Any:
         from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
 
-        if not isinstance(mask, Vector):
-            raise TypeError(f"mask must be a Vector, got {type(mask)}")
-        mask_elem_type = mask._mlir_type
-        if not (
-            ir.IntegerType.isinstance(mask_elem_type)
-            and ir.IntegerType(mask_elem_type).width == 1
-        ):
-            raise TypeError(
-                f"mask must be a vector of i1, got vector of {mask_elem_type}"
-            )
+        self._validate_i1_mask(mask)
 
         vec_len = mask.shape[0]
         if pass_thru is not None:
@@ -2909,17 +3130,7 @@ class Pointer(ir.Value):
 
         if not isinstance(value, Vector):
             raise TypeError(f"value must be a Vector, got {type(value)}")
-        if not isinstance(mask, Vector):
-            raise TypeError(f"mask must be a Vector, got {type(mask)}")
-
-        mask_elem_type = mask._mlir_type
-        if not (
-            ir.IntegerType.isinstance(mask_elem_type)
-            and ir.IntegerType(mask_elem_type).width == 1
-        ):
-            raise TypeError(
-                f"mask must be a vector of i1, got vector of {mask_elem_type}"
-            )
+        self._validate_i1_mask(mask)
         if value.shape[0] != mask.shape[0]:
             raise ValueError(
                 f"value and mask must have the same length, got {value.shape[0]} and {mask.shape[0]}"
@@ -2959,14 +3170,7 @@ class Pointer(ir.Value):
             raise ValueError(
                 f"offsets and mask must have the same length, got {offsets.shape[0]} and {mask.shape[0]}"
             )
-        mask_elem_type = mask._mlir_type
-        if not (
-            ir.IntegerType.isinstance(mask_elem_type)
-            and ir.IntegerType(mask_elem_type).width == 1
-        ):
-            raise TypeError(
-                f"mask must be a vector of i1, got vector of {mask_elem_type}"
-            )
+        self._validate_i1_mask(mask)
 
         vec_len = offsets.shape[0]
         vec_ptr_type = ir.VectorType.get([vec_len], self.mlir_type)
@@ -3173,27 +3377,20 @@ class IRVariadic:
         return len(self.operands)
 
 
-class FuncArgWithAttr(IRValue):
-    """
-    This derived class is specifically for func op arg with attr
-    """
-
-    def __init__(
-        self, ty: Any, attr_name: str, attr_ty: Any, attr_value: Any = None
-    ) -> None:
-        super().__init__(ty)
-        assert attr_name is not None and (
-            attr_ty is not None or attr_value is not None
-        ), "Invalid attr_name and/or attr_ty and/or attr_value for FuncArgWithAttr"
-        self.attr_name = attr_name
-        self.attr_ty = attr_ty
-        self.attr_value = attr_value
-
-
 def implicitDowncastNumericType(
     value: Union[bool, int, float, "Numeric"],
 ) -> Union[bool, int, float, ir.Value]:
     if isinstance(value, Numeric):
+        return value.ir_value()
+    # D1: ``_WatchedM`` is a meta-promotion wrapper used by PyIR to track
+    # primitive reads inside staged CF.  When passed to a constant-emitting
+    # callsite, bake its IR (which records the leaf under the slot so a
+    # later mutation can rewrite it via pyir.load %ref).
+    try:
+        from .pyir_runtime import _WatchedM as _PyIRWatchedM
+    except ImportError:
+        _PyIRWatchedM = None  # type: ignore[misc,assignment]
+    if _PyIRWatchedM is not None and isinstance(value, _PyIRWatchedM):
         return value.ir_value()
     return value
 
@@ -3227,15 +3424,20 @@ __all__ = [
     "Float8E4M3",
     "Float8E4M3FN",
     "Float8E4M3B11FNUZ",
+    "FloatNV8E5M3FNU",
     "Float8E4M3",
     "Float8E8M0FNU",
     "Float4E2M1FN",
     "Float6E2M3FN",
     "Float6E3M2FN",
     "Float4E2M1FNx2",
+    "Float6E2M3FNx4",
+    "Float6E3M2FNx4",
     "as_numeric",
     "align",
     "AddressSpace",
+    "GridConstant",
+    "grid_constant",
     "Pointer",
     "TypedPointer",
     "MemOrdering",
@@ -3255,3 +3457,14 @@ __all__ = [
 ]
 
 
+# =============================================================================
+# Relocated aggregate types
+# =============================================================================
+# ``Array`` lives in base_dsl so it surfaces as ``cutlass.Array`` the same way
+# the numeric types do. Address-space and pointer infrastructure are defined
+# above in this module. This import MUST stay at the bottom: ``array.py`` does
+# ``from .typing import Int32, ...`` at load, so importing it before the classes
+# above are defined would form an intra-base_dsl import cycle.
+from .array import Array as Array  # noqa: E402
+
+__all__ += ["Array"]

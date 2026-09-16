@@ -9,6 +9,8 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from dataclasses import dataclass
+from enum import Enum
 from typing import Optional, Protocol, Sequence, TypeAlias, Union
 
 from cutlass.cutlass_dsl import dsl_user_op
@@ -38,9 +40,76 @@ SkipWaitToken: TypeAlias = Union[bool, ir.Value, _SupportsIrValue]
 OperationTypeSpec: TypeAlias = Union[OperationTypeEnum, Sequence[OperationTypeEnum]]
 
 
+class MbarrierOwner(Enum):
+    """Named mbarrier owner accepted by :class:`PipelineLocale`."""
+
+    ALL = "all"
+    CTA_PAIR_LEADER = "cta_pair_leader"
+    CTA_PAIR_PEER = "cta_pair_peer"
+
+
+MbarrierOwnerSpec: TypeAlias = Union[MbarrierOwner, int]
+
+
+def _format_mbarrier_owner(owner: MbarrierOwnerSpec) -> str:
+    if isinstance(owner, MbarrierOwner):
+        return owner.value
+    if isinstance(owner, int):
+        if owner < 0:
+            raise ValueError(
+                f"cluster-id mbarrier owner must be non-negative, got {owner}"
+            )
+        return str(owner)
+    raise TypeError(
+        "mbarrier owner must be a MbarrierOwner or non-negative cluster id, "
+        f"got {type(owner)}"
+    )
+
+
+@dataclass(frozen=True)
+class PipelineLocale:
+    """Typed builder for a pipeline synchronization locale."""
+
+    _scope: str
+    _full: MbarrierOwnerSpec | None = None
+    _empty: MbarrierOwnerSpec | None = None
+
+    def __post_init__(self) -> None:
+        if self._scope == "cta":
+            if self._full is not None or self._empty is not None:
+                raise ValueError("CTA pipeline locale does not take mbarrier owners")
+            return
+
+        if self._scope == "cluster":
+            if self._full is None or self._empty is None:
+                raise ValueError(
+                    "cluster pipeline locale requires full and empty mbarrier owners"
+                )
+            _format_mbarrier_owner(self._full)
+            _format_mbarrier_owner(self._empty)
+            return
+
+        raise ValueError(f"unknown pipeline locale scope '{self._scope}'")
+
+    @staticmethod
+    def cta() -> "PipelineLocale":
+        return PipelineLocale("cta")
+
+    @staticmethod
+    def cluster(full: MbarrierOwnerSpec, empty: MbarrierOwnerSpec) -> "PipelineLocale":
+        return PipelineLocale("cluster", full, empty)
+
+    def _to_ir_text(self) -> str:
+        if self._scope == "cta":
+            return "cta"
+        assert self._full is not None and self._empty is not None
+        full_text = _format_mbarrier_owner(self._full)
+        empty_text = _format_mbarrier_owner(self._empty)
+        return f"cluster<{full_text}, {empty_text}>"
+
+
 def _format_operation_types(spec: OperationTypeSpec) -> str:
-    """Render a single op type or a set of them for a `!lir.pipeline<...>`
-    type string."""
+    """Render a single op type or a set of them for a pipeline type string."""
     if isinstance(spec, OperationTypeEnum):
         return str(spec)
     items = list(spec)
@@ -133,6 +202,28 @@ def _normalize_create_pipeline_arrival_mask(
     return arrival_mask
 
 
+def _pipeline_type_str(
+    stage: int,
+    producer: OperationTypeSpec,
+    consumer: OperationTypeSpec,
+    locale: Optional[PipelineLocale] = None,
+) -> str:
+    """The ``!lir.pipeline<...>`` type string, shared by pipeline creation and
+    the arrival-count query so a query for a pipeline carries exactly the type
+    ``create_pipeline`` builds. Every type-affecting input (the locale and any
+    pipeline mode flags) must be threaded through here so both symbols agree."""
+    if locale is not None and not isinstance(locale, PipelineLocale):
+        raise TypeError(
+            f"Expected `locale` to be a PipelineLocale or None, got {type(locale)}"
+        )
+    producer_str = _format_operation_types(producer)
+    consumer_str = _format_operation_types(consumer)
+    pipeline_type_str = f"!lir.pipeline<{stage}, {producer_str} -> {consumer_str}"
+    if locale is not None:
+        pipeline_type_str += f", {locale._to_ir_text()}"
+    return pipeline_type_str + ">"
+
+
 def _build_pipeline(
     stage: int,
     producer: OperationTypeSpec,
@@ -140,6 +231,7 @@ def _build_pipeline(
     producer_arv_count: cute.Int32,
     consumer_arv_count: cute.Int32,
     arrival_mask: Optional[cute.Int16],
+    locale: Optional[PipelineLocale],
     loc: Optional[ir.Location],
     ip: Optional[ir.InsertionPoint],
 ) -> tuple[PipelineState, PipelineState, PipelineState]:
@@ -148,9 +240,13 @@ def _build_pipeline(
     if isinstance(consumer_arv_count, int):
         consumer_arv_count = cute.Int32(consumer_arv_count)
 
-    producer_str = _format_operation_types(producer)
-    consumer_str = _format_operation_types(consumer)
-    pipeline_type_str = f"!lir.pipeline<{stage}, {producer_str} -> {consumer_str}>"
+    pipeline_type_str = _pipeline_type_str(
+        stage,
+        producer,
+        consumer,
+        locale,
+    )
+
     if arrival_mask is not None:
         if isinstance(arrival_mask, int):
             arrival_mask = cute.Int16(arrival_mask)
@@ -193,6 +289,8 @@ def create_pipeline(
     producer_arv_count: cute.Int32,
     consumer_arv_count: cute.Int32,
     arrival_mask: Optional[cute.Int16] = None,
+    *,
+    locale: Optional[PipelineLocale] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
     **compat_kwargs: object,
@@ -212,6 +310,8 @@ def create_pipeline(
         arrival_mask: Optional arrival mask for multi-CTA synchronization
             (2SM or multicast). When provided, creates the pipeline with
             explicit mask-based barrier configuration.
+        locale: Optional explicit pipeline synchronization locale. Use
+            :class:`PipelineLocale` helpers instead of passing raw type grammar.
     """
     arrival_mask = _normalize_create_pipeline_arrival_mask(arrival_mask, compat_kwargs)
     return _build_pipeline(
@@ -221,6 +321,7 @@ def create_pipeline(
         producer_arv_count,
         consumer_arv_count,
         arrival_mask,
+        locale,
         loc,
         ip,
     )
@@ -234,6 +335,8 @@ def create_pipeline_with_mask(
     producer_arv_count: cute.Int32,
     consumer_arv_count: cute.Int32,
     arrival_mask: cute.Int16,
+    *,
+    locale: Optional[PipelineLocale] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> tuple[PipelineState, PipelineState, PipelineState]:
@@ -245,9 +348,108 @@ def create_pipeline_with_mask(
         producer_arv_count,
         consumer_arv_count,
         arrival_mask,
+        locale,
         loc,
         ip,
     )
+
+
+@dsl_user_op
+def get_arrival_count(
+    stage: int,
+    producer: OperationTypeSpec,
+    consumer: OperationTypeSpec,
+    *,
+    side: str,
+    # The `int` default is coerced to Int32 in the body (as elsewhere in this
+    # file); the ignore is only for the literal-vs-Int32 default-value check.
+    num_threads_per_cta: cute.Int32 = 1,  # type: ignore[assignment]
+    op_subset: Optional[Sequence[OperationTypeEnum]] = None,
+    elect_one_sync: bool = False,
+    elect_leader_cta: bool = False,
+    fan_in: Optional[cute.Int32] = None,
+    locale: Optional[PipelineLocale] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Int32:
+    """
+    Computes the mbarrier arrival-count contribution of one logical release
+    for one side of a pipeline: ``dedup_arrives * arrives_per_cta * fan_in``
+    (see the ``lir.get_arrival_count`` op documentation for the full
+    semantics). The result feeds ``create_pipeline`` as the producer or
+    consumer arrival count, so clients no longer re-derive the count formula.
+
+    The pipeline is identified by the same ``(stage, producer, consumer)``
+    triple passed to ``create_pipeline``; both build the identical
+    ``!lir.pipeline`` type, which is how the query and the pipeline's own
+    synchronization are guaranteed to agree.
+
+    Args:
+        stage: Number of pipeline stages (as passed to ``create_pipeline``).
+        producer: Producer operation type(s) (as passed to ``create_pipeline``).
+        consumer: Consumer operation type(s) (as passed to ``create_pipeline``).
+        side: ``"producer"`` or ``"consumer"`` -- whose release is queried.
+        num_threads_per_cta: Number of threads per CTA that issue the
+            release op.
+        op_subset: Subset of the side's operation types, for split
+            producers/consumers where one release op covers part of the work.
+            Absent covers the whole side.
+        elect_one_sync: The release elects one thread per warp (mirrors the
+            commit/release ops' flag); ``num_threads_per_cta`` must then be a
+            multiple of the warp size.
+        elect_leader_cta: Only the leader CTA of each CTA pair executes the
+            release (mirrors the commit/release ops' flag).
+        fan_in: Overrides the number of CTAs converging on the barrier where
+            no value is derivable from the pipeline -- required for
+            multicast-masked arrivals (pass the converging-issuer count, e.g.
+            the structural multicast participant count).
+        locale: Must match the value passed to ``create_pipeline`` for this
+            pipeline. The locale changes the inferred signaling topology, so
+            unlike a type-only pipeline mode flag it does affect the count;
+            pass the same locale used to build the pipeline.
+    Returns the contribution of ONE logical arrival. Multiplicity belongs to
+    the caller: invoke once per logical arrival that lands in one phase and
+    sum the results.
+    """
+    if side not in ("producer", "consumer"):
+        raise ValueError(f"side must be 'producer' or 'consumer', got {side!r}")
+    if isinstance(num_threads_per_cta, int):
+        num_threads_per_cta = cute.Int32(num_threads_per_cta)
+    if isinstance(fan_in, int):
+        fan_in = cute.Int32(fan_in)
+
+    pipeline_type = ir.TypeAttr.get(
+        ir.Type.parse(
+            _pipeline_type_str(
+                stage,
+                producer,
+                consumer,
+                locale,
+            )
+        )
+    )
+    side_attr = ir.Attribute.parse(f"#lir.pipeline_side<{side}>")
+    subset_attr = None
+    if op_subset is not None:
+        subset_attr = ir.ArrayAttr.get(
+            [
+                ir.Attribute.parse(f"#core.operation_type<value = {t}>")
+                for t in op_subset
+            ]
+        )
+
+    op = cutlass_lir_ir.GetArrivalCountOp(
+        pipeline_type,
+        side_attr,
+        num_threads_per_cta.ir_value(),
+        op_subset=subset_attr,
+        elect_one_sync=elect_one_sync,
+        elect_leader_cta=elect_leader_cta,
+        fan_in=fan_in.ir_value() if fan_in is not None else None,
+        loc=loc,
+        ip=ip,
+    )
+    return cute.Int32(op.result)
 
 
 @dsl_user_op
@@ -294,6 +496,40 @@ def create_pipeline_state_at(
         ip=ip,
     )
     return op.result
+
+
+@dsl_user_op
+def get_pipeline_produce_phase(
+    state: ir.Value,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Int32:
+    """Return the producer phase carried by a pipeline state."""
+    phase_type = ir.IntegerType.get_signless(32)
+    op = cutlass_lir_ir.GetPipelineProducePhaseOp(
+        pipelineState=state,
+        results=[phase_type],
+        loc=loc,
+        ip=ip,
+    )
+    return cute.Int32(op.phase)
+
+
+@dsl_user_op
+def get_pipeline_consume_phase(
+    state: ir.Value,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Int32:
+    """Return the consumer phase carried by a pipeline state."""
+    phase_type = ir.IntegerType.get_signless(32)
+    op = cutlass_lir_ir.GetPipelineConsumePhaseOp(
+        pipelineState=state,
+        results=[phase_type],
+        loc=loc,
+        ip=ip,
+    )
+    return cute.Int32(op.phase)
 
 
 @dsl_user_op

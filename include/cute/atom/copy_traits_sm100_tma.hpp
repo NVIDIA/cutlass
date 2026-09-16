@@ -744,7 +744,7 @@ make_tma_atom_A_sm100(CopyOp                  const& copy_op,
 
 #if 0
   print("(tma_a) slayout:      "); print(slayout);      print("\n");
-  print("(tma_a) mma_tiler_nk: "); print(mma_tiler_nk); print("\n");
+  print("(tma_a) mma_tiler_mk: "); print(mma_tiler_mk); print("\n");
   print("(tma_a) g_tile:       "); print(g_tile);       print("\n");
   print("(tma_a) mma_tiler:    "); print(mma_tiler);    print("\n");
   print("(tma_a) cta_v_tile:   "); print(cta_v_tile);   print("\n");

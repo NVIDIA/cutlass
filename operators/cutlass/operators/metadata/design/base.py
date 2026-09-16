@@ -107,3 +107,19 @@ class BLASDesignMetadata(DesignMetadata):
                 "BLASDesignMetadata does not yet support performance controls"
             )
         return Status.success()
+
+    def __post_init__(self):
+        if len(self.tile_shape) != 3:
+            raise ValueError(f"tile_shape must have rank 3, got {self.tile_shape}")
+        if any(dim <= 0 for dim in self.tile_shape):
+            raise ValueError(
+                f"tile_shape dimensions must be positive, got {self.tile_shape}"
+            )
+        if len(self.cluster_shape) != 3:
+            raise ValueError(
+                f"cluster_shape must have rank 3, got {self.cluster_shape}"
+            )
+        if any(dim <= 0 for dim in self.cluster_shape):
+            raise ValueError(
+                f"cluster_shape dimensions must be positive, got {self.cluster_shape}"
+            )

@@ -32,6 +32,7 @@
 #pragma once
 
 #include <cute/arch/config.hpp>
+#include <cute/arch/tmem_capacity_sm100.hpp>
 #include <cute/arch/util.hpp>
 #include <cute/numeric/integral_constant.hpp>
 #include <cute/pointer.hpp>
@@ -41,9 +42,6 @@ namespace cute::TMEM {
 //
 // TMEM Addressing Constants
 //
-
-// 128 DP x 512 COL x uint32_t-addressing
-using MAX_CAPACITY_BITS = Int<128*512*32>;
 
 // TMEM DP stride in bit-addressing (shift by 5 for conversion from uint32_t)
 using DP_b = cute::constant<int32_t, (1 << 21)>;
@@ -60,13 +58,15 @@ using DP = cute::constant<int32_t, shiftl((1 << 16), tmem_ptr<T>::OffsetShift)>;
 class Allocator1Sm {
 public:
   static constexpr int ColumnsPerAllocationSlice = 32;
-  static constexpr int Sm100TmemCapacityColumns = 512;
 
   __device__ Allocator1Sm() { }
 
   /**
    * Performs a non-blocking allocation of TMEM.
-   * @param num_columns Number of columns being freed. Must be 32 <= num_columns <= 512 and power of 2.
+   * @param num_columns Number of columns to allocate/free.
+   *        Base instruction: power-of-2 in [32, 512].
+   *        SM107 exclusive path (when CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED):
+   *        any multiple of 32 up to 576.
    * @param dst_ptr Pointer to shared memory to which to write the result tmem pointer to.
    * @pre Must be issued by a single fully active warp of the CTA.
    * @pre Must never be issued by more than one warp at the same time.
@@ -76,25 +76,53 @@ public:
   allocate(int num_columns, uint32_t* dst_ptr) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
     uint32_t dst_intptr = cute::cast_smem_ptr_to_uint(dst_ptr);
+  #if defined(CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED)
+    asm volatile(
+      "tcgen05.alloc.exclusive.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
+      :
+      : "r"(dst_intptr), "r"(num_columns));
+  #else
     asm volatile(
       "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
       :
       : "r"(dst_intptr), "r"(num_columns));
+  #endif
   #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use TMEM allocation PTX without CUTE_ARCH_TCGEN05_TMEM_ENABLED");
   #endif
   }
 
+  /**
+   * Frees the TMEM corresponding to the pointer and slice count provided.
+   * Release the TMEM after checking that the CTA issuing the free does indeed own the corresponding slices.
+   * @param tmem_ptr Base address of the TMEM address space being freed.
+   * @param num_columns Number of columns to allocate/free.
+   *        Base instruction: power-of-2 in [32, 512].
+   *        SM107 exclusive path (when CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED):
+   *        any multiple of 32 up to 576.
+   * @pre Must be issued by a single fully active warp of the CTA.
+   * @pre Must never be issued by more than one warp at the same time.
+   * @returns true
+  **/
   __device__
   void
   free(uint32_t tmem_ptr, int num_columns) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
+  #if defined(CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED)
+    asm volatile(
+      "{\n\t"
+      "tcgen05.dealloc.exclusive.cta_group::1.sync.aligned.b32  %0, %1; \n\t"
+      "}"
+      :
+      : "r"(tmem_ptr), "r"(num_columns));
+  #else
     asm volatile(
       "{\n\t"
       "tcgen05.dealloc.cta_group::1.sync.aligned.b32  %0, %1; \n\t"
       "}"
       :
       : "r"(tmem_ptr), "r"(num_columns));
+  #endif
   #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use TMEM allocation PTX without CUTE_ARCH_TCGEN05_TMEM_ENABLED");
   #endif
@@ -117,13 +145,15 @@ public:
 class Allocator2Sm {
 public:
   static constexpr int ColumnsPerAllocationSlice = 32;
-  static constexpr int Sm100TmemCapacityColumns = 512;
 
   __device__ Allocator2Sm() { }
 
   /**
    * Performs a non-blocking allocation of TMEM.
-   * @param num_columns Number of columns being freed. Must be 32 <= num_columns <= 512 and power of 2.
+   * @param num_columns Number of columns to allocate/free.
+   *        Base instruction: power-of-2 in [32, 512].
+   *        SM107 exclusive path (when CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED):
+   *        any multiple of 32 up to 576.
    * @param dst_ptr Pointer to shared memory to which to write the result tmem pointer to.
    *   Both CTAs _must_ provide the exact same dst_ptr for correctness.
    * @pre Must be issued by a single fully active warp of the CTA.
@@ -135,10 +165,17 @@ public:
   allocate(int num_columns, uint32_t* dst_ptr) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
     uint32_t dst_intptr = cute::cast_smem_ptr_to_uint(dst_ptr);
+  #if defined(CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED)
+    asm volatile(
+      "tcgen05.alloc.exclusive.cta_group::2.sync.aligned.shared::cta.b32 [%0], %1;"
+      :
+      : "r"(dst_intptr), "r"(num_columns));
+  #else
     asm volatile(
       "tcgen05.alloc.cta_group::2.sync.aligned.shared::cta.b32 [%0], %1;"
       :
       : "r"(dst_intptr), "r"(num_columns));
+  #endif
   #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use TMEM allocation PTX without CUTE_ARCH_TCGEN05_TMEM_ENABLED");
   #endif
@@ -148,7 +185,10 @@ public:
    * Frees the TMEM corresponding to the pointer and slice count provided.
    * Release the TMEM after checking that the CTA issuing the free does indeed own the corresponding slices.
    * @param tmem_ptr Base address of the TMEM address space being freed.
-   * @param num_columns Number of columns being freed. Must be 32 <= num_columns <= 512 and power of 2.
+   * @param num_columns Number of columns to allocate/free.
+   *        Base instruction: power-of-2 in [32, 512].
+   *        SM107 exclusive path (when CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED):
+   *        any multiple of 32 up to 576.
    * @pre Must be issued by a single fully active warp of the CTA.
    * @pre Must never be issued by more than one warp at the same time.
    * @pre The 2 warps from participating CTAs have the same logical warp ID.
@@ -158,12 +198,21 @@ public:
   void
   free(uint32_t tmem_ptr, int num_columns) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
+  #if defined(CUTE_ARCH_TCGEN05_TMEM_EXCLUSIVE_ENABLED)
+    asm volatile(
+      "{\n\t"
+      "tcgen05.dealloc.exclusive.cta_group::2.sync.aligned.b32  %0, %1; \n\t"
+      "}"
+      :
+      : "r"(tmem_ptr), "r"(num_columns));
+  #else
     asm volatile(
       "{\n\t"
       "tcgen05.dealloc.cta_group::2.sync.aligned.b32  %0, %1; \n\t"
       "}"
       :
       : "r"(tmem_ptr), "r"(num_columns));
+  #endif
   #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use TMEM allocation PTX without CUTE_ARCH_TCGEN05_TMEM_ENABLED");
   #endif

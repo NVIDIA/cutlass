@@ -30,17 +30,34 @@
 Unit tests for assert_close_with_reference_conversion function. Does not require GPU.
 """
 
+import sys
+
+import pytest
+
+# Several tests here use jax.numpy and jax is unavailable on Python < 3.11
+if sys.version_info < (3, 11):
+    pytest.skip(
+        "JAX is unavailable on Python < 3.11",
+        allow_module_level=True,
+    )
+
 import jax.numpy as jnp
 import numpy as np
-import pytest
 import torch
 
 import cutlass
 
-from test_utils.reference_check import ClampMode, assert_close_with_reference_conversion
+from cutlass.operators.arguments import GemmArguments
+
+from test_utils.reference_check import (
+    ClampMode,
+    GemmReferenceTolerances,
+    assert_close_with_reference_conversion,
+    gemm_reference_tolerances,
+)
 
 
-class TestAssertCloseWithReferenceConversionTorch:
+class TestTorchAssertCloseWithReferenceConversion:
     def test_basic_float32_match(self):
         """Test basic comparison with matching float32 tensors."""
         reference = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
@@ -222,7 +239,7 @@ class TestAssertCloseWithReferenceConversionTorch:
             )
 
 
-class TestAssertCloseWithReferenceConversionNumpy:
+class TestNumpyAssertCloseWithReferenceConversion:
     def test_np_array_basic(self):
         """Test basic comparison with numpy arrays."""
         reference = np.array([1.0, 2.0, 3.0], dtype=np.float32)
@@ -278,7 +295,7 @@ class TestAssertCloseWithReferenceConversionNumpy:
             )
 
 
-class TestAssertCloseWithReferenceConversionJax:
+class TestJaxAssertCloseWithReferenceConversion:
     def test_jax_array_float8_e4m3fn_with_cutlass_dtype(self):
         """Test jax float8_e4m3fn arrays with cutlass.Float8E4M3FN output dtype."""
         reference = jnp.array([1.0, -1.0, 0.5], dtype=jnp.float32)
@@ -304,7 +321,7 @@ class TestAssertCloseWithReferenceConversionJax:
         )
 
 
-class TestAssertCloseWithReferenceConversionEdgeCases:
+class TestEdgeCasesAssertCloseWithReferenceConversion:
     def test_none_rtols_atols_defaults(self):
         """Test that None rtols/atols default to 0.0."""
         reference = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
@@ -475,3 +492,47 @@ class TestAssertCloseWithReferenceConversionEdgeCases:
         assert_close_with_reference_conversion(
             result, reference, output_dtypes=cutlass.Float32
         )
+
+
+def _make_gemm_args(K: int, accumulator_type) -> GemmArguments:
+    """Minimal GEMM problem with contraction dimension ``K``, for tolerance tests."""
+    A = torch.empty((8, K), dtype=torch.float16)
+    B = torch.empty((K, 8), dtype=torch.float16)
+    out = torch.empty((8, 8), dtype=torch.float16)
+    return GemmArguments(A, B, out, accumulator_type=accumulator_type)
+
+
+class TestGemmReferenceTolerances:
+    def test_integer_accumulator_dtype(self):
+        """Integer accumulator dtypes should have exact tolerances."""
+        args = _make_gemm_args(K=1024, accumulator_type=cutlass.Int32)
+        assert gemm_reference_tolerances(args) == GemmReferenceTolerances(
+            rtol=0.0, atol=0.0
+        )
+
+    def test_k_below_threshold_is_exact(self):
+        """Below K=512, no accumulation error is expected, so tolerances are exact."""
+        args = _make_gemm_args(K=511, accumulator_type=cutlass.Float16)
+        assert gemm_reference_tolerances(args) == GemmReferenceTolerances(
+            rtol=0.0, atol=0.0
+        )
+
+    def test_k_at_threshold(self):
+        """K=512 is the documented anchor point where rtol starts at 0.001."""
+        args = _make_gemm_args(K=512, accumulator_type=cutlass.Float16)
+        tol = gemm_reference_tolerances(args)
+        assert tol.atol == 0.0
+        assert tol.rtol == pytest.approx(0.001, rel=1e-6)
+
+    def test_k_above_threshold_grows(self):
+        """rtol grows past its K=512 base value as K increases further."""
+        args = _make_gemm_args(K=1500, accumulator_type=cutlass.Float16)
+        tol = gemm_reference_tolerances(args)
+        assert tol.rtol > 0.001
+
+    def test_fp16_accumulator_looser_than_fp32(self):
+        """fp16's larger ULP should recommend a looser rtol than fp32 at the same K."""
+        K = 1500
+        fp16_tol = gemm_reference_tolerances(_make_gemm_args(K, cutlass.Float16))
+        fp32_tol = gemm_reference_tolerances(_make_gemm_args(K, cutlass.Float32))
+        assert fp16_tol.rtol > fp32_tol.rtol

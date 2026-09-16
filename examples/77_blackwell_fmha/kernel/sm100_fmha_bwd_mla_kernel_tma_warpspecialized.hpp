@@ -76,8 +76,10 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
     static constexpr uint32_t kTotal = kDQ + TileShapeDQK{};
   };
 
+  using ArchTag = cutlass::arch::Sm100;
+
   static_assert(
-      static_cast<int>(TmemAllocation::kTotal) <= TmemAllocator::Sm100TmemCapacityColumns,
+      static_cast<int>(TmemAllocation::kTotal) <= ArchTag::kTmemCapacityColumns,
       "using too much tmem"
   );
 
@@ -107,8 +109,6 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
 
     static_assert(kWarpgroup0 + 2 * kWarpgroup1 + kWarpgroup2 <= 512);
   };
-
-  using ArchTag = cutlass::arch::Sm100;
 
   using ClusterShape = Shape<_1, _1, _1>;
   using Schedule = cutlass::gemm::KernelTmaWarpSpecialized1SmSm100;
@@ -1732,7 +1732,7 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
     else if (role == WarpRole::Mma) {
       warpgroup_reg_set<RegisterAllocation::kMma>();
 
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
 
       mma(
@@ -1781,7 +1781,7 @@ struct Sm100FmhaBwdMlaKernelTmaWarpSpecialized {
 
       if (warp_idx % kNumComputeWarps == 0) {
         uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-        tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+        tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
       }
 
     }

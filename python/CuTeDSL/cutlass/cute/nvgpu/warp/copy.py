@@ -14,11 +14,10 @@ from typing import Any, Type
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir import ir
-
-from ..common import OpError
 from ...core import _pack_shape
 from ...typing import Numeric, Optional
 from ...atom import CopyOp, Trait, make_atom
+from cutlass.cutlass_dsl import DSLUserCodeError
 
 
 @dataclass(frozen=True)
@@ -35,8 +34,7 @@ class BaseOp(CopyOp):
 
     def __post_init__(self) -> None:
         if not isinstance(self.transpose, bool):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'transpose' Op parameter to be a bool instance",
             )
 
@@ -64,12 +62,11 @@ class LdMatrix8x8x16bOp(BaseOp):
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.num_matrices not in [1, 2, 4]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
         if self.unpack_bits is not None:
-            raise OpError(self, "Op doesn't support unpacking")
+            raise DSLUserCodeError("Op doesn't support unpacking")
 
     def _make_trait(
         self,
@@ -110,14 +107,13 @@ class LdMatrix8x16x8bOp(BaseOp):
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.transpose:
-            raise OpError(self, "Op doesn't support transpose")
+            raise DSLUserCodeError("Op doesn't support transpose")
         if self.num_matrices not in [1, 2, 4]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
         if self.unpack_bits not in [None, 4, 6]:
-            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
+            raise DSLUserCodeError("Op unpack bits must be 4 or 6 or None")
 
     def _make_trait(
         self,
@@ -166,14 +162,13 @@ class LdMatrix16x8x8bOp(BaseOp):
     def __post_init__(self) -> None:
         super().__post_init__()
         if not self.transpose:
-            raise OpError(self, "Op only supports transpose")
+            raise DSLUserCodeError("Op only supports transpose")
         if self.num_matrices not in [2, 4]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'num_matrices' Op parameter to be one of [2,4]",
             )
         if self.unpack_bits not in [None, 4, 6]:
-            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
+            raise DSLUserCodeError("Op unpack bits must be 4 or 6 or None")
 
     def _make_trait(
         self,
@@ -219,14 +214,13 @@ class LdMatrix16x16x8bOp(BaseOp):
     def __post_init__(self) -> None:
         super().__post_init__()
         if not self.transpose:
-            raise OpError(self, "Op only supports transpose")
+            raise DSLUserCodeError("Op only supports transpose")
         if self.num_matrices not in [1, 2]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'num_matrices' Op parameter to be one of [1,2]",
             )
         if self.unpack_bits not in [None, 4, 6]:
-            raise OpError(self, "Op unpack bits must be 4 or 6 or None")
+            raise DSLUserCodeError("Op unpack bits must be 4 or 6 or None")
 
     def _make_trait(
         self,
@@ -270,12 +264,11 @@ class StMatrix8x8x16bOp(BaseOp):
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.num_matrices not in [1, 2, 4]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
         if self.unpack_bits is not None:
-            raise OpError(self, "Op doesn't support unpacking")
+            raise DSLUserCodeError("Op doesn't support unpacking")
 
     def _make_trait(
         self,
@@ -313,14 +306,13 @@ class StMatrix16x8x8bOp(BaseOp):
     def __post_init__(self) -> None:
         super().__post_init__()
         if not self.transpose:
-            raise OpError(self, "Op only supports transpose")
+            raise DSLUserCodeError("Op only supports transpose")
         if self.num_matrices not in [1, 2, 4]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'num_matrices' Op parameter to be one of [1,2,4]",
             )
         if self.unpack_bits is not None:
-            raise OpError(self, "Op doesn't support unpacking")
+            raise DSLUserCodeError("Op doesn't support unpacking")
 
     def _make_trait(
         self,

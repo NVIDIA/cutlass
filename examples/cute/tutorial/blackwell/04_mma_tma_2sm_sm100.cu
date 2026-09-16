@@ -244,7 +244,7 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   TmemAllocator tmem_allocator{};
 
   if (elect_one_warp) {
-    tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+    tmem_allocator.allocate(cute::TMEM::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
   }
   __syncthreads(); // Wait for all threads until warp0 allocates TMEM
   tCtAcc.data() = shared_storage.tmem_base_ptr;
@@ -405,7 +405,7 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   // Then deallocate TMEM
   if (elect_one_warp) {
     tmem_allocator.release_allocation_lock();
-    tmem_allocator.free(shared_storage.tmem_base_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+    tmem_allocator.free(shared_storage.tmem_base_ptr, cute::TMEM::Sm100TmemCapacityColumns);
   }
 }
 

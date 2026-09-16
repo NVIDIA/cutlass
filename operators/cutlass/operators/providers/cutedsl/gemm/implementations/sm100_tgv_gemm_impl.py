@@ -58,7 +58,6 @@ import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 
@@ -169,7 +168,7 @@ class TgvGemmKernel:
         # acc_shape: ((Mma_M, Mma_N), NumMma_M, NumMma_N)
         acc_shape = tiled_mma.partition_shape_C((self.cta_m, self.cta_n))
         tCtAcc_fake = tiled_mma.make_fragment_C(acc_shape)
-        self.num_tmem_alloc_cols = utils.get_num_tmem_alloc_cols(tCtAcc_fake)
+        self.num_tmem_alloc_cols = cutlass.memory.get_num_tmem_alloc_cols(tCtAcc_fake)
 
     @cute.jit
     def __call__(
@@ -183,9 +182,13 @@ class TgvGemmKernel:
         self.a_dtype = a.element_type
         self.b_dtype = b.element_type
         self.c_dtype = c.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         self._setup_attributes()
 
@@ -358,7 +361,7 @@ class TgvGemmKernel:
             # Base pointer for TMEM allocation, MMA will write the allocated address here
             tmem_base_ptr: cutlass.Int32
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(SharedStorage)
 
         # Extract barrier pointers from struct
@@ -1037,13 +1040,13 @@ class TgvGemmKernel:
             )
         ]
         # Construct predicate tensor: compare each coordinate with problem shape (M, N, L)
-        # tDpC(t) = true if coordinate is in-bounds, false if out-of-bounds
-        # C++: tDpC(t) = elem_less(tDcC(t), shape(mC))
-        tDpC = cute.make_rmem_tensor(
+        # tDpredC(t) = true if coordinate is in-bounds, false if out-of-bounds
+        # C++: tDpredC(t) = elem_less(tDcC(t), shape(mC))
+        tDpredC = cute.make_rmem_tensor(
             tDcC.shape, cutlass.Boolean
         )  # (CpyD, NumCpy_M, NumCpy_N)
-        for i in range(cute.size(tDpC)):
-            tDpC[i] = cute.elem_less(tDcC[i], mC_mnl.shape)
+        for i in range(cute.size(tDpredC)):
+            tDpredC[i] = cute.elem_less(tDcC[i], mC_mnl.shape)
 
         # ---- Wait for TMA_B to finish ----
         # Initial phase=0, it flips to 1 when TMA_B warp is done
@@ -1080,6 +1083,6 @@ class TgvGemmKernel:
         # Predicated store: rmem -> gmem
         # The store is unfortunately uncoalesced because gmem addresses across threads
         # are not contiguous, but this is acceptable for small batch sizes.
-        # C++: copy_if(tDpC, tDrC, tDgC)
-        # For each element: if tDpC[i] is true, store tDrC[i] to tDgC[i] via stg
-        cute.basic_copy_if(tDpC, tDrC, tDgC)
+        # C++: copy_if(tDpredC, tDrC, tDgC)
+        # For each element: if tDpredC[i] is true, store tDrC[i] to tDgC[i] via stg
+        cute.basic_copy_if(tDpredC, tDrC, tDgC)

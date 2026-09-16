@@ -316,7 +316,7 @@ class ContiguousOffset2D3DGemmDenseKernel:
             barrier_id=3,
             num_threads=self.threads_per_warp,
         )
-        self.num_smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        self.num_smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
         # TMEM offset for final accumulator
         self.tmem_final_offset = 384
 
@@ -489,9 +489,13 @@ class ContiguousOffset2D3DGemmDenseKernel:
         self.a_dtype: type[cutlass.Numeric] = a.element_type
         self.b_dtype: type[cutlass.Numeric] = b.element_type
         self.c_dtype: type[cutlass.Numeric] = c.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # Setup group count
         self.group_count = b.shape[2]
@@ -668,8 +672,7 @@ class ContiguousOffset2D3DGemmDenseKernel:
         tile_sched_params: scheduler_utils.PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
-        """GPU device kernel performing the Persistent batched GEMM computation.
-        """
+        """GPU device kernel performing the Persistent batched GEMM computation."""
         warp_idx = cute.arch.warp_idx()
         warp_idx = cute.arch.make_warp_uniform(warp_idx)
         lane_idx = cute.arch.lane_idx()
@@ -703,7 +706,7 @@ class ContiguousOffset2D3DGemmDenseKernel:
         #
         # Alloc and init: a+b full/empty, accumulator full/empty, tensor memory dealloc barrier
         #
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
@@ -757,7 +760,7 @@ class ContiguousOffset2D3DGemmDenseKernel:
         )
 
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_alloc_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
@@ -1700,7 +1703,7 @@ class ContiguousOffset2D3DGemmDenseKernel:
         b_dtype: type[cutlass.Numeric],
         epi_tile: cute.Tile,
         c_dtype: type[cutlass.Numeric],
-        c_layout: utils.LayoutEnum,
+        c_layout: cutlass.tensor_utils.LayoutEnum,
         num_smem_capacity: int,
         occupancy: int,
     ) -> tuple[int, int, int, int]:
@@ -1719,7 +1722,7 @@ class ContiguousOffset2D3DGemmDenseKernel:
         :param c_dtype: Data type of operand C (output).
         :type c_dtype: type[cutlass.Numeric]
         :param c_layout: Layout of operand C.
-        :type c_layout: utils.LayoutEnum
+        :type c_layout: cutlass.tensor_utils.LayoutEnum
         :param num_smem_capacity: Total available shared memory capacity in bytes.
         :type num_smem_capacity: int
         :param occupancy: Target number of CTAs per SM (occupancy).

@@ -1480,14 +1480,15 @@ private:
   static constexpr bool Is1SmMma = is_base_of_v<NoSmemWarpSpecialized1Sm, EpilogueScheduleType>;
   static constexpr bool Is2SmMma = is_base_of_v<NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
   static constexpr bool IsInterleavedComplex = is_complex<ElementAccumulator>::value;
-  static constexpr bool IsFastF32Schedule = is_same_v<FastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
-                                    is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
-  static constexpr bool IsBlockwiseSchedule = is_same_v<BlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
-                                    is_same_v<BlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  static constexpr bool IsFastF32Schedule = is_same_v<FastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                         || is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>
+                                         || is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                         || is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>
+                                         ;
+  static constexpr bool IsBlockwiseSchedule = is_same_v<BlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                           || is_same_v<BlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>
+                                           || is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                           || is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
   // Transform kernels - when dispatching to sm100 nosmem epilogue, go through the default path without EVT support.
   static constexpr bool IsTransformSchedule = IsInterleavedComplex || IsFastF32Schedule || IsBlockwiseSchedule;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");

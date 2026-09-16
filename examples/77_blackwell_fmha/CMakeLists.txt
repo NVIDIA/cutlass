@@ -33,6 +33,7 @@ set_property(
       77_blackwell_fmha_gen.cu
       77_blackwell_mla.cu
       77_blackwell_fmha_bwd.cu
+      77_blackwell_fmha_2bwd.cu
       77_blackwell_mla_fwd.cu
   PROPERTY
       COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0"
@@ -222,6 +223,23 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
     target_include_directories(77_blackwell_fmha_bwd_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(77_blackwell_fmha_bwd_${PREC} PRIVATE ${PREC_MACRO})
     target_compile_options(77_blackwell_fmha_bwd_${PREC} PRIVATE -Xptxas -v)
+
+    cutlass_example_add_executable(
+        77_blackwell_fmha_2bwd_${PREC}
+        77_blackwell_fmha_2bwd.cu
+	TEST_COMMAND_OPTIONS
+	TEST_BASIC
+	TEST_CAUSAL_00
+        TEST_VARLEN
+        TEST_VARLEN_00
+        TEST_VARLEN_01
+        TEST_VARLEN_02
+        TEST_VARLEN_03
+	TEST_GQA
+        )
+    target_include_directories(77_blackwell_fmha_2bwd_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_fmha_2bwd_${PREC} PRIVATE ${PREC_MACRO})
+    target_compile_options(77_blackwell_fmha_2bwd_${PREC} PRIVATE -Xptxas -v)
 
     cutlass_example_add_executable(
         77_blackwell_mla_fwd_${PREC}

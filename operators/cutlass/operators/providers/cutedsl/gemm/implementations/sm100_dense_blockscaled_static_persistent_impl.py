@@ -220,7 +220,7 @@ class PersistentDenseBlockScaledGemmKernel:
             num_threads=self.threads_per_warp
             * len((self.mma_warp_id, *self.epilog_warp_id)),
         )
-        self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
         self.num_tmem_alloc_cols = cute.arch.get_max_tmem_alloc_cols("sm_100")
 
     def _setup_attributes(self):
@@ -402,7 +402,7 @@ class PersistentDenseBlockScaledGemmKernel:
         sfb_ptr: cute.Pointer,
         c_ptr: cute.Pointer,
         layouts: cutlass.Constexpr[
-            tuple[OperandMajorMode, OperandMajorMode, utils.LayoutEnum]
+            tuple[OperandMajorMode, OperandMajorMode, cutlass.tensor_utils.LayoutEnum]
         ],
         problem_mnkl: tuple[int, int, int, int],
         max_active_clusters: cutlass.Constexpr,
@@ -470,7 +470,9 @@ class PersistentDenseBlockScaledGemmKernel:
                 (cute.assume(n, 32), k, l), order=(1, 0, 2)
             )
         c_layout = cute.make_ordered_layout((cute.assume(m, 32), n, l), order=(0, 1, 2))
-        if cutlass.const_expr(self.c_layout == utils.LayoutEnum.ROW_MAJOR):
+        if cutlass.const_expr(
+            self.c_layout == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
+        ):
             c_layout = cute.make_ordered_layout(
                 (m, cute.assume(n, 32), l), order=(1, 0, 2)
             )
@@ -778,7 +780,7 @@ class PersistentDenseBlockScaledGemmKernel:
         #
         # Alloc and init: a+b full/empty, accumulator full/empty, tensor memory dealloc barrier
         #
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
@@ -817,7 +819,7 @@ class PersistentDenseBlockScaledGemmKernel:
         )
 
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_alloc_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
@@ -1733,7 +1735,7 @@ class PersistentDenseBlockScaledGemmKernel:
         b_dtype: type[cutlass.Numeric],
         epi_tile: cute.Tile,
         c_dtype: type[cutlass.Numeric],
-        c_layout: utils.LayoutEnum,
+        c_layout: cutlass.tensor_utils.LayoutEnum,
         sf_dtype: type[cutlass.Numeric],
         sf_vec_size: int,
         smem_capacity: int,
@@ -1754,7 +1756,7 @@ class PersistentDenseBlockScaledGemmKernel:
         :param c_dtype: Data type of operand C (output).
         :type c_dtype: type[cutlass.Numeric]
         :param c_layout: Layout enum of operand C.
-        :type c_layout: utils.LayoutEnum
+        :type c_layout: cutlass.tensor_utils.LayoutEnum
         :param sf_dtype: Data type of Scale factor.
         :type sf_dtype: type[cutlass.Numeric]
         :param sf_vec_size: Scale factor vector size.
@@ -1880,12 +1882,16 @@ class PersistentDenseBlockScaledGemmKernel:
     ) -> bool:
         """Decide whether TMA must use the UNPACK_U8 variant for narrow operands.
 
-        Unpack is required when the operand element widths differ (mxf8f6f4
-        mixed precision, e.g. MXFP4 x MXFP8). A and B must share a uniform
-        byte-per-element SMEM layout for the MMA, so the narrower (sub-byte)
-        operand is unpacked into 1B-per-element containers in SMEM. When both
-        operands share the same width (e.g. f4 x f4 or f8 x f8) TMA can use the
-        natural packed format.
+        Unpack is required when:
+
+        * the operand element widths differ (mxf8f6f4 mixed precision, e.g.
+          MXFP4 x MXFP8 or MXFP8 x MXFP6), or
+        * either operand is 6-bit (FP6 pairs always use UNPACK_U8).
+
+        A and B must share a uniform byte-per-element SMEM layout for the MMA,
+        so the narrower (sub-byte) operand is unpacked into 1B-per-element
+        containers in SMEM. When both operands share the same non-6-bit width
+        (e.g. f4 x f4 or f8 x f8) TMA can use the natural packed format.
 
         :param a_dtype: Element data type of the A operand
         :type a_dtype: Type[cutlass.Numeric]
@@ -1895,7 +1901,11 @@ class PersistentDenseBlockScaledGemmKernel:
         :return: True if the UNPACK_U8 TMA format must be used, False otherwise
         :rtype: bool
         """
-        return a_dtype.width != b_dtype.width
+        if a_dtype.width != b_dtype.width:
+            return True
+        if a_dtype.width == 6 or b_dtype.width == 6:
+            return True
+        return False
 
     @staticmethod
     def is_valid_dtypes_and_scale_factor_vec_size(
@@ -1908,8 +1918,12 @@ class PersistentDenseBlockScaledGemmKernel:
         """Check if the dtypes and sf_vec_size are valid combinations
 
         Supports same-dtype MXF8 / MXF4 / NVF4 as well as mixed-precision
-        MXFP4 x MXFP8 and MXFP8 x MXFP4, where A and B differ in element type.
-        Mixed-precision inputs use MX scaling (Float8E8M0FNU, sf_vec_size 32).
+        MXFP4 x MXFP8, MXFP8 x MXFP4, and MXFP8E4M3 x MXFP6 (both directions /
+        both FP6 encodings). Mixed-precision inputs use MX scaling
+        (Float8E8M0FNU, sf_vec_size 32).
+
+        FP6 is intentionally restricted to mixed Float8E4M3FN pairs only —
+        FP6 x FP6, FP6 x FP4, and FP6 x Float8E5M2 are not exposed yet.
 
         :param a_dtype: The data type of the A operand
         :type a_dtype: Type[cutlass.Numeric]
@@ -1927,13 +1941,21 @@ class PersistentDenseBlockScaledGemmKernel:
         """
         supported_ab_dtypes = {
             cutlass.Float4E2M1FN,
+            cutlass.Float6E2M3FN,
+            cutlass.Float6E3M2FN,
             cutlass.Float8E5M2,
             cutlass.Float8E4M3FN,
         }
+        fp6_dtypes = {cutlass.Float6E2M3FN, cutlass.Float6E3M2FN}
 
         # Check A/B element types
         if a_dtype not in supported_ab_dtypes or b_dtype not in supported_ab_dtypes:
             return False
+
+        # Operator API FP6 enablement is mixed MXFP8E4M3 x MXFP6 only.
+        if a_dtype in fp6_dtypes or b_dtype in fp6_dtypes:
+            if {a_dtype, b_dtype} - fp6_dtypes != {cutlass.Float8E4M3FN}:
+                return False
 
         # Check valid sf_dtype
         if sf_dtype not in {cutlass.Float8E8M0FNU, cutlass.Float8E4M3FN}:
@@ -1943,8 +1965,8 @@ class PersistentDenseBlockScaledGemmKernel:
         #   * 16 (NVF4 / MXF4 fp4-pair) is only supported for Float4E2M1FN x
         #     Float4E2M1FN.
         #   * 32 (MX scaling) is required for every other A/B combination,
-        #     including mixed MXFP4 x MXFP8, and requires sf_dtype
-        #     Float8E8M0FNU.
+        #     including mixed MXFP4 x MXFP8 and MXFP8 x MXFP6, and requires
+        #     sf_dtype Float8E8M0FNU.
         both_fp4 = a_dtype is cutlass.Float4E2M1FN and b_dtype is cutlass.Float4E2M1FN
         if sf_vec_size == 16:
             if not both_fp4:
@@ -2091,13 +2113,31 @@ class PersistentDenseBlockScaledGemmKernel:
         def check_contigous_16B_alignment(dtype, is_mode0_major, tensor_shape):
             major_mode_idx = 0 if is_mode0_major else 1
             num_major_elements = tensor_shape[major_mode_idx]
-            num_contiguous_elements = 16 * 8 // dtype.width
-            return num_major_elements % num_contiguous_elements == 0
+            # Work in bits so non-byte-aligned widths (e.g. 6-bit) are handled
+            # correctly: ``16 * 8 // dtype.width`` truncates for FP6 (21 instead
+            # of requiring ``K * 6 % 128 == 0``).
+            return (num_major_elements * dtype.width) % (16 * 8) == 0
+
+        def check_contigous_128_alignment(dtype, is_mode0_major, tensor_shape):
+            # UNPACK TMA contiguous-dim requirement applies to sub-byte dtypes.
+            if dtype.width >= 8:
+                return True
+            major_mode_idx = 0 if is_mode0_major else 1
+            num_major_elements = tensor_shape[major_mode_idx]
+            return num_major_elements % 128 == 0
 
         if (
             not check_contigous_16B_alignment(a_dtype, a_major == "m", (m, k, l))
             or not check_contigous_16B_alignment(b_dtype, b_major == "n", (n, k, l))
             or not check_contigous_16B_alignment(c_dtype, c_major == "m", (m, n, l))
+        ):
+            is_valid = False
+
+        # When UNPACK TMA is used, the contiguous dim of each sub-byte operand
+        # must be a multiple of 128 elements (64B for FP4 / 96B for FP6).
+        if PersistentDenseBlockScaledGemmKernel.needs_unpack_tma(a_dtype, b_dtype) and (
+            not check_contigous_128_alignment(a_dtype, a_major == "m", (m, k, l))
+            or not check_contigous_128_alignment(b_dtype, b_major == "n", (n, k, l))
         ):
             is_valid = False
         return is_valid

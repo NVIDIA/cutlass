@@ -12,7 +12,17 @@
 import enum
 import types
 from functools import partial
-from typing import Any, Optional, Tuple, Union, Callable, Literal, Type, overload
+from typing import (
+    Any,
+    Optional,
+    Tuple,
+    Union,
+    Callable,
+    Literal,
+    Type,
+    TypeVar,
+    overload,
+)
 from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import T, dsl_user_op
@@ -37,12 +47,14 @@ from ..typing import (
     Int32,
     Uint32,
     Int64,
+    FloatNV8E5M3FNU,
     Float16,
     Float32,
     BFloat16,
     Numeric,
     Uint64,
     Pointer,
+    Array,
     as_numeric,
 )
 
@@ -84,7 +96,11 @@ class _NvvmAutoConvertProxy:
     def _convert_arg(
         arg: Any, loc: Optional[ir.Location], ip: Optional[ir.InsertionPoint]
     ) -> Any:
-        """Recursively convert DSL objects to ir.Value, including inside lists/tuples."""
+        """Convert DSL objects to ir.Value while preserving Python immediates."""
+        # Python primitive subclasses can expose ir_value(), but NVVM attribute
+        # slots must receive them as compile-time immediates.
+        if isinstance(arg, (bool, int, float)):
+            return arg
         # Check for ir_value method (covers Numeric and other DSL types)
         if hasattr(arg, "ir_value") and callable(arg.ir_value):
             return arg.ir_value(loc=loc, ip=ip)
@@ -139,6 +155,17 @@ class _NvvmAutoConvertProxy:
 
 # Create the proxy instance to replace the raw nvvm module
 nvvm = _NvvmAutoConvertProxy(_nvvm_raw)
+
+_RESULT_TYPE_INFERRED_PACKED_F32X2_OPS = (
+    nvvm.add_packed_f32x2,
+    nvvm.sub_packed_f32x2,
+    nvvm.mul_packed_f32x2,
+    nvvm.fma_packed_f32x2,
+    _nvvm_raw.add_packed_f32x2,
+    _nvvm_raw.sub_packed_f32x2,
+    _nvvm_raw.mul_packed_f32x2,
+    _nvvm_raw.fma_packed_f32x2,
+)
 
 
 # ============================================================================
@@ -323,7 +350,8 @@ def warp_idx(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the warp index within a CTA.
+    Returns the logical warp index within a CTA, computed from the CTA thread
+    index registers.
     """
     tid_x = Int32(nvvm.read_ptx_sreg_tid_x(T.i32(), loc=loc, ip=ip))
     tid_y = Int32(nvvm.read_ptx_sreg_tid_y(T.i32(), loc=loc, ip=ip))
@@ -339,7 +367,12 @@ def physical_warp_id(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the warp identifier.
+    Returns the physical warp slot identifier from the PTX ``%warpid`` special
+    register.
+
+    PTX documents ``%warpid`` as a diagnostic register whose value may change
+    during execution, for example after rescheduling. Use :func:`warp_idx` when
+    kernel code needs a stable logical warp index within a CTA.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-warpid>`__.
     """
@@ -483,7 +516,9 @@ def dynamic_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the launch dynamic smem size.
+    Returns the dynamic shared-memory size requested at launch.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-dynamic-smem-size
     """
     return Int32(nvvm.read_ptx_sreg_dynamic_smem_size(T.i32(), loc=loc, ip=ip))
 
@@ -493,13 +528,15 @@ def total_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the total shared memory reserved for the CTA, in bytes.
+    Returns the ``%total_smem_size`` special-register value for the CTA.
 
-    This is the static plus dynamic shared-memory size for the CTA.
+    PTX defines this as the total statically and dynamically allocated CTA
+    shared memory, excluding the reserved system region, reported in multiples
+    of the target architecture's shared-memory allocation unit.
 
     See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-total-smem-size
 
-    :return: Total CTA shared-memory size in bytes
+    :return: Total CTA shared-memory size in target allocation units
     :rtype: Int32
     """
     return Int32(nvvm.read_ptx_sreg_total_smem_size(T.i32(), loc=loc, ip=ip))
@@ -510,11 +547,14 @@ def aggr_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the aggregate shared memory across the CTA's cluster, in bytes (sm_90+).
+    Returns the ``%aggr_smem_size`` special-register value for the CTA (sm_90+).
+
+    PTX defines this as user shared memory plus the reserved system shared-memory
+    region for the CTA.
 
     See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-aggr-smem-size
 
-    :return: Aggregate cluster shared-memory size in bytes
+    :return: Aggregate CTA shared-memory size
     :rtype: Int32
     """
     return Int32(nvvm.read_ptx_sreg_aggr_smem_size(T.i32(), loc=loc, ip=ip))
@@ -639,7 +679,6 @@ def shuffle_sync_op(
                 T.i32(), value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
             )
             i32_res = nvvm.shfl_sync(
-                T.i32(),
                 Int32(mask).ir_value(loc=loc, ip=ip),
                 i32_val,
                 Int32(offset).ir_value(loc=loc, ip=ip),
@@ -672,7 +711,6 @@ def shuffle_sync_op(
                 value = value.to(Uint32)
         return orig_type(
             nvvm.shfl_sync(
-                type(value).mlir_type,
                 Int32(mask).ir_value(loc=loc, ip=ip),
                 value.ir_value(loc=loc, ip=ip),
                 Int32(offset).ir_value(loc=loc, ip=ip),
@@ -685,7 +723,6 @@ def shuffle_sync_op(
     elif value.width == 32:
         return orig_type(
             nvvm.shfl_sync(
-                type(value).mlir_type,
                 Int32(mask).ir_value(loc=loc, ip=ip),
                 value.ir_value(loc=loc, ip=ip),
                 Int32(offset).ir_value(loc=loc, ip=ip),
@@ -712,7 +749,6 @@ def shuffle_sync_op(
         high_32_bits = arith.trunci(T.i32(), high_32_bits, loc=loc, ip=ip)
 
         low_32_bits_shfl = nvvm.shfl_sync(
-            T.i32(),
             Int32(mask).ir_value(loc=loc, ip=ip),
             low_32_bits,
             Int32(offset).ir_value(loc=loc, ip=ip),
@@ -722,7 +758,6 @@ def shuffle_sync_op(
             ip=ip,
         )
         high_32_bits_shfl = nvvm.shfl_sync(
-            T.i32(),
             Int32(mask).ir_value(loc=loc, ip=ip),
             high_32_bits,
             Int32(offset).ir_value(loc=loc, ip=ip),
@@ -744,7 +779,11 @@ def shuffle_sync_op(
 
 
 shuffle_sync = partial(shuffle_sync_op, kind=nvvm.ShflKind.idx)
-shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up)
+# shfl.up clamps at the *lower* segment boundary, so the packed clamp must be 0
+# (not WARP_SIZE-1). With the generic 31 default every lane's source falls below
+# the bound and keeps its own value (identity). Callers can still override
+# mask_and_clamp for segmented shuffles.
+shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up, mask_and_clamp=0)
 shuffle_sync_down = partial(shuffle_sync_op, kind=nvvm.ShflKind.down)
 shuffle_sync_bfly = partial(shuffle_sync_op, kind=nvvm.ShflKind.bfly)
 
@@ -811,7 +850,6 @@ def barrier(
 
     # TODO: support barrier with reduction result
     nvvm.barrier(
-        res=None,
         barrier_id=barrier_id,
         number_of_threads=number_of_threads,
         loc=loc,
@@ -882,7 +920,7 @@ def sync_threads(
     """
     Synchronizes all threads within a CTA.
     """
-    nvvm.barrier(res=None, loc=loc, ip=ip)
+    nvvm.barrier(loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -1102,7 +1140,6 @@ def vote_sync_op(
 
     return return_type(
         nvvm.vote_sync(
-            T.i32() if kind == "ballot" else T.bool(),
             Int32(mask).ir_value(loc=loc, ip=ip),
             Boolean(pred).ir_value(loc=loc, ip=ip),
             VoteSyncKind.from_str(kind),
@@ -1352,6 +1389,7 @@ def calc_packed_f32x2_op(
     src_c: Optional[Tuple[Float32, Float32]],
     calc_func: Callable,
     *,
+    result_type_inferred: bool = False,
     rnd: Optional[Literal["rn", "rz", "rm", "rp", "none"]] = "rn",
     ftz: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
@@ -1362,6 +1400,8 @@ def calc_packed_f32x2_op(
     # Enhance enum and convert string literal to enum type
     FPRoundingMode = _enhance_enum_with_str_mapping(FPRoundingMode)
     rnd = FPRoundingMode.from_str(rnd)
+    if calc_func in _RESULT_TYPE_INFERRED_PACKED_F32X2_OPS:
+        result_type_inferred = True
 
     vec_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
     vec_src_a = vector.from_elements(
@@ -1383,9 +1423,23 @@ def calc_packed_f32x2_op(
             loc=loc,
             ip=ip,
         )
-        vec_res = calc_func(
-            vec_type, vec_src_a, vec_src_b, vec_src_c, rnd=rnd, ftz=ftz, loc=loc, ip=ip
-        )
+        if result_type_inferred:
+            vec_res = calc_func(
+                vec_src_a, vec_src_b, vec_src_c, rnd=rnd, ftz=ftz, loc=loc, ip=ip
+            )
+        else:
+            vec_res = calc_func(
+                vec_type,
+                vec_src_a,
+                vec_src_b,
+                vec_src_c,
+                rnd=rnd,
+                ftz=ftz,
+                loc=loc,
+                ip=ip,
+            )
+    elif result_type_inferred:
+        vec_res = calc_func(vec_src_a, vec_src_b, rnd=rnd, ftz=ftz, loc=loc, ip=ip)
     else:
         vec_res = calc_func(
             vec_type, vec_src_a, vec_src_b, rnd=rnd, ftz=ftz, loc=loc, ip=ip
@@ -1404,16 +1458,905 @@ def calc_packed_f32x2_op(
     return res0, res1
 
 
-fma_packed_f32x2 = partial(calc_packed_f32x2_op, calc_func=nvvm.fma_packed_f32x2)
+fma_packed_f32x2 = partial(
+    calc_packed_f32x2_op,
+    calc_func=nvvm.fma_packed_f32x2,
+    result_type_inferred=True,
+)
 mul_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.mul_packed_f32x2
+    calc_packed_f32x2_op,
+    src_c=None,
+    calc_func=nvvm.mul_packed_f32x2,
+    result_type_inferred=True,
 )
 add_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
+    calc_packed_f32x2_op,
+    src_c=None,
+    calc_func=nvvm.add_packed_f32x2,
+    result_type_inferred=True,
 )
 sub_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.sub_packed_f32x2
+    calc_packed_f32x2_op,
+    src_c=None,
+    calc_func=nvvm.sub_packed_f32x2,
+    result_type_inferred=True,
 )
+
+
+PackedAddRounding = Optional[Literal["rn", "rz", "rm", "rp", "none"]]
+PackedSubRounding = Optional[Literal["rn", "rz", "rm", "rp", "none"]]
+HalfFmaRounding = Optional[Literal["rn"]]
+_NumericT = TypeVar("_NumericT", bound=Numeric)
+
+
+def _validate_half_add_dtype(dtype: Type[_NumericT]) -> Type[_NumericT]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return dtype
+
+
+def _validate_half_sub_dtype(dtype: Type[_NumericT]) -> Type[_NumericT]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return dtype
+
+
+def _fp_rounding_mode(rnd: PackedAddRounding) -> Any:
+    from cutlass._mlir.dialects.nvvm import FPRoundingMode
+
+    FPRoundingMode = _enhance_enum_with_str_mapping(FPRoundingMode)
+    return FPRoundingMode.from_str(rnd)
+
+
+def _fp_arith_rounding_mode(rnd: HalfFmaRounding) -> Any:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    rnd = "rn" if rnd is None else rnd
+
+    try:
+        from cutlass._mlir.dialects.nvvm import FPArithRoundingMode
+    except ImportError:
+        FPArithRoundingMode = None
+
+    if FPArithRoundingMode is not None:
+        FPArithRoundingMode = _enhance_enum_with_str_mapping(FPArithRoundingMode)
+        return FPArithRoundingMode.from_str(rnd)
+
+    # For nvvm.fma, pass an explicit attribute to avoid relying on missing
+    return ir.Attribute.parse(f"#nvvm.fp_rnd_mode<{rnd}>")
+
+
+def _saturation_mode(sat: Optional[bool]) -> Any:
+    if not sat:
+        return None
+
+    try:
+        from cutlass._mlir.dialects.nvvm import SaturationMode
+    except ImportError:
+        return "sat"
+
+    SaturationMode = _enhance_enum_with_str_mapping(SaturationMode)
+    return SaturationMode.from_str("sat")
+
+
+def _validate_half_fma_dtype(dtype: Type[_NumericT]) -> Type[_NumericT]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return dtype
+
+
+def _validate_half_fma_modifiers(
+    dtype: Type[Numeric],
+    rnd: HalfFmaRounding,
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    relu: Optional[bool],
+    oob: Optional[bool],
+) -> None:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    if sat and relu:
+        raise ValueError("sat and relu cannot be used together for half fma")
+    if dtype is BFloat16:
+        if ftz:
+            raise ValueError("ftz is only supported for f16/f16x2 fma")
+        if sat:
+            raise ValueError("sat is only supported for f16/f16x2 fma")
+    elif dtype is not Float16:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    if oob and (ftz or sat):
+        raise ValueError("oob fma does not support ftz or sat modifiers")
+
+
+def _half_add_ptx_suffix(
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+) -> str:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    suffix = ".rn" if rnd == "rn" else ""
+    if dtype is Float16:
+        suffix += ".ftz" if ftz else ""
+        suffix += ".sat" if sat else ""
+    elif dtype is BFloat16:
+        if ftz:
+            raise ValueError("ftz is only supported for f16/f16x2 add")
+        if sat:
+            raise ValueError("sat is only supported for f16/f16x2 add")
+    else:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return suffix
+
+
+def _half_sub_ptx_suffix(
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+) -> str:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    suffix = ".rn" if rnd == "rn" else ""
+    if dtype is Float16:
+        suffix += ".ftz" if ftz else ""
+        suffix += ".sat" if sat else ""
+    elif dtype is BFloat16:
+        if ftz:
+            raise ValueError("ftz is only supported for f16/f16x2 sub")
+        if sat:
+            raise ValueError("sat is only supported for f16/f16x2 sub")
+    else:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return suffix
+
+
+def _add_packed_half2_ptx(
+    a: Int32,
+    b: Int32,
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    dtype = _validate_half_add_dtype(dtype)
+    ptx_type = "f16x2" if dtype is Float16 else "bf16x2"
+    suffix = _half_add_ptx_suffix(dtype, rnd, ftz, sat)
+    return inline_ptx(
+        f"add{suffix}.{ptx_type} {{$w0}}, {{$r0}}, {{$r1}};",
+        write_only_types=[Int32],
+        read_only_args=[a, b],
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _ensure_tuple2(src: Any, name: str) -> Tuple[Any, Any]:
+    if not isinstance(src, tuple) or len(src) != 2:
+        raise TypeError(f"{name} must be a 2-tuple")
+    return src
+
+
+def _packed_half2_to_vector(
+    packed: Int32,
+    dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> ir.Value:
+    vec_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    return llvm.bitcast(
+        vec_type, Int32(packed).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+    )
+
+
+def _vector_to_packed_half2(
+    vec: ir.Value,
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    return Int32(llvm.bitcast(Int32.mlir_type, vec, loc=loc, ip=ip))
+
+
+def _tuple_to_vec(
+    src: Tuple[Numeric, Numeric],
+    dtype: Type[_NumericT],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> ir.Value:
+    vec_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    return vector.from_elements(
+        vec_type,
+        tuple(
+            dtype(as_numeric(elem).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip)
+            for elem in src
+        ),
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _unpack_vec2(
+    vec: ir.Value,
+    dtype: Type[_NumericT],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Tuple[_NumericT, _NumericT]:
+    return (
+        dtype(
+            vector.extract(
+                vec, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+            )
+        ),
+        dtype(
+            vector.extract(
+                vec, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+            )
+        ),
+    )
+
+
+def _sub_packed_half2_ptx(
+    a: Int32,
+    b: Int32,
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    dtype = _validate_half_sub_dtype(dtype)
+    ptx_type = "f16x2" if dtype is Float16 else "bf16x2"
+    suffix = _half_sub_ptx_suffix(dtype, rnd, ftz, sat)
+    return inline_ptx(
+        f"sub{suffix}.{ptx_type} {{$w0}}, {{$r0}}, {{$r1}};",
+        write_only_types=[Int32],
+        read_only_args=[a, b],
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _add_half2_tuple_ptx(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Numeric, Numeric],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Tuple[Numeric, Numeric]:
+    dtype = _validate_half_add_dtype(dtype)
+    vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_b = _tuple_to_vec(src_b, dtype, loc=loc, ip=ip)
+    packed_a = _vector_to_packed_half2(vec_a, loc=loc, ip=ip)
+    packed_b = _vector_to_packed_half2(vec_b, loc=loc, ip=ip)
+    packed_res = _add_packed_half2_ptx(
+        packed_a,
+        packed_b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+    return _unpack_vec2(
+        _packed_half2_to_vector(packed_res, dtype, loc=loc, ip=ip),
+        dtype,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _sub_half2_tuple_ptx(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Numeric, Numeric],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Tuple[Numeric, Numeric]:
+    dtype = _validate_half_sub_dtype(dtype)
+    vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_b = _tuple_to_vec(src_b, dtype, loc=loc, ip=ip)
+    packed_a = _vector_to_packed_half2(vec_a, loc=loc, ip=ip)
+    packed_b = _vector_to_packed_half2(vec_b, loc=loc, ip=ip)
+    packed_res = _sub_packed_half2_ptx(
+        packed_a,
+        packed_b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+    return _unpack_vec2(
+        _packed_half2_to_vector(packed_res, dtype, loc=loc, ip=ip),
+        dtype,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _fma_scalar_half(
+    a: Numeric,
+    b: Numeric,
+    c: Numeric,
+    *,
+    dtype: Type[_NumericT],
+    rnd: HalfFmaRounding,
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    relu: Optional[bool],
+    oob: Optional[bool],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> _NumericT:
+    dtype = _validate_half_fma_dtype(dtype)
+    _validate_half_fma_modifiers(dtype, rnd, ftz, sat, relu, oob)
+    return dtype(
+        nvvm.fma(
+            dtype(as_numeric(a).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip),
+            dtype(as_numeric(b).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip),
+            dtype(as_numeric(c).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip),
+            _fp_arith_rounding_mode(rnd),
+            sat=_saturation_mode(sat),
+            ftz=ftz,
+            relu=relu,
+            oob=oob,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+def _fma_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    c: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[_NumericT],
+    rnd: HalfFmaRounding,
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    relu: Optional[bool],
+    oob: Optional[bool],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[_NumericT, _NumericT]]:
+    dtype = _validate_half_fma_dtype(dtype)
+    _validate_half_fma_modifiers(dtype, rnd, ftz, sat, relu, oob)
+    if isinstance(a, tuple) or isinstance(b, tuple) or isinstance(c, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        src_b = _ensure_tuple2(b, "b")
+        src_c = _ensure_tuple2(c, "c")
+        vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+        vec_b = _tuple_to_vec(src_b, dtype, loc=loc, ip=ip)
+        vec_c = _tuple_to_vec(src_c, dtype, loc=loc, ip=ip)
+        vec_res = nvvm.fma(
+            vec_a,
+            vec_b,
+            vec_c,
+            _fp_arith_rounding_mode(rnd),
+            sat=_saturation_mode(sat),
+            ftz=ftz,
+            relu=relu,
+            oob=oob,
+            loc=loc,
+            ip=ip,
+        )
+        return _unpack_vec2(vec_res, dtype, loc=loc, ip=ip)
+
+    vec_res = nvvm.fma(
+        _packed_half2_to_vector(a, dtype, loc=loc, ip=ip),
+        _packed_half2_to_vector(b, dtype, loc=loc, ip=ip),
+        _packed_half2_to_vector(c, dtype, loc=loc, ip=ip),
+        _fp_arith_rounding_mode(rnd),
+        sat=_saturation_mode(sat),
+        ftz=ftz,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+    return _vector_to_packed_half2(vec_res, loc=loc, ip=ip)
+
+
+def _add_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        src_b = _ensure_tuple2(b, "b")
+        return _add_half2_tuple_ptx(
+            src_a,
+            src_b,
+            dtype=dtype,
+            rnd=rnd,
+            ftz=ftz,
+            sat=sat,
+            predicate=predicate,
+            loc=loc,
+            ip=ip,
+        )
+    return _add_packed_half2_ptx(
+        a,
+        b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _sub_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        src_b = _ensure_tuple2(b, "b")
+        return _sub_half2_tuple_ptx(
+            src_a,
+            src_b,
+            dtype=dtype,
+            rnd=rnd,
+            ftz=ftz,
+            sat=sat,
+            predicate=predicate,
+            loc=loc,
+            ip=ip,
+        )
+    return _sub_packed_half2_ptx(
+        a,
+        b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def _add_f32x2_to_half2(
+    src_a: Tuple[Float32, Float32],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[_NumericT],
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[_NumericT, _NumericT]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    dtype = _validate_half_add_dtype(dtype)
+    vec_src_a = _tuple_to_vec(src_a, Float32, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    vec_res = calc_func(vec_res_type, vec_src_a, vec_src_b, loc=loc, ip=ip)
+    return _unpack_vec2(vec_res, dtype, loc=loc, ip=ip)
+
+
+add_packed_f16x2_f32x2_f32x2 = partial(
+    _add_f32x2_to_half2,
+    calc_func=nvvm.add_packed_f16x2_f32x2_f32x2,
+    dtype=Float16,
+)
+add_packed_bf16x2_f32x2_f32x2 = partial(
+    _add_f32x2_to_half2,
+    calc_func=nvvm.add_packed_bf16x2_f32x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _sub_f32x2_to_half2(
+    src_a: Tuple[Float32, Float32],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[_NumericT],
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[_NumericT, _NumericT]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    dtype = _validate_half_sub_dtype(dtype)
+    vec_src_a = _tuple_to_vec(src_a, Float32, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    vec_res = calc_func(vec_res_type, vec_src_a, vec_src_b, loc=loc, ip=ip)
+    return _unpack_vec2(vec_res, dtype, loc=loc, ip=ip)
+
+
+sub_packed_f16x2_f32x2_f32x2 = partial(
+    _sub_f32x2_to_half2,
+    calc_func=nvvm.sub_packed_f16x2_f32x2_f32x2,
+    dtype=Float16,
+)
+sub_packed_bf16x2_f32x2_f32x2 = partial(
+    _sub_f32x2_to_half2,
+    calc_func=nvvm.sub_packed_bf16x2_f32x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _fma_half2_f32x2_f32x2_to_f32x2(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Float32, Float32],
+    src_c: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[Numeric],
+    rnd: PackedAddRounding = "rn",
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    src_c = _ensure_tuple2(src_c, "src_c")
+    vec_src_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_src_c = _tuple_to_vec(src_c, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    vec_res = calc_func(
+        vec_res_type,
+        vec_src_a,
+        vec_src_b,
+        vec_src_c,
+        rnd=_fp_rounding_mode(rnd),
+        loc=loc,
+        ip=ip,
+    )
+    return _unpack_vec2(vec_res, Float32, loc=loc, ip=ip)
+
+
+fma_packed_f32x2_f16x2_f32x2_f32x2 = partial(
+    _fma_half2_f32x2_f32x2_to_f32x2,
+    calc_func=nvvm.fma_packed_f32x2_f16x2_f32x2_f32x2,
+    dtype=Float16,
+)
+fma_packed_f32x2_bf16x2_f32x2_f32x2 = partial(
+    _fma_half2_f32x2_f32x2_to_f32x2,
+    calc_func=nvvm.fma_packed_f32x2_bf16x2_f32x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _add_half2_f32x2_to_f32x2(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[Numeric],
+    rnd: PackedAddRounding = "rn",
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    vec_src_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    vec_res = calc_func(
+        vec_res_type, vec_src_a, vec_src_b, rnd=_fp_rounding_mode(rnd), loc=loc, ip=ip
+    )
+    return _unpack_vec2(vec_res, Float32, loc=loc, ip=ip)
+
+
+add_packed_f32x2_f16x2_f32x2 = partial(
+    _add_half2_f32x2_to_f32x2,
+    calc_func=nvvm.add_packed_f32x2_f16x2_f32x2,
+    dtype=Float16,
+)
+add_packed_f32x2_bf16x2_f32x2 = partial(
+    _add_half2_f32x2_to_f32x2,
+    calc_func=nvvm.add_packed_f32x2_bf16x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _sub_half2_f32x2_to_f32x2(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[Numeric],
+    rnd: PackedSubRounding = "rn",
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    vec_src_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    vec_res = calc_func(
+        vec_res_type, vec_src_a, vec_src_b, rnd=_fp_rounding_mode(rnd), loc=loc, ip=ip
+    )
+    return _unpack_vec2(vec_res, Float32, loc=loc, ip=ip)
+
+
+sub_packed_f32x2_f16x2_f32x2 = partial(
+    _sub_half2_f32x2_to_f32x2,
+    calc_func=nvvm.sub_packed_f32x2_f16x2_f32x2,
+    dtype=Float16,
+)
+sub_packed_f32x2_bf16x2_f32x2 = partial(
+    _sub_half2_f32x2_to_f32x2,
+    calc_func=nvvm.sub_packed_f32x2_bf16x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def add_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Add packed f16x2 values with PTX ``add{.rnd}{.ftz}{.sat}.f16x2``."""
+    return _add_packed_half2(
+        a,
+        b,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def add_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Add packed bf16x2 values with PTX ``add{.rnd}.bf16x2``."""
+    return _add_packed_half2(
+        a,
+        b,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=None,
+        sat=None,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_f16(
+    a: Numeric,
+    b: Numeric,
+    c: Numeric,
+    *,
+    rnd: HalfFmaRounding = "rn",
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Float16:
+    """Fused multiply-add for f16 values via ``nvvm.fma``."""
+    return _fma_scalar_half(
+        a,
+        b,
+        c,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_bf16(
+    a: Numeric,
+    b: Numeric,
+    c: Numeric,
+    *,
+    rnd: HalfFmaRounding = "rn",
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> BFloat16:
+    """Fused multiply-add for bf16 values via ``nvvm.fma``."""
+    return _fma_scalar_half(
+        a,
+        b,
+        c,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=None,
+        sat=None,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    c: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: HalfFmaRounding = "rn",
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Float16, Float16]]:
+    """Fused multiply-add for packed f16x2 values via ``nvvm.fma``."""
+    return _fma_packed_half2(
+        a,
+        b,
+        c,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    c: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: HalfFmaRounding = "rn",
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[BFloat16, BFloat16]]:
+    """Fused multiply-add for packed bf16x2 values via ``nvvm.fma``."""
+    return _fma_packed_half2(
+        a,
+        b,
+        c,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=None,
+        sat=None,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sub_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Subtract packed f16x2 values with PTX `sub{.rn}{.ftz}{.sat}.f16x2`."""
+
+    return _sub_packed_half2(
+        a,
+        b,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sub_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Subtract packed bf16x2 values with PTX `sub{.rn}.bf16x2`."""
+
+    return _sub_packed_half2(
+        a,
+        b,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -2364,7 +3307,7 @@ def griddepcontrol_wait(
         res=None,
         operands_=[],
         asm_string="griddepcontrol.wait;",
-        constraints="",
+        constraints="~{memory}",
         has_side_effects=True,
         asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
@@ -2386,7 +3329,7 @@ def griddepcontrol_launch_dependents(
         res=None,
         operands_=[],
         asm_string="griddepcontrol.launch_dependents;",
-        constraints="",
+        constraints="~{memory}",
         has_side_effects=True,
         asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
@@ -2689,6 +3632,7 @@ def _atomic(
         loc=loc,
         ip=ip,
     )
+
     # Return raw result for vectors, wrapped for scalars
     return result if is_vector else val_type(result)
 
@@ -2902,7 +3846,10 @@ def atomic_fmax(
     :type ptr: Union[ir.Value, Pointer]
     :param val: Value to combine with memory.
     :type val: Float32
-    :param sign_bit: Known sign bit of ``val``, defaults to None.
+    :param sign_bit: Known sign bit of ``val``, defaults to None. WARNING: if
+        provided, it MUST match ``val``'s actual sign — a wrong value silently
+        produces incorrect results (no type error). Leave as None unless the
+        sign is a compile-time constant.
     :type sign_bit: Optional[bool], optional
     :param sem: Memory semantic, defaults to None.
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]], optional
@@ -2960,7 +3907,10 @@ def atomic_fmin(
     :type ptr: Union[ir.Value, Pointer]
     :param val: Value to combine with memory.
     :type val: Float32
-    :param sign_bit: Known sign bit of ``val``, defaults to None.
+    :param sign_bit: Known sign bit of ``val``, defaults to None. WARNING: if
+        provided, it MUST match ``val``'s actual sign — a wrong value silently
+        produces incorrect results (no type error). Leave as None unless the
+        sign is a compile-time constant.
     :type sign_bit: Optional[bool], optional
     :param sem: Memory semantic, defaults to None.
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]], optional
@@ -3065,7 +4015,6 @@ def atomic_cas(
     cmp_ir = cmp.ir_value(loc=loc, ip=ip)
     val_ir = val.ir_value(loc=loc, ip=ip)
 
-    # * NVVM call based on nvvm version
     result = nvvm.atomicrmw(
         op=AtomicOpKind.CAS,
         ptr=ptr,
@@ -3076,6 +4025,7 @@ def atomic_cas(
         loc=loc,
         ip=ip,
     )
+
     return cmp_type(result)
 
 
@@ -3546,6 +4496,88 @@ def cvt_f4e2m1x8_to_f16x8(
     return vec_f16x8
 
 
+@dsl_user_op
+def cvt_f32x4_to_fnv8e5m3x4(
+    src_vec_f32: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    #  +-----------------------------------------------+
+    #  |   [ 0 ]   |   [ 1 ]   |   [ 2 ]   |   [ 3 ]   |
+    #  |   src0    |   src1    |   src2    |   src3    |
+    #  +-----------+-----------+-----------+-----------+
+    #  |       res0_i8x2       |       res1_i8x2       |
+    #  +-----------+-----------+-----------+-----------+
+    #  |        res0_i16       |       res1_i16        |
+    #  +-----------+-----------+-----------+-----------+
+    #  |                    res_i32                    |
+    #  +-----------+-----------+-----------+-----------+
+
+    src0 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    )
+    src1 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+    )
+    src2 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[2], loc=loc, ip=ip
+    )
+    src3 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[3], loc=loc, ip=ip
+    )
+
+    # fnv8e5m3fnu is only used for scale factors, and so, similar to f8e8m0fnu
+    # scale factors, we choose rounding to positive infinity (RP)
+    res0_i8x2 = nvvm.convert_f32x2_to_f8x2(
+        ir.VectorType.get([2], Int8.mlir_type),  # result type: vector<2xi8>
+        Float32(src1).ir_value(loc=loc, ip=ip),  # a
+        Float32(src0).ir_value(loc=loc, ip=ip),  # b
+        ir.TypeAttr.get(FloatNV8E5M3FNU.mlir_type),  # dst_ty
+        rnd=nvvm.FPRoundingMode.RP,
+        loc=loc,
+        ip=ip,
+    )
+
+    res0_i16 = llvm.bitcast(Int16.mlir_type, res0_i8x2, loc=loc, ip=ip)
+
+    res1_i8x2 = nvvm.convert_f32x2_to_f8x2(
+        ir.VectorType.get([2], Int8.mlir_type),  # result type: vector<2xi8>
+        Float32(src3).ir_value(loc=loc, ip=ip),  # a
+        Float32(src2).ir_value(loc=loc, ip=ip),  # b
+        ir.TypeAttr.get(FloatNV8E5M3FNU.mlir_type),  # dst_ty
+        rnd=nvvm.FPRoundingMode.RP,
+        loc=loc,
+        ip=ip,
+    )
+
+    res1_i16 = llvm.bitcast(Int16.mlir_type, res1_i8x2, loc=loc, ip=ip)
+
+    # Create a new i32 value representation for the converted results:
+    # the lower 16 bits are created as extending res0_i16 to i32
+    # the higher 16 bits are created by shifting res1_i16 to left by 16 bits
+    res_i32 = llvm.or_(
+        llvm.zext(T.i32(), res0_i16, loc=loc, ip=ip),
+        llvm.shl(
+            llvm.zext(T.i32(), res1_i16, loc=loc, ip=ip),
+            Int32(16).ir_value(loc=loc, ip=ip),
+            llvm.IntegerOverflowFlags.none,
+            loc=loc,
+            ip=ip,
+        ),
+        loc=loc,
+        ip=ip,
+    )
+
+    res_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
+    res_i8x4 = llvm.bitcast(res_i8x4_type, res_i32, loc=loc, ip=ip)
+    res_fnv8e5m3fnux4_type = ir.VectorType.get([4], FloatNV8E5M3FNU.mlir_type, loc=loc)
+    res_fnv8e5m3fnux4 = builtin.unrealized_conversion_cast(
+        [res_fnv8e5m3fnux4_type], [res_i8x4], loc=loc, ip=ip
+    )
+    return res_fnv8e5m3fnux4
+
+
 # Type alias for inline_ptx argument types
 ScalarArg = Union[int, float, bool, Numeric]
 
@@ -3656,11 +4688,19 @@ def inline_ptx(
     if read_write_args is None:
         read_write_args = []
 
-    # Convert inputs to Numeric types or pass through raw IR values
-    def convert_arg(arg: Union[ir.Value, Numeric]) -> Union[ir.Value, Numeric]:
-        """Convert arg to Numeric, or pass through if already an ir.Value."""
+    # Convert inputs to Numeric types or pass through address/raw IR values.
+    def convert_arg(arg: object) -> Union[ir.Value, Numeric]:
+        """Convert scalar args to Numeric and address args to LLVM IR values."""
+        if isinstance(arg, Array):
+            arg = arg.data_ptr(loc=loc, ip=ip)
         if isinstance(arg, ir.Value):
             return arg
+        to_llvm_ptr = getattr(arg, "to_llvm_ptr", None)
+        if callable(to_llvm_ptr):
+            return to_llvm_ptr(loc=loc, ip=ip)
+        llvm_ptr = getattr(arg, "llvm_ptr", None)
+        if isinstance(llvm_ptr, ir.Value):
+            return llvm_ptr
         return as_numeric(arg)
 
     read_only_ir = [convert_arg(arg) for arg in read_only_args]
@@ -3814,7 +4854,6 @@ def match_sync(
 
     if kind_enum == nvvm.MatchSyncKind.all:
         result = nvvm.match_sync(
-            llvm.StructType.get_literal([T.i32(), Boolean.mlir_type]),
             mask_ir,
             value_ir,
             kind_enum,
@@ -3824,7 +4863,6 @@ def match_sync(
         return Uint32(llvm.extractvalue(T.i32(), result, [0], loc=loc, ip=ip))
     else:
         result = nvvm.match_sync(
-            T.i32(),
             mask_ir,
             value_ir,
             kind_enum,

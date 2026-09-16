@@ -52,7 +52,10 @@ class DialectAutoConvertProxy:
         """Convert DSL value wrappers to ir.Value; pass primitives/containers through.
 
         Numeric primitives (int/float/bool) are immediates/attributes, not
-        operands, so they pass through unchanged. 
+        operands, so they pass through unchanged. This also covers PyIR's
+        ``_WatchedInt``/``_WatchedFloat`` (int/float subclasses that also expose
+        ``ir_value()``): baking those to SSA breaks attribute slots such as
+        ``cp_async_shared_global``'s ``size`` (``IntegerAttr.get`` -> bad_cast).
         DSL ``Numeric`` types are not int/float subclasses, so genuine operands
         still convert below.
         """

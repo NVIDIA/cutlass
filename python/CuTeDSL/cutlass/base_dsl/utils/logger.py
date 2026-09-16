@@ -17,9 +17,17 @@ import logging
 
 logger: logging.Logger
 
+LOG_DISABLED_LEVEL = logging.CRITICAL + 1
+
 
 def log() -> logging.Logger:
     return logger
+
+
+def _resolve_log_level(log_level: int) -> int:
+    if log_level == 0:
+        return LOG_DISABLED_LEVEL
+    return log_level
 
 
 def setup_log(
@@ -39,12 +47,15 @@ def setup_log(
     :type log_to_file: bool, optional
     :param log_file_path: Path to the log file, required if log_to_file is True
     :type log_file_path: str, optional
-    :param log_level: Logging level to set, defaults to 1
+    :param log_level: Logging verbosity: 0=disabled, 1=all messages
+        (debug and above, the default), or a standard ``logging`` level
+        (10=debug, 20=info, 30=warning, 40=error, 50=critical)
     :type log_level: int, optional
     :raises ValueError: If log_to_file is True but log_file_path is not provided
     :return: Configured logger instance
     :rtype: logging.Logger
     """
+    log_level = _resolve_log_level(log_level)
     # Create a custom logger
     global logger
     logger = logging.getLogger(name)
@@ -52,7 +63,7 @@ def setup_log(
         logger.setLevel(log_level)
     else:
         # Makes sure logging is OFF
-        logger.setLevel(logging.CRITICAL + 1)
+        logger.setLevel(LOG_DISABLED_LEVEL)
 
     # Clear existing handlers to prevent duplicate logs
     if logger.hasHandlers():

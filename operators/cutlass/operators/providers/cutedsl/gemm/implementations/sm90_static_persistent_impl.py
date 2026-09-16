@@ -110,7 +110,7 @@ class Sm90StaticPersistentGemmKernel:
         )
         self.load_register_requirement = 40
         self.mma_register_requirement = 232
-        self.smem_capacity = utils.get_smem_capacity_in_bytes("sm_90")
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_90")
 
         self.ab_stage = None
         self.epi_stage = None
@@ -205,7 +205,6 @@ class Sm90StaticPersistentGemmKernel:
             self.epi_stage,
         )
 
-
     @cute.jit
     def __call__(
         self,
@@ -258,9 +257,9 @@ class Sm90StaticPersistentGemmKernel:
         self.a_dtype = a.element_type
         self.b_dtype = b.element_type
         self.c_dtype = c.element_type
-        self.a_layout = utils.LayoutEnum.from_tensor(a)
-        self.b_layout = utils.LayoutEnum.from_tensor(b)
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(a)
+        self.b_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(b)
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         if cutlass.const_expr(
             self.a_dtype.width == 16 and self.a_dtype != self.b_dtype
@@ -428,7 +427,7 @@ class Sm90StaticPersistentGemmKernel:
         ) + cute.size_in_bytes(self.b_dtype, b_smem_layout)
 
         # Alloc and init AB full/empty + ACC full mbar (pipeline)
-        smem = cutlass.utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # mbar arrays
@@ -882,12 +881,12 @@ class Sm90StaticPersistentGemmKernel:
         tile_shape_mnk: tuple[int, int, int],
         epi_tile: tuple[int, int],
         a_dtype: type[cutlass.Numeric],
-        a_layout: utils.LayoutEnum,
+        a_layout: cutlass.tensor_utils.LayoutEnum,
         b_dtype: type[cutlass.Numeric],
-        b_layout: utils.LayoutEnum,
+        b_layout: cutlass.tensor_utils.LayoutEnum,
         ab_stage: int,
         c_dtype: type[cutlass.Numeric],
-        c_layout: utils.LayoutEnum,
+        c_layout: cutlass.tensor_utils.LayoutEnum,
         epi_stage: int,
     ) -> tuple[cute.ComposedLayout, cute.ComposedLayout, cute.ComposedLayout]:
         """Create shared memory layouts for A, B, and C tensors.
@@ -899,17 +898,17 @@ class Sm90StaticPersistentGemmKernel:
         :param a_dtype: Data type for matrix A
         :type a_dtype: type[cutlass.Numeric]
         :param a_layout: Layout enum for matrix A
-        :type a_layout: utils.LayoutEnum
+        :type a_layout: cutlass.tensor_utils.LayoutEnum
         :param b_dtype: Data type for matrix B
         :type b_dtype: type[cutlass.Numeric]
         :param b_layout: Layout enum for matrix B
-        :type b_layout: utils.LayoutEnum
+        :type b_layout: cutlass.tensor_utils.LayoutEnum
         :param ab_stage: Number of stages for A/B tensors
         :type ab_stage: int
         :param c_dtype: Data type for output matrix C
         :type c_dtype: type[cutlass.Numeric]
         :param c_layout: Layout enum for the output matrix C
-        :type c_layout: utils.LayoutEnum
+        :type c_layout: cutlass.tensor_utils.LayoutEnum
         :param epi_stage: Number of epilogue stages
         :type epi_stage: int
 
@@ -1152,7 +1151,10 @@ class Sm90StaticPersistentGemmKernel:
             cutlass.Int32: {cutlass.Uint8, cutlass.Int8},
         }
         # Check compatibility between accumulator type and A type
-        if acc_dtype not in acc_ab_compatibility or a_dtype not in acc_ab_compatibility[acc_dtype]:
+        if (
+            acc_dtype not in acc_ab_compatibility
+            or a_dtype not in acc_ab_compatibility[acc_dtype]
+        ):
             is_valid = False
 
         # Define compatibility mapping between accumulator type and C type

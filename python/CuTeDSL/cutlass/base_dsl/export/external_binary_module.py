@@ -9,8 +9,6 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import io
-import os
 
 import ctypes
 from collections.abc import Callable
@@ -20,6 +18,7 @@ from typing import Any, cast
 from ..common import DSLRuntimeError, DSLUserCodeError
 from ..diagnostics import DiagId
 from ...base_dsl.dsl import BaseDSL
+from ...base_dsl.jit_executor import JitCompiledFunction
 from ...base_dsl.typing import Int32, Int64, Float32, Float64
 from .export import SignatureProcessor, decode_metadata_from_execution_engine
 
@@ -140,7 +139,7 @@ class ExternalBinaryModule:
                 self.engine.lookup("_mlir_" + function_prefix + "_cuda_init")
                 is not None
             )
-        except Exception as e:
+        except Exception:
             has_gpu_module = False
         jit_function = load_provider.jit_function_constructor(
             ir_module=None,
@@ -155,6 +154,10 @@ class ExternalBinaryModule:
             load_from_binary=True,
             has_gpu_module=has_gpu_module,
         )
+        if isinstance(jit_function, JitCompiledFunction):
+            jit_function.execution_args.set_adapter_scope(
+                load_provider.dsl._get_dsl()._jit_arg_adapter_scope
+            )
         return jit_function
 
     def __getitem__(self, function_prefix: str) -> Any:

@@ -14,15 +14,15 @@ from dataclasses import dataclass
 from typing import Any, Optional, Type, Union, cast
 import warnings
 
-from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL, T, DSLRuntimeError
+from cutlass import base_dsl
+from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL, T, DSLRuntimeError
 from typing_extensions import deprecated
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
-from ..common import OpError, normalize_field_to_ir_name
+from ..common import normalize_field_to_ir_name
 from ..common import OperandMajorMode as _OperandMajorMode
 from ...core import _pack_shape, rank, depth
 from ...typing import (
@@ -152,30 +152,26 @@ class MmaOp(WarpGroupMmaOp):
     def __post_init__(self) -> None:
         # Verify arch
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch == Arch.sm_90a:
-            raise OpError(
-                self,
-                f"expects arch to be {Arch.sm_90a}, but got {arch}",
+        if not arch == base_dsl.Arch.sm_90a:
+            raise DSLUserCodeError(
+                f"expects arch to be {base_dsl.Arch.sm_90a}, but got {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
         # Verify that the user provided enum values
         if not isinstance(self.a_src, OperandSource):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_src' Op parameter to be a warpgroup.OperandSource instance",
             )
         if not isinstance(self.a_major_mode, _OperandMajorMode) and not isinstance(
             self.a_major_mode, OperandMajorMode
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or warpgroup.OperandMajorMode (deprecated) instance",
             )
         if not isinstance(self.b_major_mode, _OperandMajorMode) and not isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_major_mode' Op parameter to be a cute.nvgpu.OperandMajorMode or warpgroup.OperandMajorMode (deprecated) instance",
             )
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
@@ -198,17 +194,15 @@ class MmaOp(WarpGroupMmaOp):
         # Verify instruction shape
         shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
         if (rank(shape_mnk_tuple) not in [2, 3]) or (depth(shape_mnk_tuple) != 1):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expected a flat rank 2 or 3 tuple for the 'shape_mnk' Op parameter, "
                 f"but got {self.shape_mnk}",
             )
         m, n = shape_mnk_tuple[0], shape_mnk_tuple[1]
         if m != 64:
-            raise OpError(self, f"expects the M-mode to be 64, but got {m}")
+            raise DSLUserCodeError(f"expects the M-mode to be 64, but got {m}")
         if (n < 8) or (n > 256) or (n % 8 != 0):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the N-mode to satisfy 8 <= N <= 256 and N % 8 == 0. but got {n}",
             )
 
@@ -234,8 +228,7 @@ class MmaOp(WarpGroupMmaOp):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"Expected affine layout for {self._make_trait()}'s operand A, "
                 f"but got composed layout instead: {input.layout}"
                 f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
@@ -252,8 +245,7 @@ class MmaOp(WarpGroupMmaOp):
         if input.memspace == AddressSpace.smem and isinstance(
             input.layout.type, _cute_ir.ComposedLayoutType
         ):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"Expected affine layout for {self._make_trait()}'s operand B, "
                 f"but got composed layout instead: {input.layout}"
                 f"\nPlease use recast_ptr(ptr, {input.layout.inner}, element_type) operation to move swizzle to the ptr",
@@ -376,20 +368,17 @@ class MmaF16BF16Op(MmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Float16, BFloat16]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'ab_dtype' Op parameter to be one of Float16 or BFloat16",
             )
         assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
         # Accumulator data type verification
         if self.acc_dtype not in [Float16, Float32]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         if (self.a_dtype == BFloat16) and (self.acc_dtype != Float32):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter to be Float32 when 'ab_dtype' is BFloat16",
             )
         # Verify the instruction shape
@@ -399,8 +388,7 @@ class MmaF16BF16Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -502,19 +490,16 @@ class MmaF8Op(MmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Float8E5M2, Float8E4M3FN]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
             )
         if self.b_dtype not in [Float8E5M2, Float8E4M3FN]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
             )
         # Accumulator data type verification
         if self.acc_dtype not in [Float16, Float32]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
             )
         # Verify the instruction shape
@@ -524,8 +509,7 @@ class MmaF8Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
@@ -627,19 +611,16 @@ class MmaI8Op(MmaOp):
     def _verify(self) -> None:
         # Input data type verification
         if self.a_dtype not in [Int8, Uint8]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'a_dtype' Op parameter to be one of Int8 or Uint8",
             )
         if self.b_dtype not in [Int8, Uint8]:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'b_dtype' Op parameter to be one of Int8 or Uint8",
             )
         # Accumulator data type verification
         if self.acc_dtype != Int32:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'acc_dtype' Op parameter must be Int32",
             )
 
@@ -650,18 +631,16 @@ class MmaI8Op(MmaOp):
             object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
         if shape_mnk_tuple[2] != instruction_k:
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 f"expects the instruction extent in the K-mode to be {instruction_k}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
 
         n = shape_mnk_tuple[1]
         if not (n >= 8 and n <= 256 and (n == 8 or n == 24 or n % 16 == 0)):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the N-mode to satisfy N=8*i where i={1,2,3,4} ",
-                f"or N=16*i where i={{3,4,...,15,16}}. But got {n}",
+                suggestion=f"or N=16*i where i={{3,4,...,15,16}}. But got {n}",
             )
 
     def _make_trait(

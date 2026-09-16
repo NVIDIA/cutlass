@@ -412,7 +412,7 @@ public:
 
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
-    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
+    static_assert(SharedStorageSize <= ArchTag::kSharedMemoryCapacityBytes, "SMEM usage exceeded capacity.");
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop(params.mainloop, cluster_shape, cta_rank_in_cluster);
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
@@ -662,7 +662,7 @@ public:
 
     else if (is_participant.mma) {
       // Tmem allocation sequence
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
@@ -731,7 +731,7 @@ public:
       }
 
       // Free entire tmem allocation
-      tmem_allocator.free(tmem_base_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+      tmem_allocator.free(tmem_base_ptr, ArchTag::kTmemCapacityColumns);
     }
 
     else if (is_participant.epi_load) {

@@ -3,26 +3,52 @@
 Overview
 ===========================
 
-CUTLASS 4.x bridges the gap between productivity and performance for CUDA kernel development. 
-By providing Python-based DSLs to the powerful CUTLASS C++ template library, it enables 
-faster iteration, easier prototyping, and a gentler learning curve for high-performance linear 
-algebra on NVIDIA GPUs.
+CUTLASS Python is the Python kernel-authoring stack in CUTLASS 4.x. It provides
+the CUTLASS DSL package and documentation for writing high-performance CUDA
+kernels with Python syntax while retaining explicit control over the GPU memory,
+thread, and data hierarchy.
 
-Overall we envision CUTLASS DSLs as a family of domain-specific languages (DSLs). 
-With the release of 4.0, we are releasing the first of these in CuTe DSL. 
-This is a low level programming model that is fully consistent with CuTe C++ abstractions — exposing 
-core concepts such as layouts, tensors, hardware atoms, and full control over the hardware thread and data hierarchy.
 
-Why CUTLASS DSLs?
+
+CUTLASS Python is organized as layered kernel-authoring APIs. Basic data types
+provide typed building blocks. Above those, CuTe DSL provides a Python
+programming model aligned with CuTe C++ concepts such as layouts, tensors, copy
+atoms, MMA atoms, and tiled operations, while pipeline APIs compose asynchronous
+data movement and work orchestration. These layers compile Python kernel code
+through the CUTLASS Python compiler stack and NVIDIA CUDA toolchain to
+JIT-compile CUDA kernels.
+
+
+
+The CUTLASS Python documentation is organized around:
+
+- :doc:`quick_start` for installation and environment setup.
+- :doc:`cute_dsl` for the DSL programming model.
+- :doc:`guides` for framework integration, debugging, profiling, autotuning,
+  ahead-of-time compilation, and MMA programming guides.
+
+
+- :doc:`apis` for Basic Data Types, CUDA (Jittable), CuTe, Pipeline, and
+  Utilities.
+
+
+- :doc:`limitations`, :doc:`deprecation`, and :doc:`faqs` for support boundaries,
+  compatibility policy, and common questions.
+
+Why CUTLASS Python?
 ============================
 
 While CUTLASS offers exceptional performance through its C++ template abstractions, the complexity 
-can present challenges for many developers. CUTLASS 4.x addresses this by:
+can present challenges for many developers. CUTLASS Python addresses this by:
 
-- **Simplifying metaprogramming**: Metaprogramming in Python is a lot more intuitive than with C++
-- **Accelerating Iteration**: Rapid prototyping with familiar Python syntax and blazing fast compile times
-- **Lowering Barriers**: Reduced learning curve for GPU programming concepts and consistency between CuTe C++ and DSL
-- **Maintaining Performance**: Generated code leverages optimized CUTLASS primitives
+- **Simplifying metaprogramming**: express compile-time configuration with Python
+  instead of deeply nested C++ templates.
+- **Accelerating iteration**: prototype kernels with familiar Python syntax and
+  JIT compilation.
+- **Lowering barriers**: learn GPU programming concepts through APIs that mirror
+  CuTe C++ abstractions.
+- **Maintaining performance focus**: generated code uses CUDA hardware
+  primitives exposed through CUTLASS and CuTe APIs.
 
 Students can learn GPU programming concepts without the complexity of C++ templates. 
 Researchers and performance engineers can rapidly explore algorithms, prototype, and tune 
@@ -31,65 +57,133 @@ kernels before moving to production implementations.
 Key Concepts and Approach
 ================================
 
-CUTLASS DSLs translate Python code into a custom intermediate representation (IR), 
-which is then Just-In-Time (JIT) compiled into optimized CUDA kernels using MLIR and `ptxas`.
+CUTLASS Python lets developers describe CUDA kernels with Python syntax while
+retaining explicit control over data types, memory hierarchy, tiling, and work
+decomposition. Kernel code is compiled just-in-time through the CUTLASS Python
+compiler stack and NVIDIA CUDA toolchain.
 
-Core CuTe DSL Abstractions
+Core Abstractions
 -----------------------------------
 
-- **Layouts** – Describe how data is organized in memory and across threads.
-- **Tensors** – Combine data pointers or iterators with layout metadata.
-- **Atoms** – Represent fundamental hardware operations like matrix multiply-accumulate (MMA) or memory copy.
-- **Tiled Operations** – Define how atoms are applied across thread blocks and warps (e.g., ``TiledMma``, ``TiledCopy``).
+- **Basic data types** – Provide typed numeric, pointer, vector, and array
+  building blocks used across the DSL.
+- **CuTe** – Provides composable abstractions for tensor layout, data movement,
+  and compute.
+
+  - **Tensor** – Basic CuTe data object that combines a pointer or iterator
+    with layout metadata.
+  - **Layout** – Describes how data is organized in memory and across threads.
+  - **Atom** – Represents a fundamental hardware operation such as
+    matrix multiply-accumulate (MMA) or memory copy.
+  - **Tiled operation** – Applies atoms across thread blocks and warps, for
+    example ``TiledMma`` and ``TiledCopy``.
+
+
+- **Pipelines** – Coordinate asynchronous copies, barriers, compute work, and
+  producer/consumer warp groups.
+
+
 
 For more on CuTe abstractions, refer to the `CuTe C++ library documentation <https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/00_quickstart.md>`__.
 
-**Pythonic Kernel Expression**
+Pythonic Kernel Expression
+-----------------------------------
 
-Developers express kernel logic, data movement, and computation using familiar Python syntax and control flow.
+Developers express kernel logic, data movement, and computation using familiar
+Python syntax and control flow. The APIs make tiling, threading strategies, and
+data transformations explicit without requiring C++ template metaprogramming.
 
-The DSLs simplify expressing loop tiling, threading strategies, and data transformations using concise Python code.
+JIT Compilation
+-----------------------------------
 
-**JIT Compilation**
+Python kernels are compiled at runtime into CUDA device code through the
+CUTLASS Python compiler stack and CUDA toolchain, enabling rapid iteration and
+interactive debugging.
 
-Python kernels are compiled at runtime into CUDA device code using MLIR infrastructure and NVIDIA’s ``ptxas`` toolchain, 
-enabling rapid iteration and interactive debugging.
+Supported Features
+=================================
+
+For exact dependency versions, driver requirements, and installation commands,
+refer to the :doc:`quick_start` section.
+
+Platform Support
+---------------------------------
+
+- Linux on x86_64 and aarch64.
+- Python and CUDA Toolkit versions listed in :doc:`quick_start`.
+
+Kernel Authoring Capabilities
+---------------------------------
+
+- Python JIT functions and kernels with explicit static and dynamic values.
+
+
+- Basic data types for typed values, pointers, and arrays.
+
+
+- CuTe layout algebra, tensors, tiled copies, tiled MMA, and
+  register/shared/global memory views.
+- Architecture-specific GPU operations for warp-level, warpgroup-level, and
+  Blackwell ``tcgen05`` programming.
+
+
+- Pipeline APIs for producer/consumer and warp-specialized kernels.
+
+
+- Integration guides for PyTorch, TVM FFI, notebooks, IKET profiling, autotuning,
+  and ahead-of-time compilation.
+
+Architecture Coverage
+---------------------------------
+
+- **NVIDIA Ampere and Ada:** warp-level MMA programming.
+- **NVIDIA Hopper:** warpgroup MMA programming and TMA-oriented kernels.
+- **NVIDIA Blackwell:** ``tcgen05`` MMA programming, TMEM-oriented kernels, and
+  Blackwell-specific primitives.
+
+For current constraints and unsupported features, refer to the :doc:`limitations` section.
 
 Relationship to CUTLASS C++
 =================================
 
-CUTLASS DSLs are not a replacement for the CUTLASS C++ library or its 2.x and 3.x APIs. Instead, it aims to be a high-productivity kernel 
-authoring framework that shares all concepts with CUTLASS 3.x C++ API such as CuTe, pipelines, schedulers etc.
+CUTLASS Python is not a replacement for the CUTLASS C++ library or its 2.x and
+3.x APIs. Instead, it is a high-productivity kernel authoring framework that
+shares concepts with CUTLASS C++, including CuTe, pipelines, schedulers, tiled
+copy, and tiled MMA.
 
 - **Performance**: Generated kernels aim to match CUTLASS C++ kernels in performance; however, some performance gaps 
   may exist due to missing optimizations that have been added over the years to CUTLASS C++ and may be missing in the DSLs examples.
-- **Library**: The CUTLASS DSLs do not currently ship with a full GEMM/Conv autotuning profiler or library interface 
-  akin to CUTLASS C++. Instead, it focuses on generating and autotuning individual kernel instances (for example: via tile size exploration) and via native integration DL frameworks that support auto-tuning.
+- **Library scope**: CUTLASS Python focuses on authoring and tuning individual
+  kernel instances. It does not currently provide the full GEMM/Conv profiler
+  or library interface available in CUTLASS C++.
 
 Getting Started
 ================================
 
-- :doc:`quick_start` – Initial setup and installation.
-- :doc:`cute_dsl` – Overview of the typical development and workflow using CuTe DSL.
-- :doc:`cute_dsl_api` – Refer to the full API documentation.
-- :doc:`limitations` – Understand current CuTe DSL constraints and differences from C++.
-- :doc:`faqs` – Common questions and known issues.
+Use this path when learning CUTLASS Python:
 
-Current Status & Roadmap
+- Start with :doc:`quick_start` to install dependencies and verify the
+  environment.
+- Read :doc:`cute_dsl` for the DSL programming model, including JIT functions,
+  kernels, static values, control flow, and argument handling.
+- Use :doc:`guides` for task-focused workflows such as framework integration,
+  debugging, profiling, autotuning, AOT compilation, and MMA programming.
+
+
+- Use :doc:`apis` as the reference for Basic Data Types, CuTe, Pipeline, and
+  Utilities.
+
+
+- Check :doc:`limitations`, :doc:`deprecation`, and :doc:`faqs` for support
+  boundaries, compatibility policy, common questions, and known issues.
+
+Current Status
 =================================
 
-CuTe DSL is in public beta and actively evolving. Interfaces and features are subject to 
-change as we improve the system.
-
-Upcoming Milestones
-----------------------------------
-
-- Public release targeted for **Summer 2025**
-- Expanded support for additional data types and kernel types
-- Usability improvements: better error messages, debugging tools, and streamlined APIs
-- Broader integration of CUTLASS primitives and features
-
-For known issues and workarounds, please consult the :doc:`limitations` and :doc:`faqs`.
+CUTLASS Python is actively evolving with the CUTLASS 4.x releases. Interfaces
+that are experimental or subject to change are documented through the
+:doc:`deprecation` policy, API reference, and limitations pages. For known issues
+and workarounds, consult :doc:`limitations` and :doc:`faqs`.
 
 Community & Feedback
 ==================================

@@ -9,8 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any, Iterator, Sequence, Union, overload
 from dataclasses import dataclass, field
+from numbers import Integral
+from typing import Any, Sequence
 
 
 import jax
@@ -21,7 +22,7 @@ import cutlass.cute as cute
 from cutlass.cute.core import IntValue
 from cutlass.cute.runtime import from_dlpack as _from_dlpack
 from cutlass._mlir import ir
-from cutlass.address_space import AddressSpace
+from cutlass import AddressSpace
 from cutlass._mlir.dialects import llvm, arith
 
 JAX_DTYPE_TO_CUTLASS_DTYPE = {
@@ -52,6 +53,7 @@ CUTLASS_DTYPE_TO_JAX_DTYPE = {
 
 DEFAULT_CUTLASS_DEVICE_MEMSPACE = AddressSpace.gmem
 DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT = 256
+_CUTE_XLA_FFI_BUFFER_ALIGNMENT = 8
 
 
 def _llvm_pointer_type(address_space: AddressSpace = AddressSpace.generic) -> ir.Type:
@@ -116,10 +118,11 @@ class TensorSpec:
             same order as the JAX array shape and before any ``mode`` reordering.
             Positive hints constrain dynamic shape values and are propagated
             through compact stride construction: a stride inherits the product
-            of the divisibilities for dimensions with lower stride rank.
-            Positive explicit hints take precedence over inferred concrete
-            extents. If a single int is passed, it is applied to the leading
-            compact dimension only, where ``layout[i] == 0``.
+            of the divisibilities for dimensions with lower stride rank.  When
+            the JAX shape dimension is concrete, explicit hints must divide the
+            concrete extent. Positive explicit hints take precedence over
+            inferred concrete extents. If a single int is passed, it is applied
+            to the leading compact dimension only, where ``layout[i] == 0``.
     """
 
     # Minor-to-major stride ordering in CuTeDSL convention (layout[i] = stride rank
@@ -202,11 +205,12 @@ def default_tensor_spec(shaped: Any) -> TensorSpec:
     maps a physical ``(L, M, K)`` row-major input to a logical ``(M, K, L)``
     tensor.
 
-    Divisibility hints are inferred only for concrete integer input dimensions.
-    Symbolic dimensions always produce ``None`` for their slot; pass an explicit
-    ``TensorSpec`` with ``divisibility`` set if you need alignment hints for
-    symbolic shapes or want a weaker explicit constraint than the concrete
-    extent.
+    Divisibility hints are inferred only for positive concrete integer input
+    dimensions. Symbolic and zero-sized dimensions produce ``None`` for their
+    slot; pass an explicit ``TensorSpec`` with ``divisibility`` set if you need
+    alignment hints for symbolic shapes or want a weaker explicit constraint
+    than the concrete extent. Explicit constraints are checked against concrete
+    extents when they are available.
 
     Args:
         shaped: An object with a ``.shape`` attribute, or a shape tuple/sequence.
@@ -217,7 +221,7 @@ def default_tensor_spec(shaped: Any) -> TensorSpec:
     """
     if hasattr(shaped, "shape"):
         shaped = shaped.shape
-    inferred = tuple(d if isinstance(d, int) else None for d in shaped)
+    inferred = tuple(_infer_concrete_dim_divisibility(d) for d in shaped)
     divisibility = inferred if any(d is not None for d in inferred) else None
     return TensorSpec(
         layout=row_major_layout(shaped),
@@ -244,6 +248,74 @@ def _expand_divisibility(
     result: list[int | None] = [None] * ndim
     result[leading] = divisibility
     return tuple(result)
+
+
+def _is_integral(value: Any) -> bool:
+    """Return True for integer-like values, excluding ``bool``."""
+    return isinstance(value, Integral) and not isinstance(value, bool)
+
+
+def _infer_concrete_dim_divisibility(dim: Any) -> int | None:
+    """Infer a valid divisibility contract from a concrete shape dimension."""
+    if not _is_integral(dim):
+        return None
+    dim = int(dim)
+    if dim <= 0:
+        return None
+    return dim
+
+
+def _validate_divisibility_entry(value: Any, dim_idx: int) -> int | None:
+    if value is None:
+        return None
+    if not _is_integral(value):
+        raise ValueError(
+            f"divisibility entry for dimension {dim_idx} must be None or a positive integer, got {value!r}"
+        )
+    value = int(value)
+    if value <= 0:
+        raise ValueError(
+            f"divisibility entry for dimension {dim_idx} must be positive, got {value}"
+        )
+    return value
+
+
+def _check_divisibility_matches_concrete_shape(
+    dim: Any, divby: int, dim_idx: int
+) -> None:
+    if not _is_integral(dim):
+        return
+    dim = int(dim)
+    if dim % divby != 0:
+        raise ValueError(
+            f"divisibility entry {divby} for dimension {dim_idx} does not divide concrete shape dimension {dim}"
+        )
+
+
+def _normalize_divisibility(
+    divisibility: tuple[int | None, ...] | int | None,
+    order: tuple[int, ...],
+    shape: Sequence[Any],
+) -> tuple[int | None, ...] | None:
+    """Validate and expand a divisibility spec in input-dimension order.
+
+    A scalar spec follows ``mark_compact_shape_dynamic`` shorthand: it applies
+    to the compact stride-1 dimension before any ``TensorSpec.mode`` reordering.
+    Tuple specs already name input dimensions directly.
+    """
+    expanded = _expand_divisibility(divisibility, order, len(shape))
+    if expanded is None:
+        return None
+    if len(expanded) != len(shape):
+        raise ValueError("divisibility must be same length as shape", expanded, shape)
+
+    normalized = []
+    for dim_idx, (dim, entry) in enumerate(zip(shape, expanded)):
+        entry = _validate_divisibility_entry(entry, dim_idx)
+        if entry is not None:
+            _check_divisibility_matches_concrete_shape(dim, entry, dim_idx)
+        normalized.append(entry)
+    return tuple(normalized)
 
 
 def cutlass_to_jax_layout_order(
@@ -336,10 +408,47 @@ def _assume_divisible_int(
     return cute.assume(IntValue(value, loc=loc, ip=ip), divby=divby, loc=loc, ip=ip)
 
 
+def _infer_dim_divisibility(
+    shape: Sequence[Any],
+    divisibility: tuple[int | None, ...] | None,
+) -> tuple[int, ...]:
+    """Infer per-dimension divisibility from explicit hints and concrete extents.
+
+    ``divisibility`` must be ``None`` or have one entry per shape dimension.
+    Explicit hints are hard contracts. ``None`` entries inherit a positive
+    concrete extent when available and otherwise fall back to 1.
+    Raises:
+        ValueError: If explicit divisibility has a different length than shape,
+            contains invalid entries, or contradicts a concrete shape dimension.
+    """
+    if divisibility is None:
+        divisibility = (None,) * len(shape)
+    elif len(divisibility) != len(shape):
+        raise ValueError(
+            "divisibility must be same length as shape",
+            divisibility,
+            shape,
+        )
+
+    result = []
+    for dim_idx, (div_spec, static_s) in enumerate(zip(divisibility, shape)):
+        if div_spec is not None:
+            div_spec = _validate_divisibility_entry(div_spec, dim_idx)
+            assert div_spec is not None
+            _check_divisibility_matches_concrete_shape(static_s, div_spec, dim_idx)
+            result.append(div_spec)
+        else:
+            result.append(_infer_concrete_dim_divisibility(static_s) or 1)
+    return tuple(result)
+
+
 def _validate_permutation(name: str, perm: Sequence[int], shape: Sequence[Any]) -> None:
     if len(perm) != len(shape):
         raise ValueError(f"{name} must be same length as shape", perm, shape)
     for s in perm:
+        if not _is_integral(s):
+            raise ValueError(f"Invalid non-integer index {s!r} in {name}", perm)
+        s = int(s)
         if s < 0 or s >= len(shape):
             raise ValueError(f"Invalid index {s} in {name}", perm, shape)
     if len(set(perm)) != len(perm):
@@ -401,39 +510,32 @@ class JaxArray:
             )
         self.static = static
 
-        if divisibility is not None:
-            divisibility = _expand_divisibility(divisibility, self.order, self.ndim)
-            assert divisibility is not None
-            divisibility = tuple(divisibility)
-            if len(divisibility) != len(shape):
-                raise ValueError(
-                    "divisibility must be same length as shape", divisibility, shape
-                )
-            for d in divisibility:
-                if not (d is None or isinstance(d, int)):
-                    raise ValueError(
-                        f"divisibility entries must be None or integer, got {d!r}"
-                    )
-        self.divisibility = divisibility
+        self.divisibility = _normalize_divisibility(
+            divisibility, self.order, self.shape
+        )
 
 
 class JaxArrayValue(JaxArray):
-    """The IR representation of the JaxArray."""
+    """The IR representation of a :class:`JaxArray`.
+
+    Array metadata is copied at construction so the IR value remains an
+    independent snapshot if its source placeholder is later mutated.
+    """
 
     def __init__(
         self,
         ir_value: ir.Value,
-        dtype: type,
-        shape: Sequence[int | Any],
-        mem_space: AddressSpace,
-        assumed_align: int,
-        order: tuple[int, ...],
-        mode: tuple[int, ...],
-        static: bool,
-        divisibility: tuple[int | None, ...] | int | None = None,
+        jax_array: JaxArray,
     ) -> None:
         super().__init__(
-            dtype, shape, mem_space, assumed_align, order, mode, static, divisibility
+            jax_array.dtype,
+            jax_array.shape,
+            jax_array.mem_space,
+            jax_array.assumed_align,
+            jax_array.order,
+            jax_array.mode,
+            jax_array.static,
+            jax_array.divisibility,
         )
         self.value = ir_value
 
@@ -454,18 +556,9 @@ class JaxArrayValue(JaxArray):
         i32 = ir.IntegerType.get_signless(32)
 
         # Track the divisibility available for each input dimension. Explicit
-        # hints win; otherwise concrete dimensions contribute their known extent.
-        dim_divisibility = None
-        if self.divisibility is not None:
-            dim_divisibility = []
-            for div_spec, static_s in zip(self.divisibility, self.shape):
-                if div_spec is not None and div_spec > 0:
-                    dim_divisibility.append(div_spec)
-                elif isinstance(static_s, int):
-                    dim_divisibility.append(static_s)
-                else:
-                    dim_divisibility.append(1)
-            dim_divisibility = tuple(dim_divisibility)
+        # positive hints win; otherwise concrete dimensions contribute their
+        # known extent even when the caller did not provide divisibility.
+        dim_divisibility = _infer_dim_divisibility(self.shape, self.divisibility)
 
         pairs = sorted(zip(shape, order), key=lambda x: x[1])
 
@@ -481,29 +574,27 @@ class JaxArrayValue(JaxArray):
         for i in range(len(shape)):
             strides_ordered.append(strides[order[i]])
 
-        if dim_divisibility is not None:
-            # A compact stride is the product of all dimensions with a lower
-            # stride order, so it inherits the product of their divisibility.
-            stride_divisibility = []
-            for dim_order in order:
-                divby = 1
-                for other_dim, other_order in enumerate(order):
-                    if other_order < dim_order:
-                        divby *= dim_divisibility[other_dim]
-                stride_divisibility.append(divby)
+        # A compact stride is the product of all dimensions with a lower stride
+        # order, so it inherits the product of their divisibility.
+        stride_divisibility = []
+        for dim_order in order:
+            divby = 1
+            for other_dim, other_order in enumerate(order):
+                if other_order < dim_order:
+                    divby *= dim_divisibility[other_dim]
+            stride_divisibility.append(divby)
 
-            strides_ordered = [
-                _assume_divisible_int(s, divby, loc=loc, ip=ip)
-                for s, divby in zip(strides_ordered, stride_divisibility)
-            ]
+        strides_ordered = [
+            _assume_divisible_int(s, divby, loc=loc, ip=ip)
+            for s, divby in zip(strides_ordered, stride_divisibility)
+        ]
 
         # Shapes are expected to be int32 so truncate to that before creating layout
         shape_i32 = tuple(arith.trunci(i32, s) for s in shape)
-        if dim_divisibility is not None:
-            shape_i32 = tuple(
-                _assume_divisible_int(s, divby, loc=loc, ip=ip)
-                for s, divby in zip(shape_i32, dim_divisibility)
-            )
+        shape_i32 = tuple(
+            _assume_divisible_int(s, divby, loc=loc, ip=ip)
+            for s, divby in zip(shape_i32, dim_divisibility)
+        )
 
         return cute.make_layout(shape_i32, stride=tuple(strides_ordered))
 
@@ -595,86 +686,84 @@ class JaxArrayValue(JaxArray):
         return [self.value]
 
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> "JaxArrayValue":
-        return JaxArrayValue(
-            values[0],
-            self.dtype,
-            self.shape,
-            self.mem_space,
-            self.assumed_align,
-            self.order,
-            self.mode,
-            self.static,
-            self.divisibility,
-        )
+        """Reconstruct this array from exactly one MLIR descriptor pointer."""
+        if len(values) != 1:
+            raise ValueError(
+                "JaxArrayValue reconstruction requires exactly one MLIR value; "
+                f"got {len(values)}."
+            )
+        return JaxArrayValue(values[0], self)
 
 
-class JaxTracedArray(JaxArray):
-    """Represents a traced array value that is used for cute.compile.
+class JaxTracedArray(cute.Pointer):
+    """Host-side JAX buffer placeholder used by ``cute.compile``.
 
-    Traced values are not real tensors or allocated on the device.
+    XLA passes each FFI buffer descriptor as a generic pointer. ``dtype``,
+    ``memspace``, and ``alignment`` describe that ABI pointer. The contained
+    :class:`JaxArray` describes the typed, aligned device pointer loaded from
+    the descriptor.
+
+    Inside the traced function, :meth:`__new_from_mlir_values__` replaces this
+    placeholder with a :class:`JaxArrayValue`, so pointer operations are never
+    exposed on the host placeholder itself.
     """
 
+    def __init__(self, jax_array: JaxArray) -> None:
+        self._jax_array = jax_array
+        self._ffi_buffer_pointer = cute.runtime.nullptr(
+            cutlass.Int8,
+            AddressSpace.generic,
+            assumed_align=_CUTE_XLA_FFI_BUFFER_ALIGNMENT,
+        )
+
     def __str__(self) -> str:
-        return f"JaxTracedArray<{self.dtype}:{self.shape}:{self.order}:{self.mode}:{self.static}:{self.divisibility}>"
+        array = self._jax_array
+        return f"JaxTracedArray<{array.dtype}:{array.shape}:{array.order}:{array.mode}:{array.static}:{array.divisibility}>"
 
     def __repr__(self) -> str:
         return str(self)
 
-    def __get_mlir_types__(self) -> list[ir.Type]:
-        # Struct passed as opaque object.
-        return [_llvm_pointer_type()]
+    @property
+    def dtype(self) -> type:
+        """The element type of the generic XLA FFI descriptor pointer."""
+        return cutlass.Int8
 
-    def __new_from_mlir_values__(self, values: ir.Value) -> JaxArrayValue:
-        return JaxArrayValue(
-            values,
-            self.dtype,
-            self.shape,
-            self.mem_space,
-            self.assumed_align,
-            self.order,
-            self.mode,
-            self.static,
-            self.divisibility,
-        )
+    @property
+    def memspace(self) -> AddressSpace:
+        """The address space of the XLA FFI descriptor pointer."""
+        return AddressSpace.generic
 
-    def __c_pointers__(self) -> list[int]:
-        return [0]
+    @property
+    def alignment(self) -> int:
+        """The alignment encoded in the descriptor pointer's CuTe type."""
+        return _CUTE_XLA_FFI_BUFFER_ALIGNMENT
 
+    @property
+    def max_alignment(self) -> int:
+        return self.alignment
 
-class JaxArrayList:
-    """Holds list of JaxArray or JaxTracedArray.
-    This class facilitates conversion of JaxTracedArray to JaxArray when crossing
-    the jit boundary.
-    """
-
-    def __init__(self, arrays: Sequence[JaxArray]) -> None:
-        self.arrays = tuple(arrays)
-
-    @overload
-    def __getitem__(self, idx: int) -> JaxArray: ...
-    @overload
-    def __getitem__(self, idx: slice) -> tuple[JaxArray, ...]: ...
-    def __getitem__(
-        self, idx: Union[int, slice]
-    ) -> Union[JaxArray, tuple[JaxArray, ...]]:
-        return self.arrays[idx]
-
-    def __len__(self) -> int:
-        return len(self.arrays)
-
-    def __iter__(self) -> Iterator[JaxArray]:
-        return iter(self.arrays)
-
-    def __c_pointers__(self) -> list[int]:
-        return [x.__c_pointers__()[0] for x in self.arrays]  # type: ignore[attr-defined]
+    @property
+    def type(self) -> ir.Type:
+        return self.__get_mlir_types__()[0]
 
     def __get_mlir_types__(self) -> list[ir.Type]:
-        return [x.__get_mlir_types__()[0] for x in self.arrays]  # type: ignore[attr-defined]
+        return self._ffi_buffer_pointer.__get_mlir_types__()  # type: ignore[attr-defined]
 
-    def __extract_mlir_values__(self) -> list[ir.Value]:
-        return [x.__extract_mlir_values__()[0] for x in self.arrays]  # type: ignore[attr-defined]
+    def __c_pointers__(self) -> list[int]:
+        return self._ffi_buffer_pointer.__c_pointers__()  # type: ignore[attr-defined]
 
-    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "JaxArrayList":
-        return JaxArrayList(
-            [x.__new_from_mlir_values__(v) for x, v in zip(self.arrays, values)]  # type: ignore[attr-defined]
-        )
+    def __new_from_mlir_values__(self, values: list[object]) -> JaxArrayValue:
+        if len(values) != 1:
+            raise ValueError(
+                "JaxTracedArray reconstruction requires exactly one MLIR value; "
+                f"got {len(values)}."
+            )
+
+        descriptor = values[0]
+        if not isinstance(descriptor, cute.Pointer):
+            raise TypeError(
+                "JaxTracedArray reconstruction requires a cute.Pointer, "
+                f"got {type(descriptor).__name__}."
+            )
+
+        return JaxArrayValue(descriptor.to_llvm_ptr(), self._jax_array)

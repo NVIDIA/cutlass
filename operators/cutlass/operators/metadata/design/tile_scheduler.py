@@ -68,7 +68,12 @@ class CLCDynamicPersistentTileSchedulerMetadata(TileSchedulerMetadata):
         operands: OperandsMetadata | None = None,
     ) -> list[TargetSm]:
         """Returns supported targets for CLC dynamic persistent tile scheduler."""
-        return [TargetSm("100f"), TargetSm("110f"), TargetSm("120")]
+        return [
+            TargetSm("100f"),
+            TargetSm("110f"),
+            TargetSm("120f"),
+            TargetSm("107f"),
+        ]
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
@@ -87,5 +92,6 @@ class StaticPersistentTileSchedulerMetadata(TileSchedulerMetadata):
             TargetSm("90"),
             TargetSm("100f"),
             TargetSm("110f"),
-            TargetSm("120"),
+            TargetSm("120f"),
+            TargetSm("107f"),
         ]

@@ -30,7 +30,6 @@ import math
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.utils as utils
 
 """
 A high-performance batched dense GEMM example for the utilzing SM80 style TensorCore instructions
@@ -115,9 +114,9 @@ class Sm80TensorOpGemmKernel:
         # respective modes of the tile shape (bM, bN, 1). The K dimension is
         # handled within a block via a multistage process.
 
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a)
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b)
-        self.c_major_mode = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(a)
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(b)
+        self.c_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # ///////////////////////////////////////////////////////////////////////////////
         # Shared memory layout:
@@ -367,7 +366,7 @@ class Sm80TensorOpGemmKernel:
                 ]
 
             # Shared memory buffer
-            smem = cutlass.utils.SmemAllocator()
+            smem = cutlass.memory.SmemAllocator()
             # Shared memory allocated for operations with A, B will be
             # overwritten for operations on C. This is to improve performance
             # by reducing the size of shared memory requested by each block
@@ -520,13 +519,13 @@ class Sm80TensorOpGemmKernel:
             # Create the copy atoms for the copy from shared memory to register
             atom_copy_s2r_A = cute.make_copy_atom(
                 cute.nvgpu.warp.LdMatrix8x8x16bOp(
-                    self.a_major_mode != utils.LayoutEnum.ROW_MAJOR, 4
+                    self.a_major_mode != cutlass.tensor_utils.LayoutEnum.ROW_MAJOR, 4
                 ),
                 mA.element_type,
             )
             atom_copy_s2r_B = cute.make_copy_atom(
                 cute.nvgpu.warp.LdMatrix8x8x16bOp(
-                    self.b_major_mode != utils.LayoutEnum.ROW_MAJOR, 4
+                    self.b_major_mode != cutlass.tensor_utils.LayoutEnum.ROW_MAJOR, 4
                 ),
                 mB.element_type,
             )
@@ -716,7 +715,9 @@ class Sm80TensorOpGemmKernel:
 
     def _make_smem_layout_AB(self, dtype, major_mode, copy_bits, smem_tiler):
         major_mode_size = (
-            smem_tiler[1] if major_mode == utils.LayoutEnum.ROW_MAJOR else smem_tiler[0]
+            smem_tiler[1]
+            if major_mode == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
+            else smem_tiler[0]
         )
         major_mode_size = min(64, major_mode_size)
 
@@ -725,7 +726,7 @@ class Sm80TensorOpGemmKernel:
 
         layout_atom_outer = (
             cute.make_layout((8, major_mode_size), stride=(major_mode_size, 1))
-            if major_mode == utils.LayoutEnum.ROW_MAJOR
+            if major_mode == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
             else cute.make_layout((major_mode_size, 8), stride=(1, major_mode_size))
         )
         layout_atom = cute.make_composed_layout(
@@ -738,7 +739,9 @@ class Sm80TensorOpGemmKernel:
 
     def _make_smem_layout_C(self, dtype, major_mode, copy_bits, smem_tiler):
         major_mode_size = (
-            smem_tiler[1] if major_mode == utils.LayoutEnum.ROW_MAJOR else smem_tiler[0]
+            smem_tiler[1]
+            if major_mode == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
+            else smem_tiler[0]
         )
 
         swizzle_bits = int(math.log2(major_mode_size * dtype.width // copy_bits))
@@ -746,7 +749,7 @@ class Sm80TensorOpGemmKernel:
 
         layout_atom_outer = (
             cute.make_layout((8, major_mode_size), stride=(major_mode_size, 1))
-            if major_mode == utils.LayoutEnum.ROW_MAJOR
+            if major_mode == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
             else cute.make_layout((major_mode_size, 8), stride=(1, major_mode_size))
         )
         layout_atom = cute.make_composed_layout(
@@ -758,7 +761,7 @@ class Sm80TensorOpGemmKernel:
         # Due to the thread layout of the mma, remove swizzle in C to
         # prevent shared memory fragments owned by an single thread from
         # holding swizzles
-        if major_mode == utils.LayoutEnum.COL_MAJOR:
+        if major_mode == cutlass.tensor_utils.LayoutEnum.COL_MAJOR:
             layout_atom = cute.make_composed_layout(
                 cute.make_swizzle(0, 3, 4), 0, layout_atom_outer
             )
@@ -776,7 +779,7 @@ class Sm80TensorOpGemmKernel:
         thread_layout = cute.make_layout(
             (self.num_threads // shape_dim_1, shape_dim_1), stride=(shape_dim_1, 1)
         )
-        if major_mode != utils.LayoutEnum.ROW_MAJOR:
+        if major_mode != cutlass.tensor_utils.LayoutEnum.ROW_MAJOR:
             shape_dim_0 = cute.size(self.bM) // copy_elems
             thread_layout = cute.make_layout(
                 (shape_dim_0, self.num_threads // shape_dim_0), stride=(1, shape_dim_0)
@@ -784,7 +787,7 @@ class Sm80TensorOpGemmKernel:
         # Value layout for copy
         value_layout = (
             cute.make_layout((1, copy_elems))
-            if major_mode == utils.LayoutEnum.ROW_MAJOR
+            if major_mode == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
             else cute.make_layout((copy_elems, 1))
         )
         return cute.make_tiled_copy_tv(atom_copy, thread_layout, value_layout)
@@ -796,14 +799,14 @@ class Sm80TensorOpGemmKernel:
         thread_layout = cute.make_layout(
             (self.num_threads // shape_dim_1, shape_dim_1), stride=(shape_dim_1, 1)
         )
-        if major_mode != utils.LayoutEnum.ROW_MAJOR:
+        if major_mode != cutlass.tensor_utils.LayoutEnum.ROW_MAJOR:
             shape_dim_0 = cute.size(self.bM) // copy_elems
             thread_layout = cute.make_layout(
                 (shape_dim_0, self.num_threads // shape_dim_0), stride=(1, shape_dim_0)
             )
         value_layout = (
             cute.make_layout((1, copy_elems))
-            if major_mode == utils.LayoutEnum.ROW_MAJOR
+            if major_mode == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
             else cute.make_layout((copy_elems, 1))
         )
         return cute.make_tiled_copy_tv(atom_copy, thread_layout, value_layout)

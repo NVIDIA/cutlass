@@ -472,4 +472,71 @@ tma_descriptor_fence_acquire(TmaDescriptor const* desc_ptr)
 
 ///////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+// Returns true if the first `threshold_bytes` of the gmem tensor are contiguous
+// from the base address.
+template <class ShapeT, class StrideT, size_t N>
+CUTE_HOST_DEVICE
+bool
+tma_gmem_prefix_is_contiguous(cute::array<ShapeT,  N> const& gmem_prob_shape,
+                              cute::array<StrideT, N> const& gmem_prob_stride_bytes,
+                              size_t                         bits_per_element,
+                              uint64_t                       threshold_bytes = uint64_t(128) * 1024)
+{
+  // Collect the active modes (extent > 1, stride != 0).
+  cute::array<ShapeT, N> shape{};
+  shape[0] = gmem_prob_shape[0];
+  cute::array<StrideT, N> stride{};
+  stride[0] = gmem_prob_stride_bytes[0];
+  size_t num_modes = 1;
+  for (size_t i = 1; i < N; ++i) {
+    ShapeT s = gmem_prob_shape[i];
+    StrideT d = gmem_prob_stride_bytes[i];
+    if (s > 1 && d != 0) {
+      shape[num_modes]  = s;
+      stride[num_modes] = d;
+      ++num_modes;
+    }
+  }
+
+  // Sort in acending order sort mode 1 and up, keep mode 0 as is.
+  for (size_t i = 2; i < num_modes; ++i) {
+    StrideT ks = stride[i];
+    ShapeT kn = shape[i];
+    size_t j = i;
+    while (j > 1 && stride[j - 1] > ks) {
+      stride[j] = stride[j - 1];
+      shape[j]  = shape[j - 1];
+      --j;
+    }
+    stride[j] = ks;
+    shape[j]  = kn;
+  }
+
+  // Walk the modes in memory order, requiring dense packing from the base.
+  // First mode covers shape[0] * bits_per_element bits, and must be a multiple
+  // of 16B.
+  uint64_t covered = shape[0] * bits_per_element / 8;
+  for (size_t i = 1; i < num_modes; ++i) {
+    // Determine if contiguous.
+    if (stride[i] != covered) {
+      break;
+    }
+    auto s = shape[i];
+    // Check if covered >= threshold_bytes or if there would be an overflow for 
+    // covered *= s. In the case we would overflow we must be >= threshold_bytes
+    if (covered >= threshold_bytes || (s != 0 && 
+        covered > (cute::numeric_limits<uint64_t>::max() / s))) {
+      return true;
+    }
+    covered *= s;
+  }
+  return covered >= threshold_bytes;
+}
+
+} // end namespace detail
+
+///////////////////////////////////////////////////////////////////////////////
+
 } // end namespace cute

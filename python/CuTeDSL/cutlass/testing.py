@@ -290,22 +290,6 @@ def _does_kernel_use_stream(
     return False
 
 
-def _does_kernel_use_stream_with_jit_retry(
-    kernel: Callable[..., Any],
-    stream: cuda_driver.CUstream,
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-) -> bool:
-    uses_stream = _does_kernel_use_stream(kernel, stream, args, kwargs)
-    if uses_stream or not hasattr(kernel, "_dsl_cls"):
-        return uses_stream
-
-    # The first invocation of an uncompiled @cute.jit function can spend the
-    # capture attempt compiling instead of recording a launch. Retry once with
-    # the now-compiled callable before reporting a stream mismatch.
-    return _does_kernel_use_stream(kernel, stream, args, kwargs)
-
-
 def benchmark(
     callable: Callable,
     *,
@@ -317,6 +301,7 @@ def benchmark(
     workspace_count: int = 1,
     use_cuda_graphs: bool = False,
     use_cupti: bool = False,
+    nvtx_tag: Optional[str] = None,
 ) -> float:
     """Benchmarks a callable function with the specified parameters.
 
@@ -384,6 +369,11 @@ def benchmark(
     :return: The benchmark time in microseconds
     :rtype: float
     """
+    try:
+        import nvtx
+    except ImportError:
+        nvtx_tag = None
+
     import cutlass.base_dsl.jit_executor  # noqa: F401
     import cutlass.cutlass_dsl.cuda_jit_executor  # noqa: F401
 
@@ -417,7 +407,7 @@ def benchmark(
     if (
         not use_cuda_graphs
         and int(stream) != int(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
-        and not _does_kernel_use_stream_with_jit_retry(
+        and not _does_kernel_use_stream(
             callable, stream, workspaces[0].args, workspaces[0].kwargs
         )
     ):
@@ -613,10 +603,17 @@ def benchmark(
             err = cuda_runtime.cudaGraphLaunch(profiling_graph_exec, stream)
             _cuda_success(err, "Error on launching profiling graph")
 
+        if nvtx_tag is not None:
+            print(f"Starting nvtx tag {nvtx_tag}")
+            range_id = nvtx.start_range(nvtx_tag)
+
         if use_cupti:
             elapsed_time = _measure_with_cupti(launch_profiling_graph)
         else:
             elapsed_time = _measure_with_cuda_event(launch_profiling_graph)
+
+        if nvtx_tag is not None:
+            nvtx.end_range(range_id)
 
         # ---------------------------------------------------------------------
         # Step 6: Cleanup - Destroy graph executables
@@ -633,10 +630,17 @@ def benchmark(
         # Warmup iterations to stabilize GPU state
         warmup_workspace_idx = _loop_and_call_kernel(warmup_iterations)
 
+        if nvtx_tag is not None:
+            print(f"Starting nvtx tag {nvtx_tag}")
+            range_id = nvtx.start_range(nvtx_tag)
+
         def run_profiling_iterations() -> None:
             _loop_and_call_kernel(iterations, warmup_workspace_idx)
 
         elapsed_time = _measure_with_cupti(run_profiling_iterations)
+
+        if nvtx_tag is not None:
+            nvtx.end_range(range_id)
 
     # =========================================================================
     # Branch 3: CUDA event profiler mode (default)
@@ -645,10 +649,17 @@ def benchmark(
         # Warmup iterations to stabilize GPU state
         warmup_workspace_idx = _loop_and_call_kernel(warmup_iterations)
 
+        if nvtx_tag is not None:
+            print(f"Starting nvtx tag {nvtx_tag}")
+            range_id = nvtx.start_range(nvtx_tag)
+
         def run_profiling_iterations() -> None:
             _loop_and_call_kernel(iterations, warmup_workspace_idx)
 
         elapsed_time = _measure_with_cuda_event(run_profiling_iterations)
+
+        if nvtx_tag is not None:
+            nvtx.end_range(range_id)
 
     # Destroy events
     err = cuda_driver.cuEventDestroy(start_event)
@@ -732,9 +743,7 @@ def _benchmark_for_autotune(
 
     if int(current_stream) != int(
         cuda_driver.CUstream(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
-    ) and not _does_kernel_use_stream_with_jit_retry(
-        callable, current_stream, args, kwargs
-    ):
+    ) and not _does_kernel_use_stream(callable, current_stream, args, kwargs):
         raise ValueError(f"Incorrect stream passed to kernel: {current_stream}")
 
     if use_cold_l2:

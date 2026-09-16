@@ -114,8 +114,6 @@ class TargetSm:
         Raises:
             ValueError: If ``design`` does not have a ``mma_instruction_type`` field.
         """
-        # For now, just return the supported instruction.
-        # It can be extended to any other rules that are introduced.
         metadata_to_check = []
 
         if not hasattr(design, "mma_instruction_type"):
@@ -135,7 +133,31 @@ class TargetSm:
                 design, operands
             )
             metadata_to_check.append(tile_scheduler_supported_targets)
-        return list(set.intersection(*map(set, metadata_to_check)))
+
+        return TargetSm.intersect_supported_targets(metadata_to_check)
+
+    @staticmethod
+    def intersect_supported_targets(
+        target_groups: list[list[TargetSm]],
+    ) -> list[TargetSm]:
+        """Intersect component target groups by portability (logical AND across groups).
+
+        Generalises the supported-target rule to any number of component groups
+        (MMA, tile scheduler, ...): an arch is kept only when every group holds
+        some target that ``is_portable_to`` it.
+
+        Args:
+            target_groups (list[list[TargetSm]]): One target list per component.
+
+        Returns:
+            list[TargetSm]: Targets supported by all groups, in first-seen order.
+        """
+        candidates = list(dict.fromkeys(t for group in target_groups for t in group))
+        return [
+            c
+            for c in candidates
+            if all(any(t.is_portable_to(c) for t in group) for group in target_groups)
+        ]
 
     def is_portable_to(self, other: TargetSm | str) -> bool:
         """Check if this target can compile/run on architecture described by `other` TargetSm."""

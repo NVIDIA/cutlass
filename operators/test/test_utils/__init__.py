@@ -27,14 +27,14 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from . import allocation, gemm  # noqa: F401
-from .common import get_test_level, operators_for_classes, skip_if_unsupported_target
+from .common import get_test_level, reference_device, skip_if_unsupported_target
 from .reference_check import assert_close_with_reference_conversion
 
 __all__ = [
     "allocation",
     "gemm",
     "get_test_level",
-    "operators_for_classes",
+    "reference_device",
     "skip_if_unsupported_target",
     "assert_close_with_reference_conversion",
 ]

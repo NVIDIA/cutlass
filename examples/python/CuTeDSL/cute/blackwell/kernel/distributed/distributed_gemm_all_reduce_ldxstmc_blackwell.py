@@ -672,7 +672,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
         self.mma_tiler = (*mma_tiler_mn, 1)
         self.use_tma_store = use_tma_store
         # Capture the JIT target arch so SMEM/TMEM sizing tracks the actual
-        # hardware (sm_100 / sm_103 / sm_107 / ...). Matches the FMHA pattern.
+        # hardware (sm_100 / sm_103 / ...). Matches the FMHA pattern.
         arch_enum = BaseDSL._get_dsl().get_arch_enum()
         self.arch = f"sm_{arch_enum.major}{arch_enum.minor}"
 
@@ -1930,7 +1930,7 @@ class Sm100PersistentDenseGemmAllReduceLDxSTMCKernel:
                     f"[epilogue] Problem shape (M={m}, N={n}) must be divisible by cta tile shape {cta_tile_shape_mn} for non TMA store"
                 )
             # CTA swizzling improves the L2 cache utilization and reduces the number of cache misses.
-            # Make sure the swizzle size divides the cta/cga count since non TMA epilogue don't support OOB tiles.
+            # Make sure the swizzle size divides the cta/cluster count since non TMA epilogue don't support OOB tiles.
             # Swizzle only applies to the dimension orthogonal to the raster direction.
             m_per_swizzle = (m // cta_tile_shape_mn[0]) // self.cluster_shape_mn[0]
             n_per_swizzle = (n // cta_tile_shape_mn[1]) // self.cluster_shape_mn[1]

@@ -254,6 +254,27 @@ public:
       // account for dynamic smem capacity if needed
       int smem_size = ConvKernel::SharedStorageSize;
       if (smem_size >= (48 << 10)) {
+        if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 107) {
+          if (smem_size >  cutlass::arch::sm100_smem_capacity_bytes) {
+#if defined(CUDA_OVERSIZED_SMEM_ENABLED)
+            CUTLASS_TRACE_HOST("  Setting oversized smem");
+            cudaError_t result = cudaFuncSetAttribute(
+                device_kernel<ConvKernel>,
+                cudaFuncAttributeSharedMemoryMode,
+                cudaSharedMemoryModeAllowOversizedSharedMemory);
+
+            if (cudaSuccess != result) {
+              result = cudaGetLastError(); // to clear the error bit
+              CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error: " << cudaGetErrorString(result));
+              return Status::kErrorInternal;
+            }
+            return Status::kSuccess;
+#else
+            CUTLASS_TRACE_HOST("  Setting oversized smem supported for CUDA version 13.4 and above");
+            return Status::kErrorInternal;
+#endif 
+          }
+        } 
         CUTLASS_TRACE_HOST("  Setting smem size to " << smem_size);
         cudaError_t result = cudaFuncSetAttribute(
             device_kernel<ConvKernel>,
@@ -352,6 +373,7 @@ public:
         else {
           if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 100 ||
                         ConvKernel::ArchTag::kMinComputeCapability == 101
+                        || ConvKernel::ArchTag::kMinComputeCapability == 107
                         ) { 
             launch_result = ClusterLauncher::launch_with_fallback_cluster(
               grid,

@@ -138,30 +138,47 @@ def test_mixed_input_gemm_2d(fixture_toggle_tvm_ffi):
     )
 
 
-# =============================================================================
-# Convert-Scale Mode Tests (Int4)
-# =============================================================================
-# NOTE: These tests are skipped because PyTorch does not have native Int4 support.
-# Testing Int4 requires packed Int4 tensors using CUTLASS utilities (like
-# create_i4_tensor_and_scale from mixed_input_host_utils.py) which are not yet
-# exposed through the cutlass.operators. To enable these tests:
-# 1. Add Int4 tensor creation utilities to cutlass.operators
-# 2. Or use cutlass.cute tensor creation with proper packing
-
-
-@pytest.mark.skip(
-    reason="Int4 tensors require CUTLASS packed format not available through PyTorch"
+@pytest.mark.parametrize(
+    "M, N, K, L",
+    [
+        (256, 512, 256, 1),
+        (128, 128, 128, 2),
+    ],
 )
-def test_mixed_input_gemm_convert_scale_int4():
-    """
-    Test convert-scale mode with Int4 A tensors.
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_mixed_input_gemm_uint8(
+    M: int,
+    N: int,
+    K: int,
+    L: int,
+    fixture_toggle_tvm_ffi,
+):
+    """Mixed-input GEMM with Uint8 A (including values >= 128) and BFloat16 B.
 
-    Convert-scale mode: out = (type_convert(A) * scale) @ B
-
-    This test is skipped because PyTorch does not support Int4 dtype.
-    Int4 tensors must be created using CUTLASS utilities with proper
-    2-element packing into 8-bit storage.
+    Regression test for the Uint8 -> BFloat16 conversion: values >= 128 must be
+    treated as unsigned (e.g. 200 stays 200), not sign-extended (200 -> -56). The
+    A range deliberately spans the full ``[0, 255]`` to exercise the high half.
     """
+    A = torch.randint(0, 256, (L, M, K), device="cuda", dtype=torch.uint8)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda").to(torch.bfloat16)
+    D = torch.empty((L, M, N), device="cuda", dtype=torch.bfloat16)
+
+    args = ops.GemmArguments(A=A, B=B, out=D, accumulator_type=torch.float32)
+    operators = ops.get_operators(args)
+
+    assert len(operators) > 0
+    operator = operators[0]
+    logger.debug(f"Picked operator: {operator.metadata.operator_name}")
+
+    assert operator.supports(args)
+    operator.run(args)
+
+    reference = A.to(torch.float32) @ B.to(torch.float32)
+    assert_close_with_reference_conversion(D, reference, D.dtype)
+
 
 
 # =============================================================================

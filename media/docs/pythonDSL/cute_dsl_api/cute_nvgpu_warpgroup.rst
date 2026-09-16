@@ -1,7 +1,7 @@
 .. _cute_nvgpu_warpgroup:
 
-warpgroup submodule
-===================
+nvgpu.warpgroup
+===============
 
 .. automodule:: cutlass.cute.nvgpu.warpgroup
    :members:

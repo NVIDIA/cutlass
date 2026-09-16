@@ -1,7 +1,7 @@
 .. _cute_nvgpu_cpasync:
 
-cpasync submodule
-=================
+nvgpu.cpasync
+=============
 
 .. automodule:: cutlass.cute.nvgpu.cpasync
    :members:

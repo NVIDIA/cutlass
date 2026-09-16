@@ -363,7 +363,7 @@ def compute_capacity_config(
     computations, used by both early validation and compile-time configuration.
     """
     from cutlass.cute.arch import get_max_tmem_alloc_cols
-    from cutlass.utils import get_smem_capacity_in_bytes
+    from cutlass.memory import get_smem_capacity_in_bytes
 
     # Get hardware capacities
     if smem_capacity is None:
@@ -457,6 +457,7 @@ class MixedInputGemmKernel:
     :param cluster_shape_mn: Cluster dimensions (M, N) for parallel processing
     :param use_tma_store: Whether to use TMA for storing results
     :param shuffle_a: Whether to use shuffle intrinsic for int4-to-bf16 conversion
+    :param a_dtype: Narrow dtype of operand A from metadata (preserves signedness)
     """
 
     def __init__(
@@ -469,9 +470,9 @@ class MixedInputGemmKernel:
         cluster_shape_mn: tuple[int, int],
         use_tma_store: bool,
         shuffle_a: bool,
+        a_dtype: type[cutlass.Numeric],
     ):
-        """Initializes the mixed-input GEMM kernel with specified configuration.
-        """
+        """Initializes the mixed-input GEMM kernel with specified configuration."""
         self.scale_granularity_m = scale_granularity_m
         self.scale_granularity_k = scale_granularity_k
 
@@ -487,6 +488,9 @@ class MixedInputGemmKernel:
         self.mma_tiler = mma_tiler_mnk  # Full 3-tuple (M, N, K) from user
         self.use_tma_store = use_tma_store
         self.shuffle_a = shuffle_a
+        # Authoritative narrow dtype from operator metadata. Carries signedness,
+        # unlike the signless `a.element_type` recovered at the JIT boundary.
+        self._a_dtype = a_dtype
         self.arch = "sm_100"
 
         self.cta_group = (
@@ -531,7 +535,7 @@ class MixedInputGemmKernel:
         )
 
         self.smem_buffer_align_bytes = SM100_SMEM_ALIGN
-        self.smem_capacity = utils.get_smem_capacity_in_bytes(self.arch)
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes(self.arch)
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs.
@@ -727,7 +731,7 @@ class MixedInputGemmKernel:
             if a_scale is None:
                 raise ValueError("Scale tensor required for convert-scale mode")
             if (
-                utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
+                cutlass.tensor_utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
                 != OperandMajorMode.MN
             ):
                 raise ValueError("scale_major_mode must be M-major")
@@ -776,8 +780,11 @@ class MixedInputGemmKernel:
                 a_scale.iterator, cute.select(a_scale.layout, [1, 2, 0])
             )
 
-        # Extract data types from tensors
-        self.a_dtype: type[cutlass.Numeric] = a.element_type
+        # Extract data types from tensors.
+        # `a.element_type` is reconstructed from a signless `i8` memref, so a Uint8
+        # input would come back as signed Int8. Use the metadata-resolved dtype
+        # (passed via __init__) so signedness is preserved for the convert path.
+        self.a_dtype: type[cutlass.Numeric] = self._a_dtype
         self.a_scale_dtype: type[cutlass.Numeric] = (
             a_scale.element_type
             if self.scale_mode is TransformMode.ConvertScale
@@ -788,14 +795,18 @@ class MixedInputGemmKernel:
         self.mma_dtype = self.b_dtype
 
         # Extract layout information
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
         self.scale_major_mode = (
-            utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
+            cutlass.tensor_utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
             if self.scale_mode is TransformMode.ConvertScale
             else None
         )
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
             self.gmem_layout_scale = mixed_input_utils.get_gmem_layout_scale(
@@ -914,6 +925,26 @@ class MixedInputGemmKernel:
                 self.epi_tile,
             )
 
+        # Use cosize rather than size for shared-storage extents.  Some layouts
+        # (notably the int4 ConvertScale scale layout) contain broadcast/zero-stride
+        # modes: size counts logical elements, while cosize is the actual storage
+        # footprint needed by the layout.
+        c_smem_size = (
+            cute.cosize(self.c_smem_layout_staged.outer) if self.use_tma_store else 0
+        )
+        a_smem_size = cute.cosize(self.smem_layout_a.outer)
+        b_smem_size = cute.cosize(self.smem_layout_b.outer)
+        a_transform_smem_size = (
+            cute.cosize(self.smem_layout_a_transform.outer)
+            if self.transform_a_source == tcgen05.OperandSource.SMEM
+            else 0
+        )
+        a_scale_smem_size = (
+            cute.cosize(self.smem_layout_scale.outer)
+            if self.scale_mode is TransformMode.ConvertScale
+            else 0
+        )
+
         # Define shared storage structure
         @cute.struct
         class SharedStorage:
@@ -946,38 +977,23 @@ class MixedInputGemmKernel:
             tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
             smem_C: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.c_dtype,
-                    cute.size(self.c_smem_layout_staged.outer)
-                    if self.use_tma_store
-                    else 0,
-                ],
+                cute.struct.MemRange[self.c_dtype, c_smem_size],
                 self.smem_buffer_align_bytes,
             ]
             smem_A: cute.struct.Align[
-                cute.struct.MemRange[self.a_dtype, cute.size(self.smem_layout_a.outer)],
+                cute.struct.MemRange[self.a_dtype, a_smem_size],
                 self.smem_buffer_align_bytes,
             ]
             smem_B: cute.struct.Align[
-                cute.struct.MemRange[self.b_dtype, cute.size(self.smem_layout_b.outer)],
+                cute.struct.MemRange[self.b_dtype, b_smem_size],
                 self.smem_buffer_align_bytes,
             ]
             smem_A_transform: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.mma_dtype,
-                    cute.size(self.smem_layout_a_transform.outer)
-                    if self.transform_a_source == tcgen05.OperandSource.SMEM
-                    else 0,
-                ],
+                cute.struct.MemRange[self.mma_dtype, a_transform_smem_size],
                 self.smem_buffer_align_bytes,
             ]
             smem_A_scale: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.mma_dtype,
-                    cute.size(self.smem_layout_scale.outer)
-                    if self.scale_mode is TransformMode.ConvertScale
-                    else 0,
-                ],
+                cute.struct.MemRange[self.mma_dtype, a_scale_smem_size],
                 self.smem_buffer_align_bytes,
             ]
 
@@ -1054,8 +1070,7 @@ class MixedInputGemmKernel:
         epi_tile: cute.Tile,
         tile_sched_params: utils.PersistentTileSchedulerParams,
     ):
-        """GPU device kernel performing the Persistent Mixed-Input GEMM computation.
-        """
+        """GPU device kernel performing the Persistent Mixed-Input GEMM computation."""
         warp_idx = cute.arch.make_warp_uniform(cute.arch.warp_idx())
         tidx, _, _ = cute.arch.thread_idx()
         bidx, bidy, bidz = cute.arch.block_idx()
@@ -1083,7 +1098,7 @@ class MixedInputGemmKernel:
         )
         tidx, _, _ = cute.arch.thread_idx()
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # Initialize load2transform pipeline, which tracks the dependencies between TMA's loading
@@ -1173,7 +1188,7 @@ class MixedInputGemmKernel:
         )
 
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_ptr_sync_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
@@ -1545,8 +1560,13 @@ class MixedInputGemmKernel:
                 transform_local_tidx,
             )
             # make rmem tensor for input A and transformed A
+            # Use the metadata-resolved narrow dtype (carries signedness) rather than
+            # `tAsA_input.element_type`: the smem copy atom canonicalizes the integer to
+            # signless `i8`, which round-trips back to Int8 and would drop Uint8's
+            # unsignedness before the int->float convert. The smem->register copy is
+            # byte-wise (same width), so relabeling the register tensor is safe.
             tArA = cute.make_rmem_tensor(
-                tAsA_input[(None, None, None, None, 0)].shape, tAsA_input.element_type
+                tAsA_input[(None, None, None, None, 0)].shape, self.a_dtype
             )
             tArA_transform = cute.make_rmem_tensor(
                 tAsA_input[(None, None, None, None, 0)].shape, self.mma_dtype
@@ -2035,8 +2055,7 @@ class MixedInputGemmKernel:
         epi_tile: cute.Tile,
         sC: cute.Tensor,
     ) -> tuple[cute.CopyAtom, cute.Tensor, cute.Tensor]:
-        """Partitions source and destination tensors for a TMA store or SIMT store.
-        """
+        """Partitions source and destination tensors for a TMA store or SIMT store."""
         if self.use_tma_store:
             tma_atom_c, bSG_sC, bSG_gC, _, _ = (
                 mixed_input_utils.epilog_gmem_copy_and_partition(

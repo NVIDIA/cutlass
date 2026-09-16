@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -234,6 +233,7 @@ class FloatRoundStyle(enum.Enum):
 class FunctionalOp(enum.Enum):
     AtomicAdd = enum_auto()
     AtomicMaximum = enum_auto()
+    AtomicMinimum = enum_auto()
     Divides = enum_auto()
     Maximum = enum_auto()
     Minimum = enum_auto()
@@ -247,6 +247,11 @@ class FunctionalOp(enum.Enum):
 FunctionalOpTag = {
     FunctionalOp.AtomicAdd: "cutlass::atomic_add",
     FunctionalOp.AtomicMaximum: "cutlass::atomic_maximum",
+    # ``AtomicMinimum`` is deliberately absent: CUTLASS C++ ships no
+    # ``cutlass::atomic_minimum`` functor, so a C++-emitting backend asked
+    # for it must fail loudly here rather than emit a nonexistent name.
+    # The EFC backend maps the *register* fn (``Minimum``) itself and never
+    # consults this tag.
     FunctionalOp.Divides: "cutlass::divides",
     FunctionalOp.Maximum: "cutlass::maximum",
     FunctionalOp.Minimum: "cutlass::minimum",

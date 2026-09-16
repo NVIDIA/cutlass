@@ -814,30 +814,43 @@ public:
     //
     if(high_storage_unit_idx_ != low_storage_unit_idx_){
       /// Only need update 2 storage unit at once.
-      /// consider misaligned address issue, we need to do atomicCAS twice 
-      StorageUnit original_low_bits, original_high_bits, update_low_bits, update_high_bits;
+      /// consider misaligned address issue, we need to do atomicCAS twice
+      StorageUnit assumed_low_bits, original_low_bits, update_low_bits;
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+      original_low_bits = __nv_atomic_load_n(&(*ptr_)[low_storage_unit_idx_], __NV_ATOMIC_RELAXED);
+#else
+      original_low_bits = *const_cast<StorageUnit const volatile *>(&(*ptr_)[low_storage_unit_idx_]);
+#endif
       do {
-        original_low_bits  = ((*ptr_)[low_storage_unit_idx_]);
-        update_low_bits  = (original_low_bits & kLowUpdateMask) | low_new_bits;
-        original_low_bits = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), original_low_bits, update_low_bits);
-      } while (update_low_bits != original_low_bits);
+        assumed_low_bits  = original_low_bits;
+        update_low_bits   = (assumed_low_bits & kLowUpdateMask) | low_new_bits;
+        original_low_bits = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), assumed_low_bits, update_low_bits);
+      } while (original_low_bits != assumed_low_bits);
+      StorageUnit assumed_high_bits, original_high_bits, update_high_bits;
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+      original_high_bits = __nv_atomic_load_n(&(*ptr_)[high_storage_unit_idx_], __NV_ATOMIC_RELAXED);
+#else
+      original_high_bits = *const_cast<StorageUnit const volatile *>(&(*ptr_)[high_storage_unit_idx_]);
+#endif
       do {
-        original_high_bits = ((*ptr_)[high_storage_unit_idx_]);
-        update_high_bits  = (original_high_bits & kHighUpdateMask) | high_new_bits;
-        original_high_bits = atomicCAS(&((*ptr_)[high_storage_unit_idx_]), original_high_bits, update_high_bits);
-      } while (update_high_bits != original_high_bits);
+        assumed_high_bits  = original_high_bits;
+        update_high_bits   = (assumed_high_bits & kHighUpdateMask) | high_new_bits;
+        original_high_bits = atomicCAS(&((*ptr_)[high_storage_unit_idx_]), assumed_high_bits, update_high_bits);
+      } while (original_high_bits != assumed_high_bits);
     }
     else {
       /// Only need update 1 storage unit.
-      StorageUnit original, updated;
+      StorageUnit assumed, original, updated;
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+      original = __nv_atomic_load_n(&(*ptr_)[low_storage_unit_idx_], __NV_ATOMIC_RELAXED);
+#else
+      original = *const_cast<StorageUnit const volatile *>(&(*ptr_)[low_storage_unit_idx_]);
+#endif
       do {
-        original = ((*ptr_)[low_storage_unit_idx_]);
-
-        updated = (original & kLowUpdateMask) | low_new_bits;
-
-        original = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), original, updated);
-
-      } while (updated != original);
+        assumed  = original;
+        updated  = (assumed & kLowUpdateMask) | low_new_bits;
+        original = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), assumed, updated);
+      } while (original != assumed);
     }
 #else
 

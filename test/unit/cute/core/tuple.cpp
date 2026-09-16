@@ -41,6 +41,51 @@
 #include <cute/algorithm/tuple_algorithms.hpp>
 #include <cute/tensor.hpp>
 
+TEST(CuTe_core, IntegerSequenceTransformApply)
+{
+  using seq0 = cute::int_sequence<1, 2, 3>;
+  using seq1 = cute::int_sequence<4, 5, 6>;
+  using seq2 = cute::int_sequence<7, 8, 9>;
+
+  static_assert(!cute::is_same_v<
+      seq0,
+      CUTE_STL_NAMESPACE::integer_sequence<int, 1, 2, 3>>);
+
+  auto pairwise = cute::transform_apply(
+      seq0{}, seq1{},
+      [](auto x, auto y) { return x + y; },
+      [](auto... values) { return cute::make_tuple(values...); });
+  EXPECT_EQ(cute::get<0>(pairwise), 5);
+  EXPECT_EQ(cute::get<1>(pairwise), 7);
+  EXPECT_EQ(cute::get<2>(pairwise), 9);
+  static_assert(cute::is_constant_v<5, decltype(cute::get<0>(pairwise))>);
+  static_assert(cute::is_constant_v<7, decltype(cute::get<1>(pairwise))>);
+  static_assert(cute::is_constant_v<9, decltype(cute::get<2>(pairwise))>);
+
+  auto three_way = cute::transform_apply(
+      seq0{}, seq1{}, seq2{},
+      [](auto x, auto y, auto z) { return x + y + z; },
+      [](auto... values) { return cute::make_tuple(values...); });
+  EXPECT_EQ(cute::get<0>(three_way), 12);
+  EXPECT_EQ(cute::get<1>(three_way), 15);
+  EXPECT_EQ(cute::get<2>(three_way), 18);
+  static_assert(cute::is_constant_v<12, decltype(cute::get<0>(three_way))>);
+  static_assert(cute::is_constant_v<15, decltype(cute::get<1>(three_way))>);
+  static_assert(cute::is_constant_v<18, decltype(cute::get<2>(three_way))>);
+
+  auto sum = cute::fold(
+      seq0{}, cute::_0{},
+      [](auto accumulated, auto value) { return accumulated + value; });
+  EXPECT_EQ(sum, 6);
+  static_assert(cute::is_constant_v<6, decltype(sum)>);
+
+  auto sum_without_identity = cute::fold_first(
+      seq0{},
+      [](auto accumulated, auto value) { return accumulated + value; });
+  EXPECT_EQ(sum_without_identity, 6);
+  static_assert(cute::is_constant_v<6, decltype(sum_without_identity)>);
+}
+
 TEST(CuTe_core, Tuple)
 {
   using namespace cute;
@@ -354,7 +399,7 @@ test_packed_type_alias([[maybe_unused]] ExpectedPackedType packed, std::tuple<Ar
     tuple<Args...> sl = cute::apply(unpacked, [](auto... a){ return cute::make_tuple(a...); });
     EXPECT_EQ(std::get<index>(unpacked), cute::get<index>(sl));
   };
-  cute::for_each(std::make_index_sequence<sizeof...(Args)>(), test_element);
+  cute::for_each(cute::make_index_sequence<sizeof...(Args)>(), test_element);
 }
 
 void test_packed_type_aliases() {
@@ -896,4 +941,24 @@ void test_tuple_find_all() {
 TEST(CuTe_core, TupleFind)
 {
   test::test_tuple_find_all<cute::tuple>();
+}
+
+TEST(CuTe_core, IntegerSequenceTupleAlgorithms)
+{
+  using namespace cute;
+
+  auto apply_sequence = integer_sequence<int, 0, 1, 2, 3, 4>{};
+  [[maybe_unused]] auto apply_result = cute::apply(
+      apply_sequence, [](auto... i) { return make_tuple(i...); });
+  constexpr auto sequence = integer_sequence<int, 0, 2, 1>{};
+  [[maybe_unused]] constexpr auto unary_result = transform(sequence, [](auto i) { return i; });
+  [[maybe_unused]] constexpr auto binary_result = transform(
+      sequence, make_tuple(_1{}, _2{}, _4{}), [](auto i, auto v) { return i + v; });
+  constexpr auto lvalue_fold_result = fold(sequence, _0{}, [](auto sum, auto i) { return sum + i; });
+  constexpr auto rvalue_fold_result = fold(
+      integer_sequence<int, 0>{}, _0{}, [](auto sum, auto i) { return sum + i; });
+
+  static_assert(is_same_v<remove_cvref_t<decltype(lvalue_fold_result)>, _3>);
+  static_assert(is_same_v<remove_cvref_t<decltype(rvalue_fold_result)>, _0>);
+  static_assert(tuple_size<remove_cvref_t<decltype(apply_result)>>::value == 5);
 }

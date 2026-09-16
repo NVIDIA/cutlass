@@ -39,7 +39,6 @@ import cutlass.operators as ops
 from test_utils.common import _TEST_LEVEL_ENV_VAR
 
 
-
 # The ``--test-level`` CLI option is provided by the ``test_sharding``
 # plugin registered above.  This hook bridges the CLI value to the
 # ``CUTLASS_OPERATORS_TEST_LEVEL`` env var.

@@ -345,7 +345,7 @@ class GemmOperation:
     Get the tile shape passed to the collective builder.
     On Blackwell, this is different than the operation.tile_description.tile_shape.
     """
-    is_sm100_kernel = (self.arch == 100 or self.arch == 103)
+    is_sm100_kernel = (self.arch == 100 or self.arch == 103 or self.arch == 107)
     if not is_sm100_kernel:
       return self.tile_description.tile_shape
 

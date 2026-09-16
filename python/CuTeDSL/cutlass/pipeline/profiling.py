@@ -53,7 +53,7 @@ def dump_profiling_metadata(dump_dir: str, extra: Optional[dict] = None) -> None
     Call after ``cute.compile()`` returns. Merges the symbol registry
     (barriers + warps) with any extra metadata.
 
-    :param dump_dir: Output directory.
+    :param dump_dir: Output directory (typically from ``CUTE_DSL_DUMP_DIR``).
     :type dump_dir: str
     :param extra: Additional fields to merge (e.g., TS schedule).
     :type extra: dict, optional

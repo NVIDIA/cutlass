@@ -29,8 +29,9 @@
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import auto as enum_auto
+from functools import cached_property
 from typing import Any
 
 from cutlass.operators.arguments.base import Operand
@@ -392,5 +393,18 @@ def _operand_or_dense(
         raise ValueError(
             f"Expected operand to be a Operand or TensorLike, got {type(operand)}"
         )
+
+
+
+def _dense_tensor(
+    tensor: TensorLike | DenseTensor, *, name: str = "tensor"
+) -> DenseTensor:
+    """Normalize a tensor-like value while rejecting non-dense operands."""
+    operand = _operand_or_dense(tensor)
+    if not isinstance(operand, DenseTensor):
+        raise TypeError(
+            f"{name} must be a TensorLike or DenseTensor, got {type(tensor)}"
+        )
+    return operand
 
 

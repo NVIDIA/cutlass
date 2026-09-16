@@ -29,9 +29,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from cutlass.operators.arguments import GroupedGemmArguments, RuntimeArguments
+from cutlass.operators.arguments import (
+    IndexPtrGroupedGemmArguments,
+    RuntimeArguments,
+)
 from cutlass.operators.metadata.operands.base import OperandsMetadata
 from cutlass.operators.status import Status
 
@@ -41,60 +44,84 @@ if TYPE_CHECKING:
     from cutlass.operators.metadata.operand_constraints import OperandConstraints
 
 
+
 @dataclass
-class GroupedGemmOperandsMetadata(OperandsMetadata):
-    """Describes conditions under which an Operation functionally supports :class:`~cutlass.operators.GroupedGemmArguments`."""
+class IndexPtrGroupedGemmOperandsMetadata(OperandsMetadata):
+    """Operand constraints for M/N/K index-pointer grouped GEMM operations."""
 
     A: OperandConstraints
-    """Constraints on operand ``A`` of the grouped GEMM"""
+    """Constraints on dense operand ``A``."""
 
     B: OperandConstraints
-    """Constraints on operand ``B`` of the grouped GEMM"""
+    """Constraints on dense operand ``B``."""
 
     out: OperandConstraints
-    """Constraints on operand ``out`` of the grouped GEMM"""
+    """Constraints on dense operand ``out``."""
 
     offsets: OperandConstraints
-    """Constraints on operand ``offsets`` of the grouped GEMM."""
+    """Constraints on the grouped-problem boundary tensor."""
+
+    offsets_along: Literal["m", "n", "k"]
+    """Logical GEMM dimension partitioned by ``offsets``."""
 
     accumulator_type: Numeric
-    """The required data type of the accumulator tensor"""
+    """Required accumulator data type."""
 
     def supports(
-        self, other: GroupedGemmArguments | GroupedGemmOperandsMetadata
+        self,
+        other: RuntimeArguments | IndexPtrGroupedGemmOperandsMetadata,
     ) -> Status:
-        """Check whether ``other`` arguments or metadata are compatible with grouped-GEMM operands described by this metadata.
-
-        Args:
-            other (GroupedGemmArguments | GroupedGemmOperandsMetadata):
-                Either runtime :class:`~cutlass.operators.GroupedGemmArguments` or a peer
-                ``GroupedGemmOperandsMetadata`` to validate.
-
-        Returns:
-            Status: ``Status.success()`` if every operand, ``offsets``, and
-            the accumulator type match, otherwise ``Status.fail(...)`` with
-            the first failure.
-        """
-        if isinstance(other, RuntimeArguments) and not isinstance(
-            other, GroupedGemmArguments
+        """Check index-pointer arguments or peer metadata for compatibility."""
+        if not isinstance(
+            other,
+            (
+                IndexPtrGroupedGemmArguments,
+                IndexPtrGroupedGemmOperandsMetadata,
+            ),
         ):
-            return Status.fail(f"Expected GroupedGemmArguments, got {type(other)}")
+            return Status.fail(
+                f"Expected IndexPtrGroupedGemmArguments, got {type(other)}"
+            )
 
         if not (status := self.A.supports(other.A)):
             return Status.fail(f"Operand `A` is unsupported: {status.error}")
-
         if not (status := self.B.supports(other.B)):
             return Status.fail(f"Operand `B` is unsupported: {status.error}")
-
         if not (status := self.out.supports(other.out)):
             return Status.fail(f"Operand `out` is unsupported: {status.error}")
-
         if not (status := self.offsets.supports(other.offsets)):
             return Status.fail(f"Operand `offsets` is unsupported: {status.error}")
-
+        if self.offsets_along != other.offsets_along:
+            return Status.fail(
+                f"Expected offsets_along {self.offsets_along!r}, "
+                f"got {other.offsets_along!r}"
+            )
         if self.accumulator_type != other.accumulator_type:
             return Status.fail(
-                f"Expected accumulator type {self.accumulator_type}, got {other.accumulator_type}"
+                f"Expected accumulator type {self.accumulator_type}, "
+                f"got {other.accumulator_type}"
             )
 
         return Status.success()
+
+
+@dataclass(init=False)
+class GroupedGemmOperandsMetadata(IndexPtrGroupedGemmOperandsMetadata):
+    """Compatibility metadata for the released M-offset grouped GEMM API."""
+
+    def __init__(
+        self,
+        A: OperandConstraints,
+        B: OperandConstraints,
+        out: OperandConstraints,
+        offsets: OperandConstraints,
+        accumulator_type: Numeric,
+    ):
+        super().__init__(
+            A=A,
+            B=B,
+            out=out,
+            offsets=offsets,
+            offsets_along="m",
+            accumulator_type=accumulator_type,
+        )

@@ -12,12 +12,12 @@
 import enum
 import warnings
 from dataclasses import dataclass
-from typing import Any, Optional, Type, cast
+from typing import Any, Optional, Type, Union, cast
 from typing_extensions import deprecated
 from abc import ABCMeta, abstractmethod
 
-from cutlass.base_dsl.arch import Arch
-from cutlass.cutlass_dsl import BaseDSL
+from cutlass import base_dsl
+from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
@@ -29,9 +29,10 @@ ReductionOp = ReductionKind
 
 from ...atom import CopyOp, Trait, TmaTrait, make_atom
 from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric
-from ..common import OpError, LoadCacheMode as LoadCacheMode_
+from ..common import LoadCacheMode as LoadCacheMode_
 
 from ..tcgen05.mma import CtaGroup
+
 
 
 ####################################################################################################
@@ -111,8 +112,7 @@ class CopyG2SOp(CopyOp):
             )
         # Verify that the user provided enum values
         if not isinstance(self.cache_mode, LoadCacheMode_):
-            raise OpError(
-                self,
+            raise DSLUserCodeError(
                 "expects the 'cache_mode' Op parameter to be a LoadCacheMode instance",
             )
         ty = _cute_nvgpu_ir.CopyAtomSIMTAsyncCopyType.get(
@@ -162,20 +162,18 @@ class CopyG2STileBaseOp(TmaCopyOp, metaclass=ABCMeta):
 
     def __post_init__(self) -> None:
         if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self, "expects the 'cta_group' parameter to be a CtaGroup instance"
+            raise DSLUserCodeError(
+                "expects the 'cta_group' parameter to be a CtaGroup instance"
             )
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
-        if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
-            raise OpError(
-                self,
+        if (self.cta_group == CtaGroup.TWO) and arch.major == base_dsl.Arch.sm_90.major:
+            raise DSLUserCodeError(
                 f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
@@ -368,7 +366,63 @@ class CopyBulkTensorTileG2STrait(Trait):
     pass
 
 
+@dataclass
+class CopyBulkTensor2DGather4G2SOp(CopyG2STileBaseOp):
+    """
+    Bulk tensor asynchronous GMEM to SMEM Copy Operation using the TMA unit.
 
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
+    This Operation uses TMA in the ``.tile::gather4`` mode.
+    """
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_100:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_100.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def _get_description(self) -> str:
+        return "cp.async GMEM -> SMEM bulk tensor gather4 copy Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensor2DGather4G2SNonExecTrait":
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom with gmem_coord_tensor to obtain a copy Atom for TMA"
+        )
+
+    def _to_ir(self) -> _cute_nvgpu_ir.GatherScatterTmaLoadEnum:
+        if self.cta_group == CtaGroup.ONE:
+            return _cute_nvgpu_ir.GatherScatterTmaLoadEnum.sm_100
+        elif self.cta_group == CtaGroup.TWO:
+            return _cute_nvgpu_ir.GatherScatterTmaLoadEnum.sm_100_2sm
+        else:
+            assert False, "unrecognized self.cta_group"
+
+
+class CopyBulkTensor2DGather4G2SNonExecTrait(CopyG2STileNonExecBaseTrait):
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensor2DGather4G2STrait":
+        return CopyBulkTensor2DGather4G2STrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+
+
+class CopyBulkTensor2DGather4G2STrait(Trait):
+    pass
 
 
 #
@@ -545,20 +599,18 @@ class CopyBulkTensorIm2ColG2SOp(TmaCopyOp):
 
     def __post_init__(self) -> None:
         if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self, "expects the 'cta_group' parameter to be a CtaGroup instance"
+            raise DSLUserCodeError(
+                "expects the 'cta_group' parameter to be a CtaGroup instance"
             )
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
-        if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
-            raise OpError(
-                self,
+        if (self.cta_group == CtaGroup.TWO) and arch.major == base_dsl.Arch.sm_90.major:
+            raise DSLUserCodeError(
                 f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
@@ -679,20 +731,18 @@ class CopyBulkTensorIm2ColG2SMulticastOp(TmaCopyOp):
 
     def __post_init__(self) -> None:
         if not isinstance(self.cta_group, CtaGroup):
-            raise OpError(
-                self, "expects the 'cta_group' parameter to be a CtaGroup instance"
+            raise DSLUserCodeError(
+                "expects the 'cta_group' parameter to be a CtaGroup instance"
             )
-        # Arch verification
+        # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
-        if (self.cta_group == CtaGroup.TWO) and arch.major == Arch.sm_90.major:
-            raise OpError(
-                self,
+        if (self.cta_group == CtaGroup.TWO) and arch.major == base_dsl.Arch.sm_90.major:
+            raise DSLUserCodeError(
                 f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
@@ -845,12 +895,11 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
+        # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -962,12 +1011,11 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
                 )
         # else: leave as-is; _to_ir raises TypeError on unknown types.
 
-        # Arch verification
+        # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1050,6 +1098,317 @@ class CopyReduceBulkTensorTileS2GTrait(Trait):
     pass
 
 
+#
+# TMA Override GMEM -> SMEM copies
+#
+
+
+@dataclass
+class CopyBulkTensorTileG2SOverrideOp(TmaCopyOp):
+    """
+    Bulk tensor asynchronous GMEM to SMEM Copy override Operation using the TMA unit.
+
+    Override mode allows runtime modification of the TMA descriptor's global address,
+    tile dimensions, and strides at copy-issue time.
+
+    This Operation uses TMA in the ``.tile`` mode.
+    """
+
+    cta_group: CtaGroup = CtaGroup.ONE
+    def __post_init__(self) -> None:
+        if not isinstance(self.cta_group, CtaGroup):
+            raise DSLUserCodeError(
+                "expects the 'cta_group' parameter to be a CtaGroup instance"
+            )
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        if (self.cta_group == CtaGroup.TWO) and arch.major == base_dsl.Arch.sm_90.major:
+            raise DSLUserCodeError(
+                f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        return "cp.async GMEM -> SMEM bulk tensor copy override Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> Trait:
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA override"
+        )
+
+    def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
+        if self.cta_group == CtaGroup.TWO:
+            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_100_2sm
+        return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_90
+
+
+@dataclass
+class CopyBulkTensorTileG2SMulticastOverrideOp(TmaCopyOp):
+    """
+    Bulk tensor asynchronous GMEM to SMEM multicast Copy override Operation using the TMA unit.
+
+    Override mode allows runtime modification of the TMA descriptor's global address,
+    tile dimensions, and strides at copy-issue time.
+
+    This Operation uses TMA in the ``.tile`` mode.
+    """
+
+    cta_group: CtaGroup = CtaGroup.ONE
+    no_fully_oob_tile: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cta_group, CtaGroup):
+            raise DSLUserCodeError(
+                "expects the 'cta_group' parameter to be a CtaGroup instance"
+            )
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        if (self.cta_group == CtaGroup.TWO) and arch.major == base_dsl.Arch.sm_90.major:
+            raise DSLUserCodeError(
+                f"CTA group of 2 is tcgen05-specific and is not compatible with {arch}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        return "cp.async GMEM -> SMEM bulk tensor multicast copy override Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> Trait:
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA override"
+        )
+
+    def _to_ir(self) -> _cute_nvgpu_ir.TiledTmaLoadEnum:
+        if self.cta_group == CtaGroup.TWO:
+            return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_100_2sm_multicast
+        return _cute_nvgpu_ir.TiledTmaLoadEnum.sm_90_multicast
+
+
+class CopyBulkTensorTileG2SOverrideNonExecTrait(TmaTrait):
+    """Non-executable trait for TMA override load. Wraps a non-exec atom value."""
+
+    # Stashed by make_tiled_tma_atom from the Op's field; declared here so mypy
+    # recognizes the attribute.
+    no_fully_oob_tile: bool = False
+
+    def __new_from_mlir_values__(
+        self, values: list
+    ) -> "CopyBulkTensorTileG2SOverrideNonExecTrait":
+        # Preserve the Python-side `no_fully_oob_tile` flag across the
+        # @cute.jit -> @cute.kernel boundary (the base impl would drop it).
+        new = self.__class__(values[0])
+        new.no_fully_oob_tile = getattr(self, "no_fully_oob_tile", False)
+        return new
+
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensorTileG2SOverrideTrait":
+        return CopyBulkTensorTileG2SOverrideTrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+    def unpack(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        tma_bar_ptr: Optional[Pointer] = None,
+        mcast_mask: Any = None,
+        cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
+    ) -> ir.Value:
+        """
+        Custom implementation of unpack for non-executable TMA override loads.
+
+        Requires ``tma_bar_ptr`` keyword argument.
+        Optionally accepts ``mcast_mask`` for multicast override loads.
+        """
+        if not isinstance(tma_bar_ptr, Pointer):
+            raise ValueError(
+                "expects a pointer to an mbarrier to be provided via the tma_bar_ptr kw argument"
+            )
+
+        # Stashed on the trait by make_tiled_tma_atom from the Op's field.
+        no_fully_oob_tile = getattr(self, "no_fully_oob_tile", False)
+        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
+            self.value,
+            override=True,
+            no_fully_oob_tile=no_fully_oob_tile,
+            loc=loc,
+            ip=ip,
+        )
+
+        if mcast_mask is not None:
+            if not isinstance(mcast_mask, Integer):
+                raise ValueError(
+                    "expects a multicast mask to be provided via the mcast_mask kw argument"
+                )
+            attr_str = "#cute_nvgpu.atom_copy_field_tmaload<mcast_mask>"
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value,
+                attr,
+                Int16(mcast_mask).ir_value(loc=loc, ip=ip),
+                loc=loc,
+                ip=ip,
+            )
+
+        attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_MBAR_PTR_FIELD_NAME}>"
+        attr = ir.Attribute.parse(attr_str)
+        exec_value = _cute_nvgpu_ir.atom_set_value(
+            exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
+        )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
+            )
+        return exec_value
+
+
+class CopyBulkTensorTileG2SOverrideTrait(Trait):
+    """Executable trait for TMA override load."""
+
+    pass
+
+
+#
+# TMA Override SMEM -> GMEM copies
+#
+
+
+@dataclass
+class CopyBulkTensorTileS2GOverrideOp(TmaCopyOp):
+    """
+    Bulk tensor asynchronous SMEM to GMEM Copy override Operation using the TMA unit.
+
+    Override mode allows runtime modification of the TMA descriptor's global address,
+    tile dimensions, and strides at copy-issue time.
+
+    This Operation uses TMA in the ``.tile`` mode.
+    """
+
+    no_fully_oob_tile: bool = False
+
+    def __post_init__(self) -> None:
+        arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        return "cp.async SMEM -> GMEM bulk tensor copy override Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> Trait:
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom to obtain a copy Atom for TMA override"
+        )
+
+
+class CopyBulkTensorTileS2GOverrideNonExecTrait(TmaTrait):
+    """Non-executable trait for TMA override store."""
+
+    # Stashed by make_tiled_tma_atom from the Op's field; declared here so mypy
+    # recognizes the attribute.
+    no_fully_oob_tile: bool = False
+
+    def __new_from_mlir_values__(
+        self, values: list
+    ) -> "CopyBulkTensorTileS2GOverrideNonExecTrait":
+        # Preserve the Python-side `no_fully_oob_tile` flag across the
+        # @cute.jit -> @cute.kernel boundary (the base impl would drop it).
+        new = self.__class__(values[0])
+        new.no_fully_oob_tile = getattr(self, "no_fully_oob_tile", False)
+        return new
+
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensorTileS2GOverrideTrait":
+        return CopyBulkTensorTileS2GOverrideTrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+    def unpack(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        cache_policy: Optional[Int64] = None,
+        **kwargs: Any,
+    ) -> ir.Value:
+        """
+        Custom implementation of unpack for non-executable TMA override stores.
+        """
+        # Stashed on the trait by make_tiled_tma_atom from the Op's field.
+        no_fully_oob_tile = getattr(self, "no_fully_oob_tile", False)
+        exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
+            self.value,
+            override=True,
+            no_fully_oob_tile=no_fully_oob_tile,
+            loc=loc,
+            ip=ip,
+        )
+        if cache_policy is not None:
+            if not isinstance(cache_policy, Int64):
+                raise ValueError(
+                    "expects `Int64` value to be provided via the cache_policy kw argument"
+                )
+            attr_str = (
+                f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
+            )
+            attr = ir.Attribute.parse(attr_str)
+            exec_value = _cute_nvgpu_ir.atom_set_value(
+                exec_value, attr, cache_policy.ir_value(), loc=loc, ip=ip
+            )
+        return exec_value
+
+
+class CopyBulkTensorTileS2GOverrideTrait(Trait):
+    """Executable trait for TMA override store."""
+
+    pass
+
 
 @dataclass
 class CopyBulkTensorIm2ColS2GOp(TmaCopyOp):
@@ -1061,12 +1420,11 @@ class CopyBulkTensorIm2ColS2GOp(TmaCopyOp):
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1147,16 +1505,22 @@ class CopyBulkG2SOp(CopyOp):
     """
     Bulk copy asynchronous GMEM to SMEM Copy Operation.
 
+    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
+    elects one issuing lane for this operation; do not wrap the call in
+    :func:`cute.arch.elect_one`. An outer election would leave only one lane
+    able to reach the compiler-generated full-warp election, creating an
+    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
+    the compiler rejects this pattern.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1237,16 +1601,22 @@ class CopyBulkG2SMulticastOp(CopyOp):
     """
     Bulk multicast copy asynchronous GMEM to SMEM Copy Operation.
 
+    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
+    elects one issuing lane for this operation; do not wrap the call in
+    :func:`cute.arch.elect_one`. An outer election would leave only one lane
+    able to reach the compiler-generated full-warp election, creating an
+    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
+    the compiler rejects this pattern.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1336,16 +1706,22 @@ class CopyBulkS2GOp(CopyOp):
     """
     Bulk copy asynchronous SMEM to GMEM Copy Operation.
 
+    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
+    elects one issuing lane for this operation; do not wrap the call in
+    :func:`cute.arch.elect_one`. An outer election would leave only one lane
+    able to reach the compiler-generated full-warp election, creating an
+    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
+    the compiler rejects this pattern.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1389,16 +1765,22 @@ class CopyBulkS2GByteMaskOp(CopyOp):
     The i-th bit in the 16-bit wide byteMask operand specifies whether
     the i-th byte of each 16-byte wide chunk of source data is copied to the destination.
 
+    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
+    elects one issuing lane for this operation; do not wrap the call in
+    :func:`cute.arch.elect_one`. An outer election would leave only one lane
+    able to reach the compiler-generated full-warp election, creating an
+    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
+    the compiler rejects this pattern.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_100:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_100.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_100:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_100.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1468,16 +1850,22 @@ class CopyBulkS2SOp(CopyOp):
     """
     Bulk copy asynchronous SMEM CTA to Cluster Copy Operation.
 
+    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
+    elects one issuing lane for this operation; do not wrap the call in
+    :func:`cute.arch.elect_one`. An outer election would leave only one lane
+    able to reach the compiler-generated full-warp election, creating an
+    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
+    the compiler rejects this pattern.
+
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 
@@ -1561,12 +1949,11 @@ class CopyDsmemStoreOp(CopyOp):
     """
 
     def __post_init__(self) -> None:
-        # Arch verification
-        arch: Arch = BaseDSL._get_dsl().get_arch_enum()
-        if not arch >= Arch.sm_90:
-            raise OpError(
-                self,
-                f"expects arch to be at least {Arch.sm_90.name}, but got {arch.name}",
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_90:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_90.name}, but got {arch.name}",
                 suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
             )
 

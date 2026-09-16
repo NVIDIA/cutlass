@@ -11,6 +11,7 @@
 
 from .constants import *
 from .elect import *
+from .features import *
 from .mbar import *
 from .nvvm_wrappers import *
 from .smem import *
@@ -19,9 +20,13 @@ from .numeric_conversion import *
 from .clc import *
 
 import cutlass.cutlass_dsl as cutlass_dsl
+from cutlass.base_dsl import Arch
 
 # __all__ is required here for documentation generation
 __all__ = [
+    #
+    # features.py
+    #
     #
     # elect.py
     #
@@ -111,7 +116,19 @@ __all__ = [
     "fma_packed_f32x2_bf16x2_f32x2_f32x2",
     "mul_packed_f32x2",
     "add_packed_f32x2",
+    "add_packed_f16x2",
+    "add_packed_bf16x2",
+    "add_packed_f16x2_f32x2_f32x2",
+    "add_packed_bf16x2_f32x2_f32x2",
+    "add_packed_f32x2_f16x2_f32x2",
+    "add_packed_f32x2_bf16x2_f32x2",
     "sub_packed_f32x2",
+    "sub_packed_f16x2",
+    "sub_packed_bf16x2",
+    "sub_packed_f16x2_f32x2_f32x2",
+    "sub_packed_bf16x2_f32x2_f32x2",
+    "sub_packed_f32x2_f16x2_f32x2",
+    "sub_packed_f32x2_bf16x2_f32x2",
     "fmax",
     "fmin",
     "rcp_approx",

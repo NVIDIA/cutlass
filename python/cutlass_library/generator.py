@@ -118,6 +118,20 @@ def CudaToolkitVersionSatisfies(semantic_ver_string, major, minor, patch = 0):
 def ThorSMRenumbering(cuda_version):
   return 110 if CudaToolkitVersionSatisfies(cuda_version, 13, 0) else 101
 
+def is_rubin_target(manifest):
+  """Return whether the manifest targets a Rubin compute capability."""
+  ccs = manifest.compute_capabilities_baseline
+  is_rubin = 107 in ccs
+  return is_rubin
+
+
+def resolve_sm10x_arch_range(manifest, min_cc, max_cc):
+  """Map SM100-family MMA instructions to Rubin's SM107 logical architecture."""
+  if not is_rubin_target(manifest):
+    return (min_cc, max_cc)
+  resolved_sm10x_arch_range = (107, 107)
+  return resolved_sm10x_arch_range
+
 ###################################################################################################
 ###################################################################################################
 
@@ -5002,7 +5016,7 @@ def GenerateSM89_TensorOp_16832_fp8(manifest, element_acc):
   ]
 
   min_cc = 89
-  max_cc = 100
+  max_cc = 107
   alignment_constraints = [16,]
   alignment_constraints_small_channels = [16, 8, 4]
 
@@ -6825,8 +6839,10 @@ def GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
+  min_cc, max_cc = resolve_sm10x_arch_range(manifest, min_cc, max_cc)
 
   math_instructions_1sm, math_instructions_2sm = generate_tf32_math_instructions_sm100(instantiation_level)
 
@@ -6901,8 +6917,10 @@ def GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   math_instructions_1sm, math_instructions_2sm = generate_16b_math_instructions_sm100(instantiation_level)
   
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
+  min_cc, max_cc = resolve_sm10x_arch_range(manifest, min_cc, max_cc)
   
   grouped = is_grouped(gemm_kind)
 
@@ -7094,9 +7112,9 @@ def GenerateSM100_TensorOp_16b_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
   math_instructions_1sm, _ = generate_16b_math_instructions_sm100(instantiation_level)
   
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-  
   grouped = is_grouped(gemm_kind)
   if grouped:
     return
@@ -7190,8 +7208,10 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
+  min_cc, max_cc = resolve_sm10x_arch_range(manifest, min_cc, max_cc)
 
   epi_type = DataType.f32
   grouped = is_grouped(gemm_kind)
@@ -7497,9 +7517,9 @@ def GenerateSM100_TensorOp_fp8_UMMA_alignx_gemm(manifest, cuda_version, gemm_kin
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   epi_type = DataType.f32
   grouped = is_grouped(gemm_kind)
 
@@ -7831,9 +7851,9 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version, gemm_ki
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   epi_type = DataType.f32
 
   is_runtime_datatype = lambda runtime_datatype: runtime_datatype in (DataType.f4, DataType.f6, DataType.f8)
@@ -8014,8 +8034,10 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
+  min_cc, max_cc = resolve_sm10x_arch_range(manifest, min_cc, max_cc)
 
   epi_type = DataType.f32
 
@@ -8246,8 +8268,10 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
+  min_cc, max_cc = resolve_sm10x_arch_range(manifest, min_cc, max_cc)
 
   epi_type = DataType.f32
 
@@ -8534,9 +8558,9 @@ def GenerateSM100_SparseTensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   def tile_schedulers(sfdtype):
     # Only use the stream-K scheduler for non-void SFD to limit kernel count. When SFD is void,
     # the epilogue is the traditional linear combination, for which we already have tests with stream-K.
@@ -8729,9 +8753,9 @@ def GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifes
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   # 1xSM MMA kernels
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
@@ -8919,9 +8943,9 @@ def GenerateSM100_TensorOp_16b_UMMA_moe_gemm(manifest, cuda_version, gemm_kind=G
   math_instructions_1sm, math_instructions_2sm = generate_16b_math_instructions_sm100(instantiation_level)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   cluster_shapes= [[1,1,1]]
 
   tile_schedulers = [
@@ -8981,6 +9005,7 @@ def GenerateSM100_TensorOp_fp8_UMMA_moe_gemm(manifest, cuda_version, gemm_kind=G
   math_instructions_1sm, math_instructions_2sm = generate_fp8_math_instructions_sm100(instantiation_level)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
   #  only support 1x1x1 cluster shape 
@@ -9086,9 +9111,9 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_moe_gemm_with_block_scaled(manifest,
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   epi_type = DataType.f32
 
   is_runtime_datatype = lambda runtime_datatype: runtime_datatype in (DataType.f4, DataType.f6, DataType.f8)
@@ -9197,9 +9222,9 @@ def GenerateSM100_TensorOp_fp4_UMMA_MoE_gemm_with_block_scaled(manifest, cuda_ve
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   epi_type = DataType.f32
 
   is_runtime_datatype = lambda runtime_datatype: runtime_datatype in (DataType.f4, DataType.f6, DataType.f8)
@@ -9362,6 +9387,7 @@ def GenerateSM103_TensorOp_fp4_ultra_UMMA_gemm_with_block_scaled(manifest, cuda_
       return [TileSchedulerType.Default, TileSchedulerType.StreamK]
 
   min_cc = 103
+
   max_cc = 103
   epi_type = DataType.f32
 
@@ -9719,8 +9745,10 @@ def GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
+  min_cc, max_cc = resolve_sm10x_arch_range(manifest, min_cc, max_cc)
   epi_type = DataType.f32
 
   math_instructions_1sm = [
@@ -9936,9 +9964,9 @@ def GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   tile_schedulers = [
     TileSchedulerType.Default, TileSchedulerType.StreamK
   ]
@@ -10065,9 +10093,9 @@ def GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   tile_schedulers = [
     TileSchedulerType.Default, TileSchedulerType.StreamK
   ]
@@ -10194,9 +10222,9 @@ def GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   tile_schedulers = [
     TileSchedulerType.Default, TileSchedulerType.StreamK
   ]
@@ -10322,9 +10350,9 @@ def GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   tile_schedulers = [
     TileSchedulerType.Default, TileSchedulerType.StreamK
   ]
@@ -10464,9 +10492,9 @@ def GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   tile_schedulers = [
     TileSchedulerType.Default, TileSchedulerType.StreamK
   ]
@@ -10692,9 +10720,9 @@ def GenerateSM100_TensorOp_32b_UMMA_gemm_complex(manifest, cuda_version):
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   math_instructions_1sm = [
     # tf32 -> f32
     MathInstruction(
@@ -10806,7 +10834,6 @@ def GenerateSM100_TensorOp_FastF32_UMMA_gemm_complex_stream_k(manifest, cuda_ver
 
   min_cc = 100
   max_cc = 100
-
   math_instructions_1sm = [
     MathInstruction(
       [128, 64, 8],
@@ -10906,9 +10933,9 @@ def GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version,
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
   spatial_dims = [2, 3]
 
   conv_kinds = [
@@ -11062,9 +11089,9 @@ def GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version,
   thor_sm = ThorSMRenumbering(cuda_version)
 
   min_cc = 100
+  
   max_cc = 100
   max_cc = max(max_cc, thor_sm)
-
 
   spatial_dims = [2, 3]
   stages = 0 # zero means "deduce the number of stages automatically"
@@ -11264,7 +11291,6 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
 
   min_cc = 120
   max_cc = 121
-
   epi_type = DataType.f32
 
   math_instructions = []
@@ -11431,7 +11457,6 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
 
   min_cc = 120
   max_cc = 121
-
   epi_type = DataType.f32
   
   math_instructions = []
@@ -11595,7 +11620,6 @@ def GenerateSM120_Sparse_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manife
 
   min_cc = 120
   max_cc = 121
-
   epi_type = DataType.f32
   
   math_instructions = []
@@ -11714,7 +11738,6 @@ def GenerateSM120_Sparse_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda
 
   min_cc = 120
   max_cc = 121
-
   epi_type = DataType.f32
   
   math_instructions = []
@@ -11834,7 +11857,6 @@ def GenerateSM120_Sparse_TensorOp_gemm(manifest, cuda_version):
 
   min_cc = 120
   max_cc = 121
-
   kernel_schedules = [
     KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120,
   ]
@@ -11954,7 +11976,6 @@ def GenerateSM120_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version, 
 
   min_cc = 120
   max_cc = 121
-
   kernel_schedulers = [
     KernelScheduleType.BlockwiseTmaWarpSpecializedCooperativeSm120,
     KernelScheduleType.BlockwiseTmaWarpSpecializedPingpongSm120
@@ -12037,7 +12058,7 @@ def GenerateSM120_TensorOp_fp8_UMMA_gemm_with_blockwise(manifest, cuda_version, 
           gemm_kind = gemm_kind)
 
 def GenerateSM100(manifest, cuda_version):
-  arch_family_cc = ['100f', '101f', '103a']
+  arch_family_cc = ['100f', '101f', '103a', '107f']
   if CudaToolkitVersionSatisfies(cuda_version, 13, 0):
     for old_cc, new_cc in [('101f', '110f')]:
       arch_family_cc = [cc.replace(old_cc, new_cc) for cc in arch_family_cc]
@@ -12623,6 +12644,7 @@ if __name__ == "__main__":
     "110a", "110f",
     "120a", "120f",
     "121a", "121f",
+    "107a", "107f",
   ]
   blackwell_enabled_arch = any(arch in blackwell_arch_list for arch in archs)
   if blackwell_enabled_arch:

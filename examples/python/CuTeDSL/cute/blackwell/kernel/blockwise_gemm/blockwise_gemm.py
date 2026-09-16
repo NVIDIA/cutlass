@@ -2716,7 +2716,14 @@ def run(
         sfb_tensor,
         max_active_clusters,
         current_stream,
-        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
+        options=(
+            "--opt-level=2"
+            if (
+                cutlass.target_version(exact_version="12.9")
+                or cutlass.target_version(min_version="13.1")
+            )
+            else ""
+        ),
     )
 
     # Execution

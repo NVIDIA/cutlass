@@ -29,6 +29,21 @@ def _is_constexpr_annotation(ann: type) -> bool:
     return ann is Constexpr or get_origin(ann) is Constexpr
 
 
+def _coerce_field_value(ann: Any, value: Any, name: str) -> ir.Value:
+    """Coerce ``value`` for struct field ``name`` and return its single IR value.
+
+    Python literals are coerced through the field's DSL type annotation (e.g.
+    ``Int32(10)``); the result must extract to exactly one MLIR value. Shared by
+    ``__init__`` and the generated per-field setter.
+    """
+    if isinstance(ann, DslType) and not hasattr(value, "__extract_mlir_values__"):
+        value = ann(value)
+    elem = extract_mlir_values(value)
+    if len(elem) != 1:
+        raise TypeError(f"Expected single value for field {name!r}, got {len(elem)}")
+    return elem[0]
+
+
 def _annotation_to_mlir_type(ann: type) -> ir.Type:
     """Resolve a type annotation to an MLIR type for struct fields.
 
@@ -233,26 +248,13 @@ def native_struct(
             for i, name in enumerate(field_names):
                 v = kwargs.pop(name, None)
                 if v is not None:
-                    # Coerce Python literals (int, float, bool) using
-                    # the field's type annotation (e.g. Int32(10)).
-                    ann = field_annotations[name]
-                    if isinstance(ann, DslType) and not hasattr(
-                        v, "__extract_mlir_values__"
-                    ):
-                        v = ann(v)
-                    elem = extract_mlir_values(v)
-                    if len(elem) != 1:
-                        raise TypeError(
-                            f"Expected single value for field {name!r}, got {len(elem)}"
-                        )
-                    val = llvm.insertvalue(val, elem[0], position=[i], loc=loc, ip=ip)
+                    elem = _coerce_field_value(field_annotations[name], v, name)
+                    val = llvm.insertvalue(val, elem, position=[i], loc=loc, ip=ip)
             self._value = val
 
         # Build getter/setter for each field; need to capture in closure per field
-        field_annotations_for_getter = hints
-
         def _make_getter(idx: int, name: str) -> Any:
-            dsl_type = field_annotations_for_getter.get(name)
+            dsl_type = hints.get(name)
 
             def getter(
                 self: Any,
@@ -283,7 +285,7 @@ def native_struct(
             return dsl_user_op(getter)
 
         def _make_setter(idx: int, name: str) -> Any:
-            dsl_type = field_annotations_for_getter.get(name)
+            dsl_type = hints.get(name)
 
             def setter(
                 self: Any,
@@ -292,18 +294,10 @@ def native_struct(
                 loc: ir.Location | None = None,
                 ip: ir.InsertionPoint | None = None,
             ) -> None:
-                # Coerce Python literals using the field's type annotation.
-                if isinstance(dsl_type, DslType) and not hasattr(
-                    value, "__extract_mlir_values__"
-                ):
-                    value = dsl_type(value)
-                elem = extract_mlir_values(value)
-                if len(elem) != 1:
-                    raise TypeError(
-                        f"Expected single value for field {name!r}, got {len(elem)}"
-                    )
-                elem = elem[0]
-                new_value = llvm.insertvalue(self._value, elem, position=[idx], loc=loc, ip=ip)
+                elem = _coerce_field_value(dsl_type, value, name)
+                new_value = llvm.insertvalue(
+                    self._value, elem, position=[idx], loc=loc, ip=ip
+                )
                 self._value = new_value
 
             setter.__name__ = f"set_{name}"

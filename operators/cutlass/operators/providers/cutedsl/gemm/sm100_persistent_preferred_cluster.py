@@ -76,6 +76,7 @@ Usage example::
 from __future__ import annotations
 
 import itertools
+from math import prod
 from typing import TYPE_CHECKING
 
 import cutlass
@@ -300,13 +301,13 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             ]:
                 return False
         elif operands.out.dtype == cutlass.Int8 or operands.out.dtype == cutlass.Uint8:
-            if operands.accumulator_type not in [cutlass.Int32]:
+            if operands.accumulator_type != cutlass.Int32:
                 return False
         elif (
             operands.out.dtype == cutlass.Float8E4M3FN
             or operands.out.dtype == cutlass.Float8E5M2
         ):
-            if operands.accumulator_type not in [cutlass.Float32]:
+            if operands.accumulator_type != cutlass.Float32:
                 return False
         else:
             return False
@@ -469,8 +470,6 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             return False
         if cluster_size_n % 2 != 0 and cluster_size_n != 1:
             return False
-        if cluster_size_m * cluster_size_n > 16:
-            return False
         return True
 
     @staticmethod
@@ -564,9 +563,13 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
 
         # Enumerate candidate cluster shape pairs.
         # Preferred cluster must be a strict superset of fallback (preferred ≥ fallback
-        # per dimension) and must differ from fallback.
+        # per dimension), must differ from fallback, and must fit within the
+        # architecture's non-portable cluster limit.
         preferred_cluster_shapes = [
-            (M, N, 1) for M in [1, 2, 4, 8, 16] for N in [1, 2, 4, 8, 16]
+            (M, N, 1)
+            for M in [1, 2, 4, 8, 16]
+            for N in [1, 2, 4, 8, 16]
+            if prod((M, N, 1)) <= Sm100DesignMetadata.max_cluster_size
         ]
         fallback_cluster_shapes = [(2, 1, 1)]
         cluster_shape_pairs = [
@@ -628,7 +631,7 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
                         "_{num_cta}cta"
                         "_preferred{preferred}_fallback{fallback}"
                         "_tile{tile}"
-                        "_scheduler{scheduler}"
+                        "_scheduler_{scheduler}"
                         "{_tma_store}"
                     ).format(
                         layout=strides_to_layout_string(
@@ -646,7 +649,7 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
                         tile=tuple_to_string(design.tile_shape),
                         scheduler=scheduler_metadata_to_enum(
                             design.tile_scheduler
-                        ).name,
+                        ).name.lower(),
                         _tma_store="_tma_store" if design.use_tma_store else "",
                     )
 

@@ -48,7 +48,7 @@ else:
     from typing_extensions import get_overloads
 
 from .._mlir import ir
-from .._mlir.dialects import func, gpu, llvm
+from .._mlir.dialects import func, llvm
 
 from . import typing as t
 from .typing import get_mlir_types, NumericMeta, as_numeric
@@ -87,9 +87,8 @@ def mangle(name: str) -> str:
 
 def to_types(t: Any) -> set[Any]:
     """Convert a generic type to a set of possible types"""
-    if typing.get_origin(t) is None:
-        return {t}
-    if typing.get_origin(t) is UnionType or typing.get_origin(t) is Union:
+    origin = typing.get_origin(t)
+    if origin is UnionType or origin is Union:
         return set(typing.get_args(t))
     return {t}
 

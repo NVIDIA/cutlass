@@ -806,7 +806,7 @@ MMA_warp(
   static_assert((Acc2_col_max & (Acc2_col_max - 1)) == 0, "Acc2 column size is not a power of 2");
 
   // allow half of tmem to be used for overlapping with next kernel
-  static_assert((Acc1_col_max + Acc2_col_max) < TmemAllocator::Sm100TmemCapacityColumns / 2, "Accumulator is too large to fit in half of tmem");
+  static_assert((Acc1_col_max + Acc2_col_max) < cute::TMEM::Sm100TmemCapacityColumns / 2, "Accumulator is too large to fit in half of tmem");
 
   // do two separate allocations for bmm1 and bmm2 accumulators, we waste some capacity and cycles
   // if needed, in the future we can merge the two allocations into one and do some offsetting

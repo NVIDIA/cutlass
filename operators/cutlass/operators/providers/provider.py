@@ -78,10 +78,16 @@ class Provider:
 
         # Determine which Operator classes to iterate over
         if args is not None:
-            # Only consider Operator classes that support the requested argument type
-            operator_classes_to_use = cls._operator_classes_by_argtype.get(
-                type(args), []
-            )
+            # Prefer an exact argument-type registration, then the nearest
+            # registered base class. This permits compatibility subclasses to
+            # delegate to operators registered for their canonical base type.
+            operator_classes_to_use = []
+            for args_type in type(args).__mro__:
+                if args_type in cls._operator_classes_by_argtype:
+                    operator_classes_to_use = cls._operator_classes_by_argtype[
+                        args_type
+                    ]
+                    break
         else:
             # No filtering - use all Operator classes
             operator_classes_to_use = [

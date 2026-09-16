@@ -80,7 +80,9 @@ def test_overhead(fixture_toggle_tvm_ffi):
     D = torch.empty((M, N), device="cuda", dtype=torch.float16)
 
     args = ops.GemmArguments(A=A, B=B, out=D, accumulator_type=torch.float32)
-    operators = ops.get_operators(args, target_sm="80", providers=[ops.CuTeDSLProvider])
+    operators = ops.get_operators(
+        args, target_sm="80", providers=[ops.CuTeDSLProvider()]
+    )
     assert len(operators) > 0
     operator = operators[0]
 
@@ -236,7 +238,7 @@ def test_overhead_big_epilogue(fixture_toggle_tvm_ffi):
         A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
     )
     operators = ops.get_operators(
-        args, target_sm=device_or_env_target_sm(), providers=[ops.CuTeDSLProvider]
+        args, target_sm=device_or_env_target_sm(), providers=[ops.CuTeDSLProvider()]
     )
     assert len(operators) > 0
     operator = operators[0]

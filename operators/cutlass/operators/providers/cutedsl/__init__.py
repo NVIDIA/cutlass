@@ -61,6 +61,11 @@ if available:
     # Imports for side effects (Operator registration)
     import cutlass.operators.providers.cutedsl.gemm  # noqa: F401
 
-    __all__ = ["CuTeDSLProvider"]
+    from .operator import CuteDslOperator
+
+    __all__ = [
+        "CuTeDSLProvider",
+        "CuteDslOperator",
+    ]
 else:
     __all__ = []

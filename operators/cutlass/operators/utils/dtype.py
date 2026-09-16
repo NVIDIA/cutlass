@@ -34,6 +34,8 @@ from cutlass.cute.typing import (
     BFloat16,
     Boolean,
     Float4E2M1FN,
+    Float6E2M3FN,
+    Float6E3M2FN,
     Float8E4M3B11FNUZ,
     Float8E4M3FN,
     Float8E5M2,
@@ -41,6 +43,7 @@ from cutlass.cute.typing import (
     Float16,
     Float32,
     Float64,
+    Int4,
     Int8,
     Int16,
     Int32,
@@ -49,7 +52,6 @@ from cutlass.cute.typing import (
     Uint8,
     Uint16,
     Uint64,
-    Float4E2M1FN,
 )
 
 import cutlass.operators.utils.common as common
@@ -166,19 +168,37 @@ def jax_type_from_cutlass_type(dtype) -> jnp.dtype:
 def torch_storage_packing_factor(dtype: type[Numeric]) -> int:
     """Return the number of logical elements per PyTorch storage element.
 
-    For most types this is 1. For subbyte types like Float4E2M1FN, PyTorch
-    uses a packed representation (``float4_e2m1fn_x2``) that stores 2 logical
-    elements per byte, so this returns 2.
+    The factor is the storage dtype's bit width divided by the logical
+    ``dtype.width``. For most types this is 1. For sub-byte types it is the number
+    packed into one storage element, e.g. ``Float4E2M1FN`` -> 2 via torch's packed
+    ``float4_e2m1fn_x2`` (two values per byte).
+
+    ``Int4`` and the FP6 types are special-cased: PyTorch has no native dtype for
+    them, so ``cutlass.torch.cute_tensor_like`` uses ``uint8`` storage. We resolve
+    them to that storage dtype so the same ``storage_bits // width`` formula
+    applies:
+
+    * ``Int4`` -> 2 (two 4-bit values packed per byte)
+    * FP6 (``Float6E2M3FN`` / ``Float6E3M2FN``) -> 1 (one 6-bit value per byte,
+      UNPACK_U8-style)
 
     Args:
         dtype: A CUTLASS numeric type.
 
     Returns:
         int: The packing factor (logical elements per stored element).
+
+    Raises:
+        KeyError: If ``dtype`` has no torch dtype mapping and is not one of the
+            special-cased types (propagated from
+            :func:`torch_type_from_cutlass_type`).
     """
     import torch
 
-    torch_dtype = torch_type_from_cutlass_type(dtype)
+    if dtype in {Int4, Float6E2M3FN, Float6E3M2FN}:
+        torch_dtype = torch.uint8
+    else:
+        torch_dtype = torch_type_from_cutlass_type(dtype)
     torch_bits = torch_dtype.itemsize * 8
     return torch_bits // dtype.width
 

@@ -31,7 +31,7 @@ from cutlass.cutlass_dsl import (
     new_from_mlir_values,
 )
 from cutlass.cute.typing import Int32 as _Int32, Int4 as _Int4, Int8 as _Int8
-from cutlass.utils.layout import LayoutEnum
+from cutlass.tensor_utils import LayoutEnum
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 
@@ -1004,7 +1004,7 @@ def cvt_tensor_a(
     for int4-to-bf16 conversion.
     """
 
-    # shuffle is supported since CTK 13.1
+    # shuffle is supported since CUDA 13.1
     shuffle_supported = cutlass.target_version(min_version="13.1")
     shuffle = shuffle and shuffle_supported
     rst = src.load()
@@ -1038,7 +1038,7 @@ def store_transformed_a(
     src_a: cute.Tensor, dst_a: cute.Tensor, copy_atom_a: Optional[cute.CopyAtom]
 ) -> None:
     """
-    Store transformed A tensor to the given destination tensor. If copy_atom_a is not None, use autovec_copy.
+    Store transformed A tensor to the given destination tensor. If copy_atom_a is None, use autovec_copy.
     """
     if cutlass.const_expr(copy_atom_a is not None):
         cute.copy(copy_atom_a, src_a, dst_a)

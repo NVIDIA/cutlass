@@ -15,7 +15,7 @@ from .._mlir import ir
 from .._mlir.dialects import llvm
 from .._mlir_helpers.arith import ArithValue
 from .._mlir_helpers.op import dsl_user_op
-from .address_space import AddressSpace
+from . import AddressSpace
 from .typing import Int32, Int64, Integer, Numeric, Pointer, _normalize_address_space
 
 

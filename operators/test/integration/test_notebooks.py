@@ -44,6 +44,7 @@ import test_utils  # isort: skip
         ("004_fake_tensors.ipynb", ["80"]),
         ("005_grouped_gemm_contiguous_offset.ipynb", ["100a"]),
         ("006_block_scaled_gemm.ipynb", ["100f"]),
+        ("007_heuristics.ipynb", ["100a"]),
     ],
 )
 def test_notebooks(notebook_name, operator_targets, monkeypatch):
@@ -62,7 +63,8 @@ def test_notebooks(notebook_name, operator_targets, monkeypatch):
     # static TLS is allocated before jupyter/jaxlib exhaust the budget.
     # Without this the kernel's `import torch` fails with "cannot allocate
     # memory in static TLS block". libgomp is the heaviest TLS user so it
-    # must come first.
+    # must come before libc10. Any pre-existing LD_PRELOAD entries must stay
+    # ahead of the torch libs.
     from cutlass.operators.utils.common import is_torch_available
 
     if sys.platform.startswith("linux") and is_torch_available():
@@ -74,7 +76,7 @@ def test_notebooks(notebook_name, operator_targets, monkeypatch):
             preload_libs.extend(sorted(str(p) for p in torch_lib.glob(pattern)))
         if preload_libs:
             existing = os.environ.get("LD_PRELOAD", "")
-            value = ":".join(preload_libs + ([existing] if existing else []))
+            value = ":".join(([existing] if existing else []) + preload_libs)
             monkeypatch.setenv("LD_PRELOAD", value)
 
     # Register the current Python interpreter as the python3 kernel

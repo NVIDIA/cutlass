@@ -268,6 +268,7 @@ struct CollectiveBuilder<
     BuilderScheduleTag,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       not cute::is_tuple_v<ElementA>   && not cute::is_tuple_v<ElementB> &&
       not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&
@@ -350,11 +351,10 @@ struct CollectiveBuilder<
   using SmemLayoutAtomB = decltype(cutlass::gemm::collective::detail::sm100_smem_selector<
       UmmaMajorB, ElementBMma_SmemAllocType, SmemShape_N, SmemShape_K>());
   static constexpr uint32_t TotalTmemRows = 128;
-  static constexpr uint32_t Sm100TmemCapacityColumns = 512;
-  static constexpr uint32_t TotalTmem = TotalTmemRows * Sm100TmemCapacityColumns;
+  static constexpr uint32_t TotalTmem = TotalTmemRows * ArchTag::kTmemCapacityColumns;
   static constexpr uint32_t AccumulatorPipelineStageCount = (is_2sm || (!is_2sm && size(shape<0,0>(MmaShapeA_MK{}) > 64))) ? 
                                                               TotalTmem / (cute::size<0>(CtaTileShape_MNK{}) * cute::size<1>(CtaTileShape_MNK{}))
-                                                            : (Sm100TmemCapacityColumns / cute::size<1>(CtaTileShape_MNK{})) * 2;                       // 1SM MMA_M = 64 case
+                                                            : (ArchTag::kTmemCapacityColumns / cute::size<1>(CtaTileShape_MNK{})) * 2;                       // 1SM MMA_M = 64 case
   static_assert(AccumulatorPipelineStageCount > 0, "Accumulator pipeline stage count must be positive.  This error probably means that TileShape_MNK and/or TiledMma::ThrLayoutVMNK are wrong.");
 
   // Calculate scheduler pipeline stages. Having one more stage than the accumulator allows more latency hiding.

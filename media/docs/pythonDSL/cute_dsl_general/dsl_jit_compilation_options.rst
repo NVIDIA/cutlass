@@ -50,6 +50,14 @@ You can provide additional compilation options as a string when calling ``cute.c
      - Keep the generated PTX file.
      - False
      - bool
+   * - ``keep-sass``
+     - Keep the generated SASS disassembly file.
+     - False
+     - bool
+   * - ``nvdisasm-options``
+     - Flags passed to ``nvdisasm`` when disassembling the CUBIN to SASS.
+     - "-g -c"
+     - str
    * - ``ptxas-options``
      - The options to pass to the PTX Compiler library.
      - ""
@@ -60,6 +68,10 @@ You can provide additional compilation options as a string when calling ``cute.c
      - bool
    * - ``gpu-arch``
      - The GPU architecture to compile for.
+     - ""
+     - str
+   * - ``host-target``
+     - Target spec for AOT host cross-compilation. Empty targets the build host (native). A non-empty value cross-compiles the exported AOT host object for the requested target (AArch64 only). Accepts a preset tag (``linux-aarch64``) or the long form ``llvm -mtriple=<triple> [-mcpu=<cpu>] [-mattr=<features>]``. See :ref:`dsl_aot_host_cross_compilation`.
      - ""
      - str
    * - ``enable-tvm-ffi``
@@ -76,6 +88,8 @@ You can use the following code to specify compilation options:
    jit_executor_with_enable_assertions = cute.compile(add, 1, 2, options="--enable-assertions")
    jit_executor_with_keep_cubin = cute.compile(add, 1, 2, options="--keep-cubin")
    jit_executor_with_keep_ptx = cute.compile(add, 1, 2, options="--keep-ptx")
+   jit_executor_with_keep_sass = cute.compile(add, 1, 2, options="--keep-sass")
+   jit_executor_with_nvdisasm_options = cute.compile(add, 1, 2, options="--keep-sass --nvdisasm-options '-c'")
    jit_executor_with_ptxas_options = cute.compile(add, 1, 2, options="--ptxas-options '--opt-level=2'")
 
 
@@ -87,7 +101,7 @@ Compilation options can be programmatically composed using tuple and passed to `
 
 .. code-block:: python
 
-  from cutlass.cute import OptLevel, EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX
+  from cutlass.cute import OptLevel, EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX, KeepSASS, NvdisasmOptions
 
   my_debugging_options = (OptLevel(1), EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX)
   compiled_kernel_1 = cute.compile[my_debugging_options](my_kernel_1, ...)
@@ -103,4 +117,6 @@ Notebly, boolean options are automatically converted to True instances of the op
    jit_executor_with_enable_assertions = cute.compile[EnableAssertions](add, 1, 2)
    jit_executor_with_keep_cubin = cute.compile[KeepCUBIN](add, 1, 2)
    jit_executor_with_keep_ptx = cute.compile[KeepPTX](add, 1, 2)
+   jit_executor_with_keep_sass = cute.compile[KeepSASS](add, 1, 2)
+   jit_executor_with_nvdisasm_options = cute.compile[KeepSASS, NvdisasmOptions("-c")](add, 1, 2)
    jit_executor_with_ptxas_options = cute.compile[PtxasOptions("--opt-level=2")](add, 1, 2)

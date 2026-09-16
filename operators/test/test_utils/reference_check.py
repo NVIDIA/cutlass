@@ -28,6 +28,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import IntEnum
 from functools import partial
 from typing import TYPE_CHECKING
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
     import numpy as np
 
     import cutlass
+
+    from cutlass.operators.arguments.gemm import GemmArguments
 
     ArrayLike = torch.Tensor | np.ndarray | jnp.ndarray
     DtypeLike = cutlass.Numeric | torch.dtype | np.dtype | jnp.dtype
@@ -116,6 +119,63 @@ def get_torch_default_tolerances():
         torch.float32: (1.3e-6, 1e-5),
         torch.float64: (1e-7, 1e-7),
     }
+
+
+@dataclass(frozen=True)
+class GemmReferenceTolerances:
+    """Recommended ``(rtol, atol)`` for reference-checking a GEMM result."""
+
+    rtol: float
+    atol: float
+
+
+def gemm_reference_tolerances(args: GemmArguments) -> GemmReferenceTolerances:
+    """Recommend reference-check tolerances for a GEMM problem.
+
+    Uses accumulator data type and K size.
+
+    K < 512 -> rtol = 0.0, atol = 0.0
+    K == 512 -> rtol = 0.001, atol = 0.0
+    K > 512 -> rtol scales based on K size + acc data type, atol = 0.0
+
+    Args:
+        args (GemmArguments): The GEMM problem to recommend tolerances for.
+
+    Returns:
+        GemmReferenceTolerances: The recommended ``rtol``/``atol`` pair.
+    """
+    torch_dtype = cutlass.torch.dtype(args.accumulator_type)
+    # No is_integer provided by torch, so we check everything else
+    if not torch_dtype.is_floating_point and not torch_dtype.is_complex:
+        return GemmReferenceTolerances(rtol=0.0, atol=0.0)
+    elif not torch_dtype.is_floating_point:
+        raise ValueError(f"Dtype {torch_dtype} is not supported")
+
+    # Below this K, accumulation error is negligible under this codebase's
+    # "low variance" init scheme (see the comment above
+    # assert_close_with_reference_conversion) -- rtol/atol are exact (0.0).
+    k_tolerance_threshold = 512
+
+    k = args.problem_size.K
+    if k < k_tolerance_threshold:
+        return GemmReferenceTolerances(rtol=0.0, atol=0.0)
+
+    # rtol at K == k_tolerance_threshold for an fp16 accumulator. Chosen to sit
+    # close to fp16's own ULP (~9.8e-4) -- see existing comment in this file.
+    base_rtol = 0.001
+    # Tuned so an fp16 accumulator reaches rtol ~0.005 at K ~1500:
+    # 0.001 * (1500/512)**1.5 ~= 0.00501.
+    rtol_growth_exponent = 1.5
+
+    ulp = torch.finfo(torch_dtype).eps
+    fp16_ulp = torch.finfo(torch.float16).eps
+
+    rtol = (
+        base_rtol
+        * (ulp / fp16_ulp)
+        * (k / k_tolerance_threshold) ** rtol_growth_exponent
+    )
+    return GemmReferenceTolerances(rtol=rtol, atol=0.0)
 
 
 def check_as_numpy_or_jax(
@@ -209,6 +269,9 @@ def check_as_torch(
     """
     import torch
 
+    if out.device != reference.device:
+        out = out.to(reference.device)
+
     convert_fn = torch.Tensor.to
     base = torch.float32
     safe_emulate_fn = partial(convert_fn, dtype=base)
@@ -256,13 +319,14 @@ def check_as_torch(
     # Do comparisons in float32 because testing.assert_close and testing.assert_allclose
     # is not safe, doesn't support atol and rtol on lower-bitwidth datatypes
     if not skip_check:
+        # A str `msg` replaces torch's mismatch report; a callable wraps it.
         torch.testing.assert_close(
             safe_emulate_fn(out),
             safe_emulate_fn(reference),
             rtol=rtol,
             atol=atol,
             equal_nan=equal_nan,
-            msg=msg,
+            msg=(lambda default: f"{msg}\n{default}") if msg else None,
         )
     return reference
 

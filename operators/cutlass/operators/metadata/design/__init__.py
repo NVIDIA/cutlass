@@ -28,6 +28,7 @@
 
 from .base import BLASDesignMetadata, DesignMetadata
 from .sm100 import Sm100DesignMetadata
+from .sm107 import Sm107DesignMetadata
 from .tile_scheduler import (
     CLCDynamicPersistentTileSchedulerMetadata,
     StaticPersistentTileSchedulerMetadata,
@@ -38,6 +39,7 @@ __all__ = [
     "DesignMetadata",
     "BLASDesignMetadata",
     "Sm100DesignMetadata",
+    "Sm107DesignMetadata",
     # Tile scheduler metadata
     "TileSchedulerMetadata",
     "CLCDynamicPersistentTileSchedulerMetadata",

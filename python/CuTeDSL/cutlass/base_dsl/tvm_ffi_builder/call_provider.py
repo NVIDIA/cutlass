@@ -11,8 +11,9 @@
 
 """Call provider that implements a specific calling convention."""
 
-from dataclasses import dataclass
-from typing import Any, Optional, Union
+from collections.abc import Callable
+
+from typing import Any, Union
 
 from . import spec
 from ..._mlir import ir
@@ -116,24 +117,22 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
 
             stride_one_index = find_stride_one_index()
 
-            def map_shape_for_tensor_dtype_f4x2_to_f4(
-                index: int, value: ir.Value
-            ) -> ir.Value:
-                if index == stride_one_index:
-                    with ir.InsertionPoint(current_block):
-                        return self.mul(value, self.integer_constant(value.type, 2))
-                return value
+            # Shape doubles the stride-1 dimension; stride doubles all the
+            # others. Same body, mirror-image condition — build both from one
+            # factory parameterized on whether we double at the stride-1 index.
+            def _make_f4x2_mapper(
+                double_at_stride_one: bool,
+            ) -> Callable[[int, ir.Value], ir.Value]:
+                def mapper(index: int, value: ir.Value) -> ir.Value:
+                    if (index == stride_one_index) == double_at_stride_one:
+                        with ir.InsertionPoint(current_block):
+                            return self.mul(value, self.integer_constant(value.type, 2))
+                    return value
 
-            def map_stride_for_tensor_dtype_f4x2_to_f4(
-                index: int, value: ir.Value
-            ) -> ir.Value:
-                if index != stride_one_index:
-                    with ir.InsertionPoint(current_block):
-                        return self.mul(value, self.integer_constant(value.type, 2))
-                return value
+                return mapper
 
-            map_shape_value = map_shape_for_tensor_dtype_f4x2_to_f4
-            map_stride_value = map_stride_for_tensor_dtype_f4x2_to_f4
+            map_shape_value = _make_f4x2_mapper(double_at_stride_one=True)
+            map_stride_value = _make_f4x2_mapper(double_at_stride_one=False)
 
         data = context.matched_var_binding[param.data]
         shape = []

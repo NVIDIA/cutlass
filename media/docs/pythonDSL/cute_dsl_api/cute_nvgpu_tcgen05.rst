@@ -1,7 +1,7 @@
 .. _cute_nvgpu_tcgen05:
 
-tcgen05 submodule
-=================
+nvgpu.tcgen05
+=============
 
 .. automodule:: cutlass.cute.nvgpu.tcgen05
    :members:

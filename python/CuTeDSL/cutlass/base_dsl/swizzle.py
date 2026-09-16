@@ -25,7 +25,7 @@ See ``write-dsl-kernel/swizzle.md`` for full documentation and worked examples.
 """
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from . import dsl_user_op
 from .._mlir import ir as _ir
@@ -118,6 +118,7 @@ class Swizzle:
             return self
 
         from cutlass.experimental.cuda import TensorMapSwizzle  # noqa: PLC0415
+        from cutlass.experimental.primitives import Tcgen05SmemSwizzle  # noqa: PLC0415
 
         mapping: dict[Swizzle, object]
         if target_type is TensorMapSwizzle:
@@ -126,6 +127,13 @@ class Swizzle:
                 Swizzle(1, 4, 3): TensorMapSwizzle.s32b,
                 Swizzle(2, 4, 3): TensorMapSwizzle.s64b,
                 Swizzle(3, 4, 3): TensorMapSwizzle.s128b,
+            }
+        elif target_type is Tcgen05SmemSwizzle:
+            mapping = {
+                Swizzle(0, 0, 0): Tcgen05SmemSwizzle.NONE,
+                Swizzle(1, 4, 3): Tcgen05SmemSwizzle.SWIZZLE_32B,
+                Swizzle(2, 4, 3): Tcgen05SmemSwizzle.SWIZZLE_64B,
+                Swizzle(3, 4, 3): Tcgen05SmemSwizzle.SWIZZLE_128B,
             }
         else:
             raise TypeError(f"Unsupported swizzle conversion target: {target_type!r}")
@@ -177,6 +185,29 @@ def apply_swizzle(
     return Pointer._from_raw_ptr(op.result, base_ptr.dtype)
 
 
+def _make_swizzled_cute_ptr(
+    base_ptr: Any,
+    swizzle: "Swizzle",
+    alignment: int | None,
+    loc: "_ir.Location | None",
+    ip: "_ir.InsertionPoint | None",
+) -> Any:
+    """Build a CuTe-typed pointer with the swizzle encoded into its type."""
+    import cutlass.cute as cute  # noqa: PLC0415
+
+    swizzle_obj = cute.make_swizzle(
+        swizzle.bbits, swizzle.mbase, swizzle.sshift, loc=loc, ip=ip
+    )
+    return cute.make_ptr(
+        base_ptr.dtype,
+        base_ptr,
+        assumed_align=alignment,
+        swizzle_=swizzle_obj,
+        loc=loc,
+        ip=ip,
+    )
+
+
 @dsl_user_op
 def load_swizzled(
     ptr: object,
@@ -208,12 +239,12 @@ def load_swizzled(
     :param swizzle: ``Swizzle`` descriptor matching the SMEM layout.
     :param alignment: Optional byte alignment hint for the load.
     :param count: Element count.  ``None`` → scalar load.  Any integer
-        ``N ≥ 1`` → a ``Vector`` of length ``N`` (even ``count=1``
+        ``N ≥ 1`` → a ``cutlass.Vector`` of length ``N`` (even ``count=1``
         returns a 1-element Vector, not a scalar).  Very large counts
         (≥ 256) can stress the MLIR lowering; if you see compile-time
         regressions, drop back to one period per load.
     :return: Scalar ``Numeric`` when ``count is None``; otherwise a
-        base-DSL ``Vector[ptr.dtype, count]`` so callers can use
+        base-DSL ``cutlass.Vector[ptr.dtype, count]`` so callers can use
         ``vec.reduce(op)``, ``vec.to(dtype)``, element-wise arithmetic,
         and pair with :func:`store_swizzled` without any intermediate
         conversions.
@@ -223,37 +254,12 @@ def load_swizzled(
         sw  = cutlass.Swizzle.from_name("s128b")
         vec = (smem_ptr + offset).load_swizzled(sw, count=64)  # one period, fp16
 
-    :sync-class: Per-thread — single-thread SMEM load; not a collective.
-    :elect-safe: N/A — no divergent hardware side effect.
-    :device: SM80+ (swizzle kinds depend on what downstream op consumes
-        them; for ``tcgen05.mma kind::f16`` on SM100 the swizzle must be
-        ``SWIZZLE_128B``, i.e. ``Swizzle.from_name("s128b")``).
-    :side-effects: issues a swizzle-aware CuTe load; writes into the
-        register file (as scalar or 1-D Vector).
-    :peer: Pairs with :func:`store_swizzled` for an SMEM round-trip; the
-        vector returned here can be fed back verbatim.  Swizzle must
-        match the writer's (TMA ``TensorMapSwizzle.sXb`` or a prior
-        :func:`store_swizzled` with the same ``Swizzle``). Keep the same
-        logical swizzle name across the TMA descriptor,
-        ``load_swizzled`` / ``store_swizzled``, and tcgen05 descriptor;
-        note that those APIs use different integer encodings for the
-        same logical swizzle.
     """
     from .typing import Pointer  # noqa: PLC0415
     import cutlass.cute as cute  # noqa: PLC0415
 
     base_ptr = cast(Pointer, ptr)
-    swizzle_obj = cute.make_swizzle(
-        swizzle.bbits, swizzle.mbase, swizzle.sshift, loc=loc, ip=ip
-    )
-    cute_ptr = cute.make_ptr(
-        base_ptr.dtype,
-        base_ptr,
-        assumed_align=alignment,
-        swizzle_=swizzle_obj,
-        loc=loc,
-        ip=ip,
-    )
+    cute_ptr = _make_swizzled_cute_ptr(base_ptr, swizzle, alignment, loc, ip)
     if count is None:
         return cute_ptr.load(loc=loc, ip=ip)
     # Shape must be a tuple — passing a bare int here causes downstream
@@ -293,7 +299,7 @@ def store_swizzled(
 
     :param ptr: SMEM base-DSL ``Pointer`` to store to.
     :param value: Either a scalar ``Numeric`` / ``ArithValue`` / Python
-        ``int`` / ``float`` (one element), or a 1-D ``Vector`` of
+        ``int`` / ``float`` (one element), or a 1-D ``cutlass.Vector`` of
         values.  The element type is cast to ``ptr.dtype``
         automatically.  Mirrors :func:`load_swizzled`: a scalar return
         there pairs with a scalar ``value`` here; a ``Vector[T, N]``
@@ -312,18 +318,6 @@ def store_swizzled(
         vec = (vec.to(cutlass.Float32) * 2.0).to(cutlass.Float16)
         (smem_ptr + offset).store_swizzled(vec, sw)
 
-    :sync-class: Per-thread — single-thread SMEM store; not a collective.
-    :elect-safe: N/A — no divergent hardware side effect.
-    :device: SM80+ (swizzle kinds depend on what downstream op consumes
-        them; for ``tcgen05.mma kind::f16`` on SM100 the swizzle must be
-        ``SWIZZLE_128B``, i.e. ``Swizzle.from_name("s128b")``).
-    :side-effects: issues a swizzle-aware CuTe store; writes into SMEM
-        at the XOR'd physical address.  The ``Swizzle`` passed here
-        defines the physical layout any subsequent reader must assume.
-    :peer: Pairs with :func:`load_swizzled` — use the same ``Swizzle``
-        on both ends of a register-residency round-trip.  A TMA reader
-        consuming the tile must be built with a matching
-        ``TensorMapSwizzle``.
     """
     from .typing import Pointer  # noqa: PLC0415
     import cutlass.cute as cute  # noqa: PLC0415
@@ -341,17 +335,7 @@ def store_swizzled(
         swizzled_ptr = cast(Pointer, apply_swizzle(base_ptr, swizzle, loc=loc, ip=ip))
         swizzled_ptr.store(value, loc=loc, ip=ip)
         return
-    swizzle_obj = cute.make_swizzle(
-        swizzle.bbits, swizzle.mbase, swizzle.sshift, loc=loc, ip=ip
-    )
-    cute_ptr = cute.make_ptr(
-        base_ptr.dtype,
-        base_ptr,
-        assumed_align=alignment,
-        swizzle_=swizzle_obj,
-        loc=loc,
-        ip=ip,
-    )
+    cute_ptr = _make_swizzled_cute_ptr(base_ptr, swizzle, alignment, loc, ip)
     if len(value_shape) != 1:
         raise ValueError(
             "store_swizzled only supports scalar or 1-D Vector, "

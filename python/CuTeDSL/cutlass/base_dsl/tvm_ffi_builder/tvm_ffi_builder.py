@@ -11,6 +11,8 @@
 
 """TVM-FFI builder for MLIR code generation."""
 
+import hashlib
+import re
 from collections.abc import Sequence
 from enum import IntEnum
 from typing import Callable, Literal, Optional, Union
@@ -25,6 +27,57 @@ from ..._mlir import ir
 from ..._mlir.dialects import llvm
 from .mlir_builder import MLIRBuilder
 from dataclasses import dataclass
+
+
+_CUDA_LAUNCH_PREFLIGHT_VIOLATIONS = (
+    "zero_launch_dimension",
+    "block_threads_exceeds_max_threads_per_block",
+    "block_dim_x_exceeds_limit",
+    "block_dim_y_exceeds_limit",
+    "block_dim_z_exceeds_limit",
+    "grid_dim_x_exceeds_limit",
+    "grid_dim_y_exceeds_limit",
+    "grid_dim_z_exceeds_limit",
+    "dynamic_smem_exceeds_limit",
+)
+
+
+_CUDA_LAUNCH_CONFIG_GRID_DIM = 0
+_CUDA_LAUNCH_CONFIG_BLOCK_DIM = 1
+_CUDA_LAUNCH_CONFIG_DYNAMIC_SMEM_BYTES = 2
+_CUDA_LAUNCH_CONFIG_STREAM = 3
+_CUDA_LAUNCH_CONFIG_ATTRS = 4
+_CUDA_LAUNCH_CONFIG_NUM_ATTRS = 5
+
+
+# cudaDeviceAttr values used by the generated launch preflight helper.
+_CUDA_DEV_ATTR_MAX_THREADS_PER_BLOCK = 1
+_CUDA_DEV_ATTR_MAX_BLOCK_DIM_X = 2
+_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Y = 3
+_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Z = 4
+_CUDA_DEV_ATTR_MAX_GRID_DIM_X = 5
+_CUDA_DEV_ATTR_MAX_GRID_DIM_Y = 6
+_CUDA_DEV_ATTR_MAX_GRID_DIM_Z = 7
+_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK = 8
+_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK_OPTIN = 97
+
+
+@dataclass(frozen=True)
+class _CudaLaunchConfigValues:
+    grid: tuple[ir.Value, ir.Value, ir.Value]
+    block: tuple[ir.Value, ir.Value, ir.Value]
+    dynamic_smem: ir.Value
+
+
+@dataclass(frozen=True)
+class _CudaDeviceLaunchLimits:
+    query_failed: ir.Value
+    device: ir.Value
+    max_threads_per_block: ir.Value
+    max_block: tuple[ir.Value, ir.Value, ir.Value]
+    max_grid: tuple[ir.Value, ir.Value, ir.Value]
+    max_shared_mem_per_block: ir.Value
+    max_shared_mem_per_block_optin: ir.Value
 
 
 @dataclass
@@ -268,10 +321,22 @@ class TVMFFIBuilder(MLIRBuilder):
                 self.i64_type,
             ],
         )
-        self.tvm_ffi_func_type = self.func_type(
-            ret=self.i32_type,
-            params=[self.ptr_type, self.ptr_type, self.i32_type, self.ptr_type],
-        )
+        self.cuda_launch_dim3_type = ir.Type.parse("!llvm.array<3 x i32>")
+        self._cuda_launch_config_type: ir.Type | None = None
+
+    def _get_cuda_launch_config_type(self) -> ir.Type:
+        if self._cuda_launch_config_type is None:
+            self._cuda_launch_config_type = self.struct_type(
+                fields=[
+                    self.cuda_launch_dim3_type,  # gridDim
+                    self.cuda_launch_dim3_type,  # blockDim
+                    self.i64_type,  # dynamicSmemBytes
+                    self.ptr_type,  # stream
+                    self.ptr_type,  # attrs
+                    self.i32_type,  # numAttrs
+                ]
+            )
+        return self._cuda_launch_config_type
 
     def get_object_cell_ptr(self, obj: ir.Value) -> ir.Value:
         """Get the cell from the tvm_ffi_object struct.
@@ -327,218 +392,129 @@ class TVMFFIBuilder(MLIRBuilder):
         )
         return llvm.load(self.i32_type, type_index_ptr)
 
-    def load_ffi_any_array_item_v_int64(self, args: ir.Value, index: int) -> ir.Value:
-        """Get the v_int64 from the index-th field of tvm_ffi_any_type struct.
+    def _load_ffi_any_array_item_value(
+        self, args: ir.Value, index: int, load_type: ir.Type
+    ) -> ir.Value:
+        """Load the union value field (field 2) of ``args[index]`` as ``load_type``.
 
-        Semantics as follows:
-
-        .. code-block:: c
-
-            int64_t get_v_int64(void* args, const int index) {
-                return ((TVMFFIAny*)args)[index].v_int64;
-            }
+        All three TVMFFIAny value accessors read the same struct field and differ
+        only in the load type (v_int64/v_float64/v_ptr are a C union).
         """
-        v_int64_ptr = self.getelementptr(
+        value_ptr = self.getelementptr(
             args,
             [index, 2],
             elem_type=self.tvm_ffi_any_type,
         )
-        return llvm.load(self.i64_type, v_int64_ptr)
+        return llvm.load(load_type, value_ptr)
+
+    def load_ffi_any_array_item_v_int64(self, args: ir.Value, index: int) -> ir.Value:
+        """Get the v_int64 from the index-th field of tvm_ffi_any_type struct.
+
+        Semantics: ``((TVMFFIAny*)args)[index].v_int64``.
+        """
+        return self._load_ffi_any_array_item_value(args, index, self.i64_type)
 
     def load_ffi_any_array_item_v_float64(self, args: ir.Value, index: int) -> ir.Value:
         """Get the v_float64 from the index-th field of tvm_ffi_any_type struct.
 
-        Semantics as follows:
-
-        .. code-block:: c
-
-            double get_v_float64(void* args, const int index) {
-                return ((TVMFFIAny*)args)[index].v_float64;
-            }
+        Semantics: ``((TVMFFIAny*)args)[index].v_float64``.
         """
-        v_float64_ptr = self.getelementptr(
-            args,
-            [index, 2],
-            elem_type=self.tvm_ffi_any_type,
-        )
-        return llvm.load(self.f64_type, v_float64_ptr)
+        return self._load_ffi_any_array_item_value(args, index, self.f64_type)
 
     def load_ffi_any_array_item_v_ptr(
         self, args: ir.Value, index: int, address_space: Optional[int] = None
     ) -> ir.Value:
         """Get the v_ptr from the index-th field of tvm_ffi_any_type struct.
 
-        Semantics as follows:
-
-        .. code-block:: c
-
-            void* get_v_ptr(void* args, const int index) {
-                return ((TVMFFIAny*)args)[index].v_ptr;
-            }
+        Semantics: ``((TVMFFIAny*)args)[index].v_ptr``.
         """
-        v_ptr_ptr = self.getelementptr(
-            args,
-            [index, 2],
-            elem_type=self.tvm_ffi_any_type,
-        )
         ptr_type = self.ptr_type_with_address_space(address_space)
-        return llvm.load(ptr_type, v_ptr_ptr)
+        return self._load_ffi_any_array_item_value(args, index, ptr_type)
+
+    def _gep_load(
+        self,
+        obj: ir.Value,
+        indices: list[int],
+        elem_type: ir.Type,
+        load_type: ir.Type,
+    ) -> ir.Value:
+        """GEP into ``obj`` at ``indices`` (as ``elem_type``) and load ``load_type``.
+
+        Shared body for the shape-cell / array-cell / DLTensor field accessors,
+        which all do a getelementptr followed by an llvm.load and differ only in
+        the index path, struct type, and loaded type.
+        """
+        ptr = self.getelementptr(obj, indices, elem_type=elem_type)
+        return llvm.load(load_type, ptr)
 
     def load_shape_cell_data_ptr(self, shape_cell: ir.Value) -> ir.Value:
         """Get the data pointer from the shape cell."""
-        data_ptr = self.getelementptr(
-            shape_cell,
-            [0, 0],
-            elem_type=self.tvm_ffi_shape_cell_type,
+        return self._gep_load(
+            shape_cell, [0, 0], self.tvm_ffi_shape_cell_type, self.ptr_type
         )
-        return llvm.load(self.ptr_type, data_ptr)
 
     def load_shape_cell_size_as_i64(self, shape_cell: ir.Value) -> ir.Value:
         """Get the size from the shape cell as i64."""
-        size_ptr = self.getelementptr(
-            shape_cell,
-            [0, 1],
-            elem_type=self.tvm_ffi_shape_cell_type,
+        size_as_ptr_type = self._gep_load(
+            shape_cell, [0, 1], self.tvm_ffi_shape_cell_type, self.ptr_type
         )
-        size_as_ptr_type = llvm.load(self.ptr_type, size_ptr)
         return llvm.ptrtoint(self.i64_type, size_as_ptr_type)
 
     def load_array_cell_data_ptr(self, array_cell: ir.Value) -> ir.Value:
         """Get the data pointer from the array cell."""
-        data_ptr = self.getelementptr(
-            array_cell,
-            [0, 0],
-            elem_type=self.tvm_ffi_array_cell_type,
+        return self._gep_load(
+            array_cell, [0, 0], self.tvm_ffi_array_cell_type, self.ptr_type
         )
-        return llvm.load(self.ptr_type, data_ptr)
 
     def load_array_cell_size_as_i64(self, array_cell: ir.Value) -> ir.Value:
         """Get the size from the array cell as i64."""
-        size_ptr = self.getelementptr(
-            array_cell,
-            [0, 1],
-            elem_type=self.tvm_ffi_array_cell_type,
+        return self._gep_load(
+            array_cell, [0, 1], self.tvm_ffi_array_cell_type, self.i64_type
         )
-        return llvm.load(self.i64_type, size_ptr)
 
     def load_i64_array_item(self, data: ir.Value, index: int) -> ir.Value:
         """Load a shape value at the given index from the shape pointer."""
-        # Get pointer to the specific shape element at index
-        shape_elem_ptr = self.getelementptr(
-            data,
-            [index],
-            elem_type=self.i64_type,
-        )
-        # Load the actual strides value
-        return llvm.load(self.i64_type, shape_elem_ptr)
+        return self._gep_load(data, [index], self.i64_type, self.i64_type)
 
     def load_dltensor_data_ptr(self, dltensor: ir.Value) -> ir.Value:
-        """Get the data pointer from the DLTensor struct."""
-        # Get pointer to the data field (first field at index 0)
-        data_ptr = self.getelementptr(
-            dltensor,
-            [0, 0],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual data pointer
-        return llvm.load(self.ptr_type, data_ptr)
+        """Get the data pointer from the DLTensor struct (field 0)."""
+        return self._gep_load(dltensor, [0, 0], self.dltensor_type, self.ptr_type)
 
     def load_dltensor_device_type(self, dltensor: ir.Value) -> ir.Value:
-        """Get the device type from the DLTensor struct."""
-        # Get pointer to the device_type field (device at index 1, then device_type at index 0)
-        device_type_ptr = self.getelementptr(
-            dltensor,
-            [0, 1, 0],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual device type value
-        return llvm.load(self.i32_type, device_type_ptr)
+        """Get the device type from the DLTensor struct (device[1].device_type[0])."""
+        return self._gep_load(dltensor, [0, 1, 0], self.dltensor_type, self.i32_type)
 
     def load_dltensor_device_id(self, dltensor: ir.Value) -> ir.Value:
-        """Get the device id from the DLTensor struct."""
-        # Get pointer to the device_id field (device field at index 1, then device_id at index 1)
-        device_id_ptr = self.getelementptr(
-            dltensor,
-            [0, 1, 1],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual device id value
-        return llvm.load(self.i32_type, device_id_ptr)
+        """Get the device id from the DLTensor struct (device[1].device_id[1])."""
+        return self._gep_load(dltensor, [0, 1, 1], self.dltensor_type, self.i32_type)
 
     def load_dltensor_dtype_code(self, dltensor: ir.Value) -> ir.Value:
-        """Get the dtype code from the DLTensor struct."""
-        # Get pointer to the dtype code field (dtype field at index 3, then code at index 0)
-        dtype_code_ptr = self.getelementptr(
-            dltensor,
-            [0, 3, 0],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual dtype code value
-        return llvm.load(self.i8_type, dtype_code_ptr)
+        """Get the dtype code from the DLTensor struct (dtype[3].code[0])."""
+        return self._gep_load(dltensor, [0, 3, 0], self.dltensor_type, self.i8_type)
 
     def load_dltensor_dtype_bits(self, dltensor: ir.Value) -> ir.Value:
-        """Get the dtype bits from the DLTensor struct."""
-        # Get pointer to the dtype bits field (dtype field at index 3, then bits at index 1)
-        dtype_bits_ptr = self.getelementptr(
-            dltensor,
-            [0, 3, 1],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual dtype bits value
-        return llvm.load(self.i8_type, dtype_bits_ptr)
+        """Get the dtype bits from the DLTensor struct (dtype[3].bits[1])."""
+        return self._gep_load(dltensor, [0, 3, 1], self.dltensor_type, self.i8_type)
 
     def load_dltensor_dtype_lanes(self, dltensor: ir.Value) -> ir.Value:
-        """Get the dtype lanes from the DLTensor struct."""
-        # Get pointer to the dtype lanes field (dtype field at index 3, then lanes at index 2)
-        dtype_lanes_ptr = self.getelementptr(
-            dltensor,
-            [0, 3, 2],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual dtype lanes value
-        return llvm.load(self.i16_type, dtype_lanes_ptr)
+        """Get the dtype lanes from the DLTensor struct (dtype[3].lanes[2])."""
+        return self._gep_load(dltensor, [0, 3, 2], self.dltensor_type, self.i16_type)
 
     def load_dltensor_ndim(self, dltensor: ir.Value) -> ir.Value:
-        """Get the number of dimensions from the DLTensor struct."""
-        # Get pointer to the ndim field (third field at index 2)
-        ndim_ptr = self.getelementptr(
-            dltensor,
-            [0, 2],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual ndim value
-        return llvm.load(self.i32_type, ndim_ptr)
+        """Get the number of dimensions from the DLTensor struct (field 2)."""
+        return self._gep_load(dltensor, [0, 2], self.dltensor_type, self.i32_type)
 
     def load_dltensor_shape(self, dltensor: ir.Value) -> ir.Value:
-        """Get the shape value at the given index from the DLTensor struct."""
-        # Get pointer to the shape array (fifth field at index 4)
-        shape_ptr = self.getelementptr(
-            dltensor,
-            [0, 4],
-            elem_type=self.dltensor_type,
-        )
-        return llvm.load(self.ptr_type, shape_ptr)
+        """Get the shape pointer from the DLTensor struct (field 4)."""
+        return self._gep_load(dltensor, [0, 4], self.dltensor_type, self.ptr_type)
 
     def load_dltensor_strides(self, dltensor: ir.Value) -> ir.Value:
-        """Get the strides value at the given index from the DLTensor struct."""
-        # Get pointer to the strides array (sixth field at index 5)
-        strides_ptr = self.getelementptr(
-            dltensor,
-            [0, 5],
-            elem_type=self.dltensor_type,
-        )
-        return llvm.load(self.ptr_type, strides_ptr)
+        """Get the strides pointer from the DLTensor struct (field 5)."""
+        return self._gep_load(dltensor, [0, 5], self.dltensor_type, self.ptr_type)
 
     def load_dltensor_byte_offset(self, dltensor: ir.Value) -> ir.Value:
-        """Get the byte offset from the DLTensor struct."""
-        # Get pointer to the byte_offset field (seventh field at index 6)
-        byte_offset_ptr = self.getelementptr(
-            dltensor,
-            [0, 6],
-            elem_type=self.dltensor_type,
-        )
-        # Load the actual byte offset value
-        return llvm.load(self.i64_type, byte_offset_ptr)
+        """Get the byte offset from the DLTensor struct (field 6)."""
+        return self._gep_load(dltensor, [0, 6], self.dltensor_type, self.i64_type)
 
     def downcast_i64_to_lower_bits(
         self, v_int64: ir.Value, target_dtype: "tvm_ffi.dtype"
@@ -616,78 +592,485 @@ class TVMFFIBuilder(MLIRBuilder):
                         expected_stride = self.mul(loaded_shape[index], expected_stride)
         return cond
 
-    def get_or_create_set_raised_cuda_error_helper(self, error_code_prefix: str) -> str:
-        """Get or create a helper that raises CUDADialectError from an i32 code."""
-        helper_name = "__tvm_ffi_set_raised_cuda_error"
+    def _load_cuda_launch_config_values(
+        self, launch_config: ir.Value
+    ) -> _CudaLaunchConfigValues:
+        """Load named values from the lowered CUDA launch config struct."""
+        launch_config_type = self._get_cuda_launch_config_type()
+
+        def load_dim(field: int, index: int) -> ir.Value:
+            return llvm.load(
+                self.i32_type,
+                self.getelementptr(
+                    launch_config, [0, field, index], launch_config_type
+                ),
+            )
+
+        dynamic_smem = llvm.load(
+            self.i64_type,
+            self.getelementptr(
+                launch_config,
+                [0, _CUDA_LAUNCH_CONFIG_DYNAMIC_SMEM_BYTES],
+                launch_config_type,
+            ),
+        )
+        return _CudaLaunchConfigValues(
+            grid=(
+                load_dim(_CUDA_LAUNCH_CONFIG_GRID_DIM, 0),
+                load_dim(_CUDA_LAUNCH_CONFIG_GRID_DIM, 1),
+                load_dim(_CUDA_LAUNCH_CONFIG_GRID_DIM, 2),
+            ),
+            block=(
+                load_dim(_CUDA_LAUNCH_CONFIG_BLOCK_DIM, 0),
+                load_dim(_CUDA_LAUNCH_CONFIG_BLOCK_DIM, 1),
+                load_dim(_CUDA_LAUNCH_CONFIG_BLOCK_DIM, 2),
+            ),
+            dynamic_smem=dynamic_smem,
+        )
+
+    def _query_cuda_launch_limits(self) -> _CudaDeviceLaunchLimits:
+        """Emit CUDA device-attribute queries needed by launch preflight checks."""
+
+        def alloca_i32() -> ir.Value:
+            return llvm.alloca(
+                res=self.ptr_type,
+                elem_type=self.i32_type,
+                array_size=self.i32(1),
+                alignment=4,
+            )
+
+        device_alloca = alloca_i32()
+        max_threads_alloca = alloca_i32()
+        max_block_x_alloca = alloca_i32()
+        max_block_y_alloca = alloca_i32()
+        max_block_z_alloca = alloca_i32()
+        max_grid_x_alloca = alloca_i32()
+        max_grid_y_alloca = alloca_i32()
+        max_grid_z_alloca = alloca_i32()
+        max_smem_alloca = alloca_i32()
+        max_smem_optin_alloca = alloca_i32()
+
+        device_attrs = [
+            (_CUDA_DEV_ATTR_MAX_THREADS_PER_BLOCK, max_threads_alloca),
+            (_CUDA_DEV_ATTR_MAX_BLOCK_DIM_X, max_block_x_alloca),
+            (_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Y, max_block_y_alloca),
+            (_CUDA_DEV_ATTR_MAX_BLOCK_DIM_Z, max_block_z_alloca),
+            (_CUDA_DEV_ATTR_MAX_GRID_DIM_X, max_grid_x_alloca),
+            (_CUDA_DEV_ATTR_MAX_GRID_DIM_Y, max_grid_y_alloca),
+            (_CUDA_DEV_ATTR_MAX_GRID_DIM_Z, max_grid_z_alloca),
+            (_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK, max_smem_alloca),
+            (_CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK_OPTIN, max_smem_optin_alloca),
+        ]
+        llvm.store(value=self.i32(0), addr=device_alloca)
+        for _, alloca in device_attrs:
+            llvm.store(value=self.i32(0), addr=alloca)
+
+        get_device_status = llvm.call(
+            result=self.i32_type,
+            callee="_cudaGetDevice",
+            callee_operands=[device_alloca],
+            op_bundle_sizes=[],
+            op_bundle_operands=[],
+        )
+        device = llvm.load(self.i32_type, device_alloca)
+
+        attr_statuses: list[ir.Value] = []
+        for attr, alloca in device_attrs:
+            attr_statuses.append(
+                llvm.call(
+                    result=self.i32_type,
+                    callee="_cudaDeviceGetAttribute",
+                    callee_operands=[alloca, self.i32(attr), device],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+            )
+
+        query_failed = self.not_equal(get_device_status, self.i32(0))
+        for status in attr_statuses:
+            query_failed = self.or_(query_failed, self.not_equal(status, self.i32(0)))
+
+        return _CudaDeviceLaunchLimits(
+            query_failed=query_failed,
+            device=device,
+            max_threads_per_block=llvm.load(self.i32_type, max_threads_alloca),
+            max_block=(
+                llvm.load(self.i32_type, max_block_x_alloca),
+                llvm.load(self.i32_type, max_block_y_alloca),
+                llvm.load(self.i32_type, max_block_z_alloca),
+            ),
+            max_grid=(
+                llvm.load(self.i32_type, max_grid_x_alloca),
+                llvm.load(self.i32_type, max_grid_y_alloca),
+                llvm.load(self.i32_type, max_grid_z_alloca),
+            ),
+            max_shared_mem_per_block=llvm.load(self.i32_type, max_smem_alloca),
+            max_shared_mem_per_block_optin=llvm.load(
+                self.i32_type, max_smem_optin_alloca
+            ),
+        )
+
+    def _cuda_launch_error_runtime_param_types(self) -> list[ir.Type]:
+        """Return the runtime helper parameter types for CUDA launch diagnostics."""
+        launch_dim_types = [self.i32_type] * 7
+        launch_limit_types = [self.i32_type] * 10
+        source_location_types = [
+            self.ptr_type,
+            self.i32_type,
+            self.i32_type,
+            self.i32_type,
+        ]
+        return (
+            [self.ptr_type]
+            + launch_dim_types
+            + [self.i64_type]
+            + launch_limit_types
+            + [self.ptr_type]
+            + source_location_types
+        )
+
+    def find_or_declare_extern_func(
+        self, name: str, params: Sequence[ir.Type], ret: ir.Type
+    ) -> None:
+        """Find an existing extern function or declare it if it doesn't exist."""
+        existing_func = self.find_func_in_module(self.module, name)
+        if existing_func is not None:
+            return
+
+        # Function declarations are module-level symbols. Avoid relying on
+        # whichever insertion point is active at the call site.
+        with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+            self.declare_extern_func(name, params, ret)
+
+    def get_or_create_cuda_launch_preflight_check_helper(self) -> str:
+        """Get or create the debug-only helper that validates CUDA launch args."""
+        helper_name = "__tvm_ffi_cuda_launch_preflight_check"
         if self.find_func_in_module(self.module, helper_name):
             return helper_name
 
-        sprintf_type = ir.Type.parse("!llvm.func<i32 (!llvm.ptr, !llvm.ptr, ...)>")
-        if not self.find_func_in_module(self.module, "sprintf"):
-            with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
-                func_op = llvm.func(
-                    "sprintf",
-                    function_type=ir.TypeAttr.get(sprintf_type),
-                )
-                func_op.attributes["llvm.linkage"] = ir.StringAttr.get("external")
-        format_symbol = self.define_global_string(content="%d")
-        error_kind_symbol = self.define_global_string(content="CUDADialectError")
-        error_prefix_symbol = self.define_global_string(content=error_code_prefix)
-        set_error_from_parts_helper = self.get_or_create_set_raised_from_cstr_parts(2)
+        self.find_or_declare_extern_func(
+            "_cudaGetDevice", [self.ptr_type], self.i32_type
+        )
+        self.find_or_declare_extern_func(
+            "_cudaDeviceGetAttribute",
+            [self.ptr_type, self.i32_type, self.i32_type],
+            self.i32_type,
+        )
+        self.find_or_declare_extern_func(
+            "TVMFFIErrorSetRaisedFromCStrParts",
+            [self.ptr_type, self.ptr_type, self.i32_type],
+            self.void_type,
+        )
+        self.find_or_declare_extern_func(
+            "CuteDSLRT_TVMFFISetRaisedCudaLaunchError",
+            self._cuda_launch_error_runtime_param_types(),
+            self.void_type,
+        )
+        violation_symbols = {
+            violation: self.define_global_string(content=violation)
+            for violation in _CUDA_LAUNCH_PREFLIGHT_VIOLATIONS
+        }
+
+        def gt(lhs: ir.Value, rhs: ir.Value) -> ir.Value:
+            return llvm.icmp(llvm.ICmpPredicate.sgt, lhs, rhs)
+
+        def le(lhs: ir.Value, rhs: ir.Value) -> ir.Value:
+            return llvm.icmp(llvm.ICmpPredicate.sle, lhs, rhs)
+
+        def positive_and_gt(value: ir.Value, limit: ir.Value) -> ir.Value:
+            return self.and_(gt(limit, self.i32(0)), gt(value, limit))
+
+        def positive_i64_and_gt_i32_limit(value: ir.Value, limit: ir.Value) -> ir.Value:
+            limit_i64 = llvm.zext(self.i64_type, limit)
+            return self.and_(
+                gt(limit, self.i32(0)),
+                llvm.icmp(llvm.ICmpPredicate.sgt, value, limit_i64),
+            )
+
+        def any_of(values: Sequence[ir.Value]) -> ir.Value:
+            result = values[0]
+            for value in values[1:]:
+                result = self.or_(result, value)
+            return result
 
         with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
             params, entry_block = self.function(
                 name=helper_name,
-                params_type=[self.i32_type],
-                ret_type=self.void_type,
+                params_type=[
+                    self.ptr_type,
+                    self.ptr_type,
+                    self.i32_type,
+                    self.i32_type,
+                    self.i32_type,
+                ],
+                ret_type=self.i32_type,
                 internal=True,
                 llvm_func_attrs=["noinline"],
             )
-            (value,) = params
+            (
+                launch_config,
+                source_file,
+                source_line,
+                source_col,
+                source_end_col,
+            ) = params
+
             with ir.InsertionPoint(entry_block):
-                buffer = llvm.alloca(
-                    res=self.ptr_type,
-                    elem_type=self.i8_type,
-                    array_size=self.i32(12),
-                    alignment=1,
-                )
-                llvm.call(
-                    result=self.i32_type,
-                    callee="sprintf",
-                    callee_operands=[
-                        buffer,
-                        self.address_of(format_symbol, self.ptr_type),
-                        value,
-                    ],
-                    var_callee_type=ir.TypeAttr.get(sprintf_type),
-                    op_bundle_sizes=[],
-                    op_bundle_operands=[],
+                launch_values = self._load_cuda_launch_config_values(launch_config)
+                grid_x, grid_y, grid_z = launch_values.grid
+                block_x, block_y, block_z = launch_values.block
+                dynamic_smem = launch_values.dynamic_smem
+                limits = self._query_cuda_launch_limits()
+
+                skip_block = entry_block.create_after()
+                checks_block = skip_block.create_after()
+                self.cond_br(
+                    cond=limits.query_failed,
+                    true_block=skip_block,
+                    false_block=checks_block,
+                    branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
                 )
 
+            with ir.InsertionPoint(skip_block):
+                self.return_(self.i32(0))
+
+            with ir.InsertionPoint(checks_block):
+                block_threads = self.mul(self.mul(block_x, block_y), block_z)
+                zero_dim = any_of(
+                    [
+                        le(grid_x, self.i32(0)),
+                        le(grid_y, self.i32(0)),
+                        le(grid_z, self.i32(0)),
+                        le(block_x, self.i32(0)),
+                        le(block_y, self.i32(0)),
+                        le(block_z, self.i32(0)),
+                    ]
+                )
+                block_threads_exceeds = positive_and_gt(
+                    block_threads, limits.max_threads_per_block
+                )
+                block_x_exceeds = positive_and_gt(block_x, limits.max_block[0])
+                block_y_exceeds = positive_and_gt(block_y, limits.max_block[1])
+                block_z_exceeds = positive_and_gt(block_z, limits.max_block[2])
+                grid_x_exceeds = positive_and_gt(grid_x, limits.max_grid[0])
+                grid_y_exceeds = positive_and_gt(grid_y, limits.max_grid[1])
+                grid_z_exceeds = positive_and_gt(grid_z, limits.max_grid[2])
+                dynamic_smem_exceeds = positive_i64_and_gt_i32_limit(
+                    dynamic_smem, limits.max_shared_mem_per_block_optin
+                )
+
+            error_block = checks_block.create_after()
+            violation_arg = error_block.add_argument(
+                self.ptr_type, ir.Location.unknown()
+            )
+            ok_block = error_block.create_after()
+
+            def emit_check(
+                current_block: ir.Block, cond: ir.Value, violation: str
+            ) -> ir.Block:
+                next_block = current_block.create_after()
+                with ir.InsertionPoint(current_block):
+                    self.cond_br(
+                        cond=cond,
+                        true_block=error_block,
+                        false_block=next_block,
+                        true_dest_operands=[
+                            self.address_of(violation_symbols[violation], self.ptr_type)
+                        ],
+                        branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
+                    )
+                return next_block
+
+            current_block = checks_block
+            checks = [
+                (zero_dim, "zero_launch_dimension"),
+                (
+                    block_threads_exceeds,
+                    "block_threads_exceeds_max_threads_per_block",
+                ),
+                (block_x_exceeds, "block_dim_x_exceeds_limit"),
+                (block_y_exceeds, "block_dim_y_exceeds_limit"),
+                (block_z_exceeds, "block_dim_z_exceeds_limit"),
+                (grid_x_exceeds, "grid_dim_x_exceeds_limit"),
+                (grid_y_exceeds, "grid_dim_y_exceeds_limit"),
+                (grid_z_exceeds, "grid_dim_z_exceeds_limit"),
+                (dynamic_smem_exceeds, "dynamic_smem_exceeds_limit"),
+            ]
+            for cond, violation in checks:
+                current_block = emit_check(current_block, cond, violation)
+
+            with ir.InsertionPoint(current_block):
+                self.br(ok_block)
+
+            with ir.InsertionPoint(error_block):
                 llvm.call(
                     result=None,
-                    callee=set_error_from_parts_helper,
+                    callee="CuteDSLRT_TVMFFISetRaisedCudaLaunchError",
                     callee_operands=[
-                        self.address_of(error_kind_symbol, self.ptr_type),
-                        self.i32(2),
-                        self.address_of(error_prefix_symbol, self.ptr_type),
-                        buffer,
+                        self.address_of(
+                            "TVMFFIErrorSetRaisedFromCStrParts", self.ptr_type
+                        ),
+                        grid_x,
+                        grid_y,
+                        grid_z,
+                        block_x,
+                        block_y,
+                        block_z,
+                        block_threads,
+                        dynamic_smem,
+                        limits.device,
+                        limits.max_threads_per_block,
+                        limits.max_block[0],
+                        limits.max_block[1],
+                        limits.max_block[2],
+                        limits.max_grid[0],
+                        limits.max_grid[1],
+                        limits.max_grid[2],
+                        limits.max_shared_mem_per_block,
+                        limits.max_shared_mem_per_block_optin,
+                        violation_arg,
+                        source_file,
+                        source_line,
+                        source_col,
+                        source_end_col,
                     ],
                     op_bundle_sizes=[],
                     op_bundle_operands=[],
                 )
-                self.return_()
+                self.return_(self.i32(-1))
+
+            with ir.InsertionPoint(ok_block):
+                self.return_(self.i32(0))
 
         return helper_name
 
-    def raise_cuda_error_and_return(
-        self, code: ir.Value, error_code_prefix: str
-    ) -> None:
+    def get_or_create_cuda_checked_launch_helper(
+        self,
+        *,
+        source_file: str = "",
+        source_line: int = 0,
+        source_col: int = 0,
+        source_end_col: int = 0,
+    ) -> str:
+        """Get or create a cudaLaunchKernelEx wrapper with debug preflight checks."""
+        helper_name = "__tvm_ffi_cuda_launch_preflight_or_launch"
+        if source_file or source_line or source_col or source_end_col:
+            source_key = f"{source_file}:{source_line}:{source_col}:{source_end_col}"
+            digest = hashlib.sha1(source_key.encode("utf-8")).hexdigest()[:12]
+            helper_name = f"{helper_name}_{digest}"
+        if self.find_func_in_module(self.module, helper_name):
+            return helper_name
+
+        self.find_or_declare_extern_func(
+            "_cudaLaunchKernelEx",
+            [self.ptr_type, self.ptr_type, self.ptr_type],
+            self.i32_type,
+        )
+        preflight_helper = self.get_or_create_cuda_launch_preflight_check_helper()
+        source_file_symbol = self.define_global_string(content=source_file)
+
+        with ir.InsertionPoint(self.module.body):  # type: ignore[union-attr]
+            params, entry_block = self.function(
+                name=helper_name,
+                params_type=[self.ptr_type, self.ptr_type, self.ptr_type],
+                ret_type=self.i32_type,
+                internal=True,
+                llvm_func_attrs=["noinline"],
+            )
+            launch_config, kernel, kernel_args = params
+
+            with ir.InsertionPoint(entry_block):
+                preflight_status = llvm.call(
+                    result=self.i32_type,
+                    callee=preflight_helper,
+                    callee_operands=[
+                        launch_config,
+                        self.address_of(source_file_symbol, self.ptr_type),
+                        self.i32(source_line),
+                        self.i32(source_col),
+                        self.i32(source_end_col),
+                    ],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+                error_block = entry_block.create_after()
+                launch_block = error_block.create_after()
+                self.cond_br(
+                    cond=self.not_equal(preflight_status, self.i32(0)),
+                    true_block=error_block,
+                    false_block=launch_block,
+                    branch_weights=self.BRANCH_WEIGHTS_UNLIKELY,
+                )
+
+            with ir.InsertionPoint(error_block):
+                self.return_(preflight_status)
+
+            with ir.InsertionPoint(launch_block):
+                status = llvm.call(
+                    result=self.i32_type,
+                    callee="_cudaLaunchKernelEx",
+                    callee_operands=[launch_config, kernel, kernel_args],
+                    op_bundle_sizes=[],
+                    op_bundle_operands=[],
+                )
+                self.return_(status)
+
+        return helper_name
+
+    _PY_SOURCE_LOC_RE = re.compile(r'"(?P<file>[^"]+?\.py)":(?P<line>\d+):(?P<col>\d+)')
+
+    @staticmethod
+    def _extract_python_source_location(op: ir.Operation) -> tuple[str, int, int, int]:
+        location = str(op.location)
+        match = TVMFFIBuilder._PY_SOURCE_LOC_RE.search(location)
+        if match is None:
+            return "", 0, 0, 0
+
+        source_col = int(match.group("col"))
+        return match.group("file"), int(match.group("line")), source_col, source_col
+
+    def instrument_cuda_launch_preflight_checks(self, function_name: str) -> int:
+        """Wrap cudaLaunchKernelEx calls in ``function_name`` with debug preflight."""
+        module = self.module
+        assert module is not None
+        target = self.find_func_in_module(module, function_name)
+        if target is None:
+            return 0
+
+        num_rewritten = 0
+
+        def rewrite_launch_call(op: ir.Operation) -> ir.WalkResult:
+            nonlocal num_rewritten
+            if op.name != "llvm.call" or "callee" not in op.attributes:
+                return ir.WalkResult.ADVANCE
+
+            callee_name = str(op.attributes["callee"]).lstrip("@").strip('"')
+            if callee_name == "_cudaLaunchKernelEx":
+                source_file, source_line, source_col, source_end_col = (
+                    self._extract_python_source_location(op)
+                )
+                helper_name = self.get_or_create_cuda_checked_launch_helper(
+                    source_file=source_file,
+                    source_line=source_line,
+                    source_col=source_col,
+                    source_end_col=source_end_col,
+                )
+                op.attributes["callee"] = ir.FlatSymbolRefAttr.get(helper_name)
+                num_rewritten += 1
+            return ir.WalkResult.ADVANCE
+
+        target.walk(rewrite_launch_call)
+        return num_rewritten
+
+    def raise_cuda_error_and_return(self, code: ir.Value) -> None:
         """Raise CUDADialectError and return -1 from the current TVM-FFI wrapper."""
         llvm.call(
             result=None,
-            callee=self.get_or_create_set_raised_cuda_error_helper(error_code_prefix),
-            callee_operands=[code],
+            callee="CuteDSLRT_TVMFFISetRaisedCudaError",
+            callee_operands=[
+                self.address_of("TVMFFIErrorSetRaisedFromCStrParts", self.ptr_type),
+                code,
+            ],
             op_bundle_sizes=[],
             op_bundle_operands=[],
         )
@@ -908,32 +1291,21 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         self.matched_var_source = {}
         self.matched_var_arg_field_name = {}
 
-    def find_or_declare_extern_func(
-        self, name: str, params: Sequence[ir.Type], ret: ir.Type
-    ) -> None:
-        """Find an existing extern function or declare it if it doesn't exist.
+    def _arg_err(
+        self, prefix: str, arg_context: "ArgContext", suffix: str | None = None
+    ) -> list:
+        """Build a decode-error message-parts list.
 
-        This method checks if a function with the given name already exists in the module.
-        If it does, the method returns without doing anything. Otherwise, it declares
-        the function as an external function.
-
-        Parameters
-        ----------
-        name : str
-            The name of the extern function.
-        params : Sequence[ir.Type]
-            The parameter types of the function.
-        ret : ir.Type
-            The return type of the function.
+        Every decode_param_* error follows the shape
+        ``[prefix, *arg_context.get(), self._fn_call_context, suffix?]``; this
+        centralizes that construction (message text is unchanged). ``suffix`` is
+        omitted when the message ends at the call context (e.g. the "value "
+        binding messages).
         """
-        # Check if the function already exists
-        existing_func = self.find_func_in_module(self.module, name)
-        if existing_func is not None:
-            # Function already declared, nothing to do
-            return
-
-        # Function doesn't exist, declare it
-        self.declare_extern_func(name, params, ret)
+        parts = [prefix, *arg_context.get(), self._fn_call_context]
+        if suffix is not None:
+            parts.append(suffix)
+        return parts
 
     def decode_param_int(
         self,
@@ -959,12 +1331,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: is_int_or_bool,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected int",
-            ],
+            self._arg_err("Mismatched type ", arg_context, ", expected int"),
         )
         with ir.InsertionPoint(current_block):
             v_int64: ir.Value = self.load_ffi_any_array_item_v_int64(args, arg_index)
@@ -975,11 +1342,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             param,
             v_int64,
-            [
-                "value ",
-                *arg_context.get(),
-                self._fn_call_context,
-            ],
+            self._arg_err("value ", arg_context),
             arg_context.get_field_name(""),
         )
 
@@ -1069,12 +1432,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             # Break error message into reusable parts for better string deduplication
             self.raise_error_and_return(
                 "TypeError",
-                [
-                    "Mismatched type ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected float",
-                ],
+                self._arg_err("Mismatched type ", arg_context, ", expected float"),
             )
 
         # Merge the results using block argument
@@ -1123,12 +1481,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: is_opaque_ptr_or_nullptr,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                expect_message,
-            ],
+            self._arg_err("Mismatched type ", arg_context, expect_message),
         )
 
         with ir.InsertionPoint(current_block):
@@ -1169,9 +1522,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
         # with ``payload_kind`` so the display value tracks the Python type
         # (e.g. bool → True/False) rather than the wire value (int 1/0).
         accepted: tuple[TVMFFITypeIndex, ...]
-        payload_kind: (
-            tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
-        )
+        payload_kind: tuple[Literal["int"], int] | tuple[Literal["float"], float] | None
         expected_repr: bool | int | float
         if isinstance(param, spec.ConstNone):
             accepted = (TVMFFITypeIndex.kTVMFFINone,)
@@ -1207,19 +1558,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
             type_ok: ir.Value = self.equal(type_index, self.i32(accepted[0]))
             for tx in accepted[1:]:
-                type_ok = self.or_(
-                    type_ok, self.equal(type_index, self.i32(tx))
-                )
+                type_ok = self.or_(type_ok, self.equal(type_index, self.i32(tx)))
         current_block = self.check_condition(
             current_block,
             lambda: type_ok,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                f", expected {kind_name}",
-            ],
+            self._arg_err("Mismatched type ", arg_context, f", expected {kind_name}"),
         )
 
         # Step 2 — value check (None has no payload).
@@ -1242,19 +1586,16 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                     self.f64_type,
                     ir.FloatAttr.get(self.f64_type, expected_float),
                 ).res
-                value_ok = llvm.fcmp(
-                    llvm.FCmpPredicate.oeq, v_float64, expected_const
-                )
+                value_ok = llvm.fcmp(llvm.FCmpPredicate.oeq, v_float64, expected_const)
         return self.check_condition(
             current_block,
             lambda: value_ok,
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched constexpr value ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected {expected_repr}",
-            ],
+            ),
         )
 
     def check_int_value_dtype_bound(
@@ -1480,12 +1821,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(array_size, self.i64(len(param.shape))),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched Shape ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected shape size={len(param.shape)}",
-            ],
+            ),
         )
 
         # Load and validate each element of the array
@@ -1550,12 +1890,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(shape_size, self.i64(len(param.shape))),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched Shape ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected shape size={len(param.shape)}",
-            ],
+            ),
         )
 
         with ir.InsertionPoint(current_block):
@@ -1636,12 +1975,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             # Break error message into reusable parts for better string deduplication
             self.raise_error_and_return(
                 "TypeError",
-                [
-                    "Mismatched type ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected ffi.Shape or ffi.Array",
-                ],
+                self._arg_err(
+                    "Mismatched type ", arg_context, ", expected ffi.Shape or ffi.Array"
+                ),
             )
 
         # Set or check the matched variable bindings for each dimension
@@ -1713,12 +2049,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             # Break error message into reusable parts for better string deduplication
             self.raise_error_and_return(
                 "TypeError",
-                [
-                    "Mismatched type ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected Tensor",
-                ],
+                self._arg_err("Mismatched type ", arg_context, ", expected Tensor"),
             )
 
         # subsequent block: receive DLTensor pointer and set it to parameter
@@ -1763,12 +2094,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 current_block,
                 check_alignment,
                 "ValueError",
-                [
+                self._arg_err(
                     "Misaligned Tensor data ",
-                    *arg_context.get(),
-                    self._fn_call_context,
+                    arg_context,
                     f", expected data alignment={param.data_alignment} bytes",
-                ],
+                ),
             )
 
         # store the matched values, these do not need constraint checks
@@ -1783,11 +2113,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             param.device_id,
             device_id,
-            [
-                "device index ",
-                *arg_context.get(),
-                self._fn_call_context,
-            ],
+            self._arg_err("device index ", arg_context),
             arg_context.get_field_name(".device.index"),
             skip_cast_and_check=True,
         )
@@ -1799,12 +2125,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(ndim, self.i32(expected_ndim)),
             "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                f", expected ndim={expected_ndim}",
-            ],
+            self._arg_err(
+                "Mismatched Tensor ", arg_context, f", expected ndim={expected_ndim}"
+            ),
         )
         # check device_type
         # Break error message into reusable parts for better string deduplication
@@ -1812,12 +2135,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(device_type, self.i32(param.dlpack_device_type)),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected device_type={param.device_type_name}",
-            ],
+            ),
         )
 
         # check dtype
@@ -1850,12 +2172,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             dtype_equal,
             "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                f", expected dtype={param.dtype}",
-            ],
+            self._arg_err(
+                "Mismatched Tensor ", arg_context, f", expected dtype={param.dtype}"
+            ),
         )
         # check byte_offset
         # Break error message into reusable parts for better string deduplication
@@ -1863,12 +2182,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(byte_offset, self.i64(0)),
             "ValueError",
-            [
-                "Mismatched Tensor ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected byte_offset=0",
-            ],
+            self._arg_err(
+                "Mismatched Tensor ", arg_context, ", expected byte_offset=0"
+            ),
         )
 
         with ir.InsertionPoint(current_block):
@@ -1915,12 +2231,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
                 current_block,
                 lambda: self.is_contiguous(param.shape, load_shapes, load_strides),
                 "ValueError",
-                [
-                    "Mismatched Tensor ",
-                    *arg_context.get(),
-                    self._fn_call_context,
-                    ", expected contiguous",
-                ],
+                self._arg_err(
+                    "Mismatched Tensor ", arg_context, ", expected contiguous"
+                ),
             )
         return current_block
 
@@ -1977,7 +2290,12 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             The working stream.
         """
         for param in params:
-            if (
+            if isinstance(param, spec.TupleParam):
+                # Recursively check tuples
+                result = self.find_env_stream(param.params)
+                if result is not None:
+                    return result
+            elif (
                 isinstance(param, spec.Tensor)
                 and param.dlpack_device_type != tvm_ffi.DLDeviceType.kDLCPU
             ):
@@ -2023,12 +2341,9 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: is_ffi_array,
             "TypeError",
-            [
-                "Mismatched type ",
-                *arg_context.get(),
-                self._fn_call_context,
-                ", expected ffi.Array for tuple",
-            ],
+            self._arg_err(
+                "Mismatched type ", arg_context, ", expected ffi.Array for tuple"
+            ),
         )
 
         # Load the array cell
@@ -2044,12 +2359,11 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             current_block,
             lambda: self.equal(array_size, self.i64(len(param.params))),
             "ValueError",
-            [
+            self._arg_err(
                 "Mismatched tuple size ",
-                *arg_context.get(),
-                self._fn_call_context,
+                arg_context,
                 f", expected tuple size={len(param.params)}",
-            ],
+            ),
         )
 
         # Recursively decode each element of the tuple
@@ -2086,39 +2400,33 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             Context information for error messages.
         """
         if isinstance(param, spec.Var):
-            if param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.INT:
+            _codes = tvm_ffi._dtype.DataTypeCode
+            type_code = param.dtype.type_code
+            # INT / UINT / BOOL all decode via v_int64; FLOAT / BFLOAT via
+            # v_float64. BOOL and BFLOAT may be absent in older tvm_ffi, so build
+            # the code sets conditionally (getattr guarded) rather than repeating
+            # per-arm hasattr checks.
+            _int_codes = {_codes.INT, _codes.UINT}
+            if hasattr(_codes, "BOOL"):
+                _int_codes.add(_codes.BOOL)
+            _float_codes = {_codes.FLOAT}
+            if hasattr(_codes, "BFLOAT"):
+                _float_codes.add(_codes.BFLOAT)
+
+            if type_code in _int_codes:
                 return self.decode_param_int(
                     current_block, param, args, arg_index, arg_context
                 )
-            elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.UINT:
-                # UINT uses the same logic as INT since both are stored in v_int64
-                return self.decode_param_int(
-                    current_block, param, args, arg_index, arg_context
-                )
-            elif (
-                hasattr(tvm_ffi._dtype.DataTypeCode, "BOOL")
-                and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BOOL
-            ):
-                return self.decode_param_int(
-                    current_block, param, args, arg_index, arg_context
-                )
-            elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.FLOAT:
+            elif type_code in _float_codes:
                 return self.decode_param_float(
                     current_block, param, args, arg_index, arg_context
                 )
-            elif (
-                hasattr(tvm_ffi._dtype.DataTypeCode, "BFLOAT")
-                and param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.BFLOAT
-            ):
-                return self.decode_param_float(
-                    current_block, param, args, arg_index, arg_context
-                )
-            elif param.dtype.type_code == tvm_ffi._dtype.DataTypeCode.HANDLE:
+            elif type_code == _codes.HANDLE:
                 return self.decode_param_opaque_handle(
                     current_block, param, args, arg_index, arg_context
                 )
             else:
-                raise ValueError(f"Unsupported parameter type: {param.dtype.type_code}")
+                raise ValueError(f"Unsupported parameter type: {type_code}")
         elif isinstance(param, spec.Shape):
             return self.decode_param_shape(
                 current_block, param, args, arg_index, arg_context

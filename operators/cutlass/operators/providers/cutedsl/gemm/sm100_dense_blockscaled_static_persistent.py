@@ -29,11 +29,11 @@
 from __future__ import annotations
 
 import itertools
+import math
 from typing import TYPE_CHECKING
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.utils as utils
 from cutlass.cute.nvgpu.common import OperandMajorMode
 
 from cutlass.operators.arch import TargetSm
@@ -155,7 +155,7 @@ class PersistentDenseBlockScaledGemmOperator(CuteDslOperator):
     ) -> tuple[
         tuple[OperandMajorMode, str],
         tuple[OperandMajorMode, str],
-        tuple[utils.LayoutEnum, str],
+        tuple[cutlass.tensor_utils.LayoutEnum, str],
     ]:
         # A, B, and out can be of rank 2 or 3. Extract the final two dimensions
         # to determine the major mode
@@ -172,9 +172,9 @@ class PersistentDenseBlockScaledGemmOperator(CuteDslOperator):
         )
 
         if args.out.stride[-2:].index(1) == 1:
-            out_layout = (utils.LayoutEnum.ROW_MAJOR, "n")
+            out_layout = (cutlass.tensor_utils.LayoutEnum.ROW_MAJOR, "n")
         else:
-            out_layout = (utils.LayoutEnum.COL_MAJOR, "m")
+            out_layout = (cutlass.tensor_utils.LayoutEnum.COL_MAJOR, "m")
 
         return a_major_mode, b_major_mode, out_layout
 
@@ -242,8 +242,9 @@ class PersistentDenseBlockScaledGemmOperator(CuteDslOperator):
         if not isinstance(operands, GemmOperandsMetadata):
             return False
 
-        # A and B may have the same element type or form a mixed MXFP4 x MXFP8
-        # pair (handled below by is_valid_dtypes_and_scale_factor_vec_size).
+        # A and B may have the same element type or form a mixed MXFP4 x MXFP8 /
+        # MXFP8E4M3 x MXFP6 pair (handled below by
+        # is_valid_dtypes_and_scale_factor_vec_size).
         # The scale factors A and B must share the same dtype, scale mode, and
         # swizzle mode.
         if operands.A.scale.dtype != operands.B.scale.dtype:
@@ -335,13 +336,24 @@ class PersistentDenseBlockScaledGemmOperator(CuteDslOperator):
         with divisibility constraints set based on those required by the kernel.
         """
         alignment_bytes = 16
-        a_divisibility = alignment_bytes * 8 // a_dtype.width
-        b_divisibility = alignment_bytes * 8 // b_dtype.width
-        out_divisibility = alignment_bytes * 8 // out_dtype.width
+        alignment_bits = alignment_bytes * 8
 
-        # Mixed pairs (e.g. MXFP4 x MXFP8) load the sub-byte operand via the UNPACK
-        # TMA, whose contiguous dim must be a multiple of 128 elements.
-        # Encoding it as divisibility makes discovery reject unsupported shapes
+        def _tma_alignment_divisibility(dtype: cutlass.Numeric) -> int:
+            # Smallest positive element count whose bit-width is a multiple of
+            # ``alignment_bits``. ``alignment_bits // dtype.width`` truncates for
+            # non-byte-aligned widths (FP6 → 21 instead of 64).
+            # When CUDA-spec TMA helpers (ptr/shape/stride alignment) are available
+            # in-tree, prefer those over this gcd encoding.
+            return alignment_bits // math.gcd(dtype.width, alignment_bits)
+
+        a_divisibility = _tma_alignment_divisibility(a_dtype)
+        b_divisibility = _tma_alignment_divisibility(b_dtype)
+        out_divisibility = _tma_alignment_divisibility(out_dtype)
+
+        # Mixed pairs (e.g. MXFP4 x MXFP8 / MXFP8 x MXFP6) load the sub-byte
+        # operand via the UNPACK TMA, whose contiguous dim must be a multiple of
+        # 128 elements. Encoding it as divisibility makes discovery reject
+        # unsupported shapes.
         unpack_contiguous_divisibility = 128
         if PersistentDenseBlockScaledGemmKernel.needs_unpack_tma(a_dtype, b_dtype):
             if a_dtype.width < 8:
@@ -449,7 +461,13 @@ class PersistentDenseBlockScaledGemmOperator(CuteDslOperator):
         """Generator that yields all valid (GemmOperandsMetadata, sf_vec_size) combinations
         based on the validation rules in _valid_operands.
         """
-        valid_dtypes = [cutlass.Float8E5M2, cutlass.Float8E4M3FN, cutlass.Float4E2M1FN]
+        valid_dtypes = [
+            cutlass.Float8E5M2,
+            cutlass.Float8E4M3FN,
+            cutlass.Float4E2M1FN,
+            cutlass.Float6E2M3FN,
+            cutlass.Float6E3M2FN,
+        ]
 
         out_dtypes = [
             cutlass.Float32,

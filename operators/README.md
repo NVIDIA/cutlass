@@ -75,6 +75,7 @@ It also supports:
 
 - **Custom epilogue fusions with ease** — pass a plain Python function; Operator API lowers it onto
   CuTe DSL's Epilogue Fusion Configuration (EFC) framework and fuses it into supported kernels.
+  These epilogue fusions can contain elementwise math/activations, broadcasts, reductions, and custom per-tensor data-transport strategies.
 - **Bring-your-own-kernel** — register your own CuTe DSL kernels so you can call them through the same
   interfaces as pre-bundled ones from CUTLASS, with no separate integration path for in-house kernels.
 - **Negligible runtime overhead** on top of invoking the underlying kernel directly.
@@ -126,18 +127,24 @@ CUTLASS Operator API will support a wide range of functionality, configurations,
   - Grouped GEMM (Contiguous offset) for Blackwell
   - Low-latency TGV GEMM for Blackwell
 
-- Custom epilogue fusions (e.g. activations, elementwise ops, aux load/store)
+- Custom epilogue fusions
+
+  - Activations, elementwise ops, auxiliary tensor load/store
+  - Row/column broadcasts
+  - Scalar and row/column reductions (``sum`` / ``max`` / ``min``) fused with the GEMM store
+  - Per-tensor data-transport selection (TMA, direct GMEM, ``cp.async``)
+
 - CUDA Graph support
 - Native support for PyTorch and other DLPack tensors
 - Bring-your-own-kernel
-
+- Operator ranking via nvMatmulHeuristics (``heuristic=NvMatmulHeuristics(gpu=...)``)
+  for dense SM100 GEMM
 
 **Upcoming support:**
 
 - Additional GEMM kernel coverage: Sparsity, performance optimizations, grouped GEMM variants, and more
 - Ahead-of-time compilation
 - JAX Graph support
-- nvMatmulHeuristics support
 
 Community & Feedback
 ====================

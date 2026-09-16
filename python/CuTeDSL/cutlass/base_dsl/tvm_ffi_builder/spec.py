@@ -577,4 +577,7 @@ def create_map_tensor_dtype_f4x2_to_f4_spec(f4_tensor_spec: Tensor) -> Tensor:
         dtype=tvm_ffi.dtype("float4_e2m1fnx2"),
         strides=new_strides,  # type: ignore[arg-type]
         map_tensor_dtype_f4x2_to_f4=True,
+        device_type=f4_tensor_spec.device_type_name,
+        device_id=f4_tensor_spec.device_id,
+        data_alignment=f4_tensor_spec.data_alignment,
     )
