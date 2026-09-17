@@ -235,6 +235,12 @@ class _Tensor(Tensor):
         :rtype: _Tensor
         """
         self.load_dltensor()
+        if leading_dim is None and self.shape and all(s <= 1 for s in self.shape):
+            leading_dim = len(self.shape) - 1
+            for dim in reversed(range(len(self.shape))):
+                if self.stride[dim] == 1:
+                    leading_dim = dim
+                    break
         self._dltensor_wrapper.mark_layout_dynamic(leading_dim)
         return self
 
@@ -931,11 +937,23 @@ class TensorAdapter:
 
 
 # -------------------------------------------------------------------------
-# Register TensorAdapter for numpy/torch tensors lazily by type name, so
-# importing this module never pays for importing numpy or torch itself.
+# Register TensorAdapter for numpy/torch/jax tensors lazily by type name, so
+# importing this module never pays for importing numpy, torch, or jax itself.
 # -------------------------------------------------------------------------
 
 JitArgAdapterRegistry.register_jit_arg_adapter("numpy.ndarray", lazy=True)(
     TensorAdapter
 )
 JitArgAdapterRegistry.register_jit_arg_adapter("torch.Tensor", lazy=True)(TensorAdapter)
+
+# Register JAX array implementation classes
+for qualname in (
+    "jaxlib._jax.ArrayImpl",
+    "jax.jaxlib._jax.ArrayImpl",
+    "jaxlib.xla_extension.ArrayImpl",
+    "jax._src.array.ArrayImpl",
+):
+    JitArgAdapterRegistry.register_jit_arg_adapter(qualname, lazy=True)(
+        TensorAdapter
+    )
+
