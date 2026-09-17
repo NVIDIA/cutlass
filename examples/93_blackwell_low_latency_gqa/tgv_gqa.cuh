@@ -1259,19 +1259,24 @@ EPILOG_warp(
   }*/
 
   static_assert(MaxSplits <= 32, "we can use 1 warp to initialize mailbox");
-  // initialize mailbox tensor for fmax and fsum, when NumSplits < MaxSplits, we need to init those value to -inf and 0
-  // because we do reduction on the full tensor (of size MaxSplits) not just the valid splits
-  if (tid < MaxSplits) {
+  // Initialize only inactive splits: active entries may already contain remote stores.
+  // The reduction still reads all MaxSplits entries.
+  if (tid >= NumSplits && tid < MaxSplits) {
     fill(sFmaxMailbox(tid, _), -cutlass::platform::numeric_limits<TypeAcc>::infinity());
     clear(sFsumMailbox(tid, _));
   }
   // we also need to clear out acc2 mailbox for invalid splits, because acc2 value could be nan
   // nan * 0 (beta) = nan, we still need to clear acc2
   if (tid < CTA_dH) {
-    clear(sAcc2Mailbox(tid, _, _));
+    CUTE_UNROLL
+    for (int split = 0; split < MaxSplits; ++split) {
+      if (split >= NumSplits) {
+        clear(sAcc2Mailbox(tid, _, split));
+      }
+    }
   }
 
-  // ensure initialized smem is visible to the entire cluster
+  // Make inactive entries visible to the reduction threads in this CTA.
   cutlass::arch::fence_view_async_shared();
   epilog_barrier.arrive_and_wait();
 
