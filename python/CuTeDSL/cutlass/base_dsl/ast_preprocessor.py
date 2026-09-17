@@ -2258,11 +2258,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         collector = NameCollector()
         [collector.visit(generator) for generator in node.generators]
 
+        previous_targets = self.session_data.generator_targets
         self.session_data.generator_targets = targets
-
-        ele_visitor(node)
-
-        self.session_data.generator_targets = []
+        try:
+            ele_visitor(node)
+        finally:
+            self.session_data.generator_targets = previous_targets
         return node
 
     def visit_DictComp(self, node: ast.DictComp) -> ast.DictComp:
