@@ -58,6 +58,7 @@ using DP = cute::constant<int32_t, shiftl((1 << 16), tmem_ptr<T>::OffsetShift)>;
 class Allocator1Sm {
 public:
   static constexpr int ColumnsPerAllocationSlice = 32;
+  static constexpr int Sm100TmemCapacityColumns = cute::TMEM::Sm100TmemCapacityColumns;
 
   __device__ Allocator1Sm() { }
 
@@ -145,6 +146,7 @@ public:
 class Allocator2Sm {
 public:
   static constexpr int ColumnsPerAllocationSlice = 32;
+  static constexpr int Sm100TmemCapacityColumns = cute::TMEM::Sm100TmemCapacityColumns;
 
   __device__ Allocator2Sm() { }
 
