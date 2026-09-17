@@ -30,6 +30,12 @@
 # Compress Kernel
 #
 
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sparse_config_batch_stride
+
+    sparse_config_batch_stride.cu
+)
+
 add_custom_target(
     cutlass_test_unit_sm90_structured_sparse_gemm_compressor
     DEPENDS
