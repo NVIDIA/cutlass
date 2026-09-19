@@ -1817,7 +1817,9 @@ class DSLPreprocessor(ast.NodeTransformer):
         if isinstance(func, ast.Name):
             # AST rewrite only redirect call to bool to bool_cast
             # If `bool` escapes as a symbol, usually it means type check, do not rewrite it
-            if func.id == "bool":
+            # Only rewrite the one argument form. bool() has no args[0] and would
+            # raise IndexError here instead of a normal TypeError later.
+            if func.id == "bool" and len(node.args) == 1 and not node.keywords:
                 return ast.copy_location(
                     ast.Call(
                         func=ast.Call(
