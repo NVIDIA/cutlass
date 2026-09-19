@@ -107,6 +107,30 @@ TEST(TensorRef, rank2_row_major) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// A coordinate offset and a layout capacity are LongIndex values. Each product of two
+// Index values widens before the multiplication, thus a tensor of 2 to the 31 elements
+// or more keeps an exact offset. The test needs no memory.
+TEST(TensorRef, offset_and_capacity_wider_than_32_bits) {
+
+  using Layout = cutlass::IdentityTensorLayout<2>;
+  using LongIndex = Layout::LongIndex;
+
+  Layout layout(cutlass::make_Coord(65536, 1));
+
+  EXPECT_EQ(layout(cutlass::make_Coord(65536, 0)), LongIndex(4294967296LL));
+  EXPECT_EQ(layout(cutlass::make_Coord(-65536, 0)), LongIndex(-4294967296LL));
+
+  // Two coordinates of one extent must not give one offset.
+  EXPECT_NE(layout(cutlass::make_Coord(65536, 0)), layout(cutlass::make_Coord(0, 0)));
+
+  EXPECT_EQ(layout.capacity(cutlass::make_Coord(49152, 65536)), LongIndex(3221225472LL));
+
+  EXPECT_EQ(cutlass::make_Coord(65536, 65536).dot(cutlass::make_Coord(65536, 65536)),
+            LongIndex(8589934592LL));
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 TEST(TensorRef, rank2_contiguous_dynamic) {
   int const M = 8;
   int const N = 16;
