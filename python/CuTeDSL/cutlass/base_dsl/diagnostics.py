@@ -2112,7 +2112,9 @@ class DiagId(_DiagMixin, enum.Enum):
     PHASE_DYNAMIC_INDEX = (
         "Cannot use a {staged} value as a list index or for loop range in plain Python code",
         (
-            "Mark the loop as dynamic with @dynamic_expr or @range_dynamic",
+            "Inside a @jit / @kernel function a plain `range(...)` over a {staged} value "
+            "already runs at run time (`cutlass.range(...)` adds unroll / pipelining control); "
+            "`@dynamic_expr` and `@range_dynamic` are deprecated and not needed.",
             "Decorate the parent function with @jit so the indexing happens in staged code where {staged} values are allowed",
         ),
     )
