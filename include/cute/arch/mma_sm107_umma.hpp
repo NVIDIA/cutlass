@@ -333,9 +333,9 @@ struct SM107_MMA_MXF4NVF4_SS
   static_assert((VS == 16) || (VS == 32),
                 "SM107_MMA_MXF4NVF4_SS Vector size can only be 16 or 32.");
   static_assert(is_same_v<sf_type, cutlass::float_ue8m0_t> ||
-                is_same_v<sf_type, cutlass::float_e4m3_t > ||
+                is_same_v<sf_type, cutlass::float_ue4m3_t> ||
                 is_same_v<sf_type, cutlass::float_ue5m3_t>,
-                "SF data type can only be one of {ue8m0, e4m3, or ue5m3}.");
+                "SF data type can only be one of {ue8m0, ue4m3, or ue5m3}.");
 
   using DRegisters   = void;
   using ARegisters   = uint64_t[1];
@@ -449,9 +449,9 @@ struct SM107_MMA_MXF4NVF4_2x1SM_SS
   static_assert((VS == 16) || (VS == 32),
                 "SM107_MMA_MXF4NVF4_2x1SM_SS Vector size can only be 16 or 32.");
   static_assert(is_same_v<sf_type, cutlass::float_ue8m0_t> ||
-                is_same_v<sf_type, cutlass::float_e4m3_t > ||
+                is_same_v<sf_type, cutlass::float_ue4m3_t> ||
                 is_same_v<sf_type, cutlass::float_ue5m3_t>,
-                "SF data type can only be one of {ue8m0, e4m3, or ue5m3}.");
+                "SF data type can only be one of {ue8m0, ue4m3, or ue5m3}.");
 
   using DRegisters   = void;
   using ARegisters   = uint64_t[1];

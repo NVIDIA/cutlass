@@ -81,7 +81,7 @@ struct CollectiveBuilder<
     GmemLayoutTagD,
     AlignmentD,
     EpilogueScheduleType,
-    FusionOp 
+    FusionOp
 >
 {
   using CollectiveOp = typename CollectiveBuilder<
@@ -102,5 +102,7 @@ struct CollectiveBuilder<
                           FusionOp
                         >::CollectiveOp;
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::epilogue::collective

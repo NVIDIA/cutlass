@@ -25,19 +25,19 @@ if TYPE_CHECKING:
 class _PreprocessModeState:
     def __init__(self, dsl: "BaseDSL") -> None:
         self._dsl = dsl
-        self._epoch = 0
         self._stack: list[tuple[bool, bool, DSLPreprocessor]] = []
-
-    def stamp(self, preprocessor: DSLPreprocessor) -> DSLPreprocessor:
-        setattr(preprocessor, "_mode_epoch", self._epoch)
-        return preprocessor
 
     def current_signature(
         self,
-    ) -> tuple[tuple[bool, bool, str | None, int]]:
+    ) -> tuple[tuple[bool, bool, str | None]]:
         return (self.current_mode_key(),)
 
-    def current_mode_key(self) -> tuple[bool, bool, str | None, int]:
+    def current_mode_key(self) -> tuple[bool, bool, str | None]:
+        # The rewrite output is a pure function of (source, mode key): the
+        # preprocessor class fixes the choke set, and the two flags fix its
+        # parameters.  No history/epoch component — restoring an identical
+        # mode MUST yield an identical key, or every cached rewrite in the
+        # process is spuriously invalidated on each mode round trip.
         preprocessor = getattr(self._dsl, "preprocessor", None)
         preprocessor_cls = (
             type(preprocessor).__name__ if preprocessor is not None else None
@@ -46,7 +46,6 @@ class _PreprocessModeState:
             bool(self._dsl.envar.enable_pyir),
             bool(self._dsl.envar.auto_m2s),
             preprocessor_cls,
-            self._epoch,
         )
 
     def push_pyir(self) -> None:
@@ -89,18 +88,14 @@ class _PreprocessModeState:
         auto_m2s: bool,
         preprocessor: DSLPreprocessor,
     ) -> None:
-        current_mode = (
-            bool(self._dsl.envar.enable_pyir),
-            bool(self._dsl.envar.auto_m2s),
-            type(self._dsl.preprocessor).__name__,
-        )
-        next_mode = (
-            bool(enable_pyir),
-            bool(auto_m2s),
-            type(preprocessor).__name__,
-        )
-        if current_mode != next_mode:
-            self._epoch += 1
+        if enable_pyir:
+            # Turning PyIR on here bypasses the environment manager, which is
+            # where _pyir_register_mode_fact would otherwise bind the Numeric
+            # write funnel. Without it the wrapper write funnel is undeclared
+            # for this trace and no holder write is ever stamped.
+            from .typing import _pyir_install_numeric_write_funnel
+
+            _pyir_install_numeric_write_funnel()
         self._dsl.envar.enable_pyir = enable_pyir
         self._dsl.envar.auto_m2s = auto_m2s
-        self._dsl.preprocessor = self.stamp(preprocessor)
+        self._dsl.preprocessor = preprocessor

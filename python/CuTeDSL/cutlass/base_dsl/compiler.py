@@ -30,7 +30,6 @@ from .common import DSLBaseError, DSLUserCodeError
 from . import diagnostics as _diagnostics
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
-
 _SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -45,6 +44,59 @@ def _split_options(text: str) -> list:
     if os.name == "nt":
         text = text.replace("\\", "\\\\")
     return shlex.split(text)
+
+
+# msvcrt's FILE is 48 bytes on x64 and stdout is __iob[1]; _IONBF is 4.
+_MSVCRT_FILE_SIZE = 48
+_IONBF = 4
+_jit_c_stdout_unbuffered = False
+
+
+def _unbuffer_jit_c_stdout() -> None:
+    """Unbuffer the C stdout that the JIT's ``printf`` writes to (Windows).
+
+    LLVM binds the JIT's ``printf`` by scanning the process's loaded modules
+    for an export of that name. The UCRT does not export one -- ``printf`` is
+    inline in its <stdio.h> -- so the search lands on the legacy
+    ``msvcrt.dll``, whose C stdout is a stream of its own, unrelated to the one
+    Python writes through. On a pipe it is fully buffered and flushed only when
+    msvcrt runs its exit handler, so every ``cute.printf`` line surfaces after
+    all Python output rather than interleaving in program order.
+
+    lit already pins the Python side with ``PYTHONUNBUFFERED=1``; this pins the
+    C side to match. Done once when the execution engine is built, so nothing
+    lands on the execution path, and it touches only msvcrt's stdout, which no
+    other part of the process writes to. No-op off Windows, where ``printf``
+    resolves to the same libc Python is already sharing.
+    """
+    global _jit_c_stdout_unbuffered
+    if _jit_c_stdout_unbuffered or os.name != "nt":
+        return
+    # Only ever attempt this once, successful or not.
+    _jit_c_stdout_unbuffered = True
+    import ctypes
+
+    try:
+        msvcrt = ctypes.CDLL("msvcrt.dll")
+        iob_func = getattr(msvcrt, "__iob_func")
+        iob_func.restype = ctypes.c_void_p
+        msvcrt._fileno.restype = ctypes.c_int
+        msvcrt._fileno.argtypes = [ctypes.c_void_p]
+        msvcrt.setvbuf.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_size_t,
+        ]
+        stdout = iob_func() + _MSVCRT_FILE_SIZE
+        # Confirm the FILE stride against the descriptor rather than trusting
+        # the struct layout blindly; leave the stream alone if it disagrees.
+        if msvcrt._fileno(stdout) != 1:
+            log().warning("msvcrt stdout not found at __iob[1]; leaving buffered")
+            return
+        msvcrt.setvbuf(stdout, None, _IONBF, 0)
+    except (OSError, AttributeError) as e:
+        log().warning(f"could not unbuffer the JIT's C stdout: {e}")
 
 
 sys.path.append(_SCRIPT_PATH)
@@ -266,6 +318,7 @@ class Compiler:
         shared_libs: collections.abc.Sequence[str] = (),
     ) -> Any:
         """Wraps the module in a JIT execution engine."""
+        _unbuffer_jit_c_stdout()
         return self.execution_engine.ExecutionEngine(
             module, opt_level=opt_level, shared_libs=shared_libs
         )
@@ -730,6 +783,13 @@ class HostTarget(StringCompileOption):
     Presets::
 
         linux-aarch64   → aarch64-unknown-linux-gnu
+        qnx8-aarch64    → aarch64-unknown-nto-qnx8.0.0
+
+    LLVM has no QNX target, so the QNX triple resolves to an unknown OS
+    and generic AArch64 ELF codegen: the emitted object is byte-identical
+    to the ``linux-aarch64`` one, and QNX uses the same AAPCS64 ABI. The
+    distinct triple exists so the AOT runtime library lookup
+    (``aot_config --target``) can tell the two targets apart.
 
     Long form (explicit tuning / escape hatch)::
 
@@ -751,6 +811,7 @@ class HostTarget(StringCompileOption):
 
     _PRESETS: "dict[str, tuple[str, str, str]]" = {
         "linux-aarch64": ("aarch64-unknown-linux-gnu", "", ""),
+        "qnx8-aarch64": ("aarch64-unknown-nto-qnx8.0.0", "", ""),
     }
 
     def __init__(self, val: str = "") -> None:
@@ -1605,6 +1666,13 @@ class CompileCallable:
 
         if not hasattr(func, "_dsl_object"):
             raise DSLUserCodeError(_diagnostics.DiagId.CALL_MISSING_JIT_DECORATOR)
+
+        # Reject a @cute.kernel target.
+        if getattr(func, "_decorator_kind", "jit") == "kernel":
+            raise DSLUserCodeError(
+                _diagnostics.DiagId.CALL_KERNEL_TARGET,
+                function_name=getattr(func, "__name__", "<kernel>"),
+            )
 
         # Validate the migration-aid ``is_experimental`` kwarg against
         # the routing already baked into the function by its jit/kernel

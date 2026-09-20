@@ -695,7 +695,7 @@ class PersistentDenseGemmAlphaBetaKernel:
                 acc_epi_div_tiled = cute.flat_divide(accumulators_sliced, epi_tile)
                 subtile_cnt = cute.size(acc_epi_div_tiled.shape, mode=[3])
 
-                for mn in range(subtile_cnt):
+                for mn in cutlass.range(subtile_cnt, unroll_full=True):
                     # TMEM -> RMEM
                     cute_ext.partition_and_copy(
                         tiled_copy_t2r.get_slice(tid_x),

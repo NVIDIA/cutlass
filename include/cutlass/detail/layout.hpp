@@ -37,7 +37,6 @@
 #include "cute/util/type_traits.hpp"
 #include "cute/arch/copy_sm90_tma.hpp"
 #include "cute/arch/copy_sm100_tma.hpp"
-
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
 #include "cutlass/numeric_types.h"
@@ -302,17 +301,17 @@ constexpr bool is_tma_copy_engine() {
     return false;
   }
   else {
-   if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                         GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,              GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL,                 GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,       GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_STORE,                       GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_2D_GATHER4,            GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_MULTICAST_2D_GATHER4,  GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_STORE_2D_SCATTER4,          GmemTiledCopy>
+   if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                           GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,                GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL,                   GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,         GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_STORE,                         GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                  GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                     GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,           GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_2D_GATHER4,              GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_LOAD_MULTICAST_2D_GATHER4,    GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_STORE_2D_SCATTER4,            GmemTiledCopy>
                   ) {
       return true;
     }

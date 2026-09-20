@@ -31,6 +31,15 @@ from .common import *
 from .common import DSLUserCodeError as DSLUserCodeError  # star-import re-export
 from .diagnostics import DiagId
 
+# Generated code names pyir_runtime symbols through the module alias the
+# rewriter binds in the function preamble; this import is for ast_helpers'
+# OWN use (if_selector witnesses trace-time predicate folds), not a re-export.
+from .pyir_runtime import _pyir_witness_predicate_fold
+from .multi_stage_manager import (  # noqa: F401 (re-exported via wildcard)
+    enter_constexpr_loop,
+    exit_constexpr_loop,
+)
+
 
 class Executor:
     """
@@ -259,7 +268,9 @@ def loop_selector(
 
 def if_selector(pred: Any, write_args: list[Any] = []) -> Callable[..., Any]:
     log().debug("pred [%s] write_args [%s]", pred, write_args)
-    # Handle Numeric types here?
+    # Witness a trace-time fold of a watched META predicate so a later staged
+    # write of its source places refuses loudly. No-op for other predicates.
+    _pyir_witness_predicate_fold(pred)
 
     from .typing import Numeric
 
@@ -460,6 +471,20 @@ def assert_executor(test: Any, msg: str | None = None) -> None:
         )
 
 
+def bool_short_circuits(value: Any, short_circuit_value: bool) -> bool:
+    """True when the and/or LHS *value* short-circuits in Python: it is a
+    Python-truth bool -- a plain ``bool``, or a wrapper DECLARING a bool
+    payload through ``_pyir_raw_payload`` -- whose truth equals
+    *short_circuit_value*.  A staged or non-bool value answers False, so the
+    rewrite's other arm evaluates (the ``and_``/``or_`` helper)."""
+    if type(value) is bool:
+        return value == short_circuit_value
+    payload = getattr(value, "_pyir_raw_payload", None)
+    if type(payload) is bool:
+        return payload == short_circuit_value
+    return False
+
+
 def bool_cast(value: Any) -> bool:
     if executor._is_dynamic_expression(value):  # type: ignore[misc]
         raise DSLUserCodeError(
@@ -487,7 +512,31 @@ def compare_executor(left: Any, comparators: list[Any], ops: list[Any]) -> Any:
     assert executor._compare_executor is not None, (
         "Function must be set before execution."
     )
-    return executor._compare_executor(left, comparators, ops)
+    if "is" in ops or "is not" in ops:
+        # Identity legs over tracker-minted wrappers refuse-or-witness
+        # (LangRef 3.12 section 6.10.3); inert outside a PyIR trace scope.
+        from .pyir_core import _pyir_identity_compare_choke
+
+        _pyir_identity_compare_choke(left, comparators, ops)
+    result = executor._compare_executor(left, comparators, ops)
+    # Gate-once evidence (see pyir_state): record only the provable membership-gate
+    # shape (one ``not in`` over a plain set); clear on every other comparison.
+    try:
+        from .pyir_runtime import _PYIR_LAST_NOTIN_COMPARE
+
+        if (
+            len(ops) == 1
+            and ops[0] == "not in"
+            and type(result) is bool
+            and type(left) in (str, int, bool)
+            and type(comparators[0]) is set
+        ):
+            _PYIR_LAST_NOTIN_COMPARE[0] = (comparators[0], left, result)
+        else:
+            _PYIR_LAST_NOTIN_COMPARE[0] = None
+    except Exception:
+        pass
+    return result
 
 
 # =============================================================================
@@ -662,83 +711,6 @@ def closure_check(
             raise DSLUserCodeError(
                 DiagId.SCOPE_CLOSURE_CAPTURE,
                 func_name=closure.__name__,
-                var_name=name,
-            )
-
-
-def _is_dsl_traced_callable(fn: object) -> bool:
-    """Whether *fn* is a jit-/kernel-decorated wrapper.
-
-    Such a wrapper re-traces its body on every staged pass (the jit decorator
-    tags the wrapper with ``_dsl_cls`` / ``_dsl_object``), so its effects are
-    NOT frozen at the first trace.
-    """
-    return hasattr(fn, "_dsl_cls") or hasattr(fn, "_dsl_object")
-
-
-_REGION_BUILDER_SCOPES = (
-    "loop_body_",
-    "then_block_",
-    "else_block_",
-    "if_region_",
-    "while_region_",
-    "while_before_block_",
-    "while_after_block_",
-    "ifexp_then_block_",
-    "ifexp_else_block_",
-)
-
-
-def lambda_capture_check(candidates: list[Any]) -> None:
-    """Reject a ``lambda`` invoked inside staged CF that captures an enclosing
-    local.
-
-    A bare ``lambda`` is invoked as raw Python at trace time; its body reads
-    captured variables through a closure cell bound to the ENCLOSING function's
-    local -- not the staged region's loop-carried slot.  A captured meta that
-    is mutated inside the region therefore reads its first-pass value forever
-    (a silent miscompile).  Only lambdas are handled here; ordinary (``def``)
-    closures are out of scope.  Jit-decorated lambdas trace per pass,
-    and lambdas capturing nothing (or only globals / other functions) are safe.
-
-    *candidates* is the region's bare-name calls that resolve to values in
-    scope (rather than tracked callables); non-lambdas are skipped.  Emitted
-    only by the PyIR preprocessor subclass, so non-pyir compilation never runs
-    this check.
-    """
-    for fn in candidates:
-        if not isinstance(fn, types.FunctionType):
-            continue
-        if _is_dsl_traced_callable(fn):
-            continue
-        if getattr(fn, "__name__", None) != "<lambda>":
-            continue
-        # A lambda DEFINED INSIDE the staged region cannot go stale: the
-        # region builder re-creates it on the trace pass, so its closure
-        # cells hold that pass's bindings.  Only lambdas defined OUTSIDE and
-        # called INSIDE freeze their captures.  Region-builder scopes are
-        # identifiable from the generated block names in the qualname.
-        qualname = getattr(fn, "__qualname__", "")
-        if any(f".{part}" in qualname for part in _REGION_BUILDER_SCOPES):
-            continue
-        # Read the closure captures natively.  A lambda's captured (nonlocal)
-        # names are ``co_freevars`` positionally paired with its ``__closure__``
-        # cells; globals/builtins are not cells, so they are excluded.  An
-        # UNFILLED cell cannot be vouched for -> map it to ``None`` so it takes
-        # the reject path below (fail closed).
-        for name, cell in zip(fn.__code__.co_freevars, fn.__closure__ or ()):
-            try:
-                value = cell.cell_contents
-            except ValueError:
-                value = None
-            if value is not None and (
-                inspect.ismodule(value)
-                or inspect.isfunction(value)
-                or inspect.ismethod(value)
-            ):
-                continue
-            raise DSLUserCodeError(
-                DiagId.SCOPE_LAMBDA_CAPTURE,
                 var_name=name,
             )
 

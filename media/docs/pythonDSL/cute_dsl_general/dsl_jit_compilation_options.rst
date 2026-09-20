@@ -24,7 +24,7 @@ The |DSL| provides multiple ways to specify compilation options - either by spec
 ``cute.compile`` Compilation Options as strings
 -----------------------------------------------
 
-You can provide additional compilation options as a string when calling ``cute.compile``. The |DSL| uses ``argparse`` to parse these options and will raise an error if any invalid options are specified.
+You can provide additional compilation options as a string when calling ``cute.compile``. The |DSL| uses ``argparse`` to parse the documented driver options below and will raise an error if any invalid options are specified.
 
 .. list-table::
    :header-rows: 1
@@ -92,7 +92,6 @@ You can use the following code to specify compilation options:
    jit_executor_with_nvdisasm_options = cute.compile(add, 1, 2, options="--keep-sass --nvdisasm-options '-c'")
    jit_executor_with_ptxas_options = cute.compile(add, 1, 2, options="--ptxas-options '--opt-level=2'")
 
-
 ``cute.compile`` Compilation Options as separate Python types
 -------------------------------------------------------------
 
@@ -101,7 +100,16 @@ Compilation options can be programmatically composed using tuple and passed to `
 
 .. code-block:: python
 
-  from cutlass.cute import OptLevel, EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX, KeepSASS, NvdisasmOptions
+  from cutlass.cute import (
+    OptLevel,
+    EnableAssertions,
+    GenerateLineInfo,
+    KeepCUBIN,
+    KeepPTX,
+    KeepSASS,
+    NvdisasmOptions,
+    PtxasOptions,
+  )
 
   my_debugging_options = (OptLevel(1), EnableAssertions, GenerateLineInfo, KeepCUBIN, KeepPTX)
   compiled_kernel_1 = cute.compile[my_debugging_options](my_kernel_1, ...)

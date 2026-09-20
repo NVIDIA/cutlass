@@ -73,6 +73,7 @@ def _get_smem_allocator() -> "cutlass.memory.SmemAllocator":
     dsl_obj = None
     caller = inspect.currentframe()
     frame = caller.f_back if caller is not None else None
+    del caller
     while frame:
         obj = frame.f_locals.get("self", None)
         if obj and isinstance(obj, CutlassBaseDSL):

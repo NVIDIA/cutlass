@@ -120,14 +120,15 @@ CUTLASS Operator API will support a wide range of functionality, configurations,
 
 - Kernel coverage
 
-  - Dense GEMMs (F32, F16, BF16, INT8) for Blackwell, Hopper, Ampere
+  - Dense GEMMs for Rubin, Blackwell, Hopper, Ampere
+    - FP8 for Rubin, with more in future. Various combinations of F32, F16, BF16, FP8, INT8 for Blackwell and older.
     - Preferred and fallback cluster shapes
     - Static and dynamic scheduling
-  - Block-scaled GEMMs (NVFP4, MXFP4, MXFP8, mixed input precision) for Blackwell
+  - Block-scaled GEMMs (NVFP4, MXFP4, MXFP8, mixed input precision) for Rubin and Blackwell
   - Grouped GEMM (Contiguous offset) for Blackwell
   - Low-latency TGV GEMM for Blackwell
 
-- Custom epilogue fusions
+- Custom epilogue fusions for Blackwell
 
   - Activations, elementwise ops, auxiliary tensor load/store
   - Row/column broadcasts

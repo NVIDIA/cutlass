@@ -138,8 +138,9 @@ class JitArgAdapterRegistry:
 
     # Adapters keyed by fully-qualified type name ("module.QualName") for
     # types whose defining module is too expensive to import at registration
-    # time (e.g. torch). Promoted into jit_arg_adapter_registry on first
-    # lookup of an instance, which can only exist once the module is loaded.
+    # time (e.g. torch). Cached in jit_arg_adapter_registry for each concrete
+    # type on first lookup of an instance, which can only exist once the module
+    # is loaded.
     lazy_jit_arg_adapter_registry: dict[str, Any] = {}
 
     # Top-level module names of the lazy registrations, so lookups of
@@ -179,7 +180,9 @@ class JitArgAdapterRegistry:
         "module.QualName" string instead, so registration never imports the
         defining module (e.g. torch). An instance of the type can only reach
         a JIT function after the application has imported its module, so the
-        adapter is promoted to the concrete-type registry on first lookup.
+        adapter is cached for the concrete type on first lookup. Named base
+        classes also match their subclasses, allowing registration against a
+        stable public type when implementations use private concrete types.
         """
 
         if python_type is None:
@@ -240,11 +243,15 @@ class JitArgAdapterRegistry:
 
     @classmethod
     def _promote_lazy_adapter(cls, python_type: type) -> Any:
-        type_qualname = f"{python_type.__module__}.{python_type.__qualname__}"
-        adapter = cls.lazy_jit_arg_adapter_registry.pop(type_qualname, None)
-        if adapter is not None:
-            cls.jit_arg_adapter_registry[python_type] = adapter
-        return adapter
+        for candidate_type in python_type.__mro__:
+            type_qualname = (
+                f"{candidate_type.__module__}.{candidate_type.__qualname__}"
+            )
+            adapter = cls.lazy_jit_arg_adapter_registry.get(type_qualname)
+            if adapter is not None:
+                cls.jit_arg_adapter_registry[python_type] = adapter
+                return adapter
+        return None
 
     @classmethod
     @contextmanager
@@ -285,6 +292,19 @@ class JitArgAdapterRegistry:
         exists, but reports ambiguity instead of silently choosing an adapter
         based on module import order.
         """
+        # Transparency protocol (F-TRANSPARENT): a tracing observation wrapper
+        # that declares a plain counterpart resolves and runs its adapter AS
+        # that plain value. The wrapper type is a host-trace artifact and is
+        # never registered, so an exact-type lookup would miss the plain type's
+        # adapter and the argument would reach the JIT boundary unconverted.
+        # Same consult as ``utils.tree_utils._tree_flatten``.
+        if getattr(type(arg), "__pyir_plain_type__", None) is not None:
+            plain_view: Any = arg.__pyir_plain_view__()  # type: ignore[attr-defined]
+            plain_adapter = cls.get_registered_adapter(plain_view)
+            if plain_adapter is None:
+                return None
+            return lambda wrapper: plain_adapter(wrapper.__pyir_plain_view__())
+
         python_type = type(arg)
         resolved_scope = cls._active_scope.get()
         adapter = None
@@ -299,8 +319,10 @@ class JitArgAdapterRegistry:
         if (
             adapter is None
             and cls.lazy_jit_arg_adapter_registry
-            and python_type.__module__.partition(".")[0]
-            in cls._lazy_adapter_module_roots
+            and not cls._lazy_adapter_module_roots.isdisjoint(
+                candidate_type.__module__.partition(".")[0]
+                for candidate_type in python_type.__mro__
+            )
         ):
             adapter = cls._promote_lazy_adapter(python_type)
 

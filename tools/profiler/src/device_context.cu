@@ -171,7 +171,11 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
         case library::NumericTypeID::kFUE4M3:
           data_distribution.set_uniform(1, 4, 0);
           break;
-        
+
+        case library::NumericTypeID::kFUE5M3:
+          data_distribution.set_uniform(1, 4, 0);
+          break;
+
         case library::NumericTypeID::kF16:
           data_distribution.set_uniform(-3, 3, 0);
           break;

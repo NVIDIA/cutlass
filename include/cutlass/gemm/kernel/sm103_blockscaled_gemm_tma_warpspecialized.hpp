@@ -794,6 +794,8 @@ public:
 
     else if (is_participant.main_sf_load) {
       set_warpgroup_reg_dealloc();
+      cutlass::arch::wait_on_dependent_grids();
+
       bool do_load_order_arrive = is_epi_load_needed;
       auto load_inputs = collective_mainloop.load_sf_init(
           problem_shape_MNKL, params.mainloop, shared_storage.tensors.mainloop);

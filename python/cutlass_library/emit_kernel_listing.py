@@ -336,6 +336,18 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     sm100_mma_filter_regex_1sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
     sm100_mma_filter_regex_2sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
 
+    sm107_mma_cluster_size = [
+      '2x2x1',
+      '0x0x1' # dynamic cluster
+    ]
+
+    sm107_mma_data_type_general = [
+      "gemm_f8_f8_f32_f16_f16",
+    ]
+
+    sm107_mma_filter_regex_1sm = "cutlass3x_sm107_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_data_type_general, sm107_mma_cluster_size, sm100_mma_layouts]]) + ").*_breuse_1sm.*"
+    sm107_mma_filter_regex_2sm = "cutlass3x_sm107_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_data_type_general, sm107_mma_cluster_size, sm100_mma_layouts]]) + ").*_breuse_2sm.*"
+
     #
     # Block Scale Gemm
     #
@@ -367,10 +379,27 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     # regex list must be in kernel procedural name order
     block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
     block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
-    
+
     sm103_block_scaled_prefetch_policy = ['tmapf']
     sm103_block_scaled_filter_regex_1sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
     sm103_block_scaled_filter_regex_2sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
+
+    sm107_mma_bs_data_type_general = [
+      "gemm_ue8m0xf8_ue8m0xf8_f32_f16_f16",
+      "gemm_ue8m0xf8_ue8m0xf8_f32_bf16_e5m2",
+    ]
+
+    sm107_mma_bs_filter_regex_1sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_bs_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_1sm.*"
+    sm107_mma_bs_filter_regex_2sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_bs_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_2sm.*"
+
+    sm107_mma_nvf4_data_type_general = [
+      "gemm_ue8m0xe2m1_ue8m0xe2m1_f32_f16_f16",
+      "gemm_ue4m3xe2m1_ue4m3xe2m1_f32_bf16_bf16",
+      "gemm_ue5m3xe2m1_ue5m3xe2m1_f32_f16_f16",
+    ]
+
+    sm107_mma_nvf4_filter_regex_1sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_nvf4_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_1sm.*"
+    sm107_mma_nvf4_filter_regex_2sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_nvf4_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_2sm.*"
 
     if arch in ["100a", "100f"]:
       kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \

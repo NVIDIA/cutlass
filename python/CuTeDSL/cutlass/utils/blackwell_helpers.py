@@ -893,6 +893,61 @@ def make_smem_layout_b(
 
 
 @dsl_user_op
+def make_smem_layout_c(
+    tiled_mma: cute.TiledMma,
+    mma_tiler_mnk: cute.Tile,
+    c_dtype: Type[Numeric],
+    num_stages: int,
+    is_m_major: bool,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[cute.Layout, cute.ComposedLayout]:
+    """This function helps with:
+
+    1. Get the partitioned shape of the C tensor based on the tiled_mma & MMA tiler.
+    2. Select the heuristic SMEM layout atom based on the C tensor's majorness, the data type, and the major mode size.
+    3. cute.Tile the SMEM layout atom to the MMA tile shape.
+    4. Stage the SMEM layout based on the number of stages.
+
+    Useful for when we don't care about epilogue subtiling, which get_smem_layout_epi is designed for.
+
+    :param tiled_mma: The tiled MMA used to partition tensor C
+    :type tiled_mma: cute.TiledMma
+    :param mma_tiler_mnk: The MMA tile shape
+    :type mma_tiler_mnk: cute.cute.Tile
+    :param c_dtype: The element type for tensor C
+    :type c_dtype: Type[Numeric]
+    :param num_stages: The number of pipeline stages for tensor C
+    :type num_stages: int
+
+    :return: SMEM layout for tensor C
+    :rtype: Union[cute.Layout, cute.ComposedLayout]
+    """
+
+    c_major_mode = OperandMajorMode.MN if is_m_major else OperandMajorMode.K
+    c_smem_shape = tiled_mma.partition_shape_C(
+        cute.dice(mma_tiler_mnk, (1, 1, None), loc=loc, ip=ip), loc=loc, ip=ip
+    )
+    c_smem_shape_mn = (
+        cute.size(c_smem_shape[0][0], loc=loc, ip=ip) * c_smem_shape[1],
+        cute.size(c_smem_shape[0][1], loc=loc, ip=ip) * c_smem_shape[2],
+    )
+    smem_layout_atom_kind = get_smem_layout_atom_ab(
+        c_major_mode, c_dtype, c_smem_shape_mn, loc=loc, ip=ip
+    )
+    c_smem_layout_atom = make_smem_layout_atom(
+        smem_layout_atom_kind, c_dtype, loc=loc, ip=ip
+    )
+
+    c_smem_shape = cute.append(c_smem_shape, num_stages, loc=loc, ip=ip)
+    order = (2, 1, 3) if is_m_major else (1, 2, 3)
+    return tile_to_mma_shape(
+        c_smem_layout_atom, c_smem_shape, order=order, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
 def get_smem_layout_atom_epi(
     layout: LayoutEnum,
     element_type: Type[Numeric],

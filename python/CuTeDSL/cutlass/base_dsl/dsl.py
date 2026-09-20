@@ -67,7 +67,12 @@ from .compiler import (
     KeepCUBIN,
 )
 from .ast_helpers import DSLOptimizationWarning
-from .common import DSLRuntimeError, active_env_manager, target_version
+from .common import (
+    DSLRuntimeError,
+    DSLUserCodeError,
+    active_env_manager,
+    target_version,
+)
 from .compile_backend import CompileContext, get_compiler_backend
 
 # =============================================================================
@@ -86,6 +91,7 @@ from .runtime.jit_arg_adapters import (
 )
 
 from .ast_preprocessor import DSLPreprocessor
+from .pyir_class_facts import configure_facts_cache, record_jit_decoration
 from .pyir_preprocessor import PyIRDSLPreprocessor
 from .preprocess_mode import _PreprocessModeState
 from .common import *
@@ -136,6 +142,12 @@ from .dynamic_debug import (  # noqa: F401
 # =============================================================================
 
 MLIR_DYNAMIC = -9223372036854775808
+
+# Optional PyIR runtime hook bound at module load; absent pyir/ub dialects degrade it to None.
+try:
+    from .pyir_runtime import _verify_no_used_poison as _PYIR_VERIFY_POISON
+except ImportError:
+    _PYIR_VERIFY_POISON = None  # type: ignore[assignment]  # optional-import degrade
 
 # Keyword parameter a compiler provider declares to receive the compiled module
 # back. Keep this in sync with the keyword-only parameter named return_module on
@@ -349,6 +361,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.jit_cache: JitCacheDict = JitCacheDict(
             max_elems=self.envar.jit_cache_max_elems
         )
+        # On-disk cache for the PyIR per-class write-fact parses (source
+        # content-hash keyed); follows this DSL's file-caching switch.
+        configure_facts_cache(
+            os.path.join(
+                get_default_generated_ir_path(self.envar.prefix), "pyir_class_facts"
+            ),
+            enabled=not self.envar.disable_file_caching,
+        )
 
         self.host_jit_decorator_name: str = f"@{BaseDSL.jit.__name__}"
         self.device_jit_decorator_name: str = f"@{BaseDSL.kernel.__name__}"
@@ -403,8 +423,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             self.preprocessor: DSLPreprocessor = preprocessor
 
         self._preprocess_mode = _PreprocessModeState(self)
-        if preprocess:
-            self._preprocess_mode.stamp(self.preprocessor)
 
         log().info(f"Initializing {name} DSL")
         log().debug(f"Logger initialized for {self.name}")
@@ -469,12 +487,35 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     @classmethod
     @contextmanager
     def enable_pyir(cls) -> Generator[None, Any, None]:
-        dsl = cls._get_dsl()
-        dsl._preprocess_mode.push_pyir()
+        """Select the PyIR frontend for every trace started inside the block.
+
+        Frontend choice is a property of the *trace*, not of one DSL object.
+        A single module routinely mixes DSLs -- a ``@cute.experimental.jit``
+        entry inlines ``@cute.jit`` library helpers -- and each DSL singleton
+        owns its own ``preprocessor`` and ``envar``. Arming only the singleton
+        that ``_get_dsl()`` happens to return leaves the other one tracing v1
+        while PyIR-rewritten helpers emit ``pyir.*`` ops into its module, and
+        its pipeline then omits ``enable-pyir=true`` (both on
+        ``lir-to-cute-dsl`` and in the compile options), so the prelower never
+        runs and ``pyir.ref`` reaches LLVM translation.
+        """
+        # Materialize the singleton for `cls` (and assert one exists when
+        # called on BaseDSL itself) before snapshotting the registry.
+        cls._get_dsl()
+        # Snapshot: a DSL built with preprocess=False owns no preprocessor and
+        # cannot switch frontends. A singleton created after this point keeps
+        # its own mode; both cute DSLs already exist once `cutlass` is imported.
+        pushed: list[Any] = []
         try:
+            for dsl in list(DSLSingletonMeta._instances.values()):
+                if not hasattr(dsl, "preprocessor"):
+                    continue
+                dsl._preprocess_mode.push_pyir()
+                pushed.append(dsl)
             yield
         finally:
-            dsl._preprocess_mode.pop()
+            for dsl in reversed(pushed):
+                dsl._preprocess_mode.pop()
 
     @staticmethod
     def _can_preprocess(**dkwargs: Any) -> bool:
@@ -537,12 +578,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     def jit_runner(
         cls: type["BaseDSL"],
         executor_name: str,
-        frame: Any,
+        location: DSLLocation,
         *dargs: Any,
         **dkwargs: Any,
     ) -> Any:
         """
         Decorator to mark a function for JIT compilation.
+
+        ``location`` is the user's call site, already resolved to a value by
+        the caller via :meth:`get_location_from_frame`.
+
         """
         log().info("jit_runner")
 
@@ -550,8 +595,19 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             # Run preprocessor that alters AST
             preprocess_enabled = BaseDSL._can_preprocess(**dkwargs)
             func._dsl_cls = cls
-            func._decorator_location = BaseDSL.get_location_from_frame(frame)
+            func._decorator_kind = (
+                "kernel" if executor_name == "_kernel_helper" else "jit"
+            )
+            func._decorator_location = location
             func._preprocess_enabled = preprocess_enabled
+            # F-COVER decoration-time attestation: an explicit preprocess
+            # opt-out declares the function native; otherwise the rewrite
+            # point stamps ``__pyir_rewritten__`` before tracing.
+            if not preprocess_enabled:
+                func.__pyir_native__ = True
+            # Decoration-time producer for the per-class self-field write-fact
+            # registry (O(1) until PyIR activates; see pyir_class_facts).
+            record_jit_decoration(func)
             if not hasattr(func, "_preprocessed") and not preprocess_enabled:
                 func._preprocessed = True
 
@@ -634,20 +690,30 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """
         Decorator to mark a function for JIT compilation for Host code.
         """
-        cur_frame = inspect.currentframe()
-        assert cur_frame is not None
-        frame = cur_frame.f_back
-        return BaseDSL.jit_runner(cls, "_func", frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(
+            cls,
+            "_func",
+            BaseDSL.get_location_from_frame(
+                inspect.currentframe().f_back  # type: ignore[union-attr]
+            ),
+            *dargs,
+            **dkwargs,
+        )
 
     @classmethod
     def kernel(cls, *dargs: Any, **dkwargs: Any) -> Any:
         """
         Decorator to mark a function for JIT compilation for GPU.
         """
-        cur_frame = inspect.currentframe()
-        assert cur_frame is not None
-        frame = cur_frame.f_back
-        return BaseDSL.jit_runner(cls, "_kernel_helper", frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(
+            cls,
+            "_kernel_helper",
+            BaseDSL.get_location_from_frame(
+                inspect.currentframe().f_back  # type: ignore[union-attr]
+            ),
+            *dargs,
+            **dkwargs,
+        )
 
     @abstractmethod
     def _kernel_helper(self, func: Any, *args: Any, **kwargs: Any) -> Any:
@@ -1555,9 +1621,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
     def get_module_hash(self, module: ir.Module, function_name: str) -> str:
         s = io.BytesIO()
         module.operation.write_bytecode(s)
-        for attr, value in self.envar.__dict__.items():
-            if value is not None:
-                s.write(str(value).encode())
+        s.write(self.envar.cache_key_str().encode())
         # Add compile options to the hash
         s.write(self.compile_options.to_str().encode())
         hash_obj = self.get_version().copy()
@@ -1662,6 +1726,15 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     f"Trace finalize hook failed: {hook_name}", cause=e
                 ) from e
 
+    def _inspection_pipeline(self, passes: str) -> str:
+        """Frame ``passes`` for IR-inspection dumps: under PyIR, prepend the
+        ``pyir-prelower`` unless ``passes`` already starts with it, matching production."""
+        if self.envar.enable_pyir and not passes.lstrip().startswith(
+            ("pyir-prelower", "convert-pyir-to-scf")
+        ):
+            passes = f"pyir-prelower,{passes}"
+        return f"builtin.module({passes})"
+
     def _compile_clone_and_save(
         self, module: ir.Module, pipeline: str, label: str
     ) -> Any:
@@ -1713,12 +1786,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         # Poison-read check: any used ub.poison value is a definite bug
         # (a value was read in code that does not dominate the write).
-        try:
-            from .pyir_runtime import _verify_no_used_poison
-
-            _verify_no_used_poison(module)
-        except ImportError:
-            pass
+        if _PYIR_VERIFY_POISON is not None:
+            _PYIR_VERIFY_POISON(module)
 
         # Verify the module
         try:
@@ -1792,6 +1861,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             _jit_scope(),
                             self._track_deferred_kernel_launches(),
                         ):
+                            # PyIR entry attestation (V-9), then trace-arg
+                            # intake: host trace args become candidate holders
+                            # and F-SPEC roots.
+                            from .pyir_runtime import (
+                                _pyir_assert_entry_attested,
+                            )
+
+                            _pyir_assert_entry_attested(funcBody, self)
+                            try:
+                                from .pyir_runtime import _pyir_register_trace_args
+
+                                _pyir_register_trace_args(
+                                    ir_args, ir_kwargs, sig=sig, entry_func=funcBody
+                                )
+                            except Exception:
+                                pass
                             result = funcBody(*ir_args, **ir_kwargs)
                         default_ret_values = self.generate_default_return_values(
                             ir.InsertionPoint.current
@@ -1807,17 +1892,29 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             err_filename = tb.tb_frame.f_code.co_filename
                             err_lineno = tb.tb_lineno
                             tb = tb.tb_next
+                        # The curated funnel is a PyIR-mode fact: only the
+                        # PyIR rewrite guarantees a genuinely-unbound read
+                        # never escapes as a bare NameError.
+                        if not self.envar.enable_pyir:
+                            raise DSLUserCodeError(
+                                f"NameError in `{funcBody.__name__}`: {name_error}",
+                                filename=err_filename,
+                                lineno=err_lineno,
+                                cause=name_error,
+                                suggestion=(
+                                    "Variables used inside staged control flow "
+                                    "(for/if/while) must be defined before the "
+                                    "control flow region. Give the variable an "
+                                    "initial value before the loop or branch."
+                                ),
+                            ) from name_error
                         raise DSLUserCodeError(
-                            f"NameError in `{funcBody.__name__}`: {name_error}",
+                            DiagId.SCOPE_UNBOUND_NAME_IN_TRACE,
                             filename=err_filename,
                             lineno=err_lineno,
                             cause=name_error,
-                            suggestion=(
-                                "Variables used inside staged control flow "
-                                "(for/if/while) must be defined before the "
-                                "control flow region. Give the variable an "
-                                "initial value before the loop or branch."
-                            ),
+                            var=getattr(name_error, "name", None)
+                            or f"<in {funcBody.__name__}>",
                         ) from name_error
                     except (DSLRuntimeError, DSLUserCodeError):
                         raise
@@ -2236,6 +2333,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     return result
 
                 # Get a single reference to the cache since garbage collection
+                # This module-hash lookup needs no specialization validation:
+                # tracing re-ran before the hash was computed (self-curing).
                 cached_jit_func = None if no_cache else self.jit_cache.get(module_hash)
 
                 if (
@@ -2259,6 +2358,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         original_function_name=original_function_name,
                         funcBody=funcBody,
                     )
+                    # F-SPEC: the fresh handle adopts the specialization
+                    # record its producing trace sealed (V-11 validates
+                    # __call__ re-entries; a cached handle keeps its own).
+                    from .pyir_runtime import _pyir_take_sealed_spec
+
+                    jit_function.seal_specialization(_pyir_take_sealed_spec())
                 else:
                     # cache hit
                     log().info(
@@ -2320,6 +2425,26 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self,
         original_function: Any,
     ) -> Any:
+        # Attestation gate (PyIR-mode fact): a generator/coroutine entry only
+        # mints its generator/coroutine object at call time -- the body would
+        # never trace -- so the PyIR rewrite refuses before attesting the
+        # function; the base rewrite compiles these entries exactly as before.
+        if self.envar.enable_pyir:
+            _entry_code = getattr(original_function, "__code__", None)
+            if inspect.isasyncgenfunction(original_function) or (
+                inspect.iscoroutinefunction(original_function)
+            ):
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_ASYNC,
+                    filename=getattr(_entry_code, "co_filename", None),
+                    lineno=getattr(_entry_code, "co_firstlineno", None),
+                )
+            if inspect.isgeneratorfunction(original_function):
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_YIELD,
+                    filename=getattr(_entry_code, "co_filename", None),
+                    lineno=getattr(_entry_code, "co_firstlineno", None),
+                )
         function_name = original_function.__name__
         self.funcBody = original_function
         log().info("Started preprocessing [%s]", function_name)
@@ -2348,6 +2473,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             original_function._preprocessed_signature = (
                 self._preprocess_mode.current_signature()
             )
+            # F-COVER: attest the rewrite on the function object itself (the
+            # value-borne carrier); the trace-entry check validates it.
+            _choke_ver = getattr(self.preprocessor, "choke_set_version", None)
+            if _choke_ver is not None:
+                original_function.__pyir_rewritten__ = _choke_ver
 
             return preprocessor_session.exec(
                 original_function.__name__,
@@ -2538,7 +2668,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         pipeline = kwargs.pop("pipeline", None)
         gpu_module_attrs = kwargs.pop("gpu_module_attrs", {})
-        no_cache = kwargs.pop("no_cache", False)
+        no_cache = kwargs.pop("no_cache", False) or self.envar.no_cache
         no_jit_engine = kwargs.pop("no_jit_engine", False)
         compile_only = kwargs.pop("compile_only", False)
 
@@ -2644,6 +2774,38 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             with __import__(
                 f"{__package__}.multi_stage_manager", fromlist=["_jit_scope"]
             )._jit_scope():
+                # PyIR entry attestation (V-9) + trace-arg intake for the
+                # INLINE nested-jit call.
+                __import__(
+                    f"{__package__}.pyir_runtime",
+                    fromlist=["_pyir_assert_entry_attested"],
+                )._pyir_assert_entry_attested(funcBody, self)
+                _pyir_default_binds: Any = []
+                try:
+                    _pyir_rt = __import__(
+                        f"{__package__}.pyir_runtime",
+                        fromlist=["_pyir_register_trace_args"],
+                    )
+                    _pyir_rt._pyir_register_trace_args(args, kwargs)
+                    # Taken parameter defaults bind at the plain call below
+                    # with no dispatcher in the way: intake their holders,
+                    # stage their meta-leaf reads, and seal their F-SPEC rows.
+                    _pyir_rt._pyir_register_taken_default_holders(
+                        funcBody, args, kwargs
+                    )
+                    _pyir_default_binds = (
+                        _pyir_rt._pyir_boundary_stage_taken_default_reads(
+                            funcBody, args, kwargs
+                        )
+                    )
+                    _pyir_rt._pyir_spec_boundary_default_reads(funcBody, args, kwargs)
+                except Exception:
+                    pass
+                if _pyir_default_binds:
+                    try:
+                        return funcBody(*args, **kwargs)
+                    finally:
+                        _pyir_rt._pyir_boundary_restore_meta_reads(_pyir_default_binds)
                 return funcBody(*args, **kwargs)
 
         setup = self._prepare_compilation(funcBody, *args, **kwargs)
@@ -2949,6 +3111,21 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     "kernelGenHelper should be explicitly specified!"
                 )
 
+                # Taken parameter defaults bind at apply_defaults below with
+                # no dispatcher in the way: intake their holders and seal
+                # their F-SPEC rows.
+                try:
+                    _pyir_rt = __import__(
+                        f"{__package__}.pyir_runtime",
+                        fromlist=["_pyir_spec_boundary_default_reads"],
+                    )
+                    _pyir_rt._pyir_register_taken_default_holders(
+                        funcBody, args, kwargs
+                    )
+                    _pyir_rt._pyir_spec_boundary_default_reads(funcBody, args, kwargs)
+                except Exception:
+                    pass
+
                 # Get bound arguments
                 bound_args = self._get_function_bound_args(
                     signature, kernel_name, *args, **kwargs
@@ -3013,6 +3190,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             f"{__package__}.multi_stage_manager",
                             fromlist=["isolated_region"],
                         ).isolated_region():
+                            # PyIR entry attestation (V-9), then trace-arg
+                            # intake: kernel block-arg reconstructions become
+                            # holders.
+                            __import__(
+                                f"{__package__}.pyir_runtime",
+                                fromlist=["_pyir_assert_entry_attested"],
+                            )._pyir_assert_entry_attested(funcBody, self)
+                            try:
+                                __import__(
+                                    f"{__package__}.pyir_runtime",
+                                    fromlist=["_pyir_register_trace_args"],
+                                )._pyir_register_trace_args(ir_args, ir_kwargs)
+                            except Exception:
+                                pass
                             kernel_ret = funcBody(*ir_args, **ir_kwargs)
                             if hasattr(helper, "set_kernel_ret"):
                                 helper.set_kernel_ret(kernel_ret)

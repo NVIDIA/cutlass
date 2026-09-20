@@ -98,7 +98,7 @@ class CompilerBackend(ABC):
         dsl = self._dsl
         load_from_file_cache = False
 
-        if ctx.cache_enabled:
+        if ctx.cache_enabled and not dsl.envar.disable_file_caching:
             assert ctx.module_hash is not None
             fn = load_cache_from_path(
                 dsl.name, ctx.module_hash, bytecode_reader=read_bytecode_and_check_crc32

@@ -55,8 +55,10 @@ from cutlass.base_dsl.typing import (
     Numeric,
     Uint8,
     Uint32,
+    Uint64,
 )
 import cutlass.base_dsl.typing as _cutlass
+from cutlass.base_dsl import target_version as _target_version
 from cutlass.base_dsl.typing import Array
 
 # Auto-converting proxy over the raw NVVM dialect bindings: lets the private
@@ -117,6 +119,42 @@ def _tcgen05_mma_smem_desc(
         )
     )
 
+
+@dsl_user_op
+def _tcgen05_mma_smem_desc_v2(
+    start_address: int | Int32 | Uint32,
+    leading_dim_offset: int | Int32 | Uint32,
+    stride_dim_offset: int | Int32 | Uint32,
+    descriptor_version: int | Int8 | Uint8,
+    base_offset: int | Int8 | Uint8,
+    leading_dim_mode: int | Boolean,
+    k_segment_offset: int | Boolean,
+    swizzle_type: int | Int8 | Uint8,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int64:
+    """Build an extended ``tcgen05.mma`` SMEM descriptor.
+
+    Like :func:`_tcgen05_mma_smem_desc` with two extra descriptor fields,
+    ``descriptor_version`` and ``k_segment_offset``. Module-private; construct
+    descriptors through :meth:`Tcgen05SmemDesc.build`, the sole customer.
+    All offsets are in units of 16 bytes (the descriptor granule).
+    """
+    return _cutlass.Int64(
+        _nvvm.tcgen05_mma_smem_desc_v2(
+            _cutlass.Int32(start_address),
+            _cutlass.Int32(leading_dim_offset),
+            _cutlass.Int32(stride_dim_offset),
+            _cutlass.Int8(descriptor_version),
+            _cutlass.Int8(base_offset),
+            _cutlass.Boolean(leading_dim_mode),
+            _cutlass.Boolean(k_segment_offset),
+            _cutlass.Int8(swizzle_type),
+            loc=loc,
+            ip=ip,
+        )
+    )
 
 
 # =============================================================================
@@ -358,6 +396,12 @@ class WgmmaSmemDesc(Int64, width=64):  # type: ignore[call-arg]
 # =============================================================================
 
 
+# Toolchains whose assembler needs the split-word form of
+# ``Tcgen05SmemDesc.advance_start_address`` (CUDA 12.x and 13.0). From 13.1 on
+# the plain 64-bit add is assembled correctly and is kept for its lower op count.
+_SPLIT_WORD_START_ADDRESS_ADVANCE: bool = _target_version(max_version="13.0")
+
+
 class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
     """SM100 ``tcgen05.mma`` shared-memory descriptor (64-bit).
 
@@ -419,16 +463,26 @@ class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
         included, so the byte offset must be a multiple of 16. Passing a
         Python ``int`` that violates this raises :class:`ValueError`.
 
-        This lowers to the same encoded start-address addition as
-        ``desc + (byte_increment >> 4)``. The caller must ensure the
-        resulting start address still fits the 14-bit field.
-        """
-        return self + _drop_low_bits(byte_increment, 4, "byte_increment")  # type: ignore[return-value]
+        This computes ``desc + (byte_increment >> 4)``. On CUDA 13.1+
+        toolchains it lowers to that plain 64-bit add; on CUDA 12.x / 13.0
+        toolchains the addition is done on the low 32-bit word and the
+        untouched high word is re-packed, so the descriptor constant bits
+        never pass through a 64-bit add. The caller must ensure the resulting
+        start address still fits the 14-bit field.
 
-    # Keep ``desc + encoded_offset_16b`` on the base Int64 path. A masked
-    # ``__add__`` overload emits extra descriptor-field arithmetic in hot
-    # tcgen05 K loops. ``advance_start_address()`` keeps the byte-count API
-    # while lowering through the same fast encoded-add path.
+        """
+        inc = _drop_low_bits(byte_increment, 4, "byte_increment")
+        if not _SPLIT_WORD_START_ADDRESS_ADVANCE:
+            return self + inc  # type: ignore[return-value]
+        lo = Uint32(self) + Uint32(inc)
+        hi = (Uint64(self) >> 32) << 32
+        return type(self)(Int64(hi | Uint64(lo)))  # type: ignore[return-value]
+
+    # Keep ``desc + encoded_offset_16b`` on the base Int64 path where the
+    # toolchain allows it. A masked ``__add__`` overload emits extra
+    # descriptor-field arithmetic in hot tcgen05 K loops;
+    # ``advance_start_address()`` keeps the byte-count API while lowering
+    # through the fast encoded-add path (or the split-word form above).
 
     @classmethod
     def build(
@@ -436,9 +490,11 @@ class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
         start_address: Array | cutlass.Pointer | Int32 | int,
         leading_byte_offset: int = 0,
         stride_byte_offset: int = 0,
+        version: Literal[0, 1, 2, 3] = 1,
         base_offset: Literal[0, 1, 2, 3, 4, 5, 6, 7] = 0,
         layout: int | Tcgen05SmemSwizzle = 0,
         leading_dim_mode: int = 0,
+        k_segment_offset: int = 0,
     ) -> "Tcgen05SmemDesc":
         """Build the SMEM descriptor via the NVVM descriptor intrinsic.
 
@@ -482,6 +538,8 @@ class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
             default unless you explicitly need the SM103+ absolute-address
             leading-dimension mode.
 
+        :param version: Descriptor version field.
+        :param k_segment_offset: B K_Segment start offset in K=128 (48B) block.
         """
         # A swizzle-descriptor object (Tcgen05SmemSwizzle / cutlass.Swizzle /
         # TensorMapSwizzle) converts to the tcgen05 encoding via .to(); a plain
@@ -510,14 +568,19 @@ class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
             _drop_low_bits(stride_byte_offset, 4, "stride_byte_offset")
         )
 
+        # The extended descriptor op carries descriptor_version and
+        # k_segment_offset (the K-segmented form) required by newer tcgen05
+        # descriptor layouts.
         return cls(
-            _tcgen05_mma_smem_desc(
-                addr >> 4,
-                leading_dim_offset,
-                stride_dim_offset,
-                _cutlass.Int8(base_offset),
-                _cutlass.Boolean(leading_dim_mode),
-                swizzle_code,
+            _tcgen05_mma_smem_desc_v2(
+                start_address=addr >> 4,
+                leading_dim_offset=leading_dim_offset,
+                stride_dim_offset=stride_dim_offset,
+                descriptor_version=_cutlass.Int8(version),
+                base_offset=_cutlass.Int8(base_offset),
+                leading_dim_mode=_cutlass.Boolean(leading_dim_mode),
+                k_segment_offset=_cutlass.Boolean(k_segment_offset),
+                swizzle_type=swizzle_code,
             )
         )
 
@@ -773,9 +836,10 @@ class Tcgen05InstrDesc(Int32):
         assert sparse_flag in [0, 1], f"sparse_flag must be 0 or 1, got {sparse_flag}"
         assert saturate in [0, 1], f"saturate must be 0 or 1, got {saturate}"
         assert 0 <= c_format < 4, f"c_format must be in [0, 3], got {c_format}"
-        assert sparse_format in [0, 1], (
-            f"sparse_format must be 0 or 1, got {sparse_format}"
-        )
+        assert sparse_format in [
+            0,
+            1,
+        ], f"sparse_format must be 0 or 1, got {sparse_format}"
         assert 0 <= a_format < 8, f"a_format must be in [0, 7], got {a_format}"
         assert 0 <= b_format < 8, f"b_format must be in [0, 7], got {b_format}"
         assert a_negate in [0, 1], f"a_negate must be 0 or 1, got {a_negate}"
@@ -949,7 +1013,11 @@ class Tcgen05MxInstrDesc(Int32):
             return 1
         if dtype is _cutlass.Float6E2M3FN:
             return 3
+        if dtype is _cutlass.Float6E2M3FNx4:
+            return 3
         if dtype is _cutlass.Float6E3M2FN:
+            return 4
+        if dtype is _cutlass.Float6E3M2FNx4:
             return 4
         if dtype is _cutlass.Float4E2M1FN:
             return 5

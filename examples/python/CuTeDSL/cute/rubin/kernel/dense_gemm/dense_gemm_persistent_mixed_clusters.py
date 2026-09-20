@@ -404,8 +404,14 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
         # otherwise when the division is not exact, the extra partial wave of
         # preferred clusters may force the hardware to schedule one additional wave,
         # causing significant performance regression.
-        max_preferred_cluster_count = (
-            max_ctas_for_fallback_cluster // preferred_cluster_size_mn
+        # It is possible to end up with a small problem size where
+        # max_ctas_for_fallback_cluster < preferred_cluster_size_mn, which leads to
+        # max_preferred_cluster_count being zero; in this case, we
+        # cannot even fill a single wave, and so we are not concerned with performance
+        # implications rather we choose to still be able to execute properly instead of
+        # erroring out.
+        max_preferred_cluster_count = cutlass.max(
+            1, max_ctas_for_fallback_cluster // preferred_cluster_size_mn
         )
         preferred_grid = (
             preferred_grid[0],
@@ -506,19 +512,6 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
                     f"integer multiple of fallback cluster shape {fallback_cluster_shape_mn}"
                 )
 
-            # Check that the problem is at least as large as the preferred cluster tile.
-            # The mixed clusters kernel computes max_preferred_cluster_count as:
-            #   max_ctas_for_fallback_cluster // preferred_cluster_size_mn
-            # If the problem is smaller than one preferred cluster tile, this count
-            # becomes zero, resulting in an invalid grid shape.
-            m, n, k, l = mnkl
-            preferred_tile_m = mma_tiler[0] * preferred_cluster_shape_mn[0]
-            preferred_tile_n = mma_tiler[1] * preferred_cluster_shape_mn[1]
-            if m < preferred_tile_m or n < preferred_tile_n:
-                raise testing.CantImplementError(
-                    f"Problem size ({m}, {n}) is smaller than the preferred cluster tile "
-                    f"({preferred_tile_m}, {preferred_tile_n})"
-                )
         except testing.CantImplementError as e:
             print(f"[DSL ERROR] CantImplementError: {e}")
             return False

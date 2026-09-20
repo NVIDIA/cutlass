@@ -16,7 +16,7 @@ regarding to that dialect.
 
 # Local module imports
 from types import GenericAlias, SimpleNamespace, UnionType
-from typing_extensions import deprecated
+from typing_extensions import deprecated, override
 from typing import (
     Callable,
     Generator,
@@ -84,7 +84,11 @@ from ..base_dsl.common import (
     active_env_manager,
 )
 from ..base_dsl.diagnostics import DiagId, find_user_source_location
-from ..base_dsl.env_manager import EnvironmentVarManager, get_bool_env_var
+from ..base_dsl.env_manager import (
+    env_var,
+    EnvironmentVarManager,
+    get_bool_env_var,
+)
 from ..base_dsl.utils.logger import log
 from ..base_dsl.utils.tree_utils import (
     Leaf,
@@ -143,6 +147,19 @@ from .cutlass_ast_decorators import (
     _while_execute_dynamic,
     _ifexp_execute_dynamic,
     LoopUnroll,
+)
+
+from ._launch_facts_metadata import (
+    CLUSTER_LAUNCH_FIELD,
+    COOPERATIVE_LAUNCH_FIELD,
+    CUDA_LAUNCH_DIM_MAX,
+    EXACT_BLOCK_DIM_FIELD,
+    EXACT_CLUSTER_DIM_FIELD,
+    EXACT_GRID_DIM_FIELD,
+    LAUNCH_FACTS_ATTR,
+    LAUNCH_FACTS_SCHEMA_VERSION,
+    LAUNCH_FACTS_SCHEMA_VERSION_FIELD,
+    int64_attr,
 )
 
 # =============================================================================
@@ -369,6 +386,98 @@ def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
     return kernel_attrs
 
 
+def _is_pyir_watched_meta(value: object) -> bool:
+    """Return whether ``value`` may be promoted from a PyIR meta value.
+
+    Watched integers and booleans deliberately subclass ``int`` and are not
+    recognized by ``is_dynamic_expression``. Treating their trace-time shadow
+    as exact would leave stale launch metadata if PyIR later promotes the slot.
+    """
+
+    try:
+        from ..base_dsl.pyir_runtime import _WatchedM
+    except ImportError:
+        return False
+    return isinstance(value, _WatchedM)
+
+
+def _static_launch_dim(dims: Sequence[Any]) -> tuple[int, int, int] | None:
+    """Return a verified static CUDA dimension, or ``None`` for SSA values."""
+
+    normalized: list[int] = []
+    for dim in dims:
+        value = dim.value if isinstance(dim, Integer) else dim
+        if _is_pyir_watched_meta(value):
+            return None
+        if is_dynamic_expression(value):
+            return None
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            return None
+        value = int(value)
+        if value <= 0 or value > CUDA_LAUNCH_DIM_MAX:
+            return None
+        normalized.append(value)
+    if len(normalized) != 3:
+        return None
+    return tuple(normalized)  # type: ignore[return-value]
+
+
+def _static_launch_bool(value: object) -> bool | None:
+    """Return a verified static launch Boolean, or ``None`` for SSA values."""
+
+    if isinstance(value, Boolean):
+        value = value.value
+        if _is_pyir_watched_meta(value):
+            return None
+        # Static DSL booleans use the integer representation inherited from
+        # ``Integer`` even though their constructor canonicalizes through bool.
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+    return value if isinstance(value, bool) else None
+
+
+def _build_launch_facts_attr(config: BaseDSL.LaunchConfig) -> ir.DictAttr:
+    """Encode exact facts from the same ``LaunchConfig`` used for launch.
+
+    Mixed preferred/fallback cluster launches omit ``exact_cluster_dim`` when
+    the runtime may select different shapes. Dynamic fields are omitted rather
+    than represented as exact facts.
+    """
+
+    cluster_launch = config.has_cluster or config.has_fallback_cluster
+    facts: dict[str, ir.Attribute] = {
+        LAUNCH_FACTS_SCHEMA_VERSION_FIELD: int64_attr(LAUNCH_FACTS_SCHEMA_VERSION),
+        CLUSTER_LAUNCH_FIELD: ir.BoolAttr.get(cluster_launch),
+    }
+    cooperative_launch = _static_launch_bool(config.cooperative)
+    if cooperative_launch is not None:
+        facts[COOPERATIVE_LAUNCH_FIELD] = ir.BoolAttr.get(cooperative_launch)
+    block = _static_launch_dim(config.block)
+    if block is not None:
+        facts[EXACT_BLOCK_DIM_FIELD] = ir.DenseI64ArrayAttr.get(block)
+    grid = _static_launch_dim(config.grid)
+    if grid is not None:
+        facts[EXACT_GRID_DIM_FIELD] = ir.DenseI64ArrayAttr.get(grid)
+
+    exact_cluster: tuple[int, int, int] | None = None
+    if config.has_cluster:
+        assert config.cluster is not None
+        if not config.has_fallback_cluster:
+            exact_cluster = _static_launch_dim(config.cluster)
+        else:
+            assert config.fallback_cluster is not None
+            preferred = _static_launch_dim(config.cluster)
+            fallback = _static_launch_dim(config.fallback_cluster)
+            if preferred is not None and preferred == fallback:
+                exact_cluster = preferred
+    elif config.has_fallback_cluster:
+        assert config.fallback_cluster is not None
+        exact_cluster = _static_launch_dim(config.fallback_cluster)
+    if exact_cluster is not None:
+        facts[EXACT_CLUSTER_DIM_FIELD] = ir.DenseI64ArrayAttr.get(exact_cluster)
+    return ir.DictAttr.get(facts)
+
+
 class CutlassBaseDSL(BaseDSL):
     """This abstract class provides a DSL for Cutlass."""
 
@@ -380,7 +489,7 @@ class CutlassBaseDSL(BaseDSL):
     @staticmethod
     def _make_kernel_decorator(
         target_cls: type["CutlassBaseDSL"],
-        frame: Any,
+        location: DSLLocation,
         *dargs: Any,
         **dkwargs: Any,
     ) -> Any:
@@ -391,13 +500,13 @@ class CutlassBaseDSL(BaseDSL):
         ``CuteExperimentalDSL.kernel``: when ``attributes`` is supplied,
         the resulting decorator stamps the spec onto the function via
         ``target_cls._KERNEL_ATTR_SPEC_FIELD`` before running the normal
-        jit wrapping logic. The caller is responsible for capturing the
-        user's source frame so source locations point to the call site
-        rather than this helper.
+        jit wrapping logic. The caller is responsible for resolving the
+        user's call site, so source locations point there rather than at
+        this helper.
         """
         attr_spec = dkwargs.pop("attributes", None)
         kernel_decorator = BaseDSL.jit_runner(
-            target_cls, "_kernel_helper", frame, *dargs, **dkwargs
+            target_cls, "_kernel_helper", location, *dargs, **dkwargs
         )
         if attr_spec is None:
             return kernel_decorator
@@ -525,7 +634,12 @@ class CutlassBaseDSL(BaseDSL):
         raw_attrs = self._collect_raw_kernel_attrs_from_decorator(func_body, func_args)
         if not raw_attrs:
             return {}
+        return self._convert_extra_kernel_value_attrs(raw_attrs)
 
+    def _convert_extra_kernel_value_attrs(
+        self, raw_attrs: dict[str, Any]
+    ) -> dict[str, ir.Attribute]:
+        """Validate and convert resolved kernel attributes to MLIR attributes."""
         converted_attrs: dict[str, ir.Attribute] = {}
         for key, value in raw_attrs.items():
             if key not in self._ALLOWED_EXTRA_KERNEL_VALUE_ATTRS:
@@ -639,7 +753,7 @@ class CutlassBaseDSL(BaseDSL):
             f"Expect LaunchConfig for @kernel, but got {type(config)}"
         )
 
-        ret = {}
+        ret = {LAUNCH_FACTS_ATTR: _build_launch_facts_attr(config)}
         if not config.has_max_number_threads():
             block_str = ", ".join(map(str, config.block))
             has_dynamic = any(is_dynamic_expression(dim) for dim in config.block)
@@ -1730,11 +1844,12 @@ class CuTeDSLEnvironmentManager(EnvironmentVarManager):
       programs without an explicit per-compile opt-out (default: False).
     """
 
+    use_extension_compiler: bool = env_var(
+        "USE_EXTENSION_COMPILER", affects_compile=True, default=False
+    )
+
     def __init__(self, prefix: str = "CUTE_DSL") -> None:
         super().__init__(prefix)
-        self.use_extension_compiler = get_bool_env_var(
-            f"{prefix}_USE_EXTENSION_COMPILER", False
-        )
 
 
 class CuTeDSL(CutlassBaseDSL):
@@ -1743,6 +1858,13 @@ class CuTeDSL(CutlassBaseDSL):
     """
 
     _env_class = CuTeDSLEnvironmentManager
+    _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset(
+        {
+            "lir.tma_update_mode",
+            "lir.tma_override_mode",
+        }
+    )
+    _KERNEL_ATTR_SPEC_FIELD: Optional[str] = "_cute_kernel_attributes"
     envar: CuTeDSLEnvironmentManager
 
     def __init__(self) -> None:
@@ -1778,8 +1900,15 @@ class CuTeDSL(CutlassBaseDSL):
         # Capture the user's call site (mirroring BaseDSL.jit) so that
         # decorator source locations are reported relative to the caller,
         # not this override.
-        frame = inspect.currentframe().f_back  # type: ignore[union-attr]
-        return BaseDSL.jit_runner(target_cls, "_func", frame, *dargs, **dkwargs)
+        return BaseDSL.jit_runner(
+            target_cls,
+            "_func",
+            BaseDSL.get_location_from_frame(
+                inspect.currentframe().f_back  # type: ignore[union-attr]
+            ),
+            *dargs,
+            **dkwargs,
+        )
 
     def _should_use_extension_compilation(self) -> bool:
         """Return whether the current compilation uses the extension compiler."""
@@ -1789,6 +1918,19 @@ class CuTeDSL(CutlassBaseDSL):
         # The rollout gate only controls the otherwise-unqualified default;
         # all explicit and architecture-wide opt-outs above win.
         return self.envar.use_extension_compiler
+
+    @override
+    def _collect_extra_kernel_value_attrs(
+        self, func_body: Callable[..., None], func_args: tuple, func_kwargs: dict
+    ) -> dict[str, ir.Attribute]:
+        """Collect extension kernel attributes only for extension compilation."""
+        del func_kwargs
+        raw_attrs = self._collect_raw_kernel_attrs_from_decorator(func_body, func_args)
+        if not raw_attrs:
+            return {}
+        if not self._should_use_extension_compilation():
+            raise DSLUserCodeError(DiagId.CONFIG_ATTRIBUTES_UNSUPPORTED)
+        return self._convert_extra_kernel_value_attrs(raw_attrs)
 
     def _get_pipeline(self, pipeline: Optional[str]) -> str:
         if self._should_use_extension_compilation():
@@ -1834,10 +1976,10 @@ class CuTeDSL(CutlassBaseDSL):
             and non-experimental decorations on the same kernel triggers
             preprocessor mismatches.
         attributes : optional
-            Kernel-level attribute spec, only supported when routing to
-            ``CuteExperimentalDSL`` (i.e. ``is_experimental=True``).
-            Stamped onto the wrapped function via
-            ``CuteExperimentalDSL._KERNEL_ATTR_SPEC_FIELD``.
+            Kernel-level attribute spec. Ordinary ``CuTeDSL`` kernels support
+            the extension attribute allowlist when extension compilation is selected;
+            ``CuteExperimentalDSL`` kernels continue to use their existing
+            always-on extension route.
         """
         is_experimental = dkwargs.pop("is_experimental", False)
         # CuteExperimentalDSL is defined later in this module; the
@@ -1848,11 +1990,13 @@ class CuTeDSL(CutlassBaseDSL):
         # Capture the user's call site here rather than relying on a
         # nested method, so source locations point at the caller rather
         # than this override.
-        current_frame = inspect.currentframe()
-        assert current_frame is not None
-        frame = current_frame.f_back
         return CutlassBaseDSL._make_kernel_decorator(
-            target_cls, frame, *dargs, **dkwargs
+            target_cls,
+            BaseDSL.get_location_from_frame(
+                inspect.currentframe().f_back  # type: ignore[union-attr]
+            ),
+            *dargs,
+            **dkwargs,
         )
 
     def generate_func_op(
@@ -2070,6 +2214,15 @@ class CuTeDSL(CutlassBaseDSL):
         self, funcBody: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> Any:
         if ir.Context.current is not None and ir.InsertionPoint.current is not None:
+            # PyIR trace-arg intake for the INLINE device-function call.
+            # Only a missing pyir layer is tolerable; a real intake error
+            # must surface, not be swallowed.
+            try:
+                from ..base_dsl.pyir_runtime import _pyir_register_trace_args
+            except ImportError:
+                pass
+            else:
+                _pyir_register_trace_args(args, kwargs)
             return funcBody(*args, **kwargs)
 
         # Device functions have no host entry point — never create a JIT engine.
@@ -2199,6 +2352,17 @@ class CuTeDSL(CutlassBaseDSL):
                             from ..base_dsl.multi_stage_manager import isolated_region
 
                             with isolated_region():
+                                # PyIR trace-arg intake: register the device-function trace's block-arg reconstructions.
+                                # Only a missing pyir layer is tolerable; a
+                                # real intake error must surface.
+                                try:
+                                    from ..base_dsl.pyir_runtime import (
+                                        _pyir_register_trace_args,
+                                    )
+                                except ImportError:
+                                    pass
+                                else:
+                                    _pyir_register_trace_args(ir_args, ir_kwargs)
                                 result = funcBody(*ir_args, **ir_kwargs)
 
                             # Emit the cuda.return terminator (shared with
@@ -2337,10 +2501,14 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         # which would record *this* frame instead of the user's source
         # location (f_back would land in this override rather than in
         # the user file).
-        current_frame = inspect.currentframe()
-        assert current_frame is not None
-        frame = current_frame.f_back
-        return CutlassBaseDSL._make_kernel_decorator(cls, frame, *dargs, **dkwargs)
+        return CutlassBaseDSL._make_kernel_decorator(
+            cls,
+            BaseDSL.get_location_from_frame(
+                inspect.currentframe().f_back  # type: ignore[union-attr]
+            ),
+            *dargs,
+            **dkwargs,
+        )
 
     def _generate_kernel_attrs(self, config: BaseDSL.LaunchConfig) -> dict:
         import re

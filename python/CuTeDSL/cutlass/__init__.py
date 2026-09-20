@@ -38,11 +38,14 @@ del _ensure_mlir_type_compat
 __version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
 # Monkey patch CUDA version query function
 from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
+    NumericCast as _NumericCast,
     get_cuda_version as _get_cuda_version,
 )
 from .base_dsl import common as _common
+from .base_dsl import typing as _base_dsl_typing
 
 _common._get_cuda_version = _get_cuda_version
+_base_dsl_typing._native_numeric_cast = _NumericCast
 
 # Import CUDA version from base_dsl
 from .base_dsl.version_info import CUDA_VERSION
