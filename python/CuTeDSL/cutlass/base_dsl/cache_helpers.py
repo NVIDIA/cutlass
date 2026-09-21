@@ -282,7 +282,7 @@ def load_cache_from_path(
             ret = JitCompiledFunction(module, None, None, None, None, [], False, None)  # type: ignore[arg-type]
     except Exception as e:
         log().warning(
-            f"{dsl_name} failed with loading generated IR cache for {file}.", e
+            f"{dsl_name} failed with loading generated IR cache for {file}: {e}"
         )
     return ret
 
