@@ -860,6 +860,7 @@ if (CUTLASS_NVCC_DEVICE_COMPILE)
   cutlass_test_unit_gemm_device_add_executable(
     cutlass_test_unit_gemm_device_broadcast
     gemm_f16t_f16n_f16t_tensor_op_f16_broadcast_sm80.cu
+    gemm_universal_with_broadcast_vector_sm80.cu
   )
 
 endif()
