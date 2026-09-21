@@ -1153,6 +1153,7 @@ def autotune_suite(
         cases accepted them, each ``{"config": dict, "count": int}``, or None
         when ``accept_percentile`` is None.
     :rtype: Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]
+    :raises RuntimeError: If no configuration is attempted or succeeds.
     """
     from cutlass import cute
     from cutlass import testing
@@ -1188,6 +1189,7 @@ def autotune_suite(
             )
 
         timings = []
+        attempted_config_count = 0
         for config_values in product(*params_dict.values()):
             config = dict(zip(keys, config_values))
             # Skip configs rejected by the user's prune_configs predicate.
@@ -1196,6 +1198,7 @@ def autotune_suite(
                    if k in inspect.signature(prune_configs).parameters}
             ):
                 continue
+            attempted_config_count += 1
             try:
                 # Compute configuration-derived compile-time arguments on the
                 # host (e.g. max_active_clusters from cluster_shape_mn), passing
@@ -1251,6 +1254,23 @@ def autotune_suite(
                 continue
             # Include the derived params in the reported config so the returned best_config is directly usable
             timings.append({"config": {**config, **derived}, "time_us": time_us})
+
+        if not timings:
+            # Raise a RuntimeError if no configuration was attempted because they are all pruned
+            if attempted_config_count == 0:
+                raise RuntimeError(
+                    f"No configurations were benchmarked for case {case!r}; "
+                    "the search space is empty or all configurations were pruned"
+                )
+            summary_hint = (
+                ""
+                if print_summary
+                else "; set print_summary=True to see why each configuration failed"
+            )
+            # Raise a RuntimeError if all configurations failed to compile or run
+            raise RuntimeError(
+                f"No configuration succeeded for case {case!r}{summary_hint}"
+            )
 
         timings.sort(key=lambda entry: entry["time_us"])
         accepted_timings = timings
