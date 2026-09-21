@@ -862,9 +862,10 @@ class autotune_jit:
             _autotune_update_params = autotune_update_params
             _derived_params: Dict[str, Callable[..., Any]] = {}
 
-            def __init__(self, **fixed_kwargs: Any) -> None:
+            def __init__(self, *fixed_args: Any, **fixed_kwargs: Any) -> None:
                 # Constructor arguments that are NOT tuned (e.g. dtypes) may be
                 # fixed here; the tunable parameters come from params_dict instead.
+                self._fixed_args = fixed_args
                 self._fixed_kwargs = fixed_kwargs
                 # Per-instance tuning cache.
                 self._best_kernel: Dict[Any, Any] = {}
@@ -938,7 +939,7 @@ class autotune_jit:
                             k: v for k, v in config_with_derived.items()
                             if k not in init_params
                         }
-                        kernel = kernel_cls(**init_configs)
+                        kernel = kernel_cls(*self._fixed_args, **init_configs)
                         # Override class attributes
                         for k, v in attr_configs.items():
                             if not hasattr(kernel, k):
