@@ -1173,6 +1173,7 @@ def autotune_suite(
     keys = list(params_dict.keys())
     make_args_params = inspect.signature(make_arguments).parameters
     case_reports = []
+    accepted_timings_by_case = []
     for case in cases:
 
         def case_arguments(overrides, case=case):
@@ -1252,9 +1253,11 @@ def autotune_suite(
             timings.append({"config": {**config, **derived}, "time_us": time_us})
 
         timings.sort(key=lambda entry: entry["time_us"])
+        accepted_timings = timings
         if accept_percentile is not None:
             keep = max(1, math.ceil(len(timings) * accept_percentile / 100))
-            timings = timings[:keep]
+            accepted_timings = timings[:keep]
+        accepted_timings_by_case.append(accepted_timings)
         case_reports.append(
             {
                 "case": case,
@@ -1266,8 +1269,8 @@ def autotune_suite(
     recommended = None
     if accept_percentile is not None:
         counts: Dict[tuple, int] = {}
-        for report in case_reports:
-            for entry in report["timings"]:
+        for accepted_timings in accepted_timings_by_case:
+            for entry in accepted_timings:
                 config = tuple(sorted(entry["config"].items()))
                 counts[config] = counts.get(config, 0) + 1
         recommended = [
