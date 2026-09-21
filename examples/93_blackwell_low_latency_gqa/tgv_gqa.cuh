@@ -1512,6 +1512,12 @@ EPILOG_warp(
     // the rest 16 threads hold bogus data
     // for dH=128, all 32 threads hold valid data
     tmem_load<decltype(bmm2_tmem_load)>(acc2_tmem_addr, tAcc2rAcc2);
+    // tcgen05.ld is asynchronous. For dH=64 only lanes [0, CTA_dH / NumEpilogWarps) consume tAcc2rAcc2
+    // below, so nothing orders the other lanes' TMEM reads before the arrive on
+    // tmem_allocation_result_barrier that lets the MMA warp deallocate this TMEM. Wait for the load in all
+    // lanes first, as the Acc1 path does above (PTX ISA: tcgen05.wait::ld is required to order tcgen05.ld
+    // with respect to other threads' tcgen05 operations).
+    cutlass::arch::fence_view_async_tmem_load();
     int lane_id = cutlass::canonical_lane_idx();
     if (lane_id < (CTA_dH / NumEpilogWarps)) {
       // do the st.async of acc2 to remote, rmem -> dsmem
