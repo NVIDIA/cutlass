@@ -401,13 +401,19 @@ struct TiledMMA : MMA_Atom
     // (M,N) -> (M,N)
     auto ref_C = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<1>()));
 
+    // (ThrV,(ThrM,ThrN)) -> (ThrV,(ThrM,ThrN,ThrK))
+    auto ctile = make_tile(_,
+                           make_tile(_,
+                                     make_layout(make_shape (size<2>(thr_layout_vmnk_), size<3>(thr_layout_vmnk_)),
+                                                 make_stride(               Int<1>{} ,                Int<0>{} ))));
+
     // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
     auto thridx_2_thrid = composition(make_layout(make_shape (size(thr_layout_vmnk_), Int<1>{}),
                                                   make_stride(Int<1>{},               Int<0>{})),
                                       right_inverse(make_layout(thr_layout_vmnk_, complement(thr_layout_vmnk_))));
 
     // (thr_idx,val) -> (M,N)
-    return thrfrg_C(ref_C).compose(thridx_2_thrid, _);
+    return thrfrg_C(ref_C).compose(ctile, _).compose(thridx_2_thrid, _);
   }
 
 
