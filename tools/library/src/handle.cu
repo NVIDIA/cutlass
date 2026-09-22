@@ -35,6 +35,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdint>
+#include <string>
 
 #include "cutlass/library/handle.h"
 #include "cutlass/library/singleton.h"
@@ -181,7 +182,11 @@ void Handle::set_workspace_size(size_t bytes) {
       cudaError_t error = cudaMalloc((void **)&workspace_, workspace_size_);
 
       if (error != cudaSuccess) {
-        throw std::runtime_error("Failed to allocate workspace");
+        std::string message = "Failed to allocate workspace of "
+          + std::to_string(workspace_size_) + " bytes: "
+          + cudaGetErrorName(error) + " ("
+          + cudaGetErrorString(error) + ")";
+        throw std::runtime_error(message);
       }
     }
   }
