@@ -4689,13 +4689,11 @@ def inline_ptx(
     :type read_write_args: list[ScalarArg], optional
     :param predicate: Optional Boolean value for conditional execution (corresponds to @$p prefix).
     :type predicate: Boolean, optional
-    :param force_register_args: Optional indices into ``read_only_args`` whose
-        operands must be materialized into a register before the instruction
-        runs. Use this for instructions that accept only a register in that
-        operand slot (for example ``max.xorsign.abs.bf16x2``); without it a
-        compile-time constant is passed as an immediate and ptxas rejects the
-        instruction. Defaults to None, which keeps the current automatic
-        behavior for every operand. Indices are validated; a bad index raises.
+    :param force_register_args: Optional indices into ``read_only_args`` that must be
+        materialized into a register first, for instructions that accept only a register in
+        that slot (for example ``max.xorsign.abs.bf16x2``); otherwise a compile-time
+        constant goes in as an immediate and ptxas rejects it. Supported operand types are
+        i1, i16, i32, i64 and pointers. Indices are validated; a bad index raises.
     :type force_register_args: Sequence[int], optional
     :param loc: MLIR location (advanced use, typically None).
     :type loc: Any, optional

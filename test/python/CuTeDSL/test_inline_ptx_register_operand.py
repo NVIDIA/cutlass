@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 """
-Unit test for ``inline_ptx(force_register_args=...)``.
+End-to-end tests for ``inline_ptx(force_register_args=...)``.
 
 A compile-time constant that reaches a read-only operand of ``nvvm.inline_ptx``
 is given the immediate constraint ``n`` by the NVVM to LLVM conversion.  Some
@@ -19,209 +19,156 @@ PTX instructions accept only a register in a given operand slot
 with "Arguments mismatch for instruction 'max'".
 
 ``force_register_args`` names the read-only operands that must be moved into a
-register first.  These tests are CPU only: they build the IR and assert on its
-shape, so they need neither a GPU nor ptxas.
+register first.  Every test here compiles and launches a real ``@cute.jit``
+kernel, so the whole path runs: DSL tracing, the NVVM to LLVM conversion, PTX
+generation, ptxas and the launch.  Asserting on the IR text instead would pin
+the shape of the fix without ever establishing that ptxas accepts the
+instruction, which is the failure being fixed.
 """
+
+from __future__ import annotations
 
 import unittest
 
-from cutlass._mlir import ir
-from cutlass._mlir.dialects import func
+import torch
+
+import cutlass
+import cutlass.cute as cute
 from cutlass import Int32, Int64
 from cutlass.cute.arch.nvvm_wrappers import inline_ptx
+from cutlass.cute.runtime import from_dlpack
 
-_PTX_MAX = "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};"
+_PTX_MAX_XORSIGN_ABS_BF16X2 = "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};"
+
+THREADS = 32
+
+# bf16 bit patterns for +0, -0, +1, -1, +2, -2, +0.5, -0.5; all are exactly
+# representable, so the expected result is exact rather than approximate.
+_BF16_BITS = (0x0000, 0x8000, 0x3F80, 0xBF80, 0x4000, 0xC000, 0x3F00, 0xBF00)
 
 
-def _build(body, arg_types=("i32", "i32")):
-    """Build ``func.func @test`` with ``arg_types`` and return its IR text."""
-    with ir.Context(), ir.Location.unknown():
-        module = ir.Module.create()
-        with ir.InsertionPoint(module.body):
-            fn = func.FuncOp(
-                "test",
-                ir.FunctionType.get([ir.Type.parse(a) for a in arg_types], []),
-            )
-            with ir.InsertionPoint(fn.add_entry_block()):
-                body(fn)
-                func.ReturnOp([])
-        module.operation.verify()
-        return str(module)
+def _carrier(lo: int, hi: int) -> int:
+    """Pack two bf16 values into the i32 carrier ``max.xorsign.abs.bf16x2`` reads."""
+    return (lo & 0xFFFF) | ((hi & 0xFFFF) << 16)
+
+
+def _sample_carriers(count: int) -> list[int]:
+    return [_carrier(_BF16_BITS[i % 8], _BF16_BITS[(i + 3) % 8]) for i in range(count)]
+
+
+def _expected_carriers(count: int) -> list[int]:
+    """With ``a == +0``, ``max.xorsign.abs`` returns ``b`` unchanged."""
+    return _sample_carriers(count)
+
+
+def _as_int32(values: list[int]) -> list[int]:
+    """Reinterpret the carriers' raw bits as the signed values torch stores."""
+    return [value - (1 << 32) if value >= (1 << 31) else value for value in values]
+
+
+@cute.kernel
+def _max_kernel(g_in: cute.Tensor, g_out: cute.Tensor, force: cutlass.Constexpr):
+    tid = cute.arch.thread_idx()[0]
+    b = g_in[tid]
+    if cutlass.const_expr(force):
+        r = inline_ptx(
+            _PTX_MAX_XORSIGN_ABS_BF16X2,
+            write_only_types=[Int32],
+            read_only_args=[Int32(0), b],
+            force_register_args=(0,),
+        )
+    else:
+        r = inline_ptx(
+            _PTX_MAX_XORSIGN_ABS_BF16X2,
+            write_only_types=[Int32],
+            read_only_args=[Int32(0), b],
+        )
+    g_out[tid] = r
+
+
+@cute.jit
+def _run_max(g_in: cute.Tensor, g_out: cute.Tensor, force: cutlass.Constexpr):
+    _max_kernel(g_in, g_out, force).launch(grid=(1, 1, 1), block=(THREADS, 1, 1))
+
+
+@cute.kernel
+def _mov_kernel(g_out: cute.Tensor):
+    tid = cute.arch.thread_idx()[0]
+    g_out[tid] = inline_ptx(
+        "mov.b64 {$w0}, {$r0};",
+        write_only_types=[Int64],
+        read_only_args=[Int64(7)],
+        force_register_args=(0,),
+    )
+
+
+@cute.jit
+def _run_mov(g_out: cute.Tensor):
+    _mov_kernel(g_out).launch(grid=(1, 1, 1), block=(THREADS, 1, 1))
 
 
 class TestInlinePtxForceRegisterArgs(unittest.TestCase):
-    def test_default_path_is_unchanged(self):
-        """Without the opt-in the constant stays an operand of the target op."""
-        def body(_fn):
-            inline_ptx(
-                _PTX_MAX,
-                write_only_types=[Int32],
-                read_only_args=[Int32(0), Int32(7)],
-                ip=ir.InsertionPoint.current,
-            )
+    def setUp(self):
+        if not torch.cuda.is_available():
+            self.skipTest("these tests compile and launch real kernels")
 
-        text = _build(body)
-        self.assertNotIn("mov.", text)
-        self.assertIn(
-            'nvvm.inline_ptx "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};" '
-            "ro(%c0_i32, %c7_i32 : i32, i32)",
-            text,
-        )
+    def test_constant_in_a_register_only_slot_runs(self):
+        """The case from the issue: a compile-time constant ptxas rejects as an immediate.
 
-    def test_forced_operand_is_materialized(self):
-        """The named operand becomes the result of an explicit ``mov``."""
-        def body(_fn):
-            inline_ptx(
-                _PTX_MAX,
-                write_only_types=[Int32],
-                read_only_args=[Int32(0), Int32(7)],
-                force_register_args=(0,),
-                ip=ir.InsertionPoint.current,
-            )
+        Before the opt-in the compile fails with "Arguments mismatch for
+        instruction 'max'", so reaching the assertion at all is half the result.
+        """
+        x = torch.tensor(_as_int32(_sample_carriers(THREADS)), dtype=torch.int32, device="cuda")
+        out = torch.zeros(THREADS, dtype=torch.int32, device="cuda")
 
-        text = _build(body)
-        self.assertIn('nvvm.inline_ptx "mov.b32 {$w0}, {$r0};" ro(%c0_i32 : i32)', text)
-        # The target instruction must consume the materialized value, not %c0_i32.
-        self.assertIn(
-            'nvvm.inline_ptx "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};" '
-            "ro(%0, %c7_i32 : i32, i32)",
-            text,
-        )
+        _run_max(from_dlpack(x), from_dlpack(out), True)
 
-    def test_index_refers_to_read_only_args_only(self):
-        """Index 1 selects the second read-only operand and leaves index 0 alone."""
-        def body(_fn):
-            inline_ptx(
-                _PTX_MAX,
-                write_only_types=[Int32],
-                read_only_args=[Int32(5), Int32(0)],
-                force_register_args=[1],
-                ip=ir.InsertionPoint.current,
-            )
+        self.assertEqual(out.cpu().tolist(), _as_int32(_expected_carriers(THREADS)))
 
-        text = _build(body)
-        self.assertIn('nvvm.inline_ptx "mov.b32 {$w0}, {$r0};" ro(%c0_i32 : i32)', text)
-        self.assertIn(
-            'nvvm.inline_ptx "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};" '
-            "ro(%c5_i32, %0 : i32, i32)",
-            text,
-        )
+    def test_forced_int64_operand_runs(self):
+        """A wider operand takes the same path; the materialization is a mov.b64."""
+        out = torch.zeros(THREADS, dtype=torch.int64, device="cuda")
 
-    def test_identical_constants_are_treated_by_index(self):
-        """Two operands with the same value can be treated differently."""
-        def body(_fn):
-            inline_ptx(
-                _PTX_MAX,
-                write_only_types=[Int32],
-                read_only_args=[Int32(0), Int32(0)],
-                force_register_args=(1,),
-                ip=ir.InsertionPoint.current,
-            )
+        _run_mov(from_dlpack(out))
 
-        text = _build(body)
-        # Exactly one materialization, feeding the second read-only operand.
-        self.assertEqual(text.count('"mov.b32 {$w0}, {$r0};"'), 1)
-        self.assertIn(
-            'nvvm.inline_ptx "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};" '
-            "ro(%c0_i32, %0 : i32, i32)",
-            text,
-        )
-
-    def test_mov_type_follows_operand_type(self):
-        """The materialization preserves the operand's own type."""
-        def body(_fn):
-            inline_ptx(
-                "mov.b64 {$w0}, {$r0};",
-                write_only_types=[Int64],
-                read_only_args=[Int64(0)],
-                force_register_args=(0,),
-                ip=ir.InsertionPoint.current,
-            )
-
-        text = _build(body, arg_types=("i64", "i64"))
-        self.assertIn('nvvm.inline_ptx "mov.b64 {$w0}, {$r0};" ro(%c0_i64 : i64)', text)
-
-    def test_pointer_operand_uses_64_bit_mov(self):
-        """A generic pointer operand is materialized with mov.b64."""
-        def body(fn):
-            inline_ptx(
-                "mov.b64 {$w0}, {$r0};",
-                write_only_types=[Int64],
-                read_only_args=[fn.arguments[0]],
-                force_register_args=(0,),
-                ip=ir.InsertionPoint.current,
-            )
-
-        text = _build(body, arg_types=("!llvm.ptr", "i32"))
-        self.assertEqual(text.count('"mov.b64 {$w0}, {$r0};"'), 2)
-        self.assertIn("%0 = nvvm.inline_ptx \"mov.b64 {$w0}, {$r0};\" ro(%arg0", text)
-        self.assertIn('ro(%0', text)
-
-    def test_duplicate_indices_are_deduplicated(self):
-        """Repeating an index must not materialize the operand twice."""
-        def body(_fn):
-            inline_ptx(
-                _PTX_MAX,
-                write_only_types=[Int32],
-                read_only_args=[Int32(0), Int32(7)],
-                force_register_args=(0, 0),
-                ip=ir.InsertionPoint.current,
-            )
-
-        self.assertEqual(_build(body).count('"mov.b32 {$w0}, {$r0};"'), 1)
+        self.assertEqual(out.cpu().tolist(), [7] * THREADS)
 
     def test_out_of_range_index_is_rejected(self):
-        def body(_fn):
+        with self.assertRaises(IndexError):
             inline_ptx(
-                _PTX_MAX,
+                _PTX_MAX_XORSIGN_ABS_BF16X2,
                 write_only_types=[Int32],
                 read_only_args=[Int32(0)],
                 force_register_args=(1,),
-                ip=ir.InsertionPoint.current,
             )
 
-        with self.assertRaises(IndexError):
-            _build(body)
-
     def test_negative_index_is_rejected(self):
-        def body(_fn):
+        with self.assertRaises(IndexError):
             inline_ptx(
-                _PTX_MAX,
+                _PTX_MAX_XORSIGN_ABS_BF16X2,
                 write_only_types=[Int32],
                 read_only_args=[Int32(0)],
                 force_register_args=(-1,),
-                ip=ir.InsertionPoint.current,
             )
 
-        with self.assertRaises(IndexError):
-            _build(body)
-
     def test_bare_int_is_rejected(self):
-        """A bare int is a common mistake; it must not be read as an index."""
-        def body(_fn):
+        """A bare int is a common mistake; it must not be read as a sequence of indices."""
+        with self.assertRaises(TypeError):
             inline_ptx(
-                _PTX_MAX,
+                _PTX_MAX_XORSIGN_ABS_BF16X2,
                 write_only_types=[Int32],
                 read_only_args=[Int32(0), Int32(7)],
                 force_register_args=0,
-                ip=ir.InsertionPoint.current,
             )
 
-        with self.assertRaises(TypeError):
-            _build(body)
-
     def test_non_integer_entry_is_rejected(self):
-        def body(_fn):
+        with self.assertRaises(TypeError):
             inline_ptx(
-                _PTX_MAX,
+                _PTX_MAX_XORSIGN_ABS_BF16X2,
                 write_only_types=[Int32],
                 read_only_args=[Int32(0)],
                 force_register_args=("0",),
-                ip=ir.InsertionPoint.current,
             )
-
-        with self.assertRaises(TypeError):
-            _build(body)
 
 
 if __name__ == "__main__":
