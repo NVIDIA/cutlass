@@ -2671,6 +2671,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         no_cache = kwargs.pop("no_cache", False) or self.envar.no_cache
         no_jit_engine = kwargs.pop("no_jit_engine", False)
         compile_only = kwargs.pop("compile_only", False)
+        cache_compile_only = kwargs.pop("cache_compile_only", False)
 
         compile_to_precompiled_mlir = kwargs.pop("compile_to_precompiled_mlir", False)
 
@@ -2685,7 +2686,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             no_cache = True
             self.print_warning("Cache is disabled as user wants to generate PTX/ASM.")
 
-        if not no_cache and compile_only:
+        if not no_cache and compile_only and not cache_compile_only:
             no_cache = True
             self.print_warning("Cache is disabled as user wants to compile only.")
 

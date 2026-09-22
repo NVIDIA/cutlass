@@ -26,7 +26,7 @@ import shlex
 import sys
 import inspect
 import types
-from .common import DSLBaseError, DSLUserCodeError
+from .common import DSLBaseError, DSLRuntimeError, DSLUserCodeError
 from . import diagnostics as _diagnostics
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
@@ -1526,6 +1526,11 @@ class CompileCallable:
     modeled with :class:`cutlass.cute.typing.SymInt` in fake tensor
     shapes / strides or host-function scalar arguments.
 
+    ``cute.compile(..., use_cache=True)`` opts into the same invalidating
+    in-memory and file cache used by implicit JIT calls. The default remains
+    uncached so applications can retain complete control over executor
+    lifetimes and custom cache keys.
+
     ``cute.compile(..., options="...")`` accepts the same token string as
     ``CUTE_DSL_COMPILER_OPT``. Keep this docstring focused on the compile
     contract; use ``write-kernel/references/compiler-options.md`` as the
@@ -1633,9 +1638,13 @@ class CompileCallable:
         # call: the rest of the pipeline does not know about it.
         is_experimental_requested = kwargs.pop("is_experimental", False)
         finalize_hook = kwargs.pop("trace_finalize_hooks", None)
+        use_cache = kwargs.pop("use_cache", False)
+        if not isinstance(use_cache, bool):
+            raise DSLRuntimeError("`use_cache` must be a bool")
 
         kwargs["compile_only"] = True
-        kwargs["no_cache"] = True
+        kwargs["no_cache"] = not use_cache
+        kwargs["cache_compile_only"] = use_cache
 
         if inspect.isfunction(func):
             # regular function

@@ -50,11 +50,11 @@ When calling a JIT Executor instance, it:
 * Parses Python runtime arguments and converts them to C ABI-compatible types according to argument specifications
 * Invokes the host function with the converted arguments
 
-Custom Caching with ``cute.compile``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Caching with ``cute.compile``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``cute.compile`` bypasses caching in |DSL| and always performs compilation, returning a fixed JIT Executor instance.
-This allows implementing custom caching strategies as shown below:
+This default allows implementing custom caching strategies as shown below:
 
 .. code-block:: python
 
@@ -78,6 +78,14 @@ This allows implementing custom caching strategies as shown below:
    # Use the custom cache
    custom_cache[1](2) # result = 3
    custom_cache[2](2) # result = 4
+
+Pass ``use_cache=True`` to use the same in-memory and file cache as implicit JIT calls:
+
+.. code-block:: python
+
+   compiled_add = cute.compile(add, 2, use_cache=True)
+
+The kernel is still traced and its MLIR cache key is regenerated on every call so source, captured values, compiler inputs, and compile options remain validated. A hit skips backend compilation and rebuilds the executor from the cached compiled MLIR. The default remains ``use_cache=False`` for backward compatibility and for applications that own a custom cache of JIT Executor instances.
 
 
 Cache in |DSL|
@@ -150,4 +158,4 @@ The intention of caching is to reduce the host launch overhead before each execu
 the consistency between the original Python code and the MLIR program is hard to maintain because of the impact of dynamic factors such as global variables.
 Therefore, the MLIR program **MUST** always be generated to verify that the kernel content matches what was previously built.
 
-For optimal host launch latency, we recommend using above custom caching method with ``cute.compile``.
+For optimal host launch latency, retain and reuse the JIT Executor returned by ``cute.compile``. ``use_cache=True`` reduces backend compilation across repeated ``cute.compile`` calls or processes, but it does not skip the frontend trace needed to validate the key.
