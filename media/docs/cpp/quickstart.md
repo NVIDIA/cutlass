@@ -606,7 +606,7 @@ It is advised to only compile CUTLASS kernels for NVIDIA architectures one plans
 can be selectively included in the CUTLASS Library by specifying filter strings and wildcard characters when executing CMake.
 
 Several examples are defined below for convenience. They may be combined as a comma-delimited list.
-Compling only the kernels desired reduces compilation time.
+Compiling only the kernels desired reduces compilation time.
 
 
 ## GEMM CMake Examples

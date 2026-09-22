@@ -22,7 +22,7 @@ Like NVIDIA CUB, the components of CUTLASS are organized hierarchically based on
 elements. For example, warp-level GEMM components perform a matrix multiply collectively by the
 set of threads within a warp. The following figure illustrates each layer.
 
-Components are designed to be usable by client applications accessing functionailty at each scope.
+Components are designed to be usable by client applications accessing functionality at each scope.
 
 CUTLASS Templates are implemented by header files in the following directory structure:
 
@@ -187,7 +187,7 @@ examples/
 
   05_batched_gemm/           # example demonstrating CUTLASS's batched strided GEMM operation
 
-  06_splitK_gemm/            # exmaple demonstrating CUTLASS's Split-K parallel reduction kernel
+  06_splitK_gemm/            # example demonstrating CUTLASS's Split-K parallel reduction kernel
 
   07_volta_tensorop_gemm/    # example demonstrating mixed precision GEMM using Volta Tensor Cores
 

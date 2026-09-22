@@ -251,7 +251,7 @@ struct WriteableRandomAccessContiguousTileIteratorConcept :
   void store(
     Fragment const &frag,                       ///< fragment to store to the location pointed to by the tensor
     TensorCoord const &tile_offset,             ///< stores a tile with a logical offset in units of whole tiles
-    Index pointer_offset);                      ///< stores a tile witha logical offset AND a pointer offset
+    Index pointer_offset);                      ///< stores a tile with a logical offset AND a pointer offset
 };
 ```
 
@@ -268,7 +268,7 @@ clearing or enabling all guarded memory accesses.
 /// supports. These remain implementation-dependent details of iterators implementing this concept.
 struct MaskedTileIteratorConcept {
 
-  using Mask;                                        ///< mask object used to guard against acceses.
+  using Mask;                                        ///< mask object used to guard against accesses.
 
   CUTLASS_DEVICE void clear_mask();                  ///< efficiently disables all accesses guarded by mask
   CUTLASS_DEVICE void enable_mask();                 ///< efficiently enables all accesses guarded by mask
