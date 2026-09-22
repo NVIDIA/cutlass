@@ -14,9 +14,8 @@ This module provides MLIR Arith Dialect helper functions
 """
 
 import array
-from typing import Any, Callable, Optional, Union
-
-import numpy as np
+import sys
+from typing import Any, Callable, Optional, Union, TYPE_CHECKING
 
 from ..base_dsl.common import *
 from ..base_dsl.common import DSLRuntimeError, DSLNotImplemented
@@ -26,6 +25,24 @@ from .._mlir.dialects import arith, math, builtin
 from .op import dsl_user_op
 
 from .lru_cache_ir import lru_cache_ir
+
+if TYPE_CHECKING:
+    import numpy as np
+    from ..base_dsl.typing import Numeric
+
+
+def _as_numpy_ndarray(value: Any) -> Any:
+    """Return ``value`` if it is a NumPy array, else None.
+
+    NumPy is an optional dependency. A value cannot be an ``ndarray`` unless
+    NumPy is already imported, so consulting ``sys.modules`` is an exact test
+    that never imports NumPy on its behalf.
+    """
+    numpy = sys.modules.get("numpy")
+    if numpy is None or not isinstance(value, numpy.ndarray):
+        return None
+    return value
+
 
 # =============================================================================
 # Arith Dialect Helper functions
@@ -342,9 +359,8 @@ def _cast(
         )
 
 
-@lru_cache_ir()
 def const(
-    value: Union[int, float, bool, np.ndarray],
+    value: Union[int, float, bool, "np.ndarray", "Numeric", "ArithValue"],
     ty: Optional[Union[ir.Type, "NumericMeta"]] = None,  # type: ignore[name-defined]
     *,
     signed: Union[bool, None] = None,
@@ -354,20 +370,32 @@ def const(
     """
     Generates dynamic expression for constant values.
     """
-    from ..base_dsl.typing import Numeric, NumericMeta
-    from ..base_dsl.dsl import is_dynamic_expression
-    from ..base_dsl.utils.numpy import _numpy_type_to_mlir_type
-
-    # D1: ``_WatchedM`` is the PyIR meta-promotion wrapper.  When fed into
-    # ``arith.const`` we ask the wrapper to bake its leaf (records the
-    # constant under the slot so a later mutation can rewrite it via
-    # pyir.load %ref).  Lazy-import to keep PyIR-disabled builds clean.
     try:
         from ..base_dsl.pyir_runtime import _WatchedM
-    except ImportError:
+    except ModuleNotFoundError as e:
+        # The relative import always resolves to <root>.base_dsl.pyir_runtime,
+        # so match the full suffix: a bare-basename match would also swallow a
+        # failing transitive dep that merely SHARES the module name.
+        if e.name is None or not e.name.endswith(".base_dsl.pyir_runtime"):
+            raise
         _WatchedM = None  # type: ignore[misc,assignment]
     if _WatchedM is not None and isinstance(value, _WatchedM):
         return value.ir_value()
+
+    return _const_cached(value, ty, signed=signed, loc=loc, ip=ip)
+
+
+@lru_cache_ir()
+def _const_cached(
+    value: Union[int, float, bool, "np.ndarray", "Numeric", "ArithValue"],
+    ty: Optional[Union[ir.Type, "NumericMeta"]] = None,  # type: ignore[name-defined]
+    *,
+    signed: Union[bool, None] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    from ..base_dsl.typing import Numeric, NumericMeta
+    from ..base_dsl.dsl import is_dynamic_expression
 
     if isinstance(value, Numeric):
         value = value.value
@@ -387,9 +415,11 @@ def const(
             ty = T.bool()
         elif isinstance(value, int):
             ty = T.i32()
-        elif isinstance(value, np.ndarray):
-            ty = T.vector(*value.shape, _numpy_type_to_mlir_type(value.dtype))
-            value = array.array(value.dtype.kind, value.flatten().tolist())  # type: ignore[assignment]
+        elif (ndarray := _as_numpy_ndarray(value)) is not None:
+            from ..base_dsl.utils.numpy import _numpy_type_to_mlir_type
+
+            ty = T.vector(*ndarray.shape, _numpy_type_to_mlir_type(ndarray.dtype))
+            value = array.array(ndarray.dtype.kind, ndarray.flatten().tolist())  # type: ignore[assignment]
         else:
             raise DSLNotImplemented(f"{type(value)} is not supported")
     elif isinstance(ty, NumericMeta):

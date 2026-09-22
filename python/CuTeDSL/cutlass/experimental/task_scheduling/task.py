@@ -43,9 +43,6 @@ from collections.abc import Iterator, Sequence, Set as AbstractSet
 from itertools import chain
 from typing import Any, Callable, FrozenSet, Optional, List, TYPE_CHECKING
 from typing import Tuple, cast
-from cutlass.utils.static_persistent_tile_scheduler import (
-    WorkTileInfo,
-)
 
 if TYPE_CHECKING:
     from .schedule_builder import ScheduleResult
@@ -68,6 +65,7 @@ from .resources import (
     StageInfo,
     MemoryResource,
     PipelineConfig,
+    WorkTileInfo,
     PipelineGroup,
     WorkQueue,
     SlotRouting,

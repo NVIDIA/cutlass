@@ -547,6 +547,15 @@ Array<Element, 4> make_Array(Element x, Element y, Element z, Element w) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T, int N>
+struct no_op< Array<T, N> > {
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs) const {
+    return lhs;
+  }
+};
+
+template <typename T, int N>
 struct absolute_value_op< Array<T, N> > {
 
   CUTLASS_HOST_DEVICE

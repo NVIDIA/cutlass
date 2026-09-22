@@ -33,13 +33,7 @@ import torch
 from typing import Optional, Type, Tuple, Literal, Callable
 
 import cutlass
-from cutlass import core
-from cutlass import utils
-import cutlass.cute as cute
-from cutlass import (
-    cute as cute,
-    utils as utils,
-)
+from cutlass import core, cute, utils
 
 from cutlass.cute.nvgpu import tcgen05
 from cutlass.cute.nvgpu.tcgen05.mma import CollectorOp
@@ -59,9 +53,6 @@ from cutlass.cute.experimental.utils import make_t2r_rmem_layout
 # b-reuse where ``MMA_M == 2``.
 from cutlass.utils.gemm.sm100 import transform_partitioned_tensor_layout
 
-# Persistent tile scheduler lives in the local ``helpers`` package alongside
-# the cute_ext examples (rooted at ``CuTeDSL/``); the cute_ext/<arch>/ files
-# add ``CuTeDSL/`` to ``sys.path`` so the import resolves.
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, os.path.join(current_dir, ".."))
@@ -88,9 +79,10 @@ isolated to a handful of spots, all in ``Sm107BlockScaledDenseGemmKernel``:
   (it has FP4-specific entries and falls back to the sm_100 table otherwise).
 * ``arch="sm_107"`` selects Rubin's larger SMEM budget.
 * The MMA tiler K is supplied separately from the MMA instruction K via
-  ``--mma_tiler`` / ``--mma_inst_shape``. For Rubin FP4 the atom's K is 128
-  (vs sm_100's 64), so the typical configuration is mma_tiler_k=256 and
-  mma_inst_shape_k=128, keeping the per-stage K tile at 256.
+  ``--mma_tiler`` / ``--mma_inst_shape``. This kernel uses instruction/tiler
+  K=64/128 for FP8xFP8 and mixed FP8/FP4 configurations. Pure FP4 x FP4 uses
+  instruction K=128 and preserves the existing positive-multiple-of-128 tiler
+  envelope; the reference configuration uses tiler K=256.
 
 The LIR-level operation types (``SM100_MMA_SCALED_*``, ``SM90_TMA_LOAD``,
 ``cute_ext.dot_block_scaled``, ...) are functionally a superset of what sm_107
@@ -98,9 +90,11 @@ needs and are reused as-is here. We expect to share more code with the
 Blackwell LIR version once the dust settles -- duplication is intentional for
 now.
 
-Initial scope :
+Supported scope:
 
-- A/B dtype: ``Float4E2M1FN`` only.
+- A/B dtype: all ``Float8E4M3FN`` / ``Float8E5M2`` pairings,
+  ``Float4E2M1FN`` for both operands, and mixed FP8/FP4 in either
+  operand order.
 - B-reuse: opt-in via ``mma_tiler_m // mma_inst_shape_m == 2``. The MMA
   warp then issues a bkeep / breuse pair per K-block (FILL / LASTUSE
   collector ops on B), sharing one B+SFB load between the two M-halves.
@@ -257,16 +251,102 @@ class Sm107BlockScaledDenseGemmKernel:
                 f"D major axis {c_major!r} not supported; expected one of ('n', 'm')."
             )
 
-        # ---- Rubin initial-scope restrictions -------------------------------
-        if a_dtype is not cutlass.Float4E2M1FN:
+        supported_dtype_configs = {
+            (
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E5M2,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float8E5M2,
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float8E5M2,
+                cutlass.Float8E5M2,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E4M3FN,
+                16,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E4M3FN,
+                32,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E8M0FNU,
+                16,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float4E2M1FN,
+                cutlass.FloatNV8E5M3FNU,
+                16,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float4E2M1FN,
+                cutlass.FloatNV8E5M3FNU,
+                32,
+            ),
+            (
+                cutlass.Float8E4M3FN,
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float8E5M2,
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E4M3FN,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+            (
+                cutlass.Float4E2M1FN,
+                cutlass.Float8E5M2,
+                cutlass.Float8E8M0FNU,
+                32,
+            ),
+        }
+        if (a_dtype, b_dtype, sf_dtype, sf_vec_size) not in supported_dtype_configs:
             return (
-                f"SM107 LIR initial scope: only a_dtype=Float4E2M1FN is "
-                f"supported; got {a_dtype}."
-            )
-        if b_dtype is not cutlass.Float4E2M1FN:
-            return (
-                f"SM107 LIR initial scope: only b_dtype=Float4E2M1FN is "
-                f"supported; got {b_dtype}."
+                f"Unsupported (a_dtype, b_dtype, sf_dtype, sf_vec_size) "
+                f"combination: ({a_dtype}, {b_dtype}, {sf_dtype}, {sf_vec_size}); "
+                f"expected FP8 with A/B in "
+                f"{{Float8E4M3FN, Float8E5M2}}, Float8E8M0FNU scale factors, "
+                f"and sf_vec_size=32; mixed FP8/FP4 with the same scale-factor "
+                f"configuration; or FP4 with sf_dtype in "
+                f"{{Float8E8M0FNU, Float8E4M3FN, FloatNV8E5M3FNU}} and "
+                f"sf_vec_size in {{16, 32}}."
             )
         if mma_inst_shape[0] not in (128, 256):
             return (
@@ -306,14 +386,23 @@ class Sm107BlockScaledDenseGemmKernel:
             )
         # ---------------------------------------------------------------------
 
-        # FP4 atom's K is fixed at 128.
-        if mma_inst_shape[2] != 128:
-            return f"FP4 MMA instruction K must be 128; got {mma_inst_shape[2]}."
-        # MMA tiler K must be a positive multiple of the MMA instruction K.
-        if mma_tiler[2] <= 0 or mma_tiler[2] % mma_inst_shape[2] != 0:
+        is_fp4 = a_dtype is cutlass.Float4E2M1FN and b_dtype is cutlass.Float4E2M1FN
+        if is_fp4 and mma_inst_shape[2] != 128:
+            return f"FP4 requires mma_inst_shape_k=128; got {mma_inst_shape[2]}."
+        # Preserve the kernel's existing support for any positive number of
+        # FP4 instruction-K blocks per load stage. This kernel keeps pure FP4
+        # at instruction K=128; the reference uses two blocks (tiler K=256).
+        if is_fp4 and (mma_tiler[2] <= 0 or mma_tiler[2] % mma_inst_shape[2] != 0):
             return (
-                f"mma_tiler_k={mma_tiler[2]} must be a positive multiple of "
-                f"mma_inst_shape_k={mma_inst_shape[2]}."
+                f"FP4 mma_tiler_k={mma_tiler[2]} must be a positive multiple "
+                f"of mma_inst_shape_k={mma_inst_shape[2]}."
+            )
+        if not is_fp4 and (mma_inst_shape[2] != 64 or mma_tiler[2] != 128):
+            return (
+                f"This SM107 block-scaled kernel requires mma_inst_shape_k=64 "
+                f"and mma_tiler_k=128 for MXF8F6F4 configurations; got "
+                f"mma_inst_shape_k={mma_inst_shape[2]} and "
+                f"mma_tiler_k={mma_tiler[2]}."
             )
 
         if mma_inst_shape[1] not in (64, 128, 192, 256):
@@ -321,25 +410,12 @@ class Sm107BlockScaledDenseGemmKernel:
                 f"MMA instruction N {mma_inst_shape[1]} not supported; "
                 f"expected one of (64, 128, 192, 256)."
             )
-        # FP4 SF dtype / vec size combos supported by SM107MmaMXF4NVF4Op.
-        # TODO: add E5M3 support
-        if (sf_dtype, sf_vec_size) not in (
-            (cutlass.Float8E4M3FN, 16),
-            (cutlass.Float8E4M3FN, 32),
-            (cutlass.Float8E8M0FNU, 16),
-            (cutlass.Float8E8M0FNU, 32),
-        ):
-            return (
-                f"Unsupported (sf_dtype, sf_vec_size) combination: "
-                f"({sf_dtype}, {sf_vec_size}) for FP4; supported combos: "
-                f"(Float8E4M3FN/Float8E8M0FNU, 16/32)."
-            )
-        # FP4 atoms require K-major A/B and N-major D.
-        if not (a_major == b_major == "k" and c_major == "n"):
-            return (
-                f"FP4 block-scaled requires a_major='k', b_major='k', c_major='n'; "
-                f"got a_major={a_major!r}, b_major={b_major!r}, c_major={c_major!r}."
-            )
+        # Every FP4 operand must be K-major. FP8 operands support both major
+        # modes admitted at the start of this predicate.
+        if a_dtype is cutlass.Float4E2M1FN and a_major != "k":
+            return f"FP4 operand A requires a_major='k'; got a_major={a_major!r}."
+        if b_dtype is cutlass.Float4E2M1FN and b_major != "k":
+            return f"FP4 operand B requires b_major='k'; got b_major={b_major!r}."
         if c_dtype not in (
             cutlass.Float16,
             cutlass.BFloat16,
@@ -858,7 +934,6 @@ class Sm107BlockScaledDenseGemmKernel:
             # - All warps advance to the next pipeline stage
             tma_store_pipeline.release_advance()
 
-        tma_store_pipeline.tail()
         return tma_store_pipeline
 
     @cute.experimental.jit
@@ -1123,8 +1198,7 @@ class Sm107BlockScaledDenseGemmKernel:
             cluster_layout_vmnk=cluster_layout_vmnk,
         )
 
-        # UMMA -> tcgen05.ld. For 2-CTA both peers' epilogue warpgroups call
-        # ``consumer_release``, so the arrive count doubles.
+        # UMMA -> tcgen05.ld.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=self.num_acc_stages,
             mma_operation_type=mma_operation_type,
@@ -1490,6 +1564,10 @@ class Sm107BlockScaledDenseGemmKernel:
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
 
+            # Stage reuse across CTA tiles is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per CTA tile.
+            tma_store_pipe.tail()
+
         # Cluster sync before exit. No-op for pure 1-CTA (1,1) launches.
         if cutlass.const_expr(cute.size(self.cluster_shape_mn) > 1):
             cute.arch.cluster_arrive()
@@ -1755,8 +1833,8 @@ def run(
         output_tensor_name="C",
     )
 
-    # Initial-scope gate -- delegate to the kernel's predicate so this stays in
-    # sync with what the kernel actually accepts.
+    # Delegate to the kernel's predicate so this stays in sync with what the
+    # kernel actually accepts.
     reason = Sm107BlockScaledDenseGemmKernel.can_implement(
         mnkl,
         mma_inst_shape,
@@ -1890,7 +1968,8 @@ if __name__ == "__main__":
         type=cli.comma_separated_ints_of(3),
         default=(128, 128, 128),
         help="MMA instruction shape (M,N,K) comma-separated. mma_inst_m must "
-        "be 128 (1-CTA) or 256 (2-CTA); FP4 fixes mma_inst_k == 128.",
+        "be 128 (1-CTA) or 256 (2-CTA); mma_inst_k is 64 for FP8 and "
+        "mixed FP8/FP4, and 128 for pure FP4.",
     )
     parser.add_argument(
         "--mma_tiler",
@@ -1898,8 +1977,9 @@ if __name__ == "__main__":
         default=(128, 128, 256),
         help="MMA tiler shape (M,N,K) comma-separated. mma_tiler_m equals "
         "mma_inst_shape_m (no b-reuse) or 2*mma_inst_shape_m (b-reuse on); "
-        "mma_tiler_n must equal mma_inst_shape_n; mma_tiler_k must be a "
-        "positive multiple of mma_inst_shape_k.",
+        "mma_tiler_n must equal mma_inst_shape_n; mma_tiler_k must be "
+        "128 for FP8/mixed FP8-FP4 or a positive multiple of 128 for "
+        "pure FP4.",
     )
     cli.add_cluster_shape_arg(
         parser,
@@ -1913,9 +1993,9 @@ if __name__ == "__main__":
     parser.add_argument("--sf_dtype", type=cutlass.dtype, default=cutlass.Float8E8M0FNU)
     parser.add_argument("--sf_vec_size", type=int, default=32)
     cli.add_dtype_args(parser, c=cutlass.Float16)
-    # FP4 (initial scope) requires K-major A/B and N-major C; enforced by
-    # ``can_implement``.
-    cli.add_major_args(parser, a=["k"], b=["k"], c=["n"])
+    # Every FP4 operand requires K-major; FP8 operands support the full matrix.
+    # The dtype-dependent constraints are enforced by ``can_implement``.
+    cli.add_major_args(parser)
     # Optional pipeline-depth caps; each only lowers the value picked by
     # ``_compute_stages`` (an override >= the computed depth has no effect).
     parser.add_argument("--num_load_stages_override", type=int, default=None)

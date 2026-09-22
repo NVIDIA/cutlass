@@ -550,8 +550,10 @@ def copy(
     logical profile ``((ATOM_V,ATOM_REST),REST,...)``, the predication tensor must maintain profile
     compatibility with ``(ATOM_REST,REST,...)``.
 
-    For Copy Atoms requiring single-threaded execution, thread election is managed automatically by the
-    copy operation. External thread selection mechanisms are not necessary.
+    In general, Copy Atoms requiring single-threaded execution handle thread
+    election internally. The non-tensor bulk copy operations (``CopyBulkG2SOp``,
+    ``CopyBulkG2SMulticastOp``, ``CopyBulkS2GOp``, ``CopyBulkS2GByteMaskOp``, and
+    ``CopyBulkS2SOp``) are exceptions: they do not perform thread election.
 
     .. note::
 
@@ -686,8 +688,7 @@ def prefetch(
     rest-dimension entry, so a single ``cute.prefetch`` call covers every stage and lives outside
     any per-stage loop.
 
-    For Copy Atoms that require single-threaded execution, the copy op automatically handles thread
-    election internally. Manual thread selection is not required in such cases.
+    Non-tensor bulk copy prefetch requires explicit thread election.
     """
     src_list = _normalize_variadic_tensor_operand(src, "src")
 

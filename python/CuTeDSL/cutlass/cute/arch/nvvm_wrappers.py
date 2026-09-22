@@ -1637,6 +1637,30 @@ def _add_packed_half2_ptx(
     )
 
 
+def _exp2_packed_half2_ptx(
+    a: Int32,
+    *,
+    dtype: Type[Numeric],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    if dtype is Float16:
+        ptx = "ex2.approx.f16x2 {$w0}, {$r0};"
+    elif dtype is BFloat16:
+        ptx = "ex2.approx.ftz.bf16x2 {$w0}, {$r0};"
+    else:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return inline_ptx(
+        ptx,
+        write_only_types=[Int32],
+        read_only_args=[a],
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
 def _ensure_tuple2(src: Any, name: str) -> Tuple[Any, Any]:
     if not isinstance(src, tuple) or len(src) != 2:
         raise TypeError(f"{name} must be a 2-tuple")
@@ -1925,6 +1949,42 @@ def _add_packed_half2(
     )
 
 
+def _exp2_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[_NumericT],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[_NumericT, _NumericT]]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    if isinstance(a, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+        packed_a = _vector_to_packed_half2(vec_a, loc=loc, ip=ip)
+        packed_res = _exp2_packed_half2_ptx(
+            packed_a,
+            dtype=dtype,
+            predicate=predicate,
+            loc=loc,
+            ip=ip,
+        )
+        return _unpack_vec2(
+            _packed_half2_to_vector(packed_res, dtype, loc=loc, ip=ip),
+            dtype,
+            loc=loc,
+            ip=ip,
+        )
+    return _exp2_packed_half2_ptx(
+        a,
+        dtype=dtype,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
 def _sub_packed_half2(
     a: Union[Int32, Tuple[Numeric, Numeric]],
     b: Union[Int32, Tuple[Numeric, Numeric]],
@@ -2183,6 +2243,48 @@ def add_packed_bf16x2(
         rnd=rnd,
         ftz=None,
         sat=None,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def exp2_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Float16, Float16]]:
+    """Approximate base-2 exponential for packed f16x2 values.
+
+    Lowers to PTX ``ex2.approx.f16x2``.
+    """
+    return _exp2_packed_half2(
+        a,
+        dtype=Float16,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def exp2_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[BFloat16, BFloat16]]:
+    """Approximate base-2 exponential for packed bf16x2 values.
+
+    Lowers to PTX ``ex2.approx.ftz.bf16x2``.
+    """
+    return _exp2_packed_half2(
+        a,
+        dtype=BFloat16,
         predicate=predicate,
         loc=loc,
         ip=ip,
@@ -4703,7 +4805,31 @@ def inline_ptx(
             return llvm_ptr
         return as_numeric(arg)
 
-    read_only_ir = [convert_arg(arg) for arg in read_only_args]
+    def convert_read_only_arg(arg: object) -> Union[ir.Value, Numeric]:
+        """Keep Float32 inputs in registers when lowering inline PTX.
+
+        The 4.8 NVVM lowering can assign the integer-immediate constraint
+        ``n`` when a Float32 operand folds to a constant.  An explicit register
+        move prevents that invalid constraint while preserving the operand's
+        value and bit pattern.
+        """
+        converted = convert_arg(arg)
+        if isinstance(converted, Float32):
+            value = converted.ir_value(loc=loc, ip=ip)
+        elif isinstance(converted, ir.Value) and converted.type == Float32.mlir_type:
+            value = converted
+        else:
+            return converted
+        return llvm.inline_asm(
+            Float32.mlir_type,
+            [value],
+            "mov.f32 $0, $1;",
+            "=f,f",
+            loc=loc,
+            ip=ip,
+        )
+
+    read_only_ir = [convert_read_only_arg(arg) for arg in read_only_args]
     read_write_ir = [convert_arg(arg) for arg in read_write_args]
 
     # Build write_only result types

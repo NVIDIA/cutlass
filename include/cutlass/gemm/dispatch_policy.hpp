@@ -37,6 +37,7 @@
 #include "cute/numeric/integral_constant.hpp" // cute::false_type
 #include "cute/atom/copy_traits_sm100.hpp"
 #include "cutlass/detail/collective/sm103_kernel_type.hpp"
+
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -579,6 +580,24 @@ struct KernelPtrArrayTmaWarpSpecializedInputTransformSm100 final {
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
 
+// SM107 kernel schedules
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelTmaWarpSpecializedSm107 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
+
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelTmaWarpSpecializedBlockScaledSm107 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
 
 // SM120 kernel schedules
 template<int SchedulerPipelineStageCount_>
@@ -911,6 +930,65 @@ using KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103 = Kerne
 using KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103 = KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch;
 using KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103 = KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch;
 using KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103 = KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//          SM107 Dispatch Policies
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct KernelScheduleSm107 {};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// SM107 Dense GEMM Dispatch Policies
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct KernelScheduleSm107DenseGemm : KernelScheduleSm107 {};
+struct KernelScheduleSm107DenseGemmf8f6f4 : KernelScheduleSm107DenseGemm {};
+struct KernelScheduleSm107BlockScaledMxf8f6f4 : KernelScheduleSm107DenseGemm {};
+struct KernelScheduleSm107BlockScaledMxNvf4 : KernelScheduleSm107DenseGemm {};
+
+struct KernelScheduleSm107DenseGemmf8f6f4WithoutBreuse : KernelScheduleSm107DenseGemmf8f6f4 {};
+struct KernelScheduleSm107DenseGemmf8f6f4WithBreuse : KernelScheduleSm107DenseGemmf8f6f4 {};
+
+struct KernelScheduleSm107BlockScaledMxf8f6f4WithoutBreuse : KernelScheduleSm107BlockScaledMxf8f6f4 {};
+struct KernelScheduleSm107BlockScaledMxf8f6f4WithBreuse : KernelScheduleSm107BlockScaledMxf8f6f4 {};
+
+// Block Scaled GEMM (NVF4): Specialize for scale factor vector size, then B-reuse
+struct KernelScheduleSm107BlockScaledMxNvf4Vs16 : KernelScheduleSm107BlockScaledMxNvf4 {};
+struct KernelScheduleSm107BlockScaledMxNvf4Vs32 : KernelScheduleSm107BlockScaledMxNvf4 {};
+
+struct KernelScheduleSm107BlockScaledMxNvf4Vs16WithoutBreuse : KernelScheduleSm107BlockScaledMxNvf4Vs16 {};
+struct KernelScheduleSm107BlockScaledMxNvf4Vs16WithBreuse : KernelScheduleSm107BlockScaledMxNvf4Vs16 {};
+struct KernelScheduleSm107BlockScaledMxNvf4Vs32WithoutBreuse : KernelScheduleSm107BlockScaledMxNvf4Vs32 {};
+struct KernelScheduleSm107BlockScaledMxNvf4Vs32WithBreuse : KernelScheduleSm107BlockScaledMxNvf4Vs32 {};
+
+// Dense GEMM: Specialize for 1SM vs 2SM
+struct KernelTmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithoutBreuse final : KernelSchedule1Sm, KernelScheduleSm107DenseGemmf8f6f4WithoutBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithoutBreuse final : KernelSchedule2Sm, KernelScheduleSm107DenseGemmf8f6f4WithoutBreuse {};
+
+struct KernelTmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithBreuse final : KernelSchedule1Sm, KernelScheduleSm107DenseGemmf8f6f4WithBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithBreuse final : KernelSchedule2Sm, KernelScheduleSm107DenseGemmf8f6f4WithBreuse {};
+
+// Dense blockscaled GEMM: specialized for 1SM vs 2SM
+struct KernelTmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithoutBreuse final : KernelSchedule1Sm, KernelScheduleSm107BlockScaledMxf8f6f4WithoutBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithoutBreuse final : KernelSchedule2Sm, KernelScheduleSm107BlockScaledMxf8f6f4WithoutBreuse {};
+
+struct KernelTmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithBreuse final : KernelSchedule1Sm, KernelScheduleSm107BlockScaledMxf8f6f4WithBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithBreuse final : KernelSchedule2Sm, KernelScheduleSm107BlockScaledMxf8f6f4WithBreuse {};
+
+// Dense blockscaled GEMM (NVF4): specialized for 1SM vs 2SM, scale factor vector size, and B-reuse
+struct KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithoutBreuse final : KernelSchedule1Sm, KernelScheduleSm107BlockScaledMxNvf4Vs16WithoutBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithoutBreuse final : KernelSchedule2Sm, KernelScheduleSm107BlockScaledMxNvf4Vs16WithoutBreuse {};
+
+struct KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithBreuse final : KernelSchedule1Sm, KernelScheduleSm107BlockScaledMxNvf4Vs16WithBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithBreuse final : KernelSchedule2Sm, KernelScheduleSm107BlockScaledMxNvf4Vs16WithBreuse {};
+
+struct KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithoutBreuse final : KernelSchedule1Sm, KernelScheduleSm107BlockScaledMxNvf4Vs32WithoutBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithoutBreuse final : KernelSchedule2Sm, KernelScheduleSm107BlockScaledMxNvf4Vs32WithoutBreuse {};
+
+struct KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithBreuse final : KernelSchedule1Sm, KernelScheduleSm107BlockScaledMxNvf4Vs32WithBreuse {};
+struct KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithBreuse final : KernelSchedule2Sm, KernelScheduleSm107BlockScaledMxNvf4Vs32WithBreuse {};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -1443,6 +1521,39 @@ struct MainloopSm103ArrayTmaUmmaWarpSpecializedBlockScaled {
   // For backwards compatibility with GemmUniversalAdapter.
   constexpr static int Stages = LoadABPipelineStageCount;
   constexpr static cutlass::sm103::detail::KernelPrefetchType PrefetchType = PrefetchType_;
+};
+
+// n-buffer in smem, pipelined with Rubin UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  bool WithBreuse_ = false,
+  class ArchTag_ = arch::Sm107
+>
+struct MainloopSm107TmaUmmaWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  constexpr static bool WithBreuse = WithBreuse_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelTmaWarpSpecializedSm107<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+};
+
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  bool WithBreuse_ = false,
+  class ArchTag_ = arch::Sm107
+>
+struct MainloopSm107TmaUmmaWarpSpecializedBlockScaled {
+  constexpr static int Stages = Stages_;
+  constexpr static bool WithBreuse = WithBreuse_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = ArchTag_;
+  using Schedule = KernelTmaWarpSpecializedBlockScaledSm107<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
 };
 
 template<

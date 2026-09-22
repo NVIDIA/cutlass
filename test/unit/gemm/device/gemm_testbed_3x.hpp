@@ -289,7 +289,9 @@ bool initialize_tensor(
     else if (bits_input <= 8) {
 
       if constexpr (
-                    cute::is_same_v<Element, cutlass::float_ue8m0_t>){
+                    cute::is_same_v<Element, cutlass::float_ue4m3_t> ||
+                    cute::is_same_v<Element, cutlass::float_ue8m0_t> ||
+                    cute::is_same_v<Element, cutlass::float_ue5m3_t>){
         scope_max = 4;
         scope_min = 1;
       }
@@ -1166,6 +1168,34 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaled
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_SFB.host_view()), 0);
     return true;
   }
+};
+
+
+//
+// Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB (SM107)
+//
+template<
+  class Gemm,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ElementA_,
+  class ElementB_
+>
+struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm107<SchedulerPipelineStageCount_,
+                                                                                       AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> : public
+       HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> {
+  using Base = HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,AccumulatorPipelineStageCount_>,
+                                      Gemm, ElementA_, ElementB_>;
+  HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = Base::kDefaultSeed,
+    typename Base::LayoutTagA::Stride stride_factor_A_ = typename Base::LayoutTagA::Stride(),
+    typename Base::LayoutTagB::Stride stride_factor_B_ = typename Base::LayoutTagB::Stride()
+  ) : Base::HostCollectiveMainloop(check_relative_equality_, init_A_, init_B_, seed_, stride_factor_A_, stride_factor_B_) {}
 };
 
 

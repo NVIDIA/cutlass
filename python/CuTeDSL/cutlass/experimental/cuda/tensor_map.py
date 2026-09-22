@@ -45,6 +45,8 @@ from cutlass.base_dsl.typing import (
     Float6E3M2FN,
     Float6E2M3FN,
     Float4E2M1FNx2,
+    Float6E3M2FNx4,
+    Float6E2M3FNx4,
 )
 import cutlass.cute as cute
 from cutlass.cute.core import ScaledBasis, depth, leading_dim
@@ -63,9 +65,16 @@ def _stride_to_tma_units(
     Element units here mean units of ``element_type`` itself. For
     packed dtypes such as ``Float4E2M1FNx2`` / ``Float6E{3M2,2M3}FNx4``,
     one tensor element is already one packed storage unit.
+
+    A dynamic stride is widened to 64 bits before scaling. Tensor strides
+    are commonly 32-bit values, and ``stride * width`` wraps once the
+    stride reaches 2^27 fp16 elements, which hands the encoder a negative
+    or truncated byte stride.
     """
 
-    return stride * element_type.width // 128
+    if isinstance(stride, int):
+        return stride * element_type.width // 128
+    return Int64(stride) * element_type.width // 128
 
 
 def _product(values: Sequence[Int8 | int]) -> Int32 | int:
@@ -472,6 +481,11 @@ def _derive_tensormap_stride_dtype(
     if tma_format in {TensorMapDataFormat.B4X16, TensorMapDataFormat.B4X16_P64}:
         if dtype is Float4E2M1FNx2:
             return Float4E2M1FN
+    if tma_format == TensorMapDataFormat.B6X16_P32:
+        if dtype is Float6E3M2FNx4:
+            return Float6E3M2FN
+        if dtype is Float6E2M3FNx4:
+            return Float6E2M3FN
     return dtype
 
 
@@ -658,6 +672,8 @@ def get_dsl_type_to_tensormap_type(dsl_type: Type[Numeric]) -> TensorMapDataType
         return TensorMapDataType.uint8
     elif dsl_type in {Float6E3M2FN, Float6E2M3FN}:
         # 6-bit FP6 — same alignment story as FP4.
+        return TensorMapDataType.f416u6_align16b
+    elif dsl_type in {Float6E3M2FNx4, Float6E2M3FNx4}:
         return TensorMapDataType.f416u6_align16b
     raise ValueError(f"Unsupported type for TensorMap: {dsl_type}")
 

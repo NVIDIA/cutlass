@@ -227,6 +227,8 @@ from .. import cutlass_dsl as _dsl
 
 from .ffi import ffi, extern, BitCode, ConstValue, mangle
 
+from .launch_facts import _get_launch_facts
+
 # Aliases
 jit: Callable[..., Any] = _dsl.CuTeDSL.jit
 kernel: Callable[..., Any] = _dsl.CuTeDSL.kernel

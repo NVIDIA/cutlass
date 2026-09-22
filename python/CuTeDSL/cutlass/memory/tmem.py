@@ -479,8 +479,16 @@ class TmemAllocator:
         assert self.check_valid_num_columns(num_columns), (
             f"num_columns must be multiple of 32 and power of two, and between 0 and {self._max_tmem_columns}"
         )
-        assert self._num_allocated_columns + num_columns <= self._max_tmem_columns, (
-            f"total allocated columns must be less than or equal to {self._max_tmem_columns}"
+        # Inside warp-specialized control flow the bookkeeping counter is a
+        # runtime value, so check capacity with a runtime assert. The backend
+        # strips it unless CUTE_DSL_ENABLE_ASSERTIONS=True.
+        from cutlass.cute.testing import assert_ as runtime_assert
+
+        runtime_assert(
+            self._num_allocated_columns + num_columns <= self._max_tmem_columns,
+            f"total allocated columns must be less than or equal to {self._max_tmem_columns}",
+            loc=loc,
+            ip=ip,
         )
 
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
@@ -607,8 +615,15 @@ class TmemAllocator:
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
         _is_allocator_warp = warp_idx == self._allocator_warp_id
 
-        assert num_columns <= self._num_allocated_columns, (
-            "num_columns must be less than or equal to num_allocated_columns"
+        # Same as allocate(): the counter is a runtime value inside
+        # warp-specialized control flow, so this is a runtime assert.
+        from cutlass.cute.testing import assert_ as runtime_assert
+
+        runtime_assert(
+            num_columns <= self._num_allocated_columns,
+            "num_columns must be less than or equal to num_allocated_columns",
+            loc=loc,
+            ip=ip,
         )
         if const_expr(num_columns != 0):
             assert self.check_valid_num_columns(num_columns), "num_columns is invalid"

@@ -359,7 +359,7 @@ class TgvGemmKernel:
             # Barrier between MMA and epilog: sync TMEM allocation/deallocation status
             tmem_allocation_result_barrier: cutlass.Int64
             # Base pointer for TMEM allocation, MMA will write the allocated address here
-            tmem_base_ptr: cutlass.Int32
+            tmem_base: cutlass.Int32
 
         smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(SharedStorage)
@@ -370,7 +370,7 @@ class TgvGemmKernel:
         tma_epilog_full_bar = storage.tma_epilog_full_barrier.ptr
         mma_epilog_full_bar = storage.mma_epilog_full_barrier.ptr
         tmem_alloc_result_bar = storage.tmem_allocation_result_barrier.ptr
-        tmem_base_smem_ptr = storage.tmem_base_ptr.ptr
+        tmem_base_smem_ptr = storage.tmem_base.ptr
 
         # ============================================================
         # Barrier initialization — ALL threads reach here, elect_one inits
