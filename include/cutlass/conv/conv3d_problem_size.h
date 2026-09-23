@@ -193,7 +193,7 @@ public:
     pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0])
     {
       // set output Z
-      Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;
+      Z = ((D + pad_d * 2 - ((T - 1) * dilation_d + 1)) / stride_d) + 1;
     }
 
   /// Constructs convolution problem size from cutlass Tensor5DCoord, Coord3D
@@ -221,7 +221,8 @@ public:
     pad_d(CUTLASS_STL_NAMESPACE::get<0>(padding)[0]), stride_d(stride[0]), dilation_d(dilation[0])
     {
       // set output Z
-      Z = ((D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+      Z = ((D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding)[0] -
+            ((T - 1) * dilation_d + 1)) / stride_d) + 1;
     }
 
   /// Equality operator (ignores mode and split_k_slice)
