@@ -122,37 +122,38 @@ class PipelineTmaUmma(PipelineAsync):
             cta_layout_vmnk, cta_in_cluster_coord_vmnk, mcast_mode=1, loc=loc, ip=ip
         )
 
-        block_in_cluster_coord_vmnk_peer = (
-            cta_in_cluster_coord_vmnk[0] ^ 1,
-            *cta_in_cluster_coord_vmnk[1:],
-        )
-        tma_mcast_mask_a_peer = cute.nvgpu.cpasync.create_tma_multicast_mask(
-            cta_layout_vmnk,
-            block_in_cluster_coord_vmnk_peer,
-            mcast_mode=2,
-            loc=loc,
-            ip=ip,
-        )
-        tma_mcast_mask_b_peer = cute.nvgpu.cpasync.create_tma_multicast_mask(
-            cta_layout_vmnk,
-            block_in_cluster_coord_vmnk_peer,
-            mcast_mode=1,
-            loc=loc,
-            ip=ip,
-        )
+        # The peer CTA only exists when a 2CTA tcgen05 MMA pairs the CTAs along mode 0,
+        # i.e. when the v-extent is 2. If it is 1 the peer coordinate (v ^ 1) = 1 is
+        # outside the domain of cta_layout_vmnk, and its image mask sets bits for CTA
+        # ranks that are not part of the cluster. Arriving on such a mask is an
+        # out-of-range remote mbarrier access (SM CGA exception, Xid 13).
+        if cute.size(cta_layout_vmnk, mode=[0], loc=loc, ip=ip) != 1:
+            block_in_cluster_coord_vmnk_peer = (
+                cta_in_cluster_coord_vmnk[0] ^ 1,
+                *cta_in_cluster_coord_vmnk[1:],
+            )
+            tma_mcast_mask_a |= cute.nvgpu.cpasync.create_tma_multicast_mask(
+                cta_layout_vmnk,
+                block_in_cluster_coord_vmnk_peer,
+                mcast_mode=2,
+                loc=loc,
+                ip=ip,
+            )
+            tma_mcast_mask_b |= cute.nvgpu.cpasync.create_tma_multicast_mask(
+                cta_layout_vmnk,
+                block_in_cluster_coord_vmnk_peer,
+                mcast_mode=1,
+                loc=loc,
+                ip=ip,
+            )
 
         assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
         if mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 1:
-            return (
-                tma_mcast_mask_a
-                | tma_mcast_mask_b
-                | tma_mcast_mask_a_peer
-                | tma_mcast_mask_b_peer
-            )
+            return tma_mcast_mask_a | tma_mcast_mask_b
         elif mcast_mode_mn[1] == 1:
-            return tma_mcast_mask_b | tma_mcast_mask_b_peer
+            return tma_mcast_mask_b
         assert mcast_mode_mn[0] == 1
-        return tma_mcast_mask_a | tma_mcast_mask_a_peer
+        return tma_mcast_mask_a
 
     @dsl_user_op
     @staticmethod
