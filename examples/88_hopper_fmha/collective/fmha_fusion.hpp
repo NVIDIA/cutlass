@@ -142,7 +142,7 @@ struct CausalFusion : DefaultFusion {
     // Again, we'd add the offset_q into the max_blocks_q calculation
     int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
     int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
-    return std::min(max_blocks_k, max_blocks_q);
+    return cute::min(max_blocks_k, max_blocks_q);
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>

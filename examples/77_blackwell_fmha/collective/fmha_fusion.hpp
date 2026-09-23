@@ -206,11 +206,11 @@ struct CausalMask : NoMask {
     int max_blocks_k = Base::get_trip_count(blk_coord, tile_shape, problem_size);
     if constexpr (IsQBegin) {
       int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape), get<1>(tile_shape));
-      return std::min(max_blocks_k, max_blocks_q);
+      return cute::min(max_blocks_k, max_blocks_q);
     } else {
       const int offset_q = get<1>(problem_size) - get<0>(problem_size);
       int max_blocks_q = ceil_div((get<0>(blk_coord) + 1) * get<0>(tile_shape) + offset_q, get<1>(tile_shape));
-      return std::min(max_blocks_k, max_blocks_q);
+      return cute::min(max_blocks_k, max_blocks_q);
     }
   }
 
@@ -223,10 +223,10 @@ struct CausalMask : NoMask {
         
     int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
     if constexpr (IsQBegin) {
-      return std::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
+      return cute::min(trip_count, int(ceil_div(size<0>(tile_shape), size<1>(tile_shape))));
     } else {
       const int offset_tile_q = (get<1>(problem_size) - get<0>(problem_size)) % get<1>(tile_shape);
-      return std::min(trip_count, int(ceil_div(get<0>(tile_shape) + offset_tile_q, get<1>(tile_shape))));
+      return cute::min(trip_count, int(ceil_div(get<0>(tile_shape) + offset_tile_q, get<1>(tile_shape))));
     }
   }
 
