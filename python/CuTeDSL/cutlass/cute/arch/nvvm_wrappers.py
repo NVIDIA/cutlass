@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import enum
+import operator
 import types
 from functools import partial
 from typing import (
@@ -25,7 +26,8 @@ from typing import (
 )
 from typing_extensions import deprecated
 
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass import base_dsl
+from cutlass.cutlass_dsl import T, BaseDSL, dsl_user_op, target_version
 
 import cutlass.cutlass_dsl as cutlass_dsl
 
@@ -788,6 +790,114 @@ shuffle_sync_down = partial(shuffle_sync_op, kind=nvvm.ShflKind.down)
 shuffle_sync_bfly = partial(shuffle_sync_op, kind=nvvm.ShflKind.bfly)
 
 
+def _warp_reduction_max_op(x: Numeric, y: Numeric) -> Numeric:
+    """Binary max used by :func:`warp_reduction_max` (``fmax`` for Float32, ``max`` otherwise)."""
+    return fmax(x, y) if isinstance(x, Float32) else cutlass_dsl.max(x, y)
+
+
+def _warp_reduction_sum_op(x: Numeric, y: Numeric) -> Numeric:
+    """Binary add used by :func:`warp_reduction_sum`."""
+    return x + y
+
+
+def _warp_reduction_redux_kind(
+    value_type: Type[Numeric], op: Callable, threads_in_group: int
+) -> Optional[Tuple[str, bool]]:
+    """Decide whether ``warp_reduction(val, op)`` can be lowered to one ``redux.sync``.
+
+    Returns ``(kind, nan)`` -- the ``warp_redux_sync`` kind string and whether the
+    NaN-propagating ``.NaN`` form is required -- when the single-instruction
+    reduction is bit-for-bit equivalent to the butterfly shuffle tree, or ``None``
+    when the caller must keep the shuffle fallback.  The decision is purely
+    structural (type / operator / group size); architecture support is checked
+    separately by :func:`_warp_reduction_redux_supported`.
+
+    Equivalence conditions:
+
+    * the reduction group is the whole warp -- ``redux.sync`` has no notion of
+      sub-warp groups;
+    * ``value_type`` is exactly Int32, Uint32 or Float32 -- the only 32-bit
+      operand types the instruction accepts;
+    * ``op`` is a known binary operator.  An arbitrary callable cannot be
+      inspected and always falls back.  ``functools.partial`` around
+      ``fmax``/``fmin`` is unwrapped so that ``partial(fmax, nan=True)`` maps to
+      the ``.NaN`` form.  ``abs=True`` is *not* mapped: ``fmax(abs=True)`` is the
+      xorsign-abs form (``sign(a ^ b) * max(|a|, |b|)``) while ``redux.sync.abs``
+      reduces magnitudes only, so the two differ; ``ftz`` has no ``redux.sync``
+      counterpart.  Both keep the shuffle fallback.
+    """
+    if threads_in_group != WARP_SIZE:
+        return None
+
+    func: Callable = op
+    kwargs: dict = {}
+    if isinstance(op, partial):
+        if op.args:
+            return None
+        func = op.func
+        kwargs = dict(op.keywords or {})
+
+    if value_type is Float32:
+        # redux.sync has no floating-point add; only min/max are available.
+        float_ops = (
+            (fmax, "fmax"),
+            (fmin, "fmin"),
+            (_warp_reduction_max_op, "fmax"),
+        )
+        for candidate, kind in float_ops:
+            if func is candidate:
+                if set(kwargs) - {"abs", "nan", "ftz"}:
+                    return None
+                if kwargs.get("abs") or kwargs.get("ftz"):
+                    return None
+                return kind, bool(kwargs.get("nan", False))
+        return None
+
+    if value_type is Int32 or value_type is Uint32:
+        if kwargs:
+            return None
+        # ``warp_redux_sync`` promotes "max"/"min" to "umax"/"umin" for Uint32,
+        # matching the signedness-aware ``cutlass_dsl.max``/``min`` used by the
+        # shuffle tree.  Integer add wraps modulo 2**32 on both paths.
+        int_ops = (
+            (operator.add, "add"),
+            (_warp_reduction_sum_op, "add"),
+            (cutlass_dsl.max, "max"),
+            (_warp_reduction_max_op, "max"),
+            (cutlass_dsl.min, "min"),
+            (operator.and_, "and"),
+            (operator.or_, "or"),
+            (operator.xor, "xor"),
+        )
+        for candidate, kind in int_ops:
+            if func is candidate:
+                return kind, False
+        return None
+
+    return None
+
+
+def _warp_reduction_redux_supported(
+    value_type: Type[Numeric], arch: Optional[base_dsl.Arch] = None
+) -> bool:
+    """Whether the compile target can execute ``redux.sync`` for ``value_type``.
+
+    Per the PTX ISA, the integer forms need sm_80+.  The ``.f32`` forms need
+    sm_100a (PTX ISA 8.6) and are available on sm_100f and later members of the
+    same family from PTX ISA 8.8, i.e. a CUDA 12.9+ toolchain.  ``arch``
+    defaults to the current compile target.
+    """
+    if arch is None:
+        arch = BaseDSL._get_dsl().get_arch_enum()
+    if value_type is Float32:
+        return arch.is_family_of(base_dsl.Arch.sm_100f) and target_version(
+            min_version="12.9"
+        )
+    if value_type is Int32 or value_type is Uint32:
+        return arch >= base_dsl.Arch.sm_80
+    return False
+
+
 @dsl_user_op
 def warp_reduction(
     val: Numeric,
@@ -801,6 +911,22 @@ def warp_reduction(
     The threads_in_group is the number of threads reduction group in a warp.
     E.g. WARP_SIZE (32) means the whole warp reduced in one group. 8 means the warp is divided into 4 thread groups, each group has 8 threads in reduction.
 
+    When the reduction is over the whole warp, ``val`` is Int32/Uint32/Float32,
+    ``op`` is a recognised operator and the target supports it, the
+    ``log2(32) = 5`` rounds of ``shfl.sync.bfly`` + ``op`` are replaced by a single
+    ``redux.sync`` (see :func:`warp_redux_sync`) with identical results on every
+    lane:
+
+    * Int32 / Uint32: ``operator.add``, ``cutlass_dsl.max``/``min``,
+      ``operator.and_``/``or_``/``xor`` on sm_80 and later.
+    * Float32: :func:`fmax` / :func:`fmin`, optionally wrapped as
+      ``functools.partial(fmax, nan=True)`` for the NaN-propagating form, on the
+      sm_100 family (sm_100a / sm_100f and family-compatible targets) with a
+      CUDA 12.9+ toolchain.  There is no ``redux.sync`` floating-point add.
+
+    Everything else (custom lambdas, other types, ``threads_in_group < 32``,
+    ``fmax(abs=True)``, ``ftz=True``, older architectures) keeps the shuffle
+    tree.  Both paths require all lanes of the warp to execute the reduction.
 
     :param val: register value
     :type val: cutlass.Numeric
@@ -811,6 +937,19 @@ def warp_reduction(
     :return: reduced value
     :rtype: cutlass.Numeric
     """
+    if isinstance(val, Numeric):
+        redux = _warp_reduction_redux_kind(type(val), op, threads_in_group)
+        if redux is not None and _warp_reduction_redux_supported(type(val)):
+            kind, nan = redux
+            return warp_redux_sync(
+                val,
+                kind,
+                FULL_MASK,
+                nan=True if nan else None,
+                loc=loc,
+                ip=ip,
+            )
+
     offset = threads_in_group // 2
 
     while offset > 0:
@@ -824,11 +963,8 @@ def warp_reduction(
     return val
 
 
-warp_reduction_max = partial(
-    warp_reduction,
-    op=lambda x, y: fmax(x, y) if isinstance(x, Float32) else cutlass_dsl.max(x, y),
-)
-warp_reduction_sum = partial(warp_reduction, op=lambda x, y: x + y)
+warp_reduction_max = partial(warp_reduction, op=_warp_reduction_max_op)
+warp_reduction_sum = partial(warp_reduction, op=_warp_reduction_sum_op)
 
 
 @dsl_user_op
