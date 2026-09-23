@@ -1423,7 +1423,7 @@ class HopperFusedMultiHeadAttentionForward:
 
                 # Linear reduction is faster here, as well
                 for j in cutlass.range_constexpr(cute.size(acc_qk_mn, mode=[1])):
-                    s_max[i] = cutlass.max(s_max[i], acc_qk_mn[i, j])
+                    s_max[i] = cute.arch.fmax(s_max[i], acc_qk_mn[i, j])
 
             # reduce max
             for r in cutlass.range_constexpr(red_rank):
