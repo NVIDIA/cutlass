@@ -160,19 +160,23 @@ struct ReduceArrayOperation<logical_and<uint1b_t>, uint1b_t, N> {
 
   CUTLASS_HOST_DEVICE
   uint1b_t operator()(
-    logical_and<uint1b_t> const &reduction_op, 
+    logical_and<uint1b_t> const &,
     ArrayType const &array) const {
 
-    uint8_t const *ptr = reinterpret_cast<uint8_t const *>(&array);
-    bool item = false;
+    uint8_t const *ptr = reinterpret_cast<uint8_t const *>(array.raw_data());
+    bool item = true;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int byte = 0; byte < (N + 7) / 8; ++byte) {
-      uint8_t bits = ptr[byte];
-      item = (item || !bits);
+    for (int byte = 0; byte < N / 8; ++byte) {
+      item = item && (ptr[byte] == uint8_t(0xff));
     }
 
-    return uint1b_t{!item};
+    if (N % 8) {
+      uint8_t mask = uint8_t((1u << (N % 8)) - 1);
+      item = item && ((ptr[N / 8] & mask) == mask);
+    }
+
+    return uint1b_t{item};
   }
 };
 
@@ -183,16 +187,20 @@ struct ReduceArrayOperation<logical_or<uint1b_t>, uint1b_t, N> {
 
   CUTLASS_HOST_DEVICE
   uint1b_t operator()(
-    logical_and<uint1b_t> const &reduction_op, 
+    logical_or<uint1b_t> const &,
     ArrayType const &array) const {
 
-    uint8_t const *ptr = reinterpret_cast<uint8_t const *>(&array);
-    bool item = true;
+    uint8_t const *ptr = reinterpret_cast<uint8_t const *>(array.raw_data());
+    bool item = false;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int byte = 0; byte < (N + 7) / 8; ++byte) {
-      uint8_t bits = ptr[byte];
-      item = (item || bits);
+    for (int byte = 0; byte < N / 8; ++byte) {
+      item = item || ptr[byte];
+    }
+
+    if (N % 8) {
+      uint8_t mask = uint8_t((1u << (N % 8)) - 1);
+      item = item || (ptr[N / 8] & mask);
     }
 
     return uint1b_t{item};
