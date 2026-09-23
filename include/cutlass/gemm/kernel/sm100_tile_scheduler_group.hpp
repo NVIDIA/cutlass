@@ -94,7 +94,7 @@ public:
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
       problem_shapes,
       hw_info,
-      cta_shape, selected_cluster_shape);
+      cta_shape, selected_cluster_shape, args.max_swizzle_size);
 
     Params params;
     params.initialize(
@@ -142,8 +142,8 @@ public:
   template<class BlockShape, class ClusterShape>
   CUTLASS_HOST_DEVICE static
   dim3
-  get_tiled_cta_shape_mnl(GroupProblemShape const &problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
-    return UnderlyingScheduler::get_tiled_cta_shape_mnl(problem_shapes, hw_info, cta_shape, cluster_shape);
+  get_tiled_cta_shape_mnl(GroupProblemShape const &problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape, int max_swizzle_size) {
+    return UnderlyingScheduler::get_tiled_cta_shape_mnl(problem_shapes, hw_info, cta_shape, cluster_shape, max_swizzle_size);
   }
 
   // Given the inputs, computes the physical grid we should launch.
@@ -161,7 +161,7 @@ public:
       problem_shapes,
       hw_info,
       cta_shape,
-      cluster_shape);
+      cluster_shape, params.params_sm90_.max_swizzle_size_);
 
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
     Arguments args{};
