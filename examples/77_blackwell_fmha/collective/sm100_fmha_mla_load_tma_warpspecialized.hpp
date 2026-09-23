@@ -246,11 +246,17 @@ struct Sm100MlaFwdLoadTmaWarpspecialized {
     //          b -> 2*a (Ki i even) 2*a+1 (Ki i odd)
 
     uint32_t lane_predicate = cute::elect_one_sync();
+    // Every lane of the load warp waits in producer_acquire(), but only the elected lane issues the TMA.
+    // Without a warp barrier after the wait, the elected lane may start the load (and the consumer may
+    // release the buffer) before another lane has executed its own wait; that lane would then wait on
+    // the parity of a phase that has already completed and never return. The __syncwarp() after each
+    // producer_acquire() keeps every lane's wait ordered before the TMA it guards.
 
     // Q1
     int q0_index = 2 * get<0>(blk_coord_q);
     int q1_index = 2 * get<0>(blk_coord_q) + 1;
     pipeline_q.producer_acquire(pipeline_q_producer_state);
+    __syncwarp();
     if (lane_predicate) {
       auto tma_barrier = pipeline_q.producer_get_barrier(pipeline_q_producer_state);
       copy(params.tma_load_q.with(*tma_barrier, 0), tQgQ(_, q0_index), tQsQ(_, pipeline_q_producer_state.index()));
@@ -260,6 +266,7 @@ struct Sm100MlaFwdLoadTmaWarpspecialized {
     // K1
     int k_index = 0;
     pipeline_kv.producer_acquire(pipeline_kv_producer_state);
+    __syncwarp();
     if (lane_predicate) {
       auto tma_barrier = pipeline_kv.producer_get_barrier(pipeline_kv_producer_state);
       copy(params.tma_load_k.with(*tma_barrier, 0), tKgK(_, k_index), tKsK(_, pipeline_kv_producer_state.index() / 2));
@@ -268,6 +275,7 @@ struct Sm100MlaFwdLoadTmaWarpspecialized {
 
     // Q2
     pipeline_q.producer_acquire(pipeline_q_producer_state);
+    __syncwarp();
     if (lane_predicate) {
       auto tma_barrier = pipeline_q.producer_get_barrier(pipeline_q_producer_state);
       copy(params.tma_load_q.with(*tma_barrier, 0), tQgQ(_, q1_index), tQsQ(_, pipeline_q_producer_state.index()));
@@ -281,6 +289,7 @@ struct Sm100MlaFwdLoadTmaWarpspecialized {
 
     // V1
     pipeline_kv.producer_acquire_bytes(pipeline_kv_producer_state, TransactionBytesLoadV);
+    __syncwarp();
     if (lane_predicate) {
       auto tma_barrier = pipeline_kv.producer_get_barrier(pipeline_kv_producer_state);
       copy(params.tma_load_v.with(*tma_barrier, 0), tVgV(_, k_index), tVsV(_, pipeline_kv_producer_state.index() / 2));
@@ -294,6 +303,7 @@ struct Sm100MlaFwdLoadTmaWarpspecialized {
 
       // Ki
       pipeline_kv.producer_acquire(pipeline_kv_producer_state);
+      __syncwarp();
       if (lane_predicate) {
         auto tma_barrier = pipeline_kv.producer_get_barrier(pipeline_kv_producer_state);
         copy(params.tma_load_k.with(*tma_barrier, 0), tKgK(_, k_index), tKsK(_, pipeline_kv_producer_state.index() / 2));
@@ -305,6 +315,7 @@ struct Sm100MlaFwdLoadTmaWarpspecialized {
 
       // Vi
       pipeline_kv.producer_acquire_bytes(pipeline_kv_producer_state, TransactionBytesLoadV);
+      __syncwarp();
       if (lane_predicate) {
         auto tma_barrier = pipeline_kv.producer_get_barrier(pipeline_kv_producer_state);
         copy(params.tma_load_v.with(*tma_barrier, 0), tVgV(_, k_index), tVsV(_, pipeline_kv_producer_state.index() / 2));
