@@ -146,6 +146,25 @@ within the row. ``test/python/CuTeDSL/test_partition_alignment.py`` checks these
 cases with one thread per row, as well as dynamic strides with and without the
 divisibility proof.
 
+If 128-bit copies are optional, select a narrower copy instead of asserting
+alignment that a view does not have. Check both memory operands. For FP32 source
+``x`` and destination ``y`` with unit inner strides, this host-side selection
+also handles a nonzero storage offset:
+
+.. code-block:: python
+
+    aligned = all(t.data_ptr() % 16 == 0 and t.stride(0) % 4 == 0 for t in (x, y))
+    copy_bits = 128 if aligned else 32
+    src = from_dlpack(x, assumed_align=copy_bits // 8)
+    dst = from_dlpack(y, assumed_align=copy_bits // 8)
+
+Pass ``copy_bits`` as a ``Constexpr`` to ``make_copy_atom`` through
+``num_bits_per_copy``. Carry the ``divby=4`` stride assumption only into the
+128-bit path. The 32-bit path handles row stride 65 or a one-element view offset
+without that assumption; it still needs valid bounds and contiguous elements.
+The regression test checks these fallback copies, including a misaligned
+destination, and preserves padding around the destination view.
+
 Alignment and contiguity are separate requirements. A shared-memory tile
 with stride ``(N, 1)`` cannot be read along its first dimension using one
 128-bit contiguous copy. Load that partition into a register fragment with

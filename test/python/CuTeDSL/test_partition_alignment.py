@@ -22,7 +22,7 @@ from cutlass.cute.runtime import from_dlpack
 @cute.kernel
 def copy_rows(src: cute.Tensor, dst: cute.Tensor, stride: cutlass.Int32,
               offset: cutlass.Constexpr, dynamic: cutlass.Constexpr,
-              assume_aligned: cutlass.Constexpr):
+              assume_aligned: cutlass.Constexpr, copy_bits: cutlass.Constexpr):
     if cutlass.const_expr(dynamic):
         if cutlass.const_expr(assume_aligned):
             stride = cute.assume(stride, divby=4)
@@ -31,7 +31,7 @@ def copy_rows(src: cute.Tensor, dst: cute.Tensor, stride: cutlass.Int32,
         layout = src.layout
     source = cute.make_tensor(src.iterator + offset, layout)
     atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), cutlass.Float32,
-                              num_bits_per_copy=128)
+                              num_bits_per_copy=copy_bits)
     tiled = cute.make_tiled_copy_tv(atom, cute.make_layout((2, 1)),
                                    cute.make_layout((1, 4)))
     thread = tiled.get_slice(cute.arch.thread_idx()[0])
@@ -41,8 +41,8 @@ def copy_rows(src: cute.Tensor, dst: cute.Tensor, stride: cutlass.Int32,
 @cute.jit
 def launch(src: cute.Tensor, dst: cute.Tensor, stride: cutlass.Int32,
            offset: cutlass.Constexpr, dynamic: cutlass.Constexpr,
-           assume_aligned: cutlass.Constexpr):
-    copy_rows(src, dst, stride, offset, dynamic, assume_aligned).launch(
+           assume_aligned: cutlass.Constexpr, copy_bits: cutlass.Constexpr = 128):
+    copy_rows(src, dst, stride, offset, dynamic, assume_aligned, copy_bits).launch(
         grid=(1, 1, 1), block=(2, 1, 1)
     )
 
@@ -80,6 +80,37 @@ class TestPartitionAlignment(unittest.TestCase):
                 storage, dst, a, b = tensors(stride)
                 with self.assertRaisesRegex(cutlass.DSLRuntimeError, "ptr alignment"):
                     cute.compile(launch, a, b, stride, offset, dynamic, False)
+
+    def test_scalar_fallback_for_actual_offset_views(self):
+        cases = ((65, 0, 4, False), (64, 1, 4, False), (65, 1, 4, True), (64, 0, 1, False))
+        for stride, offset, dst_offset, dynamic in cases:
+            with self.subTest(stride=stride, offset=offset, dst_offset=dst_offset, dynamic=dynamic):
+                storage = torch.arange(144, device="cuda", dtype=torch.float32)
+                src = storage[offset:].as_strided((2, 4), (stride, 1))
+                output = torch.full((2, 12), -19.0, device="cuda")
+                dst = output[:, dst_offset:dst_offset + 4]
+                copy_bits = 128 if all(t.data_ptr() % 16 == 0 and t.stride(0) % 4 == 0
+                                      for t in (src, dst)) else 32
+                self.assertEqual(copy_bits, 32)
+                a = from_dlpack(src, assumed_align=copy_bits // 8)
+                b = from_dlpack(dst, assumed_align=copy_bits // 8)
+                compiled = cute.compile(launch, a, b, stride, 0, dynamic, False, copy_bits)
+                compiled(a, b, stride)
+                self.assertTrue(torch.equal(dst, src))
+                self.assertTrue(torch.all(output[:, :dst_offset] == -19))
+                self.assertTrue(torch.all(output[:, dst_offset + 4:] == -19))
+
+    def test_copy_with_unaligned_destination(self):
+        src = torch.arange(8, device="cuda", dtype=torch.float32).reshape(2, 4)
+        output = torch.full((2, 8), -19.0, device="cuda")
+        dst = output[:, 1:5]
+        a = from_dlpack(src, assumed_align=16)
+        b = from_dlpack(dst, assumed_align=4)
+        compiled = cute.compile(launch, a, b, 4, 0, False, False)
+        compiled(a, b, 4)
+        self.assertTrue(torch.equal(dst, src))
+        self.assertTrue(torch.all(output[:, :1] == -19))
+        self.assertTrue(torch.all(output[:, 5:] == -19))
 
 
 if __name__ == "__main__":
