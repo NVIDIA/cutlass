@@ -413,11 +413,7 @@ public:
     }
 
     // Assign and prepare workspace memory
-    if (args.mode == GemmUniversalMode::kGemm) {
-      return params_.init_workspace(workspace, stream);
-    }
-
-    return Status::kSuccess;
+    return params_.init_workspace(workspace, stream);
   }
 
 
