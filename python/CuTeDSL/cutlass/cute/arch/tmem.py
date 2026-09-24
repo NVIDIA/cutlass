@@ -135,7 +135,11 @@ def retrieve_tmem_ptr(
     res_ty = _cute_ir.PtrType.get(element_type.mlir_type, AddressSpace.tmem, alignment)
     return _cute_nvgpu_ir.arch_sm100_retrieve_tmem_ptr(
         res_ty,
-        ptr_to_buffer_holding_addr.value,
+        (
+            ptr_to_buffer_holding_addr.ptr.value
+            if isinstance(ptr_to_buffer_holding_addr, struct._ScalarData)
+            else ptr_to_buffer_holding_addr.value
+        ),
         loc=loc,
         ip=ip,
     )
@@ -187,7 +191,11 @@ def alloc_tmem(
 
     _cute_nvgpu_ir.arch_sm100_alloc_tmem(
         Int32(num_columns).ir_value(loc=loc, ip=ip),
-        smem_ptr_to_write_address.value,
+        (
+            smem_ptr_to_write_address.ptr.value
+            if isinstance(smem_ptr_to_write_address, struct._ScalarData)
+            else smem_ptr_to_write_address.value
+        ),
         is_two_cta=is_two_cta,
         exclusive=exclusive,
         loc=loc,
