@@ -42,6 +42,15 @@ def make_direct_copy(groups: cutlass.Constexpr, matrices: cutlass.Constexpr):
     cute.make_tiled_copy(atom, layout_tv, (8 * groups, 4 * matrices))
 
 
+@cute.jit
+def make_cotiled_copy(threads: cutlass.Constexpr, matrices: cutlass.Constexpr):
+    atom = cute.make_copy_atom(
+        StMatrix16x8x8bOp(transpose=True, num_matrices=matrices), cutlass.Uint8
+    )
+    layout = cute.make_layout((threads, 4 * matrices))
+    cute.make_cotiled_copy(atom, layout, layout)
+
+
 class TestCopyThreadGroups(unittest.TestCase):
     def test_rejects_partial_warps(self):
         for matrices in (1, 2, 4):
@@ -71,6 +80,16 @@ class TestCopyThreadGroups(unittest.TestCase):
             for groups in (4, 8):
                 with self.subTest(matrices=matrices, groups=groups):
                     cute.compile(make_direct_copy, groups, matrices)
+
+    def test_cotiled_constructor_checks_thread_groups(self):
+        for matrices in (1, 2, 4):
+            for threads in (16, 48):
+                with self.subTest(matrices=matrices, threads=threads):
+                    with self.assertRaisesRegex(ValueError, "multiple of 32 threads"):
+                        cute.compile(make_cotiled_copy, threads, matrices)
+            for threads in (32, 64):
+                with self.subTest(matrices=matrices, threads=threads):
+                    cute.compile(make_cotiled_copy, threads, matrices)
 
 
 if __name__ == "__main__":
