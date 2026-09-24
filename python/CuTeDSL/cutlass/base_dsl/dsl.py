@@ -467,7 +467,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
             atexit.register(restore_excepthook, origin_excepthook)
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=None)
     def print_warning_once(self, message: str) -> None:
         log().warning(f"Warning: {message}")
         warnings.warn(message, UserWarning)
