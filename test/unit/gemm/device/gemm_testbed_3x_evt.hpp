@@ -470,9 +470,9 @@ public:
   using Base = HostEVTNodeBase<ElementCompute>;
   using ComputeOp = ComputeOp_<ElementCompute>;
 
-  struct Arguments {
-    struct OpArgs {} op;
-  };
+  // Empty, like the default Sm90Compute::Arguments, so that the cute::tuple
+  // arguments of nodes with more than 4 ops match the device layout
+  struct Arguments { };
 private:
   ComputeOp op_;
 public:
