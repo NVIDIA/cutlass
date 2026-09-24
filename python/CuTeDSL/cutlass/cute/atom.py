@@ -1053,6 +1053,9 @@ def make_tiled_copy(
 ) -> TiledCopy:
     """Create a tiled type given a TV partitioner and tiler.
 
+    The thread mode of ``layout_tv`` must contain a whole number of the atom's
+    thread groups, including when that mode has a nested shape.
+
     :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
     :type atom: CopyAtom
     :param layout_tv: Thread-value layout
