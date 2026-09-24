@@ -205,7 +205,7 @@ int main() {
     &run_fused_gemm_f16_shmem
   };
 
-  return testRun(75, funcs, "gemm f16 shmem staging");
+  return testRun(getDefaultSmArch(), funcs, "gemm f16 shmem staging");
 
 
 }

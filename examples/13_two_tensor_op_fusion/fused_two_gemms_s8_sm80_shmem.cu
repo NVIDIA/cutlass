@@ -216,7 +216,7 @@ int main() {
     &run_fused_gemm_s8_sm80_shmem
   };
 
-  return testRun(80, funcs, "gemm int8 shmem staging");
+  return testRun(getDefaultSmArch(), funcs, "gemm int8 shmem staging");
 
 
 }
