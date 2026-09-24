@@ -42,6 +42,64 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+TEST(Matrix, nonsquare_indexing) {
+
+  cutlass::Matrix<float, 2, 3> wide = {
+    1, 2, 3,
+    4, 5, 6
+  };
+
+  EXPECT_EQ(wide.at(1, 0), 4);
+  EXPECT_EQ(wide.diagonal().at(1, 0), 5);
+
+  wide.at(1, 2) = 9;
+  EXPECT_EQ(wide.data[5], 9);
+
+  cutlass::Matrix<float, 2, 1> wide_diag = {7, 8};
+  auto wide_from_diag = cutlass::Matrix<float, 2, 3>::from_diagonal(wide_diag);
+  EXPECT_EQ(wide_from_diag.data[4], 8);
+
+  cutlass::Matrix<float, 2, 1> left = {1, 4};
+  cutlass::Matrix<float, 2, 2> right = {2, 3, 5, 6};
+  EXPECT_EQ((cutlass::Matrix<float, 2, 3>::hcat(left, right).at(1, 2)), 6);
+
+  cutlass::Matrix<float, 3, 2> tall = {
+    1, 2,
+    3, 4,
+    5, 6
+  };
+
+  EXPECT_EQ(tall.at(2, 1), 6);
+  EXPECT_EQ(tall.diagonal().at(1, 0), 4);
+
+  cutlass::Matrix<float, 2, 1> tall_diag = {7, 8};
+  auto tall_from_diag = cutlass::Matrix<float, 3, 2>::from_diagonal(tall_diag);
+  EXPECT_EQ(tall_from_diag.data[3], 8);
+
+  cutlass::Matrix<float, 1, 2> upper = {1, 2};
+  EXPECT_EQ((cutlass::Matrix<float, 4, 2>::vcat(upper, tall).at(3, 1)), 6);
+
+  cutlass::Matrix<float, 2, 4> wide4 = {1, 2, 3, 4, 5, 6, 7, 8};
+  EXPECT_EQ(wide4.diagonal().data[1], 6);
+
+  cutlass::Matrix<float, 3, 4> wide34 = {
+    1, 2, 3, 4,
+    5, 6, 7, 8,
+    9, 10, 11, 12
+  };
+  EXPECT_EQ(wide34.diagonal().data[2], 11);
+
+  EXPECT_EQ((cutlass::Matrix<float, 4, 2>::from_diagonal(tall_diag).data[3]), 8);
+
+  cutlass::Matrix<float, 3, 1> diag3 = {7, 8, 9};
+  EXPECT_EQ((cutlass::Matrix<float, 4, 3>::from_diagonal(diag3).data[8]), 9);
+
+  cutlass::Matrix<float, 4, 1> column = {1, 2, 3, 4};
+  EXPECT_EQ(column.at(3, 0), 4);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 TEST(Matrix, elementwise_add) {
 
   using Matrix4x4 = cutlass::Matrix4x4<float>;
