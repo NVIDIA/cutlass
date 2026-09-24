@@ -250,6 +250,9 @@ public:
 
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
+    if (args.split_k_slices == 0) {
+      return Status::kErrorInvalidProblem;
+    }
     return Status::kSuccess;
   }
 
