@@ -354,7 +354,8 @@ class range:
     (start, stop, step) constructors with additional parameters for loop
     optimization:
 
-    - unroll: Number of iterations to unroll (0 or 1 = no unrolling)
+    - unroll: Number of iterations to unroll (1 = no unrolling; 0 or omitted
+      lets the compiler choose)
     - unroll_full: Whether to fully unroll the loop
     - prefetch_stages: Number of prefetch stages to generate
     - vectorize: Whether to vectorize the loop (default: None)
