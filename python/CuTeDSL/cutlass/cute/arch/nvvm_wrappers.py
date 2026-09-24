@@ -15,6 +15,7 @@ from functools import partial
 from typing import (
     Any,
     Optional,
+    Sequence,
     Tuple,
     Union,
     Callable,
@@ -4684,6 +4685,82 @@ def cvt_f32x4_to_fnv8e5m3x4(
 ScalarArg = Union[int, float, bool, Numeric]
 
 
+# The NVVM -> LLVM conversion of `nvvm.inline_ptx` selects an *immediate*
+# operand constraint ("n") for every operand whose defining op is a constant,
+# without consulting the target instruction. Some PTX instructions accept only a
+# register in a given operand slot -- `max.xorsign.abs.bf16x2` is one -- so a
+# compile-time constant that reaches such a slot is rejected by ptxas with
+# "Arguments mismatch for instruction 'max'".
+#
+# `force_register_args` names the read-only inputs that must be materialized
+# into a register first; unnamed operands keep the existing automatic behavior.
+# Materialization reuses this same interface with a single `mov`, so the operand
+# the target instruction sees is produced by an instruction instead of a
+# constant op and the ordinary type-based register constraint is selected.
+#
+# PTX `mov` type per MLIR integer width. Mirrors the register letters the
+# builder derives from MLIR types: i1 -> b, i16 -> h, i32 -> r, i64 -> l.
+_MOV_TYPE_BY_INTEGER_WIDTH = {1: "pred", 16: "b16", 32: "b32", 64: "b64"}
+
+
+def _mov_ptx_type(mlir_type: ir.Type) -> str:
+    """Return the PTX `mov` type that preserves `mlir_type` bit-for-bit."""
+    if isinstance(mlir_type, ir.IntegerType):
+        mov_type = _MOV_TYPE_BY_INTEGER_WIDTH.get(mlir_type.width)
+        if mov_type is not None:
+            return mov_type
+    elif isinstance(mlir_type, llvm.PointerType):
+        # Shared-memory (state space 3) pointers are addressed with 32 bits.
+        return "b32" if mlir_type.address_space == 3 else "b64"
+    raise TypeError(
+        "force_register_args: cannot materialize an operand of MLIR type "
+        f"{mlir_type} into a register. Only i1, i16, i32, i64 and pointer "
+        "operands are supported. Float constants are excluded because the "
+        "immediate constraint the builder selects for constants ('n') accepts "
+        "only integer constants, so a float constant cannot be forwarded "
+        "either way; that is a separate defect from the register request and "
+        "is not addressed by force_register_args."
+    )
+
+
+def _materialize_register(value: ir.Value, *, loc=None, ip=None) -> ir.Value:
+    """Move `value` into a fresh register and return that register.
+
+    `mov` accepts an immediate operand, so the constant keeps the "n" constraint
+    on the materialization itself; only the value handed to the target
+    instruction becomes a register.
+    """
+    mov_type = _mov_ptx_type(value.type)
+    return nvvm.inline_ptx(
+        [value.type], [value], [], "mov." + mov_type + " {$w0}, {$r0};", loc=loc, ip=ip
+    )
+
+
+def _resolve_force_register_args(
+    force_register_args: Optional[Sequence[int]], num_read_only: int
+) -> list[int]:
+    """Validate `force_register_args` and return the indices to materialize."""
+    if force_register_args is None:
+        return []
+    indices: list[int] = []
+    for index in force_register_args:
+        if not isinstance(index, int):
+            raise TypeError(
+                "force_register_args entries must be integers, got "
+                f"{type(index).__name__}"
+            )
+        if not 0 <= index < num_read_only:
+            raise IndexError(
+                f"force_register_args index {index} is out of range for "
+                f"{num_read_only} read-only argument(s). Indices refer to "
+                "positions in read_only_args only; use read_write_args for "
+                "read-write operands."
+            )
+        if index not in indices:
+            indices.append(index)
+    return indices
+
+
 @dsl_user_op
 def inline_ptx(
     ptx_code: str,
@@ -4692,6 +4769,7 @@ def inline_ptx(
     read_only_args: Optional[list[ScalarArg]] = None,
     read_write_args: Optional[list[ScalarArg]] = None,
     predicate: Optional[Boolean] = None,
+    force_register_args: Optional[Sequence[int]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, tuple[Numeric, ...], None]:
@@ -4713,6 +4791,12 @@ def inline_ptx(
     :type read_write_args: list[ScalarArg], optional
     :param predicate: Optional Boolean value for conditional execution (corresponds to @$p prefix).
     :type predicate: Boolean, optional
+    :param force_register_args: Optional indices into ``read_only_args`` that must be
+        materialized into a register first, for instructions that accept only a register in
+        that slot (for example ``max.xorsign.abs.bf16x2``); otherwise a compile-time
+        constant goes in as an immediate and ptxas rejects it. Supported operand types are
+        i1, i16, i32, i64 and pointers. Indices are validated; a bad index raises.
+    :type force_register_args: Sequence[int], optional
     :param loc: MLIR location (advanced use, typically None).
     :type loc: Any, optional
     :param ip: MLIR insertion point (advanced use, typically None).
@@ -4778,6 +4862,18 @@ def inline_ptx(
             read_write_args=[arr[0], arr[1]],
         )
 
+    Constant operand that the instruction requires in a register:
+
+    .. code-block:: python
+
+        zero = Int32(0)
+        inline_ptx(
+            "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};",
+            write_only_types=[Int32],
+            read_only_args=[zero, value],
+            force_register_args=[0],
+        )
+
     .. note::
         Refer to the `PTX ISA documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/>`_
         for instruction syntax.
@@ -4831,6 +4927,15 @@ def inline_ptx(
 
     read_only_ir = [convert_read_only_arg(arg) for arg in read_only_args]
     read_write_ir = [convert_arg(arg) for arg in read_write_args]
+
+    # Materialize the read-only inputs that must be supplied in a register.
+    # Applied by position, never by value, so two operands holding the same
+    # constant can still be treated differently.
+    for index in _resolve_force_register_args(force_register_args, len(read_only_ir)):
+        forced = read_only_ir[index]
+        if not isinstance(forced, ir.Value):
+            forced = forced.ir_value(loc=loc, ip=ip)
+        read_only_ir[index] = _materialize_register(forced, loc=loc, ip=ip)
 
     # Build write_only result types
     write_only_mlir_types = [dtype.mlir_type for dtype in write_only_types]
