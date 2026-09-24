@@ -85,6 +85,92 @@ tensor with shape ``(128, 128)`` and dtype ``torch.float4_e2m1fn_x2`` is exposed
 tensor with shape ``(128, 256)``. The same logical reinterpretation also applies when the leading
 dimension is not the last mode.
 
+Alignment after partitioning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Base-pointer alignment does not establish alignment for every row of a tensor.
+For an FP32 tensor with unit-stride rows and dynamic row stride ``ld``, row ``r``
+starts at ``base + 4 * r * ld`` bytes. A 16-byte-aligned base therefore does not justify
+16-byte row loads unless the compiler can also prove that ``ld`` is divisible
+by four. Reconstructing the layout with an unconstrained ``Int32`` stride can
+lose that proof even when ``from_dlpack`` received ``assumed_align=16``.
+
+Check the actual strides and data pointer of a two-dimensional FP32 view on the
+host. Checking its shape or the allocation's original address is insufficient:
+
+.. code-block:: python
+
+    if x.stride(1) != 1 or x.data_ptr() % 16 or x.stride(0) % 4:
+        raise ValueError("FP32 rows must have unit stride and 16-byte-aligned starts")
+    src = from_dlpack(x, assumed_align=16)
+    ld = x.stride(0)
+
+Pass ``ld`` to the JIT function and retain the checked restriction when rebuilding
+the layout. Padded rows are valid too; their stride need not equal their width:
+
+.. code-block:: python
+
+    ld = cute.assume(ld, divby=4)
+    src = cute.make_tensor(input.iterator,
+                           cute.make_layout((M, N), stride=(ld, 1)))
+
+For a transposed output with stride ``(1, M)``, the same requirement applies
+to ``M``. ``cute.assume`` records a precondition; it is not a runtime check.
+Do not assert stronger alignment on a partitioned pointer to bypass an error
+when the stride or offset can break it. For example, a row stride of 65 FP32
+elements or a one-element offset does not preserve 16-byte alignment.
+
+For a 16-byte-aligned FP32 base, these examples describe the start of each row:
+
+.. list-table:: Row alignment preconditions
+   :header-rows: 1
+
+   * - Row stride (elements)
+     - Base offset (elements)
+     - Every row remains 16-byte aligned
+   * - 64 or 68
+     - 0
+     - Yes
+   * - 64
+     - 4
+     - Yes
+   * - 65
+     - 0
+     - No
+   * - 64
+     - 1
+     - No
+
+The checks establish alignment, not bounds: each copied vector must still fit
+within the row. ``test/python/CuTeDSL/test_partition_alignment.py`` checks these
+cases with one thread per row, as well as dynamic strides with and without the
+divisibility proof.
+
+If 128-bit copies are optional, select a narrower copy instead of asserting
+alignment that a view does not have. Check both memory operands. For FP32 source
+``x`` and destination ``y`` with unit inner strides, this host-side selection
+also handles a nonzero storage offset:
+
+.. code-block:: python
+
+    aligned = all(t.data_ptr() % 16 == 0 and t.stride(0) % 4 == 0 for t in (x, y))
+    copy_bits = 128 if aligned else 32
+    src = from_dlpack(x, assumed_align=copy_bits // 8)
+    dst = from_dlpack(y, assumed_align=copy_bits // 8)
+
+Pass ``copy_bits`` as a ``Constexpr`` to ``make_copy_atom`` through
+``num_bits_per_copy``. Carry the ``divby=4`` stride assumption only into the
+128-bit path. The 32-bit path handles row stride 65 or a one-element view offset
+without that assumption; it still needs valid bounds and contiguous elements.
+The regression test checks these fallback copies, including a misaligned
+destination, and preserves padding around the destination view.
+
+Alignment and contiguity are separate requirements. A shared-memory tile
+with stride ``(N, 1)`` cannot be read along its first dimension using one
+128-bit contiguous copy. Load that partition into a register fragment with
+``cute.autovec_copy``, then copy the register fragment to the contiguous
+output partition. Checking only the starting address is insufficient.
+
 Code Example
 ~~~~~~~~~~~~
 
