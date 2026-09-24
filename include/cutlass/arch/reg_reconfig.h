@@ -47,6 +47,7 @@
          (__CUDA_ARCH__ ==  900 && defined(__CUDA_ARCH_FEAT_SM90_ALL))      \
       || (__CUDA_ARCH__ == 1000 && defined(__CUDA_ARCH_FEAT_SM100_ALL))     \
       || (__CUDA_ARCH__ == 1010 && defined(__CUDA_ARCH_FEAT_SM101_ALL))     \
+      || (__CUDA_ARCH__ == 1100 && defined(__CUDA_ARCH_FEAT_SM110_ALL))     \
       || (__CUDA_ARCH__ == 1030 && defined(__CUDA_ARCH_FEAT_SM103_ALL))     \
       || (__CUDA_ARCH__ == 1200 && defined(__CUDA_ARCH_FEAT_SM120_ALL))     \
       || (__CUDA_ARCH__ == 1210 && defined(__CUDA_ARCH_FEAT_SM121_ALL))     \
@@ -57,6 +58,7 @@
   #if defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ >= 12 && (          \
          (__CUDA_ARCH__ == 1000 && CUDA_ARCH_FAMILY(1000))  \
       || (__CUDA_ARCH__ == 1010 && CUDA_ARCH_FAMILY(1010))  \
+      || (__CUDA_ARCH__ == 1100 && CUDA_ARCH_FAMILY(1100))  \
       || (__CUDA_ARCH__ == 1030 && CUDA_ARCH_FAMILY(1030))  \
       || (__CUDA_ARCH__ == 1200 && CUDA_ARCH_FAMILY(1200))  \
       || (__CUDA_ARCH__ == 1210 && CUDA_ARCH_CONDITIONAL_OR_FAMILY(1210))  \
