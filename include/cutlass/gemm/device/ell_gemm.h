@@ -747,7 +747,7 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size, 
+      {args.problem_size.n(), args.problem_size.m(), args.problem_size.k()},
       {ThreadblockShape::kM, args.ell_blocksize, ThreadblockShape::kK},
       args.split_k_slices);
     
