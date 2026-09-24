@@ -51,4 +51,39 @@ cutlass_example_add_executable(
   cute_tutorial_05_mma_tma_epi_sm100
   05_mma_tma_epi_sm100.cu
 )
+
+cutlass_example_add_executable(
+  cute_tutorial_01_mma_sm100_mxfp8
+  mxfp8/01_mma_sm100_mxfp8.cu
+)
+target_include_directories(cute_tutorial_01_mma_sm100_mxfp8
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+cutlass_example_add_executable(
+  cute_tutorial_02_mma_tma_sm100_mxfp8
+  mxfp8/02_mma_tma_sm100_mxfp8.cu
+)
+target_include_directories(cute_tutorial_02_mma_tma_sm100_mxfp8
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+cutlass_example_add_executable(
+  cute_tutorial_03_mma_tma_multicast_sm100_mxfp8
+  mxfp8/03_mma_tma_multicast_sm100_mxfp8.cu
+)
+target_include_directories(cute_tutorial_03_mma_tma_multicast_sm100_mxfp8
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+cutlass_example_add_executable(
+  cute_tutorial_04_mma_tma_2sm_sm100_mxfp8
+  mxfp8/04_mma_tma_2sm_sm100_mxfp8.cu
+)
+target_include_directories(cute_tutorial_04_mma_tma_2sm_sm100_mxfp8
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+cutlass_example_add_executable(
+  cute_tutorial_05_ws_tma_multicast_2sm_sm100_mxfp8
+  mxfp8/05_ws_tma_multicast_2sm_sm100_mxfp8.cu
+)
+target_include_directories(cute_tutorial_05_ws_tma_multicast_2sm_sm100_mxfp8
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
