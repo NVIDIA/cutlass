@@ -387,13 +387,13 @@ protected:
       if (iter_runtime_a != mapping.end()) {
           operator_args.mainloop.runtime_data_type_a = iter_runtime_a->second;
       } else {
-        assert("invalid runtime argument for datatype A!");
+        return Status::kErrorInvalidProblem;
       }
 
       if (iter_runtime_b != mapping.end()) {
           operator_args.mainloop.runtime_data_type_b = iter_runtime_b->second;
       } else {
-        assert("invalid runtime argument for datatype B!");
+        return Status::kErrorInvalidProblem;
       }
 
     }
