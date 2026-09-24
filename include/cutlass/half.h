@@ -613,9 +613,9 @@ struct numeric_limits<cutlass::half_t> {
   CUTLASS_HOST_DEVICE
   static cutlass::half_t max() { return cutlass::half_t::bitcast(0x7bff); }
 
-  /// Returns smallest finite value
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   CUTLASS_HOST_DEVICE
-  static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1800); }
+  static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1400); }
 
   /// Returns maximum rounding error
   CUTLASS_HOST_DEVICE
@@ -681,9 +681,9 @@ struct numeric_limits<cutlass::half_t> {
   CUTLASS_HOST_DEVICE
   static cutlass::half_t max() { return cutlass::half_t::bitcast(0x7bff); }
 
-  /// Returns smallest finite value
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   CUTLASS_HOST_DEVICE
-  static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1800); }
+  static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1400); }
 
   /// Returns maximum rounding error
   CUTLASS_HOST_DEVICE
