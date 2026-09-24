@@ -57,6 +57,12 @@ public:
   Singleton();
 
   static Singleton const &get();
+
+  /// Returns a mutable reference to the singleton for dynamic kernel loading
+  static Singleton &get_mutable();
+
+  /// Load a kernel shared library and rebuild the operation table
+  Status load_kernel_library(std::string const &path);
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

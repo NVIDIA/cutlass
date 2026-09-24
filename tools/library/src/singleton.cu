@@ -54,6 +54,26 @@ Singleton const & Singleton::get() {
   return instance;
 }
 
+Singleton & Singleton::get_mutable() {
+  // The underlying Meyer's singleton object is non-const; the const
+  // is only on the reference returned by get(). This const_cast is
+  // safe because we own the singleton and need mutability for dynamic
+  // kernel loading.
+  return const_cast<Singleton &>(get());
+}
+
+Status Singleton::load_kernel_library(std::string const &path) {
+  Status status = manifest.load_kernel_library(path);
+  if (status != Status::kSuccess) {
+    return status;
+  }
+
+  // Rebuild the operation table from scratch with the new operations
+  operation_table = OperationTable();
+  operation_table.append(manifest);
+  return Status::kSuccess;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library
