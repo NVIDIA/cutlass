@@ -33,6 +33,8 @@
 */
 #pragma once
 
+#include "cute/tensor.hpp"
+
 #include "cutlass/cutlass.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/conv/convolution.h"
@@ -556,7 +558,11 @@ private:
     // calculate n,z,p,q,k.
     // a helper lambda to compute a single spatial extent of the nzpqk tensor
     auto nzpqk_extent = [](int act_ext, int filter_ext, int pad_total, int dilation, int tstride) {
-      return 1 + (act_ext + pad_total - ((filter_ext -1) * dilation + 1)) / tstride;
+      auto numerator = act_ext + pad_total - ((filter_ext - 1) * dilation + 1);
+      if (numerator < 0) {
+        return 0;
+      }
+      return 1 + numerator / tstride;
     };
 
     shape_xformed_act[0] = shape_act[0]; // Activation N extent

@@ -305,13 +305,7 @@ public:
   Status update(Arguments const &args, void *workspace = nullptr) {
 
     // update the params structure from the arguments
-    params_.ptr_A = args.ref_A.data();
-    params_.ptr_B = args.ref_B.data();
-    params_.ptr_C = args.ref_C.data();
-    params_.ptr_D = args.ref_D.data();
-    params_.output_op = args.output_op;
-    params_.semaphore = static_cast<int *>(workspace);
-
+    params_ = typename UnderlyingKernel::Params(args, static_cast<int *>(workspace));
     return Status::kSuccess;
   }
 
