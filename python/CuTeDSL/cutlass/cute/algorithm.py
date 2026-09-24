@@ -30,6 +30,7 @@ from .typing import (
     Pointer,
     Tensor,
     Boolean,
+    Float32,
     Int8,
     Int64,
     Int16,
@@ -43,6 +44,7 @@ from .core import (
     make_layout,
     make_ptr,
     max_common_layout,
+    max_common_vector,
     logical_divide,
     append_ones,
     group_modes,
@@ -61,6 +63,7 @@ from .nvgpu.common import (
     CopyR2GOp,
     CopyS2ROp,
     CopyR2SOp)
+from .nvgpu.cpasync.copy import CopyReduceBulkS2GOp, _copy_reduce_bulk_s2g
 
 
 @dsl_user_op
@@ -552,8 +555,9 @@ def copy(
 
     In general, Copy Atoms requiring single-threaded execution handle thread
     election internally. The non-tensor bulk copy operations (``CopyBulkG2SOp``,
-    ``CopyBulkG2SMulticastOp``, ``CopyBulkS2GOp``, ``CopyBulkS2GByteMaskOp``, and
-    ``CopyBulkS2SOp``) are exceptions: they do not perform thread election.
+    ``CopyBulkG2SMulticastOp``, ``CopyBulkS2GOp``, ``CopyReduceBulkS2GOp``,
+    ``CopyBulkS2GByteMaskOp``, and ``CopyBulkS2SOp``) are exceptions: they do
+    not perform thread election.
 
     .. note::
 
@@ -620,6 +624,33 @@ def copy(
                 "Expected source and destination tensors to have the same size in mode-1, "
                 f"but got {size(src_primary, mode=[1])} and {size(dst_primary, mode=[1])}"
             )
+
+    if isinstance(atom.op, CopyReduceBulkS2GOp):
+        if (
+            len(src_list) != 1
+            or len(dst_list) != 1
+            or pred is not None
+            or unroll_factor is not None
+            or kwargs
+        ):
+            raise ValueError("CopyReduceBulkS2GOp supports one unpredicated tensor tile per call")
+        count = size(src_primary)
+        if (
+            src_primary.element_type is not Float32
+            or dst_primary.element_type is not Float32
+            or src_primary.memspace != AddressSpace.smem
+            or dst_primary.memspace != AddressSpace.gmem
+            or size(src_primary, mode=[1]) != 1
+            or not isinstance(count, int)
+            or max_common_vector(src_primary, dst_primary) != count
+            or src_primary.iterator.alignment < 16
+            or dst_primary.iterator.alignment < 16
+        ):
+            raise ValueError(
+                "CopyReduceBulkS2GOp requires contiguous, 16-byte-aligned FP32 SMEM and GMEM tiles"
+            )
+        _copy_reduce_bulk_s2g(dst_primary.iterator, src_primary.iterator, count * 4, loc=loc, ip=ip)
+        return
 
     multicast_attr_pairs = _parse_tma_multicast_args(kwargs)
 

@@ -17,18 +17,19 @@ from typing_extensions import deprecated
 from abc import ABCMeta, abstractmethod
 
 from cutlass import base_dsl
-from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL
+from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL, dsl_user_op
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
 from cutlass._mlir.dialects.cute import ReductionOp as _CuteReductionOp
 from cutlass._mlir.dialects.nvvm import ReductionOp as _NvvmReductionOp
+from cutlass._mlir.dialects import llvm
 from cutlass._mlir import ir
 
 ReductionOp = ReductionKind
 
 from ...atom import CopyOp, Trait, TmaTrait, make_atom
-from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric
+from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric, Float32
 from ..common import LoadCacheMode as LoadCacheMode_
 
 from ..tcgen05.mma import CtaGroup
@@ -1846,6 +1847,66 @@ class CopyBulkS2GOp(CopyOp):
 
 class CopyBulkS2GTrait(Trait):
     pass
+
+
+@dataclass(frozen=True)
+class CopyReduceBulkS2GOp(CopyBulkS2GOp):
+    """Non-TMA shared-to-global bulk ``add.f32`` reduction.
+
+    ``cute.copy`` accepts one contiguous, 16-byte-aligned FP32 tile per call.
+    One elected thread issues it. The caller fences shared writes before issuing
+    the copy, then commits and waits on the bulk group before reading the result.
+    """
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: object,
+    ) -> "CopyBulkS2GTrait":
+        bits = kwargs.get("num_bits_per_copy", 0)
+        if (
+            copy_internal_type is not Float32
+            or not isinstance(bits, int)
+            or bits < 128
+            or bits % 128
+        ):
+            raise ValueError(
+                "CopyReduceBulkS2GOp requires Float32 and a multiple of 128 copy bits"
+            )
+        # The bulk-copy atom supplies the partition layout; cute.copy emits the reduction.
+        return super()._make_trait(copy_internal_type, loc=loc, ip=ip, **kwargs)
+
+    def __str__(self) -> str:
+        return "cp.reduce.async.bulk SMEM -> GMEM add.f32 Operation"
+
+
+@dsl_user_op
+def _copy_reduce_bulk_s2g(
+    dst: Pointer,
+    src: Pointer,
+    byte_count: int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    llvm.inline_asm(
+        None,
+        [
+            dst.toint().ir_value(),
+            Int32(src.toint()).ir_value(),
+            Int32(byte_count).ir_value(),
+        ],
+        "cp.reduce.async.bulk.global.shared::cta.bulk_group.add.f32 [$0], [$1], $2;",
+        "l,r,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
 
 
 #
