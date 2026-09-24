@@ -2250,7 +2250,9 @@ def is_major(
     value could be 1. This keeps the result a meta-level Python boolean that is
     safe to use while tracing a JIT function.
     """
-    first_stride = front(get(stride, mode=[mode], loc=loc, ip=ip), loc=loc, ip=ip)
+    if isinstance(mode, int):
+        mode = [mode]
+    first_stride = front(get(stride, mode=mode, loc=loc, ip=ip), loc=loc, ip=ip)
     if is_dynamic_expression(first_stride):
         return False
     return True if first_stride == 1 else False
