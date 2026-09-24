@@ -118,11 +118,10 @@ fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t st
     else {
       return Status::kErrorInternal;
     }
-#else
+#elif !defined(__QNX__)
     CUdeviceptr d_workspace = reinterpret_cast<CUdeviceptr>(workspace);
     CUresult result = CUDA_SUCCESS;
 
-#ifndef __QNX__
     if (sizeof(T) == 4) {
       result = cuMemsetD32Async(d_workspace, reinterpret_cast<uint32_t&>(fill_value), fill_count, stream);
     }
@@ -132,19 +131,21 @@ fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t st
     else if (sizeof(T) == 1) {
       result = cuMemsetD8Async(d_workspace, reinterpret_cast<uint8_t&>(fill_value), fill_count, stream);
     }
-#endif
 
     if (CUDA_SUCCESS != result) {
-      const char** error_string_ptr = nullptr;
-      (void) cuGetErrorString(result, error_string_ptr);
-      if (error_string_ptr != nullptr) {
-        CUTLASS_TRACE_HOST("  cuMemsetD" << sizeof(T) * 8 << "Async() returned error " << *error_string_ptr);
+      const char* error_string = nullptr;
+      (void) cuGetErrorString(result, &error_string);
+      if (error_string != nullptr) {
+        CUTLASS_TRACE_HOST("  cuMemsetD" << sizeof(T) * 8 << "Async() returned error " << error_string);
       }
       else {
         CUTLASS_TRACE_HOST("  cuMemsetD" << sizeof(T) * 8 << "Async() returned unrecognized error");
       }
       return Status::kErrorInternal;
     }
+#else
+    CUTLASS_TRACE_HOST("  fill_workspace() is unsupported on QNX without a CUDA host adapter");
+    return Status::kErrorInternal;
 #endif
   }
 
