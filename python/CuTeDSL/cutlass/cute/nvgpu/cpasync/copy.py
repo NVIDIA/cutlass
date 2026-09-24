@@ -152,41 +152,46 @@ def _to_tma_desc_ptr(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Optional[ir.Value]:
     """
-    Normalizes the ``tma_desc_ptr`` kw argument of TMA copies into the CuTe pointer expected by
-    the lowering, or returns ``None`` if no descriptor is provided.
+    Normalizes the ``tma_desc_ptr`` kw argument of TMA copies into the generic-address-space
+    CuTe pointer expected by the lowering, or returns ``None`` if no descriptor is provided.
 
-    Accepts a CuTe pointer, or a ``cutlass.Pointer`` such as the one returned by
-    ``TensorMap.get_ptr()``, which is converted to a generic-address-space CuTe pointer.
+    Accepts a CuTe pointer in the generic or gmem address space, or a ``cutlass.Pointer`` such as
+    the one returned by ``TensorMap.get_ptr()``. The TMA instructions take the descriptor as a
+    generic address, so gmem pointers are converted to generic.
     """
     if tma_desc_ptr is None:
         return None
 
     if isinstance(tma_desc_ptr, Pointer):
-        return cast(Any, tma_desc_ptr).value
-
-    if not isinstance(tma_desc_ptr, base_dsl.typing.Pointer):
+        memspace = tma_desc_ptr.memspace
+        if memspace == AddressSpace.generic:
+            return cast(Any, tma_desc_ptr).value
+        align = max(tma_desc_ptr.alignment, TMA_DESC_MIN_ALIGNMENT)
+    elif isinstance(tma_desc_ptr, base_dsl.typing.Pointer):
+        # e.g. cutlass.experimental.cuda.TensorMap.get_ptr()
+        memspace = tma_desc_ptr.space
+        align = TMA_DESC_MIN_ALIGNMENT
+    else:
         raise TypeError(
             f"expects a pointer to a TMA descriptor to be provided via the tma_desc_ptr kw "
             f"argument, but got {type(tma_desc_ptr).__qualname__}"
         )
 
-    # e.g. cutlass.experimental.cuda.TensorMap.get_ptr()
-    memspace = tma_desc_ptr.space
     if memspace not in (AddressSpace.generic, AddressSpace.gmem):
         raise ValueError(
             f"expects the TMA descriptor pointer provided via the tma_desc_ptr kw argument "
             f"to be in the generic or gmem address space, but got {memspace}"
         )
-    llvm_ptr = tma_desc_ptr.to_llvm_ptr(loc=loc, ip=ip)
-    addr = llvm.ptrtoint(ir.IntegerType.get_signless(64), llvm_ptr, loc=loc, ip=ip)
+
+    if isinstance(tma_desc_ptr, Pointer):
+        addr = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    else:
+        llvm_ptr = tma_desc_ptr.to_llvm_ptr(loc=loc, ip=ip)
+        addr = llvm.ptrtoint(ir.IntegerType.get_signless(64), llvm_ptr, loc=loc, ip=ip)
     # The generic address of a global memory location is the same as its global address
-    addr = _cute_ir.assume(
-        _cute_ir.ConstrainedIntType.get(TMA_DESC_MIN_ALIGNMENT, 64), addr, loc=loc, ip=ip
-    )
+    addr = _cute_ir.assume(_cute_ir.ConstrainedIntType.get(align, 64), addr, loc=loc, ip=ip)
     ptr_ty = _cute_ir.PtrType.get(
-        _cute_nvgpu_ir.TmaDescriptorTiledType.get(),
-        AddressSpace.generic,
-        TMA_DESC_MIN_ALIGNMENT,
+        _cute_nvgpu_ir.TmaDescriptorTiledType.get(), AddressSpace.generic, align
     )
     return cast(Any, _cute_ir.inttoptr(ptr_ty, addr, loc=loc, ip=ip)).value
 
