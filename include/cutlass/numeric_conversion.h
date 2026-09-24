@@ -96,6 +96,44 @@ struct NumericConverter {
   }
 };
 
+template <FloatRoundStyle Round>
+struct NumericConverter<int8_t, int, Round> {
+
+  using result_type = int8_t;
+  using source_type = int;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const &s) {
+    source_type clamped = s < -128 ? -128 : (s > 127 ? 127 : s);
+    return static_cast<result_type>(clamped);
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+template <FloatRoundStyle Round>
+struct NumericConverter<uint8_t, int, Round> {
+
+  using result_type = uint8_t;
+  using source_type = int;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const &s) {
+    source_type clamped = s < 0 ? 0 : (s > 255 ? 255 : s);
+    return static_cast<result_type>(clamped);
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Partial specializations for float => int32_t
