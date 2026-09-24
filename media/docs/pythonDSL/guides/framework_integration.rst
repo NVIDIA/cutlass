@@ -85,6 +85,36 @@ tensor with shape ``(128, 128)`` and dtype ``torch.float4_e2m1fn_x2`` is exposed
 tensor with shape ``(128, 256)``. The same logical reinterpretation also applies when the leading
 dimension is not the last mode.
 
+Alignment after partitioning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Base-pointer alignment does not establish alignment for every row of a tensor.
+For an FP32 row-major tensor with dynamic stride ``N``, row ``r`` starts at
+``base + 4 * r * N`` bytes. A 16-byte-aligned base therefore does not justify
+16-byte row loads unless the compiler can also prove that ``N`` is divisible
+by four. Reconstructing the layout with an unconstrained ``Int32`` stride can
+lose that proof even when ``from_dlpack`` received ``assumed_align=16``.
+
+When the caller has checked this restriction, retain it in the dynamic layout:
+
+.. code-block:: python
+
+    N = cute.assume(N, divby=4)
+    src = cute.make_tensor(input.iterator,
+                           cute.make_layout((M, N), stride=(N, 1)))
+
+For a transposed output with stride ``(1, M)``, the same requirement applies
+to ``M``. ``cute.assume`` records a precondition; it is not a runtime check.
+Do not assert stronger alignment on a partitioned pointer to bypass an error
+when the stride or offset can break it. For example, a row stride of 65 FP32
+elements or a one-element offset does not preserve 16-byte alignment.
+
+Alignment and contiguity are separate requirements. A shared-memory tile
+with stride ``(N, 1)`` cannot be read along its first dimension using one
+128-bit contiguous copy. Load that partition into a register fragment with
+``cute.autovec_copy``, then copy the register fragment to the contiguous
+output partition. Checking only the starting address is insufficient.
+
 Code Example
 ~~~~~~~~~~~~
 
