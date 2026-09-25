@@ -641,7 +641,7 @@ class ExecutionArgs:
                 )
             rectified[idx] = value
 
-        if self._missing in rectified:
+        if any(value is self._missing for value in rectified):
             missing_args = [
                 name
                 for i, name in enumerate(self._meta.all_names)
