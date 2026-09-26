@@ -30,7 +30,6 @@ from .typing import (
     Pointer,
     Tensor,
     Boolean,
-    Float32,
     Int8,
     Int64,
     Int16,
@@ -63,7 +62,7 @@ from .nvgpu.common import (
     CopyR2GOp,
     CopyS2ROp,
     CopyR2SOp)
-from .nvgpu.cpasync.copy import CopyReduceBulkS2GOp, _copy_reduce_bulk_s2g
+from .nvgpu.cpasync.copy import CopyReduceBulkS2GTrait, _copy_reduce_bulk_s2g
 
 
 @dsl_user_op
@@ -625,7 +624,8 @@ def copy(
                 f"but got {size(src_primary, mode=[1])} and {size(dst_primary, mode=[1])}"
             )
 
-    if isinstance(atom.op, CopyReduceBulkS2GOp):
+    if isinstance(atom._trait, CopyReduceBulkS2GTrait):
+        trait = atom._trait
         if (
             len(src_list) != 1
             or len(dst_list) != 1
@@ -633,11 +633,14 @@ def copy(
             or unroll_factor is not None
             or kwargs
         ):
-            raise ValueError("CopyReduceBulkS2GOp supports one unpredicated tensor tile per call")
+            raise ValueError(
+                "CopyReduceBulkS2GOp supports one unpredicated tensor tile per call"
+            )
         count = size(src_primary)
+        element_bytes = trait.dtype.width // 8
         if (
-            src_primary.element_type is not Float32
-            or dst_primary.element_type is not Float32
+            src_primary.element_type is not trait.dtype
+            or dst_primary.element_type is not trait.dtype
             or src_primary.memspace != AddressSpace.smem
             or dst_primary.memspace != AddressSpace.gmem
             or size(src_primary, mode=[1]) != 1
@@ -647,9 +650,17 @@ def copy(
             or dst_primary.iterator.alignment < 16
         ):
             raise ValueError(
-                "CopyReduceBulkS2GOp requires contiguous, 16-byte-aligned FP32 SMEM and GMEM tiles"
+                "CopyReduceBulkS2GOp requires one contiguous, 16-byte-aligned tile of "
+                f"{trait.dtype} in SMEM and a matching GMEM tile"
             )
-        _copy_reduce_bulk_s2g(dst_primary.iterator, src_primary.iterator, count * 4, loc=loc, ip=ip)
+        _copy_reduce_bulk_s2g(
+            dst_primary.iterator,
+            src_primary.iterator,
+            count * element_bytes,
+            trait.op_type,
+            loc=loc,
+            ip=ip,
+        )
         return
 
     multicast_attr_pairs = _parse_tma_multicast_args(kwargs)
