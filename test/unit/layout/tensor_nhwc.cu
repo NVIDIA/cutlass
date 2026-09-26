@@ -102,6 +102,40 @@ namespace layout {
     }
   }
 
+  __global__ void test_nhwc_inverse_non_packed(
+      int *output,
+      int n_size,
+      int h_size,
+      int w_size,
+      int c_size,
+      int ldc,
+      int ldw,
+      int ldh) {
+
+    typedef cutlass::layout::TensorNHWC Tensor;
+
+    Tensor::Stride tensor_stride({ldc, ldw, ldh});
+    Tensor tensor_nhw(tensor_stride);
+
+    for (int n_idx = 0; n_idx < n_size; n_idx++) {
+      for (int p_idx = 0; p_idx < h_size; p_idx++) {
+        for (int q_idx = 0; q_idx < w_size; q_idx++) {
+          for (int c_idx = 0; c_idx < c_size; c_idx++) {
+            cutlass::Tensor4DCoord tensor_coord(
+                n_idx, p_idx, q_idx, c_idx);
+
+            int ptr_offset = tensor_nhw(tensor_coord);
+
+            cutlass::Tensor4DCoord inv_coord =
+                tensor_nhw.inverse(ptr_offset);
+
+            output[ptr_offset] = tensor_nhw(inv_coord);
+          }
+        }
+      }
+    }
+  }
+
   class TestTensorNHWC {
     public:
 
@@ -161,6 +195,69 @@ namespace layout {
   }
 };
 
+class TestTensorNHWCInverseNonPacked {
+  public:
+
+    void run(
+        int n_size,
+        int h_size,
+        int w_size,
+        int c_size,
+        int ldc,
+        int ldw,
+        int ldh) {
+
+      size_t size =
+          n_size * ldh;
+
+      cutlass::device_memory::allocation<int> output(size);
+      int *output_host = (int *)malloc(sizeof(int) * size);
+
+      dim3 grid(1, 1);
+      dim3 block(c_size, 1, 1);
+
+      test::layout::test_nhwc_inverse_non_packed<<<grid, block>>>(
+          output.get(),
+          n_size,
+          h_size,
+          w_size,
+          c_size,
+          ldc,
+          ldw,
+          ldh);
+
+      cudaError_t result = cudaDeviceSynchronize();
+      ASSERT_EQ(result, cudaSuccess)
+          << "CUDA error: " << cudaGetErrorString(result);
+
+      cutlass::device_memory::copy_to_host(
+          output_host, output.get(), size);
+
+      result = cudaGetLastError();
+      ASSERT_EQ(result, cudaSuccess)
+          << "CUDA error: " << cudaGetErrorString(result);
+
+      for (int n_idx = 0; n_idx < n_size; n_idx++) {
+        for (int p_idx = 0; p_idx < h_size; p_idx++) {
+          for (int q_idx = 0; q_idx < w_size; q_idx++) {
+            for (int c_idx = 0; c_idx < c_size; c_idx++) {
+
+              int reference_offset =
+                  c_idx +
+                  q_idx * ldc +
+                  p_idx * ldw +
+                  n_idx * ldh;
+
+              EXPECT_EQ(output_host[reference_offset], reference_offset);
+            }
+          }
+        }
+      }
+
+      free(output_host);
+    }
+  };
+
 
 } // namespace layout
 } // namespace test
@@ -209,6 +306,21 @@ TEST(Layout_TensorNHWC, NHWC_4_8_16_128) {
   test_nhwc.run(n_size, h_size, w_size, c_size);
 
 }
+
+TEST(Layout_TensorNHWC, NHWC_inverse_non_packed) {
+  int n_size = 1;
+  int h_size = 2;
+  int w_size = 2;
+  int c_size = 4;
+
+  int ldc = 6;
+  int ldw = 15;
+  int ldh = 45;
+
+  test::layout::TestTensorNHWCInverseNonPacked test;
+  test.run(n_size, h_size, w_size, c_size, ldc, ldw, ldh);
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

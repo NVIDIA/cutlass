@@ -161,7 +161,6 @@ public:
 
     #if defined(__CUDA_ARCH__)
     int tmp = 0;
-    c = int(index % static_cast<int>(stride_[0]));
 
     unsigned int hw_mul, hw_shr, w_mul, w_shr, c_mul, c_shr;
 
@@ -171,7 +170,7 @@ public:
 
     fast_divmod(n, tmp, index, int(stride_[2]), hw_mul, hw_shr);
     fast_divmod(h, w, tmp, int(stride_[1]), w_mul, w_shr);
-    fast_divmod(w, tmp, w, int(stride_[0]), c_mul, c_shr);
+    fast_divmod(w, c, w, int(stride_[0]), c_mul, c_shr);
     #else
 
     n = int(index / stride_[2]);
