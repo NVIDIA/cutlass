@@ -1745,6 +1745,17 @@ class JitCompiledFunction:
 
         if "gpu.container_module" in export_module.operation.attributes:
             del export_module.operation.attributes["gpu.container_module"]
+
+        # dump_object_file_pic resolves the module's runtime symbols from the
+        # libraries loaded globally in this process. Building the JIT engine
+        # loads them, but a compile for an arch this machine cannot run builds
+        # no engine. Load them here, skipping any that fail as the engine does.
+        for lib in self.export_provider.dsl._get_dsl().get_shared_libs():
+            try:
+                ctypes.CDLL(lib, mode=ctypes.RTLD_GLOBAL)
+            except OSError as e:
+                log().warning(f"Could not load {lib}: {e}")
+
         # Generate the object file
 
         try:
