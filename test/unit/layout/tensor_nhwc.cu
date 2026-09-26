@@ -198,17 +198,9 @@ namespace layout {
 class TestTensorNHWCInverseNonPacked {
   public:
 
-    void run(
-        int n_size,
-        int h_size,
-        int w_size,
-        int c_size,
-        int ldc,
-        int ldw,
-        int ldh) {
+    void run(int n_size, int h_size, int w_size, int c_size, int ldc, int ldw, int ldh) {
 
-      size_t size =
-          n_size * ldh;
+      size_t size = n_size * ldh;
 
       cutlass::device_memory::allocation<int> output(size);
       int *output_host = (int *)malloc(sizeof(int) * size);
@@ -216,9 +208,7 @@ class TestTensorNHWCInverseNonPacked {
       dim3 grid(1, 1);
       dim3 block(c_size, 1, 1);
 
-      test::layout::test_nhwc_inverse_non_packed<<<grid, block>>>(
-          output.get(),
-          n_size,
+      test::layout::test_nhwc_inverse_non_packed<<<grid, block>>>(output.get(), n_size,
           h_size,
           w_size,
           c_size,
