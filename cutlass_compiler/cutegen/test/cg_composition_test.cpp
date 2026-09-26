@@ -415,6 +415,28 @@ TEST(CompositionTest, Basic)
         EXPECT_EQ(r, layout(shape(dyn_t{}), stride(dyn_t{})));
     }
     // -------------------------------
+    // RHS ScaledBasis stride + dynamic shape (github.com/NVIDIA/cutlass/issues/3470)
+    // -------------------------------
+    {
+        // scaled_basis(mode, value)
+        auto a = layout(shape(4, 4), stride(4, 1));
+        auto b = layout(shape(dyn_t{}, 4), stride(cg::scaled_basis(1, 1), cg::scaled_basis(0, 1)));
+        auto r = test_composition(a, b);
+        // (4,4):(4,1) o (?,4):(1@1,1@0)  =>  (?,4):(1,4)
+        EXPECT_EQ(r, layout(shape(dyn_t{}, 4), stride(1, 4)));
+    }
+    {
+        // Exact repro from the issue: (4096,8192):(1,4096) o (32,?,8,128):(E(0),8*E(1),E(1),32*E(0))
+        auto a = layout(shape(4096, 8192), stride(1, 4096));
+        auto b = layout(shape(32, dyn_t{}, 8, 128),
+                        stride(cg::scaled_basis(0, 1),
+                                cg::scaled_basis(1, 8),
+                                cg::scaled_basis(1, 1),
+                                cg::scaled_basis(0, 32)));
+        auto r = test_composition(a, b);
+        EXPECT_TRUE(cg::is_valid(r));
+    }
+    // -------------------------------
     // cosize(b) > size(a) and divisibility
     // -------------------------------
     {
