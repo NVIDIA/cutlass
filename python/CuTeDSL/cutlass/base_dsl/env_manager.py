@@ -23,12 +23,15 @@ import os
 import sys
 import shutil
 import glob
+import inspect
 import warnings
+from dataclasses import dataclass, field
 from pathlib import Path
-from functools import lru_cache
+from functools import cache, lru_cache
+from typing import Any, Callable, get_args
 
 from ..base_dsl.runtime.cuda import get_compute_capability_major_minor
-from .common import DSLUserCodeError
+from .common import DSLRuntimeError, DSLUserCodeError
 from .utils.logger import log
 from .cache_helpers import get_default_file_dump_root
 
@@ -85,6 +88,192 @@ def _parse_keep_tokens(raw: str, prefix: str = "") -> frozenset[str]:
         return _KEEP_ALL_TOKENS
     unknown = tokens - _KEEP_VALID_TOKENS
     return tokens - unknown
+
+
+#: Superseded per-artifact switches, paired with the [DSL]_KEEP token each one
+#: now folds into. Kept so existing scripts keep working for a release.
+_DEPRECATED_KEEP_SWITCHES: tuple[tuple[str, str], ...] = (
+    ("KEEP_IR", "ir-debug"),
+    ("KEEP_PTX", "ptx"),
+    ("KEEP_CUBIN", "cubin"),
+    ("KEEP_SASS", "sass"),
+)
+
+
+def _default_dump_dir() -> str:
+    """Directory artifacts land in when ``[DSL]_DUMP_DIR`` is unset."""
+    return str(get_default_file_dump_root())
+
+
+def _resolve_keep_tokens(prefix: str) -> frozenset[str]:
+    """Artifacts requested by ``[DSL]_KEEP``, with the deprecated switches folded in.
+
+    Each superseded switch warns and contributes its token, so the rest of the
+    DSL only ever consults the token set.
+    """
+    raw = get_str_env_var(f"{prefix}_KEEP", "")
+    tokens: set[str] = set(_parse_keep_tokens(raw, prefix) if raw else frozenset())
+    for switch, token in _DEPRECATED_KEEP_SWITCHES:
+        if get_bool_env_var(f"{prefix}_{switch}", False):
+            warnings.warn(
+                f"{prefix}_{switch} is deprecated; use {prefix}_KEEP={token} instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            tokens.add(token)
+    return frozenset(tokens)
+
+
+
+@dataclass(frozen=True)
+class EnvVar:
+    """One setting on an :class:`EnvironmentVarManager`.
+
+    Written in the class body as ``attribute: type = env_var(...)``, so the
+    attribute, its type and where its value comes from are stated together and
+    exactly once. ``source`` is either the environment variable's suffix -- the
+    value is read from ``{prefix}_{source}`` -- or a function of the manager
+    that computes it, for a setting with no variable of its own. How to read
+    the environment follows from the annotation.
+
+    ``affects_compile`` says whether the setting is part of the JIT cache key;
+    it is required, so a setting cannot be added without answering.
+    """
+
+    source: str | Callable[[Any], Any]
+    affects_compile: bool = field(kw_only=True)
+    default: Any = None
+    read_as: str | None = None
+    attribute: str = field(default="", init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, str) and (
+            self.default is not None or self.read_as is not None
+        ):
+            raise DSLRuntimeError(
+                "A computed setting takes neither `default` nor `read_as`: it has no "
+                "environment variable to fall back from or to be read under."
+            )
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        object.__setattr__(self, "attribute", name)
+
+    @property
+    def key_name(self) -> str:
+        return self.read_as or self.attribute
+
+    def resolve(
+        self, manager: Any, prefix: str, parser: Callable[..., Any] | None
+    ) -> Any:
+        """Value this setting takes for ``manager``."""
+        if not isinstance(self.source, str):
+            return self.source(manager)
+        assert parser is not None
+        # A default that reads other settings is written as a function of the
+        # manager. There is no ambiguity to resolve: parser_for_type admits only
+        # bool, int and str, so a callable is never itself a legitimate default.
+        default = self.default(manager) if callable(self.default) else self.default
+        return parser(f"{prefix}_{self.source}", default)
+
+
+def env_var(
+    source: str | Callable[[Any], Any],
+    *,
+    affects_compile: bool,
+    default: Any = None,
+    read_as: str | None = None,
+) -> Any:
+    """Declare a setting, as the default of an annotated class attribute.
+
+    ``source`` is the variable's suffix -- the value is read from
+    ``{prefix}_{source}`` -- or a function of the manager, for a setting
+    computed rather than read. Either way it may use anything declared above.
+
+    Returns ``Any``, the way :func:`dataclasses.field` does, so the declaration
+    can carry the attribute's real type. ``default`` may itself be a function
+    of the manager when it depends on a setting declared above.
+    """
+    return EnvVar(
+        source,
+        affects_compile=affects_compile,
+        default=default,
+        read_as=read_as,
+    )
+
+
+def _annotated_type(owner: type, attr: str) -> Any:
+    """Declared type of ``attr``, searched up ``owner``'s MRO."""
+    for klass in owner.__mro__:
+        annotation = inspect.get_annotations(klass).get(attr)
+        if annotation is not None:
+            return annotation
+    raise DSLRuntimeError(
+        f"{owner.__name__}.{attr} has no type annotation, so the parser for its "
+        f"environment variable cannot be determined. Annotate it on the class."
+    )
+
+
+def parser_for_type(annotation: Any) -> Callable[..., Any]:
+    args = get_args(annotation)
+    optional = type(None) in args
+    base = next((a for a in args if a is not type(None)), annotation)
+    if base is bool:
+        return get_bool_env_var
+    if base is int:
+        return get_int_or_none_env_var if optional else get_int_env_var
+    if base is str:
+        return get_str_env_var
+    raise DSLRuntimeError(
+        f"No environment-variable reader for {annotation!r}. Give the setting a "
+        f"bool, int or str annotation, or compute it from the manager instead."
+    )
+
+
+class EnvVarSpec:
+    """Turns the settings declared in a class body into a spec.
+
+    ``_ENV_VAR_SPEC`` is what a class declares plus everything it inherits, in
+    declaration order. A subclass redeclaring an attribute replaces the
+    inherited declaration and keeps its position.
+    """
+
+    _ENV_VAR_SPEC: tuple[EnvVar, ...] = ()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        composed = {entry.attribute: entry for entry in cls._ENV_VAR_SPEC}
+        composed.update(
+            {v.attribute: v for v in vars(cls).values() if isinstance(v, EnvVar)}
+        )
+        cls._ENV_VAR_SPEC = tuple(composed.values())
+
+    def _apply_env_var_spec(self, prefix: str) -> None:
+        for entry in type(self)._ENV_VAR_SPEC:
+            parser = (
+                parser_for_type(_annotated_type(type(self), entry.attribute))
+                if isinstance(entry.source, str)
+                else None
+            )
+            setattr(self, entry.attribute, entry.resolve(self, prefix, parser))
+
+    def cache_key_str(self) -> str:
+        """Return the settings that are part of the JIT cache key."""
+        rendered = []
+        for entry in sorted(self._ENV_VAR_SPEC, key=lambda e: e.key_name):
+            if not entry.affects_compile:
+                continue
+            value = getattr(self, entry.key_name)
+            if value is None:
+                continue
+            rendered.append(f"{entry.key_name}={_render_cache_key_value(value)};")
+        return "".join(rendered)
+
+
+def _render_cache_key_value(value: object) -> str:
+    # Sorted, because frozenset iteration order is randomized per process.
+    if isinstance(value, (set, frozenset)):
+        return repr(tuple(sorted(value, key=repr)))
+    return repr(value)
 
 
 # =============================================================================
@@ -342,31 +531,137 @@ def _find_cuda_home() -> str | None:
 
 
 
-@lru_cache(maxsize=1)
-def _find_nvdisasm_binary() -> str:
-    """Return absolute path to the bundled nvdisasm binary."""
+# Fallback minimum nvdisasm (CUDA Toolkit) version for SASS dumping, as
+# (major, minor). Used only when the build-time CUDA version is unavailable
+# (see _min_nvdisasm_version).
+MIN_NVDISASM_VERSION: tuple[int, int] = (13, 3)
+
+
+def _min_nvdisasm_version() -> tuple[int, int]:
+    """Minimum supported nvdisasm version for SASS dumping.
+
+    The floor is the CUDA version the DSL was built with — the bundled
+    toolchain that produces the CUBIN. nvdisasm is versioned with the CUDA
+    Toolkit it ships in, so the two are directly comparable; an older
+    nvdisasm may not understand the CUBINs this toolchain emits, while a
+    newer one can always read them. There is deliberately no upper bound:
+    the cu12-built DSL, for example, ships with the 13.3 nvdisasm wheel
+    (the first version published on PyPI), which disassembles its CUBINs
+    fine. Falls back to the hardcoded pin floor when the build-time version
+    is unavailable (e.g. a DSL client that does not implement
+    _get_cuda_version).
+    """
+    try:
+        from .version_info import CUDA_VERSION
+    except Exception:
+        return MIN_NVDISASM_VERSION
+    return (CUDA_VERSION.major, CUDA_VERSION.minor)
+
+
+
+def _nvdisasm_suggestion() -> str:
+    floor = _min_nvdisasm_version()
+    return "\n".join(
+        [
+            f"SASS dumping requires nvdisasm >= {floor[0]}.{floor[1]}."
+            " Any of the following works:",
+            "  • pip install nvidia-cutlass-dsl[sass]",
+            "  • install or upgrade a local CUDA Toolkit and expose it via"
+            " CUDA_HOME/CUDA_PATH",
+        ]
+    )
+
+
+
+def _nvdisasm_from_wheel() -> str | None:
     from importlib import metadata
 
     try:
         dist = metadata.distribution("nvidia-cuda-nvdisasm")
     except metadata.PackageNotFoundError:
-        dist = None
-    if dist is not None and dist.files is not None:
-        for entry in dist.files:
-            if entry.name == "nvdisasm":
-                binpath = Path(str(dist.locate_file(entry)))
-                if binpath.is_file():
-                    return str(binpath)
-    raise DSLUserCodeError(
-        "nvdisasm binary not found inside the nvidia-cuda-nvdisasm wheel.",
-        suggestion="\n".join(
-            [
-                "nvidia-cuda-nvdisasm is a runtime dependency of nvidia-cutlass-dsl",
-                "and should have been installed automatically. Try:",
-                "  • pip install --force-reinstall nvidia-cuda-nvdisasm",
-            ]
-        ),
-    )
+        return None
+    if dist.files is None:
+        return None
+    for entry in dist.files:
+        if entry.name == "nvdisasm":
+            binpath = Path(str(dist.locate_file(entry)))
+            if binpath.is_file():
+                return str(binpath)
+    return None
+
+
+def _nvdisasm_from_cuda_toolkit() -> str | None:
+    """Probe the CUDA Toolkit discovered by ``_find_cuda_home`` (CUDA_HOME /
+    CUDA_PATH, the root derived from nvcc on PATH, or a common install
+    location such as /usr/local/cuda*).
+
+    Returns None when no toolkit is found or the toolkit has no nvdisasm.
+    """
+    root = _find_cuda_home()
+    if not root:
+        return None
+    name = "nvdisasm.exe" if IS_WINDOWS else "nvdisasm"
+    binpath = Path(root) / "bin" / name
+    return str(binpath) if binpath.is_file() else None
+
+
+def _get_nvdisasm_version(binary: str) -> tuple[int, int] | None:
+    """Return the (major, minor) CUDA version reported by ``nvdisasm --version``."""
+    import re
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    # e.g. "Cuda compilation tools, release 13.5, V13.5.0"
+    match = re.search(r"release (\d+)\.(\d+)", result.stdout)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)))
+
+
+@cache
+def _find_nvdisasm_binary() -> str:
+    """Locate a compatible nvdisasm binary for SASS dumping.
+
+    Probe order (first hit wins):
+      1. the nvidia-cuda-nvdisasm pip wheel (installed via the [sass] extra)
+      2. the CUDA Toolkit located by _find_cuda_home (CUDA_HOME / CUDA_PATH,
+         the root derived from nvcc on PATH, or /usr/local/cuda*)
+
+    The wheel is probed before the local toolkit so that users who installed
+    the [sass] extra get a predictable version regardless of local CTK state.
+
+    The minimum supported version is derived from the CUDA version the DSL
+    was built with (see _min_nvdisasm_version); an incompatible version is a
+    hard error.
+    """
+    binary = None
+    from_env_var = False
+    if binary is None:
+        binary = _nvdisasm_from_wheel() or _nvdisasm_from_cuda_toolkit()
+    if binary is None:
+        raise DSLUserCodeError(
+            "SASS dumping requires the nvdisasm tool, but it was not found.",
+            suggestion=_nvdisasm_suggestion(),
+        )
+    version = _get_nvdisasm_version(binary)
+    floor = _min_nvdisasm_version()
+    if version is None or version < floor:
+        found = (
+            "an unknown version"
+            if version is None
+            else f"version {version[0]}.{version[1]}"
+        )
+        raise DSLUserCodeError(
+            f"nvdisasm at {binary!r} reports {found}, which is not supported"
+            " for SASS dumping.",
+            suggestion=_nvdisasm_suggestion(),
+        )
+    return binary
 
 
 def dump_sass(
@@ -409,6 +704,7 @@ def _get_libs_cand(start: str | Path) -> str | None:
 
     try:
         from .version_info import CUDA_VERSION
+
         major = CUDA_VERSION.major
         lib_folder_guesses.append(f"cu{major}/lib")
     except Exception:
@@ -463,16 +759,21 @@ def get_prefix_dsl_libs(prefix: str) -> str | None:
     return None
 
 
-class LogEnvironmentManager:
+class LogEnvironmentManager(EnvVarSpec):
+    jit_time_profiling: bool = env_var(
+        "JIT_TIME_PROFILING", affects_compile=False, default=False
+    )
+    log_to_console: bool = env_var(
+        "LOG_TO_CONSOLE", affects_compile=False, default=False
+    )
+    log_to_file: bool = env_var("LOG_TO_FILE", affects_compile=False, default=False)
+    log_level: int = env_var("LOG_LEVEL", affects_compile=False, default=1)
+
     def __init__(self, prefix: str = "DSL") -> None:
         self.prefix = prefix
 
-        # Logging options
-        self.jit_time_profiling = get_bool_env_var(
-            f"{prefix}_JIT_TIME_PROFILING", False
-        )
-        self.log_to_console = get_bool_env_var(f"{prefix}_LOG_TO_CONSOLE", False)
-        self.log_to_file = get_bool_env_var(f"{prefix}_LOG_TO_FILE", False)
+        self._apply_env_var_spec(prefix)
+
         if (
             has_env_var(f"{prefix}_LOG_LEVEL")
             and not self.log_to_console
@@ -484,7 +785,6 @@ class LogEnvironmentManager:
                 prefix,
                 prefix,
             )
-        self.log_level = get_int_env_var(f"{prefix}_LOG_LEVEL", 1)
 
 
 class EnvironmentVarManager(LogEnvironmentManager):
@@ -555,122 +855,137 @@ class EnvironmentVarManager(LogEnvironmentManager):
 
     """
 
+    # Master switch for DSL developers: raises the default of a curated set of
+    # diagnostic settings below, each still overridable by its own variable. One of
+    # those is lineinfo, which reaches GenerateLineInfo; it also injects
+    # warnings{nvvm} and alters MLIR locations.
+    debug: bool = env_var("DEBUG", affects_compile=True, default=False)
+    print_after_preprocessor: bool = env_var(
+        "PRINT_AFTER_PREPROCESSOR", affects_compile=False, default=False
+    )
+    print_ir: bool = env_var("PRINT_IR", affects_compile=False, default=False)
+    # Selects between a full traceback and the formatted message on the exception
+    # path. Supplies the default of filter_stacktrace, never of lineinfo -- that
+    # coupling runs through debug.
+    show_stacktrace: bool = env_var(
+        "SHOW_STACKTRACE", affects_compile=False, default=lambda mgr: mgr.debug
+    )
+    # Decides whether the frame-filtering excepthook is installed. Defaulted off
+    # under debug or show_stacktrace so internal DSL frames stay visible.
+    filter_stacktrace: bool = env_var(
+        "FILTER_STACKTRACE",
+        affects_compile=False,
+        default=lambda mgr: not (mgr.debug or mgr.show_stacktrace),
+    )
+    enable_pyir: bool = env_var("ENABLE_PYIR", affects_compile=True, default=False)
+    auto_m2s: bool = env_var("AUTO_M2S", affects_compile=True, default=False)
+    tolerate_m2m: bool = env_var("TOLERATE_M2M", affects_compile=True, default=True)
+    lineinfo: bool = env_var(
+        "LINEINFO", affects_compile=True, default=lambda mgr: mgr.debug
+    )
+    # Governs whether results are cached, not what is compiled.
+    no_cache: bool = env_var("NO_CACHE", affects_compile=False, default=False)
+    jit_cache_max_elems: int | None = env_var(
+        "JIT_CACHE_MAX_ELEMS", affects_compile=False, default=None
+    )
+    # Chooses where artifacts are written. Reaches the compiler only through the
+    # keep_* dump paths, and those force caching off.
+    dump_dir: str = env_var(
+        "DUMP_DIR",
+        affects_compile=False,
+        default=lambda mgr: _default_dump_dir(),
+    )
+    # Unread; the cache root is resolved separately from the environment by
+    # get_default_generated_ir_path.
+    cache_dir: str | None = env_var("CACHE_DIR", affects_compile=False, default=None)
+    # Every artifact the tokens below request is dumped either from build_module,
+    # which runs before the cache is consulted, or from a path that forces
+    # no_cache -- so none of them can be served stale, and the raw token set does
+    # not belong in the key either. A token wired up later answers for itself:
+    # the flag deriving it has to state its own affects_compile.
+    keep_tokens: frozenset[str] = env_var(
+        lambda mgr: _resolve_keep_tokens(mgr.prefix), affects_compile=False
+    )
+    # Saves IR after canonicalize+cse, the readable form.
+    keep_ir_clean: bool = env_var(
+        lambda mgr: "ir" in mgr.keep_tokens, affects_compile=False
+    )
+    # Saves raw IR before any passes, the old KEEP_IR=1 semantics.
+    keep_ir: bool = env_var(
+        lambda mgr: "ir-debug" in mgr.keep_tokens, affects_compile=False
+    )
+    keep_ptx: bool = env_var(
+        lambda mgr: "ptx" in mgr.keep_tokens, affects_compile=False
+    )
+    keep_cubin: bool = env_var(
+        lambda mgr: "cubin" in mgr.keep_tokens, affects_compile=False
+    )
+    keep_sass: bool = env_var(
+        lambda mgr: "sass" in mgr.keep_tokens, affects_compile=False
+    )
+    dryrun: bool = env_var("DRYRUN", affects_compile=True, default=False)
+    # Stored under _arch because the public spelling belongs to the arch property,
+    # which detects lazily; read_as sends the key through that property so a
+    # not-yet-detected architecture cannot drop out of it.
+    _arch: str | None = env_var(
+        "ARCH", affects_compile=True, default=None, read_as="arch"
+    )
+    # Installs a warnings.filterwarnings("error") that turns a warning raised
+    # during compilation into an exception. Keyed because an artifact compiled
+    # while warnings were tolerated may be one that this setting is meant to
+    # reject, and a cache hit skips the compile that would have rejected it.
+    warnings_as_errors: bool = env_var(
+        "WARNINGS_AS_ERRORS", affects_compile=True, default=False
+    )
+    warnings_ignore: bool = env_var(
+        "WARNINGS_IGNORE", affects_compile=False, default=False
+    )
+    enable_optimization_warnings: bool = env_var(
+        "ENABLE_OPTIMIZATION_WARNINGS",
+        affects_compile=False,
+        default=lambda mgr: mgr.debug,
+    )
+    # Governs whether results are cached, not what is compiled.
+    disable_file_caching: bool = env_var(
+        "DISABLE_FILE_CACHING", affects_compile=False, default=False
+    )
+    compiler_opt: str = env_var("COMPILER_OPT", affects_compile=True, default="")
+    compiler_backend: str = env_var(
+        "COMPILER_BACKEND", affects_compile=True, default="legacy"
+    )
+    # MLIR runtime libraries linked by the JIT.
+    shared_libs: str | None = env_var(
+        lambda mgr: get_prefix_dsl_libs(mgr.prefix), affects_compile=True
+    )
+    # Enables asserts in host and device code.
+    enable_assertions: bool = env_var(
+        "ENABLE_ASSERTIONS", affects_compile=True, default=False
+    )
+    enable_tvm_ffi: bool = env_var(
+        "ENABLE_TVM_FFI", affects_compile=True, default=False
+    )
+    loc_tracebacks: int = env_var("LOC_TRACEBACKS", affects_compile=True, default=0)
+
     def __init__(self, prefix: str = "DSL") -> None:
         super().__init__(prefix)
 
-        # Master debug switch for DSL developers. When True, it raises the
-        # default of a curated set of diagnostic/correctness settings below
-        # (lineinfo, stacktrace, optimization warnings, IR verification).
-        # Each of those settings remains independently overridable by its own
-        # env var, so debugging mode only changes their defaults.
-        self.debug = get_bool_env_var(f"{prefix}_DEBUG", False)
+        # PyIR-mode fact per DSL prefix: the verify-failure funnel names a
+        # mixed-flag configuration when a cross-DSL compile trips dominance.
+        try:
+            from .pyir_state import _pyir_register_mode_fact
 
-        # Printing options
-        self.print_after_preprocessor = get_bool_env_var(
-            f"{prefix}_PRINT_AFTER_PREPROCESSOR", False
-        )
-        self.print_ir = get_bool_env_var(f"{prefix}_PRINT_IR", False)
-        # SHOW_STACKTRACE (and DEBUG) show the full, unfiltered traceback, so
-        # internal-frame filtering is disabled by default in either mode.
-        self.show_stacktrace = get_bool_env_var(f"{prefix}_SHOW_STACKTRACE", self.debug)
-        self.filter_stacktrace = get_bool_env_var(
-            f"{prefix}_FILTER_STACKTRACE", not (self.debug or self.show_stacktrace)
-        )
-        self.enable_pyir = get_bool_env_var(f"{prefix}_ENABLE_PYIR", False)
-        self.auto_m2s = get_bool_env_var(f"{prefix}_AUTO_M2S", False)
-        self.tolerate_m2m = get_bool_env_var(f"{prefix}_TOLERATE_M2M", True)
+            _pyir_register_mode_fact(prefix, self.enable_pyir)
+        except ImportError:
+            pass
 
-        self.lineinfo = get_bool_env_var(f"{prefix}_LINEINFO", self.debug)
-        self.no_cache = get_bool_env_var(f"{prefix}_NO_CACHE", False)
-        self.jit_cache_max_elems = get_int_or_none_env_var(
-            f"{prefix}_JIT_CACHE_MAX_ELEMS", None
-        )
         if self.no_cache:
             self.jit_cache_max_elems = 0
-        self.dump_dir = get_str_env_var(
-            f"{prefix}_DUMP_DIR", str(get_default_file_dump_root())
-        )
-        # File options
-        self.cache_dir = get_str_env_var(f"{prefix}_CACHE_DIR", None)
 
-        # ------------------------------------------------------------------ #
-        # Artifact keep — [DSL]_KEEP=<comma-list>                            #
-        # ------------------------------------------------------------------ #
-        # Parse new consolidated option.
-        _keep_raw = get_str_env_var(f"{prefix}_KEEP", "")
-        _keep_tokens: set[str] = set(
-            _parse_keep_tokens(_keep_raw, prefix) if _keep_raw else frozenset()
-        )
-
-        # Backward compatibility: publicly-documented old options emit a
-        # DeprecationWarning and fold into _keep_tokens.
-        if get_bool_env_var(f"{prefix}_KEEP_IR", False):
-            warnings.warn(
-                f"{prefix}_KEEP_IR is deprecated; use {prefix}_KEEP=ir-debug instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            _keep_tokens.add("ir-debug")
-        if get_bool_env_var(f"{prefix}_KEEP_PTX", False):
-            warnings.warn(
-                f"{prefix}_KEEP_PTX is deprecated; use {prefix}_KEEP=ptx instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            _keep_tokens.add("ptx")
-        if get_bool_env_var(f"{prefix}_KEEP_CUBIN", False):
-            warnings.warn(
-                f"{prefix}_KEEP_CUBIN is deprecated; use {prefix}_KEEP=cubin instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            _keep_tokens.add("cubin")
-
-        if get_bool_env_var(f"{prefix}_KEEP_SASS", False):
-            warnings.warn(
-                f"{prefix}_KEEP_SASS is deprecated; use {prefix}_KEEP=sass instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            _keep_tokens.add("sass")
-        self.keep_tokens: frozenset[str] = frozenset(_keep_tokens)
-
-        # Derived boolean attributes — used by compiler.py and dsl.py.
-        # keep_ir_clean: save IR after canonicalize+cse (the readable form).
-        self.keep_ir_clean: bool = "ir" in self.keep_tokens
-        # keep_ir: save raw IR before any passes (old KEEP_IR=1 semantics).
-        self.keep_ir: bool = "ir-debug" in self.keep_tokens
-        self.keep_ptx: bool = "ptx" in self.keep_tokens
-        self.keep_cubin: bool = "cubin" in self.keep_tokens
-        self.keep_sass: bool = "sass" in self.keep_tokens
-        _check_nvdisasm_wheel = True
-        if _check_nvdisasm_wheel and self.keep_sass:
+        # Fail at construction (rather than after a long compile) when the
+        # user asked for SASS dumping but no usable nvdisasm is available.
+        _check_nvdisasm = True
+        if _check_nvdisasm and self.keep_sass:
             _find_nvdisasm_binary()
-        # Other options
-        self.dryrun = get_bool_env_var(f"{prefix}_DRYRUN", False)
-        self._arch: str | None = get_str_env_var(f"{prefix}_ARCH")
-        self.warnings_as_errors = get_bool_env_var(
-            f"{prefix}_WARNINGS_AS_ERRORS", False
-        )
-        self.warnings_ignore = get_bool_env_var(f"{prefix}_WARNINGS_IGNORE", False)
-        self.enable_optimization_warnings = get_bool_env_var(
-            f"{prefix}_ENABLE_OPTIMIZATION_WARNINGS", self.debug
-        )
-        self.disable_file_caching = get_bool_env_var(
-            f"{prefix}_DISABLE_FILE_CACHING", False
-        )
-        self.compiler_opt = get_str_env_var(f"{prefix}_COMPILER_OPT", "")
-        self.compiler_backend = get_str_env_var(f"{prefix}_COMPILER_BACKEND", "legacy")
-
-        # set mlir shared libraries
-        self.shared_libs = get_prefix_dsl_libs(prefix)
-
-        # whether to enable assert in host and device code
-        self.enable_assertions = get_bool_env_var(f"{prefix}_ENABLE_ASSERTIONS", False)
-
-        self.enable_tvm_ffi = get_bool_env_var(f"{prefix}_ENABLE_TVM_FFI", False)
-
-        self.loc_tracebacks = get_int_env_var(f"{prefix}_LOC_TRACEBACKS", 0)
 
     @property
     def arch(self) -> str:

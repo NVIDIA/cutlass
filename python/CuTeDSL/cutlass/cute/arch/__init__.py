@@ -133,6 +133,8 @@ __all__ = [
     "fmin",
     "rcp_approx",
     "exp2",
+    "exp2_packed_f16x2",
+    "exp2_packed_bf16x2",
     "cvt_i8x4_to_f32x4",
     "cvt_i8x2_to_f32x2",
     "cvt_i8_bf16",

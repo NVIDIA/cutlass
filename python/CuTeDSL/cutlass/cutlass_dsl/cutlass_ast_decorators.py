@@ -26,6 +26,11 @@ from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.dsl import is_dynamic_expression
 from .._mlir_helpers.arith import ArithValue
 from ..base_dsl.ast_helpers import *  # noqa: F401,F403
+from ..base_dsl.pyir_runtime import (
+    PYIR_REGION_ATTR_WRITES_ATTR,
+    PYIR_REGION_FREE_CALLS_ATTR,
+    PYIR_REGION_METHOD_CALLS_ATTR,
+)
 from ..base_dsl.utils.logger import log
 from ..base_dsl import typing as t
 from ..base_dsl.typing import Boolean, Numeric, as_numeric, _binary_op_type_promote
@@ -81,8 +86,19 @@ class ScfGenerator:
     Encapsulates common scf dialect functionality: pack, unpack, and SCF execution.
     """
 
-    def __init__(self) -> None:
-        pass
+    # The (base, attr) pairs a staged loop body's ORIGINAL code assigns directly
+    # (preprocessor-tagged declared fact); set by the loop executor before building
+    region_attr_writes: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The (base, method) pairs a staged loop body's ORIGINAL code calls on
+    # Name-rooted receiver paths (preprocessor-tagged; completed via class facts).
+    region_method_calls: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The (func_name, arg_base) pairs a staged loop body's ORIGINAL code calls
+    # as bare-Name free functions with a Name-rooted first argument
+    # (preprocessor-tagged; completed via the callee's first-parameter facts).
+    region_free_calls: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The staged loop-body function itself: a read-only captured receiver
+    # name resolves through its closure at region entry.
+    region_body_func: "Optional[Callable[..., Any]]" = None
 
     @staticmethod
     def _normalize_region_result_to_list(region_result: Any) -> List[Any]:
@@ -275,10 +291,73 @@ class ScfGenerator:
 
         log().debug("Completed scf.%s \n[%s]", op_type_name, op)
 
-        # 4) Pack final results
+        # 4) Pack final results.
+        #
+        # Rebind pass-through loop-carried slots to their INIT value instead of
+        # the op result: a slot every region terminator forwards unchanged (the
+        # terminator operand IS the entry block argument) has a result that is
+        # value-equal to its init for every trip count, and the init is the
+        # only form guaranteed to dominate the enclosing scope.  The loop may
+        # sit inside a region-opening context manager (``with elect_one():``)
+        # that the AST-level value threading cannot see; a result-backed rebind
+        # leaks this region's SSA outward, and the enclosing staged-CF executor
+        # then yields it from a non-dominating region.
+        # Operand/argument accessors return value-caster wrappers (ArithValue,
+        # cute pointers) whose ``==`` stages an IR comparison; SSA identity must
+        # go through the base ir.Value equality on the unwrapped values.
+        def _same_ssa(a: object, b: object) -> bool:
+            def unwrap(v: object) -> Optional[ir.Value]:
+                if isinstance(v, ir.Value):
+                    return v
+                inner = getattr(v, "value", None)
+                return inner if isinstance(inner, ir.Value) else None
+
+            raw_a, raw_b = unwrap(a), unwrap(b)
+            if raw_a is None or raw_b is None:
+                return False
+            return ir.Value.__eq__(ir.Value(raw_a), ir.Value(raw_b)) is True
+
+        # Accessing operands/arguments runs the registered value casters, and
+        # wrapper construction (e.g. the memref _Tensor caster) emits IR at the
+        # current insertion point -- park the insertion point at the region's
+        # terminator during inspection so those emissions land as valid (dead)
+        # in-region ops instead of parent-block ops referencing region values.
+        def _terminator_operands_and_args(
+            block: ir.Block, skip_args: int = 0
+        ) -> "tuple[List[Any], List[Any]]":
+            term = block.operations[len(block.operations) - 1]
+            with ir.InsertionPoint(term):
+                return list(term.operands), list(block.arguments)[skip_args:]
+
+        results: List[ir.Value] = list(op.results)
+        if len(results) == len(ir_values):
+            if op_type_name == "for":
+                # Block args are [induction var, carried...].
+                yield_operands, carried_args = _terminator_operands_and_args(
+                    op.regions[0].blocks[0], skip_args=1
+                )
+                for i, (yielded, entry) in enumerate(
+                    zip(yield_operands, carried_args)
+                ):
+                    if _same_ssa(yielded, entry):
+                        results[i] = ir_values[i]
+            elif op_type_name == "while":
+                cond_operands, before_args = _terminator_operands_and_args(
+                    op.regions[0].blocks[0]
+                )
+                yield_operands, after_args = _terminator_operands_and_args(
+                    op.regions[1].blocks[0]
+                )
+                for i, (yielded, entry) in enumerate(zip(yield_operands, after_args)):
+                    # cond_operands[0] is the loop condition; forwards start at 1.
+                    if _same_ssa(yielded, entry) and _same_ssa(
+                        cond_operands[i + 1], before_args[i]
+                    ):
+                        results[i] = ir_values[i]
+
         assert isinstance(pytree_def, PyTreeDef)
         final_results = cutlass_dsl.pack_from_irvalue(
-            op.results, pytree_def, mix_iter_args, full_write_args_count
+            results, pytree_def, mix_iter_args, full_write_args_count
         )
 
         # 5) Return in a nice pattern
@@ -323,6 +402,12 @@ def _loop_execute_range_dynamic(
     Example: build an scf.for with optional unroll, using our universal helper.
     """
     scf_gen = _create_control_flow_generator()
+    # The (base, attr) pairs the loop body's ORIGINAL code assigns directly (declared
+    # syntactic fact tagged by the PyIR preprocessor); the PyIR generator adopts each
+    scf_gen.region_attr_writes = getattr(func, PYIR_REGION_ATTR_WRITES_ATTR, None)
+    scf_gen.region_method_calls = getattr(func, PYIR_REGION_METHOD_CALLS_ATTR, None)
+    scf_gen.region_free_calls = getattr(func, PYIR_REGION_FREE_CALLS_ATTR, None)
+    scf_gen.region_body_func = func
 
     def create_for_op(dyn_yield_ops: List[ir.Value]) -> ir.Operation:
         for d in dyn_yield_ops:
@@ -491,7 +576,6 @@ def _if_execute_dynamic(
     mix_yield_args: List[object] = [],
     full_write_args_count: int = 0,
     mix_yield_arg_names: List[str] = [],
-    if_constexpr: Optional[bool] = None,
 ) -> object:
     """
     Build an scf.if with optional else, using our universal helper.
@@ -627,20 +711,16 @@ def _while_execute_dynamic(
         op: ir.Operation,
         block_args: List[ir.Value],
         _: List[ir.Value],
-        pytree_def: Optional[PyTreeDef],
+        pytree_def: PyTreeDef,
         mix_iter_args: List[Any],
         full_write_args_count: int,
     ) -> Any:
         # Build the before (condition) block
-        if pytree_def is None:
-            # PyIR mode: pass original objects directly
-            flat_args = list(mix_iter_args)
-        else:
-            flat_args = list(
-                cutlass_dsl.pack_from_irvalue(
-                    block_args, pytree_def, mix_iter_args, full_write_args_count
-                )
+        flat_args = list(
+            cutlass_dsl.pack_from_irvalue(
+                block_args, pytree_def, mix_iter_args, full_write_args_count
             )
+        )
 
         log().debug("before block args: %s", flat_args)
 
@@ -680,20 +760,16 @@ def _while_execute_dynamic(
         op: ir.Operation,
         block_args: List[ir.Value],
         _: List[ir.Value],
-        pytree_def: Optional[PyTreeDef],
+        pytree_def: PyTreeDef,
         mix_iter_args: List[object],
         full_write_args_count: int,
     ) -> object:
         # Build the after (body) block
-        if pytree_def is None:
-            # PyIR mode: pass original objects directly
-            flat_args = list(mix_iter_args)
-        else:
-            flat_args = list(
-                cutlass_dsl.pack_from_irvalue(
-                    block_args, pytree_def, mix_iter_args, full_write_args_count
-                )
+        flat_args = list(
+            cutlass_dsl.pack_from_irvalue(
+                block_args, pytree_def, mix_iter_args, full_write_args_count
             )
+        )
 
         log().debug("after block args: %s", flat_args)
 

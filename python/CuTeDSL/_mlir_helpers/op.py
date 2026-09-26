@@ -21,8 +21,10 @@ import linecache
 import os
 import types
 import warnings
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import wraps, lru_cache
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, Iterator, TYPE_CHECKING
 
 from .._mlir import ir
 from ..base_dsl.common import (
@@ -45,11 +47,10 @@ try:
         _pyir_auto_load_arg,
         _pyir_lookup_slot_from_value,
         _pyir_value_tracked_by_accessible_ref,
-        _describe_value_origin,
     )
 except ImportError:
 
-    def _pyir_auto_load_arg(arg: Any) -> Any:
+    def _pyir_auto_load_arg(arg: Any, *, row_authoritative: bool = False) -> Any:  # noqa: ARG001
         return arg
 
     def _pyir_lookup_slot_from_value(value: Any) -> "MutableValue | None":  # noqa: ARG001
@@ -58,9 +59,6 @@ except ImportError:
     def _pyir_value_tracked_by_accessible_ref(value: Any) -> bool:  # noqa: ARG001
         return False
 
-    def _describe_value_origin(raw: Any) -> str:  # noqa: ARG001
-        return ""
-
 
 # The DSL package root is empty by default.
 _DSL_PACKAGE_ROOT: str | None = ""
@@ -68,6 +66,13 @@ _DSL_PACKAGE_ROOTS: tuple[str, ...] | None = None
 
 # Whether location tracking is enabled.
 _ENABLE_FRAME_FILTERING: bool = False
+
+# Generic stack of loc transforms used by dialect-specific compilation
+# contexts. Keep this file unaware of any particular dialect or debug-info
+# schema; callers decide what a transformed loc means.
+_LOC_TRANSFORMS: ContextVar[tuple[Callable[[Any], Any], ...]] = ContextVar(
+    "_LOC_TRANSFORMS", default=()
+)
 
 # When True, dsl_user_op attributes ops to the closest frame (including DSL
 # library code) instead of skipping up to the user's call site. Enabled when
@@ -133,6 +138,52 @@ def _set_enable_frame_filtering(enable: bool) -> None:
     """Set whether location tracking is enabled."""
     global _ENABLE_FRAME_FILTERING
     _ENABLE_FRAME_FILTERING = enable
+
+
+@contextmanager
+def loc_transform(transform: Callable[[Any], Any]) -> Iterator[None]:
+    """Temporarily rewrite locs produced by ``@dsl_user_op``.
+
+    The decorator still owns the generic work: find the Python user frame and
+    build the usual MLIR source loc. This hook lets a frontend or dialect wrap
+    that loc while it is building a scoped construct.
+
+    Example:
+        def add_scope(loc):
+            if loc is None:
+                return None
+            return ir.Location.name("frontend.scope", childLoc=loc)
+
+        with loc_transform(add_scope):
+            dsl_add(a, b)  # receives loc=frontend.scope("file.py":line:col)
+
+    Transforms are scoped and stackable. The innermost transform runs first, so
+    nested frontend scopes behave like nested Python context managers.
+
+    ``transform`` receives each generated or caller-provided location, which may
+    be ``None``, and returns its replacement. Exceptions raised by ``transform``
+    propagate to the caller. The active transform stack is restored when this
+    context exits, including exceptional exits.
+
+    :param transform: Callable used to rewrite locations within this scope.
+    :type transform: Callable[[Any], Any]
+    :raises TypeError: If ``transform`` is not callable.
+    """
+    if not callable(transform):
+        raise TypeError("loc_transform(transform): transform must be callable")
+
+    token = _LOC_TRANSFORMS.set(_LOC_TRANSFORMS.get() + (transform,))
+    try:
+        yield
+    finally:
+        _LOC_TRANSFORMS.reset(token)
+
+
+def _apply_loc_transforms(loc: Any) -> Any:
+    """Apply the active scoped loc transforms to ``loc``."""
+    for transform in reversed(_LOC_TRANSFORMS.get()):
+        loc = transform(loc)
+    return loc
 
 
 def _set_include_lib_frame(enable: bool) -> None:
@@ -392,6 +443,9 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
         # ``_mutable_ref`` (see pyir_runtime._pyir_auto_load_arg).
         log().debug("[dsl_user_op] %s called with %d args", opFunc.__name__, len(args))
         args = tuple(map(_pyir_auto_load_arg, args))
+        # Value-carrying kwargs escape loops like positional args; auto-load them
+        # so a post-loop kwarg use reads from the ref, not a stale in-loop SSA.
+        kwargs = {k: _pyir_auto_load_arg(v) for k, v in kwargs.items()}
         # Pop loc= from kwargs so callers that still pass it don't break.
         # The wrapper replaces it only when source-location tracking is enabled.
         loc: Any = kwargs.pop("loc", None)
@@ -408,17 +462,16 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
                 # outside a kernel).  Proceed with loc=None so that the
                 # wrapped function's own validation can still fire.
                 pass
+        loc = _apply_loc_transforms(loc)
 
         # __init__ wrappers either wrap an existing ir.Value (no new
         # ops, e.g. with_signedness) or build a trivial arith constant
         # that always verifies. They're also called *very* frequently
-        # from hot paths like signedness coercion, so we skip both the
-        # dominance check and the block-diff verify for them —
+        # from hot paths like signedness coercion, so we skip the
+        # block-diff verify for them —
         # materializing `block.operations` on every call would be O(N)
         # per call and turn kernel build into O(N^2).
         is_init = getattr(opFunc, "__name__", "") == "__init__"
-        if not is_init:
-            _check_operand_dominance(args, kwargs, frameInfo, opFunc)
 
         # Snapshot the current insertion block so we can verify newly-built
         # ops after opFunc returns. The dialect Python bindings strip
@@ -515,6 +568,10 @@ def dsl_user_op(opFunc: Callable[..., Any]) -> Callable[..., Any]:
 
         return res_or_list
 
+    # F-COVER: a DSL op wrapper runs natively inside a trace by design; the
+    # decorator declares that so entry attestation never mistakes it for an
+    # un-instrumented user function.
+    wrapper.__pyir_native__ = True  # type: ignore[attr-defined]
     return wrapper
 
 

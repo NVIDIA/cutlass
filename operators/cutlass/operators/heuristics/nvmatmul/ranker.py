@@ -99,11 +99,13 @@ def is_available() -> bool:
 
     Mirrors the availability signalling of ``cutlass.operators.available_providers``:
     the heuristic is always registered, but this reports whether it can actually
-    run in this environment (importable, ``>={MIN_NVMMH_VERSION}``, and the
-    0.1.0.27 constructor API shape).
+    run in this environment (importable, at least
+    :data:`~cutlass.operators.heuristics.nvmatmul.MIN_NVMMH_VERSION`, and
+    compatible with the 0.1.0.27 constructor API shape).
 
     Returns:
-        bool: ``True`` if a call to :meth:`NvMatmulHeuristics.rank` can use
+        bool: ``True`` if a call to
+        :meth:`~cutlass.operators.heuristics.NvMatmulHeuristics.rank` can use
         nvMMH, ``False`` if it would raise :class:`ImportError`.
     """
     try:
@@ -131,7 +133,8 @@ class NvMatmulHeuristics(Heuristic):
 
     Queries nvMMH for recommended configs, ranks Operators that match the recommended
     configs, and prunes away Operators that do not match any recommended config or that
-    do not exactly match the GPU modeled in `self.gpu`.
+    were designed for a different compute capability than the GPU selected by
+    ``gpu``.
 
     Missing optional dependencies raise :class:`ImportError`. Non-GEMM
     ``args`` raise :class:`TypeError`.
@@ -174,7 +177,7 @@ class NvMatmulHeuristics(Heuristic):
     ) -> list[Operator]:
         """Order ``operators`` best-first for ``args`` using nvMatmulHeuristics.
 
-        See :meth:`cutlass.operators.heuristics.base.Heuristic.rank`.
+        See :meth:`cutlass.operators.Heuristic.rank`.
 
         Args:
             args (RuntimeArguments | None): The problem to rank for. Must be
@@ -182,7 +185,7 @@ class NvMatmulHeuristics(Heuristic):
                 non-empty.
             operators (list[Operator]): Filtered candidate Operators.
             target_sm (TargetSm | str | None): Accepted for
-                :meth:`Heuristic.rank` compatibility; unused.
+                :meth:`~cutlass.operators.Heuristic.rank` compatibility; unused.
             limit (int | None): When set, the caller will keep only the first
                 ``limit`` Operators from the ranked result.
 

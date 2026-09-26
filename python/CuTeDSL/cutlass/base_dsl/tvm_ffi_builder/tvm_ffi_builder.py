@@ -2079,6 +2079,7 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             device_id = self.load_dltensor_device_id(dl_tensor_ptr)
             ndim = self.load_dltensor_ndim(dl_tensor_ptr)
             byte_offset = self.load_dltensor_byte_offset(dl_tensor_ptr)
+            data = self.offset_ptr_bytes(data, byte_offset)
 
         # check data alignment if specified
         if param.data_alignment is not None:
@@ -2174,16 +2175,6 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             "ValueError",
             self._arg_err(
                 "Mismatched Tensor ", arg_context, f", expected dtype={param.dtype}"
-            ),
-        )
-        # check byte_offset
-        # Break error message into reusable parts for better string deduplication
-        current_block = self.check_condition(
-            current_block,
-            lambda: self.equal(byte_offset, self.i64(0)),
-            "ValueError",
-            self._arg_err(
-                "Mismatched Tensor ", arg_context, ", expected byte_offset=0"
             ),
         )
 

@@ -80,6 +80,33 @@ def _is_assignable_leaf(obj: Any) -> bool:
     return False
 
 
+def _has_assignable_leaves(obj: Any, visited: set[int]) -> bool:
+    """Read-only reachability query: does obj's subtree hold any assignable leaf?"""
+    if obj is None:
+        return False
+    if _is_assignable_leaf(obj):
+        return True
+    if id(obj) in visited:
+        return False
+    visited.add(id(obj))
+    if isinstance(obj, (list, tuple)):
+        return any(_has_assignable_leaves(v, visited) for v in obj)
+    if isinstance(obj, dict):
+        return any(_has_assignable_leaves(v, visited) for v in obj.values())
+    if is_frozen_dataclass(obj):
+        return any(
+            _has_assignable_leaves(getattr(obj, f.name), visited)
+            for f in dataclasses.fields(obj)
+        )
+    if hasattr(obj, "__dict__") or hasattr(type(obj), "__slots__"):
+        return any(
+            _has_assignable_leaves(v, visited)
+            for k, v in _get_all_attrs(obj).items()
+            if not k.startswith("__") and not callable(v)
+        )
+    return False
+
+
 def _flatten_to_ir_values(values_dict: Any) -> list[ir.Value]:
     """Flatten a values_dict from __extract_mlir_values__ to list of ir.Values."""
     result = []
@@ -306,6 +333,13 @@ def gather_leaves(
     immutable_proxies: list[tuple[Any, ...]] = []
 
     visited = set()
+    # A proxy may only become VISIBLE inside framework-owned containers (the
+    # capture list itself or another proxy of this walk): a real user
+    # container keeps its original object between gather and inject, so a
+    # caller that never injects -- or user code running inside the window --
+    # never observes a half-disassembled object. inject_leaves' Phase-2
+    # reconstruction writes the rebuilt immutable into the real parent.
+    framework_parents = {id(objects)}
 
     def _gather_recursive(
         obj: Any, parent: Any, key: Any, key_type: str, path: str
@@ -348,7 +382,9 @@ def gather_leaves(
         if isinstance(obj, tuple):
             proxy_list = list(obj)
             immutable_proxies.append((obj, proxy_list, parent, key, key_type))
-            _write_into_parent(parent, key, key_type, proxy_list)
+            if id(parent) in framework_parents:
+                _write_into_parent(parent, key, key_type, proxy_list)
+            framework_parents.add(id(proxy_list))
             for i, item in enumerate(proxy_list):
                 item_path = f"{path}({i})" if path else f"({i})"
                 _gather_recursive(item, proxy_list, i, "list", item_path)
@@ -356,10 +392,17 @@ def gather_leaves(
 
         # Frozen dataclass (IMMUTABLE container -- create mutable proxy)
         if is_frozen_dataclass(obj):
+            # Stateless frozen dataclasses (no ir.Value-carrying leaves anywhere
+            # below) have nothing to gather or inject; installing a proxy would
+            # only leak a SimpleNamespace into the caller's object.
+            if not _has_assignable_leaves(obj, set()):
+                return
             fields = dataclasses.fields(obj)
             proxy = SimpleNamespace(**{f.name: getattr(obj, f.name) for f in fields})
             immutable_proxies.append((obj, proxy, parent, key, key_type))
-            _write_into_parent(parent, key, key_type, proxy)
+            if id(parent) in framework_parents:
+                _write_into_parent(parent, key, key_type, proxy)
+            framework_parents.add(id(proxy))
             for f in fields:
                 attr_val = getattr(proxy, f.name)
                 if f.name.startswith("__") or callable(attr_val):

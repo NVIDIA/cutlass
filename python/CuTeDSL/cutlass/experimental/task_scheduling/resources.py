@@ -95,9 +95,8 @@ from typing import (
     cast,
     get_origin,
 )
-import cutlass.utils.static_persistent_tile_scheduler as _static_persistent_tile_scheduler
 from cutlass.utils.static_persistent_tile_scheduler import (
-    WorkTileInfo,
+    WorkTileInfo as _BaseWorkTileInfo,
 )
 from cutlass.utils import (
     StaticPersistentTileScheduler,
@@ -120,76 +119,66 @@ if TYPE_CHECKING:
     from .pipeline_group import PipelineGroup
 
 
-# TS loop-carries ``WorkTileInfo`` through staged persistent control flow and
-# advances it in tail schedule entries.  The upstream implementation stores
-# ``tile_idx`` as one tuple field, which makes in-place updates fail IR
-# dominance checks in nested dynamic regions. Keep the public CUTLASS type but
-# scalarize its runtime representation while this module is loaded.
+class WorkTileInfo(_BaseWorkTileInfo):
+    """TS-local 3D work tile with scalarized loop-carried fields.
+
+    TS loop-carries work tiles through staged persistent control flow and
+    advances them in tail schedule entries. The released CUTLASS work-tile class
+    stores ``tile_idx`` as one tuple field, which makes in-place updates fail IR
+    dominance checks in nested dynamic regions. Keep that released class
+    untouched and scalarize only the TS-local subclass.
+    """
+
+    @cute.jit
+    def __init__(self, tile_idx: cute.Coord, is_valid_tile: cutlass.Boolean) -> None:
+        m_idx, n_idx, l_idx = tile_idx  # type: ignore[misc]
+        self._m_idx = cutlass.Int32(m_idx)
+        self._n_idx = cutlass.Int32(n_idx)
+        self._l_idx = cutlass.Int32(l_idx)
+        self._is_valid_tile = cutlass.Boolean(is_valid_tile)
+
+    def __extract_mlir_values__(self) -> list:
+        return [
+            self._m_idx.ir_value(),
+            self._n_idx.ir_value(),
+            self._l_idx.ir_value(),
+            self._is_valid_tile.ir_value(),
+        ]
+
+    def __new_from_mlir_values__(self, values: list) -> "WorkTileInfo":
+        assert len(values) == 4
+        return WorkTileInfo(
+            (
+                cutlass.Int32(values[0]),
+                cutlass.Int32(values[1]),
+                cutlass.Int32(values[2]),
+            ),
+            cutlass.Boolean(values[3]),
+        )
+
+    @property
+    @cute.jit
+    def tile_idx(self) -> cute.Coord:
+        return (self._m_idx, self._n_idx, self._l_idx)
+
+    @property
+    @cute.jit
+    def is_valid_tile(self) -> cutlass.Boolean:
+        return self._is_valid_tile
+
+    @cute.jit
+    def update_from(self, other: _BaseWorkTileInfo) -> None:
+        m_idx, n_idx, l_idx = other.tile_idx
+        self._m_idx = cutlass.Int32(m_idx)
+        self._n_idx = cutlass.Int32(n_idx)
+        self._l_idx = cutlass.Int32(l_idx)
+        self._is_valid_tile = cutlass.Boolean(other.is_valid_tile)
+
+
 @cute.jit
-def _work_tile_info_init_scalar(
-    self: WorkTileInfo, tile_idx: cute.Coord, is_valid_tile: cutlass.Boolean
-) -> None:
-    m_idx, n_idx, l_idx = tile_idx  # type: ignore[misc]
-    self._m_idx = cutlass.Int32(m_idx)  # type: ignore[attr-defined]
-    self._n_idx = cutlass.Int32(n_idx)  # type: ignore[attr-defined]
-    self._l_idx = cutlass.Int32(l_idx)  # type: ignore[attr-defined]
-    self._is_valid_tile = cutlass.Boolean(is_valid_tile)
+def _to_ts_work_tile_info(work_tile: _BaseWorkTileInfo) -> WorkTileInfo:
+    return WorkTileInfo(work_tile.tile_idx, work_tile.is_valid_tile)
 
-
-def _work_tile_info_extract_scalar(self: WorkTileInfo) -> list:
-    return [
-        self._m_idx.ir_value(),  # type: ignore[attr-defined]
-        self._n_idx.ir_value(),  # type: ignore[attr-defined]
-        self._l_idx.ir_value(),  # type: ignore[attr-defined]
-        self._is_valid_tile.ir_value(),
-    ]
-
-
-def _work_tile_info_new_from_mlir_values_scalar(
-    self: WorkTileInfo, values: list
-) -> WorkTileInfo:
-    assert len(values) == 4
-    return WorkTileInfo(
-        (
-            cutlass.Int32(values[0]),
-            cutlass.Int32(values[1]),
-            cutlass.Int32(values[2]),
-        ),
-        cutlass.Boolean(values[3]),
-    )
-
-
-@cute.jit
-def _work_tile_info_tile_idx_scalar(self: WorkTileInfo) -> cute.Coord:
-    return (self._m_idx, self._n_idx, self._l_idx)  # type: ignore[attr-defined]
-
-
-@cute.jit
-def _work_tile_info_is_valid_tile_scalar(self: WorkTileInfo) -> cutlass.Boolean:
-    return self._is_valid_tile
-
-
-@cute.jit
-def _work_tile_info_update_from_scalar(self: WorkTileInfo, other: WorkTileInfo) -> None:
-    m_idx, n_idx, l_idx = other.tile_idx
-    self._m_idx = cutlass.Int32(m_idx)  # type: ignore[attr-defined]
-    self._n_idx = cutlass.Int32(n_idx)  # type: ignore[attr-defined]
-    self._l_idx = cutlass.Int32(l_idx)  # type: ignore[attr-defined]
-    self._is_valid_tile = cutlass.Boolean(other.is_valid_tile)
-
-
-WorkTileInfo.__init__ = _work_tile_info_init_scalar  # type: ignore[method-assign]
-WorkTileInfo.__extract_mlir_values__ = _work_tile_info_extract_scalar  # type: ignore[method-assign]
-WorkTileInfo.__new_from_mlir_values__ = _work_tile_info_new_from_mlir_values_scalar  # type: ignore[method-assign]
-WorkTileInfo.tile_idx = property(_work_tile_info_tile_idx_scalar)  # type: ignore[method-assign]
-WorkTileInfo.is_valid_tile = property(_work_tile_info_is_valid_tile_scalar)  # type: ignore[method-assign]
-WorkTileInfo.update_from = _work_tile_info_update_from_scalar  # type: ignore[attr-defined]
-
-# The scalarized methods are installed on CUTLASS' WorkTileInfo class.  Some
-# IR reconstruction paths resolve patched class methods in the owner module's
-# globals rather than this module's globals; make the CuTe name used by the
-# patches available there too.
-_static_persistent_tile_scheduler.cute = cute
 
 # Variable-flow model
 # -------------------
@@ -730,10 +719,20 @@ class PipelineConfig:
         advance_on_wait : bool, optional
             Setting advance_on_wait=True on a PipelineConfig decouples the consumer's wait
             cursor from its release cursor by introducing two independent pipeline state objects:
-                | State                    | Advances when     | Points to                       |
-                | ------------------------ | ----------------- | ------------------------------- |
-                | `consumer_state`         | `ConsumerWait`    | the *next* buffer to wait on    |
-                | `consumer_release_state` | `ConsumerRelease` | the *oldest* un-released buffer |
+
+            .. list-table::
+               :header-rows: 1
+
+               * - State
+                 - Advances when
+                 - Points to
+               * - ``consumer_state``
+                 - ``ConsumerWait``
+                 - the *next* buffer to wait on
+               * - ``consumer_release_state``
+                 - ``ConsumerRelease``
+                 - the *oldest* un-released buffer
+
             With this split, the consumer can wait on buffer N+1 (advancing consumer_state) while
             still holding buffer N (not yet released via consumer_release_state).
         interleave_stride : int or tuple[int, int, int, int], optional
@@ -3469,7 +3468,7 @@ class WorkQueue(MemoryResource):
     @cute.jit
     def _make_initial_work_tile(self) -> WorkTileInfo:
         assert self.tile_scheduler is not None
-        return self.tile_scheduler.initial_work_tile_info()
+        return _to_ts_work_tile_info(self.tile_scheduler.initial_work_tile_info())
 
     @cute.jit
     def initial_work_tile_info(self) -> WorkTileInfo:
@@ -3533,7 +3532,7 @@ class WorkQueue(MemoryResource):
         ):
             assert self.tile_scheduler is not None
             self.tile_scheduler.advance_to_next_work()
-            work_tile = self.tile_scheduler.get_current_work()
+            work_tile = _to_ts_work_tile_info(self.tile_scheduler.get_current_work())
         else:
             # CLC dynamic: read from the per-stage response buffer.
             stage_response_ptr = self._get_stage_response_ptr(stage_info.stage_idx)

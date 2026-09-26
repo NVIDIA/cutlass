@@ -386,6 +386,12 @@ public:
     ClusterBarrier::arrive(&this->barrier_, cta_id, pred);
   }
 
+  // Remote SMEM arrive with relaxed semantics and cluster scope
+  CUTLASS_DEVICE
+  void arrive_relaxed_cluster(uint32_t cta_id, uint32_t pred = true) const {
+    ClusterBarrier::arrive_relaxed_cluster(&this->barrier_, cta_id, pred);
+  }
+
   //
   //  Static Versions
   //
@@ -506,6 +512,29 @@ public:
 #endif
   }
 
+  // Same as the above, with relaxed sem and cluster scope.
+  CUTLASS_HOST_DEVICE
+  static void arrive_relaxed_cluster(ValueType const* smem_ptr, uint32_t cta_id, uint32_t pred) {
+#if CUDA_BARRIER_ENABLED
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    if (pred) {
+      asm volatile(
+          "{\n\t"
+          ".reg .b32 remAddr32;\n\t"
+          "mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
+          "mbarrier.arrive.relaxed.cluster.shared::cluster.b64  _, [remAddr32];\n\t"
+          "}"
+          :
+          : "r"(smem_addr), "r"(cta_id)
+          : "memory");
+    }
+
+    cutlass::arch::synclog_emit_cluster_barrier_arrive_cluster(__LINE__, smem_addr, cta_id, pred);
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+  }
+
   // Barrier arrive on local smem
   CUTLASS_HOST_DEVICE
   static void arrive(ValueType const* smem_ptr) {
@@ -562,6 +591,12 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
     ClusterTransactionBarrier::arrive_and_expect_tx(&this->barrier_, transaction_bytes , cta_id, pred);
   }
 
+  // Same as above, with relaxed semantics and cluster scope
+  CUTLASS_DEVICE
+  void arrive_and_expect_tx_relaxed_cluster(uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred = 1u) const {
+    ClusterTransactionBarrier::arrive_and_expect_tx_relaxed_cluster(&this->barrier_, transaction_bytes, cta_id, pred);
+  }
+
   // Performs an expected transaction bytes increment without doing an arrive operation
   CUTLASS_DEVICE
   void expect_transaction(uint32_t transaction_bytes) const {
@@ -616,6 +651,28 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "setp.eq.u32 p, %2, 1;\n\t"
         "@p mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
         "@p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], %3;\n\t"
+        "}"
+        :
+        : "r"(smem_addr), "r"(cta_id), "r"(pred), "r"(transaction_bytes)
+        : "memory");
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+  }
+
+  // Same as the above, with relaxed sem and cluster scope.
+  CUTLASS_HOST_DEVICE
+  static void arrive_and_expect_tx_relaxed_cluster(
+      ValueType const* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
+#if CUDA_BARRIER_ENABLED
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        ".reg .b32 remAddr32;\n\t"
+        "setp.eq.u32 p, %2, 1;\n\t"
+        "@p mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
+        "@p mbarrier.arrive.expect_tx.relaxed.cluster.shared::cluster.b64  _, [remAddr32], %3;\n\t"
         "}"
         :
         : "r"(smem_addr), "r"(cta_id), "r"(pred), "r"(transaction_bytes)
@@ -947,7 +1004,6 @@ CUTE_DEVICE static void fence_view_async_tmem_store() {
     CUTLASS_NOT_IMPLEMENTED();
 #endif
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 }  // end namespace arch

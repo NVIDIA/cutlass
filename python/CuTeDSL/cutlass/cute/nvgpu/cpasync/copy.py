@@ -420,7 +420,6 @@ class CopyBulkTensor2DGather4G2SNonExecTrait(CopyG2STileNonExecBaseTrait):
         return CopyBulkTensor2DGather4G2STrait(self.unpack(loc=loc, ip=ip, **kwargs))
 
 
-
 class CopyBulkTensor2DGather4G2STrait(Trait):
     pass
 
@@ -584,6 +583,67 @@ class CopyBulkTensorTileG2SMulticastNonExecTrait(CopyG2STileMulticastNonExecBase
 class CopyBulkTensorTileG2SMulticastTrait(Trait):
     pass
 
+
+@dataclass
+class CopyBulkTensor2DGather4G2SMulticastOp(CopyG2STileBaseOp):
+    """
+    Bulk tensor asynchronous multicast GMEM to SMEM Copy Operation using the TMA unit.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk-tensor>`__.
+    This Operation uses TMA in the ``.tile::gather4`` mode.
+    """
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # base_dsl.Arch verification
+        arch: base_dsl.Arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_100:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_100.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def _get_description(self) -> str:
+        return "cp.async GMEM -> SMEM bulk tensor gather4 multicast copy Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensor2DGather4G2SMulticastNonExecTrait":
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom with gmem_coord_tensor to obtain a copy Atom for TMA"
+        )
+
+    def _to_ir(self) -> _cute_nvgpu_ir.GatherScatterTmaLoadEnum:
+        if self.cta_group == CtaGroup.ONE:
+            return _cute_nvgpu_ir.GatherScatterTmaLoadEnum.sm_100_multicast
+        elif self.cta_group == CtaGroup.TWO:
+            return _cute_nvgpu_ir.GatherScatterTmaLoadEnum.sm_100_2sm_multicast
+        else:
+            assert False, "unrecognized self.cta_group"
+
+
+class CopyBulkTensor2DGather4G2SMulticastNonExecTrait(
+    CopyG2STileMulticastNonExecBaseTrait
+):
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensor2DGather4G2SMulticastTrait":
+        return CopyBulkTensor2DGather4G2SMulticastTrait(
+            self.unpack(loc=loc, ip=ip, **kwargs)
+        )
+
+
+class CopyBulkTensor2DGather4G2SMulticastTrait(Trait):
+    pass
 
 
 @dataclass
@@ -968,6 +1028,56 @@ class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
 
 class CopyBulkTensorTileS2GTrait(Trait):
     pass
+
+
+class CopyBulkTensor2DScatter4S2GNonExecTrait(CopyBulkTensorTileS2GNonExecTrait):
+    def with_(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensor2DScatter4S2GTrait":
+        return CopyBulkTensor2DScatter4S2GTrait(self.unpack(loc=loc, ip=ip, **kwargs))
+
+
+class CopyBulkTensor2DScatter4S2GTrait(CopyBulkTensorTileS2GTrait):
+    pass
+
+
+@dataclass
+class CopyBulkTensor2DScatter4S2GOp(TmaCopyOp):
+    """
+    Bulk tensor asynchronous SMEM to GMEM Copy Operation using TMA
+    ``.tile::scatter4`` mode.
+
+    The destination operand to :func:`cute.copy` is zipped as
+    ``[dst_coord_tensor, index_tensor]``. The coord tensor supplies the common
+    2D TMA coordinate and the index tensor supplies the four scatter indices.
+    """
+
+    def __post_init__(self) -> None:
+        arch = BaseDSL._get_dsl().get_arch_enum()
+        if not arch >= base_dsl.Arch.sm_100:
+            raise DSLUserCodeError(
+                f"expects arch to be at least {base_dsl.Arch.sm_100.name}, but got {arch.name}",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+
+    def __str__(self) -> str:
+        return "cp.async SMEM -> GMEM bulk tensor scatter4 copy Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyBulkTensor2DScatter4S2GNonExecTrait":
+        raise NotImplementedError(
+            "Use cpasync.make_tiled_tma_atom with gmem_coord_tensor to obtain a copy Atom for TMA"
+        )
 
 
 @dataclass
@@ -1505,12 +1615,7 @@ class CopyBulkG2SOp(CopyOp):
     """
     Bulk copy asynchronous GMEM to SMEM Copy Operation.
 
-    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
-    elects one issuing lane for this operation; do not wrap the call in
-    :func:`cute.arch.elect_one`. An outer election would leave only one lane
-    able to reach the compiler-generated full-warp election, creating an
-    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
-    the compiler rejects this pattern.
+    The compiler does not perform thread election for this operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1601,12 +1706,7 @@ class CopyBulkG2SMulticastOp(CopyOp):
     """
     Bulk multicast copy asynchronous GMEM to SMEM Copy Operation.
 
-    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
-    elects one issuing lane for this operation; do not wrap the call in
-    :func:`cute.arch.elect_one`. An outer election would leave only one lane
-    able to reach the compiler-generated full-warp election, creating an
-    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
-    the compiler rejects this pattern.
+    The compiler does not perform thread election for this operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1706,12 +1806,7 @@ class CopyBulkS2GOp(CopyOp):
     """
     Bulk copy asynchronous SMEM to GMEM Copy Operation.
 
-    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
-    elects one issuing lane for this operation; do not wrap the call in
-    :func:`cute.arch.elect_one`. An outer election would leave only one lane
-    able to reach the compiler-generated full-warp election, creating an
-    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
-    the compiler rejects this pattern.
+    The compiler does not perform thread election for this operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1765,12 +1860,7 @@ class CopyBulkS2GByteMaskOp(CopyOp):
     The i-th bit in the 16-bit wide byteMask operand specifies whether
     the i-th byte of each 16-byte wide chunk of source data is copied to the destination.
 
-    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
-    elects one issuing lane for this operation; do not wrap the call in
-    :func:`cute.arch.elect_one`. An outer election would leave only one lane
-    able to reach the compiler-generated full-warp election, creating an
-    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
-    the compiler rejects this pattern.
+    The compiler does not perform thread election for this operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1850,12 +1940,7 @@ class CopyBulkS2SOp(CopyOp):
     """
     Bulk copy asynchronous SMEM CTA to Cluster Copy Operation.
 
-    Invoke :func:`cute.copy` collectively from a converged warp. The compiler
-    elects one issuing lane for this operation; do not wrap the call in
-    :func:`cute.arch.elect_one`. An outer election would leave only one lane
-    able to reach the compiler-generated full-warp election, creating an
-    invalid synchronization that can deadlock. With NVVM diagnostics enabled,
-    the compiler rejects this pattern.
+    The compiler does not perform thread election for this operation.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """

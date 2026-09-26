@@ -15,7 +15,7 @@ This module provides jit executor related classes.
 Pointer-address runtime arguments are opt-in. A compile-time example such as
 ``cute.runtime.nullptr(dtype, space)`` marks the corresponding runtime argument as a
 pointer slot, and
-``ExecutionArgs.record_pointer_arg_specs_from_compile_args`` records that
+``ExecutionArgs.record_arg_specs_from_compile_args`` records that
 metadata in ``_pointer_address_arg_specs``. Runtime calls may then pass an
 integer address, ``ctypes.c_void_p``, a ctypes pointer object, or
 ``cute.runtime.nullptr(...)`` for a null address. Native JIT execution packs raw
@@ -38,7 +38,18 @@ import array
 import ctypes
 import inspect
 import io
-from typing import Any, NamedTuple, TYPE_CHECKING, ClassVar, cast, get_args, get_origin
+from typing import (
+    Any,
+    Literal,
+    NamedTuple,
+    TYPE_CHECKING,
+    ClassVar,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+    overload,
+)
 from collections.abc import Callable, Sequence
 import weakref
 import threading
@@ -378,7 +389,7 @@ class ExecutionArgs:
 
     Besides normal signature rectification and scalar casting, this class owns
     the pointer-address conversion contract.
-    ``record_pointer_arg_specs_from_compile_args`` derives a lightweight spec
+    ``record_arg_specs_from_compile_args`` derives a lightweight spec
     tree from compile-time arguments, and
     ``generate_execution_args`` / ``convert_python_pointer_args_for_tvm_ffi`` use
     that spec to decide where Python pointer-like values may replace runtime
@@ -405,6 +416,9 @@ class ExecutionArgs:
             None
         ] * self._meta.arg_count
         self._has_pointer_address_arg_specs = False
+        # Whether the function was compiled with ``None`` in each argument slot,
+        # or "unknown" when the compile-time arguments were not recorded.
+        self._compiled_with_none: list[Any] = ["unknown"] * self._meta.arg_count
         # When True (set when debugging mode is ON), generate_execution_args
         # runs thorough per-argument validation that is otherwise skipped to
         # keep the launch path fast.
@@ -427,7 +441,7 @@ class ExecutionArgs:
         """Whether this compiled signature has pointer-address conversion slots."""
         return self._has_pointer_address_arg_specs
 
-    def record_pointer_arg_specs_from_compile_args(
+    def record_arg_specs_from_compile_args(
         self, args: tuple[Any, ...], kwargs: dict[str, Any]
     ) -> None:
         """Record pointer conversion metadata from compile-time arguments.
@@ -446,6 +460,12 @@ class ExecutionArgs:
         such as
         ``list[cutlass.Pointer]`` or ``Sequence[cutlass.Pointer]``, the inner annotation
         is applied to each element.
+
+        The same pass records ``_compiled_with_none``, marking which slots held
+        ``None``. Tracing takes ``None`` as a constexpr and folds it into the
+        kernel, so those slots carry no runtime argument; ``_validate_args_full``
+        needs to tell them apart from slots the kernel really does expect an
+        argument for, which the annotation cannot say.
 
         ``args``/``kwargs`` are first rectified through the function signature
         unless they already exactly match the positional runtime shape. That
@@ -466,6 +486,7 @@ class ExecutionArgs:
             )
             for index, arg in enumerate(input_args)
         ]
+        self._compiled_with_none = [arg is None for arg in input_args]
         self._has_pointer_address_arg_specs = any(
             spec is not None for spec in self._pointer_address_arg_specs
         )
@@ -633,6 +654,20 @@ class ExecutionArgs:
 
         return rectified
 
+    def bound_call_arguments(
+        self, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """THIS call's launch binding as name->value facts: the same tail-arg
+        slice and rectification ``_generate_execution_args`` performs, keyed
+        by the filtered runtime signature's parameter names."""
+        n = self._meta.arg_count
+        head = args[:n] if len(args) > n else args
+        if not kwargs and len(head) == n:
+            input_args: Sequence[Any] = head
+        else:
+            input_args = self.get_rectified_args(head, kwargs)
+        return dict(zip(self._meta.all_names, input_args))
+
     def generate_execution_args(
         self, args: tuple[Any, ...], kwargs: dict[str, Any]
     ) -> tuple[list[Any], list[Any]]:
@@ -787,6 +822,22 @@ class ExecutionArgs:
             name = meta.all_names[index] if index < len(meta.all_names) else f"#{index}"
             spec = self._pointer_address_arg_specs[index]
 
+            # A parameter compiled with `None` was baked in as a constexpr, so `None` is the only value
+            # it can take, and marshalling it to zero C pointers is correct.
+            compiled_with_none = self._compiled_with_none[index]
+            if compiled_with_none is True:
+                if arg is not None:
+                    raise DSLUserCodeError(
+                        DiagId.ARG_CONSTEXPR_MISMATCH,
+                        arg_name=name,
+                        arg_type=type(arg).__name__,
+                        context={"position": index},
+                    )
+                continue
+
+            # Skip validation if not recorded.
+            if arg is None and compiled_with_none == "unknown":
+                continue
             # Numeric scalars must be number-like so the later t.cast succeeds;
             # only reject clearly non-numeric values to avoid false positives on
             # the DSL's own numeric wrapper types.
@@ -1071,6 +1122,21 @@ class JitModule:
             self.unload()
 
 
+def _pyir_validate_spec_reentry(
+    spec: "tuple | None",
+    execution_args: "ExecutionArgs | None",
+    args: tuple,
+    kwargs: dict,
+) -> None:
+    """Lazy hook into the F-SPEC re-entry engine (pyir_spec); a handle with
+    no sealed spec never imports the engine."""
+    if spec is None:
+        return
+    from .pyir_spec import _pyir_validate_spec_reentry as _validate
+
+    _validate(spec, execution_args, args, kwargs)
+
+
 class JitExecutor:
     """An executable function that can be called to launch a device kernel.
 
@@ -1083,12 +1149,16 @@ class JitExecutor:
         jit_module: JitModule | Any,
         exec_context: JitExecuteContext | None,
         jit_time_profiling: bool,
+        spec: "tuple | None" = None,
     ) -> None:
         # JitExecutor will keep JitCompiledFunction alive so that the underlying
         # ExecutionEngine and module data is not discarded until runtime callables
         # are garbage collected.
         self.jit_module = jit_module
         self.exec_context = exec_context
+        # F-SPEC: (record, complete, entry_func, receiver) sealed by the trace that
+        # produced this module; validated at every __call__ re-entry.
+        self._pyir_spec = spec
         self.profiler = timer(enable=jit_time_profiling) if jit_time_profiling else None
 
         # Get the cuda result type from the capi function.
@@ -1172,13 +1242,22 @@ class JitExecutor:
             error_code = self.cuda_result.value  # type: ignore[union-attr]
             if error_code == 0:
                 return error_code
-            raise cuda_helpers.create_cuda_runtime_error(error_code)
+            raise cuda_helpers.create_cuda_runtime_error(
+                error_code, cuda_helpers.cudart.cudaError_t
+            )
         except DSLCudaRuntimeError as e:
             raise e
         except Exception as e:
             raise DSLRuntimeError(f"💥💥💥 Runtime Crash 💥💥💥", cause=e)
 
     def __call__(self, *args: Any, **kwargs: Any) -> int | None:
+        if self._pyir_spec is not None:
+            _pyir_validate_spec_reentry(
+                self._pyir_spec,
+                getattr(self.jit_module, "execution_args", None),
+                args,
+                kwargs,
+            )
         exe_args, adapted_args = self.generate_execution_args(*args, **kwargs)
         return self.run_compiled_program(exe_args)
 
@@ -1251,6 +1330,9 @@ class AuxRuntimeFunc(abc.ABC):
         """
 
 
+AuxRuntimeFuncT = TypeVar("AuxRuntimeFuncT", bound=AuxRuntimeFunc)
+
+
 class JitCompiledFunction:
     """Holds a compiled function."""
 
@@ -1293,7 +1375,7 @@ class JitCompiledFunction:
                 full_arg_check=full_arg_check,
                 adapter_scope=self._jit_arg_adapter_scope,
             )
-            self.execution_args.record_pointer_arg_specs_from_compile_args(
+            self.execution_args.record_arg_specs_from_compile_args(
                 tuple(dynamic_args or ()), dynamic_kwargs or {}
             )
         self.jit_time_profiling = jit_time_profiling
@@ -1322,6 +1404,11 @@ class JitCompiledFunction:
         self.jit_module: JitModule | None = None
         self._executor_lock = threading.RLock()
         self._default_executor: JitExecutor | None = None
+
+        # F-SPEC: (record, complete, entry_func, receiver) sealed by the producing
+        # trace; validated at __call__ re-entry on this handle and propagated
+        # to every executor derived from it.
+        self._pyir_spec: "tuple | None" = None
 
         # This is used to do early generation of the c header arguments to release the reference to the dynamic arguments.
         self._generate_c_header_arguments(dynamic_args, dynamic_kwargs)
@@ -1410,34 +1497,65 @@ class JitCompiledFunction:
             # Create a new executor that will be tied to a device context
             # n.b. host only modules do not load device specific modules or context.
             context = self.jit_module.get_device_execute_context(device)
-            return JitExecutor(self.jit_module, context, self.jit_time_profiling)
+            return JitExecutor(
+                self.jit_module,
+                context,
+                self.jit_time_profiling,
+                spec=self._pyir_spec,
+            )
 
     def generate_execution_args(
         self, *args: Any, **kwargs: Any
     ) -> tuple[list[Any], list[Any]]:
         return self.execution_args.generate_execution_args(args, kwargs)
 
+    @overload
     def get_aux_func(
-        self, func_class: type[AuxRuntimeFunc], kernel: Callable[..., Any]
-    ) -> AuxRuntimeFunc:
-        """Look up and return an auxiliary runtime function for a specific kernel.
+        self,
+        func_class: type[AuxRuntimeFuncT],
+        kernel: Callable[..., Any] | None = None,
+        *,
+        required: Literal[True] = True,
+    ) -> AuxRuntimeFuncT: ...
 
-        ``kernel`` must be a ``@dsl_name.kernel``-annotated callable that was called
-        inside the ``@dsl_name.jit`` function that produced this compiled object.
-        The lookup resolves the symbol ``{kernel_name}_{func_class.name}`` for
-        that specific kernel.
+    @overload
+    def get_aux_func(
+        self,
+        func_class: type[AuxRuntimeFuncT],
+        kernel: Callable[..., Any] | None = None,
+        *,
+        required: Literal[False],
+    ) -> AuxRuntimeFuncT | None: ...
+
+    def get_aux_func(
+        self,
+        func_class: type[AuxRuntimeFuncT],
+        kernel: Callable[..., Any] | None = None,
+        *,
+        required: bool = True,
+    ) -> AuxRuntimeFuncT | None:
+        """Look up and return an auxiliary runtime function.
+
+        When ``kernel`` is provided, resolves
+        ``{kernel_name}_{func_class.name}``. Otherwise, resolves
+        ``func_class.name`` directly.
 
         :param func_class: A subclass of :class:`AuxRuntimeFunc` whose
-            ``name`` class attribute identifies the host function suffix.
-        :param kernel: A ``@dsl_name.kernel``-annotated callable.  Must have been
-            called at least once inside a ``@dsl_name.jit`` function so that
-            ``_dsl_kernel_name`` is set.
+            ``name`` class attribute identifies the full symbol when ``kernel``
+            is omitted or the host function suffix when ``kernel`` is provided.
+        :param kernel: An optional ``@dsl_name.kernel``-annotated callable. If
+            provided, it must have been called at least once inside a
+            ``@dsl_name.jit`` function so that ``_dsl_kernel_name`` is set.
+        :param required: Whether an unavailable auxiliary function is an error.
+            If false, a missing execution engine or symbol returns ``None``.
         :return: An instance of ``func_class`` initialised with the matched
-            function pointer and ready to call.
+            function pointer, or ``None`` when the symbol is not required and
+            is absent.
         :raises TypeError: If ``func_class`` is not a subclass of
             :class:`AuxRuntimeFunc`.
         :raises ValueError: If ``kernel`` has no ``_dsl_kernel_name`` attribute.
-        :raises DSLRuntimeError: If no matching symbol is found in the JIT engine.
+        :raises DSLRuntimeError: If ``required`` is true and the execution
+            engine is unavailable or no matching symbol is found in it.
         """
         if not (
             isinstance(func_class, type) and issubclass(func_class, AuxRuntimeFunc)
@@ -1446,20 +1564,26 @@ class JitCompiledFunction:
                 f"func_class must be a subclass of AuxRuntimeFunc, got {func_class!r}"
             )
 
-        # Unwrap bound methods then @wraps wrappers to reach the original funcBody.
-        func_body = getattr(kernel, "__func__", kernel)  # bound method → function
-        func_body = getattr(func_body, "__wrapped__", func_body)  # jit_wrapper → func
-        kernel_name = getattr(func_body, "_dsl_kernel_name", None)
-        if kernel_name is None:
-            raise ValueError(
-                f"kernel {kernel!r} has no '_dsl_kernel_name' attribute. "
-                "Make sure it has been called at least once inside a @cute.jit function."
-            )
+        sym_name = func_class.name
+        candidate = sym_name
+        if kernel is not None:
+            # Unwrap bound methods then @wraps wrappers to reach the original funcBody.
+            func_body = getattr(kernel, "__func__", kernel)
+            func_body = getattr(func_body, "__wrapped__", func_body)
+            kernel_name = getattr(func_body, "_dsl_kernel_name", None)
+            if kernel_name is None:
+                raise ValueError(
+                    f"kernel {kernel!r} has no '_dsl_kernel_name' attribute. "
+                    "Make sure it has been called at least once inside a "
+                    "@cute.jit function."
+                )
+            candidate = f"{kernel_name}_{sym_name}"
+
+        if self.engine is None and not required:
+            return None
 
         self._validate_engine()
 
-        sym_name = func_class.name
-        candidate = f"{kernel_name}_{sym_name}"
         candidates = [candidate]
         if self.prefix is not None:
             candidates = [f"_mlir_{self.prefix}_{candidate}"] + candidates
@@ -1471,11 +1595,18 @@ class JitCompiledFunction:
                 break
 
         if not fn_ptr:
+            if not required:
+                return None
             raise DSLRuntimeError(
                 f"Host function '{sym_name}' not found in JIT engine. "
                 f"Tried: {candidates}"
             )
         return func_class(fn_ptr, self.execution_args)
+
+    def seal_specialization(self, spec: "tuple | None") -> None:
+        """Attach the producing trace's F-SPEC (record, complete, entry_func, receiver);
+        __call__ re-entries on this handle validate against it (V-11)."""
+        self._pyir_spec = spec
 
     def __call__(self, *args: Any, **kwargs: Any) -> int | None:
         """Executes the jit-compiled function under the currently active CUDA context.
@@ -1484,6 +1615,13 @@ class JitCompiledFunction:
         CUDA errors. If you need to call the kernel on multiple devices use `to`
         to return a per-device function.
         """
+        if self._pyir_spec is not None:
+            _pyir_validate_spec_reentry(
+                self._pyir_spec,
+                getattr(self, "execution_args", None),
+                args,
+                kwargs,
+            )
         exe_args, adapted_args = self.execution_args.generate_execution_args(
             args, kwargs
         )

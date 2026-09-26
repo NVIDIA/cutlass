@@ -11,9 +11,9 @@
 
 import ctypes
 import math
+import struct
 from abc import abstractmethod
 from itertools import chain
-import numpy as np
 import operator
 from typing import (
     TYPE_CHECKING,
@@ -28,6 +28,7 @@ from typing import (
     Union,
     Any,
     cast as tcast,
+    SupportsIndex,
     Type,
     TypeVar,
     overload,
@@ -48,7 +49,18 @@ from .._mlir.dialects import arith, llvm, nvvm, vector
 
 from . import AddressSpace
 
-from .pyir_runtime import _WatchedM
+from .pyir_runtime import (
+    _PYIR_CANDIDATE_REGISTRY_ACTIVE,
+    _PYIR_SCOPE_STACK,
+    _WatchedM,
+    _pyir_declare_write_funnel,
+    _pyir_note_holder_write,
+    _pyir_record_external_payload_consumption,
+    _pyir_record_staged_identity_hashed,
+    _pyir_refresh_cell_read,
+    _pyir_register_candidate_holder,
+    _pyir_setattr_raw,
+)
 
 # =============================================================================
 # Dynamic Expression Protocol
@@ -370,16 +382,17 @@ class NumericMeta(DslType):
         For unpacked dtypes this is the element width. Packed view dtypes
         use the width of one packed tensor element.
     :type width: int
-    :param np_dtype: Corresponding NumPy dtype
-    :type np_dtype: numpy.dtype, optional
+    :param np_dtype_name: Name of the corresponding NumPy scalar type, or None
+        when NumPy has no matching type
+    :type np_dtype_name: str, optional
     :param mlir_type: Corresponding MLIR type
     :type mlir_type: Any, optional
     :param is_abstract: Whether the type is abstract, defaults to False
     :type is_abstract: bool, optional
     :ivar width: Bit width of the numeric type
     :type width: int
-    :ivar _np_dtype: Corresponding NumPy dtype
-    :type _np_dtype: Union[numpy.dtype, None]
+    :ivar _np_dtype_name: Name of the corresponding NumPy scalar type
+    :type _np_dtype_name: Union[str, None]
 
     :property numpy_dtype: Returns the corresponding NumPy dtype
     :rtype numpy_dtype: numpy.dtype
@@ -390,7 +403,7 @@ class NumericMeta(DslType):
 
     # Placeholder type
     _mlir_type = Any
-    _np_dtype: Optional[type]
+    _np_dtype_name: Optional[str]
 
     def __new__(
         cls,
@@ -398,7 +411,7 @@ class NumericMeta(DslType):
         bases: tuple,
         attrs: dict,
         width: int = 8,
-        np_dtype: Optional[type] = None,
+        np_dtype_name: Optional[str] = None,
         mlir_type: Optional[Callable[[], ir.Type]] = None,
         is_abstract: bool = False,
         **kwargs: Any,
@@ -428,7 +441,7 @@ class NumericMeta(DslType):
 
         new_cls.width = width
         new_cls.bytes = max(1, (width + 7) // 8)
-        new_cls._np_dtype = np_dtype
+        new_cls._np_dtype_name = np_dtype_name
         return new_cls
 
     def n_bytes(cls, n_elements: int) -> int:
@@ -438,7 +451,20 @@ class NumericMeta(DslType):
 
     @property
     def numpy_dtype(cls) -> Optional[type]:
-        return cls._np_dtype
+        """Return the NumPy scalar type for this dtype, or None if it has none.
+
+        NumPy is an optional dependency, so it is imported on first access
+        rather than at module load: nothing else in the type system needs it.
+
+        :raises ModuleNotFoundError: If NumPy is not installed and this dtype
+            does have a NumPy counterpart.
+        """
+        if cls._np_dtype_name is None:
+            return None
+
+        import numpy
+
+        return getattr(numpy, cls._np_dtype_name, None)
 
     @property
     @abstractmethod
@@ -534,6 +560,20 @@ def cast(
     return res
 
 
+_INTEGER_DTYPE_NAMES: dict[tuple[int, bool], str] = {
+    (8, True): "int8",
+    (16, True): "int16",
+    (32, True): "int32",
+    (64, True): "int64",
+    (8, False): "uint8",
+    (16, False): "uint16",
+    (32, False): "uint32",
+    (64, False): "uint64",
+}
+
+_FLOAT_DTYPE_NAMES = frozenset({"float16", "float32", "float64"})
+
+
 # Option 1: use ir.Value as base
 # class IntegerMeta(DslType, type(ir.Value)):
 class IntegerMeta(NumericMeta):
@@ -553,9 +593,12 @@ class IntegerMeta(NumericMeta):
     """
 
     signed: bool
-    # Value range that ``_np_dtype`` stores exactly, or None when there is no
-    # numpy dtype to store into. See ``Integer.__init__``.
+    # Value range this type stores exactly, or None when the width has no
+    # matching C integer to cast to. See ``Integer.__init__``.
     _exact_range: Optional[tuple[int, int]]
+    # (width, signedness) of the C integer this type casts to, or None when
+    # there is none. See ``_float_to_int``.
+    _cast_key: Optional[tuple[int, bool]]
 
     def __new__(
         cls,
@@ -567,16 +610,9 @@ class IntegerMeta(NumericMeta):
         mlir_type: Optional[Callable[[], ir.Type]] = None,
         is_abstract: bool = False,
     ) -> Any:
-        if width == 1:
-            np_dtype = np.bool_
-        elif width == 128:
-            np_dtype = None
-        elif width == 4:
-            np_dtype = None
-        elif signed:
-            np_dtype = getattr(np, f"int{width}")
-        else:
-            np_dtype = getattr(np, f"uint{width}")
+        np_dtype_name = (
+            "bool_" if width == 1 else _INTEGER_DTYPE_NAMES.get((width, signed))
+        )
 
         def _c_pointers(self: "Integer") -> list[ctypes.c_void_p]:
             if width == 1:
@@ -592,22 +628,41 @@ class IntegerMeta(NumericMeta):
             "__c_pointers__": _c_pointers,
         }
         new_cls = super().__new__(
-            cls, name, bases, attrs | new_attrs, width, np_dtype, mlir_type, is_abstract
+            cls,
+            name,
+            bases,
+            attrs | new_attrs,
+            width,
+            np_dtype_name,
+            mlir_type,
+            is_abstract,
         )
         new_cls.signed = signed
         # Precomputed once per type so ``Integer.__init__`` can range-check without
-        # rebuilding the bounds on every construction. These track ``np_dtype``
-        # rather than ``width``, because the numpy cast is what they must agree
-        # with, and a few subclasses patch ``width`` afterwards.
-        if np_dtype is None:
+        # rebuilding the bounds on every construction. These track the dtype
+        # rather than the ``width`` attribute, because the dtype's C cast is what
+        # they must agree with, and a few subclasses patch ``width`` afterwards --
+        # hence the local ``width``/``signed`` parameters below rather than
+        # ``cls.width``. The final branches are reached only for widths 8/16/32/64,
+        # where the dtype is exactly ``int{width}``/``uint{width}``, so
+        # two's-complement arithmetic on the parameters agrees with it by
+        # construction.
+        if np_dtype_name is None:
             new_cls._exact_range = None
         elif width == 1:
-            # np.bool_ folds everything nonzero to True, so only 0 and 1 survive
+            # bool folds everything nonzero to True, so only 0 and 1 survive
             # the cast unchanged.
             new_cls._exact_range = (0, 1)
+        elif signed:
+            new_cls._exact_range = (-(2 ** (width - 1)), 2 ** (width - 1) - 1)
         else:
-            info = np.iinfo(np_dtype)  # type: ignore[type-var]
-            new_cls._exact_range = (int(info.min), int(info.max))
+            new_cls._exact_range = (0, 2**width - 1)
+        # Boolean is declared signed with width 1 yet folds to (0, 1), and it
+        # has no C integer to cast to, so it is excluded alongside the widths
+        # that have no dtype at all.
+        new_cls._cast_key = (
+            None if (np_dtype_name is None or width == 1) else (width, signed)
+        )
         return new_cls
 
     def __str__(cls) -> str:
@@ -683,14 +738,15 @@ class FloatMeta(NumericMeta):
         mlir_type: Optional[Callable[[], ir.Type]] = None,
         is_abstract: bool = False,
     ) -> Any:
-        np_dtype = getattr(np, name.lower(), None)
+        lowered_name = name.lower()
+        np_dtype_name = lowered_name if lowered_name in _FLOAT_DTYPE_NAMES else None
         new_cls = super().__new__(
             cls,
             name,
             bases,
             attrs,
             width,
-            np_dtype,
+            np_dtype_name,
             mlir_type,
             is_abstract,
         )
@@ -915,6 +971,59 @@ def _promote_integer(
         return a.to(b.dtype), b, b.dtype
 
 
+def _pyir_mark_fold_srcs(result: Any, operands: "tuple[Any, ...]") -> None:
+    """Stamp on *result* the payload-backed Numeric operands (plus their own
+    recorded sources) whose trace-time values decided it; consumed by the
+    staged-literal predicate-fold witness (see pyir_core).
+
+    Gated on an open PyIR trace scope (the same check the consumption
+    recorder uses): outside a trace there is no witness to consume the
+    stamp, so scalar folds stay untouched."""
+    if not _PYIR_SCOPE_STACK:
+        return
+    try:
+        srcs: list = []
+        for o in operands:
+            if isinstance(o, Numeric) and type(getattr(o, "value", None)) in (
+                bool,
+                int,
+                float,
+            ):
+                if all(s is not o for s in srcs):
+                    srcs.append(o)
+            for s in getattr(o, "_pyir_fold_srcs", ()):
+                if all(x is not s for x in srcs):
+                    srcs.append(s)
+        if srcs:
+            _pyir_setattr_raw(result, "_pyir_fold_srcs", tuple(srcs))
+    except Exception:
+        pass
+
+
+def _pyir_numeric_protocol_gate(proto: str, *operands: Any) -> None:
+    """Refuse a numeric protocol that has no staged form when any operand is a
+    staged (runtime) value; payload operands proceed to the fold arm."""
+    for o in operands:
+        staged = isinstance(o, ArithValue) or (
+            isinstance(o, Numeric)
+            and not isinstance(o.__dict__.get("value"), (bool, int, float))
+        )
+        if staged:
+            raise DSLUserCodeError(
+                DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
+                proto=proto,
+                what=type(o).__name__,
+            )
+
+
+def _pyir_numeric_payload(operand: Any) -> Any:
+    """The plain Python payload of a fold-arm operand (gate-checked Numeric
+    wrappers expose it as ``value``; plain primitives pass through)."""
+    if isinstance(operand, Numeric):
+        return operand.__dict__.get("value")
+    return operand
+
+
 def _binary_op(
     op: Callable[..., Any],
     promote_operand: bool = True,
@@ -956,6 +1065,9 @@ def _binary_op(
     ) -> Any:
         orig_lhs_type = type(lhs)
         orig_rhs_type = type(rhs)
+        # Captured BEFORE promotion rebinds lhs/rhs: the fold witness must key
+        # the ORIGINAL objects (promotion may mint twin wrappers).
+        orig_operands = (lhs, rhs)
 
         # When called directly with self and other
         ty = type(lhs)
@@ -1009,7 +1121,11 @@ def _binary_op(
             lhs_val, rhs_val = rhs_val, lhs_val
 
         res_val = op(lhs_val, rhs_val)
-        return res_type(res_val, loc=loc, ip=ip)
+        res = res_type(res_val, loc=loc, ip=ip)
+        # A Python-payload compute is a trace-time fold: propagate its sources.
+        if type(res_val) in (bool, int, float):
+            _pyir_mark_fold_srcs(res, orig_operands)
+        return res
 
     return wrapper
 
@@ -1021,7 +1137,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     implementing basic arithmetic operations.
 
     :param value: The value to store in the numeric type
-    :type value: Union[bool, int, float, Value]
+    :type value: Union[bool, int, float, Value, Numeric]
 
     :ivar value: The stored numeric value
     :vartype value: Union[bool, int, float, Value]
@@ -1030,7 +1146,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     # Injected by NumericMeta.__new__ on every concrete subclass.
     width: ClassVar[int]
     bytes: ClassVar[int]
-    _np_dtype: ClassVar[Optional[type]]
+    _np_dtype_name: ClassVar[Optional[str]]
 
     # TODO: Consider implementing MLIR style interface for PyIR mutable values.
     # Marker: MutableValue can track this type via pyir.ref/load/store.
@@ -1038,14 +1154,47 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     # Non-scalar DSL types (Array, Tensor) do NOT set this.
     _pyir_ref_supported = True
 
+    # The payload is a bool/int/float literal, an ``ir.Value`` or another
+    # Numeric depending on stage, and every reader narrows it itself. Declared
+    # here because the accessor that used to carry this annotation is bound
+    # onto the class only when PyIR is enabled.
+    value: Any
+
     def __init__(
         self,
-        value: Union[bool, int, float, Value],
+        # Numeric is accepted: every concrete subclass constructor converts
+        # from Numeric inputs (e.g. Int2(Integer(0)) is a dataclass default),
+        # and type[Numeric] calls resolve against this signature.
+        value: Union[bool, int, float, Value, "Numeric"],
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         self.value = value
+        # PyIR value-wrapper MINT choke point: every scalar Numeric constructor
+        # chains through here, once per scalar kernel argument on the launch
+        # path included, so each guard below is spelled inline: a call whose
+        # only job is to return still costs a Python frame there.
+
+        # A bare wrapper bound by an un-instrumented assignment never passes
+        # ``pyir_assign``/``pyir_read``; this sighting keeps it discoverable.
+        if _PYIR_CANDIDATE_REGISTRY_ACTIVE[0]:
+            _pyir_register_candidate_holder(self)
+        # Birth-context stamp: an SSA-backed wrapper belongs to the MLIR context
+        # that minted it (a live ``ir.Value`` keeps the context id stable).
+
+        # The read funnels refuse a cross-context wrapper instead of
+        # dereferencing a handle whose defining op is gone.  PyIR-only: the
+        # trace-close host-place restore keys this-compilation identity on the
+        # stamp, and only PyIR's read funnels consume it, so an unstamped
+        # wrapper in the baseline mode pays no per-mint guard work.  The
+        # C-level type test leads so a literal payload never reaches the
+        # environment manager lookup.
+        if isinstance(value, ir.Value) and is_pyir_enabled():
+            try:
+                self._pyir_birth_ctx = id(ir.Context.current)
+            except Exception:
+                pass
 
     def __str__(self) -> str:
         # Use member's pretty-str method if member object has method.
@@ -1060,7 +1209,23 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         return f"{self.__class__.__name__}({repr(self.value)})"
 
     def __hash__(self) -> int:
-        return hash(type(self).__class__) ^ hash(self.value)
+        v = self.__dict__.get("value")
+        if type(v) in (bool, int, float):
+            # Hashing the payload (dict key / set member) consumes it as structure.
+            _pyir_record_external_payload_consumption(self)
+        elif isinstance(v, ir.Value):
+            # Hashing a STAGED payload launders runtime identity into a plain
+            # Python hash; record it so the container key wall's write-site
+            # snapshot/compare can see the consumption (recording never raises).
+            _pyir_record_staged_identity_hashed()
+        return hash(type(self).__class__) ^ hash(v)
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
+        v = self.__dict__.get("value")
+        if type(v) in (bool, int, float):
+            # Serialization consumes the payload as structure.
+            _pyir_record_external_payload_consumption(self)
+        return super().__reduce_ex__(protocol)
 
     @property
     def dtype(self) -> Type["Numeric"]:
@@ -1169,7 +1334,30 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             if isinstance(self.value, (int, float, bool)):
                 res = arith_helper.const(self.value, type(self), loc=loc, ip=ip)
             elif isinstance(self.value, ir.Value):
-                res = self.value
+                # Cross-compilation guard: a raw SSA minted under a DIFFERENT MLIR
+                # context belongs to a finalized compilation -- refuse loudly.
+                # An unstamped wrapper (baseline mode never stamps) skips the
+                # guard entirely, paying one attribute probe and no context id.
+                _birth: "int | None" = getattr(self, "_pyir_birth_ctx", None)
+                if _birth is not None:
+                    _cur_ctx: "int | None"
+                    try:
+                        _cur_ctx = id(ir.Context.current)
+                    except Exception:
+                        _cur_ctx = _birth
+                    if _birth != _cur_ctx:
+                        raise DSLRuntimeError(
+                            "this value was produced by a previous @jit "
+                            "compilation and cannot be reused here: its "
+                            "backing IR lives in an already-finalized "
+                            "compilation context. Pass it through the "
+                            "kernel's arguments or recompute it in this "
+                            "compilation."
+                        )
+                # Staged-read choke: a wrapper paired with a live place cell
+                # materialises the CELL's current content, never a stale raw.
+                refreshed = _pyir_refresh_cell_read(self)
+                res = self.value if refreshed is None else refreshed.value
             else:
                 raise ValueError(
                     f"cannot convert {type(self)} to {dtype}, "
@@ -1370,16 +1558,39 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         return self.__ne__(zero, loc=loc, ip=ip)
 
     def __bool__(self) -> bool:
-        if isinstance(self.value, (int, float, bool)):
-            return bool(self.value)
+        v = self.__dict__.get("value")
+        if isinstance(v, (int, float, bool)):
+            # A truth-test on the payload folds trace-time data: witness it.
+            _pyir_record_external_payload_consumption(self)
+            return bool(v)
         else:
             raise DSLUserCodeError(DiagId.PHASE_DYNAMIC_TO_STATIC_BOOL)
 
     def __index__(self) -> int:
-        if isinstance(self.value, (int, float, bool)):
-            return self.value  # type: ignore[return-value]
+        v = self.__dict__.get("value")
+        if isinstance(v, (int, float, bool)):
+            # An index coercion of the payload is a structural bake: witness it.
+            _pyir_record_external_payload_consumption(self)
+            return v  # type: ignore[return-value]
         else:
             raise DSLUserCodeError(DiagId.PHASE_DYNAMIC_INDEX)
+
+    def __complex__(self) -> complex:
+        # The arm is a PyIR-mode fact: without PyIR there is no __complex__,
+        # and CPython's constructor falls through to the __index__ slot
+        # (``operator.index`` applies the same non-int return check).
+        if not is_pyir_enabled():
+            return complex(operator.index(self))
+        v = self.__dict__.get("value")
+        if isinstance(v, (int, float, bool)):
+            # complex() consumes the trace-time payload: witness it.
+            _pyir_record_external_payload_consumption(self)
+            return complex(v)
+        raise DSLUserCodeError(
+            DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
+            proto="complex()",
+            what=type(self).__name__,
+        )
 
     def __neg__(
         self,
@@ -1388,7 +1599,9 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric":
         if isinstance(self.value, (bool, int, float)):
-            return type(self)(-self.value)
+            res = type(self)(-self.value)
+            _pyir_mark_fold_srcs(res, (self,))
+            return res
         else:
             return type(self)(-self.value, loc=loc, ip=ip)  # type: ignore[operator]
 
@@ -1399,7 +1612,9 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric":
         if isinstance(self.value, (bool, int, float)):
-            return type(self)(abs(self.value))
+            res = type(self)(abs(self.value))
+            _pyir_mark_fold_srcs(res, (self,))
+            return res
         else:
             return type(self)(abs(self.value), loc=loc, ip=ip)  # type: ignore[arg-type]
 
@@ -1421,8 +1636,15 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         elif isinstance(value, ArithValue):
             res_type = Numeric.from_mlir_type(value.type)
         else:
+            if not is_pyir_enabled():
+                raise ValueError(
+                    f"unable to convert {value} in type {type(value)} to Numeric"
+                )
+            # Pure error path under PyIR: rendering the VALUE could emit IR (a
+            # traced wrapper's __str__ builds ops), so the message names the
+            # type only.
             raise ValueError(
-                f"unable to convert {value} in type {type(value)} to Numeric"
+                f"unable to convert value of type {type(value)} to Numeric"
             )
         return res_type(value)
 
@@ -1622,11 +1844,63 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     def __pow__(
         self,
         other: Union[int, float, bool, "Numeric"],
+        mod: Union[int, float, bool, "Numeric", None] = None,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric":
-        return _binary_op(operator.pow)(self, other, loc=loc, ip=ip)
+        if mod is None:
+            return _binary_op(operator.pow)(self, other, loc=loc, ip=ip)
+        # Ternary pow (LangRef 3.3.8): payload-only fold; no staged
+        # modular-exponentiation form.  The mod arm is a PyIR-mode fact:
+        # without PyIR the arm declines and Python raises its native
+        # TypeError, as with the two-argument signature it replaced.
+        if not is_pyir_enabled():
+            return NotImplemented
+        _pyir_numeric_protocol_gate("pow(a, b, mod)", self, other, mod)
+        res_val = pow(
+            _pyir_numeric_payload(self),
+            _pyir_numeric_payload(other),
+            _pyir_numeric_payload(mod),
+        )
+        res = type(self)(res_val)
+        _pyir_mark_fold_srcs(res, (self, other, mod))
+        return res
+
+    @dsl_user_op
+    def __rpow__(
+        self,
+        other: Union[int, float, bool, "Numeric"],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "Numeric":
+        # The reflected arm is a PyIR-mode fact: without PyIR there is no
+        # reflected producer, so Python raises its native TypeError.
+        if not is_pyir_enabled():
+            return NotImplemented
+        return _binary_op(operator.pow, flip=True)(self, other, loc=loc, ip=ip)
+
+    def __divmod__(self, other: Any) -> Any:
+        # LangRef 3.3.8: divmod(a, b) is definitionally the (a // b, a % b)
+        # pair; each half folds or emits through its existing arm, so the
+        # pair inherits exactly those arms' semantics and refusals.  The
+        # producer is a PyIR-mode fact: without PyIR the arm declines and
+        # Python raises its native TypeError, exactly as before.
+        if not is_pyir_enabled():
+            return NotImplemented
+        if not isinstance(other, (Numeric, ArithValue, bool, int, float)):
+            return NotImplemented
+        return (self.__floordiv__(other), self.__mod__(other))
+
+    def __rdivmod__(self, other: Any) -> Any:
+        # Reflected pair (other // self, other % self) through the existing
+        # reflected arms; a PyIR-mode fact like the direct arm.
+        if not is_pyir_enabled():
+            return NotImplemented
+        if not isinstance(other, (ArithValue, bool, int, float)):
+            return NotImplemented
+        return (self.__rfloordiv__(other), self.__rmod__(other))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         raise ValueError(
@@ -1677,6 +1951,82 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         return type_map[mlir_type]
 
 
+# The wrapper write funnel is INSTALLED, not merely gated.  A ``property`` and a
+# Python ``__setattr__`` bypass CPython's specialized attribute opcodes, so
+# binding them on ``Numeric`` up front costs every construction and every
+# payload read even when PyIR never runs -- and marshalling one scalar kernel
+# argument is exactly that work.  They are bound on first PyIR enablement
+# instead.  Until then ``value`` is a plain instance attribute; the payload
+# lives under the same key either way, so a wrapper minted before installation
+# keeps reading back correctly afterwards.
+
+
+def _numeric_payload_get(self: "Numeric") -> Any:
+    """The wrapped payload; a plain-payload read by non-DSL code is a
+    recorded structural consumption (the coercion-witness recorder)."""
+    try:
+        v = self.__dict__["value"]
+    except KeyError:
+        raise AttributeError("value") from None
+    if type(v) in (bool, int, float):
+        _pyir_record_external_payload_consumption(self)
+    return v
+
+
+def _numeric_payload_set(self: "Numeric", v: Any) -> None:
+    self.__dict__["value"] = v
+    _pyir_note_holder_write(self)
+
+
+# The payload lives in the instance dict under its original key so every
+# __dict__-driven walk sees the same storage shape as a plain attribute.
+_numeric_payload_property = property(_numeric_payload_get, _numeric_payload_set)
+
+
+# Every language-level attribute write/delete lands in plain storage (verbatim
+# delegate) and stamps the write clock.
+def _numeric_funnel_setattr(self: "Numeric", name: str, value: Any) -> None:
+    object.__setattr__(self, name, value)
+    _pyir_note_holder_write(self)
+
+
+def _numeric_funnel_delattr(self: "Numeric", name: str) -> None:
+    object.__delattr__(self, name)
+    _pyir_note_holder_write(self)
+
+
+def _pyir_install_numeric_write_funnel() -> None:
+    """Bind the wrapper write funnel onto ``Numeric`` and anchor the declared
+    fact on its now-verbatim members.
+
+    Idempotent.  ``_pyir_register_mode_fact`` calls this the first time any DSL
+    registers with PyIR enabled, which happens when that DSL's environment
+    manager is constructed -- before any tracing.
+    """
+    if Numeric.__dict__.get("value") is _numeric_payload_property:
+        return
+    Numeric.value = _numeric_payload_property  # type: ignore[assignment]
+    Numeric.__setattr__ = _numeric_funnel_setattr  # type: ignore[assignment]
+    Numeric.__delattr__ = _numeric_funnel_delattr  # type: ignore[assignment]
+    _pyir_declare_write_funnel(Numeric)
+
+
+def _numeric_construct_read(x: "Numeric") -> Any:
+    """Read *x*'s current backing for wrapper-from-wrapper construction.
+
+    Constructing a Numeric FROM another Numeric is a READ of the source at the
+    construction point: the same staged-read choke ``Numeric.to(ir.Value)`` applies.
+
+    A literal-backed wrapper read inside staged CF is the place's first
+    in-region observation: the choke promotes it so the construction consumes
+    the region's carry, not a re-baked loop-invariant constant.
+    """
+    refreshed = _pyir_refresh_cell_read(x)
+    if refreshed is not None:
+        return refreshed.value
+    return x.value
+
+
 def as_numeric(obj: Union[bool, int, float, ir.Value, Numeric]) -> Numeric:
     """Convert a Python primitive value to a Numeric type.
 
@@ -1702,6 +2052,41 @@ def as_numeric(obj: Union[bool, int, float, ir.Value, Numeric]) -> Numeric:
     return Numeric._from_python_value(obj)
 
 
+# ``np.array(x)`` holds a Python int in int64 up to 2**63-1 and in uint64 up to
+# 2**64-1; anything wider becomes an object array whose cast to an integer dtype
+# raises. Frozen here so the numpy-free cast rejects the same values.
+_C_INTEGER_MIN = -(1 << 63)
+_C_INTEGER_MAX = (1 << 64) - 1
+
+
+def _wrap_to_exact_range(value: int, exact_range: tuple[int, int]) -> int:
+    """Wrap ``value`` into ``exact_range`` the way a C integer cast would.
+
+    Keeps the low ``width`` bits and reinterprets them with the range's
+    signedness, e.g. ``Int32(1 << 34) -> 0``. ``(0, 1)`` is the boolean range,
+    where every nonzero value folds to 1 instead of wrapping.
+    """
+    if exact_range == (0, 1):
+        return int(bool(value))
+    lo, hi = exact_range
+    return (value - lo) % (hi - lo + 1) + lo
+
+
+# Bound by the DSL package initializer to the ``NumericCast`` class of the
+# native extension. Read at call time, never captured at import time: the
+# binding happens after this module has been imported.
+_native_numeric_cast: Optional[Any] = None
+
+
+def _float_to_int(
+    x: float, cast_key: Optional[tuple[int, bool]], exact_range: tuple[int, int]
+) -> int:
+    """Narrow ``x`` to a C integer the way NumPy's scalar cast does."""
+    if _native_numeric_cast is not None and cast_key is not None:
+        return _native_numeric_cast.float_to_int(x, *cast_key)
+    return _wrap_to_exact_range(int(x), exact_range)
+
+
 class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True):
     """A class representing integer values with specific width and signedness.
 
@@ -1715,17 +2100,26 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     :return: A new Integer instance with the converted value
     :rtype: Integer
 
-    :raises AssertionError: If the type's numpy_dtype is None
+    :raises AssertionError: If the type has no exactly representable range
     :raises NotImplementedError: If converting between different Integer types
     :raises ValueError: If the input type is not supported for conversion
-    :raises OverflowError: If converting float infinity to integer
+    :raises OverflowError: If converting float infinity to integer, or an
+        integer too wide for any C integer type
 
     Type conversion behavior:
 
     * Python scalars (bool, int, float):
-        * Converted through numpy dtype casting
+        * Converted through the target dtype's C cast
         * NaN and infinity values are rejected
-        * Example: Int8(256) -> -256 (overflow behavior)
+        * A value whose magnitude exceeds the target width is narrowed by
+          the dtype's C cast and emits ``TYPE_INT_LITERAL_OUT_OF_RANGE`` for
+          an integer literal (``Int8(256) -> 0``) or
+          ``TYPE_FLOAT_TO_INT_OUT_OF_RANGE`` for a float one
+          (``Int32(1e40)``). An integer wraps, dropping the high bits; a
+          float follows the host CPU's own conversion and is therefore
+          architecture-defined, matching NumPy on the same machine. To
+          materialize a specific bit pattern intentionally, mask first
+          (``Int8(256 & 0xFF)``).
 
     * MLIR Value with IntegerType:
         * Width differences handled by signless to signed/unsigned conversion
@@ -1737,7 +2131,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         * Example: f32 -> i32/ui32 depending on target type
 
     * Integer:
-        * Uses MLIR float-to-int conversion or numpy dtype casting
+        * Uses MLIR int-to-int conversion or the target dtype's C cast
         * Example: Int32(Int32(5)) => 5
 
     * Float:
@@ -1759,6 +2153,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     # Injected by IntegerMeta.__new__ on every concrete subclass.
     signed: ClassVar[bool]
     _exact_range: ClassVar[Optional[tuple[int, int]]]
+    _cast_key: ClassVar[Optional[tuple[int, bool]]]
 
     def __init__(
         self,
@@ -1768,14 +2163,14 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
-        # D1: if x is a _WatchedM, ir_value() emits arith.constant AND records
-        # the leaf under its slot so a later mutation can rewrite the use via
-        # replaceAllUsesWith.
+        # D1: a watched meta unwraps through the declared promotion (its
+        # numeric class survives; ir_value() inside records the leaf for the
+        # retroactive rewrite) -- never to a raw signless value.
         if isinstance(x, _WatchedM):
-            x = x.ir_value()
+            x = as_numeric(x)
 
         if isinstance(x, (bool, int, float)):
-            # Add check for NaN before numpy conversion
+            # Add check for NaN before the cast
             if isinstance(x, float):
                 if math.isnan(x):
                     raise ValueError("Cannot convert float NaN to integer")
@@ -1786,18 +2181,87 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
             if exact_range is not None and exact_range[0] <= x <= exact_range[1]:
                 # Already representable, so the cast below would round-trip the
                 # value unchanged. int() truncates floats toward zero and folds
-                # bools to 0/1, which is what astype does for this range too.
+                # bools to 0/1, which is what the cast does for this range too.
                 x_val = int(x)
             else:
-                # Out of range: defer to numpy for the wrap-around (or the
-                # overflow it raises on values wider than the dtype). _exact_range
-                # is None exactly when there is no dtype to cast to, so this is
-                # still where an unsupported width is rejected.
-                np_dtype = ty.numpy_dtype
-                assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
-                x_val = int(np.array(x).astype(np_dtype))
+                # Out of range: narrow the way the dtype's C cast would, and
+                # reject the ints too wide for any C integer. _exact_range is
+                # None exactly when there is no dtype to cast to, so this is
+                # still where an unsupported width is rejected. A float cast is
+                # architecture-defined and an integer cast is not, so they take
+                # different paths.
+                assert exact_range is not None, (
+                    f"expects an exactly representable range, but got {exact_range}"
+                )
+                if isinstance(x, float):
+                    x_val = _float_to_int(x, ty._cast_key, exact_range)
+                else:
+                    if not (_C_INTEGER_MIN <= x <= _C_INTEGER_MAX):
+                        raise OverflowError(f"{int(x)} is too large for a C integer")
+                    x_val = _wrap_to_exact_range(int(x), exact_range)
+            # A value whose truncation lands outside the target type's width is
+            # silently narrowed by the cast above, losing magnitude (e.g.
+            # ``Int32(1 << 34) -> 0``). Surface that loss as a warning, under a
+            # dedicated code per literal kind so the wording and the suggested
+            # fix match what was written. MLIR-value / same-type paths never
+            # reach here, so intentional bit-pattern materialization via
+            # ``arith_helper.const`` is unaffected. ``Boolean`` (width 1) is
+            # excluded: it has no magnitude range (any nonzero is True), so the
+            # ``[min, max]`` formula does not apply.
+            #
+            # The two literal kinds get different bounds, because only one of
+            # them has a bit-pattern idiom.
+            #
+            # Integer literals are tested against the union of the signed and
+            # unsigned ranges of that width, and signedness is deliberately not
+            # part of the test. A mask, flag word or other bit pattern is
+            # naturally unsigned, so a full 32-bit mask reaches a signed type as
+            # ``Int32(0xFFFFFFFF)``; the mirror idiom ``Uint32(-1)`` spells the
+            # same bits the other way. Both keep all ``width`` bits -- only the
+            # interpretation of the sign bit changes -- and the diagnostic's own
+            # remedy (mask to the type width) cannot quiet them.
+            #
+            # Float literals are tested against the type's own ``[min, max]``.
+            # Nobody spells a bit pattern as a float, so the wider band would
+            # only swallow real mistakes: ``Int32(3e9)`` is out of range for the
+            # type and is reported, matching the diagnostic NumPy used to raise
+            # for that cast. Testing the truncated magnitude keeps ordinary
+            # fractional truncation (``Int32(3.7)``) silent -- it loses no bits.
+            if ty.width > 1:
+                int_val = int(x)
+                if isinstance(x, float):
+                    lossless_lo, lossless_hi = ty.min, ty.max
+                else:
+                    lossless_lo = -(1 << (ty.width - 1))
+                    lossless_hi = (1 << ty.width) - 1
+                if int_val < lossless_lo or int_val > lossless_hi:
+                    from .diagnostics import WarnId, report_warning
+
+                    if isinstance(x, float):
+                        report_warning(
+                            WarnId.TYPE_FLOAT_TO_INT_OUT_OF_RANGE,
+                            stacklevel=3,
+                            value=x,
+                            type=ty.__name__,
+                            min=ty.min,
+                            max=ty.max,
+                            result=x_val,
+                        )
+                    else:
+                        report_warning(
+                            WarnId.TYPE_INT_LITERAL_OUT_OF_RANGE,
+                            stacklevel=3,
+                            value=int_val,
+                            type=ty.__name__,
+                            min=ty.min,
+                            max=ty.max,
+                            wrapped=x_val,
+                            mask=(1 << ty.width) - 1,
+                        )
         elif type(x) == ty:
-            x_val = x.value  # type: ignore[assignment]
+            # Same-type copy is a READ of *x* at this point: route through
+            # the staged-read choke, never the pinned raw.
+            x_val = _numeric_construct_read(x)  # type: ignore[assignment]
         elif isinstance(x, ir.Value):
             x_val = x
             if isinstance(x.type, ir.IntegerType):
@@ -1808,21 +2272,35 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
                 # float -> (u)int
                 x_val = arith_helper.fptoi(x, ty.signed, ty.mlir_type, loc=loc, ip=ip)
         elif isinstance(x, Integer):
+            # Consult the staged-read choke BEFORE dispatching: a loop-carried
+            # wrapper still caches its pre-loop literal, so a ``x.value`` type
+            # test would bake the stale constant instead of loading the cell.
+            refreshed = _pyir_refresh_cell_read(x)
+            if refreshed is not None:
+                x = refreshed
             if isinstance(x.value, ir.Value):
                 x_val = arith_helper.int_to_int(x.ir_value(), ty)
             else:
-                # For non-MLIR values, use numpy casting
-                src_val = np.array(x.value, dtype=type(x).numpy_dtype)
-                x_val = int(src_val.astype(ty.numpy_dtype))
+                # For non-MLIR values, wrap the way the target's C cast would.
+                # A target with no exactly representable range (Int4, Int128)
+                # has no cast to perform, so the value carries across as is.
+                target_range = ty._exact_range
+                src_val = tcast(Union[bool, int, float], x.value)
+                x_val = (
+                    int(src_val)
+                    if target_range is None
+                    else _wrap_to_exact_range(int(src_val), target_range)
+                )
         elif isinstance(x, Float):
             # float -> int is handled by Integer.__init__ recursively
-            Integer.__init__(self, x.value)
+            Integer.__init__(self, _numeric_construct_read(x))
             return
         else:
             raise DSLRuntimeError(f"{x} to integer conversion is not supported")
 
         super().__init__(x_val)
 
+    @dsl_user_op
     def __invert__(
         self,
         *,
@@ -1832,6 +2310,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         res_type = type(self)
         return res_type(self.ir_value(loc=loc, ip=ip).__invert__(loc=loc, ip=ip))
 
+    @dsl_user_op
     def __lshift__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1853,6 +2332,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
             raise ValueError(f"Cannot left shift {other_} with {self}")
         return other_.__lshift__(self, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __rshift__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1874,6 +2354,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
             raise ValueError(f"Cannot right shift {other_} with {self}")
         return other_.__rshift__(self, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __and__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1892,6 +2373,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     ) -> "Numeric":
         return self.__and__(other, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __or__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1910,6 +2392,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     ) -> "Numeric":
         return self.__or__(other, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __xor__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1932,6 +2415,19 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         return self.value
 
 
+# Standard IEEE-754 binary formats keyed by DSL type name, mapping to
+# (``struct`` format code, max finite magnitude, smallest positive subnormal).
+# Used by ``Float.__init__`` to detect a Python-float literal that overflows to
+# +/-inf or underflows to 0 in the target type -- numpy-free, via exact
+# ``struct`` round-trips. Only these standard formats are probed; non-IEEE /
+# narrow types (bf16, tf32, fp8, fp6, fp4) are absent and narrow later in IR.
+_IEEE_FLOAT_PROBE: dict = {
+    "Float16": ("e", 65504.0, 2.0**-24),
+    "Float32": ("f", 3.4028234663852886e38, 2.0**-149),
+    "Float64": ("d", 1.7976931348623157e308, 2.0**-1074),
+}
+
+
 class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     """A class representing floating-point values.
 
@@ -1941,8 +2437,14 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     Type conversion behavior:
 
     1. Python scalars (bool, int, float):
-       - Converted through numpy dtype casting
+
+       - Kept at full Python-float precision and narrowed during IR emission
        - Example: Float32(1.7) -> 1.7
+       - A value whose magnitude cannot be represented in the target type
+         collapses to +/-inf (overflow) or 0 (underflow) and emits a
+         ``TYPE_FLOAT_LITERAL_OVERFLOW`` / ``TYPE_FLOAT_LITERAL_UNDERFLOW``
+         warning, e.g. ``Float32(1e40) -> inf``. Ordinary precision/rounding
+         loss (``Float32(0.1)``) is not flagged.
 
     2. MLIR Value with FloatType:
        - If width differs: converts between float types
@@ -1978,7 +2480,6 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
 
         Narrow precision types and special floating-point formats support matrix on device:
 
-    :raises AssertionError: If the type's numpy_dtype is None
     :raises ValueError: If conversion from the input type is not supported
     """
 
@@ -1990,24 +2491,60 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
-        # D1: if x is a _WatchedM, ir_value() emits arith.constant AND records
-        # the leaf under its slot so a later mutation can rewrite the use via
-        # replaceAllUsesWith. Watched Python integers use their Python signedness
-        # to select the integer-to-float conversion before the wrapper is erased.
+        # D1: a watched meta unwraps through the declared promotion (its
+        # numeric class survives; ir_value() inside records the leaf for the
+        # retroactive rewrite) -- never to a raw signless value.
         if isinstance(x, _WatchedM):
-            watched = x
-            x = watched.ir_value()
-            if isinstance(watched.python_value, bool):
-                x = Boolean(x)
-            elif isinstance(watched.python_value, int):
-                x = Int32(x)
+            x = as_numeric(x)
 
         if isinstance(x, (bool, int, float)):
-            # Why we need to convert x to with numpy?
-            # np_dtype = ty.numpy_dtype
-            # assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
-            # x = float(np.array(x).astype(np_dtype))
-            super().__init__(float(x))
+            fx = float(x)
+            # A finite, nonzero Python float whose magnitude cannot be
+            # represented in the target type collapses to +/-inf (overflow) or
+            # 0 (underflow) once narrowed, losing the value entirely. Surface
+            # that catastrophic loss -- but NOT ordinary precision/rounding loss
+            # (e.g. ``Float32(0.1)``), which is inherent to every float literal
+            # and would be unbearably noisy. We keep the full-precision Python
+            # double below; the probe here is only to detect the collapse.
+            #
+            # Detection uses stdlib ``struct`` (exact IEEE-754 round-trips) so
+            # this stays numpy-free. Only the standard binary16/32/64 formats
+            # have a ``struct`` code; non-IEEE / narrow types (bf16, tf32, fp8,
+            # fp6, fp4) are absent from the map and narrow later during IR
+            # emission, so they are skipped.
+            struct_code, max_finite, min_subnormal = _IEEE_FLOAT_PROBE.get(
+                ty.__name__, (None, None, None)
+            )
+            if struct_code is not None and fx != 0.0 and math.isfinite(fx):
+                try:
+                    narrowed = struct.unpack(struct_code, struct.pack(struct_code, fx))[
+                        0
+                    ]
+                except OverflowError:
+                    # binary16 pack raises rather than saturating to inf.
+                    narrowed = math.copysign(math.inf, fx)
+                if math.isinf(narrowed) or narrowed == 0.0:
+                    from .diagnostics import WarnId, report_warning
+
+                    if math.isinf(narrowed):
+                        report_warning(
+                            WarnId.TYPE_FLOAT_LITERAL_OVERFLOW,
+                            stacklevel=3,
+                            value=fx,
+                            type=ty.__name__,
+                            max=max_finite,
+                            wrapped=narrowed,
+                        )
+                    else:
+                        report_warning(
+                            WarnId.TYPE_FLOAT_LITERAL_UNDERFLOW,
+                            stacklevel=3,
+                            value=fx,
+                            type=ty.__name__,
+                            tiny=min_subnormal,
+                            wrapped=narrowed,
+                        )
+            super().__init__(fx)
         elif isinstance(x, ir.Value):
             if isinstance(x.type, ir.IntegerType):
                 raise DSLRuntimeError("signless to float conversion is not implemented")
@@ -2016,15 +2553,25 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
                     x = arith_helper.cvtf(x, ty.mlir_type, loc=loc, ip=ip)
             super().__init__(x)
         elif isinstance(x, Integer):
+            # Consult the staged-read choke BEFORE dispatching: a loop-carried
+            # wrapper still caches its pre-loop literal, so a ``x.value`` type
+            # test would bake the stale constant instead of loading the cell.
+            refreshed = _pyir_refresh_cell_read(x)
+            if refreshed is not None:
+                x = refreshed
             if isinstance(x.value, ir.Value):
                 x = arith_helper.itofp(
-                    x.value, type(x).signed, ty.mlir_type, loc=loc, ip=ip
+                    x.value,
+                    type(x).signed,
+                    ty.mlir_type,
+                    loc=loc,
+                    ip=ip,
                 )
             else:
                 x = float(x.value)  # type: ignore[arg-type]
             super().__init__(x)
         elif isinstance(x, Float):
-            Float.__init__(self, x.value)
+            Float.__init__(self, _numeric_construct_read(x))
         else:
             raise DSLRuntimeError(f"{x} to Float conversion is not supported")
 
@@ -2071,16 +2618,16 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        # D1: if a is a _WatchedM, ir_value() emits arith.constant AND records
-        # the leaf under its slot so a later mutation can rewrite the use via
-        # replaceAllUsesWith.
+        # D1: a watched meta unwraps through the declared promotion (its
+        # numeric class survives; ir_value() inside records the leaf for the
+        # retroactive rewrite) -- never to a raw signless value.
         if isinstance(a, _WatchedM):
-            a = a.ir_value()
+            a = as_numeric(a)
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
         elif isinstance(a, Numeric):
-            Boolean.__init__(self, a.value, loc=loc, ip=ip)
+            Boolean.__init__(self, _numeric_construct_read(a), loc=loc, ip=ip)
             return
         elif isinstance(a, ArithValue):
             if a.type == T.bool():
@@ -2211,14 +2758,28 @@ class TFloat32(Float, metaclass=FloatMeta, width=32, mlir_type=T.tf32):
 class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
-        # Convert float to float16 binary representation
-        # First convert to numpy float16 to handle the conversion
-        f16_val = np.float16(value)
-        # Get the raw bits as a 16-bit integer
-        bits: int = int(f16_val.view(np.uint16))
-        # Create a short (16-bit int) with those bits
-        c_val = ctypes.c_short(int(bits))
-        return _make_owning_c_pointer(c_val)
+        """Marshal ``value`` as its IEEE-754 binary16 bit pattern.
+
+        Two cases need handling beyond a plain ``struct`` pack:
+
+        * NaN. ``struct`` collapses every NaN to the canonical quiet pattern,
+          which would turn a signaling NaN into a quiet one and drop the
+          payload. Narrow the payload explicitly instead, keeping the high
+          mantissa bits and forcing a nonzero payload so the result cannot
+          decay into an infinity.
+        * Finite overflow. ``struct`` raises rather than saturating to inf.
+        """
+        if value != value:
+            double_bits = struct.unpack("<Q", struct.pack("<d", value))[0]
+            sign = (double_bits >> 48) & 0x8000
+            payload = (double_bits & ((1 << 52) - 1)) >> 42
+            bits = sign | 0x7C00 | (payload or 1)
+        else:
+            try:
+                bits = struct.unpack("<H", struct.pack("<e", value))[0]
+            except OverflowError:
+                bits = 0xFC00 if value < 0 else 0x7C00
+        return _make_owning_c_pointer(ctypes.c_short(bits))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2232,13 +2793,15 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
             raise ValueError("only float is supported")
         # Convert float32 to bfloat16 representation
         # First convert the value to float32 bit representation
-        f32_val = np.float32(self.value)
-        # Get the 32-bit integer representation
-        bits = int(f32_val.view(np.uint32))
+        try:
+            bits = struct.unpack("<I", struct.pack("<f", self.value))[0]
+        except OverflowError:
+            # binary32 pack raises rather than saturating to inf.
+            bits = 0xFF800000 if self.value < 0 else 0x7F800000
         # Truncate to 16 bits, keeping the high 16 bits
-        bf16_bits = np.uint16(bits >> 16)
+        bf16_bits = bits >> 16
         # Create a short (16-bit int) with those bits
-        c_val = ctypes.c_short(bf16_bits)  # type: ignore[arg-type]
+        c_val = ctypes.c_short(bf16_bits)
         c_pointer = _make_owning_c_pointer(c_val)
         return [c_pointer]
 
@@ -3382,16 +3945,17 @@ def implicitDowncastNumericType(
 ) -> Union[bool, int, float, ir.Value]:
     if isinstance(value, Numeric):
         return value.ir_value()
-    # D1: ``_WatchedM`` is a meta-promotion wrapper used by PyIR to track
-    # primitive reads inside staged CF.  When passed to a constant-emitting
-    # callsite, bake its IR (which records the leaf under the slot so a
-    # later mutation can rewrite it via pyir.load %ref).
+    # A direct ``_mlir.dialects`` builder call receives the plain payload of a
+    # watched-META wrapper (OFF-parity: the un-watched value is the payload);
+    # the bake is a recorded non-retargetable consumption, and a promoted
+    # place refuses (no single compile-time value exists to pass).
     try:
         from .pyir_runtime import _WatchedM as _PyIRWatchedM
+        from .pyir_runtime import _pyir_boundary_consume_meta_arg as _pyir_consume
     except ImportError:
         _PyIRWatchedM = None  # type: ignore[misc,assignment]
     if _PyIRWatchedM is not None and isinstance(value, _PyIRWatchedM):
-        return value.ir_value()
+        return _pyir_consume(value)
     return value
 
 

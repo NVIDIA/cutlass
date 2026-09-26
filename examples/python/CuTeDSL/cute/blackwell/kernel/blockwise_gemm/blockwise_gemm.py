@@ -33,7 +33,7 @@ import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
-import cutlass.cute.testing as testing
+from cutlass import testing
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
@@ -78,7 +78,7 @@ The accumulator in TMEM must then be loaded to registers before writing back to 
 
 .. code-block:: bash
 
-    python examples/blackwell/blockwise_gemm/blockwise_gemm.py                  \
+    python examples/cute/blackwell/kernel/blockwise_gemm/blockwise_gemm.py                  \
       --ab_dtype Float8E4M3FN --c_dtype BFloat16 --acc_dtype Float32            \
       --scale_dtype Float32                                                     \
       --mma_tiler_mn 128,128 --cluster_shape_mn 1,2                             \
@@ -88,7 +88,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/blockwise_gemm/blockwise_gemm.py              \
+    ncu python examples/cute/blackwell/kernel/blockwise_gemm/blockwise_gemm.py              \
       --ab_dtype Float8E4M3FN --c_dtype BFloat16 --acc_dtype Float32            \
       --scale_dtype Float32                                                     \
       --mma_tiler_mn 128,128 --cluster_shape_mn 1,2                             \
@@ -233,7 +233,7 @@ class BlockwiseGemmKernel:
             barrier_id=3,
             num_threads=self.threads_per_warp,
         )
-        self.num_smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        self.num_smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
         # TMEM offset for final accumulator
         self.tmem_final_offset = 384
 
@@ -254,6 +254,7 @@ class BlockwiseGemmKernel:
         # Configure tiled mma
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.a_dtype,
+            self.b_dtype,
             self.a_major_mode,
             self.b_major_mode,
             self.acc_dtype,
@@ -422,9 +423,13 @@ class BlockwiseGemmKernel:
         self.c_dtype: Type[cutlass.Numeric] = c.element_type
         self.sfa_dtype: Type[cutlass.Numeric] = sfa.element_type
         self.sfb_dtype: Type[cutlass.Numeric] = sfb.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # Check if input data types are compatible with MMA instruction
         if cutlass.const_expr(self.a_dtype != self.b_dtype):
@@ -434,6 +439,7 @@ class BlockwiseGemmKernel:
         self._setup_attributes()
 
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
+            self.a_dtype,
             self.a_dtype,
             self.a_major_mode,
             self.b_major_mode,
@@ -678,15 +684,12 @@ class BlockwiseGemmKernel:
         #
         # Alloc and init: a+b full/empty, accumulator full/empty, tensor memory dealloc barrier
         #
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_tma_producer = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_tma_producer
-        )
+        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Warp)
         ab_pipeline = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
@@ -694,6 +697,7 @@ class BlockwiseGemmKernel:
             consumer_group=ab_pipeline_consumer_group,
             tx_count=self.num_tma_load_bytes,
             cta_layout_vmnk=cluster_layout_vmnk,
+            enable_multicast_signaling=True,
             defer_sync=True,
         )
 
@@ -766,7 +770,7 @@ class BlockwiseGemmKernel:
         )
 
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_alloc_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
@@ -1401,24 +1405,10 @@ class BlockwiseGemmKernel:
                         )
 
                         # tCtAcc += tCrA * tCrB
-                        num_kblocks = cute.size(tCrA, mode=[2])
-                        for kblock_idx in cutlass.range(num_kblocks, unroll_full=True):
-                            kblock_coord = (
-                                None,
-                                None,
-                                kblock_idx,
-                                ab_consumer_state.index,
-                            )
-
-                            cute.gemm(
-                                tiled_mma,
-                                tCtAcc,
-                                tCrA[kblock_coord],
-                                tCrB[kblock_coord],
-                                tCtAcc,
-                            )
-                            # Enable accumulate on tCtAcc after first kblock
-                            tiled_mma.set(tcgen05.Field.ACCUMULATE, True)
+                        tile_crd = (None, None, None, ab_consumer_state.index)
+                        cute.gemm(
+                            tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc
+                        )
 
                         # Async arrive AB buffer empty
                         ab_pipeline.consumer_release(ab_consumer_state)
@@ -1736,7 +1726,6 @@ class BlockwiseGemmKernel:
 
             tTR_rC = None
             tiled_copy_r2s = None
-            simt_atom = None
             tRS_rC = None
             tRS_sC = None
             bSG_sC = None
@@ -2206,7 +2195,7 @@ class BlockwiseGemmKernel:
         b_dtype: Type[cutlass.Numeric],
         epi_tile: cute.Tile,
         c_dtype: Type[cutlass.Numeric],
-        c_layout: utils.LayoutEnum,
+        c_layout: cutlass.tensor_utils.LayoutEnum,
         sfa_dtype: Type[cutlass.Numeric],
         sfb_dtype: Type[cutlass.Numeric],
         sfa_count: int,
@@ -2229,7 +2218,7 @@ class BlockwiseGemmKernel:
         :param c_dtype: Data type of operand C (output).
         :type c_dtype: type[cutlass.Numeric]
         :param c_layout: Layout of operand C.
-        :type c_layout: utils.LayoutEnum
+        :type c_layout: cutlass.tensor_utils.LayoutEnum
         :param num_smem_capacity: Total available shared memory capacity in bytes.
         :type num_smem_capacity: int
         :param occupancy: Target number of CTAs per SM (occupancy).
@@ -2672,7 +2661,7 @@ def run(
         b_major,
         c_major,
     ):
-        raise TypeError(
+        raise cutlass.testing.CantImplementError(
             f"Unsupported testcase {ab_dtype}, {acc_dtype}, {c_dtype}, {use_2cta_instrs}, {mma_tiler_mn}, {cluster_shape_mn}, {m}, {n}, {k}, {l}, {a_major}, {b_major}, {c_major}"
         )
 
@@ -2716,7 +2705,11 @@ def run(
         sfb_tensor,
         max_active_clusters,
         current_stream,
-        options=f"--opt-level=2" if cutlass.__version__[0:3]=="4.6" else "",
+        options=(
+            "--opt-level=2"
+            if tuple(map(int, cutlass.__version__.split(".")[:2])) >= (4, 6)
+            else ""
+        ),
     )
 
     # Execution

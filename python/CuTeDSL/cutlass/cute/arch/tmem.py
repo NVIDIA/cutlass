@@ -19,6 +19,7 @@ from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
+from ..core import struct
 from ..typing import Pointer, Int, Int32, Numeric, NumericMeta
 
 SM100_TMEM_CAPACITY_COLUMNS = (
@@ -128,6 +129,9 @@ def retrieve_tmem_ptr(
             f"element_type must be a type of Numeric, but got {element_type}"
         )
 
+    if isinstance(ptr_to_buffer_holding_addr, struct._ScalarData):
+        ptr_to_buffer_holding_addr = ptr_to_buffer_holding_addr.ptr
+
     res_ty = _cute_ir.PtrType.get(element_type.mlir_type, AddressSpace.tmem, alignment)
     return _cute_nvgpu_ir.arch_sm100_retrieve_tmem_ptr(
         res_ty,
@@ -177,6 +181,9 @@ def alloc_tmem(
             err_msg += " except for arch-specific exceptions (e.g., exclusive allocation for sm_107)"
             err_msg += f", but got {num_columns}."
             raise ValueError(err_msg)
+
+    if isinstance(smem_ptr_to_write_address, struct._ScalarData):
+        smem_ptr_to_write_address = smem_ptr_to_write_address.ptr
 
     _cute_nvgpu_ir.arch_sm100_alloc_tmem(
         Int32(num_columns).ir_value(loc=loc, ip=ip),
@@ -245,6 +252,9 @@ def dealloc_tmem(
             err_msg += " except for arch-specific exceptions (e.g., exclusive allocation for sm_107)"
             err_msg += f", but got {num_columns}."
             raise ValueError(err_msg)
+
+    if isinstance(tmem_ptr, struct._ScalarData):
+        tmem_ptr = tmem_ptr.ptr
 
     _cute_nvgpu_ir.arch_sm100_dealloc_tmem(
         tmem_ptr.value,

@@ -1025,7 +1025,20 @@ def cvt_tensor_a(
 
 
 def cvt_tensor_a_mxf8(src: cute.Tensor, dtype: type[cutlass.Numeric]) -> cute.TensorSSA:
-    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic`."""
+    """Convert an int4 A-tile slice to mxfp8 via :func:`cute.arch.cvt_i4_mxf8_intrinsic <cutlass.cute.arch.cvt_i4_mxf8_intrinsic>`.
+
+    The slice is loaded into a vector and converted in 8-element chunks, so its
+    element count must be a multiple of 8. The result keeps the source shape.
+
+    :param src: A-tile slice of int4 values.
+    :type src: cute.Tensor
+    :param dtype: FP8 destination numeric type, typically ``cutlass.Float8E4M3FN``.
+    :type dtype: type[cutlass.Numeric]
+    :return: The converted tile with ``src``'s shape and ``dtype`` elements.
+    :rtype: cute.TensorSSA
+    :raises AssertionError: if the slice does not hold a multiple of 8 elements,
+        which the underlying intrinsic requires to process whole chunks.
+    """
     rst = src.load()
     return cute.TensorSSA.from_vector(
         cute.arch.cvt_i4_mxf8_intrinsic(rst, cute.size(rst.shape), dtype),

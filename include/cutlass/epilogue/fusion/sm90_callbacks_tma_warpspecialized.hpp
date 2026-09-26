@@ -57,6 +57,44 @@ namespace cutlass::epilogue::fusion {
 template <class NodeOp, class... ChildOps>
 using Sm90EVT = Sm90TreeVisitor<NodeOp, ChildOps...>;
 
+// D = acc
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  class ElementOutput,
+  class ElementCompute,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    fusion::PlainAcc<ElementOutput, ElementCompute, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm90EVT<Sm90Compute<no_op, ElementOutput, ElementCompute, RoundStyle>,
+      Sm90AccFetch
+    > {
+  using Impl = 
+    Sm90EVT<Sm90Compute<no_op, ElementOutput, ElementCompute, RoundStyle>,
+      Sm90AccFetch
+    >;
+  using Operation = fusion::PlainAcc<ElementOutput, ElementCompute, RoundStyle>;
+
+  struct Arguments {
+    operator typename Impl::Arguments() const {
+      return
+        {};
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
 // D = alpha * acc
 template <
   int StagesC,

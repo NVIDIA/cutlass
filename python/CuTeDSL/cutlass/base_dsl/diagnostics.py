@@ -733,6 +733,7 @@ def _format_internal_error_diagnostic(
     # diagnostics so backend failures and internal DSL failures are scannable in
     # the same way.
     is_verifier_error = _is_internal_verifier_error(err.message, cause_text)
+    is_dominance_escape = is_verifier_error and _is_dominance_escape_cause(cause_text)
     headline = (
         "The compiler could not build valid IR for this code."
         if is_verifier_error
@@ -757,6 +758,24 @@ def _format_internal_error_diagnostic(
         if verifier_detail:
             summary = f"{summary}: {verifier_detail}"
         parts.extend(_format_labeled_text("error", summary))
+        if is_dominance_escape:
+            def_frame = _dominance_escape_def_frame(cause_text)
+            if def_frame:
+                parts.extend(
+                    _format_labeled_text("note", "the escaping value is created here:")
+                )
+                parts.append(def_frame)
+            parts.extend(
+                _format_labeled_text(
+                    "note",
+                    "a staged value created inside a for/while/if body is used "
+                    "outside that body. The tracer threads plain local variables "
+                    "across staged control flow, but it cannot see rebinds made "
+                    "through other channels: object attributes assigned inside "
+                    "helper methods, values stashed in module-level or aliased "
+                    "containers, and closure captures.",
+                )
+            )
     else:
         parts.extend(
             _format_labeled_text(
@@ -771,6 +790,34 @@ def _format_internal_error_diagnostic(
             parts.extend(_format_internal_cause(cause_text))
 
     if is_verifier_error:
+        # A mixed *_ENABLE_PYIR configuration is the one declared config fact
+        # producing this failure shape (a cross-DSL kernel compile leaves
+        # region-crossing SSA behind): name it before the generic advice.
+        try:
+            from .pyir_state import _pyir_mixed_mode_hint
+
+            _mode_hint = _pyir_mixed_mode_hint()
+        except Exception:
+            _mode_hint = None
+        if _mode_hint:
+            parts.extend(_format_labeled_text("suggestion", _mode_hint))
+        if is_dominance_escape:
+            parts.extend(
+                _format_labeled_text(
+                    "suggestion",
+                    "Carry the value as a plain local variable rebound directly "
+                    "in the loop or branch body, or re-derive it at the point of "
+                    "use instead of reusing a value captured inside the region.",
+                )
+            )
+            if not _PY_LOC_RE.search(cause_text):
+                parts.extend(
+                    _format_labeled_text(
+                        "suggestion",
+                        "Re-run with CUTE_DSL_LINEINFO=1 to see where the "
+                        "escaping value is created.",
+                    )
+                )
         parts.extend(
             _format_labeled_text(
                 "suggestion",
@@ -800,6 +847,32 @@ def _is_internal_verifier_error(message: str, cause_text: str) -> bool:
     return (
         "ICE IR Verification Failed" in message or "Verification failed:" in cause_text
     )
+
+
+def _is_dominance_escape_cause(cause_text: str) -> bool:
+    """A dominance failure at trace-module verify almost always means a staged
+    value leaked across region boundaries through a Python-side channel the
+    tracer does not thread (attribute writes in helper methods, module-level
+    or aliased containers, closure captures)."""
+    return "does not dominate this use" in cause_text
+
+
+def _dominance_escape_def_frame(cause_text: str) -> str | None:
+    """Source frame for the verifier's 'operand defined here' note, available
+    when the IR carries Python locations (PyIR trace or lineinfo builds)."""
+    for line in cause_text.splitlines():
+        if "operand defined here" not in line:
+            continue
+        loc_match = _PY_LOC_RE.search(line)
+        if not loc_match:
+            return None
+        frame = _format_compiler_source_frame(
+            loc_match.group("file"),
+            int(loc_match.group("line")),
+            int(loc_match.group("col")),
+        )
+        return "\n".join(frame) if frame else None
+    return None
 
 
 def _brief_internal_error(message: str) -> str:
@@ -1510,19 +1583,17 @@ class DiagId(_DiagMixin, enum.Enum):
             "If it is a fixed setting, set it once before the for/while/if.",
         ),
     )
-    PHASE_PREDICATE_FOLDED_STALE = (
-        "`{var}` (a {meta}, value {value}) already decided {fold_kind} at "
-        "{fold_location} while your code was being traced, but it is modified at "
-        "{mut_location}, inside a run-time for/while/if. That earlier decision was "
-        "made ONCE, from the original value {value}, and cannot re-run when `{var}` "
-        "changes -- the compiled kernel would silently keep the stale decision.",
+    PHASE_AUTO_PROMOTE_DISABLED = (
+        "`{var}` (a {meta}, value {value}) is updated inside a for/while/if "
+        "whose path is decided at run time. Keeping it correct there requires "
+        "promoting it to a {staged}, and automatic Meta-to-Staged promotion "
+        "is disabled (`CUTE_DSL_AUTO_M2S` is off, the default). Without the "
+        "promotion the compiler traces the body once and later iterations "
+        "would silently observe a wrong value, so it refuses instead.",
         (
-            "Make `{var}` a {staged} BEFORE the run-time for/while/if, e.g. "
-            "`{var} = {type}({var})`, so the decision at {fold_location} becomes a "
-            "run-time branch that sees the updated value.",
-            "If `{var}` is a fixed setting, do not modify it inside the run-time "
-            "for/while/if (keep the update outside, or guard it with "
-            "`const_expr(...)`).",
+            "Make `{var}` a {staged} before the for/while/if, e.g. "
+            "`{var} = {type}(...)`, so the update is tracked explicitly.",
+            "Or opt in to automatic promotion with `CUTE_DSL_AUTO_M2S=True`.",
         ),
     )
     PHASE_PYTHON_THEN_TRACKED = (
@@ -1543,14 +1614,6 @@ class DiagId(_DiagMixin, enum.Enum):
             "result is consistently one type.",
         ),
     )
-    SCOPE_READ_NEVER_SET = (
-        "A variable is read on a path where it was never given a value. It must be "
-        "set before it is read, on every path that can reach this point.",
-        (
-            "Set the variable before the for/while/if, or set it on every branch "
-            "that can reach this read.",
-        ),
-    )
     SCOPE_DEL_LOOP_CARRIED = (
         "`{var}` is removed with `del` inside a for/while/if, but it carries a "
         "value in from before the block. Deleting it drops that carry, so the "
@@ -1560,14 +1623,201 @@ class DiagId(_DiagMixin, enum.Enum):
             "value instead, or move the `del` outside the for/while/if.",
         ),
     )
-    UNSUP_WALRUS_TUPLE_REBIND = (
-        "A `:=` inside this tuple assignment rewrites `{var}` while another "
-        "element of the same right-hand side reads it out of order. Under staged "
-        "tracing the walrus's rebind retroactively changes that read, so the "
-        "elements would disagree with plain Python.",
+    SCOPE_READ_NEVER_SET = (
+        "A variable is read on a path where it was never given a value{detail}. "
+        "It must be set before it is read, on every path that can reach this "
+        "point.",
         (
-            "Assign the walrus result on its own line before the tuple, e.g. "
-            "`{var} = <expr>` and then reference `{var}` in the tuple.",
+            "Set the variable before the for/while/if, or set it on every branch "
+            "that can reach this read.",
+        ),
+    )
+    SCOPE_UNBOUND_NAME_IN_TRACE = (
+        "`{var}` is read here but was never given a value on the traced path.",
+        (
+            "Set `{var}` before this read on every path that can reach it (a "
+            "branch selected off at trace time does not bind it).",
+        ),
+    )
+    SCOPE_LOCALS_SYNTH_MISS = (
+        "`locals()` inside a rewritten if/ifexp/while arm sees only the names "
+        "the arm rebinds, and `{name}` is not one of them -- the source "
+        "program's `locals()` would see the whole function scope, so this "
+        "lookup cannot be answered faithfully.",
+        (
+            "Read `{name}` directly instead of through `locals()`, or call "
+            "`locals()` outside the for/while/if arm.",
+        ),
+    )
+    MEMREF_INREGION_ALLOC_REBIND = (
+        "`{name}` is re-pointed inside staged control flow ({region_kind}) "
+        "to a handle rooted at memory ALLOCATED inside the region, and the "
+        "escape cannot be proven faithful: the previous handle is still "
+        "held by another live binding, the handle is a raw pointer or view "
+        "(no declared memory-space fact), or the space is not per-thread "
+        "registers. In-region allocations are hoisted to ONE function-entry "
+        "buffer when lowering, so an escaped old handle would alias the "
+        "fresh buffer and observe its overwrites instead of the buffer "
+        "Python named.",
+        (
+            "Drop the extra binding of the old buffer (finish reading it "
+            "before re-pointing `{name}`), carry the tensor itself instead "
+            "of a raw pointer or view into it, allocate the backing memory "
+            "once outside the dynamic region and write `{name}` in place, "
+            "or make the selection a Python-time (constexpr) branch.",
+        ),
+    )
+    MEMREF_STALE_SCRATCH_CONSUMED = (
+        "`{name}` holds iteration-private scratch memory (re-pointed inside "
+        "staged control flow) and a superseded handle to it escapes that "
+        "iteration's window at {consumer_loc}. All in-region allocations "
+        "alias ONE function-entry buffer when lowering, so the escaped "
+        "handle would observe later overwrites instead of the buffer Python "
+        "read.",
+        (
+            "Consume the scratch inside the iteration that filled it "
+            "(before the next re-point), or allocate the backing memory "
+            "once outside the dynamic region and write `{name}` in place.",
+        ),
+    )
+    BOUNDARY_META_LOOP_CARRY = (
+        "`{name}` is a Python value changed inside this for/while body by "
+        "code the compiler cannot see (a plain, non-jit method or function). "
+        "Its per-iteration update ran on plain Python values, so the carried "
+        "update cannot be reconstructed -- iterations after the first would "
+        "silently observe a wrong value.",
+        (
+            "Decorate the function that updates `{name}` with the DSL's jit "
+            "decorator so the update is tracked, or make `{name}` a Runtime "
+            "value (Staged value) before the loop, e.g. `Int32(...)`.",
+        ),
+    )
+    BOUNDARY_FLIP_GUARD_STAGED = (
+        "`{name}` is now being changed to a Runtime value, but it gates an "
+        "update of `{flipped}` performed by a plain, non-jit function "
+        "(defined at {def_file}:{def_line}) inside a for/while body. That "
+        "update was compiled as an unconditional per-iteration store on the "
+        "proof that `{name}` never changes during the loop; changing it "
+        "breaks that proof, so iterations could silently observe a wrong "
+        "`{flipped}`.",
+        (
+            "Decorate the function that updates `{flipped}` with the DSL's "
+            "jit decorator so the update is tracked, or make both `{name}` "
+            "and `{flipped}` Runtime values (Staged values) before the loop.",
+        ),
+    )
+    BOUNDARY_CLOSURE_READ_THEN_PROMOTED = (
+        "`{name}` is read through a closure by a plain, non-jit function "
+        "(defined at {def_file}:{def_line}) inside staged control flow, and "
+        "is now being changed so it must become a Runtime value. That "
+        "closure read ran on the plain Python value and was baked into the "
+        "kernel at its trace-time value; no rewrite can retarget it to the "
+        "staged update, so every use would keep observing the old value -- "
+        "matching Python for some runtime inputs and silently diverging for "
+        "others.",
+        (
+            "Decorate the function that reads `{name}` with the DSL's jit "
+            "decorator, pass `{name}` to it as an argument, or make it a "
+            "Runtime value (e.g. `{name} = Int32({name})`) before the first "
+            "call.",
+        ),
+    )
+    BOUNDARY_CLOSURE_READ_THEN_WRITTEN = (
+        "`{name}` is changed here inside staged control flow, but it was "
+        "already read through a closure by a plain, non-jit function "
+        "(defined at {def_file}:{def_line}). That closure read ran on the "
+        "plain Python value and was baked into the kernel at its trace-time "
+        "value; no rewrite can retarget it to the staged update, so every "
+        "use would keep observing the old value -- matching Python for some "
+        "runtime inputs and silently diverging for others.",
+        (
+            "Decorate the function that reads `{name}` with the DSL's jit "
+            "decorator so the read is tracked, or make `{name}` a Runtime "
+            "value (Staged value) before the plain function reads it.",
+        ),
+    )
+    BOUNDARY_SHORT_CIRCUIT_EFFECT = (
+        "`{name}` is changed by a call inside a short-circuited `and`/`or` "
+        "operand. The trace evaluates that operand exactly once, so the "
+        "change cannot be conditioned on the runtime value of the guarding "
+        "expression -- it would apply unconditionally, silently.",
+        (
+            "Move the call out of the `and`/`or` expression to its own "
+            "statement, or guard it with an explicit `if`.",
+        ),
+    )
+    BOUNDARY_MEMOIZED_IN_STAGED_CF = (
+        "`{name}` is a functools.lru_cache-wrapped function called inside "
+        "staged (runtime) control flow. A cache hit at trace time skips the "
+        "wrapped body, so its work cannot be replayed for each runtime "
+        "execution of this region -- executions after the first would "
+        "silently observe stale effects.",
+        (
+            "Hoist the `{name}` call out of the staged for/while/if, or call "
+            "the undecorated function (`{name}.__wrapped__`) inside the "
+            "kernel.",
+        ),
+    )
+    PHASE_META_FIELD_CHANGED_IN_CF = (
+        "Meta-primitive field `{owner_class}.{attr}` cannot change across "
+        "iterations of staged control flow ({old_value!r} -> {new_value!r}). "
+        "The compiler traces the body only once and would silently discard "
+        "later changes.",
+        (
+            "Use a DSL Numeric type for `{attr}` so it is tracked by "
+            "`pyir.ref`, or hoist the assignment outside staged control "
+            "flow.",
+        ),
+    )
+    CONTAINER_META_REBUILT_IN_CF = (
+        "The {kind} field `{var}` holds plain Python values (Meta values) "
+        "and is rebuilt inside staged control flow ({old_value!r} -> "
+        "{new_value!r}). The compiler traces the body only once, so the "
+        "rebuilt {kind} would silently keep its first-iteration values.",
+        (
+            "Initialize the {kind} with DSL Numeric values (e.g. "
+            "`Int32(0)`) so each element is tracked. In a staged `for` "
+            "body, `CUTE_DSL_AUTO_M2S=True` promotes the elements "
+            "automatically.",
+            "If the {kind} is trace-time structure, rebuild it in a "
+            "`range_constexpr(...)` loop instead.",
+        ),
+    )
+    CONTAINER_SET_REBUILT_IN_CF = (
+        "The set field `{var}` is rebuilt inside staged control flow "
+        "({old_value!r} -> {new_value!r}). Set members are compile-time "
+        "structure (hashing and membership are decided while tracing), so "
+        "the rebuilt set would silently keep its first-iteration members.",
+        (
+            "Store per-iteration runtime values in a tuple, list, or dict "
+            "field instead; a set cannot hold runtime values.",
+            "If the set is trace-time structure, rebuild it in a "
+            "`range_constexpr(...)` loop instead.",
+        ),
+    )
+    UNSUP_META_CONTAINER_MUTATION = (
+        "In-place mutation `{container}.{method}(...)` of a meta Python "
+        "{kind} is not allowed inside staged control flow. The compiler "
+        "traces the body once and would silently discard the per-iteration "
+        "mutation.",
+        (
+            "Build the {kind} before the staged region, or use a DSL "
+            "collection/struct type that the compiler can track for "
+            "accumulation.",
+        ),
+    )
+    SCOPE_READ_OF_SUPERSEDED_GENERATION = (
+        "`{var}` is {access} through an object that was replaced by a whole-object "
+        "assignment{detail}. The compiler keeps ONE live storage cell per field "
+        "across such a replacement, so keeping BOTH the old and the new object "
+        "alive does not work: this access would silently observe the replacing "
+        "object's current value instead of the value the old object held when it "
+        "was captured.",
+        (
+            "Copy the fields you need into plain locals BEFORE the whole-object "
+            "assignment, e.g. `saved = obj.field`.",
+            "Or access the field through the live binding instead of the retained "
+            "handle.",
         ),
     )
     CONTAINER_TUPLE_LENGTH_CHANGED = (
@@ -1575,6 +1825,18 @@ class DiagId(_DiagMixin, enum.Enum):
         "tuple must keep the same number of items every pass so its parts can be "
         "followed.",
         ("Keep `{var}` the same length on every branch and every loop pass.",),
+    )
+    CONTAINER_TUPLE_SUBCLASS_NOT_REBUILDABLE = (
+        "A `{type}` value carried through a for/while/if must be rebuilt from "
+        "its parts, but `{type}` cannot be reconstructed that way{detail}. "
+        "Rebuilding it as a plain tuple would silently drop its named fields / "
+        "methods, so this is refused.",
+        (
+            "Use a `typing.NamedTuple` (or a plain tuple) for values carried "
+            "through a for/while/if.",
+            "Or give `{type}` a constructor that accepts the item iterable "
+            "(like `tuple` itself) and no extra per-instance state.",
+        ),
     )
     CONTAINER_STRUCTURE_CHANGED = (
         "`{var}` has a different structure at the end of this `{op_type}` than at "
@@ -1602,39 +1864,145 @@ class DiagId(_DiagMixin, enum.Enum):
             "`{var}.field = new_value`.",
         ),
     )
-    CONTAINER_LIST_SHAPE_MUTATED = (
-        "`{var}` is a list whose length changes (e.g. `.append(...)`/`.pop()`) "
-        "inside a for/while/if whose path is decided at run time. The body is "
-        "traced once, so the per-iteration shape change would be silently lost. "
-        "Only a fixed-shape container can be carried through run-time control flow.",
+    CONTAINER_DICT_META_WRITE_UNPROMOTED = (
+        "`{var}` is a dict entry holding a {meta} (value {old_value}) that is "
+        "changed (to {new_value}) inside a for/while/if whose path is decided at "
+        "run time, but no earlier use let the compiler promote it to a {staged}. "
+        "The body runs once at compile time, so the per-iteration change would be "
+        "silently discarded.",
         (
-            "Build the list before the run-time for/while/if, or accumulate into a "
-            "{staged} container the compiler can track.",
+            "Store a {staged} in the entry from the start, e.g. "
+            "`{var} = Int32(0)`, so updates inside the for/while/if are tracked.",
+            "If the entry is a fixed compile-time setting, set it once before the "
+            "for/while/if.",
         ),
     )
     CONTAINER_DICT_KEY_SET_MUTATED = (
-        "`{var}` changes its set of keys inside a for/while/if whose path is "
-        "decided at run time (a key created/removed, or a mapping subclass like "
-        "`Counter`/`defaultdict` that materialises keys on access). The body is "
-        "traced once, so the per-iteration key-set change cannot be followed.",
+        "the key set of dict `{var}` is changed ({detail}) inside a for/while/if "
+        "whose path is decided at run time. The body runs once at compile time, so "
+        "a per-iteration key insertion/removal would be silently discarded.",
         (
-            "Seed every key before the run-time for/while/if and only UPDATE "
-            "existing keys inside it; do not add/remove keys or use a "
-            "`__missing__`-backed mapping there.",
+            "Create every key before the for/while/if and update the VALUES inside it.",
+            "If the loop is a compile-time unroll, use `range_constexpr` so the "
+            "mutation is realized at trace time.",
+        ),
+    )
+    CONTAINER_DICT_KEY_STAGED = (
+        "a {staged} is used as a dict KEY on tracked dict `{var}`. Keys name "
+        "compile-time storage places, so they must be fixed Python values "
+        "(str/int/tuple); a runtime value cannot name a place.",
+        (
+            "Use a compile-time key (a Python str/int), or restructure so the "
+            "runtime value is the ENTRY, not the key.",
+        ),
+    )
+    CONTAINER_DICT_KEY_STAGED_HASH = (
+        "the `__hash__` of a KEY on tracked dict `{var}` consumed a {staged}. "
+        "Keys name compile-time storage places, so a key whose hash is derived "
+        "from a runtime value cannot name a place.",
+        (
+            "Hash only fixed Python values in the key's `__hash__`, or use a "
+            "compile-time key (a Python str/int) and keep the runtime value as "
+            "the ENTRY, not the key.",
+        ),
+    )
+    CONTAINER_LIST_META_WRITE_UNPROMOTED = (
+        "`{var}` is a list element holding a {meta} (value {old_value}) that is "
+        "changed (to {new_value}) inside a for/while/if whose path is decided at "
+        "run time, but no earlier use let the compiler promote it to a {staged}. "
+        "The body runs once at compile time, so the per-iteration change would be "
+        "silently discarded.",
+        (
+            "Store a {staged} in the element from the start, e.g. "
+            "`{var} = Int32(0)`, so updates inside the for/while/if are tracked.",
+            "If the element is a fixed compile-time setting, set it once before "
+            "the for/while/if.",
+        ),
+    )
+    CONTAINER_LIST_SHAPE_MUTATED = (
+        "the length or element order of list `{var}` is changed ({detail}) inside "
+        "a for/while/if whose path is decided at run time. The body runs once at "
+        "compile time, so a per-iteration append/remove/reorder would be silently "
+        "discarded.",
+        (
+            "Build the list before the for/while/if and update its ELEMENTS "
+            "inside it (`{var}[i] = ...`).",
+            "If the loop is a compile-time unroll, use `range_constexpr` so the "
+            "mutation is realized at trace time.",
+        ),
+    )
+    CONTAINER_LIST_INDEX_STAGED = (
+        "a {staged} is used as the INDEX into tracked list `{var}`. Indices name "
+        "compile-time storage places, so they must be fixed Python integers; a "
+        "runtime value cannot name a place.",
+        (
+            "Use a compile-time index (a Python int), or restructure so the "
+            "runtime value is the ELEMENT, not the index.",
         ),
     )
     CONTAINER_SUBSCRIPT_WRITE_UNTRACKED = (
-        "An element of a `{py_type}` is written with `[...] = ...` inside a "
-        "for/while/if whose path is decided at run time, but a `{py_type}` is a "
-        "plain {meta}: the body is traced once, so the per-iteration write would "
-        "be silently lost. Only a dict, a list, or a {staged} container can be "
-        "updated by element there.",
+        "`{var}` (a {kind}) has an element written inside a for/while/if whose "
+        "path is decided at run time. A {kind} holds compile-time Python storage "
+        "the compiler cannot track per iteration, so the body -- which runs once "
+        "at compile time -- would silently discard the per-iteration write.",
         (
-            "Use a dict or list for run-time element updates, or a {staged} "
-            "container the compiler can track.",
-            "Or keep the for/while/if fully compile-time with "
-            "`range_constexpr(...)` / `const_expr(...)` so the container can stay "
-            "a {meta}.",
+            "Use a plain Python `list` (tracked per element) or a {staged} "
+            "value instead of the {kind}.",
+            "If the loop is a compile-time unroll, use `range_constexpr` so the "
+            "write is realized at trace time.",
+        ),
+    )
+    CONTAINER_DICT_KEY_SET_BAKED_READ = (
+        "membership/lookup over dict `{var}` is consumed at compile time, but "
+        "its key set was changed (created key(s) {detail}) inside a "
+        "for/while/if whose path is decided at run time. The body ran once at "
+        "compile time, so the consumed key set reflects that one pass -- the "
+        "kernel would silently behave as if the branch was taken, whatever "
+        "the runtime values.",
+        (
+            "Create every key before the for/while/if and update the VALUES inside it.",
+            "If the for/while/if is compile-time, use `range_constexpr(...)` "
+            "/ `const_expr(...)` so the insertion is realized at trace time.",
+        ),
+    )
+    CONTAINER_OPAQUE_SUBSCRIPT_KEY_CREATED = (
+        "an element write through `{var}` (a {kind}, whose `__setitem__` the "
+        "compiler cannot see into) created container entry/entries {detail} "
+        "inside a for/while/if whose path is decided at run time. The body "
+        "runs once at compile time and a created entry has no storage cell "
+        "from before the for/while/if, so it cannot follow the runtime path "
+        "-- later reads would silently observe it regardless of the branch "
+        "taken.",
+        (
+            "Create the entry before the for/while/if and update its VALUE inside it.",
+            "Use a plain Python `dict`/`list` (tracked per element) instead "
+            "of the {kind}.",
+            "If the for/while/if is compile-time, use `range_constexpr(...)` "
+            "/ `const_expr(...)` so the write is realized at trace time.",
+        ),
+    )
+    CONTAINER_DICT_GET_MISS_IN_STAGED_CF = (
+        "`.get()` on tracked dict `{var}` missed key {detail} inside a "
+        "for/while/if whose path is decided at run time, while other entries of "
+        "the dict are updated there. The miss default would bake as a fixed "
+        "compile-time value on this path.",
+        (
+            "Create the key before the for/while/if so every path reads a tracked "
+            "entry.",
+        ),
+    )
+    CONTAINER_DICT_ITERATED_IN_STAGED_CF = (
+        "tracked dict `{var}` is iterated ({method}) inside a for/while/if "
+        "whose path is decided at run time, after its key set was changed "
+        "there (created key(s) {detail}). The body ran once at compile time, "
+        "so the enumerated key set reflects that one pass -- the kernel "
+        "would silently iterate entries as if the path creating them was "
+        "taken, whatever the runtime values.",
+        (
+            "Create every key before the for/while/if and update the VALUES "
+            "inside it -- iteration over a stable key set is supported.",
+            "If the for/while/if is compile-time, use `range_constexpr(...)` "
+            "/ `const_expr(...)` so the insertion is realized at trace time.",
         ),
     )
     PHASE_CONVERSION_FAILED = (
@@ -1705,10 +2073,99 @@ class DiagId(_DiagMixin, enum.Enum):
         "function.",
         ("Pass `{name}` in as a function argument instead.",),
     )
+    UNSUP_YIELD = (
+        "`yield` makes a function a generator, which cannot be compiled: calling "
+        "it only creates a generator object and never executes the body.",
+        (
+            "Define the generator at module scope (plain Python, outside compiled "
+            "code) and consume it there, or build a list instead.",
+        ),
+    )
+    UNSUP_ASYNC = (
+        "`async`/`await` constructs cannot be compiled: a coroutine body does not "
+        "execute when called and there is no event loop to drive it here.",
+        ("Compute the value with a plain (non-async) call instead.",),
+    )
+    UNSUP_EXCEPT_STAR = (
+        "`except*` (ExceptionGroup handling) is not supported in a compiled function.",
+        ("Use a plain `except` clause instead.",),
+    )
+    UNSUP_DEL_IN_STAGED_CF = (
+        "`{obj}.{attr}` is deleted inside a for/while/if that runs on the GPU, but "
+        "the deletion happens once while building the program -- it cannot be made "
+        "conditional on the region's runtime condition.",
+        (
+            "Move the `del` (or `delattr`) outside the for/while/if.",
+            "If the attribute must differ per path, assign it a new value instead "
+            "of deleting it.",
+        ),
+    )
+    PROPERTY_GETTER_MUTATES_IN_STAGED_CF = (
+        "Reading `{obj}.{attr}` runs the property getter `{getter}`, which "
+        "writes state, and the read is inside a for/while/if that runs on the "
+        "GPU: the getter executes once while building the program, so its side "
+        "effect cannot re-run per iteration and both the result and the "
+        "mutated state would freeze at their first values.",
+        (
+            "Make the getter pure and perform the update in an explicit "
+            "method call whose effect assigns to tracked state.",
+            "If the side effect is trace-time-only bookkeeping, read the "
+            "backing field directly instead of going through the property.",
+        ),
+    )
+    UNSUP_GLOBAL_WRITE_IN_STAGED_CF = (
+        "`{callee}` writes the module global `{name}`, and it is called inside a "
+        "for/while/if that runs on the GPU: the write executes once while "
+        "building the program, not once per iteration, so every later read of "
+        "`{name}` would see a value frozen at its first update.",
+        (
+            "Pass the state in as an argument and return the updated value "
+            "instead of mutating a module global.",
+            "If the call is trace-time configuration whose result never feeds "
+            "computed values, move it outside the for/while/if.",
+        ),
+    )
+    UNSUP_IMPORT_IN_STAGED_CF = (
+        "`{stmt}` is inside a for/while/if that runs on the GPU, and the module is "
+        "not imported yet: its code would execute once while building the program, "
+        "not under the region's runtime condition.",
+        (
+            "Import the module at module scope (or before the for/while/if); an "
+            "already-imported module is a cache lookup and is allowed here.",
+            "If a per-path module choice is needed, import every candidate outside "
+            "the for/while/if and select between them.",
+        ),
+    )
     UNSUP_MIXED_ASSIGN_TARGETS = (
         "An assignment that mixes plain names, subscripts, and tuple targets on a "
         "single line is not supported here.",
         ("Split it into separate assignment statements, one kind of target per line.",),
+    )
+    UNSUP_NO_SOURCE = (
+        "The source of `{func}` is not available (e.g. defined in the REPL or "
+        "via exec()), so it cannot be compiled.",
+        ("Save the function to a .py file and import it from there.",),
+    )
+
+    UNSUP_WALRUS_CONDITIONAL = (
+        "A walrus assignment (`{name} := ...`) inside a conditionally-evaluated "
+        "expression (an `and`/`or` right-hand side, a ternary branch, or a "
+        "comprehension) is not supported in compiled code: whether the write "
+        "happens cannot be decided at compile time.",
+        (
+            "Move the walrus assignment out to its own statement before the "
+            "expression, or compute the value into a variable first.",
+        ),
+    )
+    UNSUP_WALRUS_EVAL_ORDER = (
+        "A call (`{call}`) that Python evaluates around the walrus assignment "
+        "(`{name} := ...`) in this statement cannot be kept in its original "
+        "evaluation order by the compiler (it sits in a conditionally-evaluated "
+        "position, or between two walrus assignments).",
+        (
+            "Move the walrus assignment out to its own statement before the "
+            "expression, or compute the call's result into a variable first.",
+        ),
     )
 
     # =====================================================================
@@ -1747,6 +2204,15 @@ class DiagId(_DiagMixin, enum.Enum):
     ARG_COUNT_MISMATCH = (
         "Passed {got} argument(s) to FFI function, but it expects {expected}",
         ("Check the function signature and provide the correct number of arguments",),
+    )
+    ARG_CONSTEXPR_MISMATCH = (
+        "Argument `{arg_name}` was `None` when this function was compiled, and it was "
+        "baked into the compiled function as constexpr. Expected exactly the same "
+        "argument `None`, but got `{arg_type}`.",
+        (
+            "Pass `None` for `{arg_name}`, as at compile time.",
+            "Or compile the function again with the value you want to pass.",
+        ),
     )
     ARG_FOR_LOOP_STEP_NOT_INT = (
         "Loop bounds and step must be integers, not {kind}",
@@ -1838,6 +2304,26 @@ class DiagId(_DiagMixin, enum.Enum):
             "Convert the value to an integer type, e.g., `int({name})`.",
         ),
     )
+    # --- ATTR ---
+    ATTR_BUILDER_REQUIRES_CONSTANT = (
+        "`{var}` is passed to `{callee}`, which needs one plain compile-time "
+        "value, but `{var}` changes inside a for/while/if -- no single value "
+        "exists to pass.",
+        (
+            "Pass a {staged} value through a DSL API that accepts runtime "
+            "values, or keep `{var}` a fixed compile-time constant.",
+        ),
+    )
+    # --- BODY ---
+    BODY_BORN_SEED_UNPLACEABLE = (
+        "`{var}` is first given a value inside a for/while/if, but that value "
+        "was computed on a different path, so no store can be placed where the "
+        "assignment actually runs.",
+        (
+            "Assign `{var}` a value computed on the same path (or before the "
+            "for/while/if) so the assignment can be compiled where it runs.",
+        ),
+    )
     # --- CALL ---
     CALL_BUILTIN_KWARGS_UNSUPPORTED = (
         "The built-in function '{fcn}' does not support keyword arguments.",
@@ -1870,6 +2356,11 @@ class DiagId(_DiagMixin, enum.Enum):
     CALL_FUNCTION_NOT_PROVIDED = (
         "No function was provided to compile. Pass a callable decorated with @cute.jit.",
         ("Ensure you pass a valid @cute.jit-decorated function to cute.compile().",),
+    )
+    CALL_KERNEL_TARGET = (
+        "`{function_name}` is decorated with @cute.kernel. cute.compile() "
+        "expects a @cute.jit-decorated function to compile its target as the host entry point.",
+        ("Compile the @cute.jit function that launches `{function_name}`.",),
     )
     CALL_MISSING_ARG = (
         "Required argument `{name}` is missing in the call to `{function_name}`.",
@@ -1930,10 +2421,11 @@ class DiagId(_DiagMixin, enum.Enum):
         ),
     )
     CONFIG_ATTRIBUTES_UNSUPPORTED = (
-        "The `@kernel` decorator with `attributes=` is not supported by this DSL. Only experimental CuTe supports this feature.",
+        "Non-empty `@kernel` attributes require CuTe extension compilation.",
         (
+            "Make `attributes=` resolve to `None` or an empty dict for this kernel.",
             "Remove the `attributes=` parameter from the @kernel decorator.",
-            "Or use `@cute.experimental.kernel(attributes=...)` if you need kernel-level attributes.",
+            "Or enable CuTe extension compilation for this program.",
         ),
     )
     CONFIG_ATTR_KEY_UNSUPPORTED = (
@@ -2002,9 +2494,9 @@ class DiagId(_DiagMixin, enum.Enum):
         ("Use `Constexpr` annotation or a Python constant for max_number_threads.",),
     )
     CONFIG_MISSING_NVDISASM = (
-        "{vars} requires the 'nvdisasm' tool to write SASS output, but it is not found in PATH.",
+        "{vars} requires the 'nvdisasm' tool to write SASS output, but no compatible binary was found.",
         (
-            "Install the CUDA Toolkit from https://developer.nvidia.com/cuda-downloads; if CUDA is installed, add its bin directory to PATH: export PATH=/usr/local/cuda/bin:$PATH",
+            "Install it with `pip install nvidia-cutlass-dsl[sass]`, or install a CUDA Toolkit and expose it via CUDA_HOME/CUDA_PATH.",
         ),
     )
     CONFIG_MISSING_TVM_FFI = (
@@ -2063,6 +2555,19 @@ class DiagId(_DiagMixin, enum.Enum):
             'Pass a version string like "12.3" or use DSLCudaVersion("{version_string}")',
         ),
     )
+    # --- INSTRUMENTATION ---
+    INSTRUMENTATION_GAP = (
+        "Function `{name}` is being traced as a compilation entry point, but "
+        "it was never rewritten by the DSL preprocessor and is not declared "
+        "native -- its variable reads/writes would be invisible to the "
+        "compiler, producing silently wrong code.",
+        (
+            "Decorate `{name}` with @jit / @kernel so the preprocessor "
+            "instruments it before tracing.",
+            "Or opt it out explicitly with `preprocess=False` if it must run "
+            "as plain Python.",
+        ),
+    )
     # --- LAUNCH ---
     LAUNCH_INVALID_CLUSTER = (
         "Launch cluster must have exactly 3 dimensions.",
@@ -2099,7 +2604,84 @@ class DiagId(_DiagMixin, enum.Enum):
             "If you meant to discard the call, remove it.",
         ),
     )
+    # --- OWNER ---
+    OWNER_CLASS_CHANGED = (
+        "An object whose state is tracked across a for/while/if changed its "
+        "class from `{old_class}` to `{new_class}` -- the tracked state was "
+        "recorded under `{old_class}` and cannot be re-derived for "
+        "`{new_class}`.",
+        (
+            "Create a new `{new_class}` object instead of reassigning "
+            "`__class__` on one the compiler is tracking.",
+        ),
+    )
+    OWNER_DEL_FINALIZER_AT_BIRTH = (
+        "`{cls}` defines `__del__` (via `{definer}`): the finalizer runs at "
+        "a garbage-collection-determined instant, which has no position in "
+        "the traced program, so an object of this class created here cannot "
+        "be tracked.",
+        (
+            "Release resources with an explicit close()/context manager "
+            "instead of `__del__` on `{definer}`.",
+            "Or create the object outside the traced function and pass it in.",
+        ),
+    )
+    OWNER_DECLARED_SURFACE_VIOLATION = (
+        "`{obj}` opted into the DSL value protocol "
+        "(`__extract_mlir_values__`), declaring which of its values follow "
+        "run-time control flow, but {violation}. State outside the "
+        "declaration is fixed once code is read and cannot change inside a "
+        "for/while/if whose path is decided at run time.",
+        (
+            "Declare the state: make `__extract_mlir_values__` / "
+            "`__new_from_mlir_values__` carry it (and keep the DSL value "
+            "type's own `__hash__`).",
+            "Or perform the change outside the run-time for/while/if.",
+        ),
+    )
+    OWNER_FABRICATED_ATTR_IN_STAGED_CF = (
+        "`{obj}.{attr}` is fabricated by `{definer}.__getattr__` inside "
+        "staged (runtime) control flow: the name resolves to no storage "
+        "slot, so the trace-time value would bake here and silently mask "
+        "state that can change across runtime executions of this region.",
+        (
+            "Read `{obj}.{attr}` into a local before the staged "
+            "for/while/if and use the local, or give `{attr}` real storage "
+            "(assign it in `__init__`).",
+        ),
+    )
     # --- PHASE ---
+    PHASE_IDENTITY_ON_TRACKED = (
+        "`is` asks for Python object identity, but `{what}` is a "
+        "compiler-tracked value here: the compiler re-wraps tracked values "
+        "while staging code, so wrapper identity does not follow the "
+        "program's own object identity.",
+        (
+            "Compare values with `==` instead of `is`.",
+            "Identity tests against `None` (or another non-numeric sentinel) "
+            "stay exact and are supported.",
+        ),
+    )
+    PHASE_SERIALIZE_STAGED = (
+        "`{what}` holds a staged (runtime) value: serializing it would bake "
+        "compiler trace state into bytes that cannot round-trip to the value "
+        "computed at run time.",
+        (
+            "Serialize plain Python values computed outside staged code.",
+            "If the value is needed at run time, keep it in scalars/tensors "
+            "instead of serialized bytes.",
+        ),
+    )
+    PHASE_NUMERIC_PROTOCOL_ON_STAGED = (
+        "`{proto}` is not supported on `{what}`, a {staged}: this numeric "
+        "protocol has no runtime (staged) form.",
+        (
+            "For 3-argument pow compute `(a ** b) % m` when wraparound "
+            "semantics are acceptable.",
+            "For `@` and complex(), keep the operands plain Python values -- "
+            "Python defines no scalar `@` either.",
+        ),
+    )
     PHASE_CONDITIONAL_NOT_DYNAMIC = (
         "The condition must be a {staged} value, not a {meta}.",
         ("Ensure the condition is a runtime value (Boolean, Int32, etc.).",),
@@ -2125,6 +2707,68 @@ class DiagId(_DiagMixin, enum.Enum):
             "If the value is only known at run time, use the runtime form instead (for example a runtime `if`/loop or a runtime assert).",
         ),
     )
+    PHASE_STRUCTURAL_CONSTANT_MUTATED = (
+        "`{var}` is changed here so it must become a {staged}, but it was "
+        "already consumed as a compile-time constant (value {value}, at "
+        "{read_file}:{read_line}) inside a for/while/if -- as a loop trip "
+        "count, a Python-sequence index, a folded if/while predicate, or a "
+        "similar structural use. That structure is fixed at compile time, "
+        "so every iteration would keep the old value silently.",
+        (
+            "Make `{var}` a {staged} from the start (e.g. `Int32(...)`) and "
+            "use a runtime loop/index, or keep it a fixed compile-time "
+            "constant and do not change it inside the for/while/if.",
+        ),
+    )
+    PHASE_ARM_LOCAL_CONSTANT_ESCAPES = (
+        "`{var}` is read here, but it was changed as a compile-time constant "
+        "inside an if branch that only runs on some GPU paths (at "
+        "{write_file}:{write_line}). The compiler runs the body once, so "
+        "this read would keep that branch's value even when the branch is "
+        "skipped at run time.",
+        (
+            "Make `{var}` a {staged} before the if (e.g. `{var} = "
+            "Int32(...)`) so the update is carried on every path.",
+            "Or keep every read of `{var}` inside the same if branch that "
+            "changes it.",
+        ),
+    )
+    PHASE_PREDICATE_FOLDED_STALE = (
+        "`{var}` is changed here inside a for/while body, but an if/while "
+        "condition already folded on its compile-time value ({value}, at "
+        "{read_file}:{read_line}); the folded branch was fixed at trace "
+        "time, so every iteration would keep the stale decision silently.",
+        (
+            "Make the value a {staged} at construction (e.g. `Int32(...)`) so "
+            "the condition stays a runtime comparison.",
+            "Or hoist the mutation out of the loop and keep the value a fixed "
+            "compile-time constant.",
+        ),
+    )
+    # --- READ ---
+    READ_DEPTH_OVERFLOW = (
+        "The attribute/subscript chain `{var}` is {depth} accesses deep, "
+        "which exceeds the {budget} accesses the compiler tracks per "
+        "statement -- deeper reads cannot be attributed to their storage "
+        "and would bake silently.",
+        (
+            "Split the chain across statements with intermediate variables "
+            "so each statement stays within {budget} accesses.",
+        ),
+    )
+    # --- RECONSTRUCT ---
+    RECONSTRUCT_NO_PROTOCOL = (
+        "A value of type `{cls}` must be rebuilt here from its compiled "
+        "value, but `{cls}` provides no way to do so: it implements neither "
+        "`__new_from_mlir_values__` nor a constructor accepting the compiled "
+        "value.",
+        (
+            "Implement `__extract_mlir_values__` / `__new_from_mlir_values__` "
+            "on `{cls}` so the compiler can rebuild it.",
+            "Or carry a DSL value type (Int32, Float32, TensorSSA, ...) "
+            "across the for/while/if instead.",
+        ),
+    )
     # --- SCOPE ---
     SCOPE_CLOSURE_CAPTURE = (
         "Function `{func_name}` captures variable `{var_name}`, which is not supported in staged for/while/if.",
@@ -2133,28 +2777,63 @@ class DiagId(_DiagMixin, enum.Enum):
             "Define the function inside the loop/if, or refactor to avoid the closure.",
         ),
     )
-    SCOPE_LAMBDA_CAPTURE = (
-        "A `lambda` invoked inside a staged for/while/if reads captured variable "
-        "`{var_name}` from the enclosing function. The lambda body runs as plain "
-        "Python while your code is read (at trace time), so `{var_name}` is frozen "
-        "at its first-pass value instead of following updates made inside the "
-        "staged region.",
+    SCOPE_NONLOCAL_WRITE_IN_STAGED_CF = (
+        "`{name}` was already updated through a `nonlocal` write in another "
+        "function scope inside this dynamic for/while/if, and is accessed "
+        "here from a different scope of the same region. The two accesses "
+        "cannot be routed to one storage cell across the region, so one "
+        "side's update would be silently lost at the join.",
         (
-            "Wrap the lambda with `@cute.jit`, e.g. `f = cute.jit(lambda ...: ...)`, "
-            "so its body is traced on every pass.",
-            "Or pass `{var_name}` in as a lambda argument instead of capturing it.",
+            "Return the new value from the nested function and rebind it at "
+            "the call site (`{name} = fn(...)`), or move the `nonlocal` "
+            "write outside the dynamic for/while/if.",
         ),
     )
-    SCOPE_CTXMGR_TRACE_ONLY = (
-        "The `with` uses context manager `{ctx_type}`, whose `__enter__`/`__exit__` "
-        "are plain Python and run only once, while your code is read (at trace "
-        "time). Inside a staged for/while/if the block runs on every pass at run "
-        "time, so those effects would be frozen at the first pass and the compiled "
-        "code would not match Python.",
+    # --- SNAPSHOT ---
+    SNAPSHOT_UNMATERIALIZABLE = (
+        "`{var}` holds a value captured earlier in the trace, but the tracked "
+        "variable it was captured from has moved on since, and the captured "
+        "value itself was computed inside a for/while/if region that has "
+        "already closed -- so neither the captured value nor a faithful "
+        "re-read of it is available here.",
         (
-            "Decorate both `{ctx_type}.__enter__` and `{ctx_type}.__exit__` with "
-            "`@cute.jit` so they are traced on every pass.",
-            "Or move the `with` out of the staged for/while/if.",
+            "Read the source variable directly at this point instead of "
+            "keeping a captured copy across the for/while/if.",
+            "Or capture the value before the for/while/if so the copy stays "
+            "available on every path.",
+        ),
+    )
+    # --- SPEC ---
+    SPEC_DESCRIPTOR_HOP = (
+        "Re-validating this compiled function would execute the `{attr}` "
+        "descriptor of `{owner_type}` while re-resolving `{path}`; a "
+        "specialization row must re-resolve through plain storage only. "
+        "This row should have been classified trace-internal at record time "
+        "-- a bug in the DSL, not a mistake in your code.",
+        (
+            "Recompile via cute.compile (or re-invoke the @jit function) so "
+            "the value is re-read on a fresh trace.",
+            "And report this diagnostic to the DSL team.",
+        ),
+    )
+    SPEC_UNVERIFIABLE_REENTRY = (
+        "This compiled function baked a trace-time value that cannot be "
+        "re-checked against live state, so re-invoking the compiled handle "
+        "cannot be validated for reuse.",
+        (
+            "Re-invoke the @jit-decorated function instead of the compiled "
+            "handle so the value is re-read on a fresh trace.",
+            "Or recompile with cute.compile after changing host state.",
+        ),
+    )
+    # --- STALE ---
+    STALE_SPECIALIZATION = (
+        "This compiled function was specialized on `{path}` = `{baked}`, but "
+        "the value at this call is `{live}` -- the compiled code still uses "
+        "the old value.",
+        (
+            "Recompile via cute.compile (or re-invoke the @jit function) "
+            "after changing `{path}`.",
         ),
     )
     # --- TENSOR ---
@@ -2176,6 +2855,18 @@ class DiagId(_DiagMixin, enum.Enum):
         ),
     )
     # --- TYPE ---
+    TYPE_CHANGED_INSIDE_REGION = (
+        "`{var}` changes its compiled type from `{old_type}` to `{new_type}` "
+        "inside {region}. A value carried across a for/while/if boundary must "
+        "keep one compiled type, so this change cannot be carried out of the "
+        "region.",
+        (
+            "Hoist the type change out of the for/while/if so `{var}` has the "
+            "new type on every path.",
+            "Or make the types agree: convert explicitly so every assignment "
+            "to `{var}` produces the same compiled type.",
+        ),
+    )
     TYPE_CLUSTER_NOT_INT = (
         "The {config_name} dimensions must be integers.",
         ("Provide integer values for {config_name}.",),
@@ -2261,6 +2952,19 @@ class DiagId(_DiagMixin, enum.Enum):
         "The while loop inputs must be convertible to runtime values.",
         ("Ensure all inputs are DSL types or implement DynamicExpression.",),
     )
+    # --- UNOBSERVED ---
+    UNOBSERVED_WRITE_POSITION_UNKNOWN = (
+        "`{var}` was rebound by code the compiler cannot observe (no tracked "
+        "assignment recorded the new value), and a for/while/if boundary has "
+        "passed since the variable's last tracked access -- the write cannot "
+        "be placed at its true position in the compiled program.",
+        (
+            "Perform the rebind with a plain assignment in jit-decorated code "
+            "so the write is tracked at its position.",
+            "Or move the rebind so no for/while/if boundary separates it from "
+            "the next use of `{var}`.",
+        ),
+    )
     # --- UNSUP ---
     UNSUP_ARCH = (
         "The `vectorize` attribute requires compute capability 10.0 or higher; your target is `{arch}`.",
@@ -2299,6 +3003,30 @@ class DiagId(_DiagMixin, enum.Enum):
         "The `in` operator is not supported between these values.",
         ("Use a supported comparison, or restructure the check to avoid `in`.",),
     )
+    # --- WRAPPER ---
+    WRAPPER_CLASS_MERGE = (
+        "`{var}` leaves this for/while/if holding a `{new_cls}`, but entered "
+        "it holding a `{old_cls}` over the same compiled type. The two Python "
+        "classes have no common replacement, so reads after the region cannot "
+        "reconstruct one consistent value.",
+        (
+            "Use one wrapper class for `{var}` on every path through the for/while/if.",
+            "Or convert explicitly before the for/while/if closes so both "
+            "paths produce the same class.",
+        ),
+    )
+    WRAPPER_REBIND_DUPLICATE_LEAF = (
+        "A `{cls}` is replaced inside {region}, but the value it held on "
+        "entry stores the SAME compiled value at more than one leaf "
+        "position. Carrying the replacement pairs old and new leaves by "
+        "value identity, so the repeated positions cannot be told apart and "
+        "an update could be silently wired to the wrong one.",
+        (
+            "Enter the for/while/if with a distinct value at every leaf "
+            "position (compute each initial value separately), or update "
+            "the positions in place instead of replacing the whole object.",
+        ),
+    )
 
 
 class WarnId(_DiagMixin, enum.Enum):
@@ -2319,6 +3047,49 @@ class WarnId(_DiagMixin, enum.Enum):
         (
             "To be safe, make `{var}` a {staged} before the for/while/if, e.g. "
             "`{var} = {type}({var})`.",
+        ),
+    )
+
+    TYPE_INT_LITERAL_OUT_OF_RANGE = (
+        "The Python integer {value} does not fit in {type} (range "
+        "[{min}, {max}]); it was silently truncated to {wrapped}. This drops "
+        "the high bits of the original value.",
+        (
+            "Use a wider integer type that can hold {value}, e.g. "
+            "`Int64({value})` or `Uint64({value})`.",
+            "If the wrap-around is intentional (e.g. materializing a specific "
+            "bit pattern), mask the value to the type width first, e.g. "
+            "`{type}({value} & 0x{mask:X})`, to make the intent explicit.",
+        ),
+    )
+
+    TYPE_FLOAT_TO_INT_OUT_OF_RANGE = (
+        "The Python float {value} does not fit in {type} (range "
+        "[{min}, {max}]); it was silently narrowed to {result}. "
+        "The magnitude of the original value is lost.",
+        (
+            "Clamp the value to the target range before converting, e.g. "
+            "`{type}(max({min}, min({max}, {value})))`.",
+            "Or use a wider integer type that can hold {value}.",
+            "Do not depend on the exact value {result}: narrowing a float the "
+            "target cannot represent has no portable definition.",
+        ),
+    )
+
+    TYPE_FLOAT_LITERAL_OVERFLOW = (
+        "The Python float {value} is larger than the maximum finite {type} "
+        "value ({max:g}); it silently became {wrapped}. The magnitude of the "
+        "original value is lost.",
+        ("Use a wider float type that can hold {value}, e.g. `Float64({value})`.",),
+    )
+
+    TYPE_FLOAT_LITERAL_UNDERFLOW = (
+        "The Python float {value} is smaller than the smallest nonzero {type} "
+        "value ({tiny:g}); it silently became {wrapped}. The original nonzero "
+        "value is lost.",
+        (
+            "Use a wider float type that can represent {value}, e.g. "
+            "`Float64({value})`.",
         ),
     )
 

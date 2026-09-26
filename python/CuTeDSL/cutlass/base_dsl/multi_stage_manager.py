@@ -16,6 +16,8 @@ the phase rules of the two-stage language.
 
 """
 
+import itertools
+
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -50,23 +52,31 @@ def is_inside_staged_cf() -> bool:
     return _staged_cf_depth > 0
 
 
-# ``range_constexpr`` / ``const_expr`` if / ``const_expr`` while resolve at
-# trace time (the loop unrolls or the branch is selected in Python), so a
-# Python-side ``.append`` / variable mutation directly inside their body is
-# realized deterministically -- it is NOT a silently-lost loop-carried
-# mutation.  The M->M / container-mutation guards therefore opt out when the
-# INNERMOST control-flow construct governing the mutation is a constexpr
-# construct.
-#
-# "Innermost" is the key: a constexpr scope nested inside dynamic staged CF
-# still opts out (the mutation is constexpr-governed), but a *dynamic* loop /
-# if nested inside a constexpr scope must NOT opt out (the mutation is
-# governed by the dynamic construct and is silently lost).  We capture this
-# by recording ``_staged_cf_depth`` at each constexpr-scope entry: the scope
-# is the innermost CF only while no dynamic CF has been entered since, i.e.
-# the current ``_staged_cf_depth`` still equals the snapshot on top of the
-# stack.
+def current_staged_cf_depth() -> int:
+    """Current staged-CF nesting depth (0 outside any region): a first-def at a
+    shallower depth than a reassignment marks a loop-carried/cross-branch variable."""
+    return _staged_cf_depth
+
+
+# Each entry records ``_staged_cf_depth`` at constexpr-scope entry; the scope is
+# the innermost CF only while the current depth still equals the top snapshot.
 _constexpr_scope_stack: list[int] = []
+
+# Monotone per-INSTANCE serials, parallel to the depth stack: each
+# ``enter_constexpr_loop()`` (one unrolled iteration / one taken const_expr
+# arm) is a distinct instance; binding-birth ownership records these serials.
+_constexpr_instance_counter = itertools.count(1)
+_constexpr_instance_serials: list[int] = []
+
+
+def open_constexpr_instance_serial() -> "int | None":
+    """Serial of the innermost OPEN constexpr instance, else ``None``."""
+    return _constexpr_instance_serials[-1] if _constexpr_instance_serials else None
+
+
+def open_constexpr_instance_serials() -> "list[int]":
+    """All open constexpr-instance serials (outermost first)."""
+    return _constexpr_instance_serials
 
 
 def enter_constexpr_loop() -> None:
@@ -79,12 +89,15 @@ def enter_constexpr_loop() -> None:
     the AST preprocessor instead emits a generated ``try/finally``.
     """
     _constexpr_scope_stack.append(_staged_cf_depth)
+    _constexpr_instance_serials.append(next(_constexpr_instance_counter))
 
 
 def exit_constexpr_loop() -> None:
     """Leave the innermost constexpr scope."""
     if _constexpr_scope_stack:
         _constexpr_scope_stack.pop()
+    if _constexpr_instance_serials:
+        _constexpr_instance_serials.pop()
 
 
 def is_inside_constexpr_loop() -> bool:
@@ -97,6 +110,12 @@ def is_inside_constexpr_loop() -> bool:
     )
 
 
+def constexpr_scope_under_staged_cf() -> bool:
+    """True if the innermost open constexpr scope was entered while staged CF was
+    open: it unrolls at trace time but its writes stay runtime-conditional."""
+    return bool(_constexpr_scope_stack) and _constexpr_scope_stack[-1] > 0
+
+
 def _reset_constexpr_scope() -> None:
     """Clear constexpr-scope state.  Backstop for the AST-injected
     ``try/finally`` bracketing: cleared at outermost trace exit so an
@@ -104,6 +123,7 @@ def _reset_constexpr_scope() -> None:
     silently disable the guards for the next trace.
     """
     _constexpr_scope_stack.clear()
+    _constexpr_instance_serials.clear()
 
 
 @contextmanager
@@ -119,22 +139,9 @@ def constexpr_loop_scope() -> Iterator[None]:
         exit_constexpr_loop()
 
 
-def get_staged_cf_depth() -> int:
-    """Return the current staged-CF nesting depth.
-
-    Counts runtime CF regions (``scf.if`` / ``scf.for`` / ``scf.while``)
-    entered via ``_scf_execute_pyir``.  Trace-time ``range_constexpr``
-    unrolls do NOT bump this counter, so a strictly greater depth between
-    a slot's first-def and a later reassignment means the reassignment is
-    inside a NESTED RUNTIME loop/if that must thread the value as an
-    iter_arg / scf result rather than constexpr-fold it.
-    """
-    return _staged_cf_depth
-
-
 @contextmanager
 def _jit_scope() -> Iterator[None]:
-    """Track the staged-CF depth baseline for a nested ``@cute.jit`` call.
+    """Track the staged-CF depth baseline for a nested jit-decorated call.
 
     On exit from the OUTERMOST trace, clear the D1 meta-value promotion
     state so a second invocation of the same function in the same process
@@ -149,16 +156,15 @@ def _jit_scope() -> Iterator[None]:
             # Outermost trace just exited -- clear D1 trace state and
             # any constexpr-scope state left over from an unbalanced trace.
             _reset_constexpr_scope()
-            try:
-                from .pyir_runtime import _exit_function_trace
+            # Function-local import (layering cycle: the pyir chain imports
+            # from this module at module top).
+            from .pyir_runtime import _exit_function_trace
 
-                _exit_function_trace()
-            except ImportError:
-                pass  # PyIR runtime unavailable -- nothing to clean.
+            _exit_function_trace()
 
 
 def is_inside_locally_staged_cf() -> bool:
-    """Return True if the current ``@cute.jit`` body opened staged CF."""
+    """Return True if the current jit-decorated body opened staged CF."""
     if not _jit_depth_baseline_stack:
         return _staged_cf_depth > 0
     return _staged_cf_depth > _jit_depth_baseline_stack[-1]
@@ -193,23 +199,30 @@ def isolated_region() -> Iterator[None]:
         _staged_cf_depth = saved
 
 
+# Lazily bound ``_WatchedM`` class (see :func:`_is_staged_value`).
+_WATCHED_M_CLS: "type | None" = None
+
+
 def _is_staged_value(val: object) -> bool:
     """Return True if *val* is a staged (S) value (DSL type with ir_value).
 
     Bare Python scalars (int, float, bool, str, None) are Meta (M).
     DSL types (Numeric, Pointer, Array, etc.) are Staged (S).
     """
+    global _WATCHED_M_CLS
     if val is None or isinstance(val, (int, float, bool, str, bytes, type)):
         return False
-    # Lazy import to avoid circular dependency: pyir_runtime imports from
-    # this module.
-    try:
+    # Lazily bound (layering cycle: the pyir chain imports from this module
+    # at module top); resolved once, then a plain global read.
+    wm = _WATCHED_M_CLS
+    if wm is None:
         from .pyir_runtime import _WatchedM
-    except ImportError:
-        _WatchedM = None  # type: ignore[misc,assignment]
-    if _WatchedM is not None and isinstance(val, _WatchedM):
+
+        wm = _WATCHED_M_CLS = _WatchedM
+    if isinstance(val, wm):
         return False
-    return hasattr(val, "ir_value") and callable(getattr(val, "ir_value"))
+    iv = getattr(val, "ir_value", None)
+    return iv is not None and callable(iv)
 
 
 def _get_ir_type(val: Any) -> Any:
@@ -219,6 +232,84 @@ def _get_ir_type(val: Any) -> Any:
         return iv.type if iv is not None else None
     except Exception:
         return None
+
+
+def _lift_scalar_to_staged_like(old_value: Any, new_value: Any) -> Any:
+    """Lift a Python scalar *new_value* to a staged value matching the staged
+    *old_value*'s type, or return ``None`` when no lifting applies.
+
+    The lifting keys on the *capabilities* of the staged value's type, never
+    on its name, so it covers every staged scalar wrapper:
+
+    1. Numeric-typed wrappers expose an ``isinstance`` classmethod and a
+       scalar-accepting constructor -- lift via ``dsl_type(new_value)``.
+
+    2. Raw MLIR-value wrappers (``ir.Value`` subclasses without ``isinstance``)
+       lift to the ``Numeric`` of their MLIR element type.
+    """
+    # Only a Python scalar can be lifted to a staged scalar; the guard lives
+    # here so the lifting rule is fully self-contained.
+    if not isinstance(new_value, (bool, int, float)):
+        return None
+
+    # Function-local imports (layering cycle: typing/_mlir_helpers import back
+    # into base_dsl).
+    from .typing import Numeric
+    from .._mlir_helpers.arith import element_type
+    from .common import DSLRuntimeError
+
+    dsl_type = type(old_value)
+
+    # Strategy 1: Numeric-style type with an ``isinstance`` classmethod (bare
+    # ``ir.Value`` subclasses lack it, separating the two families by lookup).
+    type_isinstance = getattr(dsl_type, "isinstance", None)
+    if callable(type_isinstance):
+        try:
+            liftable = type_isinstance(new_value)
+        except (TypeError, ValueError):
+            liftable = False
+        if liftable:
+            try:
+                return dsl_type(new_value)
+            except (TypeError, AttributeError) as e:
+                # ``isinstance`` accepted the scalar but construction failed:
+                # an internal build failure, not a not-liftable slot.
+                raise DSLRuntimeError(
+                    f"failed to lift scalar {new_value!r} into staged type "
+                    f"{dsl_type.__name__}"
+                ) from e
+        # ``None`` = "no applicable lifting"; the caller raises the
+        # illegal-mutation diagnostic.
+        return None
+
+    # Strategy 2: staged value backed by a raw MLIR value (no Numeric
+    # ``isinstance``).  Lift to a Numeric of the value's element type.
+    ir_type = _get_ir_type(old_value)
+    if ir_type is not None:
+        try:
+            numeric_type = Numeric.from_mlir_type(element_type(ir_type))
+        except (KeyError, ValueError, DSLRuntimeError):
+            # No Numeric for this element type: not liftable.
+            numeric_type = None
+        if numeric_type is not None:
+            try:
+                liftable = numeric_type.isinstance(new_value)
+            except (TypeError, ValueError):
+                liftable = False
+            if liftable:
+                try:
+                    return numeric_type(new_value)
+                except (TypeError, AttributeError) as e:
+                    # Construction failed after isinstance accepted: internal
+                    # build failure, not a not-liftable slot.
+                    raise DSLRuntimeError(
+                        f"failed to lift scalar {new_value!r} into staged type "
+                        f"{numeric_type.__name__}"
+                    ) from e
+
+    # ``None`` = "no applicable lifting"; the caller raises the
+    # illegal-mutation diagnostic.
+    return None
 
 
 def _user_type_name(value: Any) -> str:
@@ -247,8 +338,9 @@ def assign_meta_staged_check(
     target_name: str,
     old_value: Any,
     new_value: Any,
-    filename: str,
-    lineno: int,
+    filename: "str | None",
+    lineno: "int | None",
+    owner: Any = None,
 ) -> Any:
     """Runtime check for assignments inside staged control flow.
 
@@ -274,13 +366,11 @@ def assign_meta_staged_check(
 
     # Rule 2: (M) mutation inside staged CF
     if old_is_staged and not new_is_staged:
-        # Auto-coerce: Python bool/int/float → matching DSL type
-        dsl_type = type(old_value)
-        if isinstance(new_value, (bool, int, float)) and dsl_type.isinstance(new_value):
-            try:
-                return dsl_type(new_value)
-            except (TypeError, ValueError):
-                pass
+        # Auto-lift a Python scalar reassigned to a staged variable back to
+        # staged, so the IR keeps an SSA value instead of dropping the write.
+        lifted_value = _lift_scalar_to_staged_like(old_value, new_value)
+        if lifted_value is not None:
+            return lifted_value
 
         raise DSLUserCodeError(
             DiagId.PHASE_ASSIGN_PYTHON_TO_TRACKED,
@@ -290,23 +380,12 @@ def assign_meta_staged_check(
         )
 
     if not old_is_staged and not new_is_staged:
-        if target_name == "self.dummy":
+        # A ``_WatchedM`` slot is table-tracked and ``pyir_assign`` handles its
+        # retroactive promotion — allow it here (local import: layering cycle).
+        from .pyir_runtime import _WatchedM
+
+        if isinstance(old_value, _WatchedM) or isinstance(new_value, _WatchedM):
             return None
-
-        # D1 (META_VALUE_TABLE_DESIGN): when *old_value* is a ``_WatchedM``
-        # wrapper, the slot is being tracked by the meta-value table.
-        # ``pyir_assign`` (below in pyir_runtime.py) handles retroactive
-        # promotion -- it creates a ``pyir.ref`` at function entry and
-        # rewrites baked constants via ``replaceAllUsesWith``.  Allow the
-        # mutation here; D1 enforces correctness, including any type
-        # mismatch which surfaces as an MLIR verification error.
-        try:
-            from .pyir_runtime import _WatchedM
-
-            if isinstance(old_value, _WatchedM) or isinstance(new_value, _WatchedM):
-                return None
-        except ImportError:
-            pass
 
         # Mp→Mp: meta-primitive mutation inside staged CF.
         # When AUTO_M2S is enabled, auto-promote to staged so the
@@ -325,8 +404,16 @@ def assign_meta_staged_check(
                 except Exception:
                     pass  # fall through to error
 
+        # An adopted watched container is the same PLACE as the plain container
+        # that rebinds it -- adoption must not create a phase error.  Same
+        # value-kind == same plain type under the transparency protocol
+        # (F-TRANSPARENT); no wrapper-class imports.
+        def _plain_type(v: Any) -> type:
+            return getattr(type(v), "__pyir_plain_type__", type(v))
+
+        _same_type = _plain_type(old_value) is _plain_type(new_value)
         same_type_compound = (
-            type(old_value) is type(new_value)
+            _same_type
             and old_value is not None
             and not isinstance(old_value, (int, float, bool, str, bytes))
         )
@@ -346,17 +433,51 @@ def assign_meta_staged_check(
         # per-field pyir_assign calls by pyir_assign().
         # Only let them through if TOLERATE_M2M is True (default).
         if tolerate_m2m and same_type_compound:
-            try:
-                from .pyir_runtime import _has_decomposable_staged_fields
+            # Function-local import (layering cycle: the pyir chain imports
+            # from this module at module top).
+            from .pyir_runtime import _has_decomposable_staged_fields
 
-                if _has_decomposable_staged_fields(old_value):
-                    return None
-            except ImportError:
-                pass  # pyir_runtime not available (non-PyIR build)
+            if _has_decomposable_staged_fields(old_value):
+                return None
+
+        # A mutation governed by a constexpr scope resolves at trace time and is
+        # meta by construction (the scope opens without raising staged-CF depth).
+        if is_inside_constexpr_loop():
+            return None
+
+        # A plain mutable ``set`` rebound over a set (``s = s | {x}``) bakes
+        # the trace-time snapshot: there is no watched-set wrapper and a set
+        # has no decomposable staged leaves, so the same-type tolerance below
+        # would admit it silently and every iteration would read one frozen
+        # union.  Fail closed.  ``frozenset`` rebinds stay admitted: their
+        # per-call-site bake is a pinned enables-lock
+        # (test_pyir_gap_frozenset_conditional_rebind_staged_if).
+        if isinstance(old_value, set) and isinstance(new_value, set):
+            raise DSLUserCodeError(
+                DiagId.PHASE_MUTATE_PYTHON,
+                filename=filename,
+                lineno=lineno,
+                var=target_name,
+            )
 
         # Same-type M->M reassignment — tolerate if flag is set.
         if tolerate_m2m and same_type_compound:
             return None
+
+        # In-place-mutation helper pattern (`x = obj.method(x)` returning None):
+        # state provably lives in the decomposable leaves, so dropping is benign.
+        if (
+            new_value is None
+            and old_value is not None
+            and not isinstance(old_value, (int, float, bool, str, bytes))
+        ):
+            # Function-local import (layering cycle: the pyir chain imports
+            # from this module at module top).
+            from .pyir_runtime import _has_decomposable_staged_fields
+
+            if _has_decomposable_staged_fields(old_value):
+                return None
+
         raise DSLUserCodeError(
             DiagId.PHASE_MUTATE_PYTHON,
             filename=filename,
@@ -402,12 +523,16 @@ def assign_meta_staged_check(
         if auto_m2s:
             import warnings
 
+            # The constructor-suggestion prefix is per-DSL (declared on the env
+            # manager), so base_dsl names no dialect; empty means no namespace.
+            ns = getattr(env_manager, "dsl_constructor_namespace", "")
+            ctor_prefix = f"{ns}." if ns else ""
             warnings.warn(
                 f"Implicit Meta-to-Staged promotion of `{target_name}` "
                 f"(from {type(old_value).__name__} to "
                 f"{type(new_value).__name__}) is deprecated. "
                 f"Initialize as: {target_name} = "
-                f"cute.{type(new_value).__name__}({old_value!r})\n"
+                f"{ctor_prefix}{type(new_value).__name__}({old_value!r})\n"
                 f"  at {filename}:{lineno}",
                 DeprecationWarning,
                 stacklevel=3,

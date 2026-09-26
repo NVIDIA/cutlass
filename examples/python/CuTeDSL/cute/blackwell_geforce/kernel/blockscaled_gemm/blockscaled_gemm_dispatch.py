@@ -61,6 +61,24 @@ from cutlass.cute.nvgpu.warp.mma import MXF8F6F4_SUPPORTED_PAIRS
 FP4_SHIFT_BITS = 2
 
 _FP8_DTYPES = (cutlass.Float8E4M3FN, cutlass.Float8E5M2)
+_MXFP8_K64_SF_K128_TILE_SHAPE = (128, 256, 64)
+
+
+def is_mxfp8_k64_sf_k128_tile(
+    tile_shape_mnk,
+    a_dtype,
+    b_dtype,
+    sf_dtype,
+    sf_vec_size,
+):
+    """Return true when two K64 MXFP8 iterations share one K128 SF chunk."""
+    return (
+        tuple(tile_shape_mnk) == _MXFP8_K64_SF_K128_TILE_SHAPE
+        and a_dtype == b_dtype
+        and a_dtype in _FP8_DTYPES
+        and sf_dtype is cutlass.Float8E8M0FNU
+        and sf_vec_size == 32
+    )
 
 
 def make_ldmatrix_atom(operand_dtype, transpose, num_matrices=4, mixed_mode=False):
@@ -192,22 +210,21 @@ def validate_blockscaled_args(args, fp4_allowed_tiles, fp8_allowed_tiles):
     are explicitly rejected with named diagnostics.
 
     Tile-K constraints come from the BlockScaled SF SMEM layout
-    (`sm120_make_smem_layout_sfa`), which requires
-    ``tile_K >= sf_vec_size * blk_sf == sf_vec_size * 4``:
-      * sf_vec_size=16 (NVFP4): tile_K must be a multiple of 64
-      * sf_vec_size=32 (MXFP4 / MXFP8 / mixed): tile_K must be a multiple of 128
-    A K=64 SF block cannot be filled at sf_vec_size=32 (only 2 SFs along K
-    fit in the K=128-required basic chunk), so tile_K=64 is rejected for
-    sf_vec_size=32 even though the FP4 same-dtype path otherwise allows it.
+    (`sm120_make_smem_layout_sfa`):
+      * sf_vec_size=16 (NVFP4): tile_K must be a multiple of 64 (one SF basic chunk).
+      * sf_vec_size=32 (MXFP4 / MXFP8 / mixed): the default SF tile_K remains
+        one basic chunk (=128 K-elements). The cooperative MXFP8 (128,256,64)
+        tile is a narrow workaround where two K64 A/B/MMA iterations share one
+        K128 SF chunk and each iteration consumes its matching half.
+    Per-path tile lists in `*_allowed_tiles` decide which tile_K values are
+    actually validated for a given dtype combination.
     """
     tile = tuple(args.tile_shape_mnk)
     a_dtype = args.a_dtype
     b_dtype = args.b_dtype
     # Generic sf_vec_size sanity check applies to every dtype branch below.
     if args.sf_vec_size not in (16, 32):
-        raise ValueError(
-            f"--sf_vec_size must be 16 or 32, got {args.sf_vec_size}"
-        )
+        raise ValueError(f"--sf_vec_size must be 16 or 32, got {args.sf_vec_size}")
     # Mixed-precision A/B: only the four FP4 x FP8 pairs are allowed.
     if a_dtype != b_dtype:
         if (a_dtype, b_dtype) not in MXF8F6F4_SUPPORTED_PAIRS:
@@ -232,10 +249,11 @@ def validate_blockscaled_args(args, fp4_allowed_tiles, fp8_allowed_tiles):
                 f"FP4 x FP8 mixed-precision requires --sf_dtype Float8E8M0FNU, "
                 f"got --sf_dtype {args.sf_dtype}"
             )
-        if tile not in fp8_allowed_tiles:
+        mixed_allowed_tiles = set(fp8_allowed_tiles) - {_MXFP8_K64_SF_K128_TILE_SHAPE}
+        if tile not in mixed_allowed_tiles:
             raise ValueError(
                 f"tile_shape {tile} is not supported for FP4 x FP8 mixed-precision. "
-                f"Allowed mixed tile shapes: {sorted(fp8_allowed_tiles)}."
+                f"Allowed mixed tile shapes: {sorted(mixed_allowed_tiles)}."
             )
         return
     # Same-dtype paths.
@@ -271,10 +289,9 @@ def validate_blockscaled_args(args, fp4_allowed_tiles, fp8_allowed_tiles):
                 f"tile_shape {tile} is not supported for FP4 path. "
                 f"Allowed FP4 tile shapes: {sorted(fp4_allowed_tiles)}."
             )
-        if args.sf_vec_size == 32 and tile[2] % 128 != 0:
+        if args.sf_vec_size == 32 and tile[2] != 128:
             raise ValueError(
-                f"FP4 + sf_vec_size=32 (MXFP4) requires tile_K to be a "
-                f"multiple of 128, "
+                f"FP4 + sf_vec_size=32 (MXFP4) requires tile_K=128, "
                 f"got tile_K={tile[2]}."
             )
     else:
