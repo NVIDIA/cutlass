@@ -38,10 +38,26 @@ set(TEST_K_1312 --m=256 --k=1312 --batch=1 --epilogue_st=1.0 --profiling=false)
 set(TEST_K_2048 --m=256 --k=2048 --batch=1 --epilogue_st=1.0 --profiling=false)
 set(TEST_K_2176 --m=256 --k=2176 --batch=1 --epilogue_st=1.0 --profiling=false)
 
+# Cover incomplete prologue/lookahead buffers and the remaining scalar tail.
+set(TEST_PROLOGUE_1 --m=256 --k=256 --batch=2 --epilogue_st=1.0 --profiling=false)
+set(TEST_PROLOGUE_2 --m=256 --k=512 --batch=2 --epilogue_st=1.0 --profiling=false)
+set(TEST_PROLOGUE_3 --m=256 --k=768 --batch=3 --epilogue_st=1.0 --profiling=false)
+set(TEST_PREFETCH_1 --m=256 --k=1280 --batch=2 --epilogue_st=1.0 --profiling=false)
+set(TEST_PREFETCH_3 --m=256 --k=1792 --batch=3 --epilogue_st=1.0 --profiling=false)
+set(TEST_PARTIAL_TILE --m=256 --k=1312 --batch=3 --epilogue_st=1.0 --profiling=false)
+set(TEST_K_BOUNDARIES --m=256 --k=1312 --batch=2 --test-k-boundaries)
+
 cutlass_example_add_executable(
   91_fp4_gemv
   91_fp4_gemv.cu
   TEST_COMMAND_OPTIONS
+  TEST_PROLOGUE_1
+  TEST_PROLOGUE_2
+  TEST_PROLOGUE_3
+  TEST_PREFETCH_1
+  TEST_PREFETCH_3
+  TEST_PARTIAL_TILE
+  TEST_K_BOUNDARIES
   TEST_K_288
   TEST_K_1024
   TEST_K_1056

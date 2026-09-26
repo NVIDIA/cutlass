@@ -318,8 +318,9 @@ public:
         // Local aliases
         const int tileA_k_local = kThreadsPerRow * kElementsPerAccess;
         const int total_tiles   = gemm_k / tileA_k_local;
+        const int mainloop_k    = total_tiles * tileA_k_local;
 
-        int unroll_col_k = 0; // next K offset issued to gmem prefetch, not the K accumulated so far
+        int unroll_col_k = 0; // K position of the next global-memory prefetch
         const int thread_id = threadIdx.y * kThreadsPerRow + threadIdx.x;
         const bool is_even_thread = (threadIdx.x % 2 == 0);
         const bool load_b = (threadIdx.y == 0);
@@ -343,7 +344,7 @@ public:
           // Only one row of threads (threadIdx.y == 0) loads B
           const int smem_offset_B = threadIdx.x * (kElementsPerAccess / kPackedElementsB);
 
-          // PROLOGUE – prime first kStageCount-1 stages into buffer 0
+          // PROLOGUE - prime the first buffer with complete K tiles only
           CUTLASS_PRAGMA_UNROLL
           for (int b = 0; b < kBufferCount - 1; ++b) {
             // Load all stages using the helper function
@@ -358,7 +359,7 @@ public:
                 smem_sf_write_offset,
                 is_even_thread,
                 load_b,
-                true,                 // valid_tile = true for prologue
+                mainloop_k,           // exclusive end of complete K tiles
                 ptr_A,
                 ptr_B,
                 ptr_SF_A,
@@ -421,7 +422,7 @@ public:
               auto k_block_next = (k_block + Int<1>{}) % kStageCount;
               int frag_idx_next = (k_block + 1) & 1;
 
-              // Prefetch next kblock data using saved pipe index
+              // Every stage is initialized, including zero-filled lookahead.
               load_smem_fragments(
                   fragA_reg[frag_idx_next],
                   fragB_reg[frag_idx_next],
@@ -436,9 +437,6 @@ public:
               // Copy gmem to smem before computing gemm on each k-pipe
               if (k_block == 0)
               {
-                // Use predicate instead of branch for cp_async
-                bool valid_tile = (global_k < gemm_k);
-                
                 // Load all stages using the helper function
                 load_stages_gmem_to_smem(
                     smem_pipe_write,      // buffer_idx
@@ -451,7 +449,7 @@ public:
                     smem_sf_write_offset,
                     is_even_thread,
                     load_b,
-                    valid_tile,
+                    mainloop_k,
                     ptr_A,
                     ptr_B,
                     ptr_SF_A,
@@ -466,6 +464,7 @@ public:
                 smem_pipe_read = (smem_pipe_read == kBufferCount) ? 0 : smem_pipe_read;
               }
 
+              // Invalid stages contain zero A/B and scale factors.
               {
                 int frag_idx = k_block & 1;
                 
@@ -484,10 +483,10 @@ public:
           cutlass::arch::cp_async_wait<0>();
           __syncthreads();
 
-          // Tail elements that don't fill a full tile
-          const int tail_col_k = tile_idx * tileA_k_local;
-          if (tail_col_k + idx_col_k * kPackedElementsA < gemm_k) {
-            accum += process_tail_elements(tail_col_k, idx_col_k, gemm_k,
+          // Only complete tiles were accumulated; the prefetch cursor may
+          // have advanced beyond them. Start the scalar tail at mainloop_k.
+          if (mainloop_k + idx_col_k * kPackedElementsA < gemm_k) {
+            accum += process_tail_elements(mainloop_k, idx_col_k, gemm_k,
                                            ptr_A, ptr_B,
                                            ptr_SF_A, ptr_SF_B,
                                            A_converter, B_converter,
@@ -523,7 +522,7 @@ private:
       int smem_sf_write_offset,
       bool is_even_thread,
       bool load_b,
-      bool valid_tile,
+      int mainloop_k,
       ElementA const* ptr_A,
       ElementB const* ptr_B,
       ElementSFA const* ptr_SF_A,
@@ -532,6 +531,9 @@ private:
     
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < num_stages; ++s) {
+      // Recompute for each stage, both in the prologue and in lookahead
+      // buffers. Partial tiles are handled separately by the scalar tail.
+      bool valid_tile = unroll_col_k < mainloop_k;
       // Load scaling factors using cp.async - only even threads participate
       // Calculate SF indices for this thread
       int SF_idx = global_k / kSFVecSize;
@@ -540,20 +542,26 @@ private:
       void *smem_ptr_SFA = &shared_storage.smem_SFA[buffer_idx][s][smem_sf_write_offset];
       const void *gmem_ptr_SFA = ptr_SF_A + SF_offset_by_k;
       // Load 4 FP8 values (32 bits) - for this thread and next thread
-      cutlass::arch::cp_async<sizeof(uint32_t)>(smem_ptr_SFA, gmem_ptr_SFA, valid_tile && is_even_thread);
+      if (is_even_thread) {
+        cutlass::arch::cp_async_zfill<sizeof(uint32_t)>(smem_ptr_SFA, gmem_ptr_SFA, valid_tile);
+      }
         
       void *smem_ptr_SFB = &shared_storage.smem_SFB[buffer_idx][s][(threadIdx.x / 2) * 4];
       const void *gmem_ptr_SFB = ptr_SF_B + SF_offset_by_k;
       // Load 4 FP8 values (32 bits) - for this thread and next thread, only if threadIdx.y == 0
-      cutlass::arch::cp_async<sizeof(uint32_t)>(smem_ptr_SFB, gmem_ptr_SFB, valid_tile && load_b && is_even_thread);
+      if (load_b && is_even_thread) {
+        cutlass::arch::cp_async_zfill<sizeof(uint32_t)>(smem_ptr_SFB, gmem_ptr_SFB, valid_tile);
+      }
 
       void *smem_ptr_A = &shared_storage.smem_A[buffer_idx][s][smem_offset_A];
       const void *gmem_ptr_A = ptr_A + unroll_col_k / kPackedElementsA;
-      cutlass::arch::cp_async<sizeof(FragmentA)>(smem_ptr_A, gmem_ptr_A, valid_tile);
+      cutlass::arch::cp_async_zfill<sizeof(FragmentA)>(smem_ptr_A, gmem_ptr_A, valid_tile);
 
       void *smem_ptr_B = &shared_storage.smem_B[buffer_idx][s][smem_offset_B];
       const void *gmem_ptr_B = ptr_B + unroll_col_k / kPackedElementsB;
-      cutlass::arch::cp_async<sizeof(FragmentB)>(smem_ptr_B, gmem_ptr_B, valid_tile && load_b);
+      if (load_b) {
+        cutlass::arch::cp_async_zfill<sizeof(FragmentB)>(smem_ptr_B, gmem_ptr_B, valid_tile);
+      }
 
       unroll_col_k += tileA_k_local;
       global_k     += tileA_k_local;
