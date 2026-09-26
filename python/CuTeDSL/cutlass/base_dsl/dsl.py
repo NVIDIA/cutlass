@@ -1342,8 +1342,21 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
     def diagnostic(self) -> None:
         """Check command line parameters and enables diagnostic"""
-        # Check command line arguments "-diagnostic" (parser built once, cached)
-        args, _ = _get_diagnostic_arg_parser().parse_known_args()
+        # Check command line arguments "-diagnostic" (parser built once, cached).
+        # Only "-diagnostic" and the token after it are parsed: argparse would
+        # otherwise take the host program's own flags, e.g. "-d 0", as an
+        # abbreviation of "-diagnostic" and exit. allow_abbrev=False does not
+        # prevent that for single-dash options on Python 3.10/3.11 (CPython
+        # gh-104860).
+        argv = sys.argv[1:]
+        diagnostic_argv = [
+            arg
+            for i, arg in enumerate(argv)
+            if arg == "-diagnostic"
+            or arg.startswith("-diagnostic=")
+            or (i > 0 and argv[i - 1] == "-diagnostic")
+        ]
+        args, _ = _get_diagnostic_arg_parser().parse_known_args(diagnostic_argv)
         ctx = ir.Context.current
         compiler_opt = os.environ.get("CUTE_DSL_COMPILER_OPT", "")
         if args.diagnostic is None and (
