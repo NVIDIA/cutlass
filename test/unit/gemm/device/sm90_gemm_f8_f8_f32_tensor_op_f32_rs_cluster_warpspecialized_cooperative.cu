@@ -130,6 +130,67 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative, 128x128x1
   EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
 }
 
+TEST(SM90_Device_Gemm_MixedInput_RS, Int4a8AndMxfp4a8StaticProperties) {
+  using ElementA = cutlass::float_e4m3_t;
+  using LayoutA  = cutlass::layout::RowMajor;
+  using LayoutB  = cutlass::layout::ColumnMajor;
+  using ElementC = float;
+  using LayoutC  = cutlass::layout::ColumnMajor;
+  using ElementAccumulator = float;
+
+  using TileShape_MNK = Shape<_128,_128,_128>;
+  using ClusterShape_MNK = Shape<_1,_1,_1>;
+
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedCooperative;
+  using FusionOperation = cutlass::epilogue::fusion::ScaledLinCombPerRowBiasEltAct<
+      cutlass::epilogue::thread::Identity, ElementC, ElementAccumulator, ElementAccumulator>;
+
+  using EpilogueOp = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementAccumulator,
+      ElementC, LayoutC, 16 / sizeof(ElementC),
+      ElementC, LayoutC, 16 / sizeof(ElementC),
+      EpilogueSchedule,
+      FusionOperation
+    >::CollectiveOp;
+
+  using StageCountType = cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename EpilogueOp::SharedStorage)>;
+  using KernelScheduleType = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative;
+
+  using Int4a8Mainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA, 16,
+      cute::tuple<cutlass::int4b_t, cutlass::Array<cutlass::float_e4m3_t, 8>>, LayoutB, 32,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      StageCountType,
+      KernelScheduleType
+    >::CollectiveOp;
+
+  using Mxfp4a8Mainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA, 16,
+      cute::tuple<cutlass::float_e2m1_t, cutlass::Array<cutlass::bfloat16_t, 4>>, LayoutB, 32,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      StageCountType,
+      KernelScheduleType
+    >::CollectiveOp;
+
+  static_assert(Int4a8Mainloop::MxGroupSize == 128);
+  static_assert(!Int4a8Mainloop::EnableActBlockScale);
+  static_assert(Int4a8Mainloop::TmaTransactionBytesActScale == 0);
+  static_assert(Int4a8Mainloop::SharedStorage::act_scale_elements == 0);
+  static_assert(Mxfp4a8Mainloop::MxGroupSize == 32);
+  static_assert(Mxfp4a8Mainloop::EnableActBlockScale);
+  static_assert(Mxfp4a8Mainloop::TmaTransactionBytesActScale > 0);
+  static_assert(Mxfp4a8Mainloop::SharedStorage::act_scale_elements > 0);
+
+  EXPECT_TRUE(true);
+}
+
 TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative, 128x128x128_2x1x1) {
   using ElementA = cutlass::float_e4m3_t;
   using LayoutA  = cutlass::layout::RowMajor;
