@@ -333,8 +333,8 @@ public:
   }
 
   /// Computes the maximum number of active blocks per multiprocessor
-  static int maximum_active_blocks(int smem_capacity = -1) {
-    return UnderlyingOperator::maximum_active_blocks(smem_capacity);
+  static int maximum_active_blocks(int /* smem_capacity */ = -1) {
+    return UnderlyingOperator::maximum_active_blocks();
   }
 
   /// Initializes GEMM state from arguments.

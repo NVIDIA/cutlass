@@ -2,3 +2,7 @@
 __pycache__/
 cutlass_library.egg-info/
 /build*
+
+# Local dev tools
+.vscode/
+cutlass-test.sh

@@ -1,0 +1,14 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\examples",
+    "\\examples\\cute",
+    "\\examples\\cute\\tutorial",
+    "\\examples\\cute\\tutorial\\hopper",
+    "\\include",
+    "\\include\\cute",
+    "\\include\\cute\\atom"
+  ],
+  "SelectedNode": "\\examples\\cute\\tutorial\\hopper\\CMakeLists.txt",
+  "PreviewInSolutionExplorer": false
+}

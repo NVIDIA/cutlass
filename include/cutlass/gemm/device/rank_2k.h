@@ -495,11 +495,6 @@ public:
     return UnderlyingOperator::get_grid_shape(to_underlying_arguments(args));
   }
 
-  /// Computes the maximum number of active blocks per multiprocessor
-  static int maximum_active_blocks(int smem_capacity = -1) {
-    return UnderlyingOperator::maximum_active_blocks(smem_capacity);
-  }
-
   /// Initializes Rank2K state from arguments.
   Status initialize(Arguments const &args, void *workspace = nullptr, cudaStream_t stream = nullptr) {
 
