@@ -833,14 +833,14 @@ class ExecutionArgs:
                 inspect.Parameter.VAR_KEYWORD,
             ):
                 continue
-            is_kwonly = param.kind == inspect.Parameter.KEYWORD_ONLY
-            is_pos_or_kw = param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
             annotation = param.annotation
             if (
                 is_arg_annotation_constexpr(annotation, name, i, None)
                 or name in excluded_arg_names
             ):
                 continue
+            is_kwonly = param.kind == inspect.Parameter.KEYWORD_ONLY
+            is_pos_or_kw = param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
             if is_pos_or_kw:
                 has_pos_or_kw = True
             arg_names.append(name) if not is_kwonly else kwonly_names.append(name)

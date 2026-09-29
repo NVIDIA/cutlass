@@ -4,6 +4,8 @@
 import inspect
 import pytest
 
+pytest.importorskip("tvm_ffi")
+
 import cutlass.cute as cute
 from cutlass import Int32
 from cutlass.base_dsl.jit_executor import ExecutionArgs
@@ -11,9 +13,6 @@ from cutlass.cutlass_dsl.tvm_ffi_provider import (
     TVMFFIJitCompiledFunction,
     TVMFFIJitCompiledFunctionWithKwargs,
 )
-
-
-pytest.importorskip("tvm_ffi")
 
 
 @cute.jit
