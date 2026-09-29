@@ -511,14 +511,22 @@ struct FastDivmodU64 {
   }
 
   /// Returns the quotient of floor(dividend / divisor)
+  ///
+  /// The divisor must not be 0. A default-constructed object holds 0, and the two
+  /// arms then disagree: the host divides by 0, and the device gives the dividend.
   CUTLASS_HOST_DEVICE
   uint64_t divide(uint64_t dividend) const {
+    assert(divisor != 0);
     uint64_t quotient = 0;
 
     #ifdef __CUDA_ARCH__
       uint64_t x = dividend;
       if (multiplier) {
-        x = __umul64hi(dividend + round_up, multiplier);
+        // round_up is 0 or 1, thus the sum wraps only for the dividend 2^64-1.
+        // The exact product of 2^64 and the multiplier puts the multiplier in
+        // the high half.
+        uint64_t const rounded = dividend + round_up;
+        x = (rounded < dividend) ? multiplier : __umul64hi(rounded, multiplier);
       }
       quotient = (x >> shift_right);
     #else
