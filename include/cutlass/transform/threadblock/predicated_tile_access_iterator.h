@@ -1253,18 +1253,18 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
 
       if (kAdvanceRank) {
         pointer_ += params_.inc_advance_ * LongIndex(tile_offset[1] - 1);
-        pointer_ += Shape::kContiguous * tile_offset[0];
+        add_pointer_offset(Shape::kContiguous * LongIndex(tile_offset[0]) * params_.stride_[0]);
       } else {
         pointer_ += params_.inc_advance_ * LongIndex(tile_offset[0] - 1);
-        pointer_ += Shape::kStrided * tile_offset[1];
+        add_pointer_offset(Shape::kStrided * LongIndex(tile_offset[1]) * params_.stride_[1]);
       }
     } else {
       if (kAdvanceRank) {
         pointer_ += params_.inc_advance_ * LongIndex(tile_offset[1]);
-        pointer_ += Shape::kContiguous * tile_offset[0];
+        add_pointer_offset(Shape::kContiguous * LongIndex(tile_offset[0]) * params_.stride_[0]);
       } else {
         pointer_ += params_.inc_advance_ * LongIndex(tile_offset[0]);
-        pointer_ += Shape::kStrided * tile_offset[1];
+        add_pointer_offset(Shape::kStrided * LongIndex(tile_offset[1]) * params_.stride_[1]);
       }
     }
     is_residue_tile_ = false;
