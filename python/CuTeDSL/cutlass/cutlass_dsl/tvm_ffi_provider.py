@@ -922,13 +922,20 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     # to avoid most of python overhead
     __call__ = tvm_ffi.Function.__call__
 
+    def _invoke(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        """Launch without running the launch hooks. Subclasses whose
+        ``__call__`` reports launches override it and launch through it,
+        passing the packed arguments to keep that step cheap."""
+        return self.__call__(*args, **kwargs)  # type: ignore[misc]
+
     def to(self, device: Optional[int] = None) -> JitExecutor:
         """TVM FFI function itself is already support all devices."""
         return cast(JitExecutor, self)
 
     def run_compiled_program(self, exe_args: list[Any]) -> int | None:
         """Run the compiled program. This override is needed for implicit compile and execution."""
-        return cast(int | None, self.__call__(*exe_args))  # type: ignore[misc]
+        # The DSL runs the launch hooks for implicit launches itself.
+        return cast(int | None, self._invoke(tuple(exe_args), {}))
 
     def export_to_c(  # type: ignore[override]
         self,
@@ -1016,6 +1023,20 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
             self.__move_handle_from__(tvm_ffi_function)
 
     def __call__(self, *args: Any) -> Any:
+        owner = self._owner
+        # Checked on every launch, so keep the no-hook path cheap.
+        if owner is not None and owner._launch_hooks:
+            # Report only a call that can start: fail an uninitialized
+            # function before notifying, as _invoke would right after.
+            if self.__chandle__() == 0:
+                raise DSLRuntimeError(
+                    "TVM FFI function is not initialized."
+                    " Was this function compiled for a different architecture?"
+                )
+            owner._run_launch_hooks(self, args=args, kwargs={}, exe_args=None)
+        return self._invoke(args, {})
+
+    def _invoke(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
         if self.__chandle__() == 0:
             raise DSLRuntimeError(
                 "TVM FFI function is not initialized."
@@ -1071,6 +1092,20 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the TVM FFI function with kwargs wrapper."""
+        owner = self._owner
+        # Checked on every launch, so keep the no-hook path cheap.
+        if owner is not None and owner._launch_hooks:
+            # Report only a call that can start: fail an uninitialized
+            # function before notifying, as _invoke would right after.
+            if self._kwargs_wrapper is None:
+                raise DSLRuntimeError(
+                    "TVM FFI function is not initialized."
+                    " Was this function compiled for a different architecture?"
+                )
+            owner._run_launch_hooks(self, args=args, kwargs=kwargs, exe_args=None)
+        return self._invoke(args, kwargs)
+
+    def _invoke(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
         if self._kwargs_wrapper is None:
             raise DSLRuntimeError(
                 "TVM FFI function is not initialized."

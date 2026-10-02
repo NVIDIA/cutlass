@@ -86,6 +86,7 @@ from .hooks_manager import (
     HookEvent,
     PostCompileEvent,
     PostTraceEvent,
+    PreExecuteEvent,
 )
 from .utils.timer import timer
 from .utils.logger import log
@@ -430,6 +431,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self._hooks: dict[HookEvent, HookChannel] = {
             event: HookChannel(event, self.name) for event in HookEvent
         }
+        # Checked on every launch; a direct reference keeps that check cheap.
+        self._launch_hooks: HookChannel = self._hooks[HookEvent.PRE_EXECUTE]
 
         if preprocess:
             preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
@@ -1667,6 +1670,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         - ``HookEvent.POST_COMPILE``: a ``PostCompileEvent``, after each
           compilation and each in-memory cache hit, once the compilation has
           finished.
+        - ``HookEvent.PRE_EXECUTE``: a ``PreExecuteEvent``, before each call to a
+          compiled host function (the implicit launch of a ``@jit`` call, or a
+          call to a function returned by ``cute.compile``). A hook exception
+          stops the call.
 
         The event classes in ``cutlass.hooks`` document their fields;
         new fields may be added later. Except for the module of a trace
@@ -1830,6 +1837,36 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         channel = self._hooks[HookEvent.POST_TRACE]
         if channel:
             channel.run(PostTraceEvent(self, module, function_name))
+
+    def _run_launch_hooks(
+        self,
+        jit_function: JitCompiledFunction,
+        *,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        exe_args: list[Any] | None,
+    ) -> None:
+        """Report a call to ``jit_function``. Callers check ``_launch_hooks``
+        first, which keeps calls without launch hooks cheap."""
+        execution_args = getattr(jit_function, "execution_args", None)
+        arg_names = (
+            tuple(execution_args._meta.all_names) if execution_args is not None else ()
+        )
+        # Not every compiled function carries these, e.g. wrappers that only
+        # forward part of the JitCompiledFunction surface.
+        self._launch_hooks.run(
+            PreExecuteEvent(
+                owner=self,
+                function_name=jit_function.function_name,
+                module_hash=getattr(jit_function, "module_hash", None),
+                kernel_info=jit_function.kernel_info,
+                args=args,
+                kwargs=kwargs,
+                arg_names=arg_names,
+                exe_args=exe_args,
+                executor=getattr(jit_function, "_default_executor", None),
+            )
+        )
 
     def _inspection_pipeline(self, passes: str) -> str:
         """Frame ``passes`` for IR-inspection dumps: under PyIR, prepend the
@@ -2037,10 +2074,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Build IR module
         module, result = self._maybe_profile(build_ir_module)()
         self._run_trace_finalize_hooks(module, function_name)
-        # Compilation hooks tell specializations apart by module hash, so
-        # compute it even when caching is off (cute.compile, KEEP=ptx/cubin/sass,
-        # no_cache).
-        needs_module_hash = not no_cache or bool(self._hooks[HookEvent.POST_COMPILE])
+        # Compilation and launch hooks tell specializations apart by module
+        # hash, so compute it even when caching is off (cute.compile,
+        # KEEP=ptx/cubin/sass, no_cache).
+        needs_module_hash = (
+            not no_cache
+            or bool(self._hooks[HookEvent.POST_COMPILE])
+            or bool(self._launch_hooks)
+        )
         module_hash = (
             self.get_module_hash(module, function_name) if needs_module_hash else None
         )
@@ -2206,6 +2247,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             dynamic_kwargs=dynamic_kwargs,
             host_target=self.compile_options.host_target,
             module_hash=module_hash,
+            owner=self,
         )
         if isinstance(fn, JitCompiledFunction):
             fn.execution_args.set_adapter_scope(self._jit_arg_adapter_scope)
@@ -2531,7 +2573,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if compile_only:
             return jit_function
 
-        # Run the compiled program
+        # Run the compiled program. Launch hooks get the dynamic
+        # (non-Constexpr) arguments, the ones a direct call to the compiled
+        # function takes.
+        if self._launch_hooks:
+            self._run_launch_hooks(
+                jit_function,
+                args=tuple(dynamic_args),
+                kwargs=dict(dynamic_kwargs),
+                exe_args=exe_args,
+            )
         jit_function.run_compiled_program(exe_args)
 
         return result

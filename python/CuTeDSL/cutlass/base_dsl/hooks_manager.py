@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-"""Hooks that a DSL fires at points of the compilation.
+"""Hooks that a DSL fires during tracing, compilation and execution.
 
 Each point is a :class:`HookEvent`. A hook registered for an event is called
 synchronously with one event object, for example a :class:`PostCompileEvent`,
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 class HookEvent(enum.Enum):
-    """A point of the compilation at which hooks run."""
+    """A point of tracing, compilation or execution at which hooks run."""
 
     #: After tracing and before the module is hashed. Hooks receive a
     #: :class:`PostTraceEvent` and may inspect or annotate the module
@@ -42,6 +42,9 @@ class HookEvent(enum.Enum):
     #: After a compilation or an in-memory cache hit, once the compilation has
     #: finished. Hooks receive a :class:`PostCompileEvent`.
     POST_COMPILE = "post_compile"
+    #: Before each call to a compiled host function. Hooks receive a
+    #: :class:`PreExecuteEvent`.
+    PRE_EXECUTE = "pre_execute"
 
 
 @dataclass(frozen=True)
@@ -87,9 +90,55 @@ class PostCompileEvent:
     kernel_info: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class PreExecuteEvent:
+    """Payload of :attr:`HookEvent.PRE_EXECUTE`.
+
+    Calls are the implicit launch of a ``@jit`` call and every call to a
+    compiled function, TVM FFI ones included. Calls through an executor
+    returned by ``to(device)`` are not reported, except with TVM FFI, where
+    ``to`` returns the compiled function itself. Each event describes one
+    host-function call, which may launch zero, one, or multiple GPU kernels;
+    hooks are not run separately for each GPU kernel. Hooks run before the
+    call itself, so a call that fails afterwards, for example because TVM FFI
+    rejects its arguments, is still reported. A hook exception stops the call.
+    """
+
+    #: The DSL instance.
+    owner: Any
+    #: Name of the compiled host entry point.
+    function_name: str
+    #: The hash the compilation hooks received for the compiled function,
+    #: which ties the call to its compilation. ``None`` for a function compiled
+    #: with caching off (for example by ``cute.compile``) while no compilation
+    #: or launch hook was registered.
+    module_hash: str | None
+    #: Describes the kernels in the compilation.
+    kernel_info: dict[str, Any]
+    #: Runtime arguments, without ``Constexpr`` parameters. An implicit launch
+    #: reports every runtime parameter with defaults applied, positional ones
+    #: in ``args`` in declaration order and keyword-only ones in ``kwargs``. A
+    #: call to a compiled function reports the arguments as passed.
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
+    #: Names of the runtime parameters, positional ones first, so ``args[i]``
+    #: binds to ``arg_names[i]`` (positional arguments past ``len(arg_names)``
+    #: are extra trailing arguments).
+    arg_names: tuple[str, ...]
+    #: The argument list handed to the compiled program, in a backend-specific
+    #: form, or ``None`` on a TVM FFI call to a compiled function, where
+    #: tvm-ffi converts the arguments itself. It is the list that is then
+    #: passed to the compiled program.
+    exe_args: list[Any] | None
+    #: The ``JitExecutor`` serving the call, or ``None`` on the first call and
+    #: with TVM FFI.
+    executor: Any
+
+
 _EVENT_LABELS = {
     HookEvent.POST_TRACE: "Trace finalize",
     HookEvent.POST_COMPILE: "Compilation",
+    HookEvent.PRE_EXECUTE: "Launch",
 }
 
 

@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-"""Observe tracing and compilation through the DSL's hooks.
+"""Observe tracing, compilation and execution through the DSL's hooks.
 
 For example, ``register_hook(HookEvent.POST_COMPILE, on_compile)`` observes
 implicit JIT compilations as well as explicit ``cute.compile`` calls. Every
@@ -21,7 +21,12 @@ with that instance's ``register_hook``, ``remove_hook`` and ``hooks`` methods.
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
-from .base_dsl.hooks_manager import HookEvent, PostCompileEvent, PostTraceEvent
+from .base_dsl.hooks_manager import (
+    HookEvent,
+    PostCompileEvent,
+    PostTraceEvent,
+    PreExecuteEvent,
+)
 
 if TYPE_CHECKING:
     from .base_dsl.dsl import BaseDSL
@@ -64,6 +69,7 @@ __all__ = [
     "HookEvent",
     "PostCompileEvent",
     "PostTraceEvent",
+    "PreExecuteEvent",
     "hooks",
     "register_hook",
     "remove_hook",

@@ -110,6 +110,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         has_gpu_module: bool = True,
         host_target: HostTarget | None = None,
         module_hash: str | None = None,
+        owner: Any = None,
     ) -> None:
         super().__init__(
             ir_module,
@@ -127,6 +128,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             has_gpu_module,
             host_target=host_target,
             module_hash=module_hash,
+            owner=owner,
         )
 
         self.kernel_extra_args: dict[str, int] = {}

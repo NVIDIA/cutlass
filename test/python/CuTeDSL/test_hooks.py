@@ -15,8 +15,11 @@ Unit tests for the compilation hooks of ``BaseDSL``.
 
 Hooks run at points of the compilation, one ``HookEvent`` each. A trace
 finalize hook runs after tracing and before the module is hashed; a
-compilation hook runs after each compilation or in-memory cache hit and
-receives the module hash, which identifies the specialization.
+compilation hook runs after each compilation or in-memory cache hit; a launch
+hook runs before each call to a compiled host function, once per call however
+many kernels it launches, and receives the runtime arguments of the call.
+Compilation and launch hooks receive the module hash, which is how a tracer
+ties a call to the compilation behind it.
 The deprecated ``register_trace_finalize_hook`` and ``trace_finalize_hooks``
 keep their positional form and run before the ``POST_TRACE`` hooks.
 
@@ -27,6 +30,7 @@ without one.
 import contextvars
 import dataclasses
 import functools
+import importlib.util
 import re
 import unittest
 import warnings
@@ -41,7 +45,12 @@ from cutlass._mlir import ir
 from cutlass.base_dsl.cache_helpers import JitCacheDict
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.compiler import CompileOptions
-from cutlass.hooks import HookEvent, PostCompileEvent, PostTraceEvent
+from cutlass.hooks import (
+    HookEvent,
+    PostCompileEvent,
+    PostTraceEvent,
+    PreExecuteEvent,
+)
 from cutlass.base_dsl.jit_executor import JitFunctionArtifacts
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cutlass_dsl import CuTeDSL
@@ -59,6 +68,18 @@ def _launch(t: cute.Tensor, value: cutlass.Int32, threads: cutlass.Constexpr[int
 
 
 @cute.kernel
+def _add(t: cute.Tensor, value: cutlass.Int32):
+    tidx, _, _ = cute.arch.thread_idx()
+    t[tidx] = t[tidx] + value
+
+
+@cute.jit
+def _fill_then_add(t: cute.Tensor, value: cutlass.Int32):
+    _fill(t, value).launch(grid=[1, 1, 1], block=[32, 1, 1])
+    _add(t, value).launch(grid=[1, 1, 1], block=[32, 1, 1])
+
+
+@cute.kernel
 def _empty():
     pass
 
@@ -69,8 +90,9 @@ def _launch_empty(threads: cutlass.Constexpr[int]):
 
 
 #: Every ``_launch`` call runs each of these once: tracing happens on every
-#: call, and a compilation hook runs on the compilation or the cache hit.
-_EVENTS = (HookEvent.POST_TRACE, HookEvent.POST_COMPILE)
+#: call, a compilation hook runs on the compilation or the cache hit, and a
+#: launch hook on the call.
+_EVENTS = (HookEvent.POST_TRACE, HookEvent.POST_COMPILE, HookEvent.PRE_EXECUTE)
 
 
 class _Recorder:
@@ -92,6 +114,14 @@ def _failing_hook(event):
 
 def _failing_positional_hook(owner, module, function_name):
     raise ValueError("hook bug")
+
+
+def _bind(event):
+    """Name each runtime argument of a call the way a tracer does: ``args[i]``
+    binds to ``arg_names[i]``, and ``kwargs`` are keyed by name already."""
+    bound = dict(zip(event.arg_names, event.args))
+    bound.update(event.kwargs)
+    return bound
 
 
 def _flat_message(exc):
@@ -492,6 +522,189 @@ class TestCompilationHook(_HookTestCase):
         _launch(self.t, 2, 32)
         torch.cuda.synchronize()
         self.assertTrue(torch.all(self.data == 2))
+
+
+class TestLaunchHook(_HookTestCase):
+    def test_compile_scoped_execute_hooks_do_not_follow_the_function(self):
+        scoped, outer = _Recorder(), _Recorder()
+        with public_hooks.hooks(HookEvent.PRE_EXECUTE, outer):
+            compiled = cute.compile(
+                _launch, self.t, 1, 32, hooks={HookEvent.PRE_EXECUTE: scoped}
+            )
+            self.assertEqual(outer.events, [])
+            compiled(self.t, 3)
+            _launch(self.t, 4, 32)
+        self.assertEqual(scoped.events, [])
+        self.assertEqual(
+            [_bind(event) for event in outer.events],
+            [{"t": self.t, "value": value} for value in (3, 4)],
+        )
+
+    def test_arguments_bind_to_their_names_on_every_path(self):
+        """Implicit calls and direct calls to a compiled function report the
+        runtime arguments, without the Constexpr ``threads``."""
+        compiled = cute.compile(_launch, self.t, 1, 32)
+        hook = _Recorder()
+        with self.dsl.hooks(HookEvent.PRE_EXECUTE, hook):
+            _launch(self.t, 3, 32)
+            _launch(self.t, value=4, threads=32)
+            compiled(self.t, 5)
+            compiled(self.t, value=6)
+        self.assertEqual(
+            [_bind(event) for event in hook.events],
+            [{"t": self.t, "value": value} for value in (3, 4, 5, 6)],
+        )
+        for event in hook.events:
+            self.assertIsInstance(event, PreExecuteEvent)
+            self.assertEqual(event.arg_names, ("t", "value"))
+        # The hook sees the objects the caller passed.
+        self.assertIs(hook.events[0].args[0], self.t)
+        # An implicit launch reports the runtime parameters in declaration
+        # order, while a direct call reports keyword arguments as keywords.
+        self.assertEqual(hook.events[1].args, (self.t, 4))
+        self.assertEqual(hook.events[3].kwargs, {"value": 6})
+        # The kernel still ran, with the last value.
+        torch.cuda.synchronize()
+        self.assertTrue(torch.all(self.data == 6))
+
+    def test_launch_carries_the_hash_of_its_compilation(self):
+        compilations, launches = _Recorder(), _Recorder()
+        with self.dsl.hooks(HookEvent.POST_COMPILE, compilations), self.dsl.hooks(
+            HookEvent.PRE_EXECUTE, launches
+        ):
+            _launch(self.t, 1, 32)
+            _launch(self.t, 1, 16)
+            compiled = cute.compile(_launch, self.t, 1, 8)
+            compiled(self.t, 1)
+        self.assertEqual(
+            launches.field("module_hash"), compilations.field("module_hash")
+        )
+        self.assertEqual(
+            launches.field("function_name"), compilations.field("function_name")
+        )
+        self.assertEqual(launches.field("owner"), [self.dsl] * 3)
+
+    def test_launch_hook_alone_gets_the_hash(self):
+        """A launch hook needs the hash to tie a call to its compilation, so
+        cute.compile computes it while only a launch hook is registered."""
+        hook = _Recorder()
+        with self.dsl.hooks(HookEvent.PRE_EXECUTE, hook):
+            compiled = cute.compile(_launch, self.t, 1, 32)
+            compiled(self.t, 1)
+        self.assertIsInstance(compiled.module_hash, str)
+        self.assertEqual(hook.field("module_hash"), [compiled.module_hash])
+
+    def test_compilation_is_reported_before_its_launch(self):
+        events = []
+        with self.dsl.hooks(
+            HookEvent.POST_COMPILE, lambda e: events.append("compile")
+        ), self.dsl.hooks(HookEvent.PRE_EXECUTE, lambda e: events.append("launch")):
+            _launch(self.t, 1, 32)
+            _launch(self.t, 1, 32)
+        self.assertEqual(events, ["compile", "launch"] * 2)
+
+    def test_one_event_per_host_call(self):
+        """A launch hook reports each call to a compiled host function once,
+        however many kernels the call launches."""
+        compiled = cute.compile(_fill_then_add, self.t, 7)
+        hook = _Recorder()
+        with self.dsl.hooks(HookEvent.PRE_EXECUTE, hook):
+            _fill_then_add(self.t, 7)
+            compiled(self.t, 7)
+        self.assertEqual(len(hook.events), 2)
+        for event in hook.events:
+            # kernel_info describes the kernels of the compilation.
+            self.assertEqual(len(event.kernel_info), 2)
+        # Both kernels ran: fill with 7, then add 7.
+        torch.cuda.synchronize()
+        self.assertTrue(torch.all(self.data == 14))
+
+    def test_hook_error_aborts_the_launch(self):
+        compiled = cute.compile(_launch, self.t, 1, 32)
+        with self.dsl.hooks(HookEvent.PRE_EXECUTE, _failing_hook):
+            with self.assertRaises(DSLRuntimeError) as ctx:
+                compiled(self.t, 9)
+        self.assertIn("Launch hook failed: _failing_hook", _flat_message(ctx.exception))
+        self.assertIsInstance(ctx.exception.__cause__, ValueError)
+        # Launch hooks run before the kernel, so it never ran.
+        torch.cuda.synchronize()
+        self.assertTrue(torch.all(self.data == 0))
+
+
+@unittest.skipUnless(importlib.util.find_spec("tvm_ffi"), "needs apache-tvm-ffi")
+class TestTVMFFILaunch(_HookTestCase):
+    """With TVM FFI, a compiled function launches through its own ``__call__``
+    instead of ``JitCompiledFunction.__call__``."""
+
+    def setUp(self):
+        super().setUp()
+        self.patch_envar(enable_tvm_ffi=True)
+        self.t = from_dlpack(self.data, enable_tvm_ffi=True)
+
+    def test_each_launch_is_reported_once(self):
+        compiled = cute.compile(_launch, self.t, 1, 32)
+        hook = _Recorder()
+        with self.dsl.hooks(HookEvent.PRE_EXECUTE, hook):
+            _launch(self.t, 3, 32)
+            compiled(self.t, 4)
+            compiled(self.t, value=5)
+        self.assertEqual(
+            [_bind(event) for event in hook.events],
+            [{"t": self.t, "value": value} for value in (3, 4, 5)],
+        )
+        # tvm-ffi converts the arguments of a direct call itself, so there are
+        # no packed arguments to report.
+        self.assertIsNone(hook.events[1].exe_args)
+        torch.cuda.synchronize()
+        self.assertTrue(torch.all(self.data == 5))
+
+    def test_function_without_runtime_arguments(self):
+        """Such a function compiles to the positional-only TVM FFI class,
+        which has a ``__call__`` of its own."""
+        # Imported here: the module needs tvm_ffi.
+        from cutlass.cutlass_dsl.tvm_ffi_provider import TVMFFIJitCompiledFunction
+
+        compiled = cute.compile(_launch_empty, 32)
+        self.assertIsInstance(compiled, TVMFFIJitCompiledFunction)
+        hook = _Recorder()
+        with self.dsl.hooks(HookEvent.PRE_EXECUTE, hook):
+            compiled()
+        (event,) = hook.events
+        self.assertEqual((event.args, event.kwargs), ((), {}))
+
+    def test_uninitialized_function_is_not_reported(self):
+        """A function that cannot run (for example one compiled for another
+        architecture) fails before the hooks hear of the call."""
+        from cutlass.cutlass_dsl.tvm_ffi_provider import (
+            TVMFFIJitCompiledFunction,
+            TVMFFIJitCompiledFunctionWithKwargs,
+        )
+
+        positional = cute.compile(_launch_empty, 32)
+        with_kwargs = cute.compile(_launch, self.t, 1, 32)
+        self.assertIsInstance(positional, TVMFFIJitCompiledFunction)
+        self.assertIsInstance(with_kwargs, TVMFFIJitCompiledFunctionWithKwargs)
+        cases = (
+            (
+                positional,
+                (),
+                mock.patch.object(
+                    TVMFFIJitCompiledFunction, "__chandle__", return_value=0
+                ),
+            ),
+            (
+                with_kwargs,
+                (self.t, 1),
+                mock.patch.object(with_kwargs, "_kwargs_wrapper", None),
+            ),
+        )
+        for compiled, args, uninitialized in cases:
+            with self.subTest(cls=type(compiled).__name__):
+                hook = _Recorder()
+                with uninitialized, self.dsl.hooks(HookEvent.PRE_EXECUTE, hook):
+                    with self.assertRaises(DSLRuntimeError):
+                        compiled(*args)
+                self.assertEqual(hook.events, [])
 
 
 if __name__ == "__main__":
