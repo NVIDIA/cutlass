@@ -81,6 +81,12 @@ from .compile_backend import CompileContext, get_compiler_backend
 
 from .cache_helpers import *
 from .jit_executor import JitCompiledFunction, JitFunctionArtifacts
+from .hooks_manager import (
+    CompilationEvent,
+    HookChannel,
+    HookEvent,
+    TraceFinalizeEvent,
+)
 from .utils.timer import timer
 from .utils.logger import log
 from .utils.stacktrace import filter_exception, walk_to_top_module, filter_stackframe
@@ -414,10 +420,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Synchronous callbacks run after tracing and before module hashing.
         # Signature: hook(owner, module, function_name). Hooks may mutate the
         # finalized ir.Module; hook exceptions are wrapped by the caller.
+        # Deprecated in favor of HookEvent.POST_TRACE.
         self._trace_finalize_hooks: list[Callable[[Any, ir.Module, str], None]] = []
         self._scoped_trace_finalize_hooks: ContextVar[
             tuple[Callable[[Any, ir.Module, str], None], ...]
         ] = ContextVar(f"{self.name}_trace_finalize_hooks", default=())
+        # Hooks run synchronously at points of the compilation, one channel per
+        # HookEvent; see register_hook.
+        self._hooks: dict[HookEvent, HookChannel] = {
+            event: HookChannel(event, self.name) for event in HookEvent
+        }
 
         if preprocess:
             preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
@@ -1643,6 +1655,61 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         )
         return module_hash
 
+    def register_hook(self, event: HookEvent, hook: Callable[[Any], None]) -> None:
+        """Register ``hook`` to run at ``event``.
+
+        The hook is called synchronously with one event object describing that
+        point of the compilation:
+
+        - ``HookEvent.POST_TRACE``: a ``TraceFinalizeEvent``, after tracing
+          and before the module is hashed. The hook may inspect or annotate the
+          module before its cache key is computed.
+        - ``HookEvent.POST_COMPILE``: a ``CompilationEvent``, after each
+          compilation and each in-memory cache hit, once the compilation has
+          finished.
+
+        The event classes in ``cutlass.hooks`` document their fields;
+        new fields may be added later. Except for the module of a trace
+        finalize event, hooks must treat the event as read-only. A hook
+        exception is raised as ``DSLRuntimeError`` with the original exception
+        as the cause. Passing ``None`` raises ``DSLRuntimeError``; registering
+        the same hook object more than once for an event is ignored.
+        """
+        self._hook_channel(event).register(hook)
+
+    def remove_hook(self, event: HookEvent, hook: Callable[[Any], None]) -> None:
+        """Remove a hook registered for ``event`` (no-op if absent)."""
+        self._hook_channel(event).remove(hook)
+
+    @contextmanager
+    def hooks(
+        self,
+        event: HookEvent,
+        hooks: Callable[[Any], None] | Iterable[Callable[[Any], None]],
+    ) -> Generator[None, Any, None]:
+        """Temporarily register hooks for ``event`` in the current context.
+
+        Args:
+            event: The ``HookEvent`` the hooks run at.
+            hooks: A single hook or iterable of hooks, each called as for
+                ``register_hook``.
+
+        Scoped hooks live in a ``ContextVar`` for the duration of the context,
+        preserving order and ignoring duplicates, so other contexts do not see
+        them. The previous hook state is restored when the ``with`` block exits.
+
+        Raises:
+            DSLRuntimeError: If ``hooks`` is neither callable nor iterable, or
+                if any hook entry is ``None`` or not callable.
+        """
+        with self._hook_channel(event).scope(hooks):
+            yield
+
+    def _hook_channel(self, event: HookEvent) -> HookChannel:
+        if not isinstance(event, HookEvent):
+            raise DSLRuntimeError(f"Unknown hook event: {event!r}.")
+        return self._hooks[event]
+
     def register_trace_finalize_hook(
         self, hook: Callable[[Any, ir.Module, str], None]
     ) -> None:
@@ -1654,7 +1721,16 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         Hooks may inspect or annotate the module before its cache key is
         computed. Passing ``None`` raises ``DSLRuntimeError``; registering the
         same hook object more than once is ignored.
+
+        Deprecated: use ``register_hook(HookEvent.POST_TRACE, hook)`` with
+        a hook accepting one ``TraceFinalizeEvent`` instead.
         """
+        warnings.warn(
+            "register_trace_finalize_hook is deprecated; use "
+            "register_hook(HookEvent.POST_TRACE, hook) with an event object instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if hook is None:
             raise DSLRuntimeError("Trace finalize hook must not be None.")
         if not callable(hook):
@@ -1684,7 +1760,26 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         Raises:
             DSLRuntimeError: If ``hooks`` is neither callable nor iterable, or
                 if any hook entry is ``None`` or not callable.
+
+        Deprecated: use ``hooks(HookEvent.POST_TRACE, hooks)`` with hooks
+        accepting one ``TraceFinalizeEvent`` instead.
         """
+        warnings.warn(
+            "trace_finalize_hooks is deprecated; use "
+            "hooks(HookEvent.POST_TRACE, hooks) with event objects instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        with self._legacy_trace_finalize_hooks(hooks):
+            yield
+
+    @contextmanager
+    def _legacy_trace_finalize_hooks(
+        self,
+        hooks: Callable[[Any, ir.Module, str], None]
+        | Iterable[Callable[[Any, ir.Module, str], None]],
+    ) -> Generator[None, Any, None]:
+        # Also used by cute.compile, which warns at its own public call site.
         scoped_hooks: tuple[Callable[[Any, ir.Module, str], None], ...]
         if callable(hooks):
             scoped_hooks = (hooks,)
@@ -1714,6 +1809,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             self._scoped_trace_finalize_hooks.reset(token)
 
     def _run_trace_finalize_hooks(self, module: ir.Module, function_name: str) -> None:
+        # Deprecated positional hooks run before the POST_TRACE hooks.
         hooks = list(self._trace_finalize_hooks)
         for hook in self._scoped_trace_finalize_hooks.get():
             if hook not in hooks:
@@ -1730,6 +1826,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 raise DSLRuntimeError(
                     f"Trace finalize hook failed: {hook_name}", cause=e
                 ) from e
+
+        channel = self._hooks[HookEvent.POST_TRACE]
+        if channel:
+            channel.run(TraceFinalizeEvent(self, module, function_name))
 
     def _inspection_pipeline(self, passes: str) -> str:
         """Frame ``passes`` for IR-inspection dumps: under PyIR, prepend the
@@ -1937,7 +2037,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         # Build IR module
         module, result = self._maybe_profile(build_ir_module)()
         self._run_trace_finalize_hooks(module, function_name)
-        module_hash = None if no_cache else self.get_module_hash(module, function_name)
+        # Compilation hooks tell specializations apart by module hash, so
+        # compute it even when caching is off (cute.compile, KEEP=ptx/cubin/sass,
+        # no_cache).
+        needs_module_hash = not no_cache or bool(self._hooks[HookEvent.POST_COMPILE])
+        module_hash = (
+            self.get_module_hash(module, function_name) if needs_module_hash else None
+        )
 
         module = self.build_module(module, function_name)
 
@@ -2072,6 +2178,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         function_name: str,
         dynamic_args: Any,
         dynamic_kwargs: Any,
+        module_hash: str | None = None,
     ) -> JitCompiledFunction:
         """Construct the JitCompiledFunction wrapper from a compiled module + engine."""
         fn = func_type(
@@ -2098,6 +2205,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             dynamic_args=dynamic_args,
             dynamic_kwargs=dynamic_kwargs,
             host_target=self.compile_options.host_target,
+            module_hash=module_hash,
         )
         if isinstance(fn, JitCompiledFunction):
             fn.execution_args.set_adapter_scope(self._jit_arg_adapter_scope)
@@ -2354,6 +2462,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     or cached_jit_func.capi_func is None
                 ):
                     # no cache or cache miss, do ir generation/compilation/jit engine
+                    cache_hit = False
                     jit_function = self.compile_and_cache(
                         module,
                         module_hash,
@@ -2377,12 +2486,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     jit_function.seal_specialization(_pyir_take_sealed_spec())
                 else:
                     # cache hit
+                    cache_hit = True
                     log().info(
                         "JIT cache hit IN-MEMORY function=[%s] module_hash=[%s]",
                         function_name,
                         module_hash,
                     )
                     jit_function = cached_jit_func
+
+                # Keep this compilation's state for the compilation hooks,
+                # which run after the MLIR context exits. The cleanup in the
+                # finally block below rebinds kernel_info and compile_options
+                # rather than clearing them, so these references stay valid.
+                compilation_options = self.compile_options
+                compilation_kernel_info = self.kernel_info
 
             finally:
                 if _loc_tb_ctx is not None:
@@ -2391,6 +2508,24 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     except Exception:
                         pass
                 self.post_compilation_cleanup()
+
+        # Run the compilation hooks, for both fresh compilations and in-memory
+        # cache hits, outside the compilation, so a hook may itself compile
+        # other functions.
+        compilation_hooks = self._hooks[HookEvent.POST_COMPILE]
+        if compilation_hooks:
+            compilation_hooks.run(
+                CompilationEvent(
+                    owner=self,
+                    function_name=function_name,
+                    module_hash=module_hash,
+                    cache_hit=cache_hit,
+                    artifacts=jit_function.artifacts,
+                    compile_options=compilation_options,
+                    func_body=funcBody,
+                    kernel_info=compilation_kernel_info,
+                )
+            )
 
         # If compile_only is set, bypass execution return the jit_executor directly
         if compile_only:
