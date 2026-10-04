@@ -298,9 +298,32 @@ public:
 
       ElementAccumulator accum = ElementAccumulator();
 
-      // Compute inner product
+      // Prefetch four K positions into registers before consuming them, keeping
+      // the original accumulation order and scalar tail/stride semantics.
+      int k = 0;
+      int const full_k = params.problem_size.column() / 4 * 4;
       CUTLASS_PRAGMA_NO_UNROLL
-      for (int k = 0; k < params.problem_size.column(); ++k) {
+      for (; k < full_k; k += 4) {
+        ElementA a[4];
+        ElementB b[4];
+        CUTLASS_PRAGMA_UNROLL
+        for (int p = 0; p < 4; ++p) {
+          a[p] = ElementA();
+          if (i < params.problem_size.row()) {
+            a[p] = ptr_A[int64_t(p) * params.ref_A.stride(0)];
+          }
+          b[p] = ptr_B[int64_t(p) * params.inc_B];
+        }
+        CUTLASS_PRAGMA_UNROLL
+        for (int p = 0; p < 4; ++p) {
+          accum += ElementAccumulator(a[p]) * ElementAccumulator(b[p]);
+        }
+        ptr_A += int64_t(4) * params.ref_A.stride(0);
+        ptr_B += int64_t(4) * params.inc_B;
+      }
+
+      CUTLASS_PRAGMA_NO_UNROLL
+      for (; k < params.problem_size.column(); ++k) {
 
         // Fetch from A
         ElementA a = ElementA();

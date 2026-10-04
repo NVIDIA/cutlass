@@ -584,3 +584,58 @@ TEST(SM50_Device_Gemv_f64n_f64_f64_simt_f64, ColumnMajorA) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+namespace test {
+namespace gemm {
+
+template <typename ElementInput, typename ElementAccumulator>
+bool TestColumnMajorGemvTails() {
+  using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+      ElementInput, 1, ElementAccumulator, ElementAccumulator>;
+  using Gemv = cutlass::gemm::device::Gemv<
+      cutlass::gemm::kernel::Gemv<
+          ElementInput, cutlass::layout::ColumnMajor, ElementInput,
+          ElementInput, ElementAccumulator, EpilogueOp>>;
+
+  // Exercise the scalar tail before and after complete four-element groups,
+  // including partial warps and a second threadblock with one valid row.
+  for (int m : {1, 31, 32, 33}) {
+    for (int k : {1, 2, 3, 4, 5, 7, 8, 9, 31, 33, 129}) {
+      for (int batches : {1, 3}) {
+        SCOPED_TRACE(::testing::Message()
+                     << "M=" << m << ", K=" << k << ", batches=" << batches);
+        TestbedGemv<Gemv> testbed;
+        // TestbedGemv requires a nonzero result norm. For the one-row case,
+        // C[0] is 1 and the dot product is integral, so beta=0.5 prevents an
+        // accidental zero result without changing the random A/B inputs.
+        ElementAccumulator beta = ElementAccumulator(
+            (m == 1 || batches == 3) ? 0.5 : 0.0);
+        if (!testbed.run({m, k}, batches, m * k, k, m, m,
+                         ElementAccumulator(1), beta)) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+} // namespace gemm
+} // namespace test
+
+TEST(SM50_Device_Gemv_f16n_f16_f16_simt_f32, ColumnMajorTails) {
+  EXPECT_TRUE((test::gemm::TestColumnMajorGemvTails<cutlass::half_t, float>()));
+}
+
+TEST(SM50_Device_Gemv_f32n_f32_f32_simt_f32, ColumnMajorTails) {
+  EXPECT_TRUE((test::gemm::TestColumnMajorGemvTails<float, float>()));
+}
+
+TEST(SM50_Device_Gemv_f64n_f64_f64_simt_f64, ColumnMajorTails) {
+  EXPECT_TRUE((test::gemm::TestColumnMajorGemvTails<double, double>()));
+}
+
+TEST(SM80_Device_Gemv_bf16n_bf16_bf16_simt_f32, ColumnMajorTails) {
+  EXPECT_TRUE((test::gemm::TestColumnMajorGemvTails<cutlass::bfloat16_t, float>()));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
