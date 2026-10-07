@@ -544,7 +544,19 @@ def copy(
 
     .. code-block:: python
 
+        # You can create a L2 cache policy if you need to use it
+        policy = cute.nvgpu.make_l2_cache_policy(
+            cute.nvgpu.CacheEvictionPriority.EVICT_LAST, fraction=0.5
+        )
         cute.copy(tma_atom, src, dst, tma_bar_ptr=mbar_ptr, mcast_mask=mask, cache_policy=policy)
+
+    ``cache_policy`` controls L2 eviction. Create it with
+    ``cute.nvgpu.make_l2_cache_policy`` and pass the result to ``cute.copy``
+    or ``atom.with_(cache_policy=policy)``.
+    Unsupported atoms raise ``ValueError``.
+
+    For ``CopyG2ROp`` and ``CopyR2GOp``, you can set L1 priority with
+    ``l1c_evict_priority`` in ``cute.make_copy_atom``.
 
     Optional predication is supported through an additional tensor parameter. For partitioned tensors with
     logical profile ``((ATOM_V,ATOM_REST),REST,...)``, the predication tensor must maintain profile

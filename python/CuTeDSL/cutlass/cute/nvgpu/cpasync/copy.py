@@ -217,6 +217,8 @@ class CopyG2STileNonExecBaseTrait(TmaTrait):
     Base trait for non-executable bulk tensor asynchronous GMEM to SMEM Copy Operations using the TMA unit in tiled mode.
     """
 
+    _supports_cache_policy = True
+
     # We allow kw args to be dropped so that the user can write common code for non-multicast
     # and multicast loads.
 
@@ -433,6 +435,8 @@ class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
     """
     Base trait for non-executable bulk tensor asynchronous multicast GMEM to SMEM Copy Operations using the TMA unit in tiled mode.
     """
+
+    _supports_cache_policy = True
 
     @abstractmethod
     def with_(
@@ -706,6 +710,8 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
     # We allow kw args to be dropped so that the user can write common code for non-multicast
     # and multicast loads.
 
+    _supports_cache_policy = True
+
     def with_(
         self,
         *,
@@ -835,6 +841,8 @@ class CopyBulkTensorIm2ColG2SMulticastOp(TmaCopyOp):
 
 
 class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
+    _supports_cache_policy = True
+
     def with_(
         self,
         *,
@@ -980,6 +988,8 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
 
 
 class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
+    _supports_cache_policy = True
+
     def with_(
         self,
         *,
@@ -1159,6 +1169,8 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
 
 
 class CopyReduceBulkTensorTileS2GNonExecTrait(TmaTrait):
+    _supports_cache_policy = True
+
     def with_(
         self,
         *,
@@ -1318,6 +1330,8 @@ class CopyBulkTensorTileG2SMulticastOverrideOp(TmaCopyOp):
 class CopyBulkTensorTileG2SOverrideNonExecTrait(TmaTrait):
     """Non-executable trait for TMA override load. Wraps a non-exec atom value."""
 
+    _supports_cache_policy = True
+
     # Stashed by make_tiled_tma_atom from the Op's field; declared here so mypy
     # recognizes the attribute.
     no_fully_oob_tile: bool = False
@@ -1457,6 +1471,8 @@ class CopyBulkTensorTileS2GOverrideOp(TmaCopyOp):
 class CopyBulkTensorTileS2GOverrideNonExecTrait(TmaTrait):
     """Non-executable trait for TMA override store."""
 
+    _supports_cache_policy = True
+
     # Stashed by make_tiled_tma_atom from the Op's field; declared here so mypy
     # recognizes the attribute.
     no_fully_oob_tile: bool = False
@@ -1555,6 +1571,8 @@ class CopyBulkTensorIm2ColS2GOp(TmaCopyOp):
 
 
 class CopyBulkTensorIm2ColS2GNonExecTrait(TmaTrait):
+    _supports_cache_policy = True
+
     def with_(
         self,
         *,
@@ -1656,6 +1674,8 @@ class CopyBulkG2SOp(CopyOp):
 class CopyBulkG2STrait(Trait):
     # We allow kw args to be dropped so that the user can write common code for non-multicast
     # and multicast loads.
+    _supports_cache_policy = True
+
     def unpack(
         self,
         *,
@@ -1747,6 +1767,8 @@ class CopyBulkG2SMulticastOp(CopyOp):
 class CopyBulkG2SMulticastTrait(Trait):
     # We allow kw args to be dropped so that the user can write common code for non-multicast
     # and multicast loads.
+    _supports_cache_policy = True
+
     def unpack(
         self,
         *,

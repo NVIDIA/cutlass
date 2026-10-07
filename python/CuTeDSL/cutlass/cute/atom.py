@@ -20,6 +20,7 @@ from .typing import (
     Tensor,
     Numeric,
     Int32,
+    Int64,
     XTuple,
     is_int_tuple_type,
 )
@@ -105,6 +106,9 @@ class Trait(ABC):
     Traits are internal-only classes used by Atoms that wrap the underlying IR Value. The Python
     user should only interact with Ops and Atoms.
     """
+
+    # Traits that consume the L2 policy operand opt in explicitly.
+    _supports_cache_policy: ClassVar[bool] = False
 
     def __init__(self, value: ir.Value) -> None:
         self.value = value
@@ -293,12 +297,30 @@ class Atom(ABC):
         .. code-block:: python
 
             tiled_copy = cute.make_tiled_copy(tma_copy_op)
-            new_tiled_copy = tiled_copy.with_(tma_bar_ptr=tma_bar_ptr, cache_policy=cute.CacheEvictionPriority.EVICT_LAST)
+            # You can set the L2 cache policy if you need to use it
+            policy = cute.nvgpu.make_l2_cache_policy(cute.nvgpu.CacheEvictionPriority.EVICT_LAST)
+            new_tiled_copy = tiled_copy.with_(tma_bar_ptr=tma_bar_ptr, cache_policy=policy)
 
         The ``with_`` method provides a way to the user to modify such runtime state or create an executable Atom
         (e.g. an Executable TMA Load Atom).
         """
+        self._validate_cache_policy(kwargs.get("cache_policy"))
         return self.__class__(self.op, self._trait.with_(loc=loc, ip=ip, **kwargs))
+
+    def _validate_cache_policy(self, policy: Any) -> None:
+        if policy is None:
+            return
+        if not self._trait._supports_cache_policy:
+            raise ValueError(
+                f"cache_policy is not supported by {type(self.op).__name__}; "
+                "this atom does not accept "
+                "an L2 cache eviction policy"
+            )
+        if not isinstance(policy, Int64):
+            raise TypeError(
+                "cache_policy must be an Int64 L2 policy descriptor; "
+                "use cute.nvgpu.make_l2_cache_policy(...) to create one"
+            )
 
     def _unpack(
         self,
@@ -307,6 +329,7 @@ class Atom(ABC):
         ip: Optional[ir.InsertionPoint] = None,
         **kwargs: Any,
     ) -> ir.Value:
+        self._validate_cache_policy(kwargs.get("cache_policy"))
         return self._trait.unpack(loc=loc, ip=ip, **kwargs)
 
 

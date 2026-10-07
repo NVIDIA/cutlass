@@ -10,9 +10,9 @@
 # is strictly prohibited.
 import enum
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Type
+from typing import Any, Mapping, Optional, Type, Union
 
-from cutlass.cutlass_dsl import DSLUserCodeError, DSLRuntimeError
+from cutlass.cutlass_dsl import BaseDSL, DSLUserCodeError, DSLRuntimeError, dsl_user_op
 
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
@@ -42,6 +42,7 @@ __all__ = [
     "MemoryScope",
     "L2PrefetchSize",
     "CacheEvictionPriority",
+    "make_l2_cache_policy",
     "LoadCacheMode",
     "StoreCacheMode",
     "SharedSpace",
@@ -284,6 +285,75 @@ class CacheEvictionPriority(enum.Enum):
         return self.value
 
 
+@dsl_user_op
+def make_l2_cache_policy(
+    primary: CacheEvictionPriority,
+    fraction: Union[float, Float32] = 1.0,
+    secondary: CacheEvictionPriority = CacheEvictionPriority.EVICT_UNCHANGED,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int64:
+    """Create an ``Int64`` L2 eviction policy descriptor (SM80+).
+
+    Call inside a kernel and pass the result as ``cache_policy`` to
+    ``cute.copy`` or ``atom.with_``.
+
+    Priorities must be compile-time enums. ``NO_ALLOCATE`` is an L1-only
+    priority and is not supported here.
+    ``secondary`` must be ``EVICT_FIRST`` or ``EVICT_UNCHANGED``.
+    ``fraction`` accepts a Python number or runtime ``Float32`` in ``(0, 1]``;
+    callers must ensure runtime values satisfy this range.
+
+    .. code-block:: python
+
+        priority = cute.nvgpu.CacheEvictionPriority
+        policy = cute.nvgpu.make_l2_cache_policy(
+            priority.EVICT_LAST, fraction=0.5
+        )
+        cute.copy(atom, src, dst, cache_policy=policy)
+    """
+
+    if isinstance(primary, _cute_ir.CacheEvictionPriority):
+        primary = CacheEvictionPriority(primary)
+    if isinstance(secondary, _cute_ir.CacheEvictionPriority):
+        secondary = CacheEvictionPriority(secondary)
+
+    if not isinstance(primary, CacheEvictionPriority):
+        raise TypeError("primary must be a CacheEvictionPriority")
+    if not isinstance(secondary, CacheEvictionPriority):
+        raise TypeError("secondary must be a CacheEvictionPriority")
+
+    # Sanity check for inputs
+    if primary == CacheEvictionPriority.NO_ALLOCATE:
+        raise ValueError("NO_ALLOCATE is not supported as an L2 priority")
+    if secondary not in (
+        CacheEvictionPriority.EVICT_FIRST,
+        CacheEvictionPriority.EVICT_UNCHANGED,
+    ):
+        raise ValueError("secondary must be EVICT_FIRST or EVICT_UNCHANGED")
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float, Float32)):
+        raise TypeError("fraction must be an int, float, or Float32")
+    if isinstance(fraction, (int, float)) and not 0 < fraction <= 1:
+        raise ValueError("fraction must be in (0, 1]")
+
+    arch = BaseDSL._get_dsl().get_arch_enum()
+    if arch.major < 8:
+        raise DSLUserCodeError("L2 cache policies require SM80 or newer")
+
+    # Import lazily because arch wrappers depend on the copy operations.
+    from ..arch import inline_ptx
+
+    return inline_ptx(
+        f"createpolicy.fractional.L2::{primary.name.lower()}.L2::{secondary.name.lower()}"
+        ".b64 {$w0}, {$r0};",
+        write_only_types=[Int64],
+        read_only_args=[Float32(fraction)],
+        loc=loc,
+        ip=ip,
+    )
+
+
 class LoadCacheMode(enum.Enum):
     ALWAYS = _cute_nvgpu_ir.LoadCacheMode.always
     GLOBAL = _cute_nvgpu_ir.LoadCacheMode.global_
@@ -455,6 +525,8 @@ class CopyG2ROp(atom.CopyOp):
 
 
 class CopyG2RTrait(atom.Trait):
+    _supports_cache_policy = True
+
     def unpack(
         self,
         *,
@@ -534,6 +606,8 @@ class CopyR2GOp(atom.CopyOp):
 
 
 class CopyR2GTrait(atom.Trait):
+    _supports_cache_policy = True
+
     def unpack(
         self,
         *,
