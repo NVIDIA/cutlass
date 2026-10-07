@@ -1355,6 +1355,8 @@ class JitCompiledFunction:
         dynamic_kwargs: dict[str, Any] = dict[str, Any](),
         has_gpu_module: bool = True,
         host_target: "HostTarget | None" = None,
+        module_hash: str | None = None,
+        owner: Any = None,
     ) -> None:
         self.ir_module = ir_module
         self.engine = engine
@@ -1387,6 +1389,11 @@ class JitCompiledFunction:
         self.artifacts = jit_function_artifacts
         self.prefix = prefix
         self.load_from_binary = load_from_binary
+        self.module_hash = module_hash
+        # Owning DSL instance (BaseDSL). ``None`` when constructed outside the
+        # standard JIT flow (e.g. AOT helpers); launch hooks only run when an
+        # owner is present.
+        self._owner = owner
 
         # AOT cross-compile target for the host shim object. ``None`` or
         # an empty HostTarget = native build host (preserves prior behavior).
@@ -1625,6 +1632,10 @@ class JitCompiledFunction:
         exe_args, adapted_args = self.execution_args.generate_execution_args(
             args, kwargs
         )
+        owner = self._owner
+        # Checked on every launch, so keep the no-hook path cheap.
+        if owner is not None and owner._launch_hooks:
+            owner._run_launch_hooks(self, args=args, kwargs=kwargs, exe_args=exe_args)
         executor = self._default_executor
         if executor is not None:  # Only lock on first call
             return executor.run_compiled_program(exe_args)

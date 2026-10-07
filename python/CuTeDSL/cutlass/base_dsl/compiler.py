@@ -26,7 +26,8 @@ import shlex
 import sys
 import inspect
 import types
-from .common import DSLBaseError, DSLUserCodeError
+import warnings
+from .common import DSLBaseError, DSLRuntimeError, DSLUserCodeError
 from . import diagnostics as _diagnostics
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
@@ -1531,9 +1532,13 @@ class CompileCallable:
     contract; use ``write-kernel/references/compiler-options.md`` as the
     authoritative catalog of option tokens and examples.
 
-    ``cute.compile(..., trace_finalize_hooks=hook_or_hooks)`` temporarily
-    registers callbacks for that compile only. Hooks run after tracing and
-    before module hashing, and are removed even if compilation fails.
+    ``cute.compile(..., hooks={HookEvent.POST_COMPILE: hook_or_hooks})``
+    temporarily registers hooks on the function's DSL for that compile only.
+    Hooks are removed even if compilation fails; they are not attached to the
+    returned function for subsequent calls. The legacy
+    ``trace_finalize_hooks=hook_or_hooks`` argument is deprecated and adapts
+    positional callbacks to ``HookEvent.POST_TRACE``. If both forms are given,
+    legacy trace hooks precede the hooks in the mapping, with duplicates ignored.
     """
 
     def __init__(self, options: Any = None) -> None:
@@ -1633,6 +1638,18 @@ class CompileCallable:
         # call: the rest of the pipeline does not know about it.
         is_experimental_requested = kwargs.pop("is_experimental", False)
         finalize_hook = kwargs.pop("trace_finalize_hooks", None)
+        compile_hooks = kwargs.pop("hooks", None)
+        if compile_hooks is not None and not isinstance(
+            compile_hooks, collections.abc.Mapping
+        ):
+            raise DSLRuntimeError("hooks must be a mapping from HookEvent to hooks.")
+        if finalize_hook is not None:
+            warnings.warn(
+                "cute.compile(trace_finalize_hooks=...) is deprecated; use "
+                "hooks={HookEvent.POST_TRACE: hook} with an event object instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
 
         kwargs["compile_only"] = True
         kwargs["no_cache"] = True
@@ -1708,11 +1725,6 @@ class CompileCallable:
             compile_options = self._compile_options
         func._dsl_object.compile_options = compile_options
 
-        if finalize_hook is None:
-            hook_context = contextlib.nullcontext()
-        else:
-            hook_context = func._dsl_object.trace_finalize_hooks(finalize_hook)
-
         # Frontend selector: default keeps the standard preprocessor.
         staged_frontend_context: Any = contextlib.nullcontext()
         # cute.compile[FrontendNext](...) traces this compile with the PyIR
@@ -1722,7 +1734,15 @@ class CompileCallable:
         if compile_options.options[FrontendNext].value:
             staged_frontend_context = BaseDSL.enable_pyir()
 
-        with staged_frontend_context, hook_context:
+        with staged_frontend_context, contextlib.ExitStack() as hook_context:
+            if finalize_hook is not None:
+                hook_context.enter_context(
+                    func._dsl_object._trace_finalize_hooks_context(finalize_hook)
+                )
+            if compile_hooks is not None:
+                for event, hooks in compile_hooks.items():
+                    hook_context.enter_context(func._dsl_object.hooks(event, hooks))
+
             # Preprocess the function if not already preprocessed
             func._dsl_object._preprocess_and_replace_code(func)
 
