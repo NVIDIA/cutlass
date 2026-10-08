@@ -5253,9 +5253,9 @@ def local_tile(
             tiler = (2, 4)
             coord = (1, 1)
 
-            # output: (8, 6)
+            # output: (2, 4)
             # - zipped_divide(tensor, tiler)     -> ((2, 4), (8, 6))
-            # - local_tile(tensor, tiler, coord) -> (8, 6)
+            # - local_tile(tensor, tiler, coord) -> (2, 4)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord)
 
     2. Using a stride projection for specialized tiling:
@@ -5268,11 +5268,11 @@ def local_tile(
             coord = (0, 1, 1)
             proj = (1, None, 1)
 
-            # output: (8, 6)
+            # output: (2, 4)
             # projected_tiler: (2, 4)
             # projected_coord: (0, 1)
             # - zipped_divide(tensor, projected_tiler)               -> ((2, 4), (8, 6))
-            # - local_tile(tensor, projected_tiler, projected_coord) -> (8, 6)
+            # - local_tile(tensor, projected_tiler, projected_coord) -> (2, 4)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord, proj=proj)
     """
 
