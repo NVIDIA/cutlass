@@ -506,6 +506,8 @@ struct CollectiveMma<
     // first k tile
     {
       pipeline.consumer_wait(smem_pipe_read);
+      // cp.async writes are generic-proxy; make them visible to wgmma's async-proxy reads
+      cutlass::arch::fence_view_async_shared();
 
       int read_stage = smem_pipe_read.index();
 
@@ -540,6 +542,8 @@ struct CollectiveMma<
         if (!skip_wait) {
           pipeline.consumer_wait(smem_pipe_read);
         }
+        // cp.async writes are generic-proxy; make them visible to wgmma's async-proxy reads
+        cutlass::arch::fence_view_async_shared();
         copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
         transpose(sB, gmma_sB, smem_pipe_read.index(), 0);
       }
@@ -575,6 +579,8 @@ struct CollectiveMma<
           if (!skip_wait) {
             pipeline.consumer_wait(smem_pipe_read);
           }
+          // cp.async writes are generic-proxy; make them visible to wgmma's async-proxy reads
+          cutlass::arch::fence_view_async_shared();
           copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
           // transpose B operand in SMEM
           transpose(sB, gmma_sB, smem_pipe_read.index(), 0);
