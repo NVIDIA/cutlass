@@ -190,7 +190,7 @@ The non-autotuned version should look like this:
         kernel(a, b, c, max_active_clusters, stream)
 
 Since ``cluster_shape_mn`` is a tunable parameter and it's unknown when we do the grid sweep and search the optimal configuration, 
-``autotune_jit`` needs to know how to compute ``max_active_clusters`` on the host side based on the current  ``cluster_shape_mn`` value when tuning.
+``autotune_jit`` needs to know how to compute ``max_active_clusters`` at runtime based on the current  ``cluster_shape_mn`` value when tuning.
 Therefore, to allow this function to be autotuned with ``max_active_clusters`` being a parameter, we need to define an 
 auxiliary function on the host side to derive the ``max_active_clusters`` parameter from the swept ``cluster_shape_mn`` value when tuning.
 
