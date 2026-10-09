@@ -856,7 +856,7 @@ class autotune_jit:
 
         outer = cls  # the autotune_jit class, for logging and _compute_derived
 
-        class AutoTunedKernel:
+        class AutoTunedKernel(kernel_cls):
             _original_kernel_cls = kernel_cls
             _autotune_params: Dict[str, List[Any]] = {}
             _autotune_update_params = autotune_update_params
@@ -989,6 +989,8 @@ class autotune_jit:
 
         AutoTunedKernel.__name__ = kernel_cls.__name__
         AutoTunedKernel.__qualname__ = kernel_cls.__qualname__
+        AutoTunedKernel.__doc__ = kernel_cls.__doc__
+        AutoTunedKernel.__module__ = kernel_cls.__module__
         return AutoTunedKernel
 
     def __init__(
