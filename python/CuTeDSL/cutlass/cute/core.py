@@ -5185,6 +5185,8 @@ def local_partition(
 ) -> Tensor:
     if isinstance(index, cutlass_arith.ArithValue):
         index_val = index
+    elif isinstance(index, int):
+        index_val = const(index, Int32, loc=loc, ip=ip)
     else:
         index_val = index.ir_value(loc=loc, ip=ip)  # type: ignore[union-attr]
     if index_val.type.width > 32:
