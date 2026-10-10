@@ -252,6 +252,8 @@ When calling the decorated function, you still need to pass them as normal argum
     import cutlass.cute.testing as testing
     from dense_gemm_persistent import PersistentDenseGemmKernel
 
+    gemm = PersistentDenseGemmKernel
+
     @testing.autotune_jit(
         params_dict=search_space,
         update_on_change=["M", "N", "K"],
@@ -269,7 +271,7 @@ When calling the decorated function, you still need to pass them as normal argum
         cluster_shape_mn: cutlass.Constexpr = (2, 1),
         max_active_clusters: cutlass.Constexpr = 0,
     ):
-        kernel = PersistentDenseGemmKernel(
+        kernel = gemm(
             cutlass.Float32,  # acc_dtype
             use_2cta_instrs,
             mma_tiler_mn,
@@ -280,7 +282,8 @@ When calling the decorated function, you still need to pass them as normal argum
 
     autotuned_gemm(a, b, c, stream, M, N, K)  # first call for this (M, N, K) autotunes
     autotuned_gemm(a, b, c, stream, M, N, K)  # subsequent calls reuse the cached best kernel
-    print(f"Best config for autotuned_gemm: {autotuned_gemm._best_config[(M, N, K)]}")
+    timings = autotuned_gemm.get_timings(a, b, c, stream, M, N, K)
+    print(min(timings, key=lambda entry: entry["time_us"])["config"])
 
 Autotuning JIT kernels with classes
 -----------------------------------
@@ -321,7 +324,8 @@ Take a small elementwise-add kernel as an example, where ``elementwise_add`` is 
     autotuned_add = ElementwiseAddKernel()   # instantiate (no tunable params)
     autotuned_add(a, b, c, M, N)             # first call for this (M, N) autotunes
     autotuned_add(a, b, c, M, N)             # subsequent calls reuse the cached best kernel
-    print(f"Best config for autotuned_add: {autotuned_add._best_config[(M, N)]}")
+    timings = autotuned_add.get_timings(a, b, c, M, N)
+    print(min(timings, key=lambda entry: entry["time_us"])["config"])
 
 
 - ``params_dict`` takes the tuneable parameters that are passed to the class constructor (``COPY_BITS``,
@@ -341,100 +345,110 @@ Take a small elementwise-add kernel as an example, where ``elementwise_add`` is 
 Choosing one configuration for many shapes
 -------------------------------------------
 
-The JIT path tunes each problem size on its first call. When you instead need a single configuration baked into an ahead-of-time (AOT) build, 
-or you simply don't want to compile kernels too often when input shapes change frequently, you can use ``autotune_suite`` to find one that performs well
-across the shapes your application sees. ``autotune_suite`` allows you to grid-search the same space over a list of representative problem sizes.
-For each case it builds fresh inputs with ``make_arguments``, compiles and benchmarks every
-configuration (cycling through cold-L2 workspaces), and returns per-case timings plus a ranked list of recommended configurations.
+To choose one configuration for many shapes, you can do a grid search by calling the autotuned function for each representative problem size
+to get the configuration - timing pairs with ``get_timings(*args, **kwargs)``.
 
-You may then pick a configuration that you think is best and compile it ahead of time for use with all shapes.
-
-Note: autotune_suite expects a non-autotuned CuTeDSL function or class that is not decorated by ``@testing.autotune_jit``.
-
-If some argument's size depends on the configuration, such as a reduction workspace, we will pass the values from
-``params_dict`` and ``derived_params`` to ``make_arguments`` as keyword arguments if their parameter names match.
-
-For example, if the workspace size depends on ``mma_tiler_mn``, you can write
+Note that ``get_timings`` is used to obtain the timings for each configuration profiled for your autotuned kernels.
+Calling ``get_timings`` itself does not run a kernel or trigger tuning.
+You should benchmark the kernel on different input cases by running autotuning on them, and then call ``get_timings`` to get the results.
+Then, you can use these results to implement an application-specific ranking. For example, the loop below keeps each case's fastest half of configurations and
+counts how often each configuration is accepted. Other policies, such as a weighted average or worst-case slowdown, can use the same pattern to implement.
 
 .. code-block:: python
 
-    def make_arguments(M, N, K, mma_tiler_mn):
-        ...  # size a workspace from mma_tiler_mn
-
-And we will call this function with the values of ``M``, ``N``, ``K`` from the current case,
-and ``mma_tiler_mn`` from the current configuration being benchmarked.
-
-.. code-block:: python
-
+    from collections import Counter
     import torch
     import cuda.bindings.driver as cuda
-    from cutlass import cute
-    from cutlass.cute.testing import autotune_suite
 
     torch_stream = torch.cuda.Stream()
     stream = cuda.CUstream(torch_stream.cuda_stream)
 
     def make_arguments(M, N, K):
-        # Batched GEMM with a hardcoded batch size L = 1.
-        #   A: (M, K, L) M-major, B: (N, K, L) K-major, C: (M, N, L) M-major
+        # Batched GEMM with L=1: A is M-major; B and C are N-major.
         L = 1
         a = torch.randn(L, K, M, dtype=torch.float16, device="cuda").permute(2, 1, 0)
         b = torch.randn(L, N, K, dtype=torch.float16, device="cuda").permute(1, 2, 0)
         c = torch.zeros(L, N, M, dtype=torch.float16, device="cuda").permute(2, 1, 0)
         return a, b, c, stream, M, N, K
 
+    counts = Counter()
+    configurations = {}
     with torch.cuda.stream(torch_stream):
-        reports, recommended = testing.autotune_suite(
-            non_autotuned_gemm,
-            make_arguments,
-            cases=[
-                (2048, 2048, 4096),  # representative (M, N, K) problem sizes
-                (4096, 4096, 2048),
-            ],
-            params_dict=search_space,
-            prune_configs=prune_config,
-            derived_params={"max_active_clusters": derive_max_active_clusters},
-            accept_percentile=50,  # keep each case's fastest half of the configs
-            print_summary=True,
+        for case in [(2048, 2048, 4096), (4096, 4096, 2048)]:
+            args = make_arguments(*case)
+            autotuned_gemm(*args)
+            timings = sorted(
+                autotuned_gemm.get_timings(*args),
+                key=lambda entry: entry["time_us"],
+            )
+            keep = max(1, (len(timings) + 1) // 2)
+            for entry in timings[:keep]:
+                # This search space uses scalar and tuple values, which are hashable.
+                key = tuple(sorted(entry["config"].items()))
+                counts[key] += 1
+                configurations[key] = entry["config"]
+
+        # A simple policy for illustration only: pick the configuration that was accepted most often across all cases.
+        best_config = configurations[counts.most_common(1)[0][0]]
+
+        # Now you have your best config, use it to instantiate a kernel and run it on any shape you want.
+        selected_gemm = gemm(
+            cutlass.Float32,
+            best_config["use_2cta_instrs"],
+            best_config["mma_tiler_mn"],
+            best_config["cluster_shape_mn"],
+            best_config["use_tma_store"],
+        )
+        a, b, c, stream, M, N, K = make_arguments(2048, 2048, 4096)
+        compiled_gemm = cute.compile(
+            selected_gemm, a, b, c, best_config["max_active_clusters"], stream
+        )
+        compiled_gemm(a, b, c, stream)
+
+
+Benchmark your kernel compiled with a given configuration
+---------------------------------------------------------
+
+Once you have chosen a configuration and compiled its kernel, use
+``cutlass.testing.benchmark`` to measure its performance on a given input case.
+It performs warmup launches, times repeated launches, and returns the average
+execution time in microseconds. 
+
+When using ``cutlass.testing.benchmark``, ``workspace_count`` is the number of
+argument sets allocated by ``workspace_generator`` before benchmarking. Each
+generator call should allocate independent tensor storage and return it in a
+``JitArguments`` object. Warmup and timed launches cycle through these workspaces
+in a ring, allowing other data to replace a workspace's contents in L2 before
+that workspace is reused. Returning the same tensors each time defeats this
+purpose. With the default ``workspace_count=1``, repeated launches can benefit
+from L2 reuse which might not reflect actual HBM traffic.
+
+For measurements that reflect HBM traffic, a useful guideline is to make
+``(workspace_count - 1) * bytes_touched_per_workspace`` comfortably larger than
+the GPU's L2 capacity. For example, with 2 MiB touched per workspace and 10 MiB
+of L2, seven workspaces provide 12 MiB of intervening accesses before reuse.
+This is a sizing guideline; cache behavior depends on the kernel's access pattern.
+Increasing the count also increases GPU memory use.
+
+The following example benchmarks ``compiled_gemm`` with the configuration
+selected in the previous section. It uses ``make_arguments`` to create fresh
+inputs for each workspace. Their shapes, layouts, and types must match those
+used to compile the kernel.
+
+.. code-block:: python
+
+    from cutlass import testing
+
+    with torch.cuda.stream(torch_stream):
+        time_us = testing.benchmark(
+            compiled_gemm,
+            workspace_generator=lambda: testing.JitArguments(
+                # The compiled class call takes only tensors and stream.
+                *make_arguments(2048, 2048, 4096)[:4]
+            ),
+            workspace_count=7,  # size this for the actual tensors and GPU
+            warmup_iterations=10,
+            iterations=100,
             stream=stream,
         )
-
-    # recommended is ranked by how many cases accepted each config within the
-    # percentile you've given; here we just pick the top one and compile it ahead of time.
-    best_config = recommended[0]["config"]
-    args = make_arguments(2048, 2048, 4096)
-    compiled_gemm = cute.compile(non_autotuned_gemm, *args, **best_config)
-    compiled_gemm(*args)
-
-``reports`` holds one timing table per case (each configuration's measured time, fastest first) so user can use this to decide what's their favorite configuration, 
-and ``recommended`` ranks configurations by how many cases accepted them within each input case's top ``accept_percentile`` configurations
-
-The heuristic behind this is simple. You don't want a configuration that is the fastest for one case but slow for others, and a configuration that is consistently good
-among all these representative cases is more likely to be the preferred choice in general (even if it's never the best for any of those cases). It will return the top 5
-most widely accepted configurations like this:
-
-.. code-block:: text
-
-    recommended configs:
-        {'cluster_shape_mn': (2, 1), 'max_active_clusters': 76, 'mma_tiler_mn': (128, 128), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 2/2 cases
-        {'cluster_shape_mn': (2, 1), 'max_active_clusters': 76, 'mma_tiler_mn': (256, 256), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 2/2 cases
-        {'cluster_shape_mn': (2, 2), 'max_active_clusters': 36, 'mma_tiler_mn': (256, 128), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 1/2 cases
-        {'cluster_shape_mn': (2, 1), 'max_active_clusters': 76, 'mma_tiler_mn': (256, 128), 'use_2cta_instrs': True, 'use_tma_store': True}: accepted in 1/2 cases
-        {'cluster_shape_mn': (2, 2), 'max_active_clusters': 36, 'mma_tiler_mn': (256, 128), 'use_2cta_instrs': True, 'use_tma_store': False}: accepted in 1/2 cases
-
-Note: about ``workspace_count``, this is the parameter that is crucial to ensure the benchmarking is accurate in terms of memory bandwidth.
-This means ``autotune_suite`` will allocate a workspace of size ``workspace_count`` copies of input arguments using ``make_arguments`` you pass, 
-and it will cycle through these workspaces ``warmup_iterations`` + ``iterations`` times.
-To let the benchmark correctly reflect the achieved memory bandwidth, we would like to make sure our kernel is reading from HBM instead of L2 cache during the benchmarking. 
-Therefore, we need to make sure the workspace is large enough so that its size exceeds the L2 cache size, so when we finish one lap around the workspace ring buffer and get back to
-the first workspace, the data is no longer in L2 cache and we are reading from HBM again.
-
-For example, suppose our input tensors use 2MB of memory, and the L2 cache size is 10MB. If we set ``workspace_count`` to 6, then the total workspace size is 12MB, 
-which **exceeds** the L2 cache size. In this case, when we are at iteration 7, the L2 cache would hold the 5 copies of inputs from workspace 2 to 6, and 
-iteration 7 uses workspace 1, which is no longer in L2 cache and is read from HBM. 
-In addition, a total workspace size equal to the L2 cache size is not sufficient, because in this case ``workspace_count`` is 5, which means at the 6th iteration we are back to workspace 1,
-but it is still in L2 cache because L2 cache is large enough to hold all 5 copies of the input tensors. Therefore, we would be reading from L2 cache instead of HBM, which is not what we want.
-The rule of thumb is that we need ``(workspace_count - 1) * size_of_input_data >= L2_cache_size`` to guarantee that when we finish one round and get back to the first workspace, its data is no longer in L2 cache.
-
-In conclusion, you should always set ``workspace_count`` to a proper value that ensures that the current benchmark run always reads from HBM due to its input being evicted from L2 cache, 
-or just set it to a large enough value that is guaranteed to **exceed** the L2 cache size.
+    print(f"Execution time: {time_us:.2f} us")
