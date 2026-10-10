@@ -588,11 +588,6 @@ class autotune_jit:
     After a tuning run, ``user_function.get_timings(a, b, c)`` (or the same
     method on a decorated class instance) returns a list of
     ``{"config": dict, "time_us": float}`` entries for successful configurations.
-    Configurations include derived parameters, and entries follow search order.
-    Pass the same runtime arguments as the kernel call; cache keys are resolved
-    internally using ``update_on_change``. The returned dictionaries are copies.
-    This method does not compile, benchmark, or run a kernel and raises
-    ``KeyError`` if those runtime arguments have not been tuned yet.
 
     Known Limitations:
     - Only supports functions that are decorated with cute.jit
