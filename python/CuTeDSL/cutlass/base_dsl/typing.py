@@ -1937,10 +1937,10 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             T.ui16(): Uint16,
             T.ui8(): Uint8,
             T.f8E5M2(): Float8E5M2,
-            T.f8E5M2FNUZ(): Float8E5M2FNUZ,
+            ir.Float8E5M2FNUZType.get(): Float8E5M2FNUZ,
             T.f8E4M3(): Float8E4M3,
             T.f8E4M3FN(): Float8E4M3FN,
-            T.f8E4M3FNUZ(): Float8E4M3FNUZ,
+            ir.Float8E4M3FNUZType.get(): Float8E4M3FNUZ,
             T.f8E4M3B11FNUZ(): Float8E4M3B11FNUZ,
             T.f8E3M4(): Float8E3M4,
             T.fnv8E5M3FNU(): FloatNV8E5M3FNU,
@@ -2823,10 +2823,27 @@ class Float8E4M3B11FNUZ(
 ): ...
 
 
-class Float8E4M3FNUZ(Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E4M3FNUZ): ...
+# `cutlass._mlir.extras.types` ships in the nvidia-cutlass-dsl wheel and does
+# not re-export every float8 format the native type system knows about: the
+# FNUZ formats are absent. Binding the MLIR types directly keeps these dtypes
+# resolvable from a plain wheel install. Without them the DLPack importer
+# cannot resolve a tensor whose dtype decodes to one of these names, and
+# reports a missing attribute on this module rather than the tensor that
+# triggered it. Prefer the `T.*` shims; these two are the exception.
+class Float8E4M3FNUZ(
+    Float,
+    metaclass=FloatMeta,
+    width=8,
+    mlir_type=lambda: ir.Float8E4M3FNUZType.get(),
+): ...
 
 
-class Float8E5M2FNUZ(Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E5M2FNUZ): ...
+class Float8E5M2FNUZ(
+    Float,
+    metaclass=FloatMeta,
+    width=8,
+    mlir_type=lambda: ir.Float8E5M2FNUZType.get(),
+): ...
 
 
 class Float8E3M4(Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E3M4): ...
