@@ -174,8 +174,10 @@ struct UniversalParamsBase
     cudaStream_t stream = nullptr)
   {
     semaphore = static_cast<int *>(workspace);
-    // Zero-initialize entire workspace
-    if (semaphore)
+    // Zero-initialize the workspace only for serial split-K semaphores
+    // (mode kGemm); other modes fully overwrite their workspace before
+    // reading it.
+    if (semaphore && mode == GemmUniversalMode::kGemm)
     {
       size_t workspace_bytes = get_workspace_size();
 
