@@ -33,90 +33,98 @@
 */
 
 #include <stdexcept>
-#include <cstring>
+#include <string>
+#include <utility>
 
 #include "cutlass/profiler/gpu_timer.h"
-
 
 namespace cutlass {
 namespace profiler {
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+//Helper function for the rollback.
+inline void throw_cuda_error(cudaError_t result, const char* msg) {
+  throw std::runtime_error(std::string(msg) + ": " + cudaGetErrorString(result));
+}
 
 GpuTimer::GpuTimer() {
-  cudaError_t result;
-
-  for (auto & event : events) {
-    result = cudaEventCreate(&event);
+  for (size_t i = 0; i < 2; ++i) {
+    cudaError_t result = cudaEventCreate(&events[i]);
     if (result != cudaSuccess) {
-      throw std::runtime_error("Failed to create CUDA event");
+      for (size_t j = 0; j < i; ++j) {
+        cudaEventDestroy(events[j]);
+      }
+      throw_cuda_error(result, "Failed to create CUDA event");
     }
   }
 }
 
-GpuTimer::GpuTimer(GpuTimer&& gpu_timer) noexcept {
-  memcpy(events, gpu_timer.events, sizeof(events));
-  memset(gpu_timer.events, 0, sizeof(gpu_timer.events));
+GpuTimer::GpuTimer(GpuTimer&& other) noexcept {
+  for (size_t i = 0; i < 2; ++i) {
+    events[i] = std::exchange(other.events[i], nullptr);
+  }
+}
+
+GpuTimer& GpuTimer::operator=(GpuTimer&& other) noexcept {
+  if (this != &other) {
+    for (auto& event : events) {
+      if (event) cudaEventDestroy(event);
+    }
+    for (size_t i = 0; i < 2; ++i) {
+      events[i] = std::exchange(other.events[i], nullptr);
+    }
+  }
+  return *this;
 }
 
 GpuTimer::~GpuTimer() {
-  for (const auto & event : events) {
+  for (auto& event : events) {
     if (event != nullptr) {
       cudaEventDestroy(event);
     }
   }
 }
 
-/// Records a start event in the stream, the flag is for cudaEventRecordWithFlags
 void GpuTimer::start(cudaStream_t stream, const unsigned int flag) {
   cudaError_t result = cudaEventRecordWithFlags(events[0], stream, flag);
   if (result != cudaSuccess) {
-    throw std::runtime_error("Failed to record start event.");
+    throw_cuda_error(result, "Failed to record start event");
   }
 }
 
-/// Records a stop event in the stream, the flag is for cudaEventRecordWithFlags
 void GpuTimer::stop(cudaStream_t stream, const unsigned int flag) {
-cudaError_t result = cudaEventRecordWithFlags(events[1], stream, flag);
+  cudaError_t result = cudaEventRecordWithFlags(events[1], stream, flag);
   if (result != cudaSuccess) {
-    throw std::runtime_error("Failed to record stop event.");
+    throw_cuda_error(result, "Failed to record stop event");
   }
 }
 
-/// Records a stop event in the stream and synchronizes on the stream, the flag is for cudaEventRecordWithFlags
 void GpuTimer::stop_and_wait(cudaStream_t stream, const unsigned int flag) {
-
   stop(stream, flag);
 
-  cudaError_t result;
-  if (stream) {
-    result = cudaStreamSynchronize(stream);
-    if (result != cudaSuccess) {
-      throw std::runtime_error("Failed to synchronize with non-null CUDA stream.");
-    }
-  }
-  else {
-    result = cudaDeviceSynchronize();
-    if (result != cudaSuccess) {
-      throw std::runtime_error("Failed to synchronize with CUDA device.");
-    }
+  cudaError_t result = cudaEventSynchronize(events[1]);
+  if (result != cudaSuccess) {
+    throw_cuda_error(result, "Failed to synchronize stop event");
   }
 }
 
-/// Returns the duration in milliseconds
 double GpuTimer::duration(int iterations) const {
+  if (iterations <= 0) {
+    throw std::invalid_argument("GpuTimer::duration requires iterations > 0");
+  }
 
-  float avg_ms;
+  cudaError_t sync_res = cudaEventSynchronize(events[1]);
+  if (sync_res != cudaSuccess) {
+    throw_cuda_error(sync_res, "Failed to sync event prior to duration calculation");
+  }
 
+  float avg_ms = 0.0f;
   cudaError_t result = cudaEventElapsedTime(&avg_ms, events[0], events[1]);
   if (result != cudaSuccess) {
-    throw std::runtime_error("Failed to query elapsed time from CUDA events.");
+    throw_cuda_error(result, "Failed to query elapsed time");
   }
 
-  return double(avg_ms) / double(iterations);
+  return static_cast<double>(avg_ms) / iterations;
 }
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace profiler
 } // namespace cutlass
