@@ -273,6 +273,7 @@ class LegacyCompilerBackend(CompilerBackend):
             ctx.function_name,
             ctx.dynamic_args,
             ctx.dynamic_kwargs,
+            module_hash=ctx.module_hash,
         )
 
 

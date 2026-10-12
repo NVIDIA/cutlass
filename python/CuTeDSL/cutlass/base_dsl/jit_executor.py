@@ -1355,6 +1355,7 @@ class JitCompiledFunction:
         dynamic_kwargs: dict[str, Any] = dict[str, Any](),
         has_gpu_module: bool = True,
         host_target: "HostTarget | None" = None,
+        module_hash: str | None = None,
     ) -> None:
         self.ir_module = ir_module
         self.engine = engine
@@ -1387,6 +1388,7 @@ class JitCompiledFunction:
         self.artifacts = jit_function_artifacts
         self.prefix = prefix
         self.load_from_binary = load_from_binary
+        self.module_hash = module_hash
 
         # AOT cross-compile target for the host shim object. ``None`` or
         # an empty HostTarget = native build host (preserves prior behavior).
