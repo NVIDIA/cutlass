@@ -122,6 +122,12 @@ cutlass_test_unit_gemm_device_add_executable(
 list(APPEND CUTLASS_TEST_UNIT_GEMM_DEVICE_LIST cutlass_test_unit_gemm_device_simt)
 
 cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_array_update
+
+  gemm_array_update.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt_3x
 
   BATCH_SOURCES ON
