@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -290,7 +290,16 @@ public:
     iterator_A.set_iteration_index(group_start_A *
                                    IteratorA::kAccessesPerVector);
     this->smem_iterator_A_.set_iteration_index(group_start_A);
+    int warp_id = int(threadIdx.x) >> 5;
 
+    int constexpr kActiveWarpsA = 
+      IteratorA::ThreadMap::Detail::WarpAccessIterations::kContiguous * 
+      IteratorA::ThreadMap::Detail::WarpAccessIterations::kStrided; 
+    int constexpr kActiveWarpsB = 
+      IteratorB::ThreadMap::Detail::WarpAccessIterations::kContiguous * 
+      IteratorB::ThreadMap::Detail::WarpAccessIterations::kStrided; 
+    bool active_a = warp_id < kActiveWarpsA;
+    bool active_b = warp_id < kActiveWarpsB;
     // Async Copy for operand A
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupA; ++j) {
@@ -306,13 +315,15 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_A.get();
-
-          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
-            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-                dst_ptr + v, gmem_ptr, iterator_A.valid());
-          } else {
-            cutlass::arch::cp_async<kSrcBytes, kCacheOpA>(
-                dst_ptr + v, gmem_ptr, iterator_A.valid());
+          
+          if(active_a){
+            if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+              cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+                  dst_ptr + v, gmem_ptr, iterator_A.valid());
+            } else {
+              cutlass::arch::cp_async<kSrcBytes, kCacheOpA>(
+                  dst_ptr + v, gmem_ptr, iterator_A.valid());
+            }
           }
 
           ++iterator_A;
@@ -342,12 +353,14 @@ public:
         for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B.get();
 
-          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
-            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-                dst_ptr + v, gmem_ptr, iterator_B.valid());
-          } else {
-            cutlass::arch::cp_async<kSrcBytes, kCacheOpB>(
-                dst_ptr + v, gmem_ptr, iterator_B.valid());
+          if(active_b){
+            if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+              cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+                  dst_ptr + v, gmem_ptr, iterator_B.valid());
+            } else {
+              cutlass::arch::cp_async<kSrcBytes, kCacheOpB>(
+                  dst_ptr + v, gmem_ptr, iterator_B.valid());
+            }
           }
 
           ++iterator_B;
@@ -365,6 +378,17 @@ public:
     IteratorB &iterator_B,      ///< [in|out] iterator over B operand in global memory
     int &gemm_k_iterations)     ///< [in|out] number of threadblock mainloop iterations remaining
   {
+    int warp_id = int(threadIdx.x) >> 5;
+
+    int constexpr kActiveWarpsA = 
+      IteratorA::ThreadMap::Detail::WarpAccessIterations::kContiguous * 
+      IteratorA::ThreadMap::Detail::WarpAccessIterations::kStrided; 
+    int constexpr kActiveWarpsB = 
+      IteratorB::ThreadMap::Detail::WarpAccessIterations::kContiguous * 
+      IteratorB::ThreadMap::Detail::WarpAccessIterations::kStrided; 
+    bool active_a = warp_id < kActiveWarpsA;
+    bool active_b = warp_id < kActiveWarpsB;
+
     // Issue several complete stages
     CUTLASS_PRAGMA_UNROLL
     for (int stage = 0; stage < Base::kStages - 1; ++stage, --gemm_k_iterations) {
@@ -391,9 +415,10 @@ public:
               IteratorA::kAccessesPerVector / 8;
 
           int src_bytes = (iterator_A.valid() ? kSrcBytes : 0);
-
-          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-              dst_ptr + v, iterator_A.get(), iterator_A.valid());
+          if(active_a){
+            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+                dst_ptr + v, iterator_A.get(), iterator_A.valid());
+          }
 
           ++iterator_A;
         }
@@ -418,8 +443,10 @@ public:
               IteratorB::ThreadMap::kElementsPerAccess /
               IteratorB::kAccessesPerVector / 8;
 
-          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-              dst_ptr + v, iterator_B.get(), iterator_B.valid());
+          if(active_b){
+            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+                dst_ptr + v, iterator_B.get(), iterator_B.valid());
+          }
 
           ++iterator_B;
         }

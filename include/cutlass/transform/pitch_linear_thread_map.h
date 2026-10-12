@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,9 +42,35 @@
 #include "cutlass/tensor_ref.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/layout/pitch_linear.h"
+#include "cutlass/fast_math.h"
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace debug {
 
+template<class Tag, int V>
+struct kv;
+
+struct ShapeContig;
+struct ShapeStrided;
+struct ElementsPerAccess;
+struct WarpSize;
+struct WarpCount;
+struct ShapeInAccContig;
+struct ShapeInAccStrided;
+struct WarpThrArrContig;
+struct WarpThrArrStrided;
+struct WarpAccItContig;
+struct WarpAccItStrided;
+struct WarpsContig;
+struct WarpsStrided;
+struct ItersContig;
+struct ItersStrided;
+struct ItersCount;
+
+template<class... KVs>
+struct dump;   // intentionally left undefined
+
+} // namespace debug
 namespace cutlass {
 namespace transform {
 
@@ -257,6 +283,21 @@ struct PitchLinearWarpRakedThreadMap {
       Shape::kStrided
     >;
 
+    #ifdef DEBUGDUMP
+    using DebugDump = debug::dump<
+    debug::kv<debug::ShapeContig, Shape::kContiguous>,
+    debug::kv<debug::ShapeStrided, Shape::kStrided>,
+    debug::kv<debug::ElementsPerAccess, kElementsPerAccess>,
+    debug::kv<debug::WarpSize, Detail::kWarpSize>,
+    debug::kv<debug::WarpCount, Detail::kWarpCount>,
+    debug::kv<debug::ShapeInAccContig, Detail::ShapeInAccesses::kContiguous>,
+    debug::kv<debug::ShapeInAccStrided, Detail::ShapeInAccesses::kStrided>,
+    debug::kv<debug::WarpThrArrContig, Detail::WarpThreadArrangement::kContiguous>,
+    debug::kv<debug::WarpThrArrStrided, Detail::WarpThreadArrangement::kStrided>,
+  >;
+  static_assert(sizeof(DebugDump) == 0, "DEBUG: Turn this assertion only on for debugging.");
+  #endif
+
     static_assert(
       !(ShapeInAccesses::kContiguous % WarpThreadArrangement::kContiguous),
       "ShapeInAccesses must be divisible by WarpThreadArrangement.");
@@ -271,6 +312,36 @@ struct PitchLinearWarpRakedThreadMap {
       ShapeInAccesses::kStrided / WarpThreadArrangement::kStrided
     >;
 
+    
+    #ifdef DPHPC
+    static int const kWarpsStrided = 
+      ((WarpAccessIterations::kStrided >= kWarpCount)
+      ? kWarpCount
+      : (((kWarpCount % WarpAccessIterations::kStrided) != 0) 
+        && ((kWarpCount % WarpAccessIterations::kContiguous) == 0)
+        ? const_min(WarpAccessIterations::kStrided, 
+          kWarpCount / WarpAccessIterations::kContiguous)
+        : WarpAccessIterations::kStrided));
+    static int const kWarpsContiguous = 
+      ((WarpAccessIterations::kStrided >= kWarpCount)
+      ? 1
+      : ((kWarpCount % WarpAccessIterations::kStrided != 0) 
+        && (kWarpCount % WarpAccessIterations::kContiguous == 0)
+        ? WarpAccessIterations::kContiguous
+        : kWarpCount / kWarpsStrided));
+
+    /// Arrangement of warps within a threadblock-scoped tile
+    using WarpArrangement = layout::PitchLinearShape<
+      kWarpsContiguous, kWarpsStrided
+    >;
+  };
+
+  ///< Iterations along each dimension (concept: PitchLinearShape)
+  using Iterations = layout::PitchLinearShape<
+    (Detail::WarpAccessIterations::kContiguous+Detail::kWarpsContiguous-1) / Detail::kWarpsContiguous,
+    (Detail::WarpAccessIterations::kStrided+Detail::kWarpsStrided-1) / Detail::kWarpsStrided
+  >;
+    #else
     // Divide it into the number of warps, first partitioning the strided dimension then the
     // contiguous.
     static int const kWarpsStrided =
@@ -294,6 +365,29 @@ struct PitchLinearWarpRakedThreadMap {
     Detail::WarpAccessIterations::kContiguous / Detail::kWarpsContiguous,
     Detail::WarpAccessIterations::kStrided / Detail::kWarpsStrided
   >;
+    #endif
+
+  #ifdef DEBUGDUMP
+  using DebugDump = debug::dump<
+    debug::kv<debug::ShapeContig, Shape::kContiguous>,
+    debug::kv<debug::ShapeStrided, Shape::kStrided>,
+    debug::kv<debug::ElementsPerAccess, kElementsPerAccess>,
+    debug::kv<debug::WarpSize, Detail::kWarpSize>,
+    debug::kv<debug::WarpCount, Detail::kWarpCount>,
+    debug::kv<debug::ShapeInAccContig, Detail::ShapeInAccesses::kContiguous>,
+    debug::kv<debug::ShapeInAccStrided, Detail::ShapeInAccesses::kStrided>,
+    debug::kv<debug::WarpThrArrContig, Detail::WarpThreadArrangement::kContiguous>,
+    debug::kv<debug::WarpThrArrStrided, Detail::WarpThreadArrangement::kStrided>,
+    debug::kv<debug::WarpAccItContig, Detail::WarpAccessIterations::kContiguous>,
+    debug::kv<debug::WarpAccItStrided, Detail::WarpAccessIterations::kStrided>,
+    debug::kv<debug::WarpsContig, Detail::kWarpsContiguous>,
+    debug::kv<debug::WarpsStrided, Detail::kWarpsStrided>,
+    debug::kv<debug::ItersContig, Iterations::kContiguous>,
+    debug::kv<debug::ItersStrided, Iterations::kStrided>,
+    debug::kv<debug::ItersCount, Iterations::kCount>
+  >;
+  static_assert(sizeof(DebugDump) == 0, "DEBUG: Turn this assertion only on for debugging.");
+  #endif
 
   static_assert(Iterations::kCount,
     "Number of iterations must be non-zero");
