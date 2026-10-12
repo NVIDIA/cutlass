@@ -409,6 +409,14 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   tma_transaction_bytes = sizeof(make_tensor_like(tGS_sC));
 
   // Partition for TMEM accumulators load (TMEM -> RMEM)
+  // PERF NOTE: 32dp32b1x is the simplest TMEM_LOAD atom but issues one
+  // tcgen05.ld per accumulator column; ptxas (CUDA 13.x) lowers each load
+  // through a per-load convergence-helper call, so the t2r phase can
+  // dominate small/medium kernels. Prefer a wider atom (e.g.
+  // SM100_TMEM_LOAD_32dp32b32x: 32 columns per instruction) in real
+  // epilogues; on sm_103 we measured 1.49x on the whole kernel from this
+  // one line. Very wide atoms (x128) can regress on register-writeback
+  // serialization -- sweep the width for your tile shape.
   TiledCopy t2r_copy = make_tmem_copy(SM100_TMEM_LOAD_32dp32b1x{}, tAcc_epi(_,_0{}));
   ThrCopy   thr_t2r  = t2r_copy.get_slice(threadIdx.x);
   Tensor tTR_tAcc = thr_t2r.partition_S(tAcc_epi);          // (TmemCpy,NumTmemCpy,NumTiles)
