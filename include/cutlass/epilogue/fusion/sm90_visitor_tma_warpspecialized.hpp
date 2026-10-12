@@ -150,6 +150,17 @@ struct ProducerLoadCallbacksImpl {
     );
   }
 
+  // Overload of step that accepts tensormaps argument, for use in ptr-array epilogues
+  template<class Tensormaps>
+  CUTLASS_DEVICE void
+  step(uint64_t* full_mbarrier_ptr, int epi_m, int epi_n, int load_iteration, bool issue_tma_load, Tensormaps tensormaps) {
+    for_each(callbacks_tuple, tensormaps,
+      [&] (auto& callbacks, auto&& op_tensormaps) {
+        callbacks.step(full_mbarrier_ptr, epi_m, epi_n, load_iteration, issue_tma_load, op_tensormaps);
+      }
+    );
+  }
+
   // Exit of the subtile load loop.
   CUTLASS_DEVICE void
   end() {
@@ -261,6 +272,17 @@ struct ConsumerStoreCallbacksImpl {
     );
   }
 
+  // Overload of tma_store that accepts tensormaps argument, for use in ptr-array epilogues
+  template<class Tensormaps>
+  CUTLASS_DEVICE void
+  tma_store(int epi_m, int epi_n, int store_iteration, bool issue_tma_store, Tensormaps tensormaps) {
+    for_each(callbacks_tuple, tensormaps,
+      [&] (auto& callbacks, auto&& op_tensormaps) {
+        callbacks.tma_store(epi_m, epi_n, store_iteration, issue_tma_store, op_tensormaps);
+      }
+    );
+  }
+
   // End of subtile store iteration
   CUTLASS_DEVICE void
   end_loop(int epi_m, int epi_n) {
@@ -279,6 +301,72 @@ struct ConsumerStoreCallbacksImpl {
         callbacks.end();
       }
     );
+  }
+};
+
+//
+// Tensor map update callbacks, called by the epilogue load/store warps.
+// Operations that support tensormap updates must define this.
+// For use with ptr-array epilogues.
+//
+template <class CallbacksTuple>
+struct TensorMapCallbacksImpl {
+  // Callbacks can store non-persistent variables (e.g. tensors) or copies of persistent variables
+  CallbacksTuple callbacks_tuple;
+
+  // Initialization, typically performs initial copy of tensormaps from constant to shared memory
+  CUTLASS_DEVICE
+  auto
+  init(int32_t sm_count, int32_t sm_idx,int32_t warp_group_idx) {
+    return transform_apply(callbacks_tuple,
+      [&](auto&& callback) {
+        return callback.init(sm_count, sm_idx, warp_group_idx);
+      },
+      [](auto&&... tensormaps) {
+        return cute::make_tuple(tensormaps...);
+      });
+  }
+  
+  // Tensormap update in shared memory
+  template <class Tensormaps, class ProblemShape_MNKL>
+  CUTLASS_DEVICE
+  void
+  perform_update(
+      Tensormaps tensormaps,
+      ProblemShape_MNKL problem_shape_mnkl,
+      int32_t next_batch,
+      int32_t warp_group_idx)
+  {
+    for_each(callbacks_tuple, tensormaps,
+      [&](auto&& callback, auto&& op_tensormaps) {
+        callback.perform_update(op_tensormaps, problem_shape_mnkl, next_batch, warp_group_idx);
+      });
+  }
+
+  // Tensormap store from shared to global mempry and release fence
+  template <class Tensormaps>
+  CUTLASS_DEVICE
+  void
+  cp_fence_release(
+      Tensormaps tensormaps,
+      const int32_t warp_group_idx = 0)
+  {
+    for_each(callbacks_tuple, tensormaps,
+      [&](auto&& callback, auto&& op_tensormaps) {
+        callback.cp_fence_release(op_tensormaps, warp_group_idx);
+      });
+  }
+
+  // Tensormap acquire fence
+  template <class Tensormaps>
+  CUTLASS_DEVICE
+  void
+  fence_acquire(Tensormaps tensormaps)
+  {
+    for_each(callbacks_tuple, tensormaps,
+      [&](auto&& callback, auto&& op_tensormaps) {
+        callback.fence_acquire(op_tensormaps);
+      });
   }
 };
 
@@ -368,6 +456,29 @@ struct ConsumerStoreArgs {
     thread_idx(thread_idx) {}
 };
 
+template <class T, bool IsLoad, class = void>
+struct tensormaps_type_impl {
+  using type = cute::tuple<>;
+};
+
+template <class T, bool IsLoad>
+struct tensormaps_type_impl<T, IsLoad, cute::void_t<typename T::template TensorMaps<IsLoad>>> {
+  using type = typename T::template TensorMaps<IsLoad>;
+};
+
+template <class T, bool IsLoad>
+using tensormaps_type = typename tensormaps_type_impl<T, IsLoad>::type;
+
+// Helper that owns the pack itself. Sm90VisitorImplBase::TensorMaps cannot
+// expand its enclosing class's Ops pack directly in an alias-template body
+// on MSVC (emits "parameter pack 'Ops' was referenced but not expanded").
+// Pushing the expansion into this struct's own template parameter list works
+// around it; the expansion at the call site is a plain non-alias context.
+template <bool IsLoad, class... Ts>
+struct tensormaps_tuple_for {
+  using type = tuple<typename tensormaps_type_impl<Ts, IsLoad>::type...>;
+};
+
 template <class... Ops>
 struct Sm90VisitorImplBase {
   // Shared memory allocation
@@ -376,6 +487,11 @@ struct Sm90VisitorImplBase {
   using Arguments = tuple<typename Ops::Arguments...>;
   // Device side fusion params (Kernel-entry API)
   using Params = tuple<typename Ops::Params...>;
+  // Tensormap argument type used in ptr-array epilogues. The pack expansion is
+  // delegated to tensormaps_tuple_for above; spelling it inline here trips an
+  // MSVC bug with alias-template pack expansion over an enclosing class's pack.
+  template <bool IsLoad>
+  using TensorMaps = typename tensormaps_tuple_for<IsLoad, Ops...>::type;
 
   template <class ProblemShape>
   static constexpr Params
@@ -473,6 +589,8 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   using Impl = Sm90VisitorImplBase<Ops...>;
   using Params = typename Impl::Params;
   using SharedStorage = typename Impl::SharedStorage;
+  template <bool IsLoad>
+  using TensorMaps = typename Impl::template TensorMaps<IsLoad>;
 
   CUTLASS_HOST_DEVICE
   Sm90VisitorImpl() {}
@@ -549,6 +667,25 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
       }
     );
   }
+
+  template <bool IsLoad>
+  CUTLASS_DEVICE constexpr auto
+  get_tensormap_callbacks() {
+    return transform_apply(ops, 
+      [](auto& op){
+        auto has_tmap_callbacks = cute::is_valid([](auto&& t)->void_t<decltype(t.template get_tensormap_callbacks<IsLoad>())>{}, op);
+        if constexpr (has_tmap_callbacks) {
+          return op.template get_tensormap_callbacks<IsLoad>();
+        }
+        else {
+          return TensorMapCallbacksImpl<cute::tuple<>>{};
+        }
+      },
+      [](auto&&... callbacks){
+        auto callbacks_tuple = cute::make_tuple(callbacks...);
+        return TensorMapCallbacksImpl<decltype(callbacks_tuple)>{callbacks_tuple};
+      });
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -556,6 +693,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
 // Convenience aliases
 using EmptyProducerLoadCallbacks = ProducerLoadCallbacksImpl<cute::tuple<>>;
 using EmptyConsumerStoreCallbacks = ConsumerStoreCallbacksImpl<cute::tuple<>>;
+using EmptyTensorMapCallbacks = TensorMapCallbacksImpl<cute::tuple<>>;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -768,6 +906,11 @@ struct Sm90VisitorImplBase<Op0> {
     typename Op0::Params op_0;
   };
 
+  template <bool IsLoad>
+  using TensorMaps = tuple<
+    tensormaps_type<Op0, IsLoad>
+  >;
+
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
@@ -839,6 +982,12 @@ struct Sm90VisitorImplBase<Op0, Op1> {
     typename Op0::Params op_0;
     typename Op1::Params op_1;
   };
+
+  template <bool IsLoad>
+  using TensorMaps = tuple<
+    tensormaps_type<Op0,IsLoad>,
+    tensormaps_type<Op1,IsLoad>
+  >;
 
   template <class ProblemShape>
   static constexpr Params
@@ -930,6 +1079,13 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2> {
     typename Op1::Params op_1;
     typename Op2::Params op_2;
   };
+
+  template <bool IsLoad>
+  using TensorMaps = tuple<
+    tensormaps_type<Op0,IsLoad>,
+    tensormaps_type<Op1,IsLoad>,
+    tensormaps_type<Op2,IsLoad>
+  >;
 
   template <class ProblemShape>
   static constexpr Params
@@ -1039,6 +1195,14 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2, Op3> {
     typename Op2::Params op_2;
     typename Op3::Params op_3;
   };
+
+  template <bool IsLoad>
+  using TensorMaps = tuple<
+    tensormaps_type<Op0,IsLoad>,
+    tensormaps_type<Op1,IsLoad>,
+    tensormaps_type<Op2,IsLoad>,
+    tensormaps_type<Op3,IsLoad>
+  >;
 
   template <class ProblemShape>
   static constexpr Params

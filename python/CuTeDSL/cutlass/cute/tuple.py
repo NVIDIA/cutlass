@@ -9,12 +9,12 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+
 from inspect import signature
 from itertools import chain
-from typing import Any, Callable, Optional, Union, Tuple, List, Iterable
+from typing import Any, Callable, Generator, Optional, Union, Tuple, List, Iterable
 
 from cutlass._mlir import ir
-
 from cutlass.cutlass_dsl import is_dynamic_expression, dsl_user_op
 import cutlass._mlir.dialects.cute as _cute_ir
 
@@ -104,7 +104,7 @@ def unflatten(
         unflatten([1, 2, 3, 4], ((0, 0), (0, 0)))  # Returns ((1, 2), (3, 4))
     """
 
-    def _make_generator() -> Any:
+    def _make_generator() -> Generator[Any, None, None]:
         for element in sequence:
             yield element
 
@@ -225,7 +225,7 @@ def product_each(
 
 def find_if(
     t: XTuple,
-    pred_fn: Callable[[XTuple, int], bool],
+    pred_fn: Callable[[XTuple, Union[int, Tuple[int, ...]]], bool],
     hierarchical: bool = True,
 ) -> Union[int, Tuple[int, ...], None]:
     from .core import rank, get
@@ -261,7 +261,9 @@ def find_if(
         find_if(stride, pred_fn=pred_fn)
     """
 
-    def _find_if_impl(curr: Any, pos: Any) -> Any:
+    def _find_if_impl(
+        curr: XTuple, pos: Union[int, Tuple[int, ...]]
+    ) -> Union[int, Tuple[int, ...], None]:
         if isinstance(curr, tuple):
             # Recursively search nested tuple
             for i in range(rank(curr)):
@@ -320,7 +322,7 @@ def find(
     if not isinstance(x, int):
         raise TypeError(f"find() requires a static x to search for, but got {x}")
 
-    def pred_fn(val: Any, pos: Any) -> bool:
+    def pred_fn(val: XTuple, pos: Union[int, Tuple[int, ...]]) -> bool:
         # Skip dynamic values which can't be compared
         return not is_dynamic_expression(val) and val == x
 
@@ -452,7 +454,7 @@ def transform_apply(
     if not args:
         raise ValueError("transform_apply requires at least one argument")
 
-    def _compatible_xtuples(args: XTuple) -> bool:
+    def _compatible_xtuples(args: Tuple[XTuple, ...]) -> bool:
         if isinstance(args[0], tuple):
             if not all(isinstance(arg, tuple) for arg in args):
                 return False

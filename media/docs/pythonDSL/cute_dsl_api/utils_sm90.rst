@@ -1,7 +1,7 @@
 .. _utils_sm90:
 
-Utilities for SM90
-==================
+Hopper (SM90)
+=============
 
 .. automodule:: cutlass.utils.sm90
    :members:

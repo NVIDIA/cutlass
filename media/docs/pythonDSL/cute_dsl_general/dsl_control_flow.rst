@@ -105,19 +105,34 @@ This can be tedious to write and tune. |DSL| provides a loop attribute to ask th
     @cute.jit
     def example():
         ...
-        # build a circular buffer
-        buffer = ... 
+        # build a circular buffer and an mbarrier for the TMA copy
+        buffer = ...
+        mbar_ptr = ...
 
         for i in cutlass.range(bound, prefetch_stages=prefetch_stages):
             # Compiler automatically handles the pipelining:
             # - Generates prefetch loop for initial stages
             # - In main loop, prefetches future data while using current data
-            cute.copy(atom, gmem[i], buffer[i % total_stages], ...)
+            cute.copy(tma_atom, gmem[i], buffer[i % total_stages],
+                      tma_bar_ptr=mbar_ptr)
+            # ... wait on the mbarrier the TMA copy signals ...
             use(buffer[i % total_stages])  # Uses data from previous iterations
-        
+
         ...
 
 Compiler will automatically generate the prefetch loop with `prefetch_stages` iterations and a corresponding main loop.
+
+.. note::
+
+   The compiler recognizes two split points. A TMA bulk copy: at least one
+   ``cute.copy(tma_atom, ..., tma_bar_ptr=...)`` paired with an mbarrier
+   wait on the same barrier. Or a cp.async group: copies with a cp.async
+   atom followed by ``cute.arch.cp_async_commit_group()`` and
+   ``cute.arch.cp_async_wait_group(0)``, in a canonical loop (start 0,
+   step 1) whose circular-buffer slot is indexed as ``i % stages``.
+   Loops with neither split point — or outside these shapes — get a
+   warning ("software pipelining ('prefetch_stages') skipped") and are
+   compiled without pipelining.
 
 This feature is experimental and only supported on sm90 and above.
 

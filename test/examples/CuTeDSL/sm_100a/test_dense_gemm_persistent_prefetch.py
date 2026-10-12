@@ -40,8 +40,7 @@ from typing import Tuple, Type, Optional
 
 import pytest
 
-from blackwell.dense_gemm_persistent_prefetch import (
-    PersistentDenseGemmKernel,
+from blackwell.kernel.dense_gemm.dense_gemm_persistent_prefetch import (
     run,
 )
 
@@ -92,8 +91,8 @@ import cutlass.cute.testing as testing
     "prefetch_dist",
     [
         None,  # Default: auto (uses num_ab_stage)
-        0,     # Disabled
-        2,     # Explicit distance
+        0,  # Disabled
+        2,  # Explicit distance
     ],
 )
 @pytest.mark.parametrize("tolerance", [1e-01])
@@ -168,7 +167,7 @@ def test_dense_gemm_prefetch(
     "prefetch_dist",
     [
         None,  # Default: auto (uses num_ab_stage)
-        4,     # Explicit distance
+        4,  # Explicit distance
     ],
 )
 def test_dense_gemm_prefetch_L0(
@@ -215,15 +214,15 @@ def test_dense_gemm_prefetch_L0(
     "prefetch_dist",
     [
         None,  # Auto: uses num_ab_stage
-        0,     # Disabled
-        2,     # Small distance
-        4,     # Medium distance
+        0,  # Disabled
+        2,  # Small distance
+        4,  # Medium distance
     ],
 )
 def test_prefetch_dist_configurations(prefetch_dist: Optional[int]):
     """
     Test different prefetch_dist configurations specifically.
-    
+
     - None: Auto mode, uses num_ab_stage as prefetch distance
     - 0: Prefetch disabled
     - >0: Explicit prefetch distance
@@ -259,4 +258,3 @@ def test_prefetch_dist_configurations(prefetch_dist: Optional[int]):
         )
     except testing.CantImplementError:
         pytest.skip(f"Skip unsupported testcase with prefetch_dist={prefetch_dist}")
-

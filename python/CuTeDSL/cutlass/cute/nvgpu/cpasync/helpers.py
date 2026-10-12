@@ -34,8 +34,11 @@ from ...typing import (
     Numeric,
     NumericMeta,
     IntTuple,
+    _element_precision_width,
+    is_int_tuple_type,
 )
 from ... import core, atom
+from ...atom import _normalize_variadic_tensor_operand
 from .copy import (
     CopyBulkTensorTileG2SOp,
     CopyBulkTensorIm2ColG2SOp,
@@ -44,8 +47,14 @@ from .copy import (
     CopyBulkTensorTileS2GOp,
     CopyBulkTensorIm2ColS2GOp,
     CopyReduceBulkTensorTileS2GOp,
+    CopyBulkTensor2DScatter4S2GOp,
+    CopyBulkTensor2DGather4G2SOp,
+    CopyBulkTensor2DGather4G2SMulticastOp,
     CopyBulkTensorTileG2SNonExecTrait,
     CopyBulkTensorTileG2SMulticastNonExecTrait,
+    CopyBulkTensor2DGather4G2SNonExecTrait,
+    CopyBulkTensor2DGather4G2SMulticastNonExecTrait,
+    CopyBulkTensor2DScatter4S2GNonExecTrait,
     CopyBulkTensorTileS2GNonExecTrait,
     CopyReduceBulkTensorTileS2GNonExecTrait,
     CopyBulkTensorIm2ColG2SNonExecTrait,
@@ -163,6 +172,9 @@ TMAOp = Union[
     CopyBulkTensorIm2ColG2SOp,
     CopyBulkTensorIm2ColS2GOp,
     CopyReduceBulkTensorTileS2GOp,
+    CopyBulkTensor2DScatter4S2GOp,
+    CopyBulkTensor2DGather4G2SOp,
+    CopyBulkTensor2DGather4G2SMulticastOp,
 ]
 
 
@@ -290,13 +302,19 @@ def make_im2col_tma_atom(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
+        gmem_tensor_element_type = gmem_tensor.element_type
+        assert not is_int_tuple_type(gmem_tensor_element_type)
+        gmem_element_precision_width = _element_precision_width(
+            gmem_tensor_element_type
+        )
         use_unpack = (
             itype.width == 8
-            and isinstance(gmem_tensor.element_type, NumericMeta)
-            and gmem_tensor.element_type.width < 8  # type: ignore[union-attr]
+            and isinstance(gmem_tensor_element_type, type)
+            and issubclass(gmem_tensor_element_type, Numeric)
+            and gmem_element_precision_width < 8
         )
         internal_mlir_type = (
-            gmem_tensor.element_type.mlir_type if use_unpack else itype.mlir_type  # type: ignore[union-attr]
+            gmem_tensor_element_type.mlir_type if use_unpack else itype.mlir_type
         )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
@@ -359,6 +377,13 @@ def make_im2col_tma_atom(
                 f"expects num_multicast to be >= 1 for multicast G2S copies, "
                 f"but got {num_multicast}"
             )
+        assert lower_corner_whd is not None
+        assert upper_corner_whd is not None
+        assert lower_padding_whd is not None
+        assert upper_padding_whd is not None
+        assert stride_whd is not None
+        assert lower_srt is not None
+        assert stride_srt is not None
         res = _cute_nvgpu_ir.atom_make_non_exec_im2col_tma_load(
             cast(Any, gmem_tensor).value,
             smem_layout,
@@ -407,19 +432,25 @@ def make_tiled_tma_atom(
     cta_tiler: Tiler,
     num_multicast: int = 1,
     *,
+    gmem_coord_tensor: Optional[Tensor] = None,
     internal_type: Optional[Type[Numeric]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> TmaInfo:
     """
-    Makes a TMA Copy Atom in the ``.tile`` mode to copy tiles of a GMEM tensor to/from SMEM
-    buffer with the given Layout.
+    Makes a TMA Copy Atom to copy tiles of a GMEM tensor to/from SMEM buffer with the given Layout.
+
+    Supports ``.tile`` mode (default), ``.tile::gather4`` mode, and
+    ``.tile::scatter4`` mode. Gather4 and scatter4 require ``gmem_coord_tensor``
+    so their index tensor layout can drive the returned TMA tensor shape. For
+    layout conventions, examples, and restrictions, see :func:`tma_partition`.
 
     Given
 
     - a GMEM tensor
     - a SMEM layout
     - a CTA-level Tiler
+    - (optional) a GMEM index tensor for gather4/scatter4 mode
 
     this function figures out the bulk tensor asynchronous copy instruction to use with the maximum
     "TMA vector length" to copy tiles of the GMEM tensor to/from an SMEM buffer with the provided
@@ -442,6 +473,8 @@ def make_tiled_tma_atom(
     :type cta_tiler:      Tiler
     :param num_multicast: The multicast factor
     :type num_multicast:  int
+    :param gmem_coord_tensor: The GMEM index tensor for gather4/scatter4 mode (required for gather4 and scatter4 ops); see :func:`tma_partition` for layout conventions and restrictions
+    :type gmem_coord_tensor: Optional[Tensor]
     :param internal_type: Optional internal data type to use when the tensor data type is not supported by the TMA unit
     :type internal_type:  Type[Numeric]
     :return:              A TmaInfo containing the Copy Atom, TMA tensor, and SMEM layout
@@ -479,13 +512,19 @@ def make_tiled_tma_atom(
         if not isinstance(internal_type, NumericMeta):
             raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
 
+        gmem_tensor_element_type = gmem_tensor.element_type
+        assert not is_int_tuple_type(gmem_tensor_element_type)
+        gmem_element_precision_width = _element_precision_width(
+            gmem_tensor_element_type
+        )
         use_unpack = (
             itype.width == 8
-            and isinstance(gmem_tensor.element_type, NumericMeta)
-            and gmem_tensor.element_type.width < 8  # type: ignore[union-attr]
+            and isinstance(gmem_tensor_element_type, type)
+            and issubclass(gmem_tensor_element_type, Numeric)
+            and gmem_element_precision_width < 8
         )
         internal_mlir_type = (
-            gmem_tensor.element_type.mlir_type if use_unpack else itype.mlir_type  # type: ignore[union-attr]
+            gmem_tensor_element_type.mlir_type if use_unpack else itype.mlir_type
         )
         tma_format = _cute_nvgpu_ir.TmaDataFormat(
             _cute_nvgpu_ir.get_default_tma_format(internal_mlir_type, use_unpack)
@@ -533,6 +572,23 @@ def make_tiled_tma_atom(
             res[1],
             stored_smem_layout,
         )
+    elif isinstance(op, CopyBulkTensor2DScatter4S2GOp):
+        if gmem_coord_tensor is None:
+            raise ValueError("gmem_coord_tensor is required for scatter4 TMA ops")
+        res = _cute_nvgpu_ir.atom_make_non_exec_2d_scatter4_tma_store(
+            cast(Any, gmem_tensor).value,
+            gmem_coord_tensor.layout,
+            smem_layout,
+            cta_v_map,
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyBulkTensor2DScatter4S2GNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
     elif isinstance(op, CopyBulkTensorTileS2GOp):
         res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_store(
             cast(Any, gmem_tensor).value,
@@ -562,6 +618,54 @@ def make_tiled_tma_atom(
             res[1],
             stored_smem_layout,
         )
+    elif isinstance(op, CopyBulkTensor2DGather4G2SOp):
+        if gmem_coord_tensor is None:
+            raise ValueError("gmem_coord_tensor is required for gather4 TMA ops")
+        if num_multicast != 1:
+            raise ValueError(
+                f"expects num_multicast to be 1 for non multicast gather4 G2S copies, "
+                f"but got {num_multicast}"
+            )
+        res = _cute_nvgpu_ir.atom_make_non_exec_2d_gather4_tma_load(
+            gmem_tensor.value,
+            gmem_coord_tensor.layout,
+            smem_layout,
+            cta_v_map,
+            op._to_ir(),
+            num_multicast=num_multicast,
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyBulkTensor2DGather4G2SNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
+    elif isinstance(op, CopyBulkTensor2DGather4G2SMulticastOp):
+        if gmem_coord_tensor is None:
+            raise ValueError("gmem_coord_tensor is required for gather4 TMA ops")
+        if num_multicast < 1:
+            raise ValueError(
+                f"expects num_multicast to be >= 1 for multicast gather4 G2S copies, "
+                f"but got {num_multicast}"
+            )
+        res = _cute_nvgpu_ir.atom_make_non_exec_2d_gather4_tma_load(
+            gmem_tensor.value,
+            gmem_coord_tensor.layout,
+            smem_layout,
+            cta_v_map,
+            op._to_ir(),
+            num_multicast=num_multicast,
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyBulkTensor2DGather4G2SMulticastNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
     else:
         raise ValueError(f"expects a bulk tensor (TMA) Copy Op, but got {op}")
 
@@ -572,25 +676,110 @@ def tma_partition(
     cta_coord: Coord,
     cta_layout: Layout,
     smem_tensor: Tensor,
-    gmem_tensor: Tensor,
+    gmem_tensor: Union[Tensor, List[Tensor], Tuple[Tensor, ...]],
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Tensor, Tensor]:
+) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
     """
     Tiles the GMEM and SMEM tensors for the provided TMA Copy Atom.
+
+    For standard TMA modes (tiled, im2col, etc.), pass a single GMEM tensor:
+
+        tAsA, tAgA = tma_partition(atom, cta_coord, cta_layout, sA, gA)
+
+    For gather4 mode, pass a list of ``[data_coord_tensor, index_tensor]``:
+
+        tAsA, tAgA, tAgI = tma_partition(atom, cta_coord, cta_layout, sA, [gA, gI])
+
+    For scatter4 mode, pass the destination coordinate tensor and index tensor
+    as ``[dst_coord_tensor, index_tensor]`` and then pass the returned pair as
+    the destination of :func:`cute.copy`. The same index tensor must be passed
+    to :func:`make_tiled_tma_atom` as ``gmem_coord_tensor`` so the returned TMA
+    tensor shape follows the index tensor shape rather than the destination
+    data tensor shape:
+
+        atom, gB = make_tiled_tma_atom(op, dst, smem_layout, cta_tiler, gmem_coord_tensor=gI)
+        tBsB, tBgB, tBgI = tma_partition(atom, cta_coord, cta_layout, sB, [gB, gI])
+        cute.copy(atom, tBsB, [tBgB[crd], tBgI[crd]])
+
+    The 2D gather4 TMA atom (``CopyBulkTensor2DGather4G2SOp``) issues
+    ``cp.async.bulk.tensor.2d.tile::gather4``, which loads four rows from a
+    GMEM tile by gathering at four indirectly-addressed indices. Each PTX
+    instruction consumes 5 coordinates ``{crd0, crd1_i0, crd1_i1, crd1_i2,
+    crd1_i3}``: one *contiguous* coordinate (``crd0``) and four *gather*
+    coordinates pulled from ``gmem_coord_tensor``.
+
+    The ``gmem_coord_tensor`` is a rank-2 ``Int32`` tensor whose layout selects
+    which mode is the gather mode. One mode is broadcast (stride 0) and the
+    other supplies the per-row gather indices:
+
+    For TMA override, pass ``(gmem_tensor, residue_tensor)`` where the
+    gmem_tensor tracks the gmem address and stride, residue_tensor is a coordinate
+    tensor with negated strides to track the remaining shape to copy.
+
+    - **Column-major data, gather along rows:** ``stride=(0, 1)`` — mode 0 is
+      the broadcast (contiguous) mode, mode 1 carries the gather indices.
+
+      .. code-block:: python
+
+          # GMEM data is (M, N) col-major; gather along the M dimension.
+          gI = cute.make_tensor(
+              idx_ptr, cute.make_layout((M, N), stride=(0, 1))
+          )
+          atom, gA = cpasync.make_tiled_tma_atom(
+              cpasync.CopyBulkTensor2DGather4G2SOp(),
+              gA, smem_layout, cta_tiler,
+              gmem_coord_tensor=gI,
+          )
+          tAsA, tAgA, tAgI = cpasync.tma_partition(
+              atom, 0, cute.make_layout(1), sA, [gA, gI],
+          )
+          cute.copy(atom, [tAgA[crd], tAgI[crd]], tAsA, tma_bar_ptr=mbar)
+
+    - **Row-major data, gather along cols:** ``stride=(1, 0)`` — mode 1 is
+      the broadcast (contiguous) mode, mode 0 carries the gather indices.
+
+      .. code-block:: python
+
+          gI = cute.make_tensor(
+              idx_ptr, cute.make_layout((M, N), stride=(1, 0))
+          )
+
+    **Restrictions** (enforced by Python and MLIR verifiers):
+
+    - ``gmem_coord_tensor`` layout must be 2D.
+    - The gather mode size must be ``>= 4`` (4 row indices per instruction).
+    - Exactly one mode of ``gmem_coord_tensor`` must be a broadcast (stride 0);
+      that broadcast mode is *not* the gather dimension.
+
+    :param atom:         The TMA Copy Atom
+    :param cta_coord:    CTA coordinate within the cluster
+    :param cta_layout:   Layout of CTAs in the cluster
+    :param smem_tensor:  The SMEM tensor to partition
+    :param gmem_tensor:  A single GMEM tensor, ``[data_coord_tensor, index_tensor]``
+                          for gather4, or ``[dst_coord_tensor, index_tensor]``
+                          for scatter4
+    :return: ``(smem_tensor, gmem_tensor)`` for standard TMA, or
+             ``(smem_tensor, coord_tensor, index_tensor)`` for gather4/scatter4
     """
+
+    # Normalize src/dst to lists for variadic IR operands
+    gmem_tensor_list = _normalize_variadic_tensor_operand(gmem_tensor, "gmem_tensor")
+
     cta_coord_val = core._pack_coord(cta_coord, loc=loc, ip=ip)
-    s, d = _cute_nvgpu_ir.atom_tma_partition(
+    res = _cute_nvgpu_ir.atom_tma_partition(
         atom._trait.value,
         cta_coord=cta_coord_val,
         cta_layout=cta_layout,
         smem_tensor=cast(Any, smem_tensor).value,
-        target_tensors=[cast(Any, gmem_tensor).value],
+        target_tensors=[cast(Any, t).value for t in gmem_tensor_list],
         loc=loc,
         ip=ip,
     )
-    return s, d
+    # partitioned smem_tensor, gmem_tensors
+    return res
+
 
 
 @dsl_user_op
@@ -716,7 +905,7 @@ def fence_tma_desc_acquire(
         None,
         [tma_desc_ptr_i64],
         "fence.proxy.tensormap::generic.acquire.gpu [$0], 128;",
-        "l",
+        "l,~{memory}",
         has_side_effects=True,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
@@ -746,7 +935,7 @@ def cp_fence_tma_desc_release(
         None,
         [tma_desc_global_ptr_i64, tma_desc_shared_ptr_i32],
         "tensormap.cp_fenceproxy.global.shared::cta.tensormap::generic.release.gpu.sync.aligned [$0], [$1], 128;",
-        "l,r",
+        "l,r,~{memory}",
         has_side_effects=True,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
@@ -766,7 +955,7 @@ def fence_tma_desc_release(
         None,
         [],
         "fence.proxy.tensormap::generic.release.gpu;",
-        "",
+        "~{memory}",
         has_side_effects=True,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
@@ -789,3 +978,4 @@ def group_bulk_copy_modes(
     mSrc = core.group_modes(src, 0, core.rank(src), loc=loc, ip=ip)
     mDst = core.group_modes(dst, 0, core.rank(dst), loc=loc, ip=ip)
     return (mSrc, mDst)
+

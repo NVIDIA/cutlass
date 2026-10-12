@@ -16,6 +16,7 @@ This module provides jit executor related classes for CUTLASS.
 import ctypes
 import functools
 import inspect
+import sys
 import weakref
 import threading
 from typing import Any, List, Optional, Tuple, Union
@@ -27,13 +28,18 @@ import cuda.bindings.driver as cuda_driver
 from ..base_dsl.jit_executor import (
     JitExecutor,
     JitCompiledFunction,
+    JitModule,
     ExecutionArgs,
     JitFunctionArtifacts,
+    _notify_library_unload,
 )
+from ..base_dsl.compiler import HostTarget
 from ..base_dsl.utils.logger import log
-from ..base_dsl.common import DSLRuntimeError
+from ..base_dsl.common import DSLRuntimeError, DSLUserCodeError
+from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.typing import Int32
 from ..base_dsl.runtime.cuda import checkCudaErrors
+from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
 
 from .._mlir import ir, execution_engine
 
@@ -60,6 +66,9 @@ class CudaDialectJitModule:
     def unload(self) -> None:
         try:
             for library in self.cuda_library:
+                # Notify subscribers (e.g. NVSHMEM interop) while the handle is
+                # still valid so they can drop their references first.
+                _notify_library_unload(int(library))
                 cuda_runtime.cudaLibraryUnload(library)
             self.cuda_library.clear()
         except Exception as e:
@@ -68,11 +77,21 @@ class CudaDialectJitModule:
             self._unloaded = True
 
     def __del__(self) -> None:
-        self.unload()
+        # At interpreter shutdown leave libraries to the driver: unload
+        # callbacks and driver calls are not safe during teardown.
+        if not sys.is_finalizing():
+            self.unload()
 
 
 class CudaDialectJitCompiledFunction(JitCompiledFunction):
     """Holds a compiled function and its module."""
+
+    _KERNEL_EXTRA_ARGS_ATTR = "lir.kernel_extra_args"
+    _jit_arg_adapter_scope = JitArgAdapterRegistry.CUDA_DIALECT_SCOPE
+    jit_module: "JitModule | CudaDialectJitModule | None"  # type: ignore[assignment]
+    device_header: Optional[str]
+    device_object_path: Optional[str]
+    device_ptx_path: Optional[str]
 
     def __init__(
         self,
@@ -89,6 +108,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         dynamic_args: tuple[Any] = tuple[Any](),
         dynamic_kwargs: dict[str, Any] = dict[str, Any](),
         has_gpu_module: bool = True,
+        host_target: HostTarget | None = None,
     ) -> None:
         super().__init__(
             ir_module,
@@ -104,12 +124,23 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             dynamic_args,
             dynamic_kwargs,
             has_gpu_module,
+            host_target=host_target,
         )
 
-        # Populated from module attributes by CuteExperimentalDSL.compile_and_cache;
-        # defaults match pre-pass state and non-experimental CUDA JIT functions.
         self.kernel_extra_args: dict[str, int] = {}
         self.total_added_arguments: int = 0
+        # Extension finalization records workspace arguments on the module;
+        # Modules compiled without CuTe extension support simply omit this attribute.
+        if self.ir_module is not None:
+            attrs = self.ir_module.operation.attributes
+            if self._KERNEL_EXTRA_ARGS_ATTR in attrs:
+                for named in ir.DictAttr(attrs[self._KERNEL_EXTRA_ARGS_ATTR]):
+                    self.kernel_extra_args[named.name] = ir.IntegerAttr(
+                        named.attr
+                    ).value
+                self.total_added_arguments = self.kernel_extra_args.pop(
+                    "total_added_arguments", 0
+                )
 
         # Set cuda result return type.
         # When execution engine/capi function is None, do not set the return type.
@@ -119,6 +150,17 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             self.execution_args.signature = self.execution_args.signature.replace(
                 return_annotation=Int32
             )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> int | None:
+        n = self.execution_args._meta.arg_count
+        n_extra = max(0, len(args) - n)
+        if n_extra != self.total_added_arguments:
+            raise DSLUserCodeError(
+                DiagId.ARG_WORKSPACE_COUNT_MISMATCH,
+                expected=self.total_added_arguments,
+                got=n_extra,
+            )
+        return super().__call__(*args, **kwargs)
 
     @functools.cached_property
     def num_devices(self) -> int:
@@ -149,18 +191,18 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
             raise DSLRuntimeError("cuda_load not found")
         cuda_load = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(cuda_load)
 
-        cuda_init_args = [pointer_to_pointer_to_library, pointer_to_err]
+        cuda_init_args: List[Any] = [pointer_to_pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_init_args))()
         for i in range(len(cuda_init_args)):
-            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)  # type: ignore[arg-type]
+            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)
         cuda_init(packed_args)
 
         checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
-        cuda_load_args = [pointer_to_library, pointer_to_err]
+        cuda_load_args: List[Any] = [pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_load_args))()
         for i in range(len(cuda_load_args)):
-            packed_args[i] = ctypes.cast(cuda_load_args[i], ctypes.c_void_p)  # type: ignore[arg-type]
+            packed_args[i] = ctypes.cast(cuda_load_args[i], ctypes.c_void_p)
         cuda_load(packed_args)
 
         checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
@@ -184,7 +226,7 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         # and cuda_load_to_device from the engine which are defined in CudaToLLVM.
         if self.load_from_binary:
             if self.prefix is None:
-                raise DSLRuntimeError("prefix is required to be set for binary loading")
+                raise DSLUserCodeError(DiagId.CONFIG_BINARY_LOAD_PREFIX_REQUIRED)
             cuda_init = self.engine.lookup(f"_mlir_{self.prefix}_cuda_init")
             if cuda_init is None:
                 raise DSLRuntimeError(f"cuda_init not found for prefix {self.prefix}")
@@ -220,10 +262,10 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         err = ctypes.c_int32(0)
         pointer_to_err = ctypes.pointer(err)
 
-        cuda_init_args = [pointer_to_pointer_to_library, pointer_to_err]
+        cuda_init_args: List[Any] = [pointer_to_pointer_to_library, pointer_to_err]
         packed_args = (ctypes.c_void_p * len(cuda_init_args))()
         for i in range(len(cuda_init_args)):
-            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)  # type: ignore[arg-type]
+            packed_args[i] = ctypes.cast(cuda_init_args[i], ctypes.c_void_p)
         cuda_init(packed_args)
 
         checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
@@ -231,14 +273,14 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         device_id = ctypes.c_int32(0)
         pointer_to_device_id = ctypes.pointer(device_id)
 
-        cuda_load_args = [
+        cuda_load_args: List[Any] = [
             pointer_to_pointer_to_library,
             pointer_to_device_id,
             pointer_to_err,
         ]
         packed_args = (ctypes.c_void_p * len(cuda_load_args))()
         for i, arg in enumerate(cuda_load_args):
-            packed_args[i] = ctypes.cast(arg, ctypes.c_void_p)  # type: ignore[arg-type]
+            packed_args[i] = ctypes.cast(arg, ctypes.c_void_p)
 
         for dev in range(self.num_devices):
             device_id.value = dev
@@ -272,11 +314,53 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
                 and self.jit_module.is_unloaded()
             ):
                 cuda_library = self._load_cuda_library() if self.has_gpu_module else []
-                self.jit_module = CudaDialectJitModule(  # type: ignore[assignment]
+                self.jit_module = CudaDialectJitModule(
                     self.engine,
                     self.capi_func,
                     self.execution_args,
                     cuda_library,
                 )
 
-            return JitExecutor(self.jit_module, None, self.jit_time_profiling)
+            # F-SPEC: the derived executor validates re-entries against the
+            # same sealed record as the handle it came from.
+            return JitExecutor(
+                self.jit_module, None, self.jit_time_profiling, spec=self._pyir_spec
+            )
+
+    @property
+    def library(self) -> "cuda_runtime.cudaLibrary_t":
+        """Loaded ``cudaLibrary_t`` for this compile's single cubin.
+
+        Triggers a lazy ``.to()`` call if the library isn't loaded yet,
+        so callers can access this before any explicit kernel launch
+        (the typical case: passing ``compiled.library`` as a ``!cuda.library``
+        argument into another ``@cute.jit`` body for an in-trace symbol store).
+
+        :raises RuntimeError: when the compile produced no gpu.module
+            (host-only program) or multiple cubins (explicit selection
+            is not yet supported).
+        """
+        # Trigger lazy load if the library isn't materialized yet.  Same
+        # check ``store_to_symbol``'s eager path uses today.
+        if self.jit_module is None or (
+            isinstance(self.jit_module, CudaDialectJitModule)
+            and self.jit_module.is_unloaded()
+        ):
+            self.to()
+
+        libraries = (
+            getattr(self.jit_module, "cuda_library", []) if self.jit_module else []
+        )
+        if not libraries:
+            raise RuntimeError(
+                "compiled.library: no cudaLibrary_t — the compile produced "
+                "no gpu.module (host-only function), or used "
+                "`cute.compile[DeviceTarget]` (which doesn't register a "
+                "runtime cudaLibrary_t)."
+            )
+        if len(libraries) > 1:
+            raise RuntimeError(
+                "compiled.library: this compile produced multiple cubins; "
+                "explicit library= selection is not yet supported."
+            )
+        return libraries[0]

@@ -538,7 +538,7 @@ class PipelineTmaUmmaAsync {
 public:
   static constexpr uint32_t Stages = Stages_;
   using AtomThrShape_MNK = AtomThrShape_MNK_;
-private:
+protected:
   using Impl = PipelineTmaAsync<Stages>;
 public:
   using FullBarrier  = typename Impl::FullBarrier;
@@ -733,6 +733,8 @@ private:
   FullBarrier *full_barrier_ptr_;
   uint16_t block_id_mask_ = 0;
   static constexpr bool is_2sm_mma = size(AtomThrShape_MNK{}) > 1;
+
+private:
 
   // Consumer signalling Producer of completion
   // Ensures all blocks in the Same Row and Column get notifed.

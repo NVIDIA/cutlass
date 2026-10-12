@@ -9,10 +9,24 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+
+from collections.abc import Iterable
 from functools import partial, reduce
 import inspect
 from inspect import isclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, overload
+import warnings
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    cast,
+    overload,
+)
 
 from typing_extensions import deprecated
 
@@ -25,6 +39,7 @@ from cutlass._mlir.dialects.cute import (
 from cutlass._mlir.dialects.cute import (
     Ratio as _Ratio,
     ScaledBasis as _ScaledBasis,
+    SparseElemType as _SparseElemType,
 )
 from cutlass._mlir.extras.types import MemRefType as BuiltinMemRefType
 from cutlass.cutlass_dsl import (
@@ -39,10 +54,11 @@ from cutlass.cutlass_dsl import (
     lru_cache_ir,
     not_,
 )
+from cutlass.base_dsl.typing import Int8 as _BaseInt8
+from cutlass.base_dsl.typing import Pointer as _BasePointer
 
 from .tuple import find_if, flatten_to_tuple, product_each, transform_leaf, unwrap, wrap
 from .typing import (
-    AddressSpace,
     Boolean,
     ComposedLayout,
     Coord,
@@ -63,9 +79,14 @@ from .typing import (
     Tile,
     Tiler,
     XTuple,
+    _element_precision_width,
+    _as_address_space,
+    _to_mlir_address_space,
     is_int_tuple,
     is_integer,
+    AddressSpace,
 )
+
 
 __all__ = [
     # Classes
@@ -422,9 +443,15 @@ class IntValue(cutlass_arith.ArithValue):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> ir.Value:
         if isinstance(self.type, ir.IntegerType):
-            def_op = self.owner.operation
-            if def_op.name == "cute.get_scalars":
-                return def_op.operands[0]
+            # A block argument (e.g. a kernel parameter, such as the scalar
+            # divisor a FastDivmodDivisorV2 carries across the kernel boundary)
+            # is owned by an ir.Block, not an ir.Operation, so it has no
+            # defining op and no cute.get_scalars shortcut. Fall through to
+            # wrap it as an int_tuple in that case.
+            if not isinstance(self.owner, ir.Block):
+                def_op = self.owner.operation
+                if def_op.name == "cute.get_scalars":
+                    return def_op.operands[0]
 
         assert not isinstance(self.type, _cute_ir.IntTupleType)
 
@@ -1513,7 +1540,10 @@ class _Pointer(Pointer):
         assert isinstance(value, ir.Value), f"Expected ir.Value, but got {type(value)}"
         self.value = value
 
-        if isinstance(value.type.value_type, _cute_nvgpu_ir.TmaDescriptorTiledType):
+        if isinstance(
+            value.type.value_type,
+            (_cute_ir.SparseElemType, _cute_nvgpu_ir.TmaDescriptorTiledType),
+        ):
             dtype = value.type.value_type
         self._dtype = dtype or Numeric.from_mlir_type(value.type.value_type)
 
@@ -1575,16 +1605,17 @@ class _Pointer(Pointer):
     ) -> Numeric:
         # LLVM doesn't support load/store narrow precision per element
         tmp_ty = self.dtype.mlir_type
-        if self.dtype is Boolean or self.dtype.width == 8:
+        element_precision_width = _element_precision_width(self.dtype)
+        if self.dtype is Boolean or element_precision_width == 8:
             tmp_ty = T.i8()
-        elif self.dtype.width < 8:
+        elif element_precision_width < 8:
             raise ValueError(
                 f"Loading narrow precision type {self.dtype} is not supported"
             )
 
         llvm_ptr = self.to_llvm_ptr(loc=loc, ip=ip)
         tmp_val = llvm.load(tmp_ty, llvm_ptr, loc=loc, ip=ip)
-        if self.dtype.width == 8:
+        if element_precision_width == 8:
             tmp_val = arith.bitcast(self.dtype.mlir_type, tmp_val, loc=loc, ip=ip)
 
         return self.dtype(tmp_val, loc=loc, ip=ip)
@@ -1606,9 +1637,10 @@ class _Pointer(Pointer):
             raise ValueError(f"Unsupported value type: {type(value)}")
         # LLVM doesn't support load/store narrow precision per element
         tmp_val = value.ir_value(loc=loc, ip=ip)
-        if self.dtype.width == 8:
+        element_precision_width = _element_precision_width(self.dtype)
+        if element_precision_width == 8:
             tmp_val = arith.bitcast(T.i8(), tmp_val, loc=loc, ip=ip)
-        elif self.dtype is not Boolean and self.dtype.width < 8:
+        elif self.dtype is not Boolean and element_precision_width < 8:
             raise ValueError(
                 f"Storing narrow precision type {self.dtype} is not supported"
             )
@@ -1685,6 +1717,19 @@ class _Pointer(Pointer):
             [llvm_ptr_ty], [self.value], loc=loc, ip=ip
         )
 
+    @dsl_user_op
+    def raw_ptr(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> _BasePointer:
+        dtype = (
+            cast(Type[Numeric], self.dtype)
+            if isinstance(self.dtype, NumericMeta)
+            else _BaseInt8
+        )
+        return _BasePointer(self.to_llvm_ptr(loc=loc, ip=ip), dtype=dtype)
     @dsl_user_op
     @lru_cache_ir()
     def _to_builtin_memref(
@@ -1854,6 +1899,14 @@ def _op_wrapper(
         return _Tensor(res, dtype=input.element_type, loc=loc, ip=ip)
     elif isinstance(input, _ComposedLayout):
         return op_fn(input.value, loc=loc, ip=ip)
+    elif (
+        not isinstance(input, ir.Value)
+        and hasattr(input, "value")
+        and isinstance(input.value, ir.Value)
+    ):
+        # support types with ViewTypeInterface defined outside of cute_ir
+        res = op_fn(input.value, loc=loc, ip=ip)
+        return type(input)(res)
     else:
         return op_fn(input, loc=loc, ip=ip)
 
@@ -1874,9 +1927,6 @@ def ModeOpDecorator(func: Any) -> Any:
             Initialize ModeOp.
             """
             self.func = func
-            # Functions like cute.size are written to take Lists.
-            # ModeOp works better with tuples.
-            # For now, handle the conversion internally.
             self.mode = (
                 tuple(mode)
                 if isinstance(mode, list)
@@ -2048,7 +2098,7 @@ def printf(
 
     This function provides printf-style formatted printing capabilities. It can print values directly
     or format them using C-style format strings. The function supports printing various types including
-    layouts, numeric values, tensors, and other CuTe objects.
+    layouts, numeric values, tensors, pointers, and other CuTe objects.
 
     The function accepts either:
     1. A list of values to print directly
@@ -2099,43 +2149,62 @@ def printf(
         fmt = "{}" + ", {}" * (len(args) - 1) + end
 
     def process_arg(arg: Any) -> Any:
-        arg0 = arg.value if isinstance(arg, Numeric) else arg
+        if isinstance(arg, Numeric):
+            return arg.ir_value(loc=loc, ip=ip)
 
-        if isinstance(arg0, ir.Value):
-            return arg0
-        elif isinstance(arg0, bool):
-            return const(arg0, Boolean)
-        elif isinstance(arg0, int):
-            return const(arg0, Int32)
-        elif isinstance(arg0, float):
-            return const(arg0, Float32)
-        elif has_underscore(arg0):
+        if isinstance(arg, _BasePointer):
+            ptr = make_ptr(
+                arg.dtype,
+                arg.to_llvm_ptr(loc=loc, ip=ip),
+                loc=loc,
+                ip=ip,
+            )
+            return ptr.value
+        elif isinstance(arg, ir.Value):
+            return arg
+        elif isinstance(arg, bool):
+            return const(arg, Boolean)
+        elif isinstance(arg, int):
+            return const(arg, Int32)
+        elif isinstance(arg, float):
+            return const(arg, Float32)
+        elif has_underscore(arg):
             # Assume it's a coordinate
-            return _pack_coord(arg0)  # type: ignore[arg-type]
-        elif has_scaled_basis(arg0):
+            return _pack_coord(arg)  # type: ignore[arg-type]
+        elif has_scaled_basis(arg):
             # Assume it's a stride
-            return _pack_stride(arg0)  # type: ignore[arg-type]
-        elif is_int_tuple(arg0):
-            return _pack_int_tuple(arg0)  # type: ignore[arg-type]
-        elif isinstance(arg0, tuple):
+            return _pack_stride(arg)  # type: ignore[arg-type]
+        elif is_int_tuple(arg):
+            return _pack_int_tuple(arg)  # type: ignore[arg-type]
+        elif isinstance(arg, tuple):
             # Assume it's a tile
-            return _pack_tile(arg0)
-        elif isinstance(arg0, _Tensor):
-            arg0._check_can_load_store()
-            if isinstance(arg0.layout, ComposedLayout) and isinstance(
-                arg0.layout.inner, Swizzle
+            return _pack_tile(arg)
+        elif isinstance(arg, _Tensor):
+            arg._check_can_load_store()
+            if isinstance(arg.layout, ComposedLayout) and isinstance(
+                arg.layout.inner, Swizzle
             ):
                 raise NotImplementedError(
                     "tensor with swizzled layout (PISL) is not supported in printf, please use swizzled pointer (PDSL) instead"
                 )
-            return arg0.value
-        elif isinstance(arg0, (_Pointer, _ComposedLayout)):
-            return arg0.value
+            return arg.value
+        elif isinstance(arg, (_Pointer, _ComposedLayout)):
+            return arg.value
         else:
             raise TypeError(f"unsupported argument type in printf, got {type(arg)}")
 
     processed_args = [process_arg(a) for a in args]
-    _cute_ir.print_(processed_args, fmt=fmt, loc=loc, ip=ip)
+    operand_signed = [bool(getattr(type(a), "signed", True)) for a in args]
+    if all(operand_signed):
+        _cute_ir.print_(processed_args, fmt=fmt, loc=loc, ip=ip)
+    else:
+        _cute_ir.print_(
+            processed_args,
+            fmt=fmt,
+            operand_signed=ir.DenseBoolArrayAttr.get(operand_signed),
+            loc=loc,
+            ip=ip,
+        )
 
 
 @dsl_user_op
@@ -2175,8 +2244,11 @@ def is_major(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> bool:
-    """
-    Check whether a mode in stride is the major mode.
+    """Check whether a mode has a statically-known unit stride.
+
+    Dynamic stride expressions are not considered major, even if their runtime
+    value could be 1. This keeps the result a meta-level Python boolean that is
+    safe to use while tracing a JIT function.
     """
     first_stride = front(get(stride, mode=[mode], loc=loc, ip=ip), loc=loc, ip=ip)
     if is_dynamic_expression(first_stride):
@@ -2188,21 +2260,41 @@ def is_major(
 def assume(
     src: Any,
     divby: Optional[int] = None,
+    pow2: Optional[bool] = None,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Any:
-    if divby is None:
+    if pow2 is not None and not isinstance(pow2, bool):
+        raise ValueError(f"Expected `pow2` to be a bool, got {pow2}")
+
+    if divby is None and pow2 is None:
         return src
+
+    if divby is None:
+        divby = 1
+
+    if pow2 is None:
+        pow2 = False
 
     if not isinstance(divby, int) or divby <= 0:
         raise ValueError(f"Expected `divby` to be a positive integer, got {divby}")
+
+    if pow2 and divby > 1 and (divby & (divby - 1)) != 0:
+        raise ValueError(
+            f"Expected `divby` to be a power of two when pow2=True, got {divby}"
+        )
 
     if isinstance(src, int):
         if src % divby != 0:
             raise ValueError(
                 f"Expected {src} to be divisible by {divby}, got {src % divby}"
             )
+        if pow2:
+            if src <= 0:
+                raise ValueError(f"Expected a positive power of two, got {src}")
+            if (src & (src - 1)) != 0:
+                raise ValueError(f"Expected {src} to be a power of two")
         return src
 
     if isinstance(src, Integer):
@@ -2212,7 +2304,7 @@ def assume(
         width = src.type.width
         src_val = src
 
-    res_ty = _cute_ir.ConstrainedIntType.get(divby, width)
+    res_ty = _cute_ir.ConstrainedIntType.get(divby, width, pow2)
     assumed_val = _cute_ir.assume(res_ty, src_val, loc=loc, ip=ip)
     return type(src)(IntValue(_pack_int_tuple(assumed_val, loc=loc, ip=ip)))
 
@@ -2234,6 +2326,42 @@ def make_swizzle(
     ty = ir.Type.parse(f'!cute.swizzle<"S<{b},{m},{s}>">')
     return Swizzle(static(ty, loc=loc, ip=ip))
 
+
+@ir.register_value_caster(_cute_ir.SparseElemType.get_static_typeid(), replace=True)
+class SparseElem(ir.Value):
+    def __init__(self, op_result: ir.Value) -> None:
+        super().__init__(op_result)
+
+
+@dsl_user_op
+def get_sparse_elem_type(
+    num_logical: int,
+    num_phys: int,
+    elem_type: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    if not isinstance(elem_type, ir.Type):
+        elem_type = elem_type.mlir_type
+    return _cute_ir.SparseElemType.get(num_logical, num_phys, elem_type)
+
+
+@dsl_user_op
+def make_sparse_elem(
+    num_logical: int,
+    elems: Tuple[Any, ...],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    elem_0 = elems[0]
+    if not isinstance(elem_0, ir.Value):
+        elems = tuple(e.ir_value() for e in elems)
+        elem_0 = elems[0]
+    sparse_elem_type = get_sparse_elem_type(num_logical, len(elems), elem_0.type)
+    physical_storage = vector.from_elements(sparse_elem_type.physical_type, elems)
+    return _cute_ir.MakeSparseElemOp(sparse_elem_type, physical_storage).result
 
 
 @dsl_user_op
@@ -2309,7 +2437,8 @@ def rank(a: Union[XTuple, Layout, "ComposedLayout"], mode: List[int] = []) -> in
     This function is used in layout algebra to determine the dimensionality
     of tensors and layouts for operations like slicing and evaluation.
     """
-    if isinstance(a, (Layout, ComposedLayout, Tensor)):
+    # support types with ViewTypeInterface defined outside of cute_ir
+    if isinstance(a, (Layout, ComposedLayout, Tensor)) or hasattr(a, "shape"):
         return rank(a.shape, mode)
 
     # Guaranteed by ModeOpDecorator
@@ -3330,7 +3459,12 @@ def filter_zeros(
     if not isinstance(input, (Layout, Tensor)):
         raise TypeError(f"Expected layout or tensor as input, but got {type(input)=}")
     if isinstance(input, Tensor):
-        input = input.value
+        return _op_wrapper(
+            partial(_cute_ir.filter_zeros, target_profile=target_profile),
+            input,
+            loc=loc,
+            ip=ip,
+        )
     return _cute_ir.filter_zeros(input, target_profile=target_profile, loc=loc, ip=ip)
 
 
@@ -3388,7 +3522,7 @@ def filter(
             input.inner, input.offset, filter(input.outer, loc=loc, ip=ip)
         )
     elif isinstance(input, _Tensor):
-        return _cute_ir.filter(input.value, loc=loc, ip=ip)
+        return _op_wrapper(_cute_ir.filter, input, loc=loc, ip=ip)
     else:
         return _cute_ir.filter(input, loc=loc, ip=ip)
 
@@ -3507,6 +3641,8 @@ def ceil_div(
             result = cute.ceil_div(input, tiler)
             print(result)  # Outputs: (4, 2)
     """
+    if isinstance(input, int) and isinstance(tiler, int):
+        return (input + tiler - 1) // tiler
     input_val = _pack_int_tuple(input, loc=loc, ip=ip)
     tiler_val = _pack_tile(tiler, loc=loc, ip=ip)
     res = _cute_ir.ceil_div(input=input_val, tiler=tiler_val, loc=loc, ip=ip)
@@ -3546,7 +3682,7 @@ def round_up(a: IntTuple, b: IntTuple) -> IntTuple:
 
 @dsl_user_op
 def make_layout(
-    shape: Shape,
+    shape: Union[Shape, Iterable[Layout]],
     *,
     stride: Union[Stride, None] = None,
     loc: Optional[ir.Location] = None,
@@ -3557,9 +3693,14 @@ def make_layout(
     A Layout in CuTe represents the mapping between logical and physical coordinates of a tensor.
     This function creates a Layout object that defines how tensor elements are arranged in memory.
 
-    :param shape: Shape of the layout defining the size of each mode
-    :type shape: Shape
-    :param stride: Optional stride values for each mode, defaults to None
+    As an alternative to a shape, an iterable of :class:`Layout` objects may be
+    passed, in which case each layout becomes a separate mode of the result (the
+    ``stride`` argument is ignored). This mirrors CuTe's variadic
+    ``make_layout(layoutA, layoutB, ...)``.
+
+    :param shape: Shape of the layout defining the size of each mode, or an iterable of Layout objects to concatenate (each becomes a mode)
+    :type shape: Union[Shape, Iterable[Layout]]
+    :param stride: Optional stride values for each mode, defaults to None (ignored when shape is an iterable of layouts)
     :type stride: Union[Stride, None]
     :param loc: Source location information, defaults to None
     :type loc: Optional[Location]
@@ -3584,6 +3725,11 @@ def make_layout(
         # Create a layout with custom strides
         layout = make_layout((2,2,2), stride=(4,1,2))   # layout with strides (4,1,2)
 
+        # Concatenate layouts: each becomes a mode of the result
+        mode0 = make_layout(64, stride=1)
+        mode1 = make_layout(128, stride=64)
+        combined = make_layout([mode0, mode1])          # (64,128):(1,64)
+
     Note:
         - If stride is not provided, a default compact left-most stride is computed based on the shape
         - The resulting layout maps logical coordinates to physical memory locations
@@ -3596,11 +3742,31 @@ def make_layout(
         - Stride is keyword only argument to improve readability, e.g.
           * make_layout((3,4), (1,4)) can be confusing with make_layout(((3,4), (1,4)))
           * make_layout((3,4), stride=(1,4)) is more readable
+        - When passing an iterable of layouts, each layout becomes a separate mode
     """
+    # Concatenation form: an iterable of Layouts, each becoming a mode. Strings
+    # and bytes are iterable too, so exclude them; ints are not iterable and so
+    # fall through to the normal shape path unchanged.
+    if isinstance(shape, Iterable) and not isinstance(shape, (str, bytes)):
+        # tuples/lists are reusable; materialize only one-shot iterables (generators).
+        seq = shape if isinstance(shape, (list, tuple)) else list(shape)
+        if seq and all(isinstance(elem, Layout) for elem in seq):
+            # all() above guarantees every element is a Layout; mypy can't infer
+            # that from a runtime predicate, so narrow explicitly.
+            layouts = cast("List[Layout]", seq)
+            return make_layout(
+                tuple(layout.shape for layout in layouts),
+                stride=tuple(layout.stride for layout in layouts),
+                loc=loc,
+                ip=ip,
+            )
+        # Not layouts: keep the materialized form so generators still work below.
+        shape = cast("Shape", seq)
+
     if stride is not None and not is_congruent(shape, stride):
         raise ValueError("shape and stride must be congruent")
 
-    shape_val = _pack_shape(shape, loc=loc, ip=ip)
+    shape_val = _pack_shape(cast("Shape", shape), loc=loc, ip=ip)
     if stride is not None:
         stride_val = _pack_stride(stride, loc=loc, ip=ip)
         layout_ty = _cute_ir.LayoutType.get(shape_val.type, stride_val.type)
@@ -3937,6 +4103,7 @@ def size_in_bytes(
         dtype,
         (
             NumericMeta,
+            _cute_ir.SparseElemType,
         ),
     ):
         raise TypeError(f"dtype must be a Numeric, but got {dtype}")
@@ -4288,6 +4455,9 @@ def recast_ptr(
 ) -> Pointer:
     cvt_ty = None
     if dtype is not None:
+        if isinstance(dtype, _cute_ir.SparseElemType):
+            # use SparseElemType as dtype
+            cvt_ty = dtype
         if cvt_ty is None:
             if not isclass(dtype) or not issubclass(dtype, Numeric):
                 raise TypeError(f"dtype must be a type of Numeric, but got {dtype}")
@@ -4295,16 +4465,15 @@ def recast_ptr(
 
     value_ty = cvt_ty or ptr.type.value_type
     swizzle_attr = swizzle_.type.attribute if swizzle_ is not None else None
-    res_ty = _cute_ir.PtrType.get(value_ty, ptr.memspace, ptr.alignment, swizzle_attr)  # type: ignore[attr-defined]
+    res_ty = _cute_ir.PtrType.get(
+        value_ty, _to_mlir_address_space(ptr.memspace), ptr.alignment, swizzle_attr
+    )
     return _cute_ir.recast_iter(res_ty, ptr.value, loc=loc, ip=ip)
 
 
 @dsl_user_op
 def make_ptr(
-    dtype: Union[
-        Type[Numeric],
-        None,
-    ],
+    dtype: Union[Type[Numeric], _SparseElemType],
     value: Union[int, Integer, ir.Value],
     mem_space: Optional[AddressSpace] = None,
     *,
@@ -4313,13 +4482,12 @@ def make_ptr(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Pointer:
-    cvt_type = None
-    if dtype is not None:
-        if cvt_type is None:
-            if not isinstance(dtype, NumericMeta):
-                raise TypeError("expects dtype to be a type of Numeric")
-            cvt_type = dtype.mlir_type
-    if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
+    cvt_type: Union[_SparseElemType, ir.Type, None] = None
+    if cvt_type is None:
+        if not isinstance(dtype, NumericMeta):
+            raise TypeError("expects dtype to be a type of Numeric")
+        cvt_type = dtype.mlir_type
+    if isinstance(value, ir.Value) and isinstance(value.type, llvm.PointerType):
         llvm_ptr_ty = llvm.PointerType(value.type)
         mem_space = AddressSpace(llvm_ptr_ty.address_space)
         value = llvm.ptrtoint(T.i64(), value)
@@ -4329,15 +4497,14 @@ def make_ptr(
 
     if mem_space is None:
         mem_space = AddressSpace.generic
-    if not isinstance(mem_space, AddressSpace):
-        raise TypeError(f"expects mem_space to be an AddressSpace, but got {mem_space}")
+    mem_space = _as_address_space(mem_space)
 
     # TMEM addresses are 32b wide
     is_tmem = mem_space == AddressSpace.tmem
     value = Int32(value) if is_tmem else Int64(value)
 
     # Set the alignment of the pointer
-    bytes_per_elt = max(1, dtype.width // 8)  # type: ignore[union-attr]
+    bytes_per_elt = max(1, dtype.width // 8)
     if assumed_align is None:
         assumed_align = bytes_per_elt
 
@@ -4352,10 +4519,12 @@ def make_ptr(
     )
 
     # Construct the pointer Type
-    data_ty = T.i8() if dtype is None else cvt_type
+    data_ty = cvt_type
     swizzle = swizzle_.type.attribute if swizzle_ is not None else None
 
-    ptr_ty = _cute_ir.PtrType.get(data_ty, mem_space, assumed_align, swizzle)
+    ptr_ty = _cute_ir.PtrType.get(
+        data_ty, _to_mlir_address_space(mem_space), assumed_align, swizzle
+    )
     ptr = _cute_ir.inttoptr(ptr_ty, aligned_intptr, loc=loc, ip=ip)
     ptr._dtype = dtype
     return ptr
@@ -4569,6 +4738,7 @@ def logical_product(
     assert rank(tiler_val) <= rank(block), "logical_product: Too many modes in tiler."
     tiler_rank = rank(tiler_val)
     block_rank = rank(block)
+    assert isinstance(tiler_val, tuple)
     res = tuple(
         logical_product(block[i], tiler_val[i]) if i < tiler_rank else block[i]  # type: ignore[index]
         for i in range(block_rank)
@@ -4956,6 +5126,7 @@ def max_common_vector(
     # Keep only the static identity component of the common layout
     if (
         is_static(get(common.shape, mode=[0], loc=loc, ip=ip))
+        and isinstance(get(common.stride, mode=[0], loc=loc, ip=ip), int)
         and get(common.stride, mode=[0], loc=loc, ip=ip) == 1
     ):
         # Truncate to the size of the contiguous vector (static stride-1 mode)
@@ -5014,16 +5185,17 @@ def local_partition(
 ) -> Tensor:
     if isinstance(index, cutlass_arith.ArithValue):
         index_val = index
+    elif isinstance(index, int):
+        index_val = const(index, Int32, loc=loc, ip=ip)
     else:
         index_val = index.ir_value(loc=loc, ip=ip)  # type: ignore[union-attr]
     if index_val.type.width > 32:
         raise NotImplementedError(
             f"Index value should be 32-bit or smaller integer type, but got {index_val.type}"
         )
-    return _cute_ir.local_partition(
-        input=target.value,
-        tiler=dice(tiler, proj),
-        index=index_val,
+    return _op_wrapper(
+        partial(_cute_ir.local_partition, tiler=dice(tiler, proj), index=index_val),
+        target,
         loc=loc,
         ip=ip,
     )
@@ -5083,9 +5255,9 @@ def local_tile(
             tiler = (2, 4)
             coord = (1, 1)
 
-            # output: (8, 6)
+            # output: (2, 4)
             # - zipped_divide(tensor, tiler)     -> ((2, 4), (8, 6))
-            # - local_tile(tensor, tiler, coord) -> (8, 6)
+            # - local_tile(tensor, tiler, coord) -> (2, 4)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord)
 
     2. Using a stride projection for specialized tiling:
@@ -5098,11 +5270,11 @@ def local_tile(
             coord = (0, 1, 1)
             proj = (1, None, 1)
 
-            # output: (8, 6)
+            # output: (2, 4)
             # projected_tiler: (2, 4)
             # projected_coord: (0, 1)
             # - zipped_divide(tensor, projected_tiler)               -> ((2, 4), (8, 6))
-            # - local_tile(tensor, projected_tiler, projected_coord) -> (8, 6)
+            # - local_tile(tensor, projected_tiler, projected_coord) -> (2, 4)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord, proj=proj)
     """
 
@@ -5114,11 +5286,9 @@ def local_tile(
         proj_val = _pack_coord(proj, loc=loc, ip=ip)
         proj = proj_val.type.attribute
 
-    return _cute_ir.local_tile(
-        input=input.value,
-        tile=tiler_val,
-        coord=coord_val,
-        proj=proj,
+    return _op_wrapper(
+        partial(_cute_ir.local_tile, tile=tiler_val, coord=coord_val, proj=proj),
+        input,
         loc=loc,
         ip=ip,
     )
@@ -5136,11 +5306,10 @@ def make_layout_image_mask(
     """
     Makes a 16-bit integer mask of the image of a layout sliced at a given mode
     and accounting for the offset given by the input coordinate for the other modes.
+
+    Static layouts unroll the OR-chain at trace time. Dynamic layouts emit an
+    ``scf.for`` over the multicast axis.
     """
-    if not is_static(lay):
-        raise ValueError(
-            f"make_layout_image_mask requires the layout to be static, but got {pretty_str(lay)}"
-        )
     r = rank(lay)
     if rank(coord) != r:
         raise ValueError(
@@ -5148,25 +5317,28 @@ def make_layout_image_mask(
         )
     if mode > r or mode < 0:
         raise ValueError(f"expects `mode` to be in [0,rank(lay)), but got {mode}")
-    # Given that we require the layout to be static, we can check that the mask fits in 16 bits
-    # This might be too conservative but safe
-    if cosize(lay) > 16:
+    # Bound check runs only for fully-static layouts; dynamic spans cannot be
+    # validated at trace time and must satisfy cosize <= 16 at runtime.
+    if is_static(lay) and cosize(lay) > 16:
         raise ValueError("the mask may not fit into a 16-bit integer")
 
-    # Replace the mode to keep with _ in the coordinate
     slicer = tuple(None if idx == mode else x for idx, x in enumerate(coord))  # type: ignore[arg-type]
-    # Slice the layout with the slicer above and keep track of the offset
     sliced_lay, offset = slice_and_offset(slicer, lay, loc=loc, ip=ip)
-    # Given that we replace only one mode with _, the rank of the slice should be 1
     assert rank(sliced_lay) == 1
-    assert is_static(sliced_lay), (
-        "make_layout_image_mask requires the layout to be static"
-    )
 
-    # Create the mask of the image
     mcast_mask = Int16(0)
-    for i in range(size(sliced_lay)):
-        mcast_mask = mcast_mask | (1 << sliced_lay(i))
+    if is_static(sliced_lay):
+        for i in range(size(sliced_lay)):
+            mcast_mask = mcast_mask | (1 << sliced_lay(i))
+    else:  # pragma: no cover - mixed-cluster path; exercised only by GPU tests
+        from cutlass.cutlass_dsl import for_generate, yield_out
+
+        for i, mask_acc, mcast_mask in for_generate(
+            0, Int32(size(sliced_lay)), 1, [mcast_mask], loc=loc, ip=ip
+        ):
+            new_mask = mask_acc | (Int16(1) << Int16(sliced_lay(i, loc=loc, ip=ip)))
+            yield_out([new_mask], loc=loc, ip=ip)
+
     mcast_mask <<= offset
     return Int16(mcast_mask)
 
@@ -5484,7 +5656,7 @@ class struct:
         :ivar _size: The size of the MemRange.
         """
 
-        _dtype: Optional[Numeric] = None
+        _dtype: Optional[Type[Numeric]] = None
         _size: Optional[int] = None
 
         def __new__(
@@ -5517,11 +5689,14 @@ class struct:
 
         @property
         def elem_width(cls) -> int:
-            return cls._dtype.width if cls._dtype is not Boolean else 8  # type: ignore[union-attr]
+            dtype = cls._dtype
+            assert dtype is not None
+            return dtype.width if dtype is not Boolean else 8
 
         @property
         def size_in_bytes(cls) -> int:
-            return cls.size * cls.elem_width // 8  # type: ignore[operator]
+            assert cls.size is not None
+            return cls.size * cls.elem_width // 8
 
     class MemRange(metaclass=_MemRangeMeta):
         """
@@ -5540,7 +5715,10 @@ class struct:
         """
 
         def __init__(
-            self, dtype: Optional[Numeric], size: Optional[int], base: Optional[Pointer]
+            self,
+            dtype: Optional[Type[Numeric]],
+            size: Optional[int],
+            base: Optional[Pointer],
         ) -> None:
             """
             Initializes a new memory range.
@@ -5550,7 +5728,7 @@ class struct:
                          case the range can only be used for its address (e.g. as a partition marker).
             :param base: The base address of the memory range.
             """
-            self._dtype: Optional[Numeric] = dtype
+            self._dtype: Optional[Type[Numeric]] = dtype
             self._size: Optional[int] = size
             self._base: Optional[Pointer] = base
 
@@ -5640,9 +5818,10 @@ class struct:
             :raises AssertionError: If the index is out of range.
             """
             assert self._size is not None and (index >= 0) and (index < self._size)
+            assert self._dtype is not None
             ptr = self.data_ptr() + index
             ptr.store(
-                as_numeric(val).to(self._dtype),  # type: ignore[call-overload]
+                as_numeric(val).to(self._dtype),
                 loc=loc,
                 ip=ip,
             )
@@ -5782,14 +5961,6 @@ class struct:
             :return: The MLIR value of the underlying pointer.
             :rtype: ir.Value
             """
-            import warnings
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("always")
-                warnings.warn(
-                    "Use explicit `struct.scalar.ptr` for pointer instead.",
-                    DeprecationWarning,
-                )
             return self._ptr.value
 
     # util func for base dsl scalar types
@@ -5802,6 +5973,24 @@ class struct:
         :return: True if the type is a subclass of Numeric, False otherwise.
         """
         return isinstance(dtype, type) and issubclass(dtype, Numeric)
+
+    @staticmethod
+    def _install_dynamic_expression_protocol(cls: type, decorator: Any) -> None:
+        type.__setattr__(
+            cls,
+            "__get_mlir_types__",
+            lambda self: self.base.__get_mlir_types__(),
+        )
+        type.__setattr__(
+            cls,
+            "__extract_mlir_values__",
+            lambda self: self.base.__extract_mlir_values__(),
+        )
+        type.__setattr__(
+            cls,
+            "__new_from_mlir_values__",
+            lambda self, values: decorator(self.base.__new_from_mlir_values__(values)),
+        )
 
     # calculate size and alignment
     def __init__(self, cls: type) -> None:
@@ -5834,6 +6023,10 @@ class struct:
             return f"{object.__repr__(self)} <{self.__name__}> <base = {self.base}>"
 
         type.__setattr__(self._cls, "__repr__", struct_repr)
+
+        # A struct instance is fully described by its base pointer; fields are
+        # re-derived from static offsets when the struct is reconstructed.
+        struct._install_dynamic_expression_protocol(self._cls, self)
 
         # Calculate the offsets and alignment
         offset = 0
@@ -6002,7 +6195,7 @@ class union(struct):
         align = data_union.__alignof__()
 
         # Allocate and reference elements:
-        allocator = cutlass.utils.SmemAllocator()
+        allocator = cutlass.memory.SmemAllocator()
         value = allocator.allocate(data_union)
 
         # Access union members (all at the same offset):
@@ -6044,6 +6237,10 @@ class union(struct):
             return f"{object.__repr__(self)} <{self.__name__}> <base = {self.base}>"
 
         type.__setattr__(self._cls, "__repr__", union_repr)
+
+        # A union instance is fully described by its base pointer; fields are
+        # re-derived from offset zero when the union is reconstructed.
+        struct._install_dynamic_expression_protocol(self._cls, self)
 
         # Calculate the maximum size and alignment
         max_size = 0
@@ -6154,22 +6351,6 @@ class union(struct):
         return self._align_of
 
 
-# Deprecated usage but keep them to avoid breaking some examples uses `cute.core.ThrMma`
-
-from .atom import ThrCopy as _ThrCopy
-from .atom import ThrMma as _ThrMma
-
-
-@deprecated("cute.core.ThrMma is deprecated, use cute.ThrMma instead")
-class ThrMma(_ThrMma):
-    pass
-
-
-@deprecated("cute.core.ThrCopy is deprecated, use cute.ThrCopy instead")
-class ThrCopy(_ThrCopy):
-    pass
-
-
 #
 # FastDivmod operations for optimized division and modulus
 #
@@ -6178,6 +6359,13 @@ class FastDivmodDivisor:
     First-class FastDivmod divisor with operator overloading support.
 
     This class wraps a FastDivmod divisor and enables natural Python operator syntax.
+
+    .. deprecated::
+        Use :class:`FastDivmodDivisorV2` instead. V2 additionally carries the
+        scalar divisor across kernel boundaries (2 MLIR values per object
+        instead of 1), so ``.divisor`` is readable inside kernels;
+        arithmetic is unchanged. This class keeps the legacy 1-value
+        serialization contract for existing integrations.
 
     :ivar divisor: The original divisor value (publicly accessible)
     :ivar _divisor_mlir: The FastDivmod divisor MLIR value (internal)
@@ -6207,6 +6395,20 @@ class FastDivmodDivisor:
         :param is_power_of_2: Whether divisor is known to be a power of 2.
                               Defaults to False.
         """
+        # Subclasses (FastDivmodDivisorV2) share this __init__; only direct
+        # use of the legacy class is deprecated.
+        if type(self) is FastDivmodDivisor:
+            warnings.warn(
+                "FastDivmodDivisor is deprecated in favor of "
+                "cute.FastDivmodDivisorV2 / cute.fast_divmod_create_divisor_v2. "
+                "V2 additionally carries the scalar divisor across kernel "
+                "boundaries (2 MLIR values per object instead of 1), so "
+                "'.divisor' is readable inside kernels; "
+                "arithmetic (divmod, //, %) is unchanged.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         # Store the original divisor value for public access
         self._original_divisor = divisor
 
@@ -6324,6 +6526,13 @@ class FastDivmodDivisor:
             batch_fdd = cute.fast_divmod_create_divisor(batch_size)
             print(f"Divisor: {batch_fdd.divisor}")  # Access the divisor value
             some_function(divisor=batch_fdd.divisor)  # Pass to other functions
+
+        .. note::
+            After this object crosses a kernel boundary (e.g. stored in a
+            params structure passed to a ``@cute.kernel``), the returned value
+            still references host-side SSA and fails MLIR region isolation if
+            used inside the kernel (OSS issue #3243). Use
+            :class:`FastDivmodDivisorV2` to read the divisor inside a kernel.
         """
         return self._original_divisor
 
@@ -6371,7 +6580,7 @@ class FastDivmodDivisor:
         return new_obj
 
     def __repr__(self) -> str:
-        return f"FastDivmodDivisor(divisor={self._original_divisor}, type={self._divisor_mlir.type})"
+        return f"{type(self).__name__}(divisor={self._original_divisor}, type={self._divisor_mlir.type})"
 
 
 # Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator
@@ -6420,3 +6629,100 @@ def fast_divmod_create_divisor(
         remainder = linear_idx % divisor
     """
     return FastDivmodDivisor(divisor, loc=loc, ip=ip)
+
+
+class FastDivmodDivisorV2(FastDivmodDivisor):
+    """
+    FastDivmod divisor whose ``.divisor`` property is readable inside kernels.
+
+    Same arithmetic behavior as :class:`FastDivmodDivisor` (``divmod``, ``//``,
+    ``%``), but serializes **two** MLIR values across region boundaries — the
+    encoded FastDivmod plus the scalar divisor — so ``.divisor`` resolves to
+    in-region SSA after the object crosses a kernel boundary (OSS issue #3243):
+
+    .. code-block:: python
+
+        @dataclass
+        class Params:
+            fdd: cute.FastDivmodDivisorV2
+
+        @cute.kernel
+        def kernel(out: cute.Tensor, params: Params):
+            out[0] = params.fdd.divisor  # OK: region-local SSA
+
+    :class:`FastDivmodDivisor` keeps the legacy 1-value serialization contract
+    for backward compatibility; its ``.divisor`` is not readable inside a
+    kernel.
+    """
+
+    def __extract_mlir_values__(self) -> List[ir.Value]:
+        """Extract MLIR values for Host->Device transfer.
+
+        Two SSA values are emitted: the encoded FastDivmod (``_divisor_mlir``)
+        and the scalar divisor that was used to build it. The encoded value
+        still flows through GridInvariantCodeMotionPass for host hoisting; the
+        scalar value is needed so ``.divisor`` resolves to in-region SSA after
+        crossing the kernel boundary (issue #3243).
+        """
+        divisor_for_pack = self._original_divisor
+        if isinstance(divisor_for_pack, ir.Value):
+            divisor_ir = divisor_for_pack
+        else:
+            divisor_ir = Int32(divisor_for_pack).ir_value()
+        return [self._divisor_mlir, divisor_ir]
+
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "FastDivmodDivisorV2":
+        """Reconstruct FastDivmodDivisorV2 from MLIR values.
+
+        Rebuilds ``_original_divisor`` from the SSA passed in ``values[1]`` so
+        that ``.divisor`` reads kernel-region SSA, not the host-side template.
+        """
+        if len(values) != 2:
+            raise ValueError(
+                "FastDivmodDivisorV2 expects exactly 2 MLIR values (encoded "
+                f"divisor + scalar divisor SSA), got {len(values)}. If this "
+                "object is held by a params class with a hand-written "
+                "__new_from_mlir_values__, make sure it slices 2 values per "
+                "FastDivmodDivisorV2 field."
+            )
+        new_obj = object.__new__(FastDivmodDivisorV2)
+        new_obj._divisor_mlir = values[0]
+        # values[1] may arrive as a raw ir.Value or as a typed integer wrapper
+        # (the framework value caster reconstructs typed wrappers across the
+        # kernel boundary). Normalize to IntValue so '.divisor' supports
+        # arithmetic and repr inside the kernel.
+        scalar_divisor = values[1]
+        if isinstance(scalar_divisor, ir.Value):
+            scalar_divisor = IntValue(scalar_divisor)
+        new_obj._original_divisor = scalar_divisor
+        return new_obj
+
+
+@dsl_user_op
+def fast_divmod_create_divisor_v2(
+    divisor: Integer,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> FastDivmodDivisorV2:
+    """Create a FastDivmod divisor whose ``.divisor`` is readable inside kernels.
+
+    Behaves like :func:`fast_divmod_create_divisor`, but the returned
+    :class:`FastDivmodDivisorV2` serializes both the encoded FastDivmod and the
+    scalar divisor across kernel boundaries, so ``.divisor`` resolves to
+    region-local SSA inside a kernel (OSS issue #3243).
+
+    :param divisor: The divisor value (should be runtime-dynamic value)
+    :type divisor: Integer
+    :return: FastDivmodDivisorV2 object with operator overloading support
+    :rtype: FastDivmodDivisorV2
+
+    **Example:**
+
+    .. code-block:: python
+
+        divisor = fast_divmod_create_divisor_v2(batch_size)
+        quotient, remainder = divmod(linear_idx, divisor)
+        d = divisor.divisor  # readable on host AND inside kernels
+    """
+    return FastDivmodDivisorV2(divisor, loc=loc, ip=ip)

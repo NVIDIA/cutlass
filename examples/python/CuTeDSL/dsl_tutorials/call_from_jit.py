@@ -60,6 +60,8 @@ import os
 import sys
 from typing import Type, Tuple
 
+import cuda.bindings.driver as cuda
+
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import make_ptr
@@ -166,6 +168,7 @@ def tensor_op_gemm_wrapper(
     mnkl: cutlass.Constexpr[tuple[int, int, int, int]],
     acc_dtype: Type[cutlass.Numeric],
     atom_layout_mnk: cutlass.Constexpr[tuple[int, int, int]],
+    stream: cuda.CUstream,
 ):
     print("\n[DSL INFO] Input Parameters:")
     print(f"[DSL INFO]   mnkl: {mnkl}")
@@ -197,13 +200,16 @@ def tensor_op_gemm_wrapper(
     print(f"[DSL INFO]   Atom layout: {atom_layout_mnk}")
 
     # No need to compile inside jit function
-    tensor_op_gemm(mA, mB, mC)
+    tensor_op_gemm(mA, mB, mC, stream)
     print("\n[DSL INFO] Executed TensorOpGemm")
 
 
 def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
     import torch
     from cutlass.torch import dtype as torch_dtype
+
+    torch_stream = torch.cuda.current_stream()
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
     print("\nRunning TensorOpGemm test with:")
     print(f"Tensor dimensions: {mnkl}")
@@ -247,6 +253,7 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
         # no stride passing
         cutlass.Float32,
         (2, 2, 1),
+        current_stream,
     )
     torch.cuda.synchronize()
 

@@ -288,7 +288,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
   # TODO: randomize beta values for wider coverage
   beta_values = [0.5]
 
-  is_supported_arch = (arch in ["100a", "100f", "101a", "101f", "103a", "110a", "110f", "120a", "120f", "121a", "121f"])
+  is_supported_arch = (arch in ["100a", "100f", "101a", "101f", "103a", "107a", "107f", "110a", "110f", "120a", "120f", "121a", "121f"])
 
   is_runtime_datatype_enabled = mode == "functional_L0" and is_supported_arch
 
@@ -307,7 +307,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       'bf16gemm_f32_f32_f32_f32_f32',
     ]
 
-    exclude_archs = arch not in ("103a")
+    exclude_archs = arch not in ("103a", "107a", "107f")
     if exclude_archs:
       sm100_mma_data_type_general.append('gemm_s8_s8_s32_s8_s8')
 
@@ -335,6 +335,18 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
     sm100_mma_filter_regex_1sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
     sm100_mma_filter_regex_2sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
+
+    sm107_mma_cluster_size = [
+      '2x2x1',
+      '0x0x1' # dynamic cluster
+    ]
+
+    sm107_mma_data_type_general = [
+      "gemm_f8_f8_f32_f16_f16",
+    ]
+
+    sm107_mma_filter_regex_1sm = "cutlass3x_sm107_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_data_type_general, sm107_mma_cluster_size, sm100_mma_layouts]]) + ").*_breuse_1sm.*"
+    sm107_mma_filter_regex_2sm = "cutlass3x_sm107_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_data_type_general, sm107_mma_cluster_size, sm100_mma_layouts]]) + ").*_breuse_2sm.*"
 
     #
     # Block Scale Gemm
@@ -367,10 +379,27 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     # regex list must be in kernel procedural name order
     block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
     block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
-    
+
     sm103_block_scaled_prefetch_policy = ['tmapf']
     sm103_block_scaled_filter_regex_1sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
     sm103_block_scaled_filter_regex_2sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
+
+    sm107_mma_bs_data_type_general = [
+      "gemm_ue8m0xf8_ue8m0xf8_f32_f16_f16",
+      "gemm_ue8m0xf8_ue8m0xf8_f32_bf16_e5m2",
+    ]
+
+    sm107_mma_bs_filter_regex_1sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_bs_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_1sm.*"
+    sm107_mma_bs_filter_regex_2sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_bs_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_2sm.*"
+
+    sm107_mma_nvf4_data_type_general = [
+      "gemm_ue8m0xe2m1_ue8m0xe2m1_f32_f16_f16",
+      "gemm_ue4m3xe2m1_ue4m3xe2m1_f32_bf16_bf16",
+      "gemm_ue5m3xe2m1_ue5m3xe2m1_f32_f16_f16",
+    ]
+
+    sm107_mma_nvf4_filter_regex_1sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_nvf4_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_1sm.*"
+    sm107_mma_nvf4_filter_regex_2sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_nvf4_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_2sm.*"
 
     if arch in ["100a", "100f"]:
       kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \
@@ -395,7 +424,16 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                       f"({block_scaled_filter_regex_2sm})|" \
                       f"({sm103_block_scaled_filter_regex_1sm})|" \
                       f"({sm103_block_scaled_filter_regex_2sm})"
-    elif arch in ["120a", "120f", "121a", "121f"]:
+    elif arch in ["107a", "107f",
+                 ]:
+      kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \
+                      f"({sm100_mma_filter_regex_2sm})|" \
+                      f"({block_scaled_filter_regex_1sm})|" \
+                      f"({block_scaled_filter_regex_2sm})"
+      kernel_filter = kernel_filter.replace("sm100", "sm107")
+      kernel_filter = kernel_filter.replace("sm103", "sm107")
+    elif arch in ["120a", "120f", "121a", "121f",
+                 ]:
 
       # blockscaled sm120_mma kernels
       blockscaled_sm120_mma_kernel_cta_tiles = [
@@ -410,7 +448,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
       kernel_filter = f"({filter_regex_blockscaled_sm120_mma})"
     else:
-      error_message = "unsupported arch, only support sm100a, sm100f, sm101a, sm101f, sm110a, sm110f, sm103a, sm120a, sm120f, sm121a, sm121f"
+      error_message = "unsupported arch, only support sm100a, sm100f, sm101a, sm101f, sm110a, sm110f, sm103a, sm107a, sm107f, sm120a, sm120f, sm121a, sm121f"
       raise Exception(error_message)
 
   elif mode == "functional_L1":
@@ -522,10 +560,14 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
     problem_waves = [0.5, 2.5]
 
-    if arch in ["120a", "120f", "121a", "121f"]:
+    if arch in ["120a", "120f", "121a", "121f",
+               ]:
       kernel_filter = f"({filter_regex_sm120_mma})"
     else:
       kernel_filter = f"({filter_regex_sm100_mma})"
+      if arch in ["107a", "107f",
+                 ]:
+        kernel_filter = kernel_filter.replace("sm100", "sm107")
   else:
     raise ValueError()
 
@@ -865,6 +907,13 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                   if hashed_kernel_name not in auditlist_csv_map:
                     audit_row = get_kernel_features(operation, hashed_kernel_name, dynamic_datatype, runtime_input_datatype)
                     auditlist_csv_map[hashed_kernel_name] = audit_row
+
+  if kernels_emitted == 0 or testcase_counter == 0:
+    raise RuntimeError(
+      f"Generated an empty SM{arch} {mode} testlist: "
+      f"{kernels_emitted} kernels matched out of {kernels_total}, "
+      f"producing {testcase_counter} test cases."
+    )
 
   with open(outfile_name, 'w') as testlist_csv:
     csv_writer = csv.writer(testlist_csv, delimiter=',')

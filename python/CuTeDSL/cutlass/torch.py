@@ -17,15 +17,13 @@ from typing import Any, Optional, Type, Union, Tuple
 
 from cutlass.cute.typing import (
     Numeric,
-    Boolean,
-    TFloat32,
-    Float8E4M3B11FNUZ,
     Float8E4M3FN,
     Float8E5M2,
+    FloatNV8E5M3FNU,
     Float8E8M0FNU,
+    Float4E2M1FN,
     Float6E3M2FN,
     Float6E2M3FN,
-    Float4E2M1FN,
     Int4,
     Tensor,
 )
@@ -35,31 +33,7 @@ import torch
 import cuda.bindings.driver as cuda
 
 
-def dtype(ty: Type[Numeric]) -> "torch.dtype":
-    """
-    Return the corresponding torch.dtype per the given DSL type
-    """
-    torch_dtype = getattr(torch, ty.__name__.lower(), None)
-
-    torch_type_map = {
-        Boolean: torch.bool,
-        # TFloat32 is just alias of float32
-        TFloat32: torch.float32,
-        Float8E5M2: torch.float8_e5m2,
-        Float8E4M3FN: torch.float8_e4m3fn,
-        Float8E4M3B11FNUZ: torch.float8_e4m3fnuz,
-    }
-
-    # float8_e8m0fnu is introduced in latest version of torch
-    if hasattr(torch, "float8_e8m0fnu"):
-        torch_type_map[Float8E8M0FNU] = torch.float8_e8m0fnu
-
-    if torch_dtype is None:
-        torch_dtype = torch_type_map.get(ty)
-
-    if torch_dtype is None:
-        raise TypeError(f"{ty} is not supported by torch")
-    return torch_dtype
+from cutlass.base_dsl.torch import dtype as dtype  # noqa: F811
 
 
 def as_tensor(pointer: Any, shape: Any, torch_type: "torch.dtype") -> "torch.Tensor":
@@ -182,10 +156,19 @@ def convert_cute_tensor(
     cute_tensor: Tensor,
     dtype: Type[Numeric],
     is_dynamic_layout: bool = True,
+    enable_tvm_ffi: bool = False,
 ) -> Tensor:
     """
     Change the value of the cute tensor to make its value converted from a fp32 torch tensor.
     Used for fp8 and int4 types tensor creation now.
+
+    :param f32_torch_tensor: fp32 torch tensor holding the source values
+    :param cute_tensor: destination cute tensor to populate
+    :param dtype: cutlass dtype to convert the values to
+    :param is_dynamic_layout: whether the cute tensor uses dynamic layout
+    :param enable_tvm_ffi: forwarded to ``from_dlpack`` to select the TVM FFI
+        path for the temporary fp32 source tensor; default ``False`` preserves
+        the prior behaviour
     """
     # if torch_tensor is on cpu, create a gpu copy
     if f32_torch_tensor.device.type == "cpu":
@@ -197,11 +180,12 @@ def convert_cute_tensor(
         Float8E5M2,
         Float8E4M3FN,
         Float8E8M0FNU,
+        FloatNV8E5M3FNU,
+        Float4E2M1FN,
         Float6E3M2FN,
         Float6E2M3FN,
-        Float4E2M1FN,
     }:
-        fp32_cute_tensor = from_dlpack(f32_torch_tensor)
+        fp32_cute_tensor = from_dlpack(f32_torch_tensor, enable_tvm_ffi=enable_tvm_ffi)
         if is_dynamic_layout:
             # note: dim_order to not always maps to leading dimension,
             # so we need to get the leading dimension from the torch tensor strides
@@ -291,6 +275,7 @@ def cute_tensor_like(
     cutlass_dtype: Type[Numeric],
     is_dynamic_layout: bool,
     assumed_align: Optional[int] = None,
+    enable_tvm_ffi: bool = False,
 ) -> tuple[Tensor, torch.Tensor]:
     """
     Create a cute tensor use a torch tensor as the data source.
@@ -301,19 +286,22 @@ def cute_tensor_like(
     :param cutlass_dtype: cutlass dtype of the cute tensor
     :param is_dynamic_layout: whether the cute tensor uses dynamic layout
     :param assumed_align: assumed alignment of the cute tensor
+    :param enable_tvm_ffi: forwarded to ``from_dlpack`` (and the internal
+        ``convert_cute_tensor`` kernel-convert path) to select the TVM FFI path;
+        default ``False`` preserves the prior behaviour
     """
 
     # allocate device buffer for cute tensor
-    if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
+    do_kernel_convert = (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
         cutlass_dtype.is_integer and cutlass_dtype.width == 4
-    ):
-        torch_dtype = torch.int8
-    else:
-        torch_dtype = dtype(cutlass_dtype)
+    )
+    torch_dtype = torch.uint8 if do_kernel_convert else dtype(cutlass_dtype)
     torch_tensor = torch.empty_like(data_ref, dtype=torch_dtype, device="cuda")
 
     # create cute tensor using the device buffer
-    cute_tensor = from_dlpack(torch_tensor, assumed_align=assumed_align)
+    cute_tensor = from_dlpack(
+        torch_tensor, assumed_align=assumed_align, enable_tvm_ffi=enable_tvm_ffi
+    )
     cute_tensor.element_type = cutlass_dtype
 
     if is_dynamic_layout:
@@ -322,18 +310,25 @@ def cute_tensor_like(
 
     is_empty_tensor = torch_tensor.numel() == 0
     # initialize the cute tensor data
-    if not is_empty_tensor and (
-        (cutlass_dtype.is_float and cutlass_dtype.width <= 8)
-        or (cutlass_dtype.is_integer and cutlass_dtype.width == 4)
-    ):
+    if not is_empty_tensor and do_kernel_convert:
         cute_tensor = convert_cute_tensor(
             data_ref.to(dtype=torch.float32),
             cute_tensor,
             cutlass_dtype,
             is_dynamic_layout,
+            enable_tvm_ffi=enable_tvm_ffi,
         )
     else:
         torch_tensor.copy_(data_ref.to(dtype=torch_dtype))
+
+    # cast back to torch type if possible
+    if do_kernel_convert:
+        try:
+            torch_dtype = dtype(cutlass_dtype)
+        except TypeError:
+            torch_dtype = torch_tensor.dtype
+        torch_tensor = torch_tensor.view(dtype=torch_dtype)
+
     return cute_tensor, torch_tensor
 
 

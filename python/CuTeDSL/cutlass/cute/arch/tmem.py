@@ -9,15 +9,17 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from cutlass import AddressSpace
 from typing import Optional, Type
 
 from cutlass.cutlass_dsl import dsl_user_op
-from cutlass.base_dsl.arch import Arch
+from cutlass import base_dsl
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
+from ..core import struct
 from ..typing import Pointer, Int, Int32, Numeric, NumericMeta
 
 SM100_TMEM_CAPACITY_COLUMNS = (
@@ -29,12 +31,14 @@ SM100_TMEM_MIN_ALLOC_COLUMNS = (
 
 TMEM_MAX_ALLOC_COLUMNS_MAP = {
     "sm_120": 512,
+    "sm_107": 576,
     "sm_103": 512,
     "sm_100": 512,
 }
 
 TMEM_MIN_ALLOC_COLUMNS_MAP = {
     "sm_120": 32,
+    "sm_107": 32,
     "sm_103": 32,
     "sm_100": 32,
 }
@@ -74,6 +78,29 @@ def get_min_tmem_alloc_cols(compute_capability: str) -> int:
     return TMEM_MIN_ALLOC_COLUMNS_MAP[compute_capability]
 
 
+Arch = base_dsl.Arch
+
+
+def is_tmem_allocation_exclusive(num_columns: int, arch: base_dsl.Arch) -> bool:
+    """Determines whether exclusive allocation of TMEM is required
+
+    For certain architectures (e.g., sm_107), there are more than 512 columns
+    available in TMEM (e.g., 576). However, these extra columns can only be
+    used if TMEM is exclusively allocated.
+
+    :param num_columns: Number of columns to be allocated
+    :type num_columns: int
+    :param arch: Architecture
+    :type arch: base_dsl.Arch
+
+    :return: Returns True if all TMEM columns need to be exclusively allocated
+    :rtype: bool
+    """
+
+    return num_columns > 512 and arch in (
+        base_dsl.Arch.sm_107,
+    )
+
 
 @dsl_user_op
 def retrieve_tmem_ptr(
@@ -102,9 +129,10 @@ def retrieve_tmem_ptr(
             f"element_type must be a type of Numeric, but got {element_type}"
         )
 
-    res_ty = _cute_ir.PtrType.get(
-        element_type.mlir_type, _cute_ir.AddressSpace.tmem, alignment
-    )
+    if isinstance(ptr_to_buffer_holding_addr, struct._ScalarData):
+        ptr_to_buffer_holding_addr = ptr_to_buffer_holding_addr.ptr
+
+    res_ty = _cute_ir.PtrType.get(element_type.mlir_type, AddressSpace.tmem, alignment)
     return _cute_nvgpu_ir.arch_sm100_retrieve_tmem_ptr(
         res_ty,
         ptr_to_buffer_holding_addr.value,
@@ -137,23 +165,31 @@ def alloc_tmem(
     """
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
+    exclusive = None
     if isinstance(num_columns, int):
+        exclusive = is_tmem_allocation_exclusive(num_columns, base_dsl.Arch.from_string(arch))
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
             or not (
                 (num_columns & (num_columns - 1) == 0)
+                or exclusive
             )
         ):
             err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
             err_msg += "and must be pow of 2"
+            err_msg += " except for arch-specific exceptions (e.g., exclusive allocation for sm_107)"
             err_msg += f", but got {num_columns}."
             raise ValueError(err_msg)
+
+    if isinstance(smem_ptr_to_write_address, struct._ScalarData):
+        smem_ptr_to_write_address = smem_ptr_to_write_address.ptr
 
     _cute_nvgpu_ir.arch_sm100_alloc_tmem(
         Int32(num_columns).ir_value(loc=loc, ip=ip),
         smem_ptr_to_write_address.value,
         is_two_cta=is_two_cta,
+        exclusive=exclusive,
         loc=loc,
         ip=ip,
     )
@@ -198,23 +234,33 @@ def dealloc_tmem(
     """
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
+    exclusive = None
+
     if isinstance(num_columns, int):
+        exclusive = is_tmem_allocation_exclusive(num_columns, base_dsl.Arch.from_string(arch))
+
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
             or not (
                 (num_columns & (num_columns - 1) == 0)
+                or exclusive
             )
         ):
             err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
             err_msg += "and must be pow of 2"
+            err_msg += " except for arch-specific exceptions (e.g., exclusive allocation for sm_107)"
             err_msg += f", but got {num_columns}."
             raise ValueError(err_msg)
+
+    if isinstance(tmem_ptr, struct._ScalarData):
+        tmem_ptr = tmem_ptr.ptr
 
     _cute_nvgpu_ir.arch_sm100_dealloc_tmem(
         tmem_ptr.value,
         Int32(num_columns).ir_value(loc=loc, ip=ip),
         is_two_cta=is_two_cta,
+        exclusive=exclusive,
         loc=loc,
         ip=ip,
     )

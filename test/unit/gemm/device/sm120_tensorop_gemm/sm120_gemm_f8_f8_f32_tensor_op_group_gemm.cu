@@ -1,0 +1,353 @@
+/***************************************************************************************************
+ * Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ **************************************************************************************************/
+
+/*! \file
+    \brief Tests for SM120 device-wide ptr-array grouped GEMM.
+
+    Layout constraint: only TN (RowMajor A, ColumnMajor B) is supported by the
+    SM120 array TMA collective builder.
+*/
+
+#include "cutlass/cutlass.h"
+#include "cute/tensor.hpp"
+#include "cute/atom/mma_atom.hpp"
+
+#include "cutlass/numeric_types.h"
+#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/kernel/gemm_universal.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
+#include "cutlass/gemm/collective/collective_builder.hpp"
+#include "cutlass/gemm/dispatch_policy.hpp"
+
+#include "../../../common/cutlass_unit_test.h"
+#include "../gemm_testbed_3x_ptr_array.hpp"
+
+using namespace cute;
+
+#if defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED)
+
+//////////////////////////////////////////////////////////////////////////////
+// Pingpong schedule (2x2 warp-group atom layout)
+//////////////////////////////////////////////////////////////////////////////
+
+// Canonical MoE shape: e4m3 x e4m3, f32 accumulate + output, 128x128x128
+TEST(SM120_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_f32_group_pingpong, 128x128x128_1x1x1) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e4m3_t;
+  using ElementC           = float;
+  using ElementD           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;  // 16
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;  // 4
+
+  using TileShape_MNK    = Shape<_128, _128, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
+}
+
+// Narrower N tile: exercises non-square TileShape_N path in the builder
+TEST(SM120_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_f32_group_pingpong, 128x64x128_1x1x1) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e4m3_t;
+  using ElementC           = float;
+  using ElementD           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+
+  using TileShape_MNK    = Shape<_128, _64, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
+}
+
+// BF16 output: primary inference pattern (f32 accumulate, write bf16 per expert)
+TEST(SM120_Device_Gemm_e4m3t_e4m3n_bf16t_tensorop_f32_group_pingpong, 128x128x128_1x1x1) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e4m3_t;
+  using ElementC           = cutlass::bfloat16_t;
+  using ElementD           = cutlass::bfloat16_t;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;  // 8
+
+  using TileShape_MNK    = Shape<_128, _128, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
+}
+
+// Mixed FP8: e4m3 weights x e5m2 activations (non-symmetric quantization schemes)
+TEST(SM120_Device_Gemm_e4m3t_e5m2n_f32t_tensorop_f32_group_pingpong, 128x128x128_1x1x1) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e5m2_t;
+  using ElementC           = float;
+  using ElementD           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;  // both 8-bit -> 16
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+
+  using TileShape_MNK    = Shape<_128, _128, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Cooperative schedule (4x2 warp-group atom layout)
+//////////////////////////////////////////////////////////////////////////////
+
+// Canonical shape with cooperative schedule: exercises 4x2 atom layout path
+TEST(SM120_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_f32_group_cooperative, 128x128x128_1x1x1) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e4m3_t;
+  using ElementC           = float;
+  using ElementD           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+
+  using TileShape_MNK    = Shape<_128, _128, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
+}
+
+// Cooperative + BF16 output: validates 4x2 atom layout with non-accumulator output dtype
+TEST(SM120_Device_Gemm_e4m3t_e4m3n_bf16t_tensorop_f32_group_cooperative, 128x128x128_1x1x1) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e4m3_t;
+  using ElementC           = cutlass::bfloat16_t;
+  using ElementD           = cutlass::bfloat16_t;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+
+  using TileShape_MNK    = Shape<_128, _128, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
+}
+
+#endif // CUTLASS_ARCH_MMA_SM120_SUPPORTED

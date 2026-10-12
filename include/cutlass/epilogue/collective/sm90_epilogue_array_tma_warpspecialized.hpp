@@ -304,8 +304,8 @@ public:
       [[maybe_unused]] void* workspace) {
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_M = int32_t(size<0>(CtaTileMNK{}));
-    auto init_N = int32_t(size<1>(CtaTileMNK{}));
+    auto init_M = transform_leaf(get<0>(CtaTileMNK{}), [](auto v){ return int32_t(v); });
+    auto init_N = transform_leaf(get<1>(CtaTileMNK{}), [](auto v){ return int32_t(v); });
     auto init_L = 1;
 
     static_assert(!is_im2col_C and !is_im2col_D, "Im2Col not supported on C or D");
@@ -355,8 +355,7 @@ public:
 
     auto fusion_workspace = static_cast<char*>(workspace);
     auto fusion_workspace_size = round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment);
-    auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(
-                                      static_cast<char*>(workspace) + fusion_workspace_size);
+    auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(fusion_workspace + fusion_workspace_size);
 
     return {
       FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, fusion_workspace),
@@ -374,7 +373,7 @@ public:
   template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args, int sm_count) {
-    constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
+    constexpr uint32_t NumInputTensors = (is_destination_supported ? NumEpilogueWarpGroups : 0) + (is_source_supported ? 1 : 0);
     auto descriptors_shape = cute::make_shape(sm_count, Int<NumInputTensors>{});
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
@@ -493,8 +492,7 @@ public:
     class TileShapeMNK,
     class TileCoordMNKL,
     class TiledMma,
-    class TensorMapC,
-    __CUTE_REQUIRES(std::is_pointer_v<TensorMapC>)
+    class FusionTensorMaps
   >
   CUTLASS_DEVICE auto
   load(
@@ -506,7 +504,7 @@ public:
       TiledMma tiled_mma,
       int thread_idx,
       TensorStorage& shared_tensors,
-      TensorMapC const& load_tensormap,
+      cute::tuple<cute::TmaDescriptor*, FusionTensorMaps> const& load_tensormaps,
       int subtile_idx=-1) {
     using namespace cute;
 
@@ -572,12 +570,12 @@ public:
         load_pipeline.producer_acquire(load_pipe_producer_state);
 
         // Loop fusion callback entry point
-        pld_callbacks.step(tma_barrier, epi_m, epi_n, load_pipe_producer_state.count(), issue_tma_load);
+        pld_callbacks.step(tma_barrier, epi_m, epi_n, load_pipe_producer_state.count(), issue_tma_load, get<1>(load_tensormaps));
 
         // Execute the TMA load for C if needed
         if (is_C_load_needed) {
           if (issue_tma_load) {
-            copy(params.tma_load_c.with(load_tensormap, *tma_barrier, mcast_mask),
+            copy(params.tma_load_c.with(get<0>(load_tensormaps), *tma_barrier, mcast_mask),
                 bGS_gC(_,_,_,epi_m,epi_n), bGS_sC(_,_,_,load_pipe_producer_state.index()));
             load_pipeline.producer_expect_transaction(load_pipe_producer_state);
           }
@@ -595,6 +593,44 @@ public:
     pld_callbacks.end();
 
     return load_pipe_producer_state;
+  }
+
+  // Soft-deprecated overload accepting a bare cute::TmaDescriptor* (pre-EVT-tensormap API).
+  // Forwards to the tuple form with a default-constructed FusionTensorMaps placeholder, which
+  // is structurally a no-op for any fusion tree without AuxLoad/AuxStore nodes — i.e. the only
+  // EVT shapes that out-of-tree kernel layers built against the old API could have had.
+  template<
+    class ProblemShapeMNKL,
+    class TileShapeMNK,
+    class TileCoordMNKL,
+    class TiledMma
+  >
+  [[deprecated(
+    "Passing a bare cute::TmaDescriptor* to CollectiveEpilogue::load is deprecated. "
+    "Pass the cute::tuple<TmaDescriptor*, FusionTensorMaps> returned by load_init() directly so "
+    "that AuxLoad EVT nodes also receive their tensormaps. This compatibility overload skips "
+    "EVT tensormap updates and will be removed in a future release."
+  )]]
+  CUTLASS_DEVICE auto
+  load(
+      LoadPipeline load_pipeline,
+      LoadPipelineState load_pipe_producer_state,
+      ProblemShapeMNKL problem_shape_mnkl,
+      TileShapeMNK tile_shape_MNK,
+      TileCoordMNKL tile_coord_mnkl,
+      TiledMma tiled_mma,
+      int thread_idx,
+      TensorStorage& shared_tensors,
+      cute::TmaDescriptor* const& load_tensormap,
+      int subtile_idx=-1) {
+    using EvtTensormapsType = decltype(
+        fusion_callbacks.template get_tensormap_callbacks<true>().init(0, 0, 0));
+    return load(
+        load_pipeline, load_pipe_producer_state,
+        problem_shape_mnkl, tile_shape_MNK, tile_coord_mnkl, tiled_mma,
+        thread_idx, shared_tensors,
+        cute::make_tuple(load_tensormap, EvtTensormapsType{}),
+        subtile_idx);
   }
 
   CUTLASS_DEVICE auto
@@ -620,7 +656,7 @@ public:
     class TileCoordMNKL,
     class AccEngine, class AccLayout,
     class TiledMma,
-    class TensorMapD
+    class FusionTensorMaps
   >
   CUTLASS_DEVICE auto
   store(
@@ -635,7 +671,7 @@ public:
       TiledMma tiled_mma,
       int thread_idx,
       TensorStorage& shared_tensors,
-      TensorMapD const& store_tensormap,
+      cute::tuple<cute::TmaDescriptor*, FusionTensorMaps> const& store_tensormaps,
       int subtile_idx=-1) {
 
     using namespace cute;
@@ -744,15 +780,15 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tRS_cD_mn = thread_r2s.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tRS_cD = make_coord_tensor(tRS_cD_mn.layout());                          // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                     // (CTA_M,CTA_N)
+    Tensor tRS_cD = make_coord_tensor(tRS_cD_mn.layout());                                             // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tRS_cD = make_coord(M,N) - tRS_cD_mn(_0{});                                                   // (m,n)
 
     CUTE_STATIC_ASSERT(epi_tile_m % mma_tile_m == 0, "MMA_TILE_M must divide EPI_TILE_M");
 
-    if constexpr (epi_tile_m * epi_tile_n > mma_tile_m * mma_tile_n) {
+    if constexpr (epi_tile_n > mma_tile_n) {
       // When the epilogue subtile is larger than the MMA tiles, loop over multiple MMA tiles
       CUTE_STATIC_ASSERT(epi_tile_n % mma_tile_n == 0, "MMA_TILE_N must divide EPI_TILE_N");
     }
@@ -818,12 +854,12 @@ public:
       synchronize(); // ensure all threads have issued their async fence
       if constexpr (is_destination_supported) {
         if (issue_tma_store) {
-          copy(params.tma_store_d.with(store_tensormap), bSG_sD(_,_,_,store_pipe_producer_state.index()), bSG_gD(_,_,_,epi_m,epi_n));
+          copy(params.tma_store_d.with(get<0>(store_tensormaps)), bSG_sD(_,_,_,store_pipe_producer_state.index()), bSG_gD(_,_,_,epi_m,epi_n));
         }
       }
 
       // Post async fence, pre TMA commit callback entry point
-      cst_callbacks.tma_store(epi_m, epi_n, store_pipe_producer_state.count(), issue_tma_store);
+      cst_callbacks.tma_store(epi_m, epi_n, store_pipe_producer_state.count(), issue_tma_store, get<1>(store_tensormaps));
 
       // Commit the TMA stores for this stage
       if (issue_tma_store) {
@@ -901,8 +937,8 @@ public:
         if constexpr (epi_tile_m * epi_tile_n > mma_tile_m * mma_tile_n) {
           // When the epilogue subtile is larger than the MMA tiles, loop over multiple
           // MMA tiles
-          static constexpr int MmaMPerEpiM = epi_tile_m / mma_tile_m;
-          static constexpr int MmaNPerEpiN = epi_tile_n / mma_tile_n;
+          constexpr int MmaMPerEpiM = epi_tile_m / mma_tile_m;
+          constexpr int MmaNPerEpiN = epi_tile_n / mma_tile_n;
 
           CUTLASS_PRAGMA_UNROLL
           for (int mma_n_in_epi = 0; mma_n_in_epi < MmaNPerEpiN; ++mma_n_in_epi) {
@@ -951,8 +987,8 @@ public:
         // Copy tile from register to regiser if needed
         if constexpr (IsUseR2R) {
           // retile source and destination for tiled_r2r
-          Tensor tRR_rD_src = thread_r2r.retile_S(tRS_rD);                             // (R2R,R2R_M,R2R_N,EPI_M,EPI_N)
-          Tensor tRR_rD_dst = thread_r2r.retile_D(tRS_rD);                             // (R2R,R2R_M,R2R_N,EPI_M,EPI_N)
+          Tensor tRR_rD_src = thread_r2r.retile_S(tRS_rCompute);                             // (R2R,R2R_M,R2R_N,EPI_M,EPI_N)
+          Tensor tRR_rD_dst = thread_r2r.retile_D(tRS_rCompute);                             // (R2R,R2R_M,R2R_N,EPI_M,EPI_N)
 
           // Output needs register shuffling before copying to shared memory.
           copy(tiled_r2r, tRR_rD_src, tRR_rD_dst);
@@ -994,6 +1030,47 @@ public:
     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
   }
 
+  // Soft-deprecated overload accepting a bare cute::TmaDescriptor* (pre-EVT-tensormap API).
+  // See the analogous load() overload above for rationale.
+  template<
+    class ProblemShapeMNKL,
+    class TileShapeMNK,
+    class TileCoordMNKL,
+    class AccEngine, class AccLayout,
+    class TiledMma
+  >
+  [[deprecated(
+    "Passing a bare cute::TmaDescriptor* to CollectiveEpilogue::store is deprecated. "
+    "Pass the cute::tuple<TmaDescriptor*, FusionTensorMaps> returned by store_init() directly so "
+    "that AuxStore EVT nodes also receive their tensormaps. This compatibility overload skips "
+    "EVT tensormap updates and will be removed in a future release."
+  )]]
+  CUTLASS_DEVICE auto
+  store(
+      LoadPipeline load_pipeline,
+      LoadPipelineState load_pipe_consumer_state,
+      StorePipeline store_pipeline,
+      StorePipelineState store_pipe_producer_state,
+      ProblemShapeMNKL problem_shape_mnkl,
+      TileShapeMNK tile_shape_MNK,
+      TileCoordMNKL tile_coord_mnkl,
+      cute::Tensor<AccEngine,AccLayout> accumulators,
+      TiledMma tiled_mma,
+      int thread_idx,
+      TensorStorage& shared_tensors,
+      cute::TmaDescriptor* const& store_tensormap,
+      int subtile_idx=-1) {
+    using EvtTensormapsType = decltype(
+        fusion_callbacks.template get_tensormap_callbacks<false>().init(0, 0, 0));
+    return store(
+        load_pipeline, load_pipe_consumer_state,
+        store_pipeline, store_pipe_producer_state,
+        problem_shape_mnkl, tile_shape_MNK, tile_coord_mnkl,
+        accumulators, tiled_mma, thread_idx, shared_tensors,
+        cute::make_tuple(store_tensormap, EvtTensormapsType{}),
+        subtile_idx);
+  }
+
   CUTLASS_DEVICE auto
   store_tail(
       LoadPipeline load_pipeline,
@@ -1027,16 +1104,19 @@ public:
       int32_t sm_count,
       int32_t sm_idx,
       int32_t warp_group_idx) {
+    constexpr bool IsLoad = false;
     int warp_idx_in_warp_group = canonical_warp_idx_sync() % NumWarpsPerWarpGroup;
     // Since only one warp issues TMA store, we only need that one warp to initialize tensormaps
     if (warp_idx_in_warp_group == 0) {
       // Initialize tma
-      constexpr bool IsLoad = false;
       auto store_tensormaps = tensormaps_init<IsLoad>(params, shared_tensormaps, sm_count, sm_idx, warp_group_idx);
       return store_tensormaps;
     }
-    TmaDescriptor* null_tma_desc = nullptr;
-    return cute::make_tuple(null_tma_desc);
+    else {
+      // Return dummy values (default-initialized)
+      auto store_tensormaps = decltype(tensormaps_init<IsLoad>(params, shared_tensormaps, sm_count, sm_idx, warp_group_idx)){};
+      return store_tensormaps;
+    }
   }
 
   //
@@ -1052,14 +1132,15 @@ public:
       int32_t sm_idx,
       int32_t warp_group_idx) {
 
-    constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
+    constexpr uint32_t NumInputTensors = (is_destination_supported ? NumEpilogueWarpGroups : 0) + (is_source_supported ? 1 : 0);
     Layout desc_layout = make_layout(make_shape(sm_count, Int<NumInputTensors>{}));
 
     Tensor gmem_tensormap = make_tensor(params.tensormaps, desc_layout);                      // (SMs, NumInputTensors)
+    TmaDescriptor* tma_desc = nullptr;
 
     if constexpr (IsLoad) {
-      if (is_source_supported) {
-        constexpr int C_tensormap_index = NumEpilogueWarpGroups;
+      if constexpr (is_source_supported) {
+        constexpr int C_tensormap_index = is_destination_supported ? NumEpilogueWarpGroups : 0;
         Tensor pC_tensormap = make_tensor(params.tma_load_c.get_tma_descriptor(), Int<1>{}, Int<1>{});
         Tensor sC_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_C), Int<1>{}, Int<1>{});
 
@@ -1068,23 +1149,26 @@ public:
           copy(recast<uint128_t>(pC_tensormap), recast<uint128_t>(sC_tensormap));
         }
         __syncwarp();
-        return cute::make_tuple(&gmem_tensormap(sm_idx, C_tensormap_index));
-
+        tma_desc = &gmem_tensormap(sm_idx, C_tensormap_index);
       }
-      TmaDescriptor* null_tma_desc = nullptr;
-      return cute::make_tuple(null_tma_desc);
     }
     else {
-      Tensor pD_tensormap = make_tensor(params.tma_store_d.get_tma_descriptor(), Int<1>{}, Int<1>{});
-      Tensor sD_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_D[warp_group_idx]), Int<1>{}, Int<1>{});
+      if constexpr (is_destination_supported) {
+        Tensor pD_tensormap = make_tensor(params.tma_store_d.get_tma_descriptor(), Int<1>{}, Int<1>{});
+        Tensor sD_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_D[warp_group_idx]), Int<1>{}, Int<1>{});
 
-      if (cute::elect_one_sync()) {
-        // Bringing tensormaps from params to smem for modification later
-        copy(recast<uint128_t>(pD_tensormap), recast<uint128_t>(sD_tensormap));
+        if (cute::elect_one_sync()) {
+          // Bringing tensormaps from params to smem for modification later
+          copy(recast<uint128_t>(pD_tensormap), recast<uint128_t>(sD_tensormap));
+        }
+        __syncwarp();
+        tma_desc = &gmem_tensormap(sm_idx, warp_group_idx);
       }
-      __syncwarp();
-      return cute::make_tuple(&gmem_tensormap(sm_idx, warp_group_idx));
     }
+
+    auto fusion_tensormap_callbacks = fusion_callbacks.template get_tensormap_callbacks<IsLoad>();
+    auto fusion_tensormaps = fusion_tensormap_callbacks.init(sm_count, sm_idx, warp_group_idx);
+    return cute::make_tuple(tma_desc, fusion_tensormaps);
   }
 
   // Replace address for the global tensor (to be done by single thread)
@@ -1105,9 +1189,11 @@ public:
         }
       }
     }
-    else if constexpr (is_destination_supported) {
-      cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_D[warp_group_idx],
-                                                      params.ptr_D[next_batch]);
+    else {
+      if constexpr (is_destination_supported) {
+        cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_D[warp_group_idx],
+                                                        params.ptr_D[next_batch]);
+      }
     }
   }
 
@@ -1121,8 +1207,8 @@ public:
       int32_t next_group,
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t warp_group_idx) {
-    const uint32_t M = get<0>(problem_shape_mnkl);
-    const uint32_t N = get<1>(problem_shape_mnkl);
+    const auto M = get<0>(problem_shape_mnkl);
+    const auto N = get<1>(problem_shape_mnkl);
     // Replace all dims for consistency
     constexpr int MaxTensorRank = 5;
     cute::array<uint32_t, MaxTensorRank> prob_shape  = {1,1,1,1,1};
@@ -1135,7 +1221,7 @@ public:
           Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params.dC[next_group]));
 
           cute::detail::fill_tma_gmem_shape_stride(params.tma_load_c, tensor_c, 
-                                                  prob_shape, prob_stride);
+                                                   prob_shape, prob_stride);
           // Convert strides to byte strides
           for (uint64_t& stride : prob_stride) {
             stride = (stride * sizeof_bits_v<ElementC>) / 8;
@@ -1146,30 +1232,32 @@ public:
         }
       }
     }
-    else if constexpr (is_destination_supported) {
-      ElementD const* ptr_D = nullptr;
-      Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
+    else {
+      if constexpr (is_destination_supported) {
+        ElementD const* ptr_D = nullptr;
+        Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
 
-      cute::detail::fill_tma_gmem_shape_stride(params.tma_store_d, tensor_d, 
-                                               prob_shape, prob_stride);
-      // Convert strides to byte strides
-      for (uint64_t& stride : prob_stride) {
-        stride = (stride * sizeof_bits_v<ElementD>) / 8;
+        cute::detail::fill_tma_gmem_shape_stride(params.tma_store_d, tensor_d, 
+                                                prob_shape, prob_stride);
+        // Convert strides to byte strides
+        for (uint64_t& stride : prob_stride) {
+          stride = (stride * sizeof_bits_v<ElementD>) / 8;
+        }
+
+        cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_D[warp_group_idx],
+                                                                prob_shape,
+                                                                prob_stride);
       }
-
-      cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_D[warp_group_idx],
-                                                              prob_shape,
-                                                              prob_stride);
     }
   }
 
-  template <bool IsLoad, class ProblemShape_MNKL>
+  template <bool IsLoad, class ProblemShape_MNKL, class FusionTensorMaps>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
       TensorMapStorage& shared_tensormaps,
       Params const& params,
-      cute::TmaDescriptor const* tensormap,
+      cute::tuple<cute::TmaDescriptor*, FusionTensorMaps> const& tensormaps,
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t next_batch,
       int32_t warp_group_idx) {
@@ -1183,15 +1271,45 @@ public:
             shared_tensormaps, params, next_batch, problem_shape_mnkl, warp_group_idx);
       }
 
+      auto fusion_tensormap_callbacks = fusion_callbacks.template get_tensormap_callbacks<IsLoad>();
+      fusion_tensormap_callbacks.perform_update(cute::get<1>(tensormaps), problem_shape_mnkl, next_batch, warp_group_idx);
     }
   }
 
-  template <bool IsLoad>
+  // Soft-deprecated overload accepting a bare cute::TmaDescriptor* (pre-EVT-tensormap API).
+  // Forwards to the tuple form with a default-constructed FusionTensorMaps placeholder; the
+  // fusion-side perform_update is invoked with empty per-op tensormaps and is a structural
+  // no-op for any fusion tree without AuxLoad/AuxStore nodes.
+  template <bool IsLoad, class ProblemShape_MNKL>
+  [[deprecated(
+    "Passing a bare cute::TmaDescriptor* to CollectiveEpilogue::tensormaps_perform_update is "
+    "deprecated. Pass the cute::tuple<TmaDescriptor*, FusionTensorMaps> returned by "
+    "load_init()/store_init() directly so AuxLoad/AuxStore EVT nodes also get their tensormaps "
+    "updated. This compatibility overload will be removed in a future release."
+  )]]
+  CUTLASS_DEVICE
+  void
+  tensormaps_perform_update(
+      TensorMapStorage& shared_tensormaps,
+      Params const& params,
+      cute::TmaDescriptor* const& tensormap,
+      ProblemShape_MNKL problem_shape_mnkl,
+      int32_t next_batch,
+      int32_t warp_group_idx) {
+    using EvtTensormapsType = decltype(
+        fusion_callbacks.template get_tensormap_callbacks<IsLoad>().init(0, 0, 0));
+    tensormaps_perform_update<IsLoad>(
+        shared_tensormaps, params,
+        cute::make_tuple(tensormap, EvtTensormapsType{}),
+        problem_shape_mnkl, next_batch, warp_group_idx);
+  }
+
+  template <bool IsLoad, class FusionTensorMaps>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormaps,
-      cute::TmaDescriptor const* tensormap,
+      cute::tuple<cute::TmaDescriptor*, FusionTensorMaps> const& tensormaps,
       const int32_t warp_group_idx = 0) {
     // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem.
     // This operation only happens when the group/batch changes between consecutive tiles.
@@ -1206,27 +1324,76 @@ public:
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
         tma_desc_wait_all_fn();
-        tma_descriptor_cp_fence_release(tensormap, shared_tensormaps.smem_tensormap_C);
+        tma_descriptor_cp_fence_release(cute::get<0>(tensormaps), shared_tensormaps.smem_tensormap_C);
       }
     }
-    else if constexpr (is_destination_supported) {
-      tma_desc_wait_all_fn();
-      tma_descriptor_cp_fence_release(tensormap, shared_tensormaps.smem_tensormap_D[warp_group_idx]);
+    else {
+      if constexpr (is_destination_supported) {
+        tma_desc_wait_all_fn();
+        tma_descriptor_cp_fence_release(cute::get<0>(tensormaps), shared_tensormaps.smem_tensormap_D[warp_group_idx]);
+      }
     }
+
+    auto fusion_tensormap_callbacks = fusion_callbacks.template get_tensormap_callbacks<IsLoad>();
+    fusion_tensormap_callbacks.cp_fence_release(cute::get<1>(tensormaps), warp_group_idx);
   }
 
+  // Soft-deprecated overload accepting a bare cute::TmaDescriptor* (pre-EVT-tensormap API).
   template <bool IsLoad>
+  [[deprecated(
+    "Passing a bare cute::TmaDescriptor* to CollectiveEpilogue::tensormaps_cp_fence_release is "
+    "deprecated. Pass the cute::tuple<TmaDescriptor*, FusionTensorMaps> returned by "
+    "load_init()/store_init() directly so AuxLoad/AuxStore EVT nodes also get their fence "
+    "release. This compatibility overload will be removed in a future release."
+  )]]
   CUTLASS_DEVICE
   void
-  tensormaps_fence_acquire(cute::TmaDescriptor const* tensormap) {
+  tensormaps_cp_fence_release(
+      TensorMapStorage& shared_tensormaps,
+      cute::TmaDescriptor* const& tensormap,
+      const int32_t warp_group_idx = 0) {
+    using EvtTensormapsType = decltype(
+        fusion_callbacks.template get_tensormap_callbacks<IsLoad>().init(0, 0, 0));
+    tensormaps_cp_fence_release<IsLoad>(
+        shared_tensormaps,
+        cute::make_tuple(tensormap, EvtTensormapsType{}),
+        warp_group_idx);
+  }
+
+  template <bool IsLoad, class FusionTensorMaps>
+  CUTLASS_DEVICE
+  void
+  tensormaps_fence_acquire(cute::tuple<cute::TmaDescriptor*, FusionTensorMaps> const& tensormaps) {
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
-        cute::tma_descriptor_fence_acquire(tensormap);
+        cute::tma_descriptor_fence_acquire(cute::get<0>(tensormaps));
       }
     } 
     else {
-      cute::tma_descriptor_fence_acquire(tensormap);
+      if constexpr (is_destination_supported) {
+        cute::tma_descriptor_fence_acquire(cute::get<0>(tensormaps));
+      }
     }
+
+    auto fusion_tensormap_callbacks = fusion_callbacks.template get_tensormap_callbacks<IsLoad>();
+    fusion_tensormap_callbacks.fence_acquire(cute::get<1>(tensormaps));
+  }
+
+  // Soft-deprecated overload accepting a bare cute::TmaDescriptor* (pre-EVT-tensormap API).
+  template <bool IsLoad>
+  [[deprecated(
+    "Passing a bare cute::TmaDescriptor* to CollectiveEpilogue::tensormaps_fence_acquire is "
+    "deprecated. Pass the cute::tuple<TmaDescriptor*, FusionTensorMaps> returned by "
+    "load_init()/store_init() directly so AuxLoad/AuxStore EVT nodes also get their fence "
+    "acquire. This compatibility overload will be removed in a future release."
+  )]]
+  CUTLASS_DEVICE
+  void
+  tensormaps_fence_acquire(cute::TmaDescriptor* const& tensormap) {
+    using EvtTensormapsType = decltype(
+        fusion_callbacks.template get_tensormap_callbacks<IsLoad>().init(0, 0, 0));
+    tensormaps_fence_acquire<IsLoad>(
+        cute::make_tuple(tensormap, EvtTensormapsType{}));
   }
 
 private:

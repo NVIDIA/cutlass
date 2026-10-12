@@ -10,16 +10,25 @@
 # is strictly prohibited.
 
 import ctypes
+import math
+import struct
+from abc import abstractmethod
 from itertools import chain
-import numpy as np
 import operator
 from typing import (
+    TYPE_CHECKING,
+    Annotated,
     Callable,
+    ClassVar,
     Generic,
     Optional,
     Protocol,
+    Literal,
+    TypeAlias,
     Union,
     Any,
+    cast as tcast,
+    SupportsIndex,
     Type,
     TypeVar,
     overload,
@@ -28,13 +37,30 @@ from typing import (
 
 from .common import *
 from .common import DSLRuntimeError as DSLRuntimeError
-from ._mlir_helpers import arith as arith_helper
-from ._mlir_helpers.arith import ArithValue
-from ._mlir_helpers.op import dsl_user_op
+from .diagnostics import DiagId
+from .._mlir_helpers import arith as arith_helper
+from .._mlir_helpers.arith import ArithValue
+from .._mlir_helpers.vector import Vector
+from .._mlir_helpers.op import dsl_user_op
 
 from .._mlir import ir
 from .._mlir.extras import types as T
-from .._mlir.dialects import arith
+from .._mlir.dialects import arith, llvm, nvvm, vector
+
+from . import AddressSpace
+
+from .pyir_runtime import (
+    _PYIR_CANDIDATE_REGISTRY_ACTIVE,
+    _PYIR_SCOPE_STACK,
+    _WatchedM,
+    _pyir_declare_write_funnel,
+    _pyir_note_holder_write,
+    _pyir_record_external_payload_consumption,
+    _pyir_record_staged_identity_hashed,
+    _pyir_refresh_cell_read,
+    _pyir_register_candidate_holder,
+    _pyir_setattr_raw,
+)
 
 # =============================================================================
 # Dynamic Expression Protocol
@@ -228,12 +254,25 @@ def get_c_pointers(obj: Any) -> list[ctypes.c_void_p]:
     elif isinstance(obj, (tuple, list)):
         return list(chain.from_iterable(get_c_pointers(x) for x in obj))
     elif isinstance(obj, set):
-        raise DSLRuntimeError(
-            "Sets are not supported in get_c_pointers to ensure order preservation",
-            context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
-            suggestion="Consider using a list or tuple instead",
+        raise DSLUserCodeError(
+            DiagId.ARG_UNORDERED_CONTAINER,
         )
     return []
+
+
+def _make_owning_c_pointer(c_value: Any) -> ctypes.c_void_p:
+    """Return a pointer that keeps its backing ctypes value alive.
+
+    ``ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)`` makes the
+    intermediate pointer reference itself through its ``_objects`` dictionary.
+    Those cycles accumulate when cyclic garbage collection is disabled.  A
+    direct address does not create that cycle, while the private keepalive
+    attribute preserves the backing value for the lifetime of the returned
+    pointer.
+    """
+    c_pointer = ctypes.c_void_p(ctypes.addressof(c_value))
+    c_pointer._cutlass_keepalive = c_value  # type: ignore[attr-defined]
+    return c_pointer
 
 
 def get_mlir_types(obj: Any) -> list[ir.Type]:
@@ -249,12 +288,11 @@ def get_mlir_types(obj: Any) -> list[ir.Type]:
     elif isinstance(obj, (tuple, list)):
         return sum((get_mlir_types(x) for x in obj), [])
     elif isinstance(obj, set):
-        raise DSLRuntimeError(
-            "Sets are not supported in get_mlir_types to ensure order preservation",
-            context="The DSL attempted to generate JIT function argument(s) for an argument of type set but failed.",
-            suggestion="Consider using a list or tuple instead",
+        raise DSLUserCodeError(
+            DiagId.ARG_UNORDERED_CONTAINER,
         )
     return []
+
 
 
 def implements_jit_argument(obj: Any, *, partial: bool = False) -> bool:
@@ -340,19 +378,21 @@ class DslType(type):
 class NumericMeta(DslType):
     """Metaclass for numeric types providing width and numpy dtype information.
 
-    :param width: Bit width of the numeric type, defaults to 8
+    :param width: Bit width of one storage unit, defaults to 8.
+        For unpacked dtypes this is the element width. Packed view dtypes
+        use the width of one packed tensor element.
     :type width: int
-    :param np_dtype: Corresponding NumPy dtype
-    :type np_dtype: numpy.dtype, optional
+    :param np_dtype_name: Name of the corresponding NumPy scalar type, or None
+        when NumPy has no matching type
+    :type np_dtype_name: str, optional
     :param mlir_type: Corresponding MLIR type
     :type mlir_type: Any, optional
     :param is_abstract: Whether the type is abstract, defaults to False
     :type is_abstract: bool, optional
-
     :ivar width: Bit width of the numeric type
     :type width: int
-    :ivar _np_dtype: Corresponding NumPy dtype
-    :type _np_dtype: Union[numpy.dtype, None]
+    :ivar _np_dtype_name: Name of the corresponding NumPy scalar type
+    :type _np_dtype_name: Union[str, None]
 
     :property numpy_dtype: Returns the corresponding NumPy dtype
     :rtype numpy_dtype: numpy.dtype
@@ -363,7 +403,7 @@ class NumericMeta(DslType):
 
     # Placeholder type
     _mlir_type = Any
-    _np_dtype: Optional[type]
+    _np_dtype_name: Optional[str]
 
     def __new__(
         cls,
@@ -371,7 +411,7 @@ class NumericMeta(DslType):
         bases: tuple,
         attrs: dict,
         width: int = 8,
-        np_dtype: Optional[type] = None,
+        np_dtype_name: Optional[str] = None,
         mlir_type: Optional[Callable[[], ir.Type]] = None,
         is_abstract: bool = False,
         **kwargs: Any,
@@ -401,18 +441,42 @@ class NumericMeta(DslType):
 
         new_cls.width = width
         new_cls.bytes = max(1, (width + 7) // 8)
-        new_cls._np_dtype = np_dtype
+        new_cls._np_dtype_name = np_dtype_name
         return new_cls
+
+    def n_bytes(cls, n_elements: int) -> int:
+        """Return the storage byte count for ``n_elements`` dtype elements."""
+
+        return n_elements * cls.bytes
 
     @property
     def numpy_dtype(cls) -> Optional[type]:
-        return cls._np_dtype
+        """Return the NumPy scalar type for this dtype, or None if it has none.
+
+        NumPy is an optional dependency, so it is imported on first access
+        rather than at module load: nothing else in the type system needs it.
+
+        :raises ModuleNotFoundError: If NumPy is not installed and this dtype
+            does have a NumPy counterpart.
+        """
+        if cls._np_dtype_name is None:
+            return None
+
+        import numpy
+
+        return getattr(numpy, cls._np_dtype_name, None)
 
     @property
-    def is_integer(cls) -> bool: ...  # type: ignore[empty-body]
+    @abstractmethod
+    def is_integer(cls) -> bool: ...
 
     @property
-    def is_float(cls) -> bool: ...  # type: ignore[empty-body]
+    @abstractmethod
+    def is_float(cls) -> bool: ...
+
+    @property
+    @abstractmethod
+    def zero(cls) -> Union[int, float]: ...
 
     def is_same_kind(cls, other: Type) -> bool:
         return cls.is_integer == other.is_integer or cls.is_float == other.is_float
@@ -496,6 +560,20 @@ def cast(
     return res
 
 
+_INTEGER_DTYPE_NAMES: dict[tuple[int, bool], str] = {
+    (8, True): "int8",
+    (16, True): "int16",
+    (32, True): "int32",
+    (64, True): "int64",
+    (8, False): "uint8",
+    (16, False): "uint16",
+    (32, False): "uint32",
+    (64, False): "uint64",
+}
+
+_FLOAT_DTYPE_NAMES = frozenset({"float16", "float32", "float64"})
+
+
 # Option 1: use ir.Value as base
 # class IntegerMeta(DslType, type(ir.Value)):
 class IntegerMeta(NumericMeta):
@@ -515,6 +593,12 @@ class IntegerMeta(NumericMeta):
     """
 
     signed: bool
+    # Value range this type stores exactly, or None when the width has no
+    # matching C integer to cast to. See ``Integer.__init__``.
+    _exact_range: Optional[tuple[int, int]]
+    # (width, signedness) of the C integer this type casts to, or None when
+    # there is none. See ``_float_to_int``.
+    _cast_key: Optional[tuple[int, bool]]
 
     def __new__(
         cls,
@@ -526,16 +610,9 @@ class IntegerMeta(NumericMeta):
         mlir_type: Optional[Callable[[], ir.Type]] = None,
         is_abstract: bool = False,
     ) -> Any:
-        if width == 1:
-            np_dtype = np.bool_
-        elif width == 128:
-            np_dtype = None
-        elif width == 4:
-            np_dtype = None
-        elif signed:
-            np_dtype = getattr(np, f"int{width}")
-        else:
-            np_dtype = getattr(np, f"uint{width}")
+        np_dtype_name = (
+            "bool_" if width == 1 else _INTEGER_DTYPE_NAMES.get((width, signed))
+        )
 
         def _c_pointers(self: "Integer") -> list[ctypes.c_void_p]:
             if width == 1:
@@ -545,15 +622,47 @@ class IntegerMeta(NumericMeta):
             else:
                 c_value = getattr(ctypes, f"c_uint{width}")(self.value)
 
-            return [ctypes.cast(ctypes.pointer(c_value), ctypes.c_void_p)]
+            return [_make_owning_c_pointer(c_value)]
 
         new_attrs = {
             "__c_pointers__": _c_pointers,
         }
         new_cls = super().__new__(
-            cls, name, bases, attrs | new_attrs, width, np_dtype, mlir_type, is_abstract
+            cls,
+            name,
+            bases,
+            attrs | new_attrs,
+            width,
+            np_dtype_name,
+            mlir_type,
+            is_abstract,
         )
         new_cls.signed = signed
+        # Precomputed once per type so ``Integer.__init__`` can range-check without
+        # rebuilding the bounds on every construction. These track the dtype
+        # rather than the ``width`` attribute, because the dtype's C cast is what
+        # they must agree with, and a few subclasses patch ``width`` afterwards --
+        # hence the local ``width``/``signed`` parameters below rather than
+        # ``cls.width``. The final branches are reached only for widths 8/16/32/64,
+        # where the dtype is exactly ``int{width}``/``uint{width}``, so
+        # two's-complement arithmetic on the parameters agrees with it by
+        # construction.
+        if np_dtype_name is None:
+            new_cls._exact_range = None
+        elif width == 1:
+            # bool folds everything nonzero to True, so only 0 and 1 survive
+            # the cast unchanged.
+            new_cls._exact_range = (0, 1)
+        elif signed:
+            new_cls._exact_range = (-(2 ** (width - 1)), 2 ** (width - 1) - 1)
+        else:
+            new_cls._exact_range = (0, 2**width - 1)
+        # Boolean is declared signed with width 1 yet folds to (0, 1), and it
+        # has no C integer to cast to, so it is excluded alongside the widths
+        # that have no dtype at all.
+        new_cls._cast_key = (
+            None if (np_dtype_name is None or width == 1) else (width, signed)
+        )
         return new_cls
 
     def __str__(cls) -> str:
@@ -604,7 +713,9 @@ class FloatMeta(NumericMeta):
     This metaclass provides type system infrastructure for floating-point types in the DSL,
     handling MLIR type mappings and NumPy type conversions.
 
-    :param width: Bit width of the float type, defaults to 32
+    :param width: Bit width of one storage unit, defaults to 32. Packed view
+        dtypes may use a wider storage-unit width here than their logical
+        floating-point element width.
     :type width: int
     :param mlir_type: Corresponding MLIR type, defaults to None
     :type mlir_type: Any, optional
@@ -627,9 +738,17 @@ class FloatMeta(NumericMeta):
         mlir_type: Optional[Callable[[], ir.Type]] = None,
         is_abstract: bool = False,
     ) -> Any:
-        np_dtype = getattr(np, name.lower(), None)
+        lowered_name = name.lower()
+        np_dtype_name = lowered_name if lowered_name in _FLOAT_DTYPE_NAMES else None
         new_cls = super().__new__(
-            cls, name, bases, attrs, width, np_dtype, mlir_type, is_abstract
+            cls,
+            name,
+            bases,
+            attrs,
+            width,
+            np_dtype_name,
+            mlir_type,
+            is_abstract,
         )
         # Extract exponent and mantissa bits from class name if it follows Float<E><M> pattern
         # For example: Float8E4M3 -> exponent_width=4, mantissa_width=3
@@ -747,42 +866,7 @@ def _binary_op_type_promote(
 
     # Handle floating point promotions
     if a_type.is_float or b_type.is_float:
-        # Get highest precision float type based on bitwidth
-        a_width = getattr(a_type, "width", 0)
-        b_width = getattr(b_type, "width", 0)
-
-        # If one type is integer, convert it to the float type
-        if a_type.is_float and not b_type.is_float:
-            b_type = a_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
-        elif b_type.is_float and not a_type.is_float:
-            a_type = b_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
-
-        # Both are float types - handle precision promotion
-        if a_width > b_width and a_width >= 16:
-            res_type = a_type
-        elif b_width > a_width and b_width >= 16:
-            res_type = b_type
-        elif a_width == b_width:
-            # Same bitwidth - handle special cases like TFloat32 -> Float32 and BFloat16 -> Float16
-            if a_type is Float64 or b_type is Float64:
-                res_type = Float64
-            elif a_type is Float32 or b_type is Float32:
-                res_type = Float32
-            elif a_type is Float16 or b_type is Float16:
-                res_type = Float16
-            else:
-                raise ValueError(
-                    f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
-                )
-        else:
-            raise ValueError(
-                f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
-            )
-
-        # Only convert if type is different
-        new_a = a.to(res_type) if a.dtype != res_type else a
-        new_b = b.to(res_type) if b.dtype != res_type else b
-        return new_a, new_b, res_type
+        return _promote_float(a, b, a_type, b_type)
 
     # Handle bool promotion for arithmetic operations
     if promote_bool:
@@ -792,16 +876,76 @@ def _binary_op_type_promote(
             b = b.to(Int32)
             a_type = b_type = a.dtype
 
-        # If both were bools, they're now same type (Int32)
-        if a_type == b_type:
-            return a, b, a_type
-
-    # Same type, no promotion needed
+    # Same type, no promotion needed (also covers both-bool -> Int32 above)
     if a_type == b_type:
         return a, b, a_type
 
-    a_signed = a_type.signed  # type: ignore[attr-defined]
-    b_signed = b_type.signed  # type: ignore[attr-defined]
+    # At this point both must be Integer subclasses (float branch above already returned).
+    assert issubclass(a_type, Integer) and issubclass(b_type, Integer)
+    return _promote_integer(
+        a, b, tcast("Type[Integer]", a_type), tcast("Type[Integer]", b_type)
+    )
+
+
+def _apply_promotion(
+    a: "Numeric", b: "Numeric", res_type: Type["Numeric"]
+) -> tuple["Numeric", "Numeric", Type["Numeric"]]:
+    """Cast each operand to ``res_type`` (only when its dtype differs)."""
+    new_a = a.to(res_type) if a.dtype != res_type else a
+    new_b = b.to(res_type) if b.dtype != res_type else b
+    return new_a, new_b, res_type
+
+
+def _promote_float(
+    a: "Numeric", b: "Numeric", a_type: Type["Numeric"], b_type: Type["Numeric"]
+) -> tuple["Numeric", "Numeric", Type["Numeric"]]:
+    """Promotion policy when at least one operand is a float type."""
+    # Get highest precision float type based on bitwidth
+    a_width = getattr(a_type, "width", 0)
+    b_width = getattr(b_type, "width", 0)
+
+    # If one type is integer, convert it to the float type
+    if a_type.is_float and not b_type.is_float:
+        b_type = a_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
+    elif b_type.is_float and not a_type.is_float:
+        a_type = b_type.recast_width(max(a_width, b_width))  # type: ignore[attr-defined]
+
+    # Both are float types - handle precision promotion
+    if a_width > b_width and a_width >= 16:
+        res_type = a_type
+    elif b_width > a_width and b_width >= 16:
+        res_type = b_type
+    elif a_width == b_width:
+        # Same bitwidth - handle special cases like TFloat32 -> Float32 and BFloat16 -> Float16
+        if a_type is Float64 or b_type is Float64:
+            res_type = Float64
+        elif a_type is Float32 or b_type is Float32:
+            res_type = Float32
+        elif a_type is Float16 or b_type is Float16:
+            res_type = Float16
+        else:
+            raise ValueError(
+                f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
+            )
+    else:
+        raise ValueError(
+            f"implicit float promotion of {a_type} or {b_type} is not supported, cast explicitly"
+        )
+
+    return _apply_promotion(a, b, res_type)
+
+
+def _promote_integer(
+    a: "Numeric", b: "Numeric", a_type: Type["Integer"], b_type: Type["Integer"]
+) -> tuple["Numeric", "Numeric", Type["Numeric"]]:
+    """Promotion policy when both operands are integers (same dtype already handled).
+
+    ``a_type``/``b_type`` are ``Type[Integer]`` (IntegerMeta exposes ``signed``;
+    ``width`` is inherited from NumericMeta). Only called when both operands are
+    integers, so the narrowing from ``Type[Numeric]`` is sound.
+    """
+    a_signed = a_type.signed
+    b_signed = b_type.signed
     a_width = a_type.width
     b_width = b_type.width
 
@@ -818,15 +962,66 @@ def _binary_op_type_promote(
             # Promote both to signed of larger width
             res_type = signed_type
 
-        new_a = a.to(res_type) if a.dtype != res_type else a
-        new_b = b.to(res_type) if b.dtype != res_type else b
-        return new_a, new_b, res_type
+        return _apply_promotion(a, b, res_type)
 
     # Same signedness, different width - promote to larger width
     if a_width >= b_width:
         return a, b.to(a.dtype), a.dtype
     else:
         return a.to(b.dtype), b, b.dtype
+
+
+def _pyir_mark_fold_srcs(result: Any, operands: "tuple[Any, ...]") -> None:
+    """Stamp on *result* the payload-backed Numeric operands (plus their own
+    recorded sources) whose trace-time values decided it; consumed by the
+    staged-literal predicate-fold witness (see pyir_core).
+
+    Gated on an open PyIR trace scope (the same check the consumption
+    recorder uses): outside a trace there is no witness to consume the
+    stamp, so scalar folds stay untouched."""
+    if not _PYIR_SCOPE_STACK:
+        return
+    try:
+        srcs: list = []
+        for o in operands:
+            if isinstance(o, Numeric) and type(getattr(o, "value", None)) in (
+                bool,
+                int,
+                float,
+            ):
+                if all(s is not o for s in srcs):
+                    srcs.append(o)
+            for s in getattr(o, "_pyir_fold_srcs", ()):
+                if all(x is not s for x in srcs):
+                    srcs.append(s)
+        if srcs:
+            _pyir_setattr_raw(result, "_pyir_fold_srcs", tuple(srcs))
+    except Exception:
+        pass
+
+
+def _pyir_numeric_protocol_gate(proto: str, *operands: Any) -> None:
+    """Refuse a numeric protocol that has no staged form when any operand is a
+    staged (runtime) value; payload operands proceed to the fold arm."""
+    for o in operands:
+        staged = isinstance(o, ArithValue) or (
+            isinstance(o, Numeric)
+            and not isinstance(o.__dict__.get("value"), (bool, int, float))
+        )
+        if staged:
+            raise DSLUserCodeError(
+                DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
+                proto=proto,
+                what=type(o).__name__,
+            )
+
+
+def _pyir_numeric_payload(operand: Any) -> Any:
+    """The plain Python payload of a fold-arm operand (gate-checked Numeric
+    wrappers expose it as ``value``; plain primitives pass through)."""
+    if isinstance(operand, Numeric):
+        return operand.__dict__.get("value")
+    return operand
 
 
 def _binary_op(
@@ -870,6 +1065,9 @@ def _binary_op(
     ) -> Any:
         orig_lhs_type = type(lhs)
         orig_rhs_type = type(rhs)
+        # Captured BEFORE promotion rebinds lhs/rhs: the fold witness must key
+        # the ORIGINAL objects (promotion may mint twin wrappers).
+        orig_operands = (lhs, rhs)
 
         # When called directly with self and other
         ty = type(lhs)
@@ -909,13 +1107,13 @@ def _binary_op(
 
         lhs_val: Union[bool, int, float, ir.Value, ArithValue]
         if isinstance(lhs.value, ArithValue) and isinstance(lhs, Integer):
-            lhs_val = lhs.value.with_signedness(lhs.signed)  # type: ignore[attr-defined]
+            lhs_val = lhs.value.with_signedness(lhs.signed)
         else:
             lhs_val = lhs.value
 
         rhs_val: Union[bool, int, float, ir.Value, ArithValue]
         if isinstance(rhs.value, ArithValue) and isinstance(rhs, Integer):
-            rhs_val = rhs.value.with_signedness(rhs.signed)  # type: ignore[attr-defined]
+            rhs_val = rhs.value.with_signedness(rhs.signed)
         else:
             rhs_val = rhs.value
 
@@ -923,7 +1121,11 @@ def _binary_op(
             lhs_val, rhs_val = rhs_val, lhs_val
 
         res_val = op(lhs_val, rhs_val)
-        return res_type(res_val, loc=loc, ip=ip)
+        res = res_type(res_val, loc=loc, ip=ip)
+        # A Python-payload compute is a trace-time fold: propagate its sources.
+        if type(res_val) in (bool, int, float):
+            _pyir_mark_fold_srcs(res, orig_operands)
+        return res
 
     return wrapper
 
@@ -935,20 +1137,64 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     implementing basic arithmetic operations.
 
     :param value: The value to store in the numeric type
-    :type value: Union[bool, int, float, Value]
+    :type value: Union[bool, int, float, Value, Numeric]
 
     :ivar value: The stored numeric value
     :vartype value: Union[bool, int, float, Value]
     """
 
+    # Injected by NumericMeta.__new__ on every concrete subclass.
+    width: ClassVar[int]
+    bytes: ClassVar[int]
+    _np_dtype_name: ClassVar[Optional[str]]
+
+    # TODO: Consider implementing MLIR style interface for PyIR mutable values.
+    # Marker: MutableValue can track this type via pyir.ref/load/store.
+    # Type(ir_value) must be a valid single-arg constructor.
+    # Non-scalar DSL types (Array, Tensor) do NOT set this.
+    _pyir_ref_supported = True
+
+    # The payload is a bool/int/float literal, an ``ir.Value`` or another
+    # Numeric depending on stage, and every reader narrows it itself. Declared
+    # here because the accessor that used to carry this annotation is bound
+    # onto the class only when PyIR is enabled.
+    value: Any
+
     def __init__(
         self,
-        value: Union[bool, int, float, Value],
+        # Numeric is accepted: every concrete subclass constructor converts
+        # from Numeric inputs (e.g. Int2(Integer(0)) is a dataclass default),
+        # and type[Numeric] calls resolve against this signature.
+        value: Union[bool, int, float, Value, "Numeric"],
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         self.value = value
+        # PyIR value-wrapper MINT choke point: every scalar Numeric constructor
+        # chains through here, once per scalar kernel argument on the launch
+        # path included, so each guard below is spelled inline: a call whose
+        # only job is to return still costs a Python frame there.
+
+        # A bare wrapper bound by an un-instrumented assignment never passes
+        # ``pyir_assign``/``pyir_read``; this sighting keeps it discoverable.
+        if _PYIR_CANDIDATE_REGISTRY_ACTIVE[0]:
+            _pyir_register_candidate_holder(self)
+        # Birth-context stamp: an SSA-backed wrapper belongs to the MLIR context
+        # that minted it (a live ``ir.Value`` keeps the context id stable).
+
+        # The read funnels refuse a cross-context wrapper instead of
+        # dereferencing a handle whose defining op is gone.  PyIR-only: the
+        # trace-close host-place restore keys this-compilation identity on the
+        # stamp, and only PyIR's read funnels consume it, so an unstamped
+        # wrapper in the baseline mode pays no per-mint guard work.  The
+        # C-level type test leads so a literal payload never reaches the
+        # environment manager lookup.
+        if isinstance(value, ir.Value) and is_pyir_enabled():
+            try:
+                self._pyir_birth_ctx = id(ir.Context.current)
+            except Exception:
+                pass
 
     def __str__(self) -> str:
         # Use member's pretty-str method if member object has method.
@@ -963,7 +1209,23 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         return f"{self.__class__.__name__}({repr(self.value)})"
 
     def __hash__(self) -> int:
-        return hash(type(self).__class__) ^ hash(self.value)
+        v = self.__dict__.get("value")
+        if type(v) in (bool, int, float):
+            # Hashing the payload (dict key / set member) consumes it as structure.
+            _pyir_record_external_payload_consumption(self)
+        elif isinstance(v, ir.Value):
+            # Hashing a STAGED payload launders runtime identity into a plain
+            # Python hash; record it so the container key wall's write-site
+            # snapshot/compare can see the consumption (recording never raises).
+            _pyir_record_staged_identity_hashed()
+        return hash(type(self).__class__) ^ hash(v)
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> Any:
+        v = self.__dict__.get("value")
+        if type(v) in (bool, int, float):
+            # Serialization consumes the payload as structure.
+            _pyir_record_external_payload_consumption(self)
+        return super().__reduce_ex__(protocol)
 
     @property
     def dtype(self) -> Type["Numeric"]:
@@ -977,6 +1239,15 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric": ...
+
+    @overload
+    def to(
+        self,
+        dtype: Type[bool],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool: ...
 
     @overload
     def to(
@@ -995,15 +1266,6 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> float: ...
-
-    @overload
-    def to(  # type: ignore[overload-cannot-match]
-        self,
-        dtype: Type[bool],
-        *,
-        loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
-    ) -> bool: ...
 
     @overload
     def to(
@@ -1030,7 +1292,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         :type dtype: Union[Type["Numeric"], Type[int], Type[float], Type[bool]]
         :return: A new instance of the target type, or self if types match
         :rtype: Numeric
-        :raises TypeError: If trying to convert an MLIR value to a static Python type
+        :raises ValueError: If trying to convert an MLIR value to a static Python type
         :raises TypeError: If trying to convert to unsupported float types like Float8E4M3,
                           Float8E4M3B11FNUZ, Float4E2M1FN, Float6E3M2FN, or Float6E2M3FN
 
@@ -1043,38 +1305,59 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
                 - Float6E3M2FN
                 - Float6E2M3FN
 
-        Example::
+        Example:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                # Convert between DSL numeric types
-                x = Int32(5)
-                y = x.to(Float32)  # Converts to Float32(5.0)
+            # Convert between DSL numeric types.
+            x = Int32(5)
+            y = x.to(Float32)  # Converts to Float32(5.0)
 
-                # Convert to Python primitive types
-                # They are considered as static values at JIT time
-                z = x.to(int)      # Returns Python int 5
-                w = y.to(float)    # Returns Python float 5.0
+            # Convert to Python primitive types.
+            # They are considered static values at JIT time.
+            z = x.to(int)      # Returns Python int 5.
+            w = y.to(float)    # Returns Python float 5.0.
 
-                # This will raise a ValueError
-                mlir_val = arith.constant(T.i32(), 42)
-                num = Int32(mlir_val)
-                num.to(int)        # ValueError: unable to convert MLIR value to static type: <class 'int'>
+            # This raises ValueError because MLIR values are not static.
+            mlir_val = arith.constant(T.i32(), 42)
+            num = Int32(mlir_val)
+            num.to(int)
         """
         if dtype in _unsupported_dst_float_types:
             raise TypeError(f"Unsupported destination float type: {dtype}")
 
-        if isinstance(dtype, type(self)):
+        if dtype is type(self):
             return self
         elif isinstance(dtype, NumericMeta):
             return dtype(self)
         elif dtype is ir.Value:
             if isinstance(self.value, (int, float, bool)):
-                res = arith_helper.const(
-                    self.value, self.dtype.mlir_type, loc=loc, ip=ip
-                )
+                res = arith_helper.const(self.value, type(self), loc=loc, ip=ip)
             elif isinstance(self.value, ir.Value):
-                res = self.value
+                # Cross-compilation guard: a raw SSA minted under a DIFFERENT MLIR
+                # context belongs to a finalized compilation -- refuse loudly.
+                # An unstamped wrapper (baseline mode never stamps) skips the
+                # guard entirely, paying one attribute probe and no context id.
+                _birth: "int | None" = getattr(self, "_pyir_birth_ctx", None)
+                if _birth is not None:
+                    _cur_ctx: "int | None"
+                    try:
+                        _cur_ctx = id(ir.Context.current)
+                    except Exception:
+                        _cur_ctx = _birth
+                    if _birth != _cur_ctx:
+                        raise DSLRuntimeError(
+                            "this value was produced by a previous @jit "
+                            "compilation and cannot be reused here: its "
+                            "backing IR lives in an already-finalized "
+                            "compilation context. Pass it through the "
+                            "kernel's arguments or recompute it in this "
+                            "compilation."
+                        )
+                # Staged-read choke: a wrapper paired with a live place cell
+                # materialises the CELL's current content, never a stale raw.
+                refreshed = _pyir_refresh_cell_read(self)
+                res = self.value if refreshed is None else refreshed.value
             else:
                 raise ValueError(
                     f"cannot convert {type(self)} to {dtype}, "
@@ -1123,9 +1406,6 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         ir_val = self.ir_value(loc=loc, ip=ip)
         result = arith.bitcast(dtype.mlir_type, ir_val, loc=loc, ip=ip)
         return dtype(result)
-
-    @property
-    def zero(self) -> "Numeric": ...  # type: ignore[empty-body]
 
     def __dsl_not__(
         self,
@@ -1278,26 +1558,39 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         return self.__ne__(zero, loc=loc, ip=ip)
 
     def __bool__(self) -> bool:
-        if isinstance(self.value, (int, float, bool)):
-            return bool(self.value)
+        v = self.__dict__.get("value")
+        if isinstance(v, (int, float, bool)):
+            # A truth-test on the payload folds trace-time data: witness it.
+            _pyir_record_external_payload_consumption(self)
+            return bool(v)
         else:
-            raise DSLRuntimeError(
-                f"Unable to convert dynamic `{type(self).__name__}` value to bool at compile time.",
-                suggestion=[
-                    "Decorate the parent function with `jit` decorator and with `preprocess` enabled.",
-                    "Ensure not using patterns that DSL does not support.",
-                    "Otherwise, please file a bug report.",
-                ],
-            )
+            raise DSLUserCodeError(DiagId.PHASE_DYNAMIC_TO_STATIC_BOOL)
 
     def __index__(self) -> int:
-        if isinstance(self.value, (int, float, bool)):
-            return self.value  # type: ignore[return-value]
+        v = self.__dict__.get("value")
+        if isinstance(v, (int, float, bool)):
+            # An index coercion of the payload is a structural bake: witness it.
+            _pyir_record_external_payload_consumption(self)
+            return v  # type: ignore[return-value]
         else:
-            raise DSLRuntimeError(
-                f"'{type(self.value)}' object cannot be interpreted as an integer",
-                suggestion="Mark the loop as dynamic with `dynamic_expr` or `range_dynamic` and decorate the parent function with `jit` decorator",
-            )
+            raise DSLUserCodeError(DiagId.PHASE_DYNAMIC_INDEX)
+
+    def __complex__(self) -> complex:
+        # The arm is a PyIR-mode fact: without PyIR there is no __complex__,
+        # and CPython's constructor falls through to the __index__ slot
+        # (``operator.index`` applies the same non-int return check).
+        if not is_pyir_enabled():
+            return complex(operator.index(self))
+        v = self.__dict__.get("value")
+        if isinstance(v, (int, float, bool)):
+            # complex() consumes the trace-time payload: witness it.
+            _pyir_record_external_payload_consumption(self)
+            return complex(v)
+        raise DSLUserCodeError(
+            DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
+            proto="complex()",
+            what=type(self).__name__,
+        )
 
     def __neg__(
         self,
@@ -1306,7 +1599,9 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric":
         if isinstance(self.value, (bool, int, float)):
-            return type(self)(-self.value)
+            res = type(self)(-self.value)
+            _pyir_mark_fold_srcs(res, (self,))
+            return res
         else:
             return type(self)(-self.value, loc=loc, ip=ip)  # type: ignore[operator]
 
@@ -1317,7 +1612,9 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric":
         if isinstance(self.value, (bool, int, float)):
-            return type(self)(abs(self.value))
+            res = type(self)(abs(self.value))
+            _pyir_mark_fold_srcs(res, (self,))
+            return res
         else:
             return type(self)(abs(self.value), loc=loc, ip=ip)  # type: ignore[arg-type]
 
@@ -1339,8 +1636,15 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         elif isinstance(value, ArithValue):
             res_type = Numeric.from_mlir_type(value.type)
         else:
+            if not is_pyir_enabled():
+                raise ValueError(
+                    f"unable to convert {value} in type {type(value)} to Numeric"
+                )
+            # Pure error path under PyIR: rendering the VALUE could emit IR (a
+            # traced wrapper's __str__ builds ops), so the message names the
+            # type only.
             raise ValueError(
-                f"unable to convert {value} in type {type(value)} to Numeric"
+                f"unable to convert value of type {type(value)} to Numeric"
             )
         return res_type(value)
 
@@ -1540,11 +1844,63 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
     def __pow__(
         self,
         other: Union[int, float, bool, "Numeric"],
+        mod: Union[int, float, bool, "Numeric", None] = None,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Numeric":
-        return _binary_op(operator.pow)(self, other, loc=loc, ip=ip)
+        if mod is None:
+            return _binary_op(operator.pow)(self, other, loc=loc, ip=ip)
+        # Ternary pow (LangRef 3.3.8): payload-only fold; no staged
+        # modular-exponentiation form.  The mod arm is a PyIR-mode fact:
+        # without PyIR the arm declines and Python raises its native
+        # TypeError, as with the two-argument signature it replaced.
+        if not is_pyir_enabled():
+            return NotImplemented
+        _pyir_numeric_protocol_gate("pow(a, b, mod)", self, other, mod)
+        res_val = pow(
+            _pyir_numeric_payload(self),
+            _pyir_numeric_payload(other),
+            _pyir_numeric_payload(mod),
+        )
+        res = type(self)(res_val)
+        _pyir_mark_fold_srcs(res, (self, other, mod))
+        return res
+
+    @dsl_user_op
+    def __rpow__(
+        self,
+        other: Union[int, float, bool, "Numeric"],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> "Numeric":
+        # The reflected arm is a PyIR-mode fact: without PyIR there is no
+        # reflected producer, so Python raises its native TypeError.
+        if not is_pyir_enabled():
+            return NotImplemented
+        return _binary_op(operator.pow, flip=True)(self, other, loc=loc, ip=ip)
+
+    def __divmod__(self, other: Any) -> Any:
+        # LangRef 3.3.8: divmod(a, b) is definitionally the (a // b, a % b)
+        # pair; each half folds or emits through its existing arm, so the
+        # pair inherits exactly those arms' semantics and refusals.  The
+        # producer is a PyIR-mode fact: without PyIR the arm declines and
+        # Python raises its native TypeError, exactly as before.
+        if not is_pyir_enabled():
+            return NotImplemented
+        if not isinstance(other, (Numeric, ArithValue, bool, int, float)):
+            return NotImplemented
+        return (self.__floordiv__(other), self.__mod__(other))
+
+    def __rdivmod__(self, other: Any) -> Any:
+        # Reflected pair (other // self, other % self) through the existing
+        # reflected arms; a PyIR-mode fact like the direct arm.
+        if not is_pyir_enabled():
+            return NotImplemented
+        if not isinstance(other, (ArithValue, bool, int, float)):
+            return NotImplemented
+        return (self.__rfloordiv__(other), self.__rmod__(other))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         raise ValueError(
@@ -1584,6 +1940,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             T.f8E4M3(): Float8E4M3,
             T.f8E4M3FN(): Float8E4M3FN,
             T.f8E4M3B11FNUZ(): Float8E4M3B11FNUZ,
+            T.fnv8E5M3FNU(): FloatNV8E5M3FNU,
             T.f4E2M1FN(): Float4E2M1FN,
             T.f6E2M3FN(): Float6E2M3FN,
             T.f6E3M2FN(): Float6E3M2FN,
@@ -1592,6 +1949,82 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         if mlir_type not in type_map:
             raise DSLRuntimeError(f"Unsupported DSL type: {mlir_type}")
         return type_map[mlir_type]
+
+
+# The wrapper write funnel is INSTALLED, not merely gated.  A ``property`` and a
+# Python ``__setattr__`` bypass CPython's specialized attribute opcodes, so
+# binding them on ``Numeric`` up front costs every construction and every
+# payload read even when PyIR never runs -- and marshalling one scalar kernel
+# argument is exactly that work.  They are bound on first PyIR enablement
+# instead.  Until then ``value`` is a plain instance attribute; the payload
+# lives under the same key either way, so a wrapper minted before installation
+# keeps reading back correctly afterwards.
+
+
+def _numeric_payload_get(self: "Numeric") -> Any:
+    """The wrapped payload; a plain-payload read by non-DSL code is a
+    recorded structural consumption (the coercion-witness recorder)."""
+    try:
+        v = self.__dict__["value"]
+    except KeyError:
+        raise AttributeError("value") from None
+    if type(v) in (bool, int, float):
+        _pyir_record_external_payload_consumption(self)
+    return v
+
+
+def _numeric_payload_set(self: "Numeric", v: Any) -> None:
+    self.__dict__["value"] = v
+    _pyir_note_holder_write(self)
+
+
+# The payload lives in the instance dict under its original key so every
+# __dict__-driven walk sees the same storage shape as a plain attribute.
+_numeric_payload_property = property(_numeric_payload_get, _numeric_payload_set)
+
+
+# Every language-level attribute write/delete lands in plain storage (verbatim
+# delegate) and stamps the write clock.
+def _numeric_funnel_setattr(self: "Numeric", name: str, value: Any) -> None:
+    object.__setattr__(self, name, value)
+    _pyir_note_holder_write(self)
+
+
+def _numeric_funnel_delattr(self: "Numeric", name: str) -> None:
+    object.__delattr__(self, name)
+    _pyir_note_holder_write(self)
+
+
+def _pyir_install_numeric_write_funnel() -> None:
+    """Bind the wrapper write funnel onto ``Numeric`` and anchor the declared
+    fact on its now-verbatim members.
+
+    Idempotent.  ``_pyir_register_mode_fact`` calls this the first time any DSL
+    registers with PyIR enabled, which happens when that DSL's environment
+    manager is constructed -- before any tracing.
+    """
+    if Numeric.__dict__.get("value") is _numeric_payload_property:
+        return
+    Numeric.value = _numeric_payload_property  # type: ignore[assignment]
+    Numeric.__setattr__ = _numeric_funnel_setattr  # type: ignore[assignment]
+    Numeric.__delattr__ = _numeric_funnel_delattr  # type: ignore[assignment]
+    _pyir_declare_write_funnel(Numeric)
+
+
+def _numeric_construct_read(x: "Numeric") -> Any:
+    """Read *x*'s current backing for wrapper-from-wrapper construction.
+
+    Constructing a Numeric FROM another Numeric is a READ of the source at the
+    construction point: the same staged-read choke ``Numeric.to(ir.Value)`` applies.
+
+    A literal-backed wrapper read inside staged CF is the place's first
+    in-region observation: the choke promotes it so the construction consumes
+    the region's carry, not a re-baked loop-invariant constant.
+    """
+    refreshed = _pyir_refresh_cell_read(x)
+    if refreshed is not None:
+        return refreshed.value
+    return x.value
 
 
 def as_numeric(obj: Union[bool, int, float, ir.Value, Numeric]) -> Numeric:
@@ -1610,9 +2043,48 @@ def as_numeric(obj: Union[bool, int, float, ir.Value, Numeric]) -> Numeric:
             y = as_numeric(3.14)  # Converts to Float32
             z = as_numeric(True)  # Converts to Boolean
     """
+    if isinstance(obj, _WatchedM):
+        obj = (
+            obj.ir_value()
+        )  # bake arith.constant + record leaf for D1 retroactive rewrite
     if isinstance(obj, Numeric):
         return obj
     return Numeric._from_python_value(obj)
+
+
+# ``np.array(x)`` holds a Python int in int64 up to 2**63-1 and in uint64 up to
+# 2**64-1; anything wider becomes an object array whose cast to an integer dtype
+# raises. Frozen here so the numpy-free cast rejects the same values.
+_C_INTEGER_MIN = -(1 << 63)
+_C_INTEGER_MAX = (1 << 64) - 1
+
+
+def _wrap_to_exact_range(value: int, exact_range: tuple[int, int]) -> int:
+    """Wrap ``value`` into ``exact_range`` the way a C integer cast would.
+
+    Keeps the low ``width`` bits and reinterprets them with the range's
+    signedness, e.g. ``Int32(1 << 34) -> 0``. ``(0, 1)`` is the boolean range,
+    where every nonzero value folds to 1 instead of wrapping.
+    """
+    if exact_range == (0, 1):
+        return int(bool(value))
+    lo, hi = exact_range
+    return (value - lo) % (hi - lo + 1) + lo
+
+
+# Bound by the DSL package initializer to the ``NumericCast`` class of the
+# native extension. Read at call time, never captured at import time: the
+# binding happens after this module has been imported.
+_native_numeric_cast: Optional[Any] = None
+
+
+def _float_to_int(
+    x: float, cast_key: Optional[tuple[int, bool]], exact_range: tuple[int, int]
+) -> int:
+    """Narrow ``x`` to a C integer the way NumPy's scalar cast does."""
+    if _native_numeric_cast is not None and cast_key is not None:
+        return _native_numeric_cast.float_to_int(x, *cast_key)
+    return _wrap_to_exact_range(int(x), exact_range)
 
 
 class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True):
@@ -1628,17 +2100,26 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     :return: A new Integer instance with the converted value
     :rtype: Integer
 
-    :raises AssertionError: If the type's numpy_dtype is None
+    :raises AssertionError: If the type has no exactly representable range
     :raises NotImplementedError: If converting between different Integer types
     :raises ValueError: If the input type is not supported for conversion
-    :raises OverflowError: If converting float infinity to integer
+    :raises OverflowError: If converting float infinity to integer, or an
+        integer too wide for any C integer type
 
     Type conversion behavior:
 
     * Python scalars (bool, int, float):
-        * Converted through numpy dtype casting
+        * Converted through the target dtype's C cast
         * NaN and infinity values are rejected
-        * Example: Int8(256) -> -256 (overflow behavior)
+        * A value whose magnitude exceeds the target width is narrowed by
+          the dtype's C cast and emits ``TYPE_INT_LITERAL_OUT_OF_RANGE`` for
+          an integer literal (``Int8(256) -> 0``) or
+          ``TYPE_FLOAT_TO_INT_OUT_OF_RANGE`` for a float one
+          (``Int32(1e40)``). An integer wraps, dropping the high bits; a
+          float follows the host CPU's own conversion and is therefore
+          architecture-defined, matching NumPy on the same machine. To
+          materialize a specific bit pattern intentionally, mask first
+          (``Int8(256 & 0xFF)``).
 
     * MLIR Value with IntegerType:
         * Width differences handled by signless to signed/unsigned conversion
@@ -1650,7 +2131,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         * Example: f32 -> i32/ui32 depending on target type
 
     * Integer:
-        * Uses MLIR float-to-int conversion or numpy dtype casting
+        * Uses MLIR int-to-int conversion or the target dtype's C cast
         * Example: Int32(Int32(5)) => 5
 
     * Float:
@@ -1669,6 +2150,11 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         a = Int32(c5)  # Treat c5 as int32 bitwise
     """
 
+    # Injected by IntegerMeta.__new__ on every concrete subclass.
+    signed: ClassVar[bool]
+    _exact_range: ClassVar[Optional[tuple[int, int]]]
+    _cast_key: ClassVar[Optional[tuple[int, bool]]]
+
     def __init__(
         self,
         x: Union[bool, int, float, ir.Value, "Integer", "Float"],
@@ -1677,20 +2163,105 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
+        # D1: a watched meta unwraps through the declared promotion (its
+        # numeric class survives; ir_value() inside records the leaf for the
+        # retroactive rewrite) -- never to a raw signless value.
+        if isinstance(x, _WatchedM):
+            x = as_numeric(x)
 
         if isinstance(x, (bool, int, float)):
-            # Add check for NaN before numpy conversion
+            # Add check for NaN before the cast
             if isinstance(x, float):
-                if np.isnan(x):
+                if math.isnan(x):
                     raise ValueError("Cannot convert float NaN to integer")
-                elif np.isinf(x):
+                elif math.isinf(x):
                     raise OverflowError("Cannot convert float infinity to integer")
 
-            np_dtype = ty.numpy_dtype
-            assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
-            x_val = int(np.array(x).astype(np_dtype))
+            exact_range = ty._exact_range
+            if exact_range is not None and exact_range[0] <= x <= exact_range[1]:
+                # Already representable, so the cast below would round-trip the
+                # value unchanged. int() truncates floats toward zero and folds
+                # bools to 0/1, which is what the cast does for this range too.
+                x_val = int(x)
+            else:
+                # Out of range: narrow the way the dtype's C cast would, and
+                # reject the ints too wide for any C integer. _exact_range is
+                # None exactly when there is no dtype to cast to, so this is
+                # still where an unsupported width is rejected. A float cast is
+                # architecture-defined and an integer cast is not, so they take
+                # different paths.
+                assert exact_range is not None, (
+                    f"expects an exactly representable range, but got {exact_range}"
+                )
+                if isinstance(x, float):
+                    x_val = _float_to_int(x, ty._cast_key, exact_range)
+                else:
+                    if not (_C_INTEGER_MIN <= x <= _C_INTEGER_MAX):
+                        raise OverflowError(f"{int(x)} is too large for a C integer")
+                    x_val = _wrap_to_exact_range(int(x), exact_range)
+            # A value whose truncation lands outside the target type's width is
+            # silently narrowed by the cast above, losing magnitude (e.g.
+            # ``Int32(1 << 34) -> 0``). Surface that loss as a warning, under a
+            # dedicated code per literal kind so the wording and the suggested
+            # fix match what was written. MLIR-value / same-type paths never
+            # reach here, so intentional bit-pattern materialization via
+            # ``arith_helper.const`` is unaffected. ``Boolean`` (width 1) is
+            # excluded: it has no magnitude range (any nonzero is True), so the
+            # ``[min, max]`` formula does not apply.
+            #
+            # The two literal kinds get different bounds, because only one of
+            # them has a bit-pattern idiom.
+            #
+            # Integer literals are tested against the union of the signed and
+            # unsigned ranges of that width, and signedness is deliberately not
+            # part of the test. A mask, flag word or other bit pattern is
+            # naturally unsigned, so a full 32-bit mask reaches a signed type as
+            # ``Int32(0xFFFFFFFF)``; the mirror idiom ``Uint32(-1)`` spells the
+            # same bits the other way. Both keep all ``width`` bits -- only the
+            # interpretation of the sign bit changes -- and the diagnostic's own
+            # remedy (mask to the type width) cannot quiet them.
+            #
+            # Float literals are tested against the type's own ``[min, max]``.
+            # Nobody spells a bit pattern as a float, so the wider band would
+            # only swallow real mistakes: ``Int32(3e9)`` is out of range for the
+            # type and is reported, matching the diagnostic NumPy used to raise
+            # for that cast. Testing the truncated magnitude keeps ordinary
+            # fractional truncation (``Int32(3.7)``) silent -- it loses no bits.
+            if ty.width > 1:
+                int_val = int(x)
+                if isinstance(x, float):
+                    lossless_lo, lossless_hi = ty.min, ty.max
+                else:
+                    lossless_lo = -(1 << (ty.width - 1))
+                    lossless_hi = (1 << ty.width) - 1
+                if int_val < lossless_lo or int_val > lossless_hi:
+                    from .diagnostics import WarnId, report_warning
+
+                    if isinstance(x, float):
+                        report_warning(
+                            WarnId.TYPE_FLOAT_TO_INT_OUT_OF_RANGE,
+                            stacklevel=3,
+                            value=x,
+                            type=ty.__name__,
+                            min=ty.min,
+                            max=ty.max,
+                            result=x_val,
+                        )
+                    else:
+                        report_warning(
+                            WarnId.TYPE_INT_LITERAL_OUT_OF_RANGE,
+                            stacklevel=3,
+                            value=int_val,
+                            type=ty.__name__,
+                            min=ty.min,
+                            max=ty.max,
+                            wrapped=x_val,
+                            mask=(1 << ty.width) - 1,
+                        )
         elif type(x) == ty:
-            x_val = x.value  # type: ignore[assignment]
+            # Same-type copy is a READ of *x* at this point: route through
+            # the staged-read choke, never the pinned raw.
+            x_val = _numeric_construct_read(x)  # type: ignore[assignment]
         elif isinstance(x, ir.Value):
             x_val = x
             if isinstance(x.type, ir.IntegerType):
@@ -1701,21 +2272,35 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
                 # float -> (u)int
                 x_val = arith_helper.fptoi(x, ty.signed, ty.mlir_type, loc=loc, ip=ip)
         elif isinstance(x, Integer):
+            # Consult the staged-read choke BEFORE dispatching: a loop-carried
+            # wrapper still caches its pre-loop literal, so a ``x.value`` type
+            # test would bake the stale constant instead of loading the cell.
+            refreshed = _pyir_refresh_cell_read(x)
+            if refreshed is not None:
+                x = refreshed
             if isinstance(x.value, ir.Value):
                 x_val = arith_helper.int_to_int(x.ir_value(), ty)
             else:
-                # For non-MLIR values, use numpy casting
-                src_val = np.array(x.value, dtype=type(x).numpy_dtype)
-                x_val = int(src_val.astype(ty.numpy_dtype))
+                # For non-MLIR values, wrap the way the target's C cast would.
+                # A target with no exactly representable range (Int4, Int128)
+                # has no cast to perform, so the value carries across as is.
+                target_range = ty._exact_range
+                src_val = tcast(Union[bool, int, float], x.value)
+                x_val = (
+                    int(src_val)
+                    if target_range is None
+                    else _wrap_to_exact_range(int(src_val), target_range)
+                )
         elif isinstance(x, Float):
             # float -> int is handled by Integer.__init__ recursively
-            Integer.__init__(self, x.value)
+            Integer.__init__(self, _numeric_construct_read(x))
             return
         else:
             raise DSLRuntimeError(f"{x} to integer conversion is not supported")
 
         super().__init__(x_val)
 
+    @dsl_user_op
     def __invert__(
         self,
         *,
@@ -1725,6 +2310,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         res_type = type(self)
         return res_type(self.ir_value(loc=loc, ip=ip).__invert__(loc=loc, ip=ip))
 
+    @dsl_user_op
     def __lshift__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1746,6 +2332,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
             raise ValueError(f"Cannot left shift {other_} with {self}")
         return other_.__lshift__(self, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __rshift__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1767,6 +2354,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
             raise ValueError(f"Cannot right shift {other_} with {self}")
         return other_.__rshift__(self, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __and__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1785,6 +2373,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     ) -> "Numeric":
         return self.__and__(other, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __or__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1803,6 +2392,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     ) -> "Numeric":
         return self.__or__(other, loc=loc, ip=ip)  # type: ignore[call-arg]
 
+    @dsl_user_op
     def __xor__(
         self,
         other: Union[int, float, bool, "Numeric"],
@@ -1825,6 +2415,19 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         return self.value
 
 
+# Standard IEEE-754 binary formats keyed by DSL type name, mapping to
+# (``struct`` format code, max finite magnitude, smallest positive subnormal).
+# Used by ``Float.__init__`` to detect a Python-float literal that overflows to
+# +/-inf or underflows to 0 in the target type -- numpy-free, via exact
+# ``struct`` round-trips. Only these standard formats are probed; non-IEEE /
+# narrow types (bf16, tf32, fp8, fp6, fp4) are absent and narrow later in IR.
+_IEEE_FLOAT_PROBE: dict = {
+    "Float16": ("e", 65504.0, 2.0**-24),
+    "Float32": ("f", 3.4028234663852886e38, 2.0**-149),
+    "Float64": ("d", 1.7976931348623157e308, 2.0**-1074),
+}
+
+
 class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     """A class representing floating-point values.
 
@@ -1834,8 +2437,14 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
     Type conversion behavior:
 
     1. Python scalars (bool, int, float):
-       - Converted through numpy dtype casting
+
+       - Kept at full Python-float precision and narrowed during IR emission
        - Example: Float32(1.7) -> 1.7
+       - A value whose magnitude cannot be represented in the target type
+         collapses to +/-inf (overflow) or 0 (underflow) and emits a
+         ``TYPE_FLOAT_LITERAL_OVERFLOW`` / ``TYPE_FLOAT_LITERAL_UNDERFLOW``
+         warning, e.g. ``Float32(1e40) -> inf``. Ordinary precision/rounding
+         loss (``Float32(0.1)``) is not flagged.
 
     2. MLIR Value with FloatType:
        - If width differs: converts between float types
@@ -1871,7 +2480,6 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
 
         Narrow precision types and special floating-point formats support matrix on device:
 
-    :raises AssertionError: If the type's numpy_dtype is None
     :raises ValueError: If conversion from the input type is not supported
     """
 
@@ -1883,13 +2491,60 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
+        # D1: a watched meta unwraps through the declared promotion (its
+        # numeric class survives; ir_value() inside records the leaf for the
+        # retroactive rewrite) -- never to a raw signless value.
+        if isinstance(x, _WatchedM):
+            x = as_numeric(x)
 
         if isinstance(x, (bool, int, float)):
-            # Why we need to convert x to with numpy?
-            # np_dtype = ty.numpy_dtype
-            # assert np_dtype is not None, f"expects numpy.dtype, but got {np_dtype}"
-            # x = float(np.array(x).astype(np_dtype))
-            super().__init__(float(x))
+            fx = float(x)
+            # A finite, nonzero Python float whose magnitude cannot be
+            # represented in the target type collapses to +/-inf (overflow) or
+            # 0 (underflow) once narrowed, losing the value entirely. Surface
+            # that catastrophic loss -- but NOT ordinary precision/rounding loss
+            # (e.g. ``Float32(0.1)``), which is inherent to every float literal
+            # and would be unbearably noisy. We keep the full-precision Python
+            # double below; the probe here is only to detect the collapse.
+            #
+            # Detection uses stdlib ``struct`` (exact IEEE-754 round-trips) so
+            # this stays numpy-free. Only the standard binary16/32/64 formats
+            # have a ``struct`` code; non-IEEE / narrow types (bf16, tf32, fp8,
+            # fp6, fp4) are absent from the map and narrow later during IR
+            # emission, so they are skipped.
+            struct_code, max_finite, min_subnormal = _IEEE_FLOAT_PROBE.get(
+                ty.__name__, (None, None, None)
+            )
+            if struct_code is not None and fx != 0.0 and math.isfinite(fx):
+                try:
+                    narrowed = struct.unpack(struct_code, struct.pack(struct_code, fx))[
+                        0
+                    ]
+                except OverflowError:
+                    # binary16 pack raises rather than saturating to inf.
+                    narrowed = math.copysign(math.inf, fx)
+                if math.isinf(narrowed) or narrowed == 0.0:
+                    from .diagnostics import WarnId, report_warning
+
+                    if math.isinf(narrowed):
+                        report_warning(
+                            WarnId.TYPE_FLOAT_LITERAL_OVERFLOW,
+                            stacklevel=3,
+                            value=fx,
+                            type=ty.__name__,
+                            max=max_finite,
+                            wrapped=narrowed,
+                        )
+                    else:
+                        report_warning(
+                            WarnId.TYPE_FLOAT_LITERAL_UNDERFLOW,
+                            stacklevel=3,
+                            value=fx,
+                            type=ty.__name__,
+                            tiny=min_subnormal,
+                            wrapped=narrowed,
+                        )
+            super().__init__(fx)
         elif isinstance(x, ir.Value):
             if isinstance(x.type, ir.IntegerType):
                 raise DSLRuntimeError("signless to float conversion is not implemented")
@@ -1898,15 +2553,25 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
                     x = arith_helper.cvtf(x, ty.mlir_type, loc=loc, ip=ip)
             super().__init__(x)
         elif isinstance(x, Integer):
+            # Consult the staged-read choke BEFORE dispatching: a loop-carried
+            # wrapper still caches its pre-loop literal, so a ``x.value`` type
+            # test would bake the stale constant instead of loading the cell.
+            refreshed = _pyir_refresh_cell_read(x)
+            if refreshed is not None:
+                x = refreshed
             if isinstance(x.value, ir.Value):
                 x = arith_helper.itofp(
-                    x.value, type(x).signed, ty.mlir_type, loc=loc, ip=ip
+                    x.value,
+                    type(x).signed,
+                    ty.mlir_type,
+                    loc=loc,
+                    ip=ip,
                 )
             else:
                 x = float(x.value)  # type: ignore[arg-type]
             super().__init__(x)
         elif isinstance(x, Float):
-            Float.__init__(self, x.value)
+            Float.__init__(self, _numeric_construct_read(x))
         else:
             raise DSLRuntimeError(f"{x} to Float conversion is not supported")
 
@@ -1953,11 +2618,16 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
+        # D1: a watched meta unwraps through the declared promotion (its
+        # numeric class survives; ir_value() inside records the leaf for the
+        # retroactive rewrite) -- never to a raw signless value.
+        if isinstance(a, _WatchedM):
+            a = as_numeric(a)
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
         elif isinstance(a, Numeric):
-            Boolean.__init__(self, a.value, loc=loc, ip=ip)
+            Boolean.__init__(self, _numeric_construct_read(a), loc=loc, ip=ip)
             return
         elif isinstance(a, ArithValue):
             if a.type == T.bool():
@@ -2063,15 +2733,13 @@ class Float64(Float, metaclass=FloatMeta, width=64, mlir_type=T.f64):
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
 
-        return [
-            ctypes.cast(ctypes.pointer(ctypes.c_double(self.value)), ctypes.c_void_p)
-        ]
+        return [_make_owning_c_pointer(ctypes.c_double(self.value))]
 
 
 class Float32(Float, metaclass=FloatMeta, width=32, mlir_type=T.f32):
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
-        return ctypes.cast(ctypes.pointer(ctypes.c_float(value)), ctypes.c_void_p)
+        return _make_owning_c_pointer(ctypes.c_float(value))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2090,14 +2758,28 @@ class TFloat32(Float, metaclass=FloatMeta, width=32, mlir_type=T.tf32):
 class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
     @staticmethod
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
-        # Convert float to float16 binary representation
-        # First convert to numpy float16 to handle the conversion
-        f16_val = np.float16(value)
-        # Get the raw bits as a 16-bit integer
-        bits: np.uint16 = f16_val.view(np.uint16)
-        # Create a short (16-bit int) with those bits
-        c_val = ctypes.c_short(int(bits))
-        return ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        """Marshal ``value`` as its IEEE-754 binary16 bit pattern.
+
+        Two cases need handling beyond a plain ``struct`` pack:
+
+        * NaN. ``struct`` collapses every NaN to the canonical quiet pattern,
+          which would turn a signaling NaN into a quiet one and drop the
+          payload. Narrow the payload explicitly instead, keeping the high
+          mantissa bits and forcing a nonzero payload so the result cannot
+          decay into an infinity.
+        * Finite overflow. ``struct`` raises rather than saturating to inf.
+        """
+        if value != value:
+            double_bits = struct.unpack("<Q", struct.pack("<d", value))[0]
+            sign = (double_bits >> 48) & 0x8000
+            payload = (double_bits & ((1 << 52) - 1)) >> 42
+            bits = sign | 0x7C00 | (payload or 1)
+        else:
+            try:
+                bits = struct.unpack("<H", struct.pack("<e", value))[0]
+            except OverflowError:
+                bits = 0xFC00 if value < 0 else 0x7C00
+        return _make_owning_c_pointer(ctypes.c_short(bits))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
@@ -2111,14 +2793,16 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
             raise ValueError("only float is supported")
         # Convert float32 to bfloat16 representation
         # First convert the value to float32 bit representation
-        f32_val = np.float32(self.value)
-        # Get the 32-bit integer representation
-        bits: np.uint32 = f32_val.view(np.uint32)
+        try:
+            bits = struct.unpack("<I", struct.pack("<f", self.value))[0]
+        except OverflowError:
+            # binary32 pack raises rather than saturating to inf.
+            bits = 0xFF800000 if self.value < 0 else 0x7F800000
         # Truncate to 16 bits, keeping the high 16 bits
-        bf16_bits = np.uint16(bits >> 16)
+        bf16_bits = bits >> 16
         # Create a short (16-bit int) with those bits
-        c_val = ctypes.c_short(bf16_bits)  # type: ignore[arg-type]
-        c_pointer = ctypes.cast(ctypes.pointer(c_val), ctypes.c_void_p)
+        c_val = ctypes.c_short(bf16_bits)
+        c_pointer = _make_owning_c_pointer(c_val)
         return [c_pointer]
 
 
@@ -2132,6 +2816,9 @@ class Float8E4M3B11FNUZ(
     Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E4M3B11FNUZ
 ): ...
 
+
+
+class FloatNV8E5M3FNU(Float, metaclass=FloatMeta, width=8, mlir_type=T.fnv8E5M3FNU): ...
 
 
 # Added missing float types
@@ -2150,13 +2837,94 @@ class Float6E3M2FN(Float, metaclass=FloatMeta, width=6, mlir_type=T.f6E3M2FN): .
 class Float6E2M3FN(Float, metaclass=FloatMeta, width=6, mlir_type=T.f6E2M3FN): ...
 
 
-_unsupported_dst_float_types = [
-    Float8E4M3,
-    Float8E4M3B11FNUZ,
-    Float4E2M1FN,
-    Float6E3M2FN,
-    Float6E2M3FN,
-]
+# Packed narrow-float views. For FP4x2, the MLIR element type is the packed
+# storage container (`i8`) so generic pointer vector loads/stores move packed
+# bytes correctly. The class identity carries the floating-point packing
+# semantics (`x2` in the name). `width` is the width of one packed tensor
+# element: 8 bits for FP4x2. Naming follows torch: `float4_e2m1fn_x2`.
+class Float4E2M1FNx2(
+    Float,
+    metaclass=FloatMeta,
+    width=8,
+    mlir_type=T.i8,
+):
+    """Packed FP4 E2M1 — 2 elements per byte (matches ``torch.float4_e2m1fn_x2``).
+
+    Shape and strides on any layout carrying this dtype are interpreted
+    in **fp4x2 tensor-element units**. One tensor element is already one
+    packed storage unit, so ``create_tensor_map_tiled_from_view`` uses
+    ``width == 8`` directly when converting stride units for TMA.
+
+    ``width`` is the packed 8-bit tensor-element width and ``mlir_type`` is
+    the packed storage type ``i8``. Internal helpers that still need scalar
+    FP4 lane precision treat this packed dtype specially by class identity.
+
+    Use this dtype when the input is already organized in packed fp4x2
+    storage units (for example a ``torch.uint8`` buffer viewed as
+    ``torch.float4_e2m1fn_x2``) or when the kernel allocates layouts
+    directly from packed extents.
+
+    """
+
+
+# FP6x4 still carries the unpacked scalar FP6 MLIR element type for now; its
+# packed storage handling remains in specialized helpers.
+class Float6E3M2FNx4(
+    Float,
+    metaclass=FloatMeta,
+    width=24,
+    mlir_type=T.f6E3M2FN,
+):
+    """Packed FP6 E3M2 — 4 elements per 3 bytes.
+
+    See :class:`Float4E2M1FNx2` for the shape / stride invariant; one
+    tensor element is one packed fp6x4 storage unit.
+
+    ``width`` is the 24-bit packed tensor-element width.
+
+    """
+
+
+class Float6E2M3FNx4(
+    Float,
+    metaclass=FloatMeta,
+    width=24,
+    mlir_type=T.f6E2M3FN,
+):
+    """Packed FP6 E2M3 — 4 elements per 3 bytes.
+
+    See :class:`Float4E2M1FNx2` for the shape / stride invariant; one
+    tensor element is one packed fp6x4 storage unit.
+
+    ``width`` is the 24-bit packed tensor-element width.
+
+    """
+
+
+def _element_precision_width(dtype: Type["Numeric"]) -> int:
+    """Return scalar lane precision for packed narrow-float view dtypes."""
+
+    if dtype is Float4E2M1FNx2:
+        return 4
+    if dtype in {Float6E3M2FNx4, Float6E2M3FNx4}:
+        return 6
+    return dtype.width
+
+
+# frozenset for O(1) membership: Numeric.to() tests `dtype in` this on every
+# numeric coercion/promotion during tracing.
+_unsupported_dst_float_types = frozenset(
+    {
+        Float8E4M3,
+        Float8E4M3B11FNUZ,
+        Float4E2M1FN,
+        Float6E3M2FN,
+        Float6E2M3FN,
+        Float4E2M1FNx2,
+        Float6E3M2FNx4,
+        Float6E2M3FNx4,
+    }
+)
 
 
 ALL_DTYPES = {
@@ -2184,6 +2952,9 @@ ALL_DTYPES = {
     Float4E2M1FN,
     Float6E2M3FN,
     Float6E3M2FN,
+    Float4E2M1FNx2,
+    Float6E2M3FNx4,
+    Float6E3M2FNx4,
 }
 __STR_TO_DTYPE__ = {dt.__name__: dt for dt in ALL_DTYPES}
 
@@ -2198,51 +2969,39 @@ def dtype(dtype_: str) -> Type[Numeric]:
     return t
 
 
-##############################################################
-# Tensor
-##############################################################
-
-
-class TensorMeta(DslType):
-    _element_type = Any
-    _shape = Any
-
-    """
-    Examples:
-        >>> Tensor[Int32, (3,)]
-        >>> Tensor[Float32, (3, 4)]
-        >>> T = TypeVar("T")
-        >>> Tensor[T, (3, 4, 5)]
-    """
-
-    def __new__(
-        cls,
-        name: str,
-        bases: tuple,
-        attrs: dict,
-        element_type: Any = Any,
-        shape: Any = Any,
-    ) -> Any:
-        new_cls = super().__new__(cls, name, bases, attrs)
-        new_cls._element_type = element_type
-        new_cls._shape = shape
-        return new_cls
-
-
 # Generic type
 TY = TypeVar("TY")
 
 
-class Constexpr(Generic[TY]):
-    """Value is passed and computed by python interpreter"""
+if TYPE_CHECKING:
+    # Static-analysis: Constexpr[T] is transparent and treated as T.
+    Constexpr = Annotated[TY, "constexpr"]
+else:
 
-    pass
+    class Constexpr(Generic[TY]):
+        """Value is passed and computed by python interpreter"""
+
+        pass
+
+
+class _GridConstantMarker:
+    """Type marker that indicates a kernel argument as CUDA grid constant."""
+
+    def __extract_mlir_attributes__(self) -> list[ir.DictAttr]:
+        return [ir.DictAttr.get({"cuda.grid_constant": ir.UnitAttr.get()})]
+
+
+# Singleton instance of the grid constant marker
+grid_constant: _GridConstantMarker = _GridConstantMarker()
+
+# Type alias for ``Annotated[TY, grid_constant]``
+GridConstant: TypeAlias = Annotated[TY, grid_constant]
 
 
 class align(int):
     def __new__(cls, value: int) -> "align":
         if value <= 0 or (value & (value - 1)) != 0:
-            raise DSLRuntimeError("expects align be power of 2 as positive value")
+            raise DSLUserCodeError(DiagId.ARG_INVALID_ALIGNMENT)
         return super().__new__(cls, value)
 
     def __str__(self) -> str:
@@ -2250,6 +3009,8 @@ class align(int):
 
 
 class PointerMeta(DslType):
+    """Legacy subscriptable annotation metaclass."""
+
     _value_type: Any
     _align: Any
 
@@ -2277,24 +3038,23 @@ class PointerMeta(DslType):
     def __eq__(cls, other: Any) -> bool:
         if not isinstance(other, PointerMeta):
             return False
-        return (
-            cls._value_type == other._value_type
-            and cls._align._value == other._align._value
+        return cls._value_type == other._value_type and int(cls._align) == int(
+            other._align
         )  # Compare alignment values
 
     def __hash__(cls) -> int:
-        return hash((cls._value_type, cls._align._value))  # Hash alignment value
+        return hash((cls._value_type, int(cls._align)))  # Hash alignment value
 
-    def __getitem__(cls, params: Any) -> Type["Pointer"]:
+    def __getitem__(cls, params: Any) -> Type[Any]:
         value_type, align_ = params
 
         if not isinstance(align_, align):
-            raise DSLRuntimeError(f"expects align but got {align_}")
+            raise DSLUserCodeError(DiagId.ARG_TYPE_MISMATCH)
 
         # Create new class with proper name and parameters
         new_cls = type(
-            f"Pointer[{value_type.__name__}, {align_}]",
-            (Pointer,),
+            f"{cls.__name__}[{value_type.__name__}, {align_}]",
+            (cls,),
             {},
             value_type=value_type,
             align_=align_,  # Pass alignment to __new__
@@ -2305,22 +3065,832 @@ class PointerMeta(DslType):
         return f"ptr<{cls._value_type}, {cls._align}>"
 
 
-class Pointer(metaclass=PointerMeta):
-    """
-    A pointer to a memory location.
+class TypedPointer:
+    """Type annotation object for a ``Pointer`` element type and memory space.
 
-    Examples:
+    ``Pointer[dtype, space]`` returns a ``TypedPointer`` for use in kernel/JIT
+    signatures. It is not an LLVM pointer value itself; it carries the metadata
+    needed to derive the corresponding MLIR argument type.
 
-        def foo(a : Pointer[Int32, align=8]):
+    :param dtype: Element type such as ``Float32`` or ``Int8``.
+    :param space: Memory space such as ``cutlass.AddressSpace.gmem`` or its integer
+        address-space value.
+
+    Example::
+
+        def kernel(data: cutlass.Pointer[Float32, cutlass.AddressSpace.gmem]):
             ...
 
+    ``__get_mlir_types__`` reads ``space.value`` when present, otherwise treats
+    ``space`` as the raw LLVM address-space integer.
     """
 
-    def __init__(self, value: Any) -> None:
-        self.value = value
+    def __init__(self, dtype: Any, space: Any):
+        self.dtype = dtype
+        self.space = space
+
+    def __repr__(self) -> str:
+        return f"TypedPointer[{self.dtype}, {self.space}]"
+
+    def __get_mlir_types__(self) -> list[ir.Type]:
+        addrspace = getattr(self.space, "value", self.space)
+        return [llvm.PointerType.get(int(addrspace))]
+
+
+def _normalize_address_space(space: Any) -> AddressSpace:
+    if isinstance(space, AddressSpace):
+        return space
+    if isinstance(space, bool):
+        raise TypeError(
+            f"space=bool is not allowed; pass a cutlass.AddressSpace member "
+            f"or its int value. Got {space!r}."
+        )
+    if isinstance(space, int):
+        try:
+            return AddressSpace(space)
+        except ValueError:
+            valid = sorted(int(m) for m in AddressSpace)
+            raise ValueError(
+                f"space={space!r} is not a valid cutlass.AddressSpace int. "
+                f"Valid ints: {valid}."
+            ) from None
+    raise TypeError(
+        f"space must be a cutlass.AddressSpace member or int; got "
+        f"{type(space).__name__} ({space!r})."
+    )
+
+
+MemOrdering = Literal[
+    "not_atomic",
+    "monotonic",
+    "acquire",
+    "release",
+    "acq_rel",
+    "seq_cst",
+]
+MemScope = Literal["cta", "cluster", "gpu", "sys"]
+SharedSpace = Literal["cta", "cluster"]
+LoadCacheModifier = Literal["ca", "cg", "cs", "lu", "cv"]
+StoreCacheModifier = Literal["wb", "cg", "cs", "wt"]
+EvictPriority = Literal["first", "last", "normal", "unchanged", "noallocate"]
+L2PrefetchSize = Literal["size_64b", "size_128b", "size_256b"]
+L1EvictKind = Literal[
+    "evict_normal",
+    "evict_first",
+    "evict_last",
+    "evict_no_allocate",
+    "evict_unchanged",
+]
+
+MLIR_DYNAMIC_INDEX = -(2**31)
+
+
+def _to_llvm_compatible_type(elem_type: ir.Type) -> ir.Type:
+    """Convert non-LLVM-compatible element types to same-width integer types."""
+    compatible_float_widths = {16, 32, 64, 80, 128}
+    if isinstance(elem_type, ir.FloatType):
+        width = elem_type.width
+        if width not in compatible_float_widths:
+            return ir.IntegerType.get_signless(width)
+    return elem_type
+
+
+def _gep(
+    base: ir.Value,
+    elem_type: ir.Type,
+    *,
+    static_indices: list[int] | None = None,
+    dynamic_indices: list[ir.Value] | None = None,
+    loc: object = None,
+    ip: object = None,
+) -> ir.Value:
+    """Helper for LLVM getelementptr operations."""
+    if static_indices is None:
+        static_indices = []
+    if dynamic_indices is None:
+        dynamic_indices = []
+
+    return llvm.getelementptr(
+        base.type,
+        base,
+        dynamic_indices,
+        static_indices,
+        _to_llvm_compatible_type(elem_type),
+        no_wrap_flags="None",
+        loc=loc,
+        ip=ip,
+    )
+
+
+class Pointer(ir.Value):
+    """An ``llvm.ptr`` value with element dtype metadata.
+
+    ``Pointer`` is the canonical low-level DSL pointer type in the ``cutlass``
+    namespace. It subclasses ``ir.Value`` so it can be passed directly to MLIR
+    ops that require a pointer operand.
+    """
+
+    _dtype: Type[Numeric]
+    _mlir_type: ir.Type
+    _addrspace: int
+    _base: ir.Value
+
+    def __init__(
+        self,
+        base: ir.Value,
+        *,
+        dtype: Type[Numeric] | None = None,
+        space: AddressSpace | int | None = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        if hasattr(base, "to_llvm_ptr"):
+            base = base.to_llvm_ptr(loc=loc, ip=ip)
+        elif hasattr(base, "ir_value") and not isinstance(base, ir.Value):
+            base = base.ir_value(loc=loc, ip=ip)
+        if not isinstance(base, ir.Value):
+            raise TypeError(f"Pointer expects an MLIR value, got {type(base).__name__}")
+
+        super().__init__(base)
+        self._base = base
+        self._dtype = dtype or Int8
+        self._mlir_type = self._dtype.mlir_type
+
+        if space is not None:
+            self._addrspace = _normalize_address_space(space).value
+        else:
+            try:
+                self._addrspace = llvm.PointerType(base.type).address_space
+            except Exception:
+                self._addrspace = AddressSpace.generic.value
+
+    @classmethod
+    def _from_raw_ptr(
+        cls,
+        value: ir.Value,
+        dtype: Type[Numeric] | None = None,
+    ) -> "Pointer":
+        return cls(value, dtype=dtype or Int8)
+
+    def __class_getitem__(cls, args: Any) -> TypedPointer:
+        if not isinstance(args, tuple) or len(args) != 2:
+            raise DSLRuntimeError("Pointer[...] expects (dtype, memory_space)")
+        return TypedPointer(*args)
+
+    def ir_value(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> ir.Value:
+        return self
+
+    @property
+    def llvm_ptr(self) -> ir.Value:
+        return self
+
+    def to_llvm_ptr(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> ir.Value:
+        return self
+
+    def __extract_mlir_values__(self) -> list[ir.Value]:
+        return [ir.Value(self)]
+
+    def __new_from_mlir_values__(self, values: list[ir.Value]) -> "Pointer":
+        return Pointer._from_raw_ptr(values[0], self._dtype)
 
     def __str__(self) -> str:
-        return f"{self.value} : {type(self)}"
+        return f"ptr<space={self.space.name}, dtype={self.dtype}>"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    @property
+    def dtype(self) -> Type[Numeric]:
+        return self._dtype
+
+    @property
+    def natural_alignment(self) -> int:
+        return max(1, self._dtype.width // 8)
+
+    @property
+    def alignment(self) -> int:
+        return self.natural_alignment
+
+    @property
+    def max_alignment(self) -> int:
+        return self.natural_alignment
+
+    @property
+    def value_type(self) -> Type[Numeric]:
+        return self._dtype
+
+    @property
+    def space(self) -> AddressSpace:
+        try:
+            return AddressSpace(self._addrspace)
+        except ValueError:
+            return AddressSpace.generic
+
+    @property
+    def memspace(self) -> AddressSpace:
+        return self.space
+
+    @property
+    def mlir_type(self) -> ir.Type:
+        return self.type
+
+    def _effective_alignment(self, alignment: int | None) -> int:
+        return alignment if alignment is not None else self.natural_alignment
+
+    def _prepare_store_value(
+        self,
+        value: Any,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        if isinstance(value, Vector):
+            if value._dtype is not self._dtype:
+                raise TypeError(f"Expected dtype {self._dtype}, got {value._dtype}")
+            return value
+        if self._dtype.isinstance(value):
+            if isinstance(value, (int, float, bool)):
+                return arith_helper.const(value, loc=loc, ip=ip)
+            if isinstance(value, Numeric):
+                return value.ir_value(loc=loc, ip=ip)
+            return value
+        if hasattr(value, "_base") and hasattr(value, "_shape"):
+            raise TypeError(
+                "Cannot store Array directly. Use ptr.store(array.load()) instead."
+            )
+        raise TypeError(f"Expected value to be Scalar or Vector, got {type(value)}")
+
+    @dsl_user_op
+    def tospace(
+        self,
+        space: AddressSpace | int,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        target = _normalize_address_space(space)
+        if target.value == self._addrspace:
+            return self
+        if self._addrspace != 0 and target.value != 0:
+            raise ValueError(
+                "cannot cast from non-generic memory space to another non-generic memory space"
+            )
+        res_ptr = llvm.addrspacecast(
+            llvm.PointerType.get(target.value),
+            self._base,
+            loc=loc,
+            ip=ip,
+        )
+        return Pointer(res_ptr, dtype=self._dtype, space=target)
+
+    def _as_tmem_offset(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Int32":
+        if isinstance(offset, int):
+            return Int32(offset)
+        if isinstance(offset, Integer):
+            return Int32(offset, loc=loc, ip=ip)
+        if isinstance(offset, ir.Value) and ir.IntegerType.isinstance(offset.type):
+            return Int32(offset, loc=loc, ip=ip)
+        raise ValueError(
+            f"Expects static or dynamic integer value, but got {type(offset)}"
+        )
+
+    def _gep_tmem(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        # TMEM uses a packed i32 address token, so offsets are raw address
+        # increments rather than LLVM GEP element indices.
+        base_addr = self.toint(Int32, loc=loc, ip=ip)
+        offset_addr = self._as_tmem_offset(offset, loc=loc, ip=ip)
+        return self._inttoptr(
+            base_addr + offset_addr,
+            self._addrspace,
+            self._dtype,
+            loc=loc,
+            ip=ip,
+        )
+
+    def _gep(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        if self._addrspace == AddressSpace.tmem.value:
+            return self._gep_tmem(offset, loc=loc, ip=ip)
+
+        if isinstance(offset, int):
+            static_indices = [offset]
+            dyn_indices = []
+        elif isinstance(offset, Integer):
+            static_indices = [MLIR_DYNAMIC_INDEX]
+            dyn_indices = [offset.ir_value(loc=loc, ip=ip)]
+        elif isinstance(offset, ir.Value) and ir.IntegerType.isinstance(offset.type):
+            static_indices = [MLIR_DYNAMIC_INDEX]
+            dyn_indices = [offset]
+        else:
+            raise ValueError(
+                f"Expects static or dynamic integer value, but got {type(offset)}"
+            )
+
+        res_ptr = _gep(
+            self._base,
+            self._mlir_type,
+            static_indices=static_indices,
+            dynamic_indices=dyn_indices,
+            loc=loc,
+            ip=ip,
+        )
+        return Pointer(res_ptr, dtype=self._dtype, space=self.space)
+
+    @dsl_user_op
+    def toint(
+        self,
+        dtype: Optional[Type[Integer]] = None,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Integer:
+        addrspace = self._addrspace
+        if dtype is None:
+            dtype = Int64
+        if addrspace == 6:
+            return dtype(llvm.ptrtoint(Int32.mlir_type, self._base, loc=loc, ip=ip))
+        return dtype(llvm.ptrtoint(dtype.mlir_type, self._base, loc=loc, ip=ip))
+
+    @dsl_user_op
+    def load_swizzled(
+        self,
+        swizzle: Any,
+        alignment: Optional[int] = None,
+        *,
+        count: Optional[int] = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        from .swizzle import load_swizzled  # noqa: PLC0415
+
+        return load_swizzled(self, swizzle, alignment, count=count, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def store_swizzled(
+        self,
+        value: Any,
+        swizzle: Any,
+        alignment: Optional[int] = None,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        from .swizzle import store_swizzled  # noqa: PLC0415
+
+        return store_swizzled(self, value, swizzle, alignment, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def apply_swizzle(
+        self,
+        swizzle: Any,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        from .swizzle import apply_swizzle  # noqa: PLC0415
+
+        return apply_swizzle(self, swizzle, loc=loc, ip=ip)
+
+    @staticmethod
+    def _validate_i1_mask(mask: Any) -> None:
+        """Validate that ``mask`` is a Vector whose element type is ``i1``."""
+        from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
+
+        if not isinstance(mask, Vector):
+            raise TypeError(f"mask must be a Vector, got {type(mask)}")
+        mask_elem_type = mask._mlir_type
+        if not (
+            ir.IntegerType.isinstance(mask_elem_type)
+            and ir.IntegerType(mask_elem_type).width == 1
+        ):
+            raise TypeError(
+                f"mask must be a vector of i1, got vector of {mask_elem_type}"
+            )
+
+    @dsl_user_op
+    def load(
+        self,
+        alignment: Optional[int] = None,
+        *,
+        count: Optional[int] = None,
+        is_volatile: bool = False,
+        is_invariant: bool = False,
+        is_invariant_group: bool = False,
+        ordering: Any = "not_atomic",
+        syncscope: Any | None = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        effective_alignment = self._effective_alignment(alignment)
+        if count is None:
+            res_ty = self._mlir_type
+        else:
+            res_ty = ir.VectorType.get([count], self._mlir_type)
+
+        res = llvm.load(
+            res_ty,
+            self._base,
+            alignment=effective_alignment,
+            volatile_=is_volatile,
+            nontemporal=False,
+            invariant=is_invariant,
+            invariant_group=is_invariant_group,
+            ordering=(
+                llvm.AtomicOrdering(ordering) if ordering != "not_atomic" else None
+            ),
+            syncscope=syncscope,
+            loc=loc,
+            ip=ip,
+        )
+        if count is None:
+            return self._dtype(res, loc=loc, ip=ip)
+        if hasattr(res, "ir_value"):
+            res = res.ir_value()
+        return Vector(res, dtype=self._dtype)
+
+    @staticmethod
+    def _resolve_nvvm_mem_kwargs(
+        cache_modifier: Any | None,
+        evict: Any | None,
+        scope: Any | None,
+        *,
+        cache_kind: Any,
+    ) -> dict:
+        """Build the nvvm load/store-ext memory kwargs from str-or-enum inputs.
+
+        Each argument is accepted as either a string or an enum member; the name
+        is upper-cased and resolved against the relevant nvvm enum. ``cache_kind``
+        selects the cache-modifier enum (LoadCacheModifierExtKind for loads,
+        StoreCacheModifierKind for stores); evict/scope enums are shared.
+        """
+
+        def _resolve(value: Any, enum_kind: Any) -> Any:
+            name = value if isinstance(value, str) else value.name
+            return getattr(enum_kind, name.upper())
+
+        kwargs: dict = {}
+        if cache_modifier is not None:
+            kwargs["cache_modifier"] = _resolve(cache_modifier, cache_kind)
+        if evict is not None:
+            kwargs["evict"] = _resolve(evict, nvvm.EvictKind)
+        if scope is not None:
+            kwargs["scope"] = _resolve(scope, nvvm.MemScopeKind)
+        return kwargs
+
+    def nvvm_load_ext(
+        self,
+        *,
+        count: Optional[int] = None,
+        cache_modifier: Any | None = None,
+        evict: Any | None = None,
+        scope: Any | None = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        if count is None:
+            res_ty = self._mlir_type
+        else:
+            res_ty = ir.VectorType.get([count], self._mlir_type)
+
+        kwargs = self._resolve_nvvm_mem_kwargs(
+            cache_modifier, evict, scope, cache_kind=nvvm.LoadCacheModifierExtKind
+        )
+
+        res = nvvm.load_ext(res_ty, self._base, **kwargs, loc=loc, ip=ip)
+        if count is None:
+            return self._dtype(res, loc=loc, ip=ip)
+        if hasattr(res, "ir_value"):
+            res = res.ir_value()
+        return Vector(res, dtype=self._dtype)
+
+    def store(
+        self,
+        value: Any,
+        *,
+        alignment: Optional[int] = None,
+        is_volatile: bool = False,
+        is_invariant_group: bool = False,
+        ordering: Any = "not_atomic",
+        syncscope: Any | None = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        effective_alignment = self._effective_alignment(alignment)
+        ir_value = self._prepare_store_value(value, loc=loc, ip=ip)
+        return llvm.store(
+            ir_value,
+            self._base,
+            alignment=effective_alignment,
+            volatile_=is_volatile,
+            nontemporal=False,
+            invariant_group=is_invariant_group,
+            ordering=(
+                llvm.AtomicOrdering(ordering) if ordering != "not_atomic" else None
+            ),
+            syncscope=syncscope if syncscope else None,
+            loc=loc,
+            ip=ip,
+        )
+
+    def nvvm_store_ext(
+        self,
+        value: Any,
+        *,
+        cache_modifier: Any | None = None,
+        evict: Any | None = None,
+        scope: Any | None = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        ir_value = self._prepare_store_value(value, loc=loc, ip=ip)
+        kwargs = self._resolve_nvvm_mem_kwargs(
+            cache_modifier, evict, scope, cache_kind=nvvm.StoreCacheModifierKind
+        )
+
+        return nvvm.store_ext(ir_value, self._base, **kwargs, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def masked_load(
+        self,
+        mask: Any,
+        pass_thru: Any | None = None,
+        *,
+        alignment: Optional[int] = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
+
+        self._validate_i1_mask(mask)
+
+        vec_len = mask.shape[0]
+        if pass_thru is not None:
+            if not isinstance(pass_thru, Vector):
+                raise TypeError(f"pass_thru must be a Vector, got {type(pass_thru)}")
+            if pass_thru.shape[0] != vec_len:
+                raise ValueError(
+                    f"pass_thru length ({pass_thru.shape[0]}) must match mask length ({vec_len})"
+                )
+            if pass_thru.dtype is not self.dtype:
+                raise TypeError(
+                    f"pass_thru dtype ({pass_thru.dtype}) must match pointer dtype ({self.dtype})"
+                )
+
+        res_ty = ir.VectorType.get([vec_len], self.dtype.mlir_type)
+        res = llvm.intr_masked_load(
+            res_ty,
+            self._base,
+            mask,
+            pass_thru=pass_thru,
+            alignment=alignment or self.natural_alignment,
+            loc=loc,
+            ip=ip,
+        )
+        if isinstance(res, Vector):
+            return res
+        if hasattr(res, "ir_value"):
+            res = res.ir_value()
+        return Vector(res, dtype=self.dtype)
+
+    @dsl_user_op
+    def masked_store(
+        self,
+        value: Any,
+        mask: Any,
+        *,
+        alignment: Optional[int] = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
+
+        if not isinstance(value, Vector):
+            raise TypeError(f"value must be a Vector, got {type(value)}")
+        self._validate_i1_mask(mask)
+        if value.shape[0] != mask.shape[0]:
+            raise ValueError(
+                f"value and mask must have the same length, got {value.shape[0]} and {mask.shape[0]}"
+            )
+        if value.dtype is not self.dtype:
+            raise TypeError(
+                f"value dtype ({value.dtype}) must match pointer dtype ({self.dtype})"
+            )
+
+        llvm.intr_masked_store(
+            value,
+            self._base,
+            mask,
+            alignment=alignment or self.natural_alignment,
+            loc=loc,
+            ip=ip,
+        )
+
+    @dsl_user_op
+    def masked_gather(
+        self,
+        offsets: Any,
+        mask: Any,
+        pass_thru: Any | None = None,
+        *,
+        alignment: Optional[int] = None,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
+
+        if not isinstance(offsets, Vector):
+            raise TypeError(f"offsets must be a Vector, got {type(offsets)}")
+        if not isinstance(mask, Vector):
+            raise TypeError(f"mask must be a Vector, got {type(mask)}")
+        if offsets.shape[0] != mask.shape[0]:
+            raise ValueError(
+                f"offsets and mask must have the same length, got {offsets.shape[0]} and {mask.shape[0]}"
+            )
+        self._validate_i1_mask(mask)
+
+        vec_len = offsets.shape[0]
+        vec_ptr_type = ir.VectorType.get([vec_len], self.mlir_type)
+        base_ptr_vec = vector.broadcast(vec_ptr_type, self._base, loc=loc, ip=ip)
+        ptrs = llvm.getelementptr(
+            vec_ptr_type,
+            base_ptr_vec,
+            [offsets],
+            [MLIR_DYNAMIC_INDEX],
+            self.dtype.mlir_type,
+            no_wrap_flags="None",
+            loc=loc,
+            ip=ip,
+        )
+        result_type = ir.VectorType.get([vec_len], self.dtype.mlir_type)
+        result = llvm.intr_masked_gather(
+            result_type,
+            ptrs,
+            mask,
+            [pass_thru] if pass_thru is not None else [],
+            alignment=alignment or self.natural_alignment,
+            loc=loc,
+            ip=ip,
+        )
+        if isinstance(result, Vector):
+            return result
+        if hasattr(result, "ir_value"):
+            result = result.ir_value()
+        return Vector(result, dtype=self.dtype)
+
+    @dsl_user_op
+    def __add__(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        return self._gep(offset, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __sub__(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        if isinstance(offset, int):
+            neg_offset = -offset
+        else:
+            neg_offset = Int32(0) - offset
+        return self._gep(neg_offset, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __radd__(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        return self._gep(offset, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __iadd__(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        return self._gep(offset, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __isub__(
+        self,
+        offset: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        return self.__sub__(offset, loc=loc, ip=ip)
+
+    def _inttoptr(
+        self,
+        value: Any,
+        addrspace: int,
+        dtype: Type[Numeric],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        if isinstance(value, int):
+            value = (Int64 if addrspace in (0, 1) else Int32)(value)
+        if hasattr(value, "ir_value"):
+            value = value.ir_value(loc=loc, ip=ip)
+        res_val = llvm.inttoptr(llvm.PointerType.get(addrspace), value, loc=loc, ip=ip)
+        return Pointer._from_raw_ptr(res_val, dtype)
+
+    @dsl_user_op
+    def __and__(
+        self,
+        mask: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        masked_int = self.toint(loc=loc, ip=ip) & mask
+        return self._inttoptr(masked_int, self._addrspace, self.dtype, loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __rand__(
+        self,
+        mask: Union[int, Integer, ir.Value],
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> "Pointer":
+        return self.__and__(mask, loc=loc, ip=ip)
+
+    def _validate_scalar_index(self, idx: Any) -> Any:
+        if isinstance(idx, tuple):
+            raise TypeError(
+                "Pointer tuple indexing is not supported; use explicit "
+                "load(..., alignment=...) or store(..., alignment=...) calls"
+            )
+        if isinstance(idx, slice):
+            raise TypeError(
+                "Pointer slices are not supported; use explicit "
+                "load(count=...) or store(...) calls"
+            )
+        return idx
+
+    def __getitem__(
+        self,
+        idx: Any,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        offset = self._validate_scalar_index(idx)
+        ptr = self._gep(offset, loc=loc, ip=ip)
+        return ptr.load(loc=loc, ip=ip)
+
+    @dsl_user_op
+    def __setitem__(
+        self,
+        idx: Any,
+        value: Any,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> None:
+        offset = self._validate_scalar_index(idx)
+        ptr = self._gep(offset, loc=loc, ip=ip)
+        return ptr.store(value, loc=loc, ip=ip)
 
 
 class IRConst(Generic[TY]):
@@ -2370,28 +3940,22 @@ class IRVariadic:
         return len(self.operands)
 
 
-class FuncArgWithAttr(IRValue):
-    """
-    This derived class is specifically for func op arg with attr
-    """
-
-    def __init__(
-        self, ty: Any, attr_name: str, attr_ty: Any, attr_value: Any = None
-    ) -> None:
-        super().__init__(ty)
-        assert attr_name is not None and (
-            attr_ty is not None or attr_value is not None
-        ), "Invalid attr_name and/or attr_ty and/or attr_value for FuncArgWithAttr"
-        self.attr_name = attr_name
-        self.attr_ty = attr_ty
-        self.attr_value = attr_value
-
-
 def implicitDowncastNumericType(
     value: Union[bool, int, float, "Numeric"],
 ) -> Union[bool, int, float, ir.Value]:
     if isinstance(value, Numeric):
         return value.ir_value()
+    # A direct ``_mlir.dialects`` builder call receives the plain payload of a
+    # watched-META wrapper (OFF-parity: the un-watched value is the payload);
+    # the bake is a recorded non-retargetable consumption, and a promoted
+    # place refuses (no single compile-time value exists to pass).
+    try:
+        from .pyir_runtime import _WatchedM as _PyIRWatchedM
+        from .pyir_runtime import _pyir_boundary_consume_meta_arg as _pyir_consume
+    except ImportError:
+        _PyIRWatchedM = None  # type: ignore[misc,assignment]
+    if _PyIRWatchedM is not None and isinstance(value, _PyIRWatchedM):
+        return _pyir_consume(value)
     return value
 
 
@@ -2424,14 +3988,30 @@ __all__ = [
     "Float8E4M3",
     "Float8E4M3FN",
     "Float8E4M3B11FNUZ",
+    "FloatNV8E5M3FNU",
     "Float8E4M3",
     "Float8E8M0FNU",
     "Float4E2M1FN",
     "Float6E2M3FN",
     "Float6E3M2FN",
+    "Float4E2M1FNx2",
+    "Float6E2M3FNx4",
+    "Float6E3M2FNx4",
     "as_numeric",
     "align",
+    "AddressSpace",
+    "GridConstant",
+    "grid_constant",
     "Pointer",
+    "TypedPointer",
+    "MemOrdering",
+    "MemScope",
+    "SharedSpace",
+    "LoadCacheModifier",
+    "StoreCacheModifier",
+    "EvictPriority",
+    "L2PrefetchSize",
+    "L1EvictKind",
     "dtype",
     "Constexpr",
     "IRConst",
@@ -2439,3 +4019,16 @@ __all__ = [
     "IRVariadic",
     "implicitDowncastNumericType",
 ]
+
+
+# =============================================================================
+# Relocated aggregate types
+# =============================================================================
+# ``Array`` lives in base_dsl so it surfaces as ``cutlass.Array`` the same way
+# the numeric types do. Address-space and pointer infrastructure are defined
+# above in this module. This import MUST stay at the bottom: ``array.py`` does
+# ``from .typing import Int32, ...`` at load, so importing it before the classes
+# above are defined would form an intra-base_dsl import cycle.
+from .array import Array as Array  # noqa: E402
+
+__all__ += ["Array"]

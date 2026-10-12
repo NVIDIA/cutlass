@@ -271,6 +271,7 @@ struct Sm100PtrArrayNoSmemWarpSpecialized {
   constexpr static int StagesD = 1;
   constexpr static int FragmentSize = 1;
 };
+
 struct Sm100PtrArrayPlanarComplexNoSmem {};
 struct Sm100PtrArrayPlanarComplexNoSmemWarpSpecialized {};
 

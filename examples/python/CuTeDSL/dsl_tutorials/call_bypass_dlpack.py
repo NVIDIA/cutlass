@@ -30,6 +30,8 @@ import sys
 import os
 from typing import Tuple
 
+import cuda.bindings.driver as cuda
+
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import make_ptr
@@ -89,6 +91,7 @@ def tensor_op_gemm_wrapper(
     n: cutlass.Int32,
     k: cutlass.Int32,
     l: cutlass.Int32,
+    stream: cuda.CUstream,
 ):
     print("\n[DSL INFO] Input Parameters:")
     print(f"[DSL INFO]   mnkl: {(m, n, k, l)}")
@@ -119,12 +122,15 @@ def tensor_op_gemm_wrapper(
     print(f"[DSL INFO]   Atom layout: {(2, 2, 1)}")
 
     # No need to compile inside jit function
-    tensor_op_gemm(mA, mB, mC)
+    tensor_op_gemm(mA, mB, mC, stream)
     print("\n[DSL INFO] Executed TensorOpGemm")
 
 
 def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
     import torch
+
+    torch_stream = torch.cuda.current_stream()
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
     print("\nRunning TensorOpGemm test with:")
     print(f"Tensor dimensions: {mnkl}")
@@ -156,7 +162,7 @@ def run_tensor_op_gemm_wrapper(mnkl: Tuple[int, int, int, int]):
     c_ptr = make_ptr(
         cutlass.Float16, c.data_ptr(), cute.AddressSpace.gmem, assumed_align=32
     )
-    tensor_op_gemm_wrapper(a_ptr, b_ptr, c_ptr, *mnkl)
+    tensor_op_gemm_wrapper(a_ptr, b_ptr, c_ptr, *mnkl, current_stream)
     torch.cuda.synchronize()
 
     ref = torch.einsum("mkl,nkl->mnl", a, b)

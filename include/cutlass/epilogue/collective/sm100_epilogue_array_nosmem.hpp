@@ -42,6 +42,7 @@
 #include "cute/tensor.hpp"
 #include "cute/numeric/numeric_types.hpp"
 #include "cutlass/cuda_host_adapter.hpp"
+#include "cutlass/numeric_conversion.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -838,7 +839,12 @@ public:
 
         CUTLASS_PRAGMA_UNROLL
         for (int epi_v = 0; epi_v < size(tTR_rAcc_frg); ++epi_v) {
-          tTR_rD_frg(epi_v) = cst_callbacks.visit(tTR_rAcc_frg(epi_v), epi_v, epi_m, epi_n);
+          auto frg_visited = cst_callbacks.visit(tTR_rAcc_frg(epi_v), epi_v, epi_m, epi_n);
+          // For 4-bit output types (e.g. float_e2m1_t), the visitor returns ElementCompute
+          // (scaled float values) rather than ElementD. Explicitly convert here so the
+          // assignment is always well-typed regardless of visitor return type.
+          using VisitedElement = typename decltype(frg_visited)::Element;
+          tTR_rD_frg(epi_v) = NumericArrayConverter<ElementD, VisitedElement, FragmentSize>{}(frg_visited);
         }
 
         Tensor reduction_buffer = make_tensor(

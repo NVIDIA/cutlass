@@ -340,6 +340,27 @@ public:
       CUTLASS_ASSERT(cuda_adapter == nullptr);
 
       if (smem_size >= (48 << 10)) {
+        if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 107) {
+          if (smem_size > cutlass::arch::sm100_smem_capacity_bytes) {
+#if defined(CUDA_OVERSIZED_SMEM_ENABLED)
+            CUTLASS_TRACE_HOST("  Setting oversized smem");
+            cudaError_t result = cudaFuncSetAttribute(
+                device_kernel<GemmKernel>,
+                cudaFuncAttributeSharedMemoryMode,
+                cudaSharedMemoryModeAllowOversizedSharedMemory);
+
+            if (cudaSuccess != result) {
+              result = cudaGetLastError(); // to clear the error bit
+              CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error: " << cudaGetErrorString(result));
+              return Status::kErrorInternal;
+            }
+            return Status::kSuccess;
+#else
+            CUTLASS_TRACE_HOST("  Setting oversized smem supported for CUDA version 13.4 and above");
+            return Status::kErrorInternal;
+#endif 
+          }
+        } 
         CUTLASS_TRACE_HOST("  Setting smem size to " << smem_size);
         cudaError_t result = cudaFuncSetAttribute(
             device_kernel<GemmKernel>,
@@ -401,6 +422,7 @@ public:
       if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100 
                     || GemmKernel::ArchTag::kMinComputeCapability == 101
                     || GemmKernel::ArchTag::kMinComputeCapability == 103
+                    || GemmKernel::ArchTag::kMinComputeCapability == 107
                     ) {
         if constexpr (!cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape>) {
           if constexpr (detail::IsDistGemmKernel<GemmKernel>::value) {
@@ -487,6 +509,7 @@ public:
                         || GemmKernel::ArchTag::kMinComputeCapability == 101
                         || GemmKernel::ArchTag::kMinComputeCapability == 120
                         || GemmKernel::ArchTag::kMinComputeCapability == 103
+                        || GemmKernel::ArchTag::kMinComputeCapability == 107
                        ) {
             if constexpr (is_static_1x1x1) {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)

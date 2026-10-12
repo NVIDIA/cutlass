@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 import inspect
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 from cutlass.cutlass_dsl import (
     Boolean,
@@ -23,7 +23,14 @@ from cutlass.cutlass_dsl import (
     const_expr,
 )
 from cutlass._mlir import ir
+from cutlass.utils.mixed_cluster_params import MixedClusterParamsMixin
+from typing_extensions import deprecated
 import cutlass.cute as cute
+
+_DEPRECATION_MSG = (
+    "Migrated to examples/CuTeDSL/helpers/static_persistent_tile_scheduler.py "
+    "(BSD-3). The wheel copy will be removed in a future release."
+)
 
 ##############################################################################
 # Static persistent tile scheduler
@@ -42,19 +49,31 @@ class WorkTileInfo:
     def __init__(self, tile_idx: cute.Coord, is_valid_tile: Boolean):
         self._tile_idx = tile_idx
         self._is_valid_tile = Boolean(is_valid_tile)
+        self._tile_idx_num_values: Optional[int] = None
 
     def __extract_mlir_values__(self) -> list[ir.Value]:
-        values = extract_mlir_values(self.tile_idx)
-        values.extend(extract_mlir_values(self.is_valid_tile))
-        return values
+        tile_idx_values = extract_mlir_values(self.tile_idx)
+        valid_values = extract_mlir_values(self.is_valid_tile)
+        self._tile_idx_num_values = len(tile_idx_values)
+        return tile_idx_values + valid_values
 
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> "WorkTileInfo":
-        assert len(values) == 4
-        new_tile_idx = new_from_mlir_values(self._tile_idx, values[:-1])
-        new_is_valid_tile = new_from_mlir_values(self._is_valid_tile, [values[-1]])
+        if self._tile_idx_num_values is None:
+            raise ValueError(
+                "WorkTileInfo reconstruction requires tile_idx width recorded during extraction"
+            )
+        n = self._tile_idx_num_values
+        expected = n + 1
+        if len(values) != expected:
+            raise ValueError(
+                f"expected {expected} mlir values for WorkTileInfo, got {len(values)}"
+            )
+        new_tile_idx = new_from_mlir_values(self._tile_idx, values[:n])
+        new_is_valid_tile = new_from_mlir_values(self._is_valid_tile, values[n:])
         return WorkTileInfo(new_tile_idx, new_is_valid_tile)
 
     @property
+    @cute.jit
     def is_valid_tile(self) -> Boolean:
         """Check latest tile returned by the scheduler is valid or not. Any scheduling
         requests after all tasks completed will return an invalid tile.
@@ -65,6 +84,7 @@ class WorkTileInfo:
         return self._is_valid_tile
 
     @property
+    @cute.jit
     def tile_idx(self) -> cute.Coord:
         """
         Get the index of the tile.
@@ -75,7 +95,8 @@ class WorkTileInfo:
         return self._tile_idx
 
 
-class PersistentTileSchedulerParams:
+@deprecated(_DEPRECATION_MSG)
+class PersistentTileSchedulerParams(MixedClusterParamsMixin):
     """A class to represent parameters for a persistent tile scheduler.
 
     This class is designed to manage and compute the layout of clusters and tiles
@@ -96,6 +117,7 @@ class PersistentTileSchedulerParams:
         swizzle_size: int = 1,
         raster_along_m: bool = True,
         *,
+        fallback_cluster_shape_mnk: Optional[cute.Shape] = None,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
@@ -112,28 +134,44 @@ class PersistentTileSchedulerParams:
         :param raster_along_m: Rasterization order of clusters. Only used when swizzle_size > 1.
             True means along M, false means along N.
         :type raster_along_m: bool
+        :param fallback_cluster_shape_mnk: Optional. When provided and
+            different from cluster_shape_mnk, the kernel runs in mixed-cluster mode.
+        :type fallback_cluster_shape_mnk: Optional[cute.Shape]
 
         :raises ValueError: If cluster_shape_k is not 1.
         """
 
-        if cluster_shape_mnk[2] != 1:  # type: ignore[index]
-            raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")  # type: ignore[index]
+        assert isinstance(cluster_shape_mnk, tuple)
+        if cluster_shape_mnk[2] != 1:
+            raise ValueError(f"unsupported cluster_shape_k {cluster_shape_mnk[2]}")
         if swizzle_size < 1:
             raise ValueError(f"expect swizzle_size >= 1, but get {swizzle_size}")
 
         self.problem_shape_ntile_mnl = problem_shape_ntile_mnl
-        # cluster_shape_mnk is kept for reconstruction
-        self._cluster_shape_mnk = cluster_shape_mnk
-        self.cluster_shape_mn = cluster_shape_mnk[:2]  # type: ignore[index]
+        self._cluster_shape_mnk = cast(Tuple[int, int, int], tuple(cluster_shape_mnk))
+        self.cluster_shape_mn = cluster_shape_mnk[:2]
         self.swizzle_size = swizzle_size
         self.raster_along_m = raster_along_m
         self._loc = loc
+
+        self._init_fallback(
+            cast(Optional[Tuple[int, int, int]], fallback_cluster_shape_mnk),
+            factory=lambda fb: PersistentTileSchedulerParams(
+                problem_shape_ntile_mnl,
+                fb,
+                swizzle_size,
+                raster_along_m,
+                fallback_cluster_shape_mnk=None,
+                loc=loc,
+                ip=ip,
+            ),
+        )
 
         # By default, we follow m major (col-major) raster order, so make a col-major layout
         self.problem_layout_ncluster_mnl = cute.make_layout(
             cute.ceil_div(
                 self.problem_shape_ntile_mnl,
-                cluster_shape_mnk[:2],  # type: ignore[index]
+                cluster_shape_mnk[:2],
                 loc=loc,
                 ip=ip,
             ),
@@ -147,18 +185,19 @@ class PersistentTileSchedulerParams:
                 self.problem_layout_ncluster_mnl.shape,
                 (1, swizzle_size, 1) if raster_along_m else (swizzle_size, 1, 1),
             )
+            assert isinstance(problem_shape_ncluster_mnl, tuple)
 
             if raster_along_m:
                 self.problem_layout_ncluster_mnl = cute.make_layout(
                     (
-                        problem_shape_ncluster_mnl[0],  # type: ignore[index]
-                        (swizzle_size, problem_shape_ncluster_mnl[1] // swizzle_size),  # type: ignore[index, operator]
-                        problem_shape_ncluster_mnl[2],  # type: ignore[index]
+                        problem_shape_ncluster_mnl[0],
+                        (swizzle_size, problem_shape_ncluster_mnl[1] // swizzle_size),  # type: ignore[operator]
+                        problem_shape_ncluster_mnl[2],
                     ),
                     stride=(
                         swizzle_size,
-                        (1, swizzle_size * problem_shape_ncluster_mnl[0]),  # type: ignore[index]
-                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[index, operator]
+                        (1, swizzle_size * problem_shape_ncluster_mnl[0]),
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[operator]
                     ),
                     loc=loc,
                     ip=ip,
@@ -166,14 +205,14 @@ class PersistentTileSchedulerParams:
             else:
                 self.problem_layout_ncluster_mnl = cute.make_layout(
                     (
-                        (swizzle_size, problem_shape_ncluster_mnl[0] // swizzle_size),  # type: ignore[index, operator]
-                        problem_shape_ncluster_mnl[1],  # type: ignore[index]
-                        problem_shape_ncluster_mnl[2],  # type: ignore[index]
+                        (swizzle_size, problem_shape_ncluster_mnl[0] // swizzle_size),  # type: ignore[operator]
+                        problem_shape_ncluster_mnl[1],
+                        problem_shape_ncluster_mnl[2],
                     ),
                     stride=(
-                        (1, swizzle_size * problem_shape_ncluster_mnl[1]),  # type: ignore[index]
+                        (1, swizzle_size * problem_shape_ncluster_mnl[1]),
                         swizzle_size,
-                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[index, operator]
+                        problem_shape_ncluster_mnl[0] * problem_shape_ncluster_mnl[1],  # type: ignore[operator]
                     ),
                     loc=loc,
                     ip=ip,
@@ -209,8 +248,11 @@ class PersistentTileSchedulerParams:
             self.cluster_shape_major_fdd = None
             self.cluster_shape_minor_fdd = None
 
-    def __extract_mlir_values__(self) -> list[ir.Value]:
-        values, self._values_pos = [], []
+    def _extract_primary_mlir_values(self) -> list[ir.Value]:
+        # Caches ``_values_pos`` and ``_fastdivmod_indices`` for
+        # ``_new_primary_from_mlir_values`` to decode the flat list.
+        values: list[ir.Value] = []
+        values_pos: list[int] = []
         for obj in [
             self.problem_shape_ntile_mnl,
             self._cluster_shape_mnk,
@@ -219,40 +261,42 @@ class PersistentTileSchedulerParams:
         ]:
             obj_values = extract_mlir_values(obj)
             values += obj_values
-            self._values_pos.append(len(obj_values))
+            values_pos.append(len(obj_values))
 
         # Add FastDivmod divisors to MLIR values for Host->Device transfer
         # Only add non-None values to avoid MLIR type errors
         fastdivmod_values = []
         fastdivmod_indices = []  # Track which FastDivmod objects are present
 
-        for i, (fdd_name, fdd_obj) in enumerate(
+        for i, (_, fdd_obj) in enumerate(
             [
                 ("cluster_shape_major_fdd", self.cluster_shape_major_fdd),
                 ("cluster_shape_minor_fdd", self.cluster_shape_minor_fdd),
             ]
         ):
             if fdd_obj is not None:
-                # Extract MLIR values from FastDivmodDivisor objects
                 fdd_values = extract_mlir_values(fdd_obj)
                 fastdivmod_values.extend(fdd_values)
                 fastdivmod_indices.append(i)
 
         values += fastdivmod_values
-        self._values_pos.append(
+        values_pos.append(
             len(fastdivmod_indices)
         )  # Store count of FastDivmod objects, not values
-        self._fastdivmod_indices = fastdivmod_indices  # Store for reconstruction
 
+        self._values_pos = values_pos
+        self._fastdivmod_indices = fastdivmod_indices
         return values
 
-    def __new_from_mlir_values__(
+    @property
+    def _primary_values_count(self) -> int:
+        return sum(self._values_pos[:-1]) + len(self._fastdivmod_indices)
+
+    def _new_primary_from_mlir_values(
         self, values: list[ir.Value]
     ) -> "PersistentTileSchedulerParams":
         obj_list = []
-        values_copy = list(values)  # Make a copy to avoid modifying original
-
-        # Reconstruct original objects from MLIR values
+        values_copy = list(values)
         for obj, n_items in zip(
             [
                 self.problem_shape_ntile_mnl,
@@ -265,26 +309,19 @@ class PersistentTileSchedulerParams:
             obj_list.append(new_from_mlir_values(obj, values_copy[:n_items]))
             values_copy = values_copy[n_items:]
 
-        # Create new params object by calling __init__ with reconstructed values
-        # This properly recreates layouts and other derived attributes in the device context
         new_params = PersistentTileSchedulerParams(*(tuple(obj_list)), loc=self._loc)
 
         # Restore FastDivmod divisors from remaining values
         fdd_names = ["cluster_shape_major_fdd", "cluster_shape_minor_fdd"]
-
-        if hasattr(self, "_fastdivmod_indices") and len(self._fastdivmod_indices) > 0:
-            # Override the FastDivmod divisors created by __init__ with reconstructed ones
+        if len(self._fastdivmod_indices) > 0:
             for j, original_index in enumerate(self._fastdivmod_indices):
                 fdd_name = fdd_names[original_index]
-                # Get the original FastDivmodDivisor object
                 original_fdd = getattr(self, fdd_name)
                 if original_fdd is not None and j < len(values_copy):
-                    # Each FastDivmodDivisor has 1 MLIR value
                     reconstructed_fdd = new_from_mlir_values(
                         original_fdd, [values_copy[j]]
                     )
                     setattr(new_params, fdd_name, reconstructed_fdd)
-
         return new_params
 
     @dsl_user_op
@@ -442,28 +479,40 @@ class StaticPersistentTileScheduler:
         :return: A StaticPersistentTileScheduler object.
         :rtype: StaticPersistentTileScheduler
         """
-
-        # Calculate the number of persistent clusters by dividing the total grid size
-        # by the number of CTAs per cluster
-        num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // cute.size(
-            params.cluster_shape_mn, loc=loc, ip=ip
-        )
+        if const_expr(params._has_distinct_fallback):
+            active = params._select_active_params(params)
+        else:
+            active = params
 
         bidx, bidy, bidz = block_idx
 
+        # Mixed-cluster: read cluster dims at runtime so the fallback clone's
+        # persistent-loop stride is correct after the mixed-cluster expansion pass.
+        # See ``MixedClusterParamsMixin`` for why the Python tuple can't be used.
+        if const_expr(params._has_distinct_fallback):
+            cdx, cdy, _ = params.runtime_cluster_dims()
+            num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // (cdx * cdy)
+            cta_id_in_cluster = (
+                Int32(bidx % cdx),
+                Int32(bidy % cdy),
+                Int32(0),
+            )
+        else:
+            num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // cute.size(
+                active.cluster_shape_mn, loc=loc, ip=ip
+            )
+            cta_id_in_cluster = (
+                Int32(bidx % active.cluster_shape_mn[0]),
+                Int32(bidy % active.cluster_shape_mn[1]),
+                Int32(0),
+            )
+
         # Initialize workload index equals to the cluster index in the grid
         current_work_linear_idx = Int32(bidz)
-
-        # CTA id in the cluster
-        cta_id_in_cluster = (
-            Int32(bidx % params.cluster_shape_mn[0]),
-            Int32(bidy % params.cluster_shape_mn[1]),
-            Int32(0),
-        )
         # Initialize number of tiles executed to zero
         num_tiles_executed = Int32(0)
         return StaticPersistentTileScheduler(
-            params,
+            active,
             num_persistent_clusters,
             current_work_linear_idx,
             cta_id_in_cluster,
@@ -527,16 +576,29 @@ class StaticPersistentTileScheduler:
                 current_work_linear_idx, loc=loc, ip=ip
             )
 
+        import cutlass.cute as _cute
+
+        # Mixed-cluster: use runtime cluster dims (see ``MixedClusterParamsMixin``).
+        if const_expr(self.params._has_distinct_fallback):
+            cdx, cdy, _ = self.params.runtime_cluster_dims()
+            cluster_shape_mult = (cdx, cdy, Int32(1))
+        else:
+            cluster_shape_mult = (
+                Int32(self.params.cluster_shape_mn[0]),
+                Int32(self.params.cluster_shape_mn[1]),
+                Int32(1),
+            )
+
         cur_tile_coord = tuple(
-            Int32(x) * Int32(z) + Int32(y)
+            _cute.arch.make_warp_uniform(Int32(x) * Int32(z) + Int32(y))
             for x, y, z in zip(
                 cur_cluster_coord,
                 self.cta_id_in_cluster,  # type: ignore[arg-type]
-                (*self.params.cluster_shape_mn, Int32(1)),
+                cluster_shape_mult,
             )
         )
 
-        return WorkTileInfo(cur_tile_coord, is_valid)
+        return WorkTileInfo(cur_tile_coord, _cute.arch.make_warp_uniform(is_valid))
 
     def _get_cluster_work_idx_with_fastdivmod(
         self,
@@ -581,6 +643,7 @@ class StaticPersistentTileScheduler:
         return (cluster_m, cluster_n, batch_l)
 
     @dsl_user_op
+    @cute.jit
     def get_current_work(
         self,
         *,
@@ -592,6 +655,7 @@ class StaticPersistentTileScheduler:
         )
 
     @dsl_user_op
+    @cute.jit
     def initial_work_tile_info(
         self,
         *,
@@ -601,6 +665,7 @@ class StaticPersistentTileScheduler:
         return self.get_current_work(loc=loc, ip=ip)
 
     @dsl_user_op
+    @cute.jit
     def advance_to_next_work(
         self,
         *,
@@ -614,10 +679,12 @@ class StaticPersistentTileScheduler:
         self._num_tiles_executed += Int32(1)
 
     @property
+    @cute.jit
     def num_tiles_executed(self) -> Int32:
         return self._num_tiles_executed
 
 
+@deprecated(_DEPRECATION_MSG)
 class StaticPersistentRuntimeTileScheduler(StaticPersistentTileScheduler):
     """A scheduler for static persistent runtime tile execution in CUTLASS/CuTe kernels.
     This scheduler will always launch all the SMs and the scheduler will generate the real tile info for each SM.

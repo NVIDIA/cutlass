@@ -1,7 +1,7 @@
 .. _utils_sm100:
 
-Utilities for SM100
-===================
+Blackwell (SM100)
+=================
 
 .. automodule:: cutlass.utils.sm100
    :members:

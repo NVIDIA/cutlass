@@ -73,7 +73,10 @@ get_max_cta_occupancy(int max_sm_per_gpc, GemmCoord cluster_shape, int sm_count)
   int const max_cta_occupancy_per_residual_gpc = num_gpc_residual - (num_gpc_residual % cluster_size);
   cta_per_device += max_cta_occupancy_per_residual_gpc;
 
-  cta_per_device = sm_count < cta_per_device ? sm_count : cta_per_device;
+  // Clamp to sm_count without breaking the whole-cluster rounding above.
+  if (sm_count < cta_per_device) {
+    cta_per_device = platform::max(cluster_size, (sm_count / cluster_size) * cluster_size);
+  }
   return cta_per_device;
 }
 

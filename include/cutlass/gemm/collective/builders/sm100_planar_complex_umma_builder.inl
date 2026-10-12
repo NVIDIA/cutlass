@@ -68,6 +68,7 @@ struct CollectiveBuilder<
     BuilderScheduleTag,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100>
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
        // Element Types AB should be set as real type in Planar Complex f16/bf16 TCGEN05 kernels builder.
        (cute::is_same_v<ElementA, cutlass::half_t> || cute::is_same_v<ElementA, cutlass::bfloat16_t>) &&

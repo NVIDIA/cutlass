@@ -28,7 +28,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES "120a|120f|121a")
+set(_CUTLASS_87_ARCH_REGEX "120a|120f|121a")
+if (CUTLASS_NVCC_ARCHS MATCHES "${_CUTLASS_87_ARCH_REGEX}")
 cutlass_example_add_executable(
   87a_blackwell_geforce_fp8_bf16_gemm_blockwise
   87a_blackwell_geforce_fp8_bf16_gemm_blockwise.cu
@@ -45,3 +46,4 @@ cutlass_example_add_executable(
 )
 
 endif()
+unset(_CUTLASS_87_ARCH_REGEX)

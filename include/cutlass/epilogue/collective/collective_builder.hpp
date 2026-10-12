@@ -121,6 +121,7 @@ struct CallbacksBuilder<
 #include "builders/sm90_builder.inl"
 #include "builders/sm100_builder.inl"  
 #include "builders/sm103_builder.inl"
+#include "builders/sm107_builder.inl"
 #include "builders/sm120_builder.inl"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

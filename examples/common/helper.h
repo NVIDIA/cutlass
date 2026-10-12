@@ -31,78 +31,118 @@
 #pragma once
 
 #include "cuda_runtime.h"
+
 #include <iostream>
+#include <vector>
+
+#include "cutlass/util/device_memory.h"
 
 /**
  * Panic wrapper for unwinding CUTLASS errors
  */
-#define CUTLASS_CHECK(status)                                                                    \
-  {                                                                                              \
-    cutlass::Status error = status;                                                              \
-    if (error != cutlass::Status::kSuccess) {                                                    \
-      std::cerr << "Got cutlass error: " << cutlassGetStatusString(error) << " at: " << __LINE__ \
-                << std::endl;                                                                    \
-      exit(EXIT_FAILURE);                                                                        \
-    }                                                                                            \
-  }
+#define CUTLASS_CHECK(CALL)                                           \
+do {                                                                  \
+  cutlass::Status __status = CALL;                                    \
+  if (__status != cutlass::Status::kSuccess) {                        \
+    std::cerr << "Got CUTLASS error while calling " #CALL " at line " \
+              << __LINE__ << ": " << cutlassGetStatusString(__status) \
+              << std::endl;                                           \
+    exit(EXIT_FAILURE);                                               \
+  }                                                                   \
+} while (false)
 
 
 /**
  * Panic wrapper for unwinding CUDA runtime errors
  */
-#define CUDA_CHECK(status)                                              \
-  {                                                                     \
-    cudaError_t error = status;                                         \
-    if (error != cudaSuccess) {                                         \
-      std::cerr << "Got bad cuda status: " << cudaGetErrorString(error) \
-                << " at line: " << __LINE__ << std::endl;               \
-      exit(EXIT_FAILURE);                                               \
-    }                                                                   \
-  }
-
+#define CUDA_CHECK(CALL)                                           \
+do {                                                               \
+  cudaError_t __status = CALL;                                     \
+  if (__status != cudaSuccess) {                                   \
+    std::cerr << "Got CUDA error while calling " #CALL " at line " \
+              << __LINE__ << ": " << cudaGetErrorString(__status)  \
+              << std::endl;                                        \
+    exit(EXIT_FAILURE);                                            \
+  }                                                                \
+} while (false)
 
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream
  */
 struct GpuTimer
 {
-    cudaStream_t _stream_id;
-    cudaEvent_t _start;
-    cudaEvent_t _stop;
+  cudaStream_t _stream_id;
+  cudaEvent_t _start;
+  cudaEvent_t _stop;
 
-    /// Constructor
-    GpuTimer() : _stream_id(0)
-    {
-        CUDA_CHECK(cudaEventCreate(&_start));
-        CUDA_CHECK(cudaEventCreate(&_stop));
-    }
+  /// Constructor
+  GpuTimer() : _stream_id(0)
+  {
+    CUDA_CHECK(cudaEventCreate(&_start));
+    CUDA_CHECK(cudaEventCreate(&_stop));
+  }
 
-    /// Destructor
-    ~GpuTimer()
-    {
-        CUDA_CHECK(cudaEventDestroy(_start));
-        CUDA_CHECK(cudaEventDestroy(_stop));
-    }
+  /// Destructor
+  ~GpuTimer()
+  {
+    CUDA_CHECK(cudaEventDestroy(_start));
+    CUDA_CHECK(cudaEventDestroy(_stop));
+  }
 
-    /// Start the timer for a given stream (defaults to the default stream)
-    void start(cudaStream_t stream_id = 0)
-    {
-        _stream_id = stream_id;
-        CUDA_CHECK(cudaEventRecord(_start, _stream_id));
-    }
+  /// Start the timer for a given stream (defaults to the default stream)
+  void start(cudaStream_t stream_id = 0)
+  {
+    _stream_id = stream_id;
+    CUDA_CHECK(cudaEventRecord(_start, _stream_id));
+  }
 
-    /// Stop the timer
-    void stop()
-    {
-        CUDA_CHECK(cudaEventRecord(_stop, _stream_id));
-    }
+  /// Stop the timer
+  void stop()
+  {
+    CUDA_CHECK(cudaEventRecord(_stop, _stream_id));
+  }
 
-    /// Return the elapsed time (in milliseconds)
-    float elapsed_millis()
-    {
-        float elapsed = 0.0;
-        CUDA_CHECK(cudaEventSynchronize(_stop));
-        CUDA_CHECK(cudaEventElapsedTime(&elapsed, _start, _stop));
-        return elapsed;
-    }
+  /// Return the elapsed time (in milliseconds)
+  float elapsed_millis()
+  {
+    float elapsed = 0.0;
+    CUDA_CHECK(cudaEventSynchronize(_stop));
+    CUDA_CHECK(cudaEventElapsedTime(&elapsed, _start, _stop));
+    return elapsed;
+  }
 };
+
+struct BenchmarkResult {
+  double avg_runtime_ms;
+};
+
+template <class Func>
+BenchmarkResult run_benchmark(
+    Func func,
+    int warmup_iterations,
+    int bench_iterations) {
+
+  for (int iter = 0; iter < warmup_iterations; ++iter) {
+    func();
+  }
+
+  GpuTimer timer;
+  timer.start();
+  for (int iter = 0; iter < bench_iterations; ++iter) {
+    func();
+  }
+  timer.stop();
+
+  return { timer.elapsed_millis() / double(bench_iterations) };
+};
+
+template<class T>
+__global__ void print_device_tensor_kernel(T t) {
+  print_tensor(t);
+}
+
+template<class T>
+void print_device_tensor(T const& t) {
+  print_device_tensor_kernel<<<1,1>>>(t);
+  CUDA_CHECK(cudaDeviceSynchronize());
+}

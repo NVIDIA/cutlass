@@ -10,7 +10,11 @@
 # is strictly prohibited.
 
 from functools import cache
+import importlib
 import logging
+import sys
+import warnings
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +23,16 @@ logger = logging.getLogger(__name__)
 # See the following pages for details on JAX versioning:
 #   - https://docs.jax.dev/en/latest/jep/25516-effver.html
 #   - https://docs.jax.dev/en/latest/jep/9419-jax-versioning.html
-CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 5, 0)
+CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 6, 0)
+
+# This is the minimum Python version officially supported by the CuTeDSL JAX
+# integration. Earlier versions may continue to work, but users are warned to
+# upgrade.
+CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION = (3, 11)
 
 
 @cache
-def is_available():
+def is_available() -> bool:
     """Returns true if JAX extensions are supported and available."""
     try:
         import jax
@@ -44,54 +53,124 @@ def is_available():
         )
         return False
 
+    from pathlib import Path
+
+    if not (Path(__file__).parent / "primitive.py").is_file():
+        logger.debug(
+            "CuTeDSL JAX extensions are not available because they were not "
+            "built for this platform."
+        )
+        return False
+
     return True
 
 
-if is_available():
-    from .primitive import cutlass_call
-    from .types import (
-        jax_to_cutlass_dtype,
-        cutlass_to_jax_dtype,
-        jax_to_cutlass_layout_order,
-        cutlass_to_jax_layout_order,
-        from_dlpack,
-        JaxArray,
-        TensorSpec,
+@cache
+def _warn_on_unsupported_python() -> None:
+    if sys.version_info[:2] >= CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION:
+        return
+    minimum_version = ".".join(map(str, CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION))
+    current_version = ".".join(map(str, sys.version_info[:3]))
+    warnings.warn(
+        f"cutlass.jax requires Python {minimum_version} or newer, but "
+        f"Python {current_version} is in use. Please upgrade Python.",
+        RuntimeWarning,
+        stacklevel=2,
     )
-    from .compile import (
-        release_compile_cache,
-    )
-    from .ffi import (
-        get_export_disabled_safety_checks,
-        find_cute_dsl_runtime_library,
-        register_ffi,
-        is_ffi_registered,
-        get_cutlass_call_ffi_version,
-    )
-    from . import testing
 
+
+# Export name -> (submodule, attribute). A None attribute yields the submodule
+# itself. Every one of these submodules imports JAX at module scope, so binding
+# them here rather than above is what keeps JAX out of the import.
+_LAZY_ATTRS = {
+    "cutlass_call": (".primitive", "cutlass_call"),
+    "jax_to_cutlass_dtype": (".types", "jax_to_cutlass_dtype"),
+    "cutlass_to_jax_dtype": (".types", "cutlass_to_jax_dtype"),
+    "jax_to_cutlass_layout_order": (".types", "jax_to_cutlass_layout_order"),
+    "cutlass_to_jax_layout_order": (".types", "cutlass_to_jax_layout_order"),
+    "from_dlpack": (".types", "from_dlpack"),
+    "JaxArray": (".types", "JaxArray"),
+    "TensorSpec": (".types", "TensorSpec"),
     # This is a legacy name for TensorSpec. It will be removed eventually.
-    TensorMode = TensorSpec
+    "TensorMode": (".types", "TensorSpec"),
+    "release_compile_cache": (".compile", "release_compile_cache"),
+    "get_export_disabled_safety_checks": (".ffi", "get_export_disabled_safety_checks"),
+    "find_cute_dsl_runtime_library": (".ffi", "find_cute_dsl_runtime_library"),
+    "register_ffi": (".ffi", "register_ffi"),
+    "set_ffi_call_targets": (".ffi", "set_ffi_call_targets"),
+    "disable_automatic_ffi_registration": (
+        ".ffi",
+        "disable_automatic_ffi_registration",
+    ),
+    "is_ffi_registered": (".ffi", "is_ffi_registered"),
+    "get_cutlass_call_ffi_name": (".ffi", "get_cutlass_call_ffi_name"),
+    "get_cutlass_call_ffi_version": (".ffi", "get_cutlass_call_ffi_version"),
+    "testing": (".testing", None),
+}
 
-    __all__ = [
-        "CUTE_DSL_MIN_SUPPORTED_JAX_VERSION",
-        "cutlass_call",
-        "jax_to_cutlass_dtype",
-        "cutlass_to_jax_dtype",
-        "jax_to_cutlass_layout_order",
-        "cutlass_to_jax_layout_order",
-        "from_dlpack",
-        "JaxArray",
-        "TensorSpec",
-        "TensorMode",
-        "release_compile_cache",
-        "get_export_disabled_safety_checks",
-        "is_ffi_registered",
-        "register_ffi",
-        "get_cutlass_call_ffi_version",
-        "is_available",
-        "testing",
-    ]
-else:
-    # export is_available check for callers or tests.
-    __all__ = ["CUTE_DSL_MIN_SUPPORTED_JAX_VERSION", "is_available"]
+_ALL_WITHOUT_JAX = [
+    "CUTE_DSL_MIN_SUPPORTED_JAX_VERSION",
+    "CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION",
+    "is_available",
+]
+
+_ALL_WITH_JAX = [
+    "CUTE_DSL_MIN_SUPPORTED_JAX_VERSION",
+    "CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION",
+    "cutlass_call",
+    "jax_to_cutlass_dtype",
+    "cutlass_to_jax_dtype",
+    "jax_to_cutlass_layout_order",
+    "cutlass_to_jax_layout_order",
+    "from_dlpack",
+    "JaxArray",
+    "TensorSpec",
+    "TensorMode",
+    "release_compile_cache",
+    "get_export_disabled_safety_checks",
+    "is_ffi_registered",
+    "register_ffi",
+    "set_ffi_call_targets",
+    "disable_automatic_ffi_registration",
+    "get_cutlass_call_ffi_name",
+    "get_cutlass_call_ffi_version",
+    "is_available",
+    "testing",
+]
+
+
+def __getattr__(name: str):
+    """Bind the JAX-backed exports on first use.
+
+    Importing any of them loads JAX and jaxlib. jaxlib's native extension
+    imports NumPy from C during module exec, and jaxlib builds that abort
+    rather than raise on a failed import kill the process before
+    ``is_available()`` can report False. Deferring the binding keeps both
+    ``import cutlass`` and ``import cutlass.jax`` independent of JAX, and costs
+    nothing for callers that never use the integration.
+
+    ``__all__`` is served here too so that it keeps reflecting whether the
+    extensions are actually usable, as it did when it was assigned at import.
+    """
+    if name == "__all__":
+        return list(_ALL_WITH_JAX if is_available() else _ALL_WITHOUT_JAX)
+
+    target = _LAZY_ATTRS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if not is_available():
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}: the CuTeDSL JAX "
+            "extensions are not available"
+        )
+
+    _warn_on_unsupported_python()
+    module_name, attribute = target
+    module = importlib.import_module(module_name, __name__)
+    value = module if attribute is None else getattr(module, attribute)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_ATTRS))

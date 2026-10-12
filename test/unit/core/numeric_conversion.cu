@@ -48,12 +48,13 @@ namespace kernel {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Simple conversion function
-template <typename Destination, typename Source, int Count>
+template <typename Destination, typename Source, int Count,
+          cutlass::FloatRoundStyle Round = cutlass::FloatRoundStyle::round_to_nearest>
 __global__ void convert(
   cutlass::Array<Destination, Count> *destination,
   cutlass::Array<Source, Count> const *source) {
 
-  cutlass::NumericArrayConverter<Destination, Source, Count> convert;
+  cutlass::NumericArrayConverter<Destination, Source, Count, Round> convert;
 
   *destination = convert(*source);
 }
@@ -92,6 +93,8 @@ void run_test(const char dest_name[], const char source_name[], const int range 
       << ", Count: " << Count;
   }
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -188,7 +191,9 @@ TEST(NumericConversion, f32x8_to_f16x8_rn) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(NumericConversion, f16_to_f32_rn) {  
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(NumericConversion, f16_to_f32_rn) {
   int const kN = 1;
   using Source = cutlass::half_t;
   const char source_name[] = "half_t";

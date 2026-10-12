@@ -160,6 +160,40 @@ struct GemmIdentityThreadblockSwizzle {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Threadblock swizzling function for GEMMs that never pads the CUDA grid
+///
+/// Selects the largest supported swizzle width that evenly divides the number of N tiles. This
+/// preserves swizzling when possible while ensuring every launched CTA maps to a valid GEMM tile.
+template <int N = 1>
+struct GemmIdentityThreadblockSwizzleNoPadding : GemmIdentityThreadblockSwizzle<N> {
+
+  CUTLASS_HOST_DEVICE
+  GemmIdentityThreadblockSwizzleNoPadding() { }
+
+  /// Computes CUDA grid dimensions given a size in units of logical tiles
+  CUTLASS_HOST_DEVICE
+  static dim3 get_grid_shape(GemmCoord tiled_shape) {
+    int tile = 1 << get_log_tile(tiled_shape);
+    return dim3(tiled_shape.m() * tile, tiled_shape.n() / tile, tiled_shape.k());
+  }
+
+  /// Returns log2 of the widest N-dividing swizzle
+  CUTLASS_HOST_DEVICE
+  static int get_log_tile(GemmCoord tiled_shape) {
+    auto n = tiled_shape.n();
+    if (N >= 8 && n >= 8 && n % 8 == 0)
+      return 3;
+    else if (N >= 4 && n >= 4 && n % 4 == 0)
+      return 2;
+    else if (N >= 2 && n >= 2 && n % 2 == 0)
+      return 1;
+    else
+      return 0;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Threadblock swizzling function for GEMMs
 struct GemmHorizontalThreadblockSwizzle {
 

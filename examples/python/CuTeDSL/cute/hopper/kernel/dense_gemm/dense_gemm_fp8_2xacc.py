@@ -1295,7 +1295,9 @@ def run(
         ref_d = ref_torch_gpu.cpu()
 
         # Assert close results
-        torch.testing.assert_close(d_torch_gpu.cpu(), ref_d, atol=tolerance, rtol=1e-03)
+        torch.testing.assert_close(
+            d_torch_gpu.cpu().float(), ref_d.float(), atol=tolerance, rtol=1e-03
+        )
 
     def generate_tensors():
         a_tensor_workspace, _ = cutlass_torch.cute_tensor_like(

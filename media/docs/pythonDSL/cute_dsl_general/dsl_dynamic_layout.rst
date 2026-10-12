@@ -120,7 +120,7 @@ input ``torch.Tensor`` of both calls.
 Alternatively, for compact layout, ``cute.mark_compact_shape_dynamic`` can be called for a finer-grained control to specify the mode
 of the layout for dynamic and the divisibility constraint for the dynamic dimension.
 
-Refer to :doc:`framework_integration` for more details on ``from_dlpack``, ``mark_layout_dynamic``,
+Refer to :doc:`../guides/framework_integration` for more details on ``from_dlpack``, ``mark_layout_dynamic``,
 and ``mark_compact_shape_dynamic``.
 
 Static Layout vs. Dynamic Layout

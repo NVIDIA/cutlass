@@ -37,10 +37,28 @@
 namespace cute
 {
 
-using CUTE_STL_NAMESPACE::integer_sequence;
-using CUTE_STL_NAMESPACE::make_integer_sequence;
+template <class T, T... Ints>
+struct integer_sequence
+{
+  using value_type = T;
+
+  CUTE_HOST_DEVICE static constexpr size_t
+  size() noexcept
+  {
+    return sizeof...(Ints);
+  }
+};
 
 namespace detail {
+
+template <class Sequence>
+struct as_cute_integer_sequence;
+
+template <class T, T... Ints>
+struct as_cute_integer_sequence<CUTE_STL_NAMESPACE::integer_sequence<T, Ints...>>
+{
+  using type = integer_sequence<T, Ints...>;
+};
 
 template <class T, class S, T Begin>
 struct range_impl;
@@ -59,6 +77,10 @@ struct reverse_impl<integer_sequence<T, N...>> {
 };
 
 } // end namespace detail
+
+template <class T, T N>
+using make_integer_sequence = typename detail::as_cute_integer_sequence<
+    CUTE_STL_NAMESPACE::make_integer_sequence<T, N>>::type;
 
 template <class T, T Begin, T End>
 using make_integer_range = typename detail::range_impl<
@@ -150,7 +172,7 @@ template <class T>
 using to_seq_t = typename to_seq<T>::type;
 
 //
-// Specialize cute::tuple-traits for std::integer_sequence
+// Specialize cute::tuple-traits for cute::integer_sequence
 //
 
 template <class T, T... Ints>

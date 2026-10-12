@@ -65,7 +65,7 @@ See line ~155 for comprehensive diagrams showing:
 
 Example Usage:
 ```bash
-python cutlass_ir/compiler/python/examples/cute/blackwell/tutorial/tutorial_tma/tma_v0.py
+python examples/python/CuTeDSL/cute/blackwell/tutorial/tutorial_tma/tma_v0.py
 ```
 """
 

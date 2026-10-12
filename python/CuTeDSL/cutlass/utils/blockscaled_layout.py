@@ -157,10 +157,11 @@ def make_smem_layout_sfa(
     :return: Smem layout for SFA
     :rtype: cute.Layout
     """
+    assert isinstance(mma_tiler_mnk, tuple)
     # (CTA_Tile_Shape_M, MMA_Tile_Shape_K)
     sfa_tile_shape = (
-        mma_tiler_mnk[0] // cute.size(tiled_mma.thr_id.shape),  # type: ignore[index]
-        mma_tiler_mnk[2],  # type: ignore[index]
+        mma_tiler_mnk[0] // cute.size(tiled_mma.thr_id.shape),
+        mma_tiler_mnk[2],
     )
 
     # ((Atom_M, Rest_M),(Atom_K, Rest_K))
@@ -171,8 +172,8 @@ def make_smem_layout_sfa(
     )
 
     # Number of MMA instructions to cover all k-tiles
-    mma_tile_inst_m = mma_tiler_mnk[0] // cute.size(tiled_mma.shape_mnk, mode=[0])  # type: ignore[index]
-    mma_tile_inst_k = mma_tiler_mnk[2] // cute.size(tiled_mma.shape_mnk, mode=[2])  # type: ignore[index]
+    mma_tile_inst_m = mma_tiler_mnk[0] // cute.size(tiled_mma.shape_mnk, mode=[0])
+    mma_tile_inst_k = mma_tiler_mnk[2] // cute.size(tiled_mma.shape_mnk, mode=[2])
 
     # (CTA_Tile_Shape_M, MMA_Inst_Shape_K)
     sfa_tile_shape = cute.shape_div(sfa_tile_shape, (mma_tile_inst_m, mma_tile_inst_k))
@@ -225,10 +226,11 @@ def make_smem_layout_sfb(
     :return: Smem layout for SFA
     :rtype: cute.Layout
     """
+    assert isinstance(mma_tiler_mnk, tuple)
     # (Round_Up(CTA_Tile_Shape_N, 128), MMA_Tile_Shape_K)
     sfb_tile_shape = (
-        cute.round_up(mma_tiler_mnk[1], 128),  # type: ignore[index, arg-type]
-        mma_tiler_mnk[2],  # type: ignore[index]
+        cute.round_up(mma_tiler_mnk[1], 128),  # type: ignore[arg-type]
+        mma_tiler_mnk[2],
     )
 
     # ((Atom_N, Rest_N),(Atom_K, Rest_K))
@@ -239,8 +241,8 @@ def make_smem_layout_sfb(
     )
 
     # Number of MMA instructions to cover all k-tiles
-    mma_tile_inst_n = mma_tiler_mnk[1] // cute.size(tiled_mma.shape_mnk, mode=[1])  # type: ignore[index]
-    mma_tile_inst_k = mma_tiler_mnk[2] // cute.size(tiled_mma.shape_mnk, mode=[2])  # type: ignore[index]
+    mma_tile_inst_n = mma_tiler_mnk[1] // cute.size(tiled_mma.shape_mnk, mode=[1])
+    mma_tile_inst_k = mma_tiler_mnk[2] // cute.size(tiled_mma.shape_mnk, mode=[2])
 
     # (CTA_Tile_Shape_N, MMA_Inst_Shape_K)
     sfb_tile_shape = cute.shape_div(sfb_tile_shape, (mma_tile_inst_n, mma_tile_inst_k))
@@ -294,6 +296,7 @@ def sm120_make_smem_layout_sfa(
     """
 
     assert sf_vec_size == 16 or sf_vec_size == 32, "sf_vec_size must be 16 or 32"
+    assert isinstance(tile_shape_mnk, tuple)
 
     blk_mn = 128
     blk_sf = 4
@@ -305,26 +308,26 @@ def sm120_make_smem_layout_sfa(
     k_basic_block_shape = (sf_vec_size, mma_nsf)
     k_basic_block_stride = (0, 1)
 
-    assert tile_shape_mnk[0] % blk_mn == 0, (  # type: ignore[index, operator]
+    assert tile_shape_mnk[0] % blk_mn == 0, (  # type: ignore[operator]
         "tile_shape_mnk[0] must be divisible by blk_mn"
     )
 
-    sSFA_shapeM = (mn_basic_block_shape, tile_shape_mnk[0] // blk_mn)  # type: ignore[index, operator]
+    sSFA_shapeM = (mn_basic_block_shape, tile_shape_mnk[0] // blk_mn)  # type: ignore[operator]
     sSF_strideM = (mn_basic_block_stride, blk_elems)
 
-    assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (  # type: ignore[index]
+    assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (
         "tile_shape_mnk[2] must be divisible by blk_sf * mma_nsf"
     )
 
     sSFA_shapeK = (
         k_basic_block_shape,
         blk_sf // mma_nsf,
-        tile_shape_mnk[2] // sf_vec_size // blk_sf,  # type: ignore[index, operator]
+        tile_shape_mnk[2] // sf_vec_size // blk_sf,  # type: ignore[operator]
     )
     sSF_strideK = (
         k_basic_block_stride,
         mma_nsf,
-        tile_shape_mnk[0] // blk_mn * blk_elems,  # type: ignore[index, operator]
+        tile_shape_mnk[0] // blk_mn * blk_elems,  # type: ignore[operator]
     )
 
     sSFA_shape = (sSFA_shapeM, sSFA_shapeK)
@@ -380,12 +383,13 @@ def sm120_make_smem_layout_sfb(
     blk_elems = blk_mn * blk_sf
 
     assert sf_vec_size == 16 or sf_vec_size == 32, "sf_vec_size must be 16 or 32"
+    assert isinstance(tile_shape_mnk, tuple)
 
-    assert tile_shape_mnk[1] % blk_mn == 0, (  # type: ignore[index, operator]
+    assert tile_shape_mnk[1] % blk_mn == 0, (  # type: ignore[operator]
         "tile_shape_mnk[1] must be divisible by blk_mn"
     )
 
-    assert tile_shape_mnk[2] % sf_vec_size == 0, (  # type: ignore[index, operator]
+    assert tile_shape_mnk[2] % sf_vec_size == 0, (  # type: ignore[operator]
         "tile_shape_mnk[2] must be divisible by sf_vec_size"
     )
 
@@ -396,26 +400,26 @@ def sm120_make_smem_layout_sfb(
     k_basic_block_shape = (sf_vec_size, mma_nsf)
     k_basic_block_stride = (0, 1)
 
-    assert tile_shape_mnk[1] % blk_mn == 0, (  # type: ignore[index, operator]
+    assert tile_shape_mnk[1] % blk_mn == 0, (  # type: ignore[operator]
         "tile_shape_mnk[1] must be divisible by blk_mn"
     )
 
-    sSFA_shapeN = (mn_basic_block_shape, tile_shape_mnk[1] // blk_mn)  # type: ignore[index, operator]
+    sSFA_shapeN = (mn_basic_block_shape, tile_shape_mnk[1] // blk_mn)  # type: ignore[operator]
     sSF_strideN = (mn_basic_block_stride, blk_elems)
 
-    assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (  # type: ignore[index]
+    assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (
         "tile_shape_mnk[2] must be divisible by blk_sf * mma_nsf"
     )
 
     sSFA_shapeK = (
         k_basic_block_shape,
         blk_sf // mma_nsf,
-        tile_shape_mnk[2] // sf_vec_size // blk_sf,  # type: ignore[index, operator]
+        tile_shape_mnk[2] // sf_vec_size // blk_sf,  # type: ignore[operator]
     )
     sSF_strideK = (
         k_basic_block_stride,
         mma_nsf,
-        tile_shape_mnk[1] // blk_mn * blk_elems,  # type: ignore[index, operator]
+        tile_shape_mnk[1] // blk_mn * blk_elems,  # type: ignore[operator]
     )
 
     sSFA_shape = (sSFA_shapeN, sSFA_shapeK)
@@ -463,8 +467,9 @@ def make_tmem_layout_sfa(
     :return: TMEM layout for SFA
     :rtype: cute.Layout
     """
+    assert isinstance(mma_tiler_mnk, tuple)
     atom_thr_size = cute.size(tiled_mma.thr_id.shape, loc=loc, ip=ip)
-    cta_tile_shape_m = mma_tiler_mnk[0] // atom_thr_size  # type: ignore[index]
+    cta_tile_shape_m = mma_tiler_mnk[0] // atom_thr_size
 
     sfa_layout_ty = _cute_nvgpu_ir.make_tmem_layout_sfa(
         smem_layout, cta_tile_shape_m, atom_thr_size, sf_vec_size
@@ -501,8 +506,9 @@ def make_tmem_layout_sfb(
     :return: TMEM layout for SFB
     :rtype: cute.Layout
     """
+    assert isinstance(mma_tiler_mnk, tuple)
     atom_thr_size = cute.size(tiled_mma.thr_id.shape, loc=loc, ip=ip)
-    cta_tile_shape_m = mma_tiler_mnk[0] // atom_thr_size  # type: ignore[index]
+    cta_tile_shape_m = mma_tiler_mnk[0] // atom_thr_size
 
     sfb_layout_ty = _cute_nvgpu_ir.make_tmem_layout_sfb(
         smem_layout, cta_tile_shape_m, atom_thr_size, sf_vec_size
@@ -525,14 +531,12 @@ class Sm103BlockScaledBasicChunk:
     _layout: cute.Layout = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        atom_shape: cute.Shape
-        atom_stride: cute.Stride
         if self.major_mode == OperandMajorMode.K:
             atom_shape = ((8, 4, 4), (self.sf_vec_size, 4))
             atom_stride = ((16, 128, 4), (0, 1))
         else:
-            atom_shape = ((self.sf_vec_size, 4), (8, 4, 4))
-            atom_stride = ((0, 1), (16, 128, 4))
+            atom_shape = ((self.sf_vec_size, 4), (8, 4, 4))  # type: ignore[assignment]
+            atom_stride = ((0, 1), (16, 128, 4))  # type: ignore[assignment]
 
         object.__setattr__(
             self, "_layout", cute.make_layout(shape=atom_shape, stride=atom_stride)
@@ -569,7 +573,8 @@ def sm103_make_smem_layout_sfa(
     :return: Smem layout for SFA
     :rtype: cute.Layout
     """
-    mma_shape_mk = tiled_mma.partition_shape_A((mma_tiler[0], mma_tiler[2]))  # type: ignore[index]
+    assert isinstance(mma_tiler, tuple)
+    mma_shape_mk = tiled_mma.partition_shape_A((mma_tiler[0], mma_tiler[2]))
     sf_atom = Sm103BlockScaledBasicChunk(sf_vec_size, tiled_mma.op.a_major_mode).layout  # type: ignore[attr-defined]
     k_divisor = 4 if sf_vec_size == 16 else 2
     mma_sfa_tiler = (
@@ -617,9 +622,10 @@ def sm103_make_smem_layout_sfb(
     :return: Smem layout for SFB
     :rtype: cute.Layout
     """
+    assert isinstance(mma_tiler, tuple)
     sf_atom = Sm103BlockScaledBasicChunk(sf_vec_size, tiled_mma.op.b_major_mode).layout  # type: ignore[attr-defined]
     k_divisor = 4 if sf_vec_size == 16 else 2
-    mma_sfb_tiler = (mma_tiler[1], mma_tiler[2] // k_divisor)  # type: ignore[index, operator]
+    mma_sfb_tiler = (mma_tiler[1], mma_tiler[2] // k_divisor)  # type: ignore[operator]
     if mma_sfb_tiler[0] == 128:
         sfb_smem_atom_layout = cute.tiled_product(
             sf_atom,

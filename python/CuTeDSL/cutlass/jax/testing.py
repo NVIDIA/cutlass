@@ -9,18 +9,24 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-
 import jax
 import jax.numpy as jnp
 
+from typing import Sequence
+
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import dsl_user_op
-from typing import Optional
 from cutlass._mlir import ir
 
 
-def reorder_modes(src: str, target: str) -> tuple[int, ...]:
-    """Computes the mode given a source and target order."""
+def reorder_modes(src: Sequence[str], target: Sequence[str]) -> tuple[int, ...]:
+    """Compute a ``TensorSpec.mode`` from physical input order to kernel order.
+
+    ``src`` names the JAX array's physical dimension order. ``target`` names the
+    logical mode order that the CuTe kernel expects. The returned tuple can be
+    passed as ``TensorSpec(mode=...)`` while leaving ``layout`` at its default
+    row-major value when the JAX buffer is physically row-major.
+    """
     src = tuple(src)
     target = tuple(target)
     src_map = {}
@@ -29,52 +35,64 @@ def reorder_modes(src: str, target: str) -> tuple[int, ...]:
     return tuple([src_map[d] for d in target])
 
 
-def gemm_a_major(d: str):
-    """Returns order for A tensor major mode."""
+def gemm_a_major(d: str) -> str:
+    """Return the physical JAX dimension order for an A tensor major mode.
+
+    The returned string is not the kernel's canonical logical order. Use
+    :func:`gemm_a_mode` to map this physical order to kernel logical ``mkl``.
+    """
     return {"k": "lmk", "m": "lkm"}[d]
 
 
 def gemm_a_mode(d: str) -> tuple[int, ...]:
-    """Returns mode for A tensor major mode."""
+    """Return ``TensorSpec.mode`` for A, mapping physical order to logical ``mkl``."""
     return reorder_modes(gemm_a_major(d), "mkl")
 
 
-def gemm_b_major(d: str):
-    """Returns order for B tensor major mode."""
+def gemm_b_major(d: str) -> str:
+    """Return the physical JAX dimension order for a B tensor major mode.
+
+    The returned string is not the kernel's canonical logical order. Use
+    :func:`gemm_b_mode` to map this physical order to kernel logical ``nkl``.
+    """
     return {"k": "lnk", "n": "lkn"}[d]
 
 
 def gemm_b_mode(d: str) -> tuple[int, ...]:
-    """Returns mode for B tensor major mode."""
+    """Return ``TensorSpec.mode`` for B, mapping physical order to logical ``nkl``."""
     return reorder_modes(gemm_b_major(d), "nkl")
 
 
-def gemm_c_major(d: str):
-    """Returns order for C tensor major mode."""
+def gemm_c_major(d: str) -> str:
+    """Return the physical JAX dimension order for a C/D tensor major mode.
+
+    The returned string is not the kernel's canonical logical order. Use
+    :func:`gemm_c_mode` to map this physical order to kernel logical ``mnl``.
+    """
     return {"n": "lmn", "m": "lnm"}[d]
 
 
 def gemm_c_mode(d: str) -> tuple[int, ...]:
-    """Returns mode for C tensor major mode."""
+    """Return ``TensorSpec.mode`` for C/D, mapping physical order to logical ``mnl``."""
     return reorder_modes(gemm_c_major(d), "mnl")
 
 
-def gemm_a_shape(l, m, k, major) -> tuple[int, ...]:
-    """Returns shape for A tensor given major mode."""
+def gemm_a_shape(l: int, m: int, k: int, major: str) -> tuple[int, ...]:
+    """Return the physical row-major JAX shape for A with the requested major mode."""
     assert major in ("k", "m")
     shape = (l, m, k) if major == "k" else (l, k, m)
     return shape
 
 
-def gemm_b_shape(l, n, k, major) -> tuple[int, ...]:
-    """Returns shape for B tensor given major mode."""
+def gemm_b_shape(l: int, n: int, k: int, major: str) -> tuple[int, ...]:
+    """Return the physical row-major JAX shape for B with the requested major mode."""
     assert major in ("k", "n")
     shape = (l, n, k) if major == "k" else (l, k, n)
     return shape
 
 
-def gemm_c_shape(l, m, n, major) -> tuple[int, ...]:
-    """Returns shape for C tensor given major mode."""
+def gemm_c_shape(l: int, m: int, n: int, major: str) -> tuple[int, ...]:
+    """Return the physical row-major JAX shape for C/D with the requested major mode."""
     assert major in ("m", "n")
     shape = (l, m, n) if major == "n" else (l, n, m)
     return shape
@@ -85,19 +103,30 @@ def get_gemm_shape_from_tensors(
     a: cute.Tensor,
     b: cute.Tensor,
     *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
 ) -> tuple[int, int, int, int]:
     """Returns a tuple of (M, N, K, L) from A/B gemm tensors."""
     # mkl, nkl
-    m, k, l = a.shape[:]  # type: ignore[index]
-    n = b.shape[0]  # type: ignore[index]
+    a_shape = a.shape
+    b_shape = b.shape
+    assert isinstance(a_shape, tuple)
+    assert isinstance(b_shape, tuple)
+    m, k, l = a_shape[:]
+    n = b_shape[0]
     return (m, n, k, l)  # type: ignore[return-value]
 
 
 def create_tensor(
-    shape, dtype, key, *, minval=-2.0, maxval=2.0, fill_value=None, fill_arange=False
-):
+    shape: tuple[int, ...],
+    dtype: jnp.dtype,
+    key: jax.Array,
+    *,
+    minval: float = -2.0,
+    maxval: float = 2.0,
+    fill_value: float | int | None = None,
+    fill_arange: bool = False,
+) -> jax.Array:
     if fill_arange:
         tensor = jnp.ones(shape, dtype=dtype)
         tensor = tensor * jnp.arange(tensor.size, dtype=tensor.dtype).reshape(
@@ -114,17 +143,17 @@ def create_tensor(
 
 
 def create_a_tensor(
-    l,
-    m,
-    k,
-    major,
-    dtype,
-    key,
-    minval=-2.0,
-    maxval=2.0,
-    fill_value=None,
-    fill_arange=False,
-):
+    l: int,
+    m: int,
+    k: int,
+    major: str,
+    dtype: jnp.dtype,
+    key: jax.Array,
+    minval: float = -2.0,
+    maxval: float = 2.0,
+    fill_value: float | int | None = None,
+    fill_arange: bool = False,
+) -> jax.Array:
     shape = gemm_a_shape(l, m, k, major)
     tensor = create_tensor(
         shape,
@@ -139,17 +168,17 @@ def create_a_tensor(
 
 
 def create_b_tensor(
-    l,
-    n,
-    k,
-    major,
-    dtype,
-    key,
-    minval=-2.0,
-    maxval=2.0,
-    fill_value=None,
-    fill_arange=False,
-):
+    l: int,
+    n: int,
+    k: int,
+    major: str,
+    dtype: jnp.dtype,
+    key: jax.Array,
+    minval: float = -2.0,
+    maxval: float = 2.0,
+    fill_value: float | int | None = None,
+    fill_arange: bool = False,
+) -> jax.Array:
     shape = gemm_b_shape(l, n, k, major)
     tensor = create_tensor(
         shape,
@@ -164,18 +193,18 @@ def create_b_tensor(
 
 
 def create_cd_tensor(
-    l,
-    m,
-    n,
-    major,
-    dtype,
-    key,
+    l: int,
+    m: int,
+    n: int,
+    major: str,
+    dtype: jnp.dtype,
+    key: jax.Array,
     *,
-    minval=-2.0,
-    maxval=2.0,
-    fill_value=None,
-    fill_arange=False,
-):
+    minval: float = -2.0,
+    maxval: float = 2.0,
+    fill_value: float | int | None = None,
+    fill_arange: bool = False,
+) -> jax.Array:
     shape = gemm_c_shape(l, m, n, major)
     tensor = create_tensor(
         shape,
@@ -190,17 +219,17 @@ def create_cd_tensor(
 
 
 def gemm_reference_einsum(
-    a,
-    b,
-    acc_dtype,
-    c_dtype,
-    a_major,
-    b_major,
-    c_major,
-    sf_a=None,
-    sf_b=None,
-    precision="highest",
-):
+    a: jax.Array,
+    b: jax.Array,
+    acc_dtype: jnp.dtype,
+    c_dtype: jnp.dtype,
+    a_major: str,
+    b_major: str,
+    c_major: str,
+    sf_a: jax.Array | None = None,
+    sf_b: jax.Array | None = None,
+    precision: str = "highest",
+) -> jax.Array:
     a_idx = gemm_a_major(a_major)
     b_idx = gemm_b_major(b_major)
     c_idx = gemm_c_major(c_major)
@@ -226,8 +255,18 @@ def gemm_reference_einsum(
 
 
 def create_attn_tensors(
-    b, s, hq, hkv, d, dtype, key, *, minval=-2.0, maxval=2.0, fill_value=None
-):
+    b: int,
+    s: int,
+    hq: int,
+    hkv: int,
+    d: int,
+    dtype: jnp.dtype,
+    key: jax.Array,
+    *,
+    minval: float = -2.0,
+    maxval: float = 2.0,
+    fill_value: float | int | None = None,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     qkey, kkey, vkey = jax.random.split(key, 3)
     return (
         create_tensor(
@@ -257,7 +296,7 @@ def create_attn_tensors(
     )
 
 
-def attn_ref(q, k, v, is_causal: bool):
+def attn_ref(q: jax.Array, k: jax.Array, v: jax.Array, is_causal: bool) -> jax.Array:
     return jax.jit(
         lambda q, k, v: jax.nn.dot_product_attention(
             q, k, v, is_causal=is_causal, implementation="cudnn"

@@ -66,6 +66,8 @@
         (defined(__CUDA_ARCH_FEAT_SM110_ALL) || CUDA_ARCH_FAMILY(1100))) || \
      (__CUDA_ARCH__ == 1030 &&\
         (defined(__CUDA_ARCH_FEAT_SM103_ALL) || CUDA_ARCH_FAMILY(1030))) || \
+     (__CUDA_ARCH__ == 1070 &&\
+        (defined(__CUDA_ARCH_FEAT_SM107_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1070))) || \
      (__CUDA_ARCH__ == 1200 &&\
         (defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_FAMILY(1200))) || \
      (__CUDA_ARCH__ == 1210 &&\
@@ -94,7 +96,7 @@ void launch_dependent_grids() {
 CUTLASS_DEVICE
 void wait_on_dependent_grids() {
 #if (defined(CUTLASS_GDC_ENABLED))
-  asm volatile("griddepcontrol.wait;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
 #endif
 }
 

@@ -9,16 +9,16 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import io
-import os
 
 import ctypes
 from collections.abc import Callable
 from inspect import Signature, Parameter
 from typing import Any, cast
 
-from ..common import DSLRuntimeError
+from ..common import DSLRuntimeError, DSLUserCodeError
+from ..diagnostics import DiagId
 from ...base_dsl.dsl import BaseDSL
+from ...base_dsl.jit_executor import JitCompiledFunction
 from ...base_dsl.typing import Int32, Int64, Float32, Float64
 from .export import SignatureProcessor, decode_metadata_from_execution_engine
 
@@ -27,7 +27,7 @@ def _get_ctypes_return_type(signature: Signature) -> Any:
     """Get the ctypes return type from the signature."""
     return_type = signature.return_annotation
     if return_type is Parameter.empty:
-        raise DSLRuntimeError("Return type is not specified for AOT compiled function.")
+        raise DSLUserCodeError(DiagId.AOT_MISSING_RETURN_TYPE)
     type_to_ctype = {
         Int32: ctypes.c_int32,
         Int64: ctypes.c_int64,
@@ -38,7 +38,9 @@ def _get_ctypes_return_type(signature: Signature) -> Any:
 
     ctype = type_to_ctype.get(return_type)
     if ctype is None:
-        raise DSLRuntimeError(f"Unsupported return type for AOT loading: {return_type}")
+        raise DSLUserCodeError(
+            DiagId.AOT_UNSUPPORTED_RETURN_TYPE, return_type=return_type
+        )
 
     return ctype
 
@@ -120,10 +122,11 @@ class ExternalBinaryModule:
                 f"Function prefix {function_prefix} not found in the module.", cause=e
             )
         load_provider.version_checker(version_str)
+        assert function_name is not None
         capi_func_p = self.engine.lookup(function_name)
         if not capi_func_p:
             raise DSLRuntimeError(
-                "Unknown function: "  # type: ignore[operator]
+                "Unknown function: "
                 + "_mlir_"
                 + function_prefix
                 + "__mlir_ciface_"
@@ -136,7 +139,7 @@ class ExternalBinaryModule:
                 self.engine.lookup("_mlir_" + function_prefix + "_cuda_init")
                 is not None
             )
-        except Exception as e:
+        except Exception:
             has_gpu_module = False
         jit_function = load_provider.jit_function_constructor(
             ir_module=None,
@@ -151,6 +154,10 @@ class ExternalBinaryModule:
             load_from_binary=True,
             has_gpu_module=has_gpu_module,
         )
+        if isinstance(jit_function, JitCompiledFunction):
+            jit_function.execution_args.set_adapter_scope(
+                load_provider.dsl._get_dsl()._jit_arg_adapter_scope
+            )
         return jit_function
 
     def __getitem__(self, function_prefix: str) -> Any:

@@ -73,6 +73,10 @@ struct CollectiveBuilder<
        cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
        &&
+      !((cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
+         cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>) &&
+        cute::tuple_element_t<1, TileShape_MNK>::value < 16)
+       &&
       // Alignment check
       detail::sm1xx_blockscaled_gemm_is_aligned<typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairA>::data_type,
                                                 AlignmentA,
@@ -98,7 +102,7 @@ struct CollectiveBuilder<
   static_assert(cute::is_static_v<ClusterShape_MNK>, "Cluster has to be static");
   static_assert(detail::blockscaled::check_input_datatypes<BuilderScheduleTag, ElementPairA, ElementPairB, UmmaMajorA, UmmaMajorB>(), "Incorrect input types");
   static_assert(cute::size(ClusterShape_MNK{}) == Int<1>{}, "no programmatic multicast on this arch");
-  static_assert(size<1>(TileShape_MNK{}) >= 32, "Invalid tile shape N.");
+  static_assert(size<1>(TileShape_MNK{}) >= 8, "Invalid tile shape N.");
 
   static constexpr auto Instr = detail::blockscaled::select_instr<ElementPairA,
                                                                   ElementPairB,
@@ -108,7 +112,7 @@ struct CollectiveBuilder<
                                                                   BuilderScheduleTag>();
   static constexpr bool UseMxf8f6f4 = Instr == detail::blockscaled::BlockScaledInstr::MXF4F6F8;
   using PermTileM = decltype(cute::min(size<0>(TileShape_MNK{}), _128{}));
-  using PermTileN = decltype(detail::sm120_tile_n_permute_selector<SFVectorSize>());
+  using PermTileN = decltype(detail::sm120_tile_n_permute_selector<SFVectorSize, size<1>(TileShape_MNK{})>());
   using PermTileK = cute::conditional_t<(UseMxf8f6f4
                                         ), _32, _64>;
 
@@ -125,7 +129,9 @@ struct CollectiveBuilder<
                 "TileSize and MNK Major does not met with MMA Mix 8-bit TMA load requirement" );
 
   using AtomLayoutMNK = cute::conditional_t<IsCooperative,
-      Layout<Shape<_4,_2,_1>>, Layout<Shape<_2,_2,_1>>>;
+      cute::conditional_t<(size<1>(TileShape_MNK{}) >= 16), Layout<Shape<_4,_2,_1>>,
+                          Layout<Shape<_8,_1,_1>>>,
+      Layout<Shape<_2,_2,_1>>>;
 
   using TiledMma = decltype(cute::make_tiled_mma(
     cute::rr_blockscaled_op_selector_sm120<ElementA,
@@ -166,7 +172,8 @@ struct CollectiveBuilder<
                                                                                  >()), SmemAllocTypeA>;
   using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA,
                                                                                  ElementB,
-                                                                                 UseMxf8f6f4
+                                                                                 UseMxf8f6f4,
+                                                                                 size<1>(TileShape_MNK{})
                                                                                 >()), SmemAllocTypeB>;
 
   using SmemCopyAtomSF = Copy_Atom<UniversalCopy<SmemAllocTypeSF>, SmemAllocTypeSF>; // auto-vectorized LDS

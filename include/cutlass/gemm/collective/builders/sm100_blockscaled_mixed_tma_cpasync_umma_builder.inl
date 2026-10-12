@@ -124,6 +124,7 @@ struct CollectiveBuilder<
       (cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized1SmBlockScaledSm100, BuilderScheduleTag> ||
        cute::is_same_v<KernelMixedTmaCpAsyncWarpSpecialized2SmBlockScaledSm100, BuilderScheduleTag>) &&
       (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       )
     >
 >

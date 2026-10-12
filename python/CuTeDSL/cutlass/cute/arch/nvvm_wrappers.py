@@ -9,8 +9,20 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import enum
+import types
 from functools import partial
-from typing import Any, Optional, Tuple, Union, Callable, Literal, Type, overload
+from typing import (
+    Any,
+    Optional,
+    Tuple,
+    Union,
+    Callable,
+    Literal,
+    Type,
+    TypeVar,
+    overload,
+)
 from typing_extensions import deprecated
 
 from cutlass.cutlass_dsl import T, dsl_user_op
@@ -19,7 +31,9 @@ import cutlass.cutlass_dsl as cutlass_dsl
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith, builtin, llvm, math, nvvm as _nvvm_raw, vector
-from cutlass.base_dsl._mlir_helpers.dialect_proxy import DialectAutoConvertProxy
+
+from .constants import WARP_SIZE
+from .elect import make_warp_uniform
 
 from ..core import size
 
@@ -33,20 +47,125 @@ from ..typing import (
     Int32,
     Uint32,
     Int64,
+    FloatNV8E5M3FNU,
     Float16,
     Float32,
     BFloat16,
     Numeric,
     Uint64,
     Pointer,
+    Array,
     as_numeric,
 )
 
-WARP_SIZE = 32
 FULL_MASK = 0xFFFFFFFF
 
+
+# ============================================================================
+# NVVM Auto-Convert Proxy
+# ============================================================================
+
+
+class _NvvmAutoConvertProxy:
+    """
+    Proxy that wraps the raw MLIR nvvm dialect module.
+    Automatically converts Numeric arguments to ir.Value when calling any nvvm operation.
+
+    This enables users to write cleaner code without explicit .ir_value() calls:
+
+    Before:
+        nvvm.tcgen05_mma_smem_desc(
+            Int32(x).ir_value(),
+            Int32(y).ir_value(),
+            ...
+        )
+
+    After:
+        nvvm.tcgen05_mma_smem_desc(
+            Int32(x),
+            Int32(y),
+            ...
+        )
+    """
+
+    def __init__(self, nvvm_module: types.ModuleType) -> None:
+        self._module = nvvm_module
+        self._wrapped_cache: dict[str, Callable[..., Any]] = {}
+
+    @staticmethod
+    def _convert_arg(
+        arg: Any, loc: Optional[ir.Location], ip: Optional[ir.InsertionPoint]
+    ) -> Any:
+        """Convert DSL objects to ir.Value while preserving Python immediates."""
+        # Python primitive subclasses can expose ir_value(), but NVVM attribute
+        # slots must receive them as compile-time immediates.
+        if isinstance(arg, (bool, int, float)):
+            return arg
+        # Check for ir_value method (covers Numeric and other DSL types)
+        if hasattr(arg, "ir_value") and callable(arg.ir_value):
+            return arg.ir_value(loc=loc, ip=ip)
+        if isinstance(arg, (list, tuple)):
+            converted = [
+                _NvvmAutoConvertProxy._convert_arg(item, loc, ip) for item in arg
+            ]
+            return type(arg)(converted)
+        return arg
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._module, name)
+
+        # Non-callable attributes and enum classes pass through unchanged
+        # Enum classes need attribute access (e.g., ShflKind.idx), but MLIR operation
+        # classes should be wrapped for argument conversion when instantiated
+        if (
+            not callable(attr)
+            or isinstance(attr, enum.EnumMeta)
+            or hasattr(attr, "_mock_name")
+        ):
+            return attr
+
+        # Use cache for wrapped callables
+        if name not in self._wrapped_cache:
+
+            def _make_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+                def wrapped(
+                    *args: Any,
+                    loc: Optional[ir.Location] = None,
+                    ip: Optional[ir.InsertionPoint] = None,
+                    **kwargs: Any,
+                ) -> Any:
+                    # Convert Numeric args to ir.Value (recursively handles lists/tuples)
+                    converted_args = tuple(
+                        _NvvmAutoConvertProxy._convert_arg(arg, loc, ip) for arg in args
+                    )
+                    converted_kwargs = {
+                        k: _NvvmAutoConvertProxy._convert_arg(v, loc, ip)
+                        for k, v in kwargs.items()
+                    }
+                    return func(*converted_args, loc=loc, ip=ip, **converted_kwargs)
+
+                return wrapped
+
+            self._wrapped_cache[name] = _make_wrapper(attr)
+
+        return self._wrapped_cache[name]
+
+    def __dir__(self) -> list[str]:
+        return dir(self._module)
+
 # Create the proxy instance to replace the raw nvvm module
-nvvm = DialectAutoConvertProxy(_nvvm_raw)
+nvvm = _NvvmAutoConvertProxy(_nvvm_raw)
+
+_RESULT_TYPE_INFERRED_PACKED_F32X2_OPS = (
+    nvvm.add_packed_f32x2,
+    nvvm.sub_packed_f32x2,
+    nvvm.mul_packed_f32x2,
+    nvvm.fma_packed_f32x2,
+    _nvvm_raw.add_packed_f32x2,
+    _nvvm_raw.sub_packed_f32x2,
+    _nvvm_raw.mul_packed_f32x2,
+    _nvvm_raw.fma_packed_f32x2,
+)
 
 
 # ============================================================================
@@ -80,7 +199,6 @@ def _enhance_enum_with_str_mapping(enum_class: Any) -> Any:
         str_to_enum_map[str_repr] = member
 
     # Add from_str class method
-    @classmethod  # type: ignore[misc]
     def from_str(cls: Any, s: Any) -> Any:
         """
         Convert a string literal to the corresponding enum member.
@@ -99,22 +217,11 @@ def _enhance_enum_with_str_mapping(enum_class: Any) -> Any:
         from enum import Enum
 
         if isinstance(s, Enum):
-            if cutlass_dsl.target_version(exact_version="12.9"):
-                import warnings
-
-                warnings.warn(
-                    f"Passing enum member directly to {cls.__name__}.from_str() is deprecated. "
-                    f"Please use string literals instead (e.g., '{str(s)}' instead of {cls.__name__}.{s.name}).",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                return s
-            else:
-                raise TypeError(
-                    f"Expected a string literal for {cls.__name__}, but got enum '{type(s).__name__}.{s.name}'. "
-                    f"Please pass a string instead (e.g., '{str(s)}' instead of {type(s).__name__}.{s.name}). "
-                    f"Valid string options are: {sorted(str_to_enum_map.keys())}"
-                )
+            raise TypeError(
+                f"Expected a string literal for {cls.__name__}, but got enum '{type(s).__name__}.{s.name}'. "
+                f"Please pass a string instead (e.g., '{str(s)}' instead of {type(s).__name__}.{s.name}). "
+                f"Valid string options are: {sorted(str_to_enum_map.keys())}"
+            )
 
         if s not in str_to_enum_map:
             valid_options = sorted(str_to_enum_map.keys())
@@ -124,7 +231,7 @@ def _enhance_enum_with_str_mapping(enum_class: Any) -> Any:
             )
         return str_to_enum_map[s]
 
-    enum_class.from_str = from_str
+    enum_class.from_str = classmethod(from_str)
     return enum_class
 
 
@@ -243,16 +350,16 @@ def warp_idx(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the warp index within a CTA.
+    Returns the logical warp index within a CTA, computed from the CTA thread
+    index registers.
     """
-    warp_size = 32
     tid_x = Int32(nvvm.read_ptx_sreg_tid_x(T.i32(), loc=loc, ip=ip))
     tid_y = Int32(nvvm.read_ptx_sreg_tid_y(T.i32(), loc=loc, ip=ip))
     tid_z = Int32(nvvm.read_ptx_sreg_tid_z(T.i32(), loc=loc, ip=ip))
     ntid_x = Int32(nvvm.read_ptx_sreg_ntid_x(T.i32(), loc=loc, ip=ip))
     ntid_y = Int32(nvvm.read_ptx_sreg_ntid_y(T.i32(), loc=loc, ip=ip))
     tid = tid_x + tid_y * ntid_x + tid_z * ntid_x * ntid_y
-    return tid // warp_size
+    return make_warp_uniform(tid // WARP_SIZE, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -260,7 +367,12 @@ def physical_warp_id(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the warp identifier.
+    Returns the physical warp slot identifier from the PTX ``%warpid`` special
+    register.
+
+    PTX documents ``%warpid`` as a diagnostic register whose value may change
+    during execution, for example after rescheduling. Use :func:`warp_idx` when
+    kernel code needs a stable logical warp index within a CTA.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-warpid>`__.
     """
@@ -404,21 +516,129 @@ def dynamic_smem_size(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
     """
-    Returns the launch dynamic smem size.
+    Returns the dynamic shared-memory size requested at launch.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-dynamic-smem-size
     """
-    return Int32(
-        llvm.inline_asm(
-            Int32.mlir_type,
-            [],
-            "mov.u32 $0, %dynamic_smem_size;\n",
-            "=r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
-    )
+    return Int32(nvvm.read_ptx_sreg_dynamic_smem_size(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def total_smem_size(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the ``%total_smem_size`` special-register value for the CTA.
+
+    PTX defines this as the total statically and dynamically allocated CTA
+    shared memory, excluding the reserved system region, reported in multiples
+    of the target architecture's shared-memory allocation unit.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-total-smem-size
+
+    :return: Total CTA shared-memory size in target allocation units
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_total_smem_size(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def aggr_smem_size(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the ``%aggr_smem_size`` special-register value for the CTA (sm_90+).
+
+    PTX defines this as user shared memory plus the reserved system shared-memory
+    region for the CTA.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-aggr-smem-size
+
+    :return: Aggregate CTA shared-memory size
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_aggr_smem_size(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def gridid(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns a unique identifier for the current grid launch.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-gridid
+
+    :return: Grid launch identifier
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_gridid(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def nwarpid(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the maximum number of warp slots (warp IDs) per SM.
+
+    Defines the valid range for physical_warp_id() as [0, nwarpid() - 1].
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-nwarpid
+
+    :return: Number of warp slots per SM
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_nwarpid(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def warpsize(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the warp size in threads as a runtime register read (``%WARP_SZ``).
+
+    Prefer the compile-time ``WARP_SIZE`` constant unless a runtime read is
+    specifically required; both are 32 on current hardware.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-warpid-nwarpid-warpsize
+
+    :return: Warp size in threads
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_warpsize(T.i32(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def globaltimer(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int64:
+    """
+    Returns the 64-bit global nanosecond timer (``%globaltimer``).
+
+    Intended for use by NVIDIA tools: the behavior is target-specific and may
+    change or be removed on future architectures.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#special-registers-globaltimer-globaltimer-lo-globaltimer-hi
+
+    :return: Global timer value in nanoseconds
+    :rtype: Int64
+    """
+    return Int64(nvvm.read_ptx_sreg_globaltimer(T.i64(), loc=loc, ip=ip))
+
+
+@dsl_user_op
+def globaltimer_lo(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the low 32 bits of the global nanosecond timer (``%globaltimer_lo``).
+
+    :return: Low 32 bits of the global timer
+    :rtype: Int32
+    """
+    return Int32(nvvm.read_ptx_sreg_globaltimer_lo(T.i32(), loc=loc, ip=ip))
 
 
 @dsl_user_op
@@ -459,7 +679,6 @@ def shuffle_sync_op(
                 T.i32(), value.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
             )
             i32_res = nvvm.shfl_sync(
-                T.i32(),
                 Int32(mask).ir_value(loc=loc, ip=ip),
                 i32_val,
                 Int32(offset).ir_value(loc=loc, ip=ip),
@@ -476,22 +695,22 @@ def shuffle_sync_op(
     if not isinstance(value, Numeric):
         value = as_numeric(value)
 
-    if value.width > 64:  # type: ignore[attr-defined]
+    if value.width > 64:
         raise ValueError("shuffle_sync only supports values up to 64 bits")
 
     orig_type = type(value)
 
-    if value.width < 32:  # type: ignore[attr-defined]
+    if value.width < 32:
         if value.dtype.is_float:
             value = value.to(Float32)
         else:
-            if value.signed:  # type: ignore[attr-defined]
+            assert isinstance(value, Integer)
+            if value.signed:
                 value = value.to(Int32)
             else:
                 value = value.to(Uint32)
         return orig_type(
             nvvm.shfl_sync(
-                type(value).mlir_type,
                 Int32(mask).ir_value(loc=loc, ip=ip),
                 value.ir_value(loc=loc, ip=ip),
                 Int32(offset).ir_value(loc=loc, ip=ip),
@@ -501,10 +720,9 @@ def shuffle_sync_op(
                 ip=ip,
             )
         )
-    elif value.width == 32:  # type: ignore[attr-defined]
+    elif value.width == 32:
         return orig_type(
             nvvm.shfl_sync(
-                type(value).mlir_type,
                 Int32(mask).ir_value(loc=loc, ip=ip),
                 value.ir_value(loc=loc, ip=ip),
                 Int32(offset).ir_value(loc=loc, ip=ip),
@@ -515,7 +733,7 @@ def shuffle_sync_op(
             )
         )
     else:
-        if value.width != 64:  # type: ignore[attr-defined]
+        if value.width != 64:
             raise ValueError(
                 "shuffle_sync only supports 64 bits values when the bit width is larger than 32"
             )
@@ -531,7 +749,6 @@ def shuffle_sync_op(
         high_32_bits = arith.trunci(T.i32(), high_32_bits, loc=loc, ip=ip)
 
         low_32_bits_shfl = nvvm.shfl_sync(
-            T.i32(),
             Int32(mask).ir_value(loc=loc, ip=ip),
             low_32_bits,
             Int32(offset).ir_value(loc=loc, ip=ip),
@@ -541,7 +758,6 @@ def shuffle_sync_op(
             ip=ip,
         )
         high_32_bits_shfl = nvvm.shfl_sync(
-            T.i32(),
             Int32(mask).ir_value(loc=loc, ip=ip),
             high_32_bits,
             Int32(offset).ir_value(loc=loc, ip=ip),
@@ -563,7 +779,11 @@ def shuffle_sync_op(
 
 
 shuffle_sync = partial(shuffle_sync_op, kind=nvvm.ShflKind.idx)
-shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up)
+# shfl.up clamps at the *lower* segment boundary, so the packed clamp must be 0
+# (not WARP_SIZE-1). With the generic 31 default every lane's source falls below
+# the bound and keeps its own value (identity). Callers can still override
+# mask_and_clamp for segmented shuffles.
+shuffle_sync_up = partial(shuffle_sync_op, kind=nvvm.ShflKind.up, mask_and_clamp=0)
 shuffle_sync_down = partial(shuffle_sync_op, kind=nvvm.ShflKind.down)
 shuffle_sync_bfly = partial(shuffle_sync_op, kind=nvvm.ShflKind.bfly)
 
@@ -573,13 +793,13 @@ def warp_reduction(
     val: Numeric,
     op: Callable,
     *,
-    threads_in_group: int = 32,
+    threads_in_group: int = WARP_SIZE,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
     """warp reduction of a Numeric value(e.g.Float32) by shuffle_sync_bfly, accepts custom binary operator.
     The threads_in_group is the number of threads reduction group in a warp.
-    E.g. 32 means the whole warp reduced in one group. 8 means the warp is divided into 4 thread groups, each group has 8 threads in reduction.
+    E.g. WARP_SIZE (32) means the whole warp reduced in one group. 8 means the warp is divided into 4 thread groups, each group has 8 threads in reduction.
 
 
     :param val: register value
@@ -628,30 +848,13 @@ def barrier(
     if number_of_threads is not None:
         number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        if barrier_id is None:
-            barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
-        has_count = number_of_threads is not None
-        operands = [barrier_id, number_of_threads] if has_count else [barrier_id]
-        llvm.inline_asm(
-            None,
-            operands,
-            f"bar.sync {'$0, $1' if has_count else '$0'};",
-            "r,r" if has_count else "r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        # TODO: support barrier with reduction result
-        nvvm.barrier(
-            barrier_id=barrier_id,
-            number_of_threads=number_of_threads,
-            loc=loc,
-            ip=ip,
-        )
+    # TODO: support barrier with reduction result
+    nvvm.barrier(
+        barrier_id=barrier_id,
+        number_of_threads=number_of_threads,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -659,9 +862,26 @@ def barrier_arrive(
     *,
     barrier_id: Optional[Int] = None,
     number_of_threads: Optional[Int] = None,
+    aligned: bool = True,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    """Issue a non-blocking arrive on a CTA-scoped named barrier.
+
+    The PTX ISA distinguishes two flavors of the arrive instruction:
+
+    - ``aligned=True`` (default) emits ``bar.arrive`` (legacy syntax with
+      implicit ``.aligned``). All threads in the CTA must reach this
+      instruction (i.e. it must lie outside divergent control flow).
+    - ``aligned=False`` emits ``barrier.cta.arrive`` (no ``.aligned``
+      modifier), which is required when the participating threads do not
+      necessarily execute the same instruction (e.g. when only a subset of
+      threads or warps in the CTA issue the arrive).
+
+    See the `PTX documentation
+    <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-bar-barrier>`__
+    for details on the aligned vs. unaligned variants.
+    """
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
     else:
@@ -673,22 +893,21 @@ def barrier_arrive(
         )
     number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        llvm.inline_asm(
-            None,
-            [barrier_id, number_of_threads],
-            "bar.arrive $0, $1;",
-            "r,r",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
+    if aligned:
+        nvvm.barrier_arrive(
+            barrier_id=barrier_id,
+            number_of_threads=number_of_threads,
             loc=loc,
             ip=ip,
         )
     else:
-        nvvm.barrier_arrive(
+        # The unaligned variant uses `barrier.cta.arrive` (without the
+        # `.aligned` modifier). The legacy `bar.arrive` instruction is
+        # implicitly aligned and cannot express this case.
+        nvvm.barrier_cta_arrive(
             barrier_id=barrier_id,
-            number_of_threads=number_of_threads,
+            thread_count=number_of_threads,
+            aligned=False,
             loc=loc,
             ip=ip,
         )
@@ -726,7 +945,7 @@ def fence_acq_rel_cta(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_cta(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, syncscope="block", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -738,7 +957,7 @@ def fence_acq_rel_cluster(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_cluster(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, syncscope="cluster", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -750,7 +969,7 @@ def fence_acq_rel_gpu(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_gpu(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, syncscope="device", loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -762,7 +981,7 @@ def fence_acq_rel_sys(
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-membar>`__.
     """
-    nvvm.fence_acq_rel_sys(loc=loc, ip=ip)
+    llvm.fence(llvm.AtomicOrdering.acq_rel, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -914,47 +1133,13 @@ def vote_sync_op(
     Performs a vote operation across the warp.
     """
     return_type = Int32 if kind == "ballot" else Boolean
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        if kind == "ballot":
-            return return_type(
-                nvvm.vote_ballot_sync(
-                    T.i32(),
-                    Int32(mask).ir_value(loc=loc, ip=ip),
-                    Boolean(pred).ir_value(loc=loc, ip=ip),
-                    loc=loc,
-                    ip=ip,
-                )
-            )
-        else:
-            return return_type(
-                llvm.inline_asm(
-                    T.bool(),
-                    [
-                        Boolean(pred).ir_value(loc=loc, ip=ip),
-                        Int32(mask).ir_value(loc=loc, ip=ip),
-                    ],
-                    f"""{{\n\t
-                    .reg .pred ps;\n\t
-                    .reg .pred pd;\n\t
-                    setp.ne.b32 ps, $1, 0;\n\t
-                    vote.sync.{kind}.pred pd, ps, $2;\n\t
-                    selp.b32 $0, 1, 0, pd;\n\t
-                    }}""",
-                    "=r,r,r",
-                    has_side_effects=True,
-                    is_align_stack=False,
-                    asm_dialect=llvm.AsmDialect.AD_ATT,
-                    loc=loc,
-                    ip=ip,
-                )
-            )
+
     from cutlass._mlir.dialects.nvvm import VoteSyncKind
 
     VoteSyncKind = _enhance_enum_with_str_mapping(VoteSyncKind)
 
     return return_type(
         nvvm.vote_sync(
-            T.i32() if kind == "ballot" else T.bool(),
             Int32(mask).ir_value(loc=loc, ip=ip),
             Boolean(pred).ir_value(loc=loc, ip=ip),
             VoteSyncKind.from_str(kind),
@@ -1204,6 +1389,7 @@ def calc_packed_f32x2_op(
     src_c: Optional[Tuple[Float32, Float32]],
     calc_func: Callable,
     *,
+    result_type_inferred: bool = False,
     rnd: Optional[Literal["rn", "rz", "rm", "rp", "none"]] = "rn",
     ftz: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
@@ -1214,6 +1400,8 @@ def calc_packed_f32x2_op(
     # Enhance enum and convert string literal to enum type
     FPRoundingMode = _enhance_enum_with_str_mapping(FPRoundingMode)
     rnd = FPRoundingMode.from_str(rnd)
+    if calc_func in _RESULT_TYPE_INFERRED_PACKED_F32X2_OPS:
+        result_type_inferred = True
 
     vec_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
     vec_src_a = vector.from_elements(
@@ -1235,9 +1423,23 @@ def calc_packed_f32x2_op(
             loc=loc,
             ip=ip,
         )
-        vec_res = calc_func(
-            vec_type, vec_src_a, vec_src_b, vec_src_c, rnd=rnd, ftz=ftz, loc=loc, ip=ip
-        )
+        if result_type_inferred:
+            vec_res = calc_func(
+                vec_src_a, vec_src_b, vec_src_c, rnd=rnd, ftz=ftz, loc=loc, ip=ip
+            )
+        else:
+            vec_res = calc_func(
+                vec_type,
+                vec_src_a,
+                vec_src_b,
+                vec_src_c,
+                rnd=rnd,
+                ftz=ftz,
+                loc=loc,
+                ip=ip,
+            )
+    elif result_type_inferred:
+        vec_res = calc_func(vec_src_a, vec_src_b, rnd=rnd, ftz=ftz, loc=loc, ip=ip)
     else:
         vec_res = calc_func(
             vec_type, vec_src_a, vec_src_b, rnd=rnd, ftz=ftz, loc=loc, ip=ip
@@ -1256,16 +1458,1007 @@ def calc_packed_f32x2_op(
     return res0, res1
 
 
-fma_packed_f32x2 = partial(calc_packed_f32x2_op, calc_func=nvvm.fma_packed_f32x2)
+fma_packed_f32x2 = partial(
+    calc_packed_f32x2_op,
+    calc_func=nvvm.fma_packed_f32x2,
+    result_type_inferred=True,
+)
 mul_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.mul_packed_f32x2
+    calc_packed_f32x2_op,
+    src_c=None,
+    calc_func=nvvm.mul_packed_f32x2,
+    result_type_inferred=True,
 )
 add_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.add_packed_f32x2
+    calc_packed_f32x2_op,
+    src_c=None,
+    calc_func=nvvm.add_packed_f32x2,
+    result_type_inferred=True,
 )
 sub_packed_f32x2 = partial(
-    calc_packed_f32x2_op, src_c=None, calc_func=nvvm.sub_packed_f32x2
+    calc_packed_f32x2_op,
+    src_c=None,
+    calc_func=nvvm.sub_packed_f32x2,
+    result_type_inferred=True,
 )
+
+
+PackedAddRounding = Optional[Literal["rn", "rz", "rm", "rp", "none"]]
+PackedSubRounding = Optional[Literal["rn", "rz", "rm", "rp", "none"]]
+HalfFmaRounding = Optional[Literal["rn"]]
+_NumericT = TypeVar("_NumericT", bound=Numeric)
+
+
+def _validate_half_add_dtype(dtype: Type[_NumericT]) -> Type[_NumericT]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return dtype
+
+
+def _validate_half_sub_dtype(dtype: Type[_NumericT]) -> Type[_NumericT]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return dtype
+
+
+def _fp_rounding_mode(rnd: PackedAddRounding) -> Any:
+    from cutlass._mlir.dialects.nvvm import FPRoundingMode
+
+    FPRoundingMode = _enhance_enum_with_str_mapping(FPRoundingMode)
+    return FPRoundingMode.from_str(rnd)
+
+
+def _fp_arith_rounding_mode(rnd: HalfFmaRounding) -> Any:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    rnd = "rn" if rnd is None else rnd
+
+    try:
+        from cutlass._mlir.dialects.nvvm import FPArithRoundingMode
+    except ImportError:
+        FPArithRoundingMode = None
+
+    if FPArithRoundingMode is not None:
+        FPArithRoundingMode = _enhance_enum_with_str_mapping(FPArithRoundingMode)
+        return FPArithRoundingMode.from_str(rnd)
+
+    # For nvvm.fma, pass an explicit attribute to avoid relying on missing
+    return ir.Attribute.parse(f"#nvvm.fp_rnd_mode<{rnd}>")
+
+
+def _saturation_mode(sat: Optional[bool]) -> Any:
+    if not sat:
+        return None
+
+    try:
+        from cutlass._mlir.dialects.nvvm import SaturationMode
+    except ImportError:
+        return "sat"
+
+    SaturationMode = _enhance_enum_with_str_mapping(SaturationMode)
+    return SaturationMode.from_str("sat")
+
+
+def _validate_half_fma_dtype(dtype: Type[_NumericT]) -> Type[_NumericT]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return dtype
+
+
+def _validate_half_fma_modifiers(
+    dtype: Type[Numeric],
+    rnd: HalfFmaRounding,
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    relu: Optional[bool],
+    oob: Optional[bool],
+) -> None:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    if sat and relu:
+        raise ValueError("sat and relu cannot be used together for half fma")
+    if dtype is BFloat16:
+        if ftz:
+            raise ValueError("ftz is only supported for f16/f16x2 fma")
+        if sat:
+            raise ValueError("sat is only supported for f16/f16x2 fma")
+    elif dtype is not Float16:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    if oob and (ftz or sat):
+        raise ValueError("oob fma does not support ftz or sat modifiers")
+
+
+def _half_add_ptx_suffix(
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+) -> str:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    suffix = ".rn" if rnd == "rn" else ""
+    if dtype is Float16:
+        suffix += ".ftz" if ftz else ""
+        suffix += ".sat" if sat else ""
+    elif dtype is BFloat16:
+        if ftz:
+            raise ValueError("ftz is only supported for f16/f16x2 add")
+        if sat:
+            raise ValueError("sat is only supported for f16/f16x2 add")
+    else:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return suffix
+
+
+def _half_sub_ptx_suffix(
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+) -> str:
+    if rnd not in (None, "rn"):
+        raise ValueError("rnd must be one of None or 'rn'")
+    suffix = ".rn" if rnd == "rn" else ""
+    if dtype is Float16:
+        suffix += ".ftz" if ftz else ""
+        suffix += ".sat" if sat else ""
+    elif dtype is BFloat16:
+        if ftz:
+            raise ValueError("ftz is only supported for f16/f16x2 sub")
+        if sat:
+            raise ValueError("sat is only supported for f16/f16x2 sub")
+    else:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return suffix
+
+
+def _add_packed_half2_ptx(
+    a: Int32,
+    b: Int32,
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    dtype = _validate_half_add_dtype(dtype)
+    ptx_type = "f16x2" if dtype is Float16 else "bf16x2"
+    suffix = _half_add_ptx_suffix(dtype, rnd, ftz, sat)
+    return inline_ptx(
+        f"add{suffix}.{ptx_type} {{$w0}}, {{$r0}}, {{$r1}};",
+        write_only_types=[Int32],
+        read_only_args=[a, b],
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _exp2_packed_half2_ptx(
+    a: Int32,
+    *,
+    dtype: Type[Numeric],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    if dtype is Float16:
+        ptx = "ex2.approx.f16x2 {$w0}, {$r0};"
+    elif dtype is BFloat16:
+        ptx = "ex2.approx.ftz.bf16x2 {$w0}, {$r0};"
+    else:
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    return inline_ptx(
+        ptx,
+        write_only_types=[Int32],
+        read_only_args=[a],
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _ensure_tuple2(src: Any, name: str) -> Tuple[Any, Any]:
+    if not isinstance(src, tuple) or len(src) != 2:
+        raise TypeError(f"{name} must be a 2-tuple")
+    return src
+
+
+def _packed_half2_to_vector(
+    packed: Int32,
+    dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> ir.Value:
+    vec_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    return llvm.bitcast(
+        vec_type, Int32(packed).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+    )
+
+
+def _vector_to_packed_half2(
+    vec: ir.Value,
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    return Int32(llvm.bitcast(Int32.mlir_type, vec, loc=loc, ip=ip))
+
+
+def _tuple_to_vec(
+    src: Tuple[Numeric, Numeric],
+    dtype: Type[_NumericT],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> ir.Value:
+    vec_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    return vector.from_elements(
+        vec_type,
+        tuple(
+            dtype(as_numeric(elem).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip)
+            for elem in src
+        ),
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _unpack_vec2(
+    vec: ir.Value,
+    dtype: Type[_NumericT],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Tuple[_NumericT, _NumericT]:
+    return (
+        dtype(
+            vector.extract(
+                vec, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+            )
+        ),
+        dtype(
+            vector.extract(
+                vec, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+            )
+        ),
+    )
+
+
+def _sub_packed_half2_ptx(
+    a: Int32,
+    b: Int32,
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Int32:
+    dtype = _validate_half_sub_dtype(dtype)
+    ptx_type = "f16x2" if dtype is Float16 else "bf16x2"
+    suffix = _half_sub_ptx_suffix(dtype, rnd, ftz, sat)
+    return inline_ptx(
+        f"sub{suffix}.{ptx_type} {{$w0}}, {{$r0}}, {{$r1}};",
+        write_only_types=[Int32],
+        read_only_args=[a, b],
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _add_half2_tuple_ptx(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Numeric, Numeric],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Tuple[Numeric, Numeric]:
+    dtype = _validate_half_add_dtype(dtype)
+    vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_b = _tuple_to_vec(src_b, dtype, loc=loc, ip=ip)
+    packed_a = _vector_to_packed_half2(vec_a, loc=loc, ip=ip)
+    packed_b = _vector_to_packed_half2(vec_b, loc=loc, ip=ip)
+    packed_res = _add_packed_half2_ptx(
+        packed_a,
+        packed_b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+    return _unpack_vec2(
+        _packed_half2_to_vector(packed_res, dtype, loc=loc, ip=ip),
+        dtype,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _sub_half2_tuple_ptx(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Numeric, Numeric],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Tuple[Numeric, Numeric]:
+    dtype = _validate_half_sub_dtype(dtype)
+    vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_b = _tuple_to_vec(src_b, dtype, loc=loc, ip=ip)
+    packed_a = _vector_to_packed_half2(vec_a, loc=loc, ip=ip)
+    packed_b = _vector_to_packed_half2(vec_b, loc=loc, ip=ip)
+    packed_res = _sub_packed_half2_ptx(
+        packed_a,
+        packed_b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+    return _unpack_vec2(
+        _packed_half2_to_vector(packed_res, dtype, loc=loc, ip=ip),
+        dtype,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _fma_scalar_half(
+    a: Numeric,
+    b: Numeric,
+    c: Numeric,
+    *,
+    dtype: Type[_NumericT],
+    rnd: HalfFmaRounding,
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    relu: Optional[bool],
+    oob: Optional[bool],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> _NumericT:
+    dtype = _validate_half_fma_dtype(dtype)
+    _validate_half_fma_modifiers(dtype, rnd, ftz, sat, relu, oob)
+    return dtype(
+        nvvm.fma(
+            dtype(as_numeric(a).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip),
+            dtype(as_numeric(b).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip),
+            dtype(as_numeric(c).ir_value(loc=loc, ip=ip)).ir_value(loc=loc, ip=ip),
+            _fp_arith_rounding_mode(rnd),
+            sat=_saturation_mode(sat),
+            ftz=ftz,
+            relu=relu,
+            oob=oob,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+def _fma_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    c: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[_NumericT],
+    rnd: HalfFmaRounding,
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    relu: Optional[bool],
+    oob: Optional[bool],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[_NumericT, _NumericT]]:
+    dtype = _validate_half_fma_dtype(dtype)
+    _validate_half_fma_modifiers(dtype, rnd, ftz, sat, relu, oob)
+    if isinstance(a, tuple) or isinstance(b, tuple) or isinstance(c, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        src_b = _ensure_tuple2(b, "b")
+        src_c = _ensure_tuple2(c, "c")
+        vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+        vec_b = _tuple_to_vec(src_b, dtype, loc=loc, ip=ip)
+        vec_c = _tuple_to_vec(src_c, dtype, loc=loc, ip=ip)
+        vec_res = nvvm.fma(
+            vec_a,
+            vec_b,
+            vec_c,
+            _fp_arith_rounding_mode(rnd),
+            sat=_saturation_mode(sat),
+            ftz=ftz,
+            relu=relu,
+            oob=oob,
+            loc=loc,
+            ip=ip,
+        )
+        return _unpack_vec2(vec_res, dtype, loc=loc, ip=ip)
+
+    vec_res = nvvm.fma(
+        _packed_half2_to_vector(a, dtype, loc=loc, ip=ip),
+        _packed_half2_to_vector(b, dtype, loc=loc, ip=ip),
+        _packed_half2_to_vector(c, dtype, loc=loc, ip=ip),
+        _fp_arith_rounding_mode(rnd),
+        sat=_saturation_mode(sat),
+        ftz=ftz,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+    return _vector_to_packed_half2(vec_res, loc=loc, ip=ip)
+
+
+def _add_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        src_b = _ensure_tuple2(b, "b")
+        return _add_half2_tuple_ptx(
+            src_a,
+            src_b,
+            dtype=dtype,
+            rnd=rnd,
+            ftz=ftz,
+            sat=sat,
+            predicate=predicate,
+            loc=loc,
+            ip=ip,
+        )
+    return _add_packed_half2_ptx(
+        a,
+        b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _exp2_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[_NumericT],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[_NumericT, _NumericT]]:
+    if dtype not in (Float16, BFloat16):
+        raise TypeError("dtype must be cutlass.Float16 or cutlass.BFloat16")
+    if isinstance(a, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        vec_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+        packed_a = _vector_to_packed_half2(vec_a, loc=loc, ip=ip)
+        packed_res = _exp2_packed_half2_ptx(
+            packed_a,
+            dtype=dtype,
+            predicate=predicate,
+            loc=loc,
+            ip=ip,
+        )
+        return _unpack_vec2(
+            _packed_half2_to_vector(packed_res, dtype, loc=loc, ip=ip),
+            dtype,
+            loc=loc,
+            ip=ip,
+        )
+    return _exp2_packed_half2_ptx(
+        a,
+        dtype=dtype,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _sub_packed_half2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    dtype: Type[Numeric],
+    rnd: Optional[Literal["rn"]],
+    ftz: Optional[bool],
+    sat: Optional[bool],
+    predicate: Optional[Boolean],
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        src_a = _ensure_tuple2(a, "a")
+        src_b = _ensure_tuple2(b, "b")
+        return _sub_half2_tuple_ptx(
+            src_a,
+            src_b,
+            dtype=dtype,
+            rnd=rnd,
+            ftz=ftz,
+            sat=sat,
+            predicate=predicate,
+            loc=loc,
+            ip=ip,
+        )
+    return _sub_packed_half2_ptx(
+        a,
+        b,
+        dtype=dtype,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def _add_f32x2_to_half2(
+    src_a: Tuple[Float32, Float32],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[_NumericT],
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[_NumericT, _NumericT]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    dtype = _validate_half_add_dtype(dtype)
+    vec_src_a = _tuple_to_vec(src_a, Float32, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    vec_res = calc_func(vec_res_type, vec_src_a, vec_src_b, loc=loc, ip=ip)
+    return _unpack_vec2(vec_res, dtype, loc=loc, ip=ip)
+
+
+add_packed_f16x2_f32x2_f32x2 = partial(
+    _add_f32x2_to_half2,
+    calc_func=nvvm.add_packed_f16x2_f32x2_f32x2,
+    dtype=Float16,
+)
+add_packed_bf16x2_f32x2_f32x2 = partial(
+    _add_f32x2_to_half2,
+    calc_func=nvvm.add_packed_bf16x2_f32x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _sub_f32x2_to_half2(
+    src_a: Tuple[Float32, Float32],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[_NumericT],
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[_NumericT, _NumericT]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    dtype = _validate_half_sub_dtype(dtype)
+    vec_src_a = _tuple_to_vec(src_a, Float32, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], dtype.mlir_type, loc=loc)
+    vec_res = calc_func(vec_res_type, vec_src_a, vec_src_b, loc=loc, ip=ip)
+    return _unpack_vec2(vec_res, dtype, loc=loc, ip=ip)
+
+
+sub_packed_f16x2_f32x2_f32x2 = partial(
+    _sub_f32x2_to_half2,
+    calc_func=nvvm.sub_packed_f16x2_f32x2_f32x2,
+    dtype=Float16,
+)
+sub_packed_bf16x2_f32x2_f32x2 = partial(
+    _sub_f32x2_to_half2,
+    calc_func=nvvm.sub_packed_bf16x2_f32x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _fma_half2_f32x2_f32x2_to_f32x2(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Float32, Float32],
+    src_c: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[Numeric],
+    rnd: PackedAddRounding = "rn",
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    src_c = _ensure_tuple2(src_c, "src_c")
+    vec_src_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_src_c = _tuple_to_vec(src_c, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    vec_res = calc_func(
+        vec_res_type,
+        vec_src_a,
+        vec_src_b,
+        vec_src_c,
+        rnd=_fp_rounding_mode(rnd),
+        loc=loc,
+        ip=ip,
+    )
+    return _unpack_vec2(vec_res, Float32, loc=loc, ip=ip)
+
+
+fma_packed_f32x2_f16x2_f32x2_f32x2 = partial(
+    _fma_half2_f32x2_f32x2_to_f32x2,
+    calc_func=nvvm.fma_packed_f32x2_f16x2_f32x2_f32x2,
+    dtype=Float16,
+)
+fma_packed_f32x2_bf16x2_f32x2_f32x2 = partial(
+    _fma_half2_f32x2_f32x2_to_f32x2,
+    calc_func=nvvm.fma_packed_f32x2_bf16x2_f32x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _add_half2_f32x2_to_f32x2(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[Numeric],
+    rnd: PackedAddRounding = "rn",
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    vec_src_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    vec_res = calc_func(
+        vec_res_type, vec_src_a, vec_src_b, rnd=_fp_rounding_mode(rnd), loc=loc, ip=ip
+    )
+    return _unpack_vec2(vec_res, Float32, loc=loc, ip=ip)
+
+
+add_packed_f32x2_f16x2_f32x2 = partial(
+    _add_half2_f32x2_to_f32x2,
+    calc_func=nvvm.add_packed_f32x2_f16x2_f32x2,
+    dtype=Float16,
+)
+add_packed_f32x2_bf16x2_f32x2 = partial(
+    _add_half2_f32x2_to_f32x2,
+    calc_func=nvvm.add_packed_f32x2_bf16x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def _sub_half2_f32x2_to_f32x2(
+    src_a: Tuple[Numeric, Numeric],
+    src_b: Tuple[Float32, Float32],
+    calc_func: Callable,
+    *,
+    dtype: Type[Numeric],
+    rnd: PackedSubRounding = "rn",
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tuple[Float32, Float32]:
+    src_a = _ensure_tuple2(src_a, "src_a")
+    src_b = _ensure_tuple2(src_b, "src_b")
+    vec_src_a = _tuple_to_vec(src_a, dtype, loc=loc, ip=ip)
+    vec_src_b = _tuple_to_vec(src_b, Float32, loc=loc, ip=ip)
+    vec_res_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    vec_res = calc_func(
+        vec_res_type, vec_src_a, vec_src_b, rnd=_fp_rounding_mode(rnd), loc=loc, ip=ip
+    )
+    return _unpack_vec2(vec_res, Float32, loc=loc, ip=ip)
+
+
+sub_packed_f32x2_f16x2_f32x2 = partial(
+    _sub_half2_f32x2_to_f32x2,
+    calc_func=nvvm.sub_packed_f32x2_f16x2_f32x2,
+    dtype=Float16,
+)
+sub_packed_f32x2_bf16x2_f32x2 = partial(
+    _sub_half2_f32x2_to_f32x2,
+    calc_func=nvvm.sub_packed_f32x2_bf16x2_f32x2,
+    dtype=BFloat16,
+)
+
+
+@dsl_user_op
+def add_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Add packed f16x2 values with PTX ``add{.rnd}{.ftz}{.sat}.f16x2``."""
+    return _add_packed_half2(
+        a,
+        b,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def add_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Add packed bf16x2 values with PTX ``add{.rnd}.bf16x2``."""
+    return _add_packed_half2(
+        a,
+        b,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=None,
+        sat=None,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def exp2_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Float16, Float16]]:
+    """Approximate base-2 exponential for packed f16x2 values.
+
+    Lowers to PTX ``ex2.approx.f16x2``.
+    """
+    return _exp2_packed_half2(
+        a,
+        dtype=Float16,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def exp2_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[BFloat16, BFloat16]]:
+    """Approximate base-2 exponential for packed bf16x2 values.
+
+    Lowers to PTX ``ex2.approx.ftz.bf16x2``.
+    """
+    return _exp2_packed_half2(
+        a,
+        dtype=BFloat16,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_f16(
+    a: Numeric,
+    b: Numeric,
+    c: Numeric,
+    *,
+    rnd: HalfFmaRounding = "rn",
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Float16:
+    """Fused multiply-add for f16 values via ``nvvm.fma``."""
+    return _fma_scalar_half(
+        a,
+        b,
+        c,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_bf16(
+    a: Numeric,
+    b: Numeric,
+    c: Numeric,
+    *,
+    rnd: HalfFmaRounding = "rn",
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> BFloat16:
+    """Fused multiply-add for bf16 values via ``nvvm.fma``."""
+    return _fma_scalar_half(
+        a,
+        b,
+        c,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=None,
+        sat=None,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    c: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: HalfFmaRounding = "rn",
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Float16, Float16]]:
+    """Fused multiply-add for packed f16x2 values via ``nvvm.fma``."""
+    return _fma_packed_half2(
+        a,
+        b,
+        c,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    c: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: HalfFmaRounding = "rn",
+    relu: Optional[bool] = None,
+    oob: Optional[bool] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[BFloat16, BFloat16]]:
+    """Fused multiply-add for packed bf16x2 values via ``nvvm.fma``."""
+    return _fma_packed_half2(
+        a,
+        b,
+        c,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=None,
+        sat=None,
+        relu=relu,
+        oob=oob,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sub_packed_f16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Subtract packed f16x2 values with PTX `sub{.rn}{.ftz}{.sat}.f16x2`."""
+
+    return _sub_packed_half2(
+        a,
+        b,
+        dtype=Float16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sub_packed_bf16x2(
+    a: Union[Int32, Tuple[Numeric, Numeric]],
+    b: Union[Int32, Tuple[Numeric, Numeric]],
+    *,
+    rnd: Optional[Literal["rn"]] = None,
+    ftz: Optional[bool] = None,
+    sat: Optional[bool] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Int32, Tuple[Numeric, Numeric]]:
+    """Subtract packed bf16x2 values with PTX `sub{.rn}.bf16x2`."""
+
+    return _sub_packed_half2(
+        a,
+        b,
+        dtype=BFloat16,
+        rnd=rnd,
+        ftz=ftz,
+        sat=sat,
+        predicate=predicate,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -1273,28 +2466,34 @@ def fmax(
     a: Union[float, Float32],
     b: Union[float, Float32],
     *,
+    abs: bool = False,
+    nan: bool = False,
+    ftz: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        return Float32(
-            nvvm.fmax(
-                T.f32(),
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
+    """Floating-point max via ``nvvm.fmax`` (FMNMX, not ``arith.max``/SEL).
+
+    :param abs: When True, lower to the xorsign-abs form
+        ``sign(a ^ b) * max(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
+        plain max.
+    :param nan: When True, propagate NaN following IEEE 754 ``maximum``
+        (FMNMX.NaN); default False keeps the NaN-quiet ``maximumNumber``
+        behavior of the underlying NVVM op.
+    :param ftz: When True, flush denormal inputs and outputs to zero
+        (FMNMX.FTZ); default False preserves denormals.
+    """
+    return Float32(
+        nvvm.fmax(
+            Float32(a).ir_value(loc=loc, ip=ip),
+            Float32(b).ir_value(loc=loc, ip=ip),
+            abs=abs,
+            nan=nan,
+            ftz=ftz,
+            loc=loc,
+            ip=ip,
         )
-    else:
-        return Float32(
-            nvvm.fmax(
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
-        )
+    )
 
 
 @dsl_user_op
@@ -1302,28 +2501,34 @@ def fmin(
     a: Union[float, Float32],
     b: Union[float, Float32],
     *,
+    abs: bool = False,
+    nan: bool = False,
+    ftz: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        return Float32(
-            nvvm.fmin(
-                T.f32(),
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
+    """Floating-point min via ``nvvm.fmin`` (FMNMX, not ``arith.min``/SEL).
+
+    :param abs: When True, lower to the xorsign-abs form
+        ``sign(a ^ b) * min(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
+        plain min.
+    :param nan: When True, propagate NaN following IEEE 754 ``minimum``
+        (FMNMX.NaN); default False keeps the NaN-quiet ``minimumNumber``
+        behavior of the underlying NVVM op.
+    :param ftz: When True, flush denormal inputs and outputs to zero
+        (FMNMX.FTZ); default False preserves denormals.
+    """
+    return Float32(
+        nvvm.fmin(
+            Float32(a).ir_value(loc=loc, ip=ip),
+            Float32(b).ir_value(loc=loc, ip=ip),
+            abs=abs,
+            nan=nan,
+            ftz=ftz,
+            loc=loc,
+            ip=ip,
         )
-    else:
-        return Float32(
-            nvvm.fmin(
-                Float32(a).ir_value(loc=loc, ip=ip),
-                Float32(b).ir_value(loc=loc, ip=ip),
-                loc=loc,
-                ip=ip,
-            )
-        )
+    )
 
 
 @dsl_user_op
@@ -1395,6 +2600,10 @@ def cvt_i8x2_to_bf16x2(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
+    if not cutlass_dsl.target_version(min_version="13.1"):
+        raise cutlass_dsl.DSLCudaVerNotImplemented(
+            feature="cvt_i8x2_to_bf16x2", required_version="13.1"
+        )
     # pack 2 int8 into 1 int16 value
     src_i16 = llvm.bitcast(Int16.mlir_type, src_vec2, loc=loc, ip=ip)
     val_i32 = llvm.inline_asm(
@@ -1422,6 +2631,10 @@ def cvt_i8x4_to_bf16x4(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
+    if not cutlass_dsl.target_version(min_version="13.1"):
+        raise cutlass_dsl.DSLCudaVerNotImplemented(
+            feature="cvt_i8x4_to_bf16x4", required_version="13.1"
+        )
     # pack 4 int8 into 1 int32 value
     src_i32 = llvm.bitcast(Int32.mlir_type, src_vec4, loc=loc, ip=ip)
     rst01 = llvm.inline_asm(
@@ -1468,12 +2681,8 @@ def cvt_f32x2_bf16x2(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
-    src0 = vector.extractelement(
-        src_vec2, position=arith.constant(Int32.mlir_type, 0, loc=loc, ip=ip)
-    )
-    src1 = vector.extractelement(
-        src_vec2, position=arith.constant(Int32.mlir_type, 1, loc=loc, ip=ip)
-    )
+    src0 = vector.extract(src_vec2, [], [0])
+    src1 = vector.extract(src_vec2, [], [1])
     rst = llvm.inline_asm(
         T.i32(),
         [
@@ -1508,6 +2717,30 @@ def cvt_f32_bf16(
         "=h,f",
     )
     return bf16_val
+
+
+@dsl_user_op
+def cvt_f32_tf32(
+    src_f32: Union[float, Float32, ir.Value],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert one f32 value to a TF32 MMA operand register."""
+    src_val = (
+        src_f32
+        if isinstance(src_f32, ir.Value)
+        else Float32(src_f32).ir_value(loc=loc, ip=ip)
+    )
+    return llvm.inline_asm(
+        Int32.mlir_type,
+        [src_val],
+        "cvt.rna.tf32.f32 $0, $1;",
+        "=r,f",
+        has_side_effects=False,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
 
 
 # Convert vector of 4 int8 values to vector of 4 float32 values
@@ -1994,6 +3227,101 @@ def cvt_i4x8_to_bf16x8(
     return vec_bf16x8
 
 
+@dsl_user_op
+def cvt_i4x8_to_mxf8x8_impl(
+    src_i32: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert eight packed int4 values to two int32 words of FP8 bytes.
+
+    ``src_i32`` holds eight signed int4 values, one nibble per element. The
+    inline PTX uses ``prmt.b32`` with positive and negative E4M3 lookup tables
+    to produce the raw FP8 byte encodings in two 32-bit words.
+
+    :param src_i32: Packed int4 source value containing eight 4-bit elements.
+    :type src_i32: i32
+    :return: Vector of two i32 values, each containing four packed FP8 bytes.
+    :rtype: vector<2xi32>
+    """
+    sign_mask = arith.constant(Int32.mlir_type, 0x88888888, loc=loc, ip=ip)
+    lut_idx_mask = arith.constant(Int32.mlir_type, 0x77777777, loc=loc, ip=ip)
+    final_prmt_base = arith.constant(Int32.mlir_type, 0x32103210, loc=loc, ip=ip)
+    one = arith.constant(Int32.mlir_type, 1, loc=loc, ip=ip)
+    sixteen = arith.constant(Int32.mlir_type, 16, loc=loc, ip=ip)
+
+    POS_E4M3s_REG1 = arith.constant(Int32.mlir_type, 0x44403800, loc=loc, ip=ip)
+    POS_E4M3s_REG2 = arith.constant(Int32.mlir_type, 0x4E4C4A48, loc=loc, ip=ip)
+    NEG_E4M3s_REG1 = arith.constant(Int32.mlir_type, 0xCACCCED0, loc=loc, ip=ip)
+    NEG_E4M3s_REG2 = arith.constant(Int32.mlir_type, 0xB8C0C4C8, loc=loc, ip=ip)
+
+    sign = arith.andi(src_i32, sign_mask, loc=loc, ip=ip)
+    sign = arith.shrui(sign, one, loc=loc, ip=ip)
+
+    lut_idx = arith.andi(src_i32, lut_idx_mask, loc=loc, ip=ip)
+
+    rsts = []
+    for i in range(2):
+        final_prmt_idx = arith.ori(sign, final_prmt_base, loc=loc, ip=ip)
+        rst = llvm.inline_asm(
+            Int32.mlir_type,
+            [
+                POS_E4M3s_REG1,
+                POS_E4M3s_REG2,
+                NEG_E4M3s_REG1,
+                NEG_E4M3s_REG2,
+                lut_idx,
+                final_prmt_idx,
+            ],
+            """{\n\t
+            .reg .b32 pos_f8s, neg_f8s;\n\t
+            prmt.b32 pos_f8s, $1, $2, $5;\n\t
+            prmt.b32 neg_f8s, $3, $4, $5;\n\t
+            prmt.b32 $0, pos_f8s, neg_f8s, $6;\n\t
+            }""",
+            "=r,n,n,n,n,r,r",
+        )
+        rsts.append(rst)
+
+        sign = arith.shrui(sign, sixteen, loc=loc, ip=ip)
+        lut_idx = arith.shrui(lut_idx, sixteen, loc=loc, ip=ip)
+
+    vec_type = ir.VectorType.get([2], Int32.mlir_type, loc=loc)
+    return vector.from_elements(vec_type, rsts, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def cvt_i4x8_to_mxf8x8(
+    src_vec8: ir.Value,
+    *,
+    dst_type: ir.Type,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert eight int4 values to FP8 operand bytes for MXF8 MMA.
+
+    The output values are generated as raw bytes by
+    :func:`cvt_i4x8_to_mxf8x8_impl`, then bitcast to ``vector<8 x dst_type>``.
+    Callers normally pass ``Int8.mlir_type`` and treat the result as raw bytes;
+    higher-level helpers may bitcast those bytes to an FP8 vector afterward.
+    This keeps the conversion instruction sequence small and avoids building
+    intermediate FP8 constants directly.
+
+    :param src_vec8: Source vector with eight int4 elements.
+    :type src_vec8: vector<8xi4>
+    :param dst_type: MLIR element type for the output bytes, usually ``Int8.mlir_type``.
+    :type dst_type: ir.Type
+    :return: Vector with eight FP8 elements.
+    :rtype: vector<8 x dst_type>
+    """
+    # Pack 8 int4 values into 1 int32 value and fill upper bits with 0.
+    src_i32 = llvm.bitcast(Int32.mlir_type, src_vec8, loc=loc, ip=ip)
+    rst_i32x2 = cvt_i4x8_to_mxf8x8_impl(src_i32, loc=loc, ip=ip)
+    vec_mxf8x8_type = ir.VectorType.get([8], dst_type, loc=loc)
+    return llvm.bitcast(vec_mxf8x8_type, rst_i32x2, loc=loc, ip=ip)
+
+
 # Sign extend 4 int4 unpacked in 8b containers
 @dsl_user_op
 def sext_unpacked_i4x4_to_i8x4(
@@ -2081,7 +3409,7 @@ def griddepcontrol_wait(
         res=None,
         operands_=[],
         asm_string="griddepcontrol.wait;",
-        constraints="",
+        constraints="~{memory}",
         has_side_effects=True,
         asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
@@ -2103,7 +3431,7 @@ def griddepcontrol_launch_dependents(
         res=None,
         operands_=[],
         asm_string="griddepcontrol.launch_dependents;",
-        constraints="",
+        constraints="~{memory}",
         has_side_effects=True,
         asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
@@ -2134,27 +3462,26 @@ def _warp_redux_sync_nvvm(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
-    from cutlass._mlir.dialects.nvvm import ReduxKind
+    from cutlass._mlir.dialects.nvvm import ReductionKind
 
     # Enhance enum and convert string literal to enum type
-    ReduxKind = _enhance_enum_with_str_mapping(ReduxKind)
-    kind = ReduxKind.from_str(kind)
+    ReductionKind = _enhance_enum_with_str_mapping(ReductionKind)
+    kind = ReductionKind.from_str(kind)
 
     value_type = type(value)
-    if value_type.is_integer and not value_type.signed:  # type: ignore[attr-defined]
-        if kind == ReduxKind.MAX:
-            kind = ReduxKind.UMAX
-        elif kind == ReduxKind.MIN:
-            kind = ReduxKind.UMIN
+    if issubclass(value_type, Integer) and not value_type.signed:
+        if kind == ReductionKind.MAX:
+            kind = ReductionKind.UMAX
+        elif kind == ReductionKind.MIN:
+            kind = ReductionKind.UMIN
 
     value_ir = value.ir_value(loc=loc, ip=ip)
 
     return value_type(
         nvvm.redux_sync(
-            res=value_ir.type,
-            val=value_ir,
-            kind=kind,
-            mask_and_clamp=Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
+            value_ir,
+            kind,
+            Int32(mask_and_clamp).ir_value(loc=loc, ip=ip),
             abs=abs,
             nan=nan,
             loc=loc,
@@ -2179,9 +3506,6 @@ def _warp_redux_sync_ptx(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
-    """
-    **ONLY** support f32 as nvvm compatability
-    """
     value_type = type(value)
     value_ir = value.ir_value(loc=loc, ip=ip)
     mlir_type = value_type.mlir_type
@@ -2326,7 +3650,7 @@ def _atomic(
         "exch",
     ],
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, ir.Value]:
@@ -2345,8 +3669,8 @@ def _atomic(
         "max"/"min" auto-promote to "umax"/"umin" for unsigned types (Uint32/Uint64).
     :type op: Literal["add", "fadd", "max", "min", "umax", "umin", "and", "or", "xor", "exch"]
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Union[Numeric, ir.Value]
     """
@@ -2395,38 +3719,22 @@ def _atomic(
         if val_type.is_float:
             if op == AtomicOpKind.ADD:
                 op = AtomicOpKind.FADD
-        elif val_type.is_integer and not val_type.signed:  # type: ignore[attr-defined]
+        elif issubclass(val_type, Integer) and not val_type.signed:
             if op == AtomicOpKind.MAX:
                 op = AtomicOpKind.UMAX
             elif op == AtomicOpKind.MIN:
                 op = AtomicOpKind.UMIN
 
-    # * NVVM call based on nvvm version
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        # Old API: requires explicit result type as first positional argument
-        # For vectors: pass val_type (ir.VectorType), for scalars: pass val_type.mlir_type
-        result_type = val_type if is_vector else val_type.mlir_type
-        result = nvvm.atomicrmw(
-            result_type,
-            op=op,
-            ptr=ptr,
-            a=val_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        # New API: infers result type automatically
-        result = nvvm.atomicrmw(
-            op=op,
-            ptr=ptr,
-            a=val_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
+    result = nvvm.atomicrmw(
+        op=op,
+        ptr=ptr,
+        a=val_ir,
+        mem_order=sem,
+        syncscope=scope,
+        loc=loc,
+        ip=ip,
+    )
+
     # Return raw result for vectors, wrapped for scalars
     return result if is_vector else val_type(result)
 
@@ -2436,7 +3744,7 @@ def atomic_add(
     val: Union[Numeric, ir.Value],
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, ir.Value]:
@@ -2450,8 +3758,8 @@ def atomic_add(
     :type val: Union[Numeric, ir.Value]
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Union[Numeric, ir.Value]
     """
@@ -2463,7 +3771,7 @@ def atomic_and(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2477,8 +3785,8 @@ def atomic_and(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2490,7 +3798,7 @@ def atomic_or(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2504,8 +3812,8 @@ def atomic_or(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2517,7 +3825,7 @@ def atomic_xor(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2531,8 +3839,8 @@ def atomic_xor(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2544,7 +3852,7 @@ def atomic_max(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2558,8 +3866,8 @@ def atomic_max(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2571,7 +3879,7 @@ def atomic_min(
     val: Numeric,
     *,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2612,12 +3920,12 @@ def atomic_exch(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
-    return _atomic(ptr, val, op="exch", sem=sem, scope=scope, loc=loc, ip=ip)  # type: ignore[arg-type]
+    return _atomic(ptr, val, op="exch", sem=sem, scope=scope, loc=loc, ip=ip)
 
 
 @dsl_user_op
@@ -2631,42 +3939,94 @@ def atomic_fmax(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
-    """
-    Implementation of atomic fmax using integer bitcast.
+    """Atomically apply fmax through integer-bitcast atomics.
 
-    Works for +inf, -inf, and signbit-0 nans including canonical nan.
-    Atomically maxes `val` to the value at memory location `ptr` and returns the old value.
+    This wrapper handles ``+inf``, ``-inf``, and sign-bit-zero NaNs,
+    including canonical NaN.
 
-    :param ptr: Pointer to memory location. Supports:
-        - ir.Value (LLVM pointer)
-        - cute.ptr (_Pointer instance)
-    :param val: value to max
+    :param ptr: Pointer to the memory location.
+    :type ptr: Union[ir.Value, Pointer]
+    :param val: Value to combine with memory.
     :type val: Float32
-    :param sign_bit: Indicates the sign bit of `val` if known beforehand, e.g. abs vals
-    :type sign_bit: Optional[bool]
-    :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
-    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
-    :return: Old value at memory location
+    :param sign_bit: Known sign bit of ``val``, defaults to None. WARNING: if
+        provided, it MUST match ``val``'s actual sign — a wrong value silently
+        produces incorrect results (no type error). Leave as None unless the
+        sign is a compile-time constant.
+    :type sign_bit: Optional[bool], optional
+    :param sem: Memory semantic, defaults to None.
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]], optional
+    :param scope: Memory scope, defaults to None.
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]], optional
+    :return: Old value at ``ptr``.
     :rtype: Float32
     """
     intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
     then_body = lambda: atomic_min(
-        ptr,
-        Uint32(intval),
-        sem=sem,
-        scope=scope,  # type: ignore[arg-type]
-        loc=loc,
-        ip=ip,
+        ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
     )
     else_body = lambda: atomic_max(
-        ptr,
-        Int32(intval),
-        sem=sem,
-        scope=scope,  # type: ignore[arg-type]
-        loc=loc,
-        ip=ip,
+        ptr, Int32(intval), sem=sem, scope=scope, loc=loc, ip=ip
+    )
+
+    if sign_bit is None:
+        old_intval = cutlass_dsl.if_generate(
+            Int32(intval) < 0,
+            then_body,
+            else_body,
+            [],
+            [Int32],
+            loc=loc,
+            ip=ip,
+        )
+    elif sign_bit:
+        old_intval = then_body()
+    else:
+        old_intval = else_body()
+
+    assert not isinstance(old_intval, list)
+    return Float32(
+        llvm.bitcast(T.f32(), old_intval.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+    )
+
+
+@dsl_user_op
+def atomic_fmin(
+    ptr: Union[ir.Value, Pointer],
+    val: Float32,
+    *,
+    sign_bit: Optional[bool] = None,
+    sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Float32:
+    """Atomically apply fmin through integer-bitcast atomics.
+
+    This wrapper handles ``+inf``, ``-inf``, and sign-bit-zero NaNs,
+    including canonical NaN.
+
+    :param ptr: Pointer to the memory location.
+    :type ptr: Union[ir.Value, Pointer]
+    :param val: Value to combine with memory.
+    :type val: Float32
+    :param sign_bit: Known sign bit of ``val``, defaults to None. WARNING: if
+        provided, it MUST match ``val``'s actual sign — a wrong value silently
+        produces incorrect results (no type error). Leave as None unless the
+        sign is a compile-time constant.
+    :type sign_bit: Optional[bool], optional
+    :param sem: Memory semantic, defaults to None.
+    :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]], optional
+    :param scope: Memory scope, defaults to None.
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]], optional
+    :return: Old value at ``ptr``.
+    :rtype: Float32
+    """
+    intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
+    then_body = lambda: atomic_max(
+        ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
+    )
+    else_body = lambda: atomic_min(
+        ptr, Int32(intval), sem=sem, scope=scope, loc=loc, ip=ip
     )
 
     if sign_bit is None:
@@ -2712,7 +4072,7 @@ def atomic_cas(
     cmp: Numeric,
     val: Numeric,
     sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]] = None,
-    scope: Optional[Literal["gpu", "cta", "sys"]] = None,
+    scope: Optional[Literal["gpu", "cta", "cluster", "sys"]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Numeric:
@@ -2731,8 +4091,8 @@ def atomic_cas(
     :type val: Numeric
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
     :type sem: Optional[Literal["relaxed", "release", "acquire", "acq_rel"]]
-    :param scope: Memory scope ("gpu", "cta", "sys")
-    :type scope: Optional[Literal["gpu", "cta", "sys"]]
+    :param scope: Memory scope ("gpu", "cta", "cluster", "sys")
+    :type scope: Optional[Literal["gpu", "cta", "cluster", "sys"]]
     :return: Old value at memory location
     :rtype: Numeric
     """
@@ -2757,30 +4117,17 @@ def atomic_cas(
     cmp_ir = cmp.ir_value(loc=loc, ip=ip)
     val_ir = val.ir_value(loc=loc, ip=ip)
 
-    # * NVVM call based on nvvm version
-    if cutlass_dsl.target_version(exact_version="12.9"):
-        result = nvvm.atomicrmw(
-            cmp_type.mlir_type,
-            op=AtomicOpKind.CAS,
-            ptr=ptr,
-            a=val_ir,
-            b=cmp_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        result = nvvm.atomicrmw(
-            op=AtomicOpKind.CAS,
-            ptr=ptr,
-            a=val_ir,
-            b=cmp_ir,
-            mem_order=sem,
-            syncscope=scope,
-            loc=loc,
-            ip=ip,
-        )
+    result = nvvm.atomicrmw(
+        op=AtomicOpKind.CAS,
+        ptr=ptr,
+        a=cmp_ir,
+        b=val_ir,
+        mem_order=sem,
+        syncscope=scope,
+        loc=loc,
+        ip=ip,
+    )
+
     return cmp_type(result)
 
 
@@ -3251,6 +4598,270 @@ def cvt_f4e2m1x8_to_f16x8(
     return vec_f16x8
 
 
+@dsl_user_op
+def cvt_f32x4_to_fnv8e5m3x4(
+    src_vec_f32: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    #  +-----------------------------------------------+
+    #  |   [ 0 ]   |   [ 1 ]   |   [ 2 ]   |   [ 3 ]   |
+    #  |   src0    |   src1    |   src2    |   src3    |
+    #  +-----------+-----------+-----------+-----------+
+    #  |       res0_i8x2       |       res1_i8x2       |
+    #  +-----------+-----------+-----------+-----------+
+    #  |        res0_i16       |       res1_i16        |
+    #  +-----------+-----------+-----------+-----------+
+    #  |                    res_i32                    |
+    #  +-----------+-----------+-----------+-----------+
+
+    src0 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    )
+    src1 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+    )
+    src2 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[2], loc=loc, ip=ip
+    )
+    src3 = vector.extract(
+        src_vec_f32, dynamic_position=[], static_position=[3], loc=loc, ip=ip
+    )
+
+    # fnv8e5m3fnu is only used for scale factors, and so, similar to f8e8m0fnu
+    # scale factors, we choose rounding to positive infinity (RP)
+    res0_i8x2 = nvvm.convert_f32x2_to_f8x2(
+        ir.VectorType.get([2], Int8.mlir_type),  # result type: vector<2xi8>
+        Float32(src1).ir_value(loc=loc, ip=ip),  # a
+        Float32(src0).ir_value(loc=loc, ip=ip),  # b
+        ir.TypeAttr.get(FloatNV8E5M3FNU.mlir_type),  # dst_ty
+        rnd=nvvm.FPRoundingMode.RP,
+        loc=loc,
+        ip=ip,
+    )
+
+    res0_i16 = llvm.bitcast(Int16.mlir_type, res0_i8x2, loc=loc, ip=ip)
+
+    res1_i8x2 = nvvm.convert_f32x2_to_f8x2(
+        ir.VectorType.get([2], Int8.mlir_type),  # result type: vector<2xi8>
+        Float32(src3).ir_value(loc=loc, ip=ip),  # a
+        Float32(src2).ir_value(loc=loc, ip=ip),  # b
+        ir.TypeAttr.get(FloatNV8E5M3FNU.mlir_type),  # dst_ty
+        rnd=nvvm.FPRoundingMode.RP,
+        loc=loc,
+        ip=ip,
+    )
+
+    res1_i16 = llvm.bitcast(Int16.mlir_type, res1_i8x2, loc=loc, ip=ip)
+
+    # Create a new i32 value representation for the converted results:
+    # the lower 16 bits are created as extending res0_i16 to i32
+    # the higher 16 bits are created by shifting res1_i16 to left by 16 bits
+    res_i32 = llvm.or_(
+        llvm.zext(T.i32(), res0_i16, loc=loc, ip=ip),
+        llvm.shl(
+            llvm.zext(T.i32(), res1_i16, loc=loc, ip=ip),
+            Int32(16).ir_value(loc=loc, ip=ip),
+            llvm.IntegerOverflowFlags.none,
+            loc=loc,
+            ip=ip,
+        ),
+        loc=loc,
+        ip=ip,
+    )
+
+    res_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
+    res_i8x4 = llvm.bitcast(res_i8x4_type, res_i32, loc=loc, ip=ip)
+    res_fnv8e5m3fnux4_type = ir.VectorType.get([4], FloatNV8E5M3FNU.mlir_type, loc=loc)
+    res_fnv8e5m3fnux4 = builtin.unrealized_conversion_cast(
+        [res_fnv8e5m3fnux4_type], [res_i8x4], loc=loc, ip=ip
+    )
+    return res_fnv8e5m3fnux4
+
+
+# Type alias for inline_ptx argument types
+ScalarArg = Union[int, float, bool, Numeric]
+
+
+@dsl_user_op
+def inline_ptx(
+    ptx_code: str,
+    *,
+    write_only_types: Optional[list[Type[Numeric]]] = None,
+    read_only_args: Optional[list[ScalarArg]] = None,
+    read_write_args: Optional[list[ScalarArg]] = None,
+    predicate: Optional[Boolean] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[Numeric, tuple[Numeric, ...], None]:
+    """
+    Inline PTX assembly code into the current kernel.
+
+    This function handles register size selection and sets the correct
+    read/write access for each operand automatically.
+
+    :param ptx_code: PTX assembly code string. Use named operand references (see below).
+    :type ptx_code: str
+    :param write_only_types: List of Numeric types for output-only values (corresponds to {$w0}, {$w1}, ... in PTX).
+    :type write_only_types: list[Type[Numeric]], optional
+    :param read_only_args: List of input values, each int, float, bool, or Numeric.
+                          Python primitives are automatically converted to Numeric types.
+                          These correspond to {$r0}, {$r1}, ... in PTX.
+    :type read_only_args: list[ScalarArg], optional
+    :param read_write_args: List of values that are both read and written (correspond to {$rw0}, {$rw1}, ... in PTX).
+    :type read_write_args: list[ScalarArg], optional
+    :param predicate: Optional Boolean value for conditional execution (corresponds to @$p prefix).
+    :type predicate: Boolean, optional
+    :param loc: MLIR location (advanced use, typically None).
+    :type loc: Any, optional
+    :param ip: MLIR insertion point (advanced use, typically None).
+    :type ip: Any, optional
+
+    :return: None if no outputs; single Numeric if one output; or tuple of Numerics if multiple outputs are declared.
+    :rtype: None or Numeric or tuple[Numeric, ...]
+
+    **Operand Naming Convention:**
+
+    Use curly braces with prefixes inside the PTX to denote operand roles:
+
+        - {$r0}, {$r1}, ...    : Read-only operands (index 0, 1, ...)
+        - {$w0}, {$w1}, ...    : Write-only operands (index 0, 1, ...)
+        - {$rw0}, {$rw1}, ...  : Read-write operands (index 0, 1, ...)
+
+    **Examples**:
+
+    Read-only inputs (mbarrier init):
+
+    .. code-block:: python
+
+        barrier_ptr = ...  # pointer to mbarrier
+        count = Int32(1)
+        inline_ptx(
+            "mbarrier.init.b64 [{$r0}], {$r1};",
+            read_only_args=[barrier_ptr, count],
+        )
+
+    Write-only output (exponential approximation):
+
+    .. code-block:: python
+
+        input_val = Float32(2.0)
+        result = inline_ptx(
+            "ex2.approx.ftz.f32 {$w0}, {$r0};",
+            write_only_types=[Float32],
+            read_only_args=[input_val],
+        )
+
+    Max of two Int32 values:
+
+    .. code-block:: python
+
+        a = Int32(10)
+        b = Int32(20)
+        max_val = inline_ptx(
+            "max.s32 {$w0}, {$r0}, {$r1};",
+            write_only_types=[Int32],
+            read_only_args=[a, b],
+        )
+
+    Read-write operands:
+
+    .. code-block:: python
+
+        tidx = thread_idx()[0]
+        offset = tidx * Int32(4)
+        w0, w1 = inline_ptx(
+            ptx,
+            write_only_types=[Float32, Float32],
+            read_only_args=[tidx, offset],
+            read_write_args=[arr[0], arr[1]],
+        )
+
+    .. note::
+        Refer to the `PTX ISA documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/>`_
+        for instruction syntax.
+    """
+    # Initialize empty lists if None
+    if write_only_types is None:
+        write_only_types = []
+    if read_only_args is None:
+        read_only_args = []
+    if read_write_args is None:
+        read_write_args = []
+
+    # Convert inputs to Numeric types or pass through address/raw IR values.
+    def convert_arg(arg: object) -> Union[ir.Value, Numeric]:
+        """Convert scalar args to Numeric and address args to LLVM IR values."""
+        if isinstance(arg, Array):
+            arg = arg.data_ptr(loc=loc, ip=ip)
+        if isinstance(arg, ir.Value):
+            return arg
+        to_llvm_ptr = getattr(arg, "to_llvm_ptr", None)
+        if callable(to_llvm_ptr):
+            return to_llvm_ptr(loc=loc, ip=ip)
+        llvm_ptr = getattr(arg, "llvm_ptr", None)
+        if isinstance(llvm_ptr, ir.Value):
+            return llvm_ptr
+        return as_numeric(arg)
+
+    def convert_read_only_arg(arg: object) -> Union[ir.Value, Numeric]:
+        """Keep Float32 inputs in registers when lowering inline PTX.
+
+        The 4.8 NVVM lowering can assign the integer-immediate constraint
+        ``n`` when a Float32 operand folds to a constant.  An explicit register
+        move prevents that invalid constraint while preserving the operand's
+        value and bit pattern.
+        """
+        converted = convert_arg(arg)
+        if isinstance(converted, Float32):
+            value = converted.ir_value(loc=loc, ip=ip)
+        elif isinstance(converted, ir.Value) and converted.type == Float32.mlir_type:
+            value = converted
+        else:
+            return converted
+        return llvm.inline_asm(
+            Float32.mlir_type,
+            [value],
+            "mov.f32 $0, $1;",
+            "=f,f",
+            loc=loc,
+            ip=ip,
+        )
+
+    read_only_ir = [convert_read_only_arg(arg) for arg in read_only_args]
+    read_write_ir = [convert_arg(arg) for arg in read_write_args]
+
+    # Build write_only result types
+    write_only_mlir_types = [dtype.mlir_type for dtype in write_only_types]
+
+    # Get predicate IR value if provided
+    # The nvvm proxy will convert Numeric objects to ir.Value automatically
+    predicate_ir = None
+    if predicate is not None:
+        predicate_ir = as_numeric(predicate)
+        if not isinstance(predicate_ir, Boolean):
+            raise ValueError("Predicate must be a Boolean")
+
+    # Call nvvm.inline_ptx
+    results = nvvm.inline_ptx(
+        write_only_mlir_types,
+        read_only_ir,
+        read_write_ir,
+        ptx_code,
+        predicate=predicate_ir,
+        loc=loc,
+        ip=ip,
+    )
+
+    # Handle return value based on number of outputs
+    if len(write_only_types) == 0:
+        return None
+    elif len(write_only_types) == 1:
+        return write_only_types[0](results)
+    else:
+        # Multiple results - wrap each in its DSL type
+        return tuple(dtype(result) for dtype, result in zip(write_only_types, results))
 
 @dsl_user_op
 def smid(
@@ -3369,7 +4980,6 @@ def match_sync(
 
     if kind_enum == nvvm.MatchSyncKind.all:
         result = nvvm.match_sync(
-            llvm.StructType.get_literal([T.i32(), Boolean.mlir_type]),
             mask_ir,
             value_ir,
             kind_enum,
@@ -3379,7 +4989,6 @@ def match_sync(
         return Uint32(llvm.extractvalue(T.i32(), result, [0], loc=loc, ip=ip))
     else:
         result = nvvm.match_sync(
-            T.i32(),
             mask_ir,
             value_ir,
             kind_enum,
@@ -5101,46 +6710,14 @@ def prefetch(
         PrefetchCacheLevel = _enhance_enum_with_str_mapping(nvvm.PrefetchCacheLevel)
         cache_level = PrefetchCacheLevel.from_str(cache_level)
 
-    if cutlass_dsl.target_version(min_version="13.2"):
-        nvvm.prefetch(
-            addr,
-            cache_level=cache_level,
-            evict_priority=evict_priority,
-            predicate=predicate,
-            tensormap=tensormap,
-            uniform=uniform,
-            in_param_space=in_param_space,
-            loc=loc,
-            ip=ip,
-        )
-    else:
-        # Fallback: inline PTX for builds without nvvm.prefetch op
-        if tensormap:
-            ptr_as_i64 = llvm.ptrtoint(T.i64(), addr, loc=loc, ip=ip)
-            llvm.inline_asm(
-                None,
-                [ptr_as_i64],
-                "prefetch.tensormap [$0];",
-                "l",
-                has_side_effects=True,
-                is_align_stack=False,
-                asm_dialect=llvm.AsmDialect.AD_ATT,
-                loc=loc,
-                ip=ip,
-            )
-        else:
-            level = "L1"
-            if cache_level is not None:
-                level = str(cache_level)
-            ptr_as_i64 = llvm.ptrtoint(T.i64(), addr, loc=loc, ip=ip)
-            llvm.inline_asm(
-                None,
-                [ptr_as_i64],
-                f"prefetch.global.{level} [$0];",
-                "l",
-                has_side_effects=True,
-                is_align_stack=False,
-                asm_dialect=llvm.AsmDialect.AD_ATT,
-                loc=loc,
-                ip=ip,
-            )
+    nvvm.prefetch(
+        addr,
+        cache_level=cache_level,
+        evict_priority=evict_priority,
+        predicate=predicate,
+        tensormap=tensormap,
+        uniform=uniform,
+        in_param_space=in_param_space,
+        loc=loc,
+        ip=ip,
+    )

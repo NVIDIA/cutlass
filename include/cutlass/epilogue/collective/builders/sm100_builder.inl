@@ -1209,6 +1209,27 @@ private:
   using CtaTileShape_MNK = decltype(cta_tile_shape());
   using TmemWarpShape_MN = decltype(detail::sm100_tmem_warps<Is2SmMma, MmaTileShape_MNK>());
 
+  // SM100 2SM TMA epilogue with 16-bit elements and EpilogueTileAuto requires CtaN divisible
+  // by 64 when CtaN > 128. When MaxBits==16 and CtaN>128, N_perf=64 is selected, but if
+  // CtaN%64!=0 the epilogue tile falls back to CtaN, producing non-64-aligned strides in
+  // the SMEM swizzle layout that break upcast<64>.
+  static constexpr int EpiSmemMaxBits_ =
+      (sizeof_bits_v<InternalSmemElementC> >= sizeof_bits_v<InternalSmemElementD>)
+          ? sizeof_bits_v<InternalSmemElementC>
+          : sizeof_bits_v<InternalSmemElementD>;
+  static_assert(
+      !Is2SmMma ||
+      !cute::is_same_v<EpilogueTileType, EpilogueTileAuto> ||
+      FusionOp::IsPerColScaleSupported ||
+      EpiSmemMaxBits_ != 16 ||
+      size<1>(CtaTileShape_MNK{}) <= 128 ||
+      size<1>(CtaTileShape_MNK{}) % 64 == 0,
+      "SM100 2SM TMA epilogue: 16-bit element types (f16/bf16) with CtaN > 128 require "
+      "CtaN to be divisible by 64. CtaN=160 and CtaN=224 are unsupported. "
+      "Use a CtaN that is a multiple of 64 (e.g. 128, 192, 256) "
+      "or use a 32-bit output type (f32)."
+  );
+
   // Attempts to compute a reasonably performant epilogue tile or allows the user to provide one.
   static constexpr auto
   epilogue_tile() {
@@ -1459,14 +1480,15 @@ private:
   static constexpr bool Is1SmMma = is_base_of_v<NoSmemWarpSpecialized1Sm, EpilogueScheduleType>;
   static constexpr bool Is2SmMma = is_base_of_v<NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
   static constexpr bool IsInterleavedComplex = is_complex<ElementAccumulator>::value;
-  static constexpr bool IsFastF32Schedule = is_same_v<FastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
-                                    is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
-  static constexpr bool IsBlockwiseSchedule = is_same_v<BlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType> || 
-                                    is_same_v<BlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType> ||
-                                    is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
+  static constexpr bool IsFastF32Schedule = is_same_v<FastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                         || is_same_v<FastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>
+                                         || is_same_v<PtrArrayFastF32NoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                         || is_same_v<PtrArrayFastF32NoSmemWarpSpecialized2Sm, EpilogueScheduleType>
+                                         ;
+  static constexpr bool IsBlockwiseSchedule = is_same_v<BlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                           || is_same_v<BlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>
+                                           || is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized1Sm, EpilogueScheduleType>
+                                           || is_same_v<PtrArrayBlockwiseNoSmemWarpSpecialized2Sm, EpilogueScheduleType>;
   // Transform kernels - when dispatching to sm100 nosmem epilogue, go through the default path without EVT support.
   static constexpr bool IsTransformSchedule = IsInterleavedComplex || IsFastF32Schedule || IsBlockwiseSchedule;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");

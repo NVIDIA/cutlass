@@ -21,4 +21,23 @@ from .host_runtime import *
 from .math import *
 from .memory import *
 from .pipeline import *
+from .accumulator_buffering import *
+from .cluster_mailbox import *
 from .utils import *
+
+from . import cluster_mailbox as cluster_mailbox
+
+try:
+    from . import iket
+except ImportError:
+
+    class _IketUnavailable:
+        """Stub so that ``cute.experimental.iket.<anything>`` gives a clear error."""
+
+        def __getattr__(self, name: str) -> None:
+            raise ImportError(
+                "IKET (In-Kernel Event Tracing) is not available in this "
+                "installation. Reinstall nvidia-cutlass-dsl to restore it."
+            )
+
+    iket = _IketUnavailable()  # type: ignore[assignment]

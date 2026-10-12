@@ -28,8 +28,17 @@ import builtins
 
 from .utils.logger import log
 from .common import *
+from .common import DSLUserCodeError as DSLUserCodeError  # star-import re-export
+from .diagnostics import DiagId
 
-from ._mlir_helpers.arith import ArithValue
+# Generated code names pyir_runtime symbols through the module alias the
+# rewriter binds in the function preamble; this import is for ast_helpers'
+# OWN use (if_selector witnesses trace-time predicate folds), not a re-export.
+from .pyir_runtime import _pyir_witness_predicate_fold
+from .multi_stage_manager import (  # noqa: F401 (re-exported via wildcard)
+    enter_constexpr_loop,
+    exit_constexpr_loop,
+)
 
 
 class Executor:
@@ -226,7 +235,7 @@ def loop_selector(
         vectorize,
         at_least_once,
     )
-    from .typing import Integer, Numeric
+    from .typing import Integer
 
     def _maybe_upcast(value: Any) -> Any:
         if isinstance(value, Integer):
@@ -259,7 +268,9 @@ def loop_selector(
 
 def if_selector(pred: Any, write_args: list[Any] = []) -> Callable[..., Any]:
     log().debug("pred [%s] write_args [%s]", pred, write_args)
-    # Handle Numeric types here?
+    # Witness a trace-time fold of a watched META predicate so a later staged
+    # write of its source places refuses loudly. No-op for other predicates.
+    _pyir_witness_predicate_fold(pred)
 
     from .typing import Numeric
 
@@ -389,7 +400,7 @@ def range_dynamic(*args: Any, **kwargs: Any) -> None:
     raise DSLRuntimeError("range_dynamic should be always preprocessed to IR")
 
 
-def range_constexpr(*args: Any) -> None:
+def range_constexpr(*args: Any) -> range:
     raise DSLRuntimeError("range_constexpr should be preprocessed by preprocessor.")
 
 
@@ -417,11 +428,9 @@ def const_expr(expression: Any) -> Any:
         failed = True
 
     if failed:
-        raise DSLRuntimeError(
-            f"The function `const_expr({expression})` received a dynamic expression (non compile-time constant).",
-            context={
-                "If your expression depends on dynamic values": "Remove `const_expr()`",
-            },
+        raise DSLUserCodeError(
+            DiagId.PHASE_REQUIRES_CONSTANT,
+            what="`const_expr()`",
         )
     return expression
 
@@ -456,17 +465,31 @@ def assert_executor(test: Any, msg: str | None = None) -> None:
     if not fail:
         assert test, msg
     else:
-        raise DSLRuntimeError(
-            "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion="Please replace with runtime assert.",
+        raise DSLUserCodeError(
+            DiagId.PHASE_REQUIRES_CONSTANT,
+            what="`assert`",
         )
+
+
+def bool_short_circuits(value: Any, short_circuit_value: bool) -> bool:
+    """True when the and/or LHS *value* short-circuits in Python: it is a
+    Python-truth bool -- a plain ``bool``, or a wrapper DECLARING a bool
+    payload through ``_pyir_raw_payload`` -- whose truth equals
+    *short_circuit_value*.  A staged or non-bool value answers False, so the
+    rewrite's other arm evaluates (the ``and_``/``or_`` helper)."""
+    if type(value) is bool:
+        return value == short_circuit_value
+    payload = getattr(value, "_pyir_raw_payload", None)
+    if type(payload) is bool:
+        return payload == short_circuit_value
+    return False
 
 
 def bool_cast(value: Any) -> bool:
     if executor._is_dynamic_expression(value):  # type: ignore[misc]
-        raise DSLRuntimeError(
-            "Only constexpr (Python Value) is allowed here, but got non-constexpr (IR Values) expression.",
-            suggestion="Please explicitly convert to boolean with expressions like comparison.",
+        raise DSLUserCodeError(
+            DiagId.PHASE_REQUIRES_CONSTANT,
+            what="Explicit boolean conversion",
         )
     return bool(value)
 
@@ -489,7 +512,31 @@ def compare_executor(left: Any, comparators: list[Any], ops: list[Any]) -> Any:
     assert executor._compare_executor is not None, (
         "Function must be set before execution."
     )
-    return executor._compare_executor(left, comparators, ops)
+    if "is" in ops or "is not" in ops:
+        # Identity legs over tracker-minted wrappers refuse-or-witness
+        # (LangRef 3.12 section 6.10.3); inert outside a PyIR trace scope.
+        from .pyir_core import _pyir_identity_compare_choke
+
+        _pyir_identity_compare_choke(left, comparators, ops)
+    result = executor._compare_executor(left, comparators, ops)
+    # Gate-once evidence (see pyir_state): record only the provable membership-gate
+    # shape (one ``not in`` over a plain set); clear on every other comparison.
+    try:
+        from .pyir_runtime import _PYIR_LAST_NOTIN_COMPARE
+
+        if (
+            len(ops) == 1
+            and ops[0] == "not in"
+            and type(result) is bool
+            and type(left) in (str, int, bool)
+            and type(comparators[0]) is set
+        ):
+            _PYIR_LAST_NOTIN_COMPARE[0] = (comparators[0], left, result)
+        else:
+            _PYIR_LAST_NOTIN_COMPARE[0] = None
+    except Exception:
+        pass
+    return result
 
 
 # =============================================================================
@@ -539,9 +586,8 @@ def range_value_check(*args: Any) -> tuple[int, int, int]:
 
         return (start, end, step)
     except:
-        raise DSLRuntimeError(
-            "`range_constexpr` requires constexpr (compile-time constant) for all arguments.",
-            suggestion="Use `range` instead of `range_constexpr`.",
+        raise DSLUserCodeError(
+            DiagId.ARG_NON_CONSTANT,
         )
 
 
@@ -573,9 +619,9 @@ def cf_symbol_check(symbol: Any) -> None:
             failed = True
 
     if failed:
-        raise DSLRuntimeError(
-            f"Incorrect `{name}` is used.",
-            suggestion=f"Please avoid overriding `{name}` from DSL package.",
+        raise DSLUserCodeError(
+            DiagId.CALL_WRONG_IMPORT,
+            name=name,
         )
 
 
@@ -590,8 +636,9 @@ def redirect_builtin_function(fcn: Any) -> Any:
 
     if isinstance(fcn, BuiltinFunctionType):
         if fcn in [builtins.exec, builtins.eval]:
-            raise DSLRuntimeError(
-                f"Built-in function `{fcn.__name__}` is not supported in DSL.",
+            raise DSLUserCodeError(
+                DiagId.UNSUP_BUILTIN,
+                name=fcn.__name__,
             )
         if executor._builtin_redirector:
             return executor._builtin_redirector(fcn)
@@ -640,8 +687,9 @@ def closure_check(
     closures: list[Any], _visited: set[tuple[str, int]] | None = None
 ) -> None:
     """
-    Check if the closures have any unsupported capture
+    Check if the closures have any unsupported capture.
     """
+
     if _visited is None:
         _visited = set()
 
@@ -660,9 +708,10 @@ def closure_check(
             if inspect.isfunction(value) or inspect.ismethod(value):
                 closure_check([value], _visited)
                 continue
-            raise DSLRuntimeError(
-                f"Function `{closure.__name__}` is a closure that captures variable `{name}` and is not supported in dynamic control flow",
-                suggestion="Please explicitly pass in captured variables as arguments",
+            raise DSLUserCodeError(
+                DiagId.SCOPE_CLOSURE_CAPTURE,
+                func_name=closure.__name__,
+                var_name=name,
             )
 
 
@@ -710,13 +759,13 @@ class FormattedValue:
                     stacklevel=3,
                 )
             if self.format_spec is not None and len(self.format_spec) > 1:
-                raise DSLRuntimeError(
-                    "At most one format specifier is supported for dynamic expressions",
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_FSTRING_FORMAT,
                 )
             if self.format_spec is not None:
                 if self.format_spec[0].startswith(("<", ">", "^")):
-                    raise DSLRuntimeError(
-                        "Alignment specifier is not supported for dynamic expressions",
+                    raise DSLUserCodeError(
+                        DiagId.UNSUP_FSTRING_ALIGN,
                     )
                 return f"%{self.format_spec[0]}", self.value
             return "{}", self.value
@@ -754,7 +803,7 @@ def fstring_decompose(
                          followed by all dynamic argument values.
 
     Raises:
-        DSLAstPreprocessorError: If an unsupported component type is encountered.
+        DSLUserCodeError: If an unsupported component type is encountered.
     """
     format_string = ""
     dynamic_args = []
@@ -768,7 +817,5 @@ def fstring_decompose(
         elif isinstance(component, str):
             format_string += component
         else:
-            raise DSLAstPreprocessorError(
-                f"Unsupported component type in f-string: {type(component)}",
-            )
+            raise DSLUserCodeError(DiagId.UNSUP_FSTRING)
     return (format_string, *dynamic_args)

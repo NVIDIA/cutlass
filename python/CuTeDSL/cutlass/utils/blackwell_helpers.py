@@ -9,9 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import os
 from typing import Any, List, Optional, Type, Union, Tuple, overload
 from typing_extensions import deprecated
 
+import cutlass
 from cutlass.cutlass_dsl import (
     Float16,
     BFloat16,
@@ -19,18 +21,22 @@ from cutlass.cutlass_dsl import (
     Float32,
     Uint8,
     Int8,
+    Int32,
+    Boolean,
     Float8E4M3FN,
     Float8E5M2,
     Float6E3M2FN,
     Float6E2M3FN,
     Float4E2M1FN,
+    Integer,
     Numeric,
     NumericMeta,
     dsl_user_op,
 )
-
-from cutlass._mlir import ir
 import cutlass.cute as cute
+from cutlass._mlir import ir
+from cutlass._mlir.dialects import arith, vector as _vector_dialect
+import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass.cute.nvgpu.common import CopyUniversalOp, OperandMajorMode
 from cutlass.cute.nvgpu.warp import StMatrix8x8x16bOp, StMatrix16x8x8bOp
 from cutlass.cute.nvgpu.tcgen05 import (
@@ -54,21 +60,47 @@ from cutlass.cute.nvgpu.tcgen05 import (
     Pack,
     SmemLayoutAtomKind,
     make_smem_layout_atom,
+    make_sparse_smem_layout_atom,
     tile_to_mma_shape,
     is_tmem_load,
     get_tmem_copy_properties,
 )
+from cutlass.cute.nvgpu.warp.mma import SparseMetadataFormat
 from cutlass.cute.nvgpu.cpasync import (
     CopyBulkTensorTileG2SMulticastOp,
     CopyBulkTensorTileG2SOp,
 )
-from cutlass.utils.layout import LayoutEnum
-import cutlass.cute.testing as testing
+from cutlass.tensor_utils import LayoutEnum
+from cutlass import testing
 
 # Type alias for documentation clarity
 OperandSource = Tcgen05OperandSource
 
 TMA_ALIGNMENT_BYTES = 16
+
+
+def check_int8_mma_arch(
+    ab_dtype: Type[Numeric], target_arch: str | None = None
+) -> None:
+    """Reject tcgen05 integer MMA configurations on SM107 targets.
+
+    SM107 does not implement the ``tcgen05.mma.kind::i8`` instruction used by
+    the Blackwell dense GEMM examples for Int8 and Uint8 operands.  Keep this
+    check in the example preflight path so direct users fail before PTXAS.
+    """
+    if ab_dtype not in {Int8, Uint8}:
+        return
+
+    if target_arch is None:
+        from cutlass.base_dsl.env_manager import detect_gpu_arch
+
+        target_arch = os.environ.get("CUTE_DSL_ARCH") or detect_gpu_arch("cute")
+
+    normalized_arch = target_arch.strip().lower().removeprefix("sm_")
+    if normalized_arch.startswith("107"):
+        raise testing.CantImplementError(
+            f"Int8/Uint8 tcgen05 MMA is not supported on {target_arch}"
+        )
 
 
 def get_tma_aligned_contiguous_elements(elem_ty: Type[Numeric]) -> int:
@@ -150,7 +182,7 @@ def check_gemm_tma_alignment(
 
 
 @dsl_user_op
-@deprecated("API is deprecated, use cutlass.utils.get_num_tmem_alloc_cols instead")
+@deprecated("API is deprecated, use cutlass.memory.get_num_tmem_alloc_cols instead")
 def get_num_tmem_alloc_cols(
     tmem_tensors: Union[cute.Tensor, List[cute.Tensor]],
     rounding: bool = True,
@@ -158,9 +190,7 @@ def get_num_tmem_alloc_cols(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> int:
-    import cutlass.utils as utils
-
-    return utils.get_num_tmem_alloc_cols(
+    return cutlass.memory.get_num_tmem_alloc_cols(
         tmem_tensors, rounding, arch="sm_100", loc=loc, ip=ip
     )
 
@@ -174,6 +204,7 @@ def compute_epilogue_tile_shape(
     *,
     layout_c: Optional[LayoutEnum] = None,
     elem_ty_c: Union[Type[Numeric], None] = None,
+    tmem_warp_shape_mn: Optional[Tuple[int, int]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.Tile:
@@ -193,11 +224,16 @@ def compute_epilogue_tile_shape(
     :type layout_c: LayoutEnum, optional
     :param elem_ty_c: The element type for input tensor C. Defaults to None.
     :type elem_ty_c: Union[Type[Numeric], None], optional
+    :param tmem_warp_shape_mn: Optional (warp_m, warp_n) override for the tmem
+        subpartition layout. When omitted, the layout is derived from
+        ``cta_tile_shape`` and ``use_2cta_instrs``.
+    :type tmem_warp_shape_mn: Tuple[int, int], optional
 
     :return: Returns epilog tiler, which is used in subsequent epilog partitions.
     :rtype: cute.Tile
 
     :raises ValueError: If the computed tile cute.size does not meet minimum requirements based on CTA dimensions.
+
     """
 
     def validate_type(ty: Type[Numeric], ty_name: str) -> None:
@@ -208,7 +244,10 @@ def compute_epilogue_tile_shape(
     if elem_ty_c is not None:
         validate_type(elem_ty_c, "elem_ty_c")
 
-    cta_m, cta_n = cta_tile_shape[:2]  # type: ignore[index]
+    assert isinstance(cta_tile_shape, tuple)
+    cta_m, cta_n = cta_tile_shape[:2]
+    assert isinstance(cta_m, (int, Integer))
+    assert isinstance(cta_n, (int, Integer))
     d_is_m_major = layout_d.is_m_major_c()
     c_is_m_major = True if layout_c is None else layout_c.is_m_major_c()
 
@@ -221,10 +260,14 @@ def compute_epilogue_tile_shape(
         elem_ty_c.width if elem_ty_c is not None else None,
         d_is_m_major,
         c_is_m_major,
+        tmem_warp_shape_mn=tmem_warp_shape_mn,
     )
 
-    # Compute warp layout parameters (needed for CuTe layout creation)
-    (warp_m, warp_n) = (2, 2) if (cta_m == 64 and use_2cta_instrs) else (4, 1)
+    # Compute warp layout parameters (needed for CuTe layout creation).
+    if tmem_warp_shape_mn is not None:
+        (warp_m, warp_n) = tmem_warp_shape_mn
+    else:
+        (warp_m, warp_n) = (2, 2) if (cta_m == 64 and use_2cta_instrs) else (4, 1)
 
     # Validate minimum tile requirements
     disable_source = elem_ty_c is None
@@ -233,19 +276,21 @@ def compute_epilogue_tile_shape(
         if d_is_m_major
         else (128 * warp_n if elem_ty_d.width == 6 else 128 // elem_ty_d.width * warp_n)
     )
-    n_min_c = (
-        8 * warp_n
-        if (c_is_m_major or disable_source)
-        else (128 * warp_n if elem_ty_c.width == 6 else 128 // elem_ty_c.width * warp_n)  # type: ignore[union-attr]
-    )
-    if cta_n < n_min_c or cta_n < n_min_d:  # type: ignore[operator]
+    if c_is_m_major or disable_source:
+        n_min_c = 8 * warp_n
+    else:
+        assert elem_ty_c is not None
+        n_min_c = (
+            128 * warp_n if elem_ty_c.width == 6 else 128 // elem_ty_c.width * warp_n
+        )
+    if cta_n < n_min_c or cta_n < n_min_d:
         raise ValueError(f"CTA tile too small: {cta_tile_shape=}")
 
     # stride by tmem warp layout and return a by-mode tiler
     tile_m_layout = cute.make_layout(tile_m, loc=loc, ip=ip)
     tile_n_layout = cute.make_layout(
         (tile_n // warp_n, warp_n),
-        stride=(1, cta_n // warp_n),  # type: ignore[operator]
+        stride=(1, cta_n // warp_n),
         loc=loc,
         ip=ip,
     )
@@ -423,6 +468,7 @@ def get_tmem_load_op(
     epi_tile: cute.Tile,
     use_2cta_instrs: bool,
     *,
+    tmem_warp_shape_mn: Optional[Tuple[int, int]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.CopyAtom:
@@ -454,9 +500,13 @@ def get_tmem_load_op(
     acc_bits = elem_ty_acc.width
     d_bits = elem_ty_d.width
 
-    tmem_warp_shape_mn = (
-        (2, 2) if (cta_tile_shape[0] == 64 and use_2cta_instrs) else (4, 1)  # type: ignore[index]
-    )
+    assert isinstance(cta_tile_shape, tuple)
+    if tmem_warp_shape_mn is None:
+        # Default rule: (2,2) for 2CTA+M64, else (4,1). Callers may pass an
+        # explicit override.
+        tmem_warp_shape_mn = (
+            (2, 2) if (cta_tile_shape[0] == 64 and use_2cta_instrs) else (4, 1)
+        )
     epilog_tile_shape_mn = cute.product_each(
         cute.shape(epi_tile, loc=loc, ip=ip), loc=loc, ip=ip
     )
@@ -612,7 +662,8 @@ def get_tmem_load_op(
 def get_smem_layout_atom_ab(
     major_mode: OperandMajorMode,
     element_type: Type[Numeric],
-    smem_shape_mn_k: Tuple[int, int],
+    smem_shape_mn_k: cute.Tile,
+    sparsity: int = 1,
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
@@ -625,19 +676,28 @@ def get_smem_layout_atom_ab(
     :param element_type: The element type for the SMEM tensor.
     :type element_type: Type[Numeric]
     :param smem_shape_mn_k: The shape of the SMEM tensor.
-    :type smem_shape_mn_k: Tuple[int, int]
+    :type smem_shape_mn_k: cute.Tile
+    :param sparsity: The sparsity factor (1 for dense, 2 for 2:4 sparse, etc.)
+    :type sparsity: int
+
     :return: The SMEM layout atom kind
     :rtype: cutlass.cute.nvgpu.tcgen05.SmemLayoutAtomKind
     """
     is_k_major = major_mode == OperandMajorMode.K
-    major_mode_size = smem_shape_mn_k[1] if is_k_major else smem_shape_mn_k[0]
-
+    major_mode_size = (
+        cute.size(smem_shape_mn_k, mode=[1])
+        if is_k_major
+        else cute.size(smem_shape_mn_k, mode=[0])
+    )
     assert major_mode_size % 8 == 0
     sw128_num_contiguous_bits = 1024
     sw64_num_contiguous_bits = 512
     sw32_num_contiguous_bits = 256
     inter_num_contiguous_bits = 128
     major_mode_size_bits = major_mode_size * element_type.width
+
+    if is_k_major:
+        major_mode_size_bits //= sparsity
 
     assert major_mode_size_bits % inter_num_contiguous_bits == 0
 
@@ -697,7 +757,7 @@ def make_smem_layout(
     smem_layout_atom_kind = get_smem_layout_atom_ab(
         leading_mode,
         a_dtype,
-        smem_tile_shape,  # type: ignore[arg-type]
+        smem_tile_shape,
         loc=loc,
         ip=ip,
     )
@@ -711,6 +771,7 @@ def make_smem_layout(
         cute.append(smem_tile_shape, num_stages),
         order=(0, 1, 2) if is_k_major else (1, 0, 2),
     )
+
     return cute.coalesce(smem_layout, target_profile=(1, 1, 1), loc=loc, ip=ip)
 
 
@@ -832,6 +893,61 @@ def make_smem_layout_b(
 
 
 @dsl_user_op
+def make_smem_layout_c(
+    tiled_mma: cute.TiledMma,
+    mma_tiler_mnk: cute.Tile,
+    c_dtype: Type[Numeric],
+    num_stages: int,
+    is_m_major: bool,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[cute.Layout, cute.ComposedLayout]:
+    """This function helps with:
+
+    1. Get the partitioned shape of the C tensor based on the tiled_mma & MMA tiler.
+    2. Select the heuristic SMEM layout atom based on the C tensor's majorness, the data type, and the major mode size.
+    3. cute.Tile the SMEM layout atom to the MMA tile shape.
+    4. Stage the SMEM layout based on the number of stages.
+
+    Useful for when we don't care about epilogue subtiling, which get_smem_layout_epi is designed for.
+
+    :param tiled_mma: The tiled MMA used to partition tensor C
+    :type tiled_mma: cute.TiledMma
+    :param mma_tiler_mnk: The MMA tile shape
+    :type mma_tiler_mnk: cute.cute.Tile
+    :param c_dtype: The element type for tensor C
+    :type c_dtype: Type[Numeric]
+    :param num_stages: The number of pipeline stages for tensor C
+    :type num_stages: int
+
+    :return: SMEM layout for tensor C
+    :rtype: Union[cute.Layout, cute.ComposedLayout]
+    """
+
+    c_major_mode = OperandMajorMode.MN if is_m_major else OperandMajorMode.K
+    c_smem_shape = tiled_mma.partition_shape_C(
+        cute.dice(mma_tiler_mnk, (1, 1, None), loc=loc, ip=ip), loc=loc, ip=ip
+    )
+    c_smem_shape_mn = (
+        cute.size(c_smem_shape[0][0], loc=loc, ip=ip) * c_smem_shape[1],
+        cute.size(c_smem_shape[0][1], loc=loc, ip=ip) * c_smem_shape[2],
+    )
+    smem_layout_atom_kind = get_smem_layout_atom_ab(
+        c_major_mode, c_dtype, c_smem_shape_mn, loc=loc, ip=ip
+    )
+    c_smem_layout_atom = make_smem_layout_atom(
+        smem_layout_atom_kind, c_dtype, loc=loc, ip=ip
+    )
+
+    c_smem_shape = cute.append(c_smem_shape, num_stages, loc=loc, ip=ip)
+    order = (2, 1, 3) if is_m_major else (1, 2, 3)
+    return tile_to_mma_shape(
+        c_smem_layout_atom, c_smem_shape, order=order, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
 def get_smem_layout_atom_epi(
     layout: LayoutEnum,
     element_type: Type[Numeric],
@@ -868,7 +984,7 @@ def get_smem_layout_atom_epi(
         return get_smem_layout_atom_ab(
             OperandMajorMode.MN,
             element_type,
-            tma_shape,  # type: ignore[arg-type]
+            tma_shape,
             loc=loc,
             ip=ip,
         )
@@ -877,7 +993,7 @@ def get_smem_layout_atom_epi(
         return get_smem_layout_atom_ab(
             OperandMajorMode.K,
             element_type,
-            tma_shape,  # type: ignore[arg-type]
+            tma_shape,
             loc=loc,
             ip=ip,
         )
@@ -912,6 +1028,9 @@ def make_smem_layout_epi(
     :return: SMEM layout for epilog tensors (usually C & D which are processed in the epilog)
     :rtype: Union[cute.Layout, cute.ComposedLayout]
     """
+
+    if epi_dtype is Boolean:
+        epi_dtype = Int8
 
     epilog_shape = cute.product_each(
         cute.shape(epi_tile, loc=loc, ip=ip), loc=loc, ip=ip
@@ -1192,10 +1311,10 @@ def make_blockscaled_trivial_tiled_mma(
 ) -> cute.TiledMma: ...
 
 
+@overload
 @deprecated(
     "use make_blockscaled_trivial_tiled_mma with separate a_dtype and b_dtype instead"
 )
-@overload
 def make_blockscaled_trivial_tiled_mma(
     ab_dtype: Type[Numeric],
     a_leading_mode: OperandMajorMode,
@@ -1564,7 +1683,8 @@ def get_permutation_mnk(
 
     :raise ValueError: If the tile shape is not divisible by the sf_vec_size
     """
-    perm_m = min(tile_shape_mnk[0], 128)  # type: ignore[index]
+    assert isinstance(tile_shape_mnk, tuple)
+    perm_m = min(tile_shape_mnk[0], 128)
     # refer to C++ code:
     # /include/cutlass/gemm/collective/builders/sm120_common.inl?ref_type=heads#L158
     if sf_vec_size == 32 or sf_vec_size == 16:
@@ -1591,7 +1711,7 @@ def sm103_make_blockscaled_trivial_tiled_mma(
     mma_tiler_mn: Tuple[int, int],
     a_source: OperandSource = OperandSource.SMEM,
 ) -> cute.TiledMma:
-    """Create a blockscaled trivial tiled MMA for SM103 (Ultra FP4), K fixed to 96.
+    """Create a blockscaled trivial tiled MMA for SM103 (ultra FP4), K fixed to 96.
 
     Returns a tcgen05 MMA configured for the given (M, N) tiler and CTA group.
 
@@ -1677,6 +1797,414 @@ def sm120_get_smem_store_op(
 
 
 
+@dsl_user_op
+def make_sparse_a_dtype(
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Type[Numeric]:
+    """Create sparse A data type based on raw A data type.
+
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: Sparse A data type
+    :rtype: Type[Numeric]
+    """
+    if a_raw_dtype is Float4E2M1FN:
+        return cute.get_sparse_elem_type(
+            num_logical=4,
+            num_phys=1,
+            elem_type=Uint8,
+        )
+    else:
+        return cute.get_sparse_elem_type(
+            num_logical=2,
+            num_phys=1,
+            elem_type=a_raw_dtype,
+        )
+
+
+@dsl_user_op
+def make_sparse_e_dtype(
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Type[Numeric]:
+    """Create sparse E data type based on raw A data type.
+
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: Sparse E data type
+    :rtype: Type[Numeric]
+    """
+    if a_raw_dtype is Float4E2M1FN:
+        return cute.get_sparse_elem_type(
+            num_logical=16,
+            num_phys=1,
+            elem_type=Uint8,
+        )
+    elif a_raw_dtype in {Float16, BFloat16, Int8, Uint8, Float8E4M3FN, Float8E5M2}:
+        return cute.get_sparse_elem_type(
+            num_logical=8,
+            num_phys=1,
+            elem_type=Uint8,
+        )
+    elif a_raw_dtype in {TFloat32, Float32}:
+        return cute.get_sparse_elem_type(
+            num_logical=4,
+            num_phys=1,
+            elem_type=Uint8,
+        )
+    else:
+        raise ValueError(f"Unsupported a_raw_dtype for sparse E tensor: {a_raw_dtype}")
+
+
+@dsl_user_op
+def make_tensor_e_atom_layout(
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Layout:
+    """Get TensorEAtom layout for given A data type.
+
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: TensorEAtom layout
+    :rtype: cute.Layout
+
+    :raises ValueError: If a_raw_dtype is not supported for sparse operations
+    """
+    if a_raw_dtype in {Float4E2M1FN}:
+        return cute.make_layout((128, 256), stride=(256, 1), loc=loc, ip=ip)
+    elif a_raw_dtype in {Int8, Uint8, Float8E4M3FN, Float8E5M2}:
+        return cute.make_layout((128, 128), stride=(128, 1), loc=loc, ip=ip)
+    elif a_raw_dtype in {TFloat32, Float32}:
+        return cute.make_layout(
+            ((8, 2, 8), (8, 2, 4)), stride=((64, 8, 1024), (1, 512, 16)), loc=loc, ip=ip
+        )
+    elif a_raw_dtype in {Float16, BFloat16}:
+        return cute.make_layout(
+            ((8, 2, 8), (16, 2, 4)),
+            stride=((128, 16, 2048), (1, 1024, 32)),
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        raise ValueError(f"Unsupported a_raw_dtype for sparse E tensor: {a_raw_dtype}")
+
+
+@dsl_user_op
+def make_sparse_gmem_layout_e(
+    problem_shape_mnkl: cute.Shape,
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Layout:
+    """Create GMEM layout for sparse metadata E tensor.
+
+    :param problem_shape_mnkl: Problem shape (M, N, K, L)
+    :type problem_shape_mnkl: cute.Shape
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: GMEM layout for metadata E tensor
+    :rtype: cute.Layout
+    """
+    assert isinstance(problem_shape_mnkl, tuple)
+    m, _, k, l = problem_shape_mnkl[:4]
+
+    # Get TensorEAtom properties
+    tensor_e_atom_layout = make_tensor_e_atom_layout(a_raw_dtype, loc=loc, ip=ip)
+    tensor_e_atom_shape = tensor_e_atom_layout.shape
+    tensor_e_atom_stride = tensor_e_atom_layout.stride
+    tensor_e_atom_m = cute.size(tensor_e_atom_layout, mode=[0], loc=loc, ip=ip)
+    tensor_e_atom_k = cute.size(tensor_e_atom_layout, mode=[1], loc=loc, ip=ip)
+    tensor_e_atom_cosize = cute.cosize(tensor_e_atom_layout, loc=loc, ip=ip)
+
+    m_aligned_e = cute.round_up(m, tensor_e_atom_m)
+    k_aligned_e = cute.round_up(k, tensor_e_atom_k)
+
+    shape = (
+        (tensor_e_atom_shape[0], m_aligned_e // tensor_e_atom_m),
+        (tensor_e_atom_shape[1], k_aligned_e // tensor_e_atom_k),
+        l,
+    )
+
+    batch_stride = m_aligned_e * k_aligned_e  # type: ignore[operator]
+    stride = (
+        (tensor_e_atom_stride[0], tensor_e_atom_cosize),
+        (tensor_e_atom_stride[1], m_aligned_e * tensor_e_atom_k),
+        batch_stride,
+    )
+
+    return cute.make_layout(shape, stride=stride, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_sparse_smem_layout_e(
+    tiled_mma: cute.TiledMma,
+    mma_tiler_e_mnk: cute.Tile,
+    a_raw_dtype: Type[Numeric],
+    num_stages: int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[cute.Layout, cute.ComposedLayout]:
+    """This function helps with:
+
+    1. Get the partitioned shape of the E tensor based on the tiled_mma & MMA tiler.
+    2. Create SMEM layout atom with swizzle and sparse metadata flags.
+    3. Tile the SMEM layout atom to the MMA tile shape.
+    4. Stage the SMEM layout based on the number of stages.
+
+    :param tiled_mma: The sparse tiled MMA used to partition tensor E
+    :type tiled_mma: cute.TiledMma
+    :param mma_tiler_e_mnk: The E tile shape (M, N, K) in logical elements
+    :type mma_tiler_e_mnk: cute.Tile
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+    :param num_stages: Number of pipeline stages for tensor E
+    :type num_stages: int
+
+    :return: SMEM layout for tensor E
+    :rtype: Union[cute.Layout, cute.ComposedLayout]
+    """
+    e_smem_shape = tiled_mma.partition_shape_A(
+        cute.dice(mma_tiler_e_mnk, (1, None, 1), loc=loc, ip=ip), loc=loc, ip=ip
+    )
+    tensor_e_atom_layout = make_tensor_e_atom_layout(a_raw_dtype, loc=loc, ip=ip)
+
+    # Create composed layout with swizzle for sparse metadata
+    e_smem_layout_atom = cute.make_composed_layout(
+        cute.make_swizzle(0, 4, 3),
+        0,
+        tensor_e_atom_layout,
+        loc=loc,
+        ip=ip,
+    )
+
+    e_smem_shape = cute.append(e_smem_shape, num_stages, loc=loc, ip=ip)
+    return tile_to_mma_shape(
+        e_smem_layout_atom, e_smem_shape, order=(1, 2, 3), loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def make_sparse_tmem_layout_e(
+    tmem_shape: cute.Shape,
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Layout:
+    """Create TMEM layout for sparse metadata E tensor.
+
+    This function implements the logic from tmem_e_frg::make() in mma_traits_sm100.hpp.
+    It creates a TMEM layout based on the A matrix data type and the metadata shape.
+
+    :param tmem_shape: Shape from E SMEM layout, expected format ((M_MMA, N_MMA), ...)
+    :type tmem_shape: cute.Shape
+    :param a_raw_dtype: Data type of A matrix (determines atom layout)
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: TMEM layout for metadata tensor
+    :rtype: cute.Layout
+
+    :raises ValueError: If shape structure is invalid or M_MMA is not 128
+    :raises ValueError: If N_MMA doesn't match expected value for the data type
+    :raises ValueError: If a_raw_dtype bits is not supported
+    """
+    assert isinstance(tmem_shape, tuple)
+    # Validate shape structure
+    if cute.rank(tmem_shape, mode=[0]) != 2:
+        raise ValueError("Expected post-partitioned shape ((M_MMA, N_MMA), ...)")
+
+    R = cute.rank(tmem_shape)
+    M_MMA = cute.size(tmem_shape, mode=[0, 0])
+    N_MMA = cute.size(tmem_shape, mode=[0, 1])
+    # TMEM DP stride constant for byte-based addressing (1 << 21 = 2097152)
+    TMEM_DP_BYTES_STRIDE = 1 << 21
+
+    if M_MMA != 128:
+        raise ValueError(f"Only M_MMA=128 is implemented, got {M_MMA}")
+
+    # TMEM restride layout for virtual tensor memory addressing
+    # DP_b is the DP stride constant from TMEM allocator
+    # For metadata, we use byte-based addressing
+    tmem_restride = cute.make_layout(
+        (128, 16384),
+        stride=(TMEM_DP_BYTES_STRIDE, 1),
+        loc=loc,
+        ip=ip,
+    )
+
+    a_dtype_bits = a_raw_dtype.width
+
+    if a_dtype_bits == 32:  # TF32: 128x16 atom
+        if N_MMA != 16:
+            raise ValueError(f"For TF32, expected N_MMA=16, got {N_MMA}")
+
+        # TF32 metadata atom layout
+        tmem_atom = cute.make_layout(
+            ((8, 2, 8), (8, 2)), stride=((1, 1024, 16), (128, 8)), loc=loc, ip=ip
+        )
+
+        # Tile to MMA tiling
+        tmem_logical_layout = cute.tiled_product(
+            tmem_atom,
+            cute.make_layout(tmem_shape[1:R], loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+
+        # Address transformations with upcast<2> for 2-bit base types
+        tmem_layout = cute.composition(
+            cute.upcast(tmem_restride, 2, loc=loc, ip=ip),  # type: ignore[attr-defined]
+            tmem_logical_layout,
+            loc=loc,
+            ip=ip,
+        )
+
+    elif a_dtype_bits == 16:  # FP16/BF16: 128x32 atom
+        if N_MMA != 32:
+            raise ValueError(f"For FP16/BF16, expected N_MMA=32, got {N_MMA}")
+
+        # FP16/BF16 metadata atom layout
+        tmem_atom = cute.make_layout(
+            ((8, 2, 8), (16, 2)), stride=((1, 2048, 16), (128, 8)), loc=loc, ip=ip
+        )
+
+        # Tile to MMA tiling
+        tmem_logical_layout = cute.tiled_product(
+            tmem_atom,
+            cute.make_layout(tmem_shape[1:R], loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+
+        # Address transformations
+        tmem_layout = cute.composition(
+            tmem_restride, tmem_logical_layout, loc=loc, ip=ip
+        )
+
+    elif a_dtype_bits == 8:  # S8|Mix.F4/F6/F8: 128x64 atom
+        if N_MMA != 64:
+            raise ValueError(f"For 8-bit types, expected N_MMA=64, got {N_MMA}")
+
+        # 8-bit metadata atom layout
+        tmem_atom = cute.make_layout((128, 64), stride=(1, 128), loc=loc, ip=ip)
+
+        # Tile to MMA tiling
+        tmem_logical_layout = cute.tiled_product(
+            tmem_atom,
+            cute.make_layout(tmem_shape[1:R], loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+
+        # Address transformations
+        tmem_layout = cute.composition(
+            tmem_restride, tmem_logical_layout, loc=loc, ip=ip
+        )
+
+    elif a_dtype_bits == 4:  # F4: 128x128 atom
+        if N_MMA != 128:
+            raise ValueError(f"For F4, expected N_MMA=128, got {N_MMA}")
+
+        # F4 has different restride
+        tmem_restride_f4 = cute.make_layout(
+            (128, 32768), stride=(TMEM_DP_BYTES_STRIDE, 1), loc=loc, ip=ip
+        )
+
+        # F4 metadata atom layout
+        tmem_atom = cute.make_layout((128, 128), stride=(1, 128), loc=loc, ip=ip)
+
+        # Tile to MMA tiling
+        tmem_logical_layout = cute.tiled_product(
+            tmem_atom,
+            cute.make_layout(tmem_shape[1:R], loc=loc, ip=ip),
+            loc=loc,
+            ip=ip,
+        )
+
+        # Address transformations
+        tmem_layout = cute.composition(
+            tmem_restride_f4, tmem_logical_layout, loc=loc, ip=ip
+        )
+
+    else:
+        raise ValueError(f"Unsupported a_raw_dtype bits: {a_dtype_bits}")
+
+    return tmem_layout
+
+
+@dsl_user_op
+def make_sparse_smem_layout_a(
+    tiled_mma: cute.TiledMma,
+    mma_tiler_mnk: cute.Tile,
+    a_raw_dtype: Type[Numeric],
+    num_stages: int,
+    sparsity: int = 2,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Union[cute.Layout, cute.ComposedLayout]:
+    """This function helps with:
+
+    1. Get the partitioned shape of the sparse A tensor based on the tiled_mma & MMA tiler.
+    2. Select the heuristic SMEM layout atom based on the A tensor's majorness, data type, and sparsity.
+    3. Tile the SMEM layout atom to the MMA tile shape.
+    4. Stage the SMEM layout based on the number of stages.
+
+    :param tiled_mma: The sparse tiled MMA used to partition tensor A
+    :type tiled_mma: cute.TiledMma
+    :param mma_tiler_mnk: The MMA tile shape
+    :type mma_tiler_mnk: cute.Tile
+    :param a_raw_dtype: The element type for sparse tensor A
+    :type a_raw_dtype: Type[Numeric]
+    :param num_stages: The number of pipeline stages for tensor A
+    :type num_stages: int
+    :param sparsity: The sparsity ratio for tensor A (default: 2 for 2:4 structured sparsity)
+    :type sparsity: int
+
+    :return: SMEM layout for sparse tensor A
+    :rtype: Union[cute.Layout, cute.ComposedLayout]
+    """
+    is_k_major = tiled_mma.op.a_major_mode == OperandMajorMode.K  # type: ignore[attr-defined]
+    a_smem_shape = tiled_mma.partition_shape_A(
+        cute.dice(mma_tiler_mnk, (1, None, 1), loc=loc, ip=ip), loc=loc, ip=ip
+    )
+    a_smem_shape_mn_k = (
+        cute.size(a_smem_shape[0][0], loc=loc, ip=ip) * a_smem_shape[1],
+        cute.size(a_smem_shape[0][1], loc=loc, ip=ip) * a_smem_shape[2],
+    )
+
+    smem_layout_atom_kind = get_smem_layout_atom_ab(
+        tiled_mma.op.a_major_mode,  # type: ignore[attr-defined]
+        a_raw_dtype,
+        a_smem_shape_mn_k,
+        sparsity=sparsity,
+        loc=loc,
+        ip=ip,
+    )
+    a_smem_layout_atom = make_sparse_smem_layout_atom(
+        smem_layout_atom_kind, a_raw_dtype, sparsity=sparsity, loc=loc, ip=ip
+    )
+
+    a_smem_shape_staged = cute.append(a_smem_shape, num_stages, loc=loc, ip=ip)
+    order = (2, 1, 3) if not is_k_major else (1, 2, 3)
+    return tile_to_mma_shape(
+        a_smem_layout_atom, a_smem_shape_staged, order=order, loc=loc, ip=ip
+    )
+
+
 def compute_epilogue_tile_size(
     cta_tile_m: int,
     cta_tile_n: int,
@@ -1685,16 +2213,12 @@ def compute_epilogue_tile_size(
     elem_width_c: int | None = None,
     d_is_m_major: bool = True,
     c_is_m_major: bool = True,
+    tmem_warp_shape_mn: Optional[Tuple[int, int]] = None,
 ) -> tuple[int, int]:
     """Compute epilogue subtile dimensions ``(tile_m, tile_n)`` (pure Python, no MLIR).
 
     Used by :func:`compute_epilogue_tile_shape` and at kernel-discovery time
-    for SMEM capacity estimation.  Must match the C++ logic in
-    ``cutlass/include/cutlass/epilogue/collective/builders/sm100_builder.inl``
-    (the ``EpilogueTileAuto`` branch) and
-    ``cutlass_ir/compiler/lib/Collective/SM100.cpp``
-    (``sm100_compute_tile_shape_or_override``).
-
+    for SMEM capacity estimation.
     Background – SM100 epilogue flow
     ---------------------------------
     After the MMA, the accumulator lives in **TMEM** (Tensor Memory, 128
@@ -1800,9 +2324,16 @@ def compute_epilogue_tile_size(
     """
     # -- Step 1: warp grid ------------------------------------------------
     # (2,2) for 2CTA+M64 so each warp gets 32 rows; else (4,1).
-    (warp_m, warp_n) = (2, 2) if (cta_tile_m == 64 and use_2cta) else (4, 1)
+    if tmem_warp_shape_mn is not None:
+        (warp_m, warp_n) = tmem_warp_shape_mn
+    else:
+        (warp_m, warp_n) = (2, 2) if (cta_tile_m == 64 and use_2cta) else (4, 1)
     disable_source = elem_width_c is None
-    max_bits = elem_width_d if disable_source else max(elem_width_c, elem_width_d)  # type: ignore[type-var]
+    if disable_source:
+        max_bits = elem_width_d
+    else:
+        assert elem_width_c is not None
+        max_bits = max(elem_width_c, elem_width_d)
 
     # -- Step 2: tile_m ---------------------------------------------------
     # 32 datapaths per subpartition (hardware constant); cap so each warp
@@ -1840,11 +2371,11 @@ def compute_epilogue_tile_size(
         if d_is_m_major
         else (128 * warp_n if elem_width_d == 6 else 128 // elem_width_d * warp_n)
     )
-    n_min_c = (
-        8 * warp_n
-        if (c_is_m_major or disable_source)
-        else (128 * warp_n if elem_width_c == 6 else 128 // elem_width_c * warp_n)  # type: ignore[operator]
-    )
+    if c_is_m_major or disable_source:
+        n_min_c = 8 * warp_n
+    else:
+        assert elem_width_c is not None
+        n_min_c = 128 * warp_n if elem_width_c == 6 else 128 // elem_width_c * warp_n
 
     # -- Step 5: tile_n ---------------------------------------------------
     tile_n = min(cta_tile_n, max(n_perf, n_min_c, n_min_d))
@@ -1868,14 +2399,7 @@ def compute_acc_tmem_cols_per_stage(
     Returns the **raw** layout footprint — the caller must enforce hardware
     allocation constraints (min 32 columns, power-of-2 total) at the final
     ``alloc_tmem`` call site.  See ``TmemAllocator.check_valid_num_columns``
-    in ``cutlass/utils/tmem_allocator.py``.
-
-    Replicates the C++ logic from without requiring an
-    MLIR context, so it can be used at kernel discovery time.  When an
-    MLIR context is available, prefer
-    ``cutlass.cute.nvgpu.tcgen05.find_tmem_tensor_col_offset`` which
-    computes the column count directly from the compiler-generated
-    TMEM layout.
+    in ``cutlass/memory/tmem.py``.
 
     **How TMEM packing works**
 
@@ -1956,12 +2480,35 @@ def thrfrg_SFA(
     """Thread-fragment scale factor A tensor for SM120 block-scaled MMA.
 
     Implements the ThrFrg partitioning for scale factor A according to the
-    corresponding C++ code.
+    corresponding C++ code in cutlass/include/cute/atom/mma_traits_sm120.hpp:
+    SFALayout for SM120 MXF4 16x8x64 uses K=64, SM120 MXF8F6F4 16x8x32 uses
+    K=32; the stride pattern ``((_8,_0,_1), _16)`` is shared.
     """
     assert cute.rank(sfa_tensor) >= 2
 
     atom_shape_mnk = tiled_mma.shape_mnk
-    atom_sfa_layout = cute.make_layout(shape=((2, 2, 8), 64), stride=((8, 0, 1), 16))
+    # K-dim of the warp-MMA atom: FP4 -> 64, FP8 -> 32 (per mma_traits_sm120.hpp).
+    # For FP8 (atom_K=32) where mma_nsf=1, wrap K in a 2-tuple ``(atom_K, 1)``
+    # so the layout's K mode keeps its 2D structure and the resulting fragment
+    # has the same rank as the FP4 path. For FP4 (atom_K=64) the original 1D
+    # layout already produces a 2D K decomposition through SMEM-layout
+    # composition, so we keep the original shape.
+    atom_K = atom_shape_mnk[2]
+    if atom_K == 32:
+        atom_sfa_layout = cute.make_layout(
+            shape=((2, 2, 8), (atom_K, 1)),
+            stride=((8, 0, 1), (16, 0)),
+        )
+    elif atom_K == 64:
+        atom_sfa_layout = cute.make_layout(
+            shape=((2, 2, 8), atom_K),
+            stride=((8, 0, 1), 16),
+        )
+    else:
+        raise ValueError(
+            f"thrfrg_SFA: unsupported atom_K={atom_K}; SM120 block-scaled atoms "
+            f"use atom_K=32 (mxf8/mxf8f6f4) or atom_K=64 (mxf4/mxf4nvf4)"
+        )
     permutation_mnk = tiled_mma.permutation_mnk
     thr_layout_vmnk = tiled_mma.thr_layout_vmnk
 
@@ -2000,12 +2547,32 @@ def thrfrg_SFB(
     """Thread-fragment scale factor B tensor for SM120 block-scaled MMA.
 
     Implements the ThrFrg partitioning for scale factor B according to the
-    corresponding C++ code.
+    corresponding C++ code in cutlass/include/cute/atom/mma_traits_sm120.hpp:
+    SFBLayout for SM120 MXF4 16x8x64 uses K=64, SM120 MXF8F6F4 16x8x32 uses
+    K=32; the stride pattern ``((_0,_1), _8)`` is shared.
     """
     assert cute.rank(sfb_tensor) >= 2
 
     atom_shape_mnk = tiled_mma.shape_mnk
-    atom_sfb_layout = cute.make_layout(shape=((4, 8), 64), stride=((0, 1), 8))
+    # K-dim of the warp-MMA atom: FP4 -> 64, FP8 -> 32 (per mma_traits_sm120.hpp).
+    # See :func:`thrfrg_SFA` for the rationale behind the FP8-only
+    # ``(atom_K, 1)`` wrapping.
+    atom_K = atom_shape_mnk[2]
+    if atom_K == 32:
+        atom_sfb_layout = cute.make_layout(
+            shape=((4, 8), (atom_K, 1)),
+            stride=((0, 1), (8, 0)),
+        )
+    elif atom_K == 64:
+        atom_sfb_layout = cute.make_layout(
+            shape=((4, 8), atom_K),
+            stride=((0, 1), 8),
+        )
+    else:
+        raise ValueError(
+            f"thrfrg_SFB: unsupported atom_K={atom_K}; SM120 block-scaled atoms "
+            f"use atom_K=32 (mxf8/mxf8f6f4) or atom_K=64 (mxf4/mxf4nvf4)"
+        )
     permutation_mnk = tiled_mma.permutation_mnk
     thr_layout_vmnk = tiled_mma.thr_layout_vmnk
 
@@ -2160,7 +2727,14 @@ __all__ = [
     "cluster_shape_to_tma_atom_B",
     "cluster_shape_to_tma_atom_SFB",
     "get_permutation_mnk",
-    "get_num_tmem_alloc_cols",  # deprecated; use cutlass.utils.get_num_tmem_alloc_cols instead
+    "get_num_tmem_alloc_cols",  # deprecated; use cutlass.memory.get_num_tmem_alloc_cols instead
+    "make_sparse_a_dtype",
+    "make_sparse_e_dtype",
+    "make_sparse_gmem_layout_a",
+    "make_sparse_gmem_layout_e",
+    "make_sparse_smem_layout_a",
+    "make_sparse_smem_layout_e",
+    "make_sparse_tmem_layout_e",
     "thrfrg_SFA",
     "thrfrg_SFB",
     "partition_fragment_SFA",

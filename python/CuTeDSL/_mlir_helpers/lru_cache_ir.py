@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# Use of this software is governed by the terms and conditions of the
+# NVIDIA End User License Agreement (EULA), available at:
+# https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/license.html
+#
+# Any use, reproduction, disclosure, or distribution of this software
+# and related documentation outside the scope permitted by the EULA
+# is strictly prohibited.
+
+"""
+This module provides @lru_cache_ir
+It extends functools.lru_cache with IR Context awareness.
+
+Example usage:
+from cutlass import ir
+from lru_cache_ir import lru_cache_ir
+
+@lru_cache_ir(ir, maxsize=128, typed=False)
+def make_layout(...):
+...
+
+"""
+
+from functools import lru_cache, wraps
+from typing import Any, Callable
+
+from .._mlir import ir
+from .nanobind_compat import has_insertion_point
+
+
+def get_ir_context(func: Any) -> Any:
+    """
+    Return the context for given func called under ir.
+    Currently the context includes MLIRContext and InsertionPoint.
+    """
+    if not ir:
+        return None
+    try:
+        ctx = ir.Context.current
+    except (ValueError, RuntimeError):
+        return None
+    if has_insertion_point():
+        return (ctx, ir.InsertionPoint.current)
+    return (ctx,)
+
+
+def lru_cache_ir(maxsize: int = 128, typed: bool = True) -> Callable[..., Any]:
+    """
+    Applies an LRU cache to a given function, with awareness of IR context.
+
+    Usage is similar to functools.lru_cache while taking `ir` as required argument.
+
+    :param ir: The IR object from which to derive the context by `get_ir_context`
+    :param maxsize: Max cache size, same as functools.lru_cache
+    :param typed: Whether params are type-sensitive, default to True as IR is type-sensitive
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        # Use functools.lru_cache with a custom wrapper to control the key generation
+        @lru_cache(maxsize=maxsize, typed=typed)
+        def cached_func(context: Any, *args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                # Call the cached function with the context
+                return cached_func(get_ir_context(func), *args, **kwargs)
+            except (RuntimeError, TypeError):
+                return func(*args, **kwargs)
+
+        # Expose cache-related methods for introspection
+        wrapper.cache_clear = cached_func.cache_clear  # type: ignore[attr-defined]
+        wrapper.cache_info = cached_func.cache_info  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorator

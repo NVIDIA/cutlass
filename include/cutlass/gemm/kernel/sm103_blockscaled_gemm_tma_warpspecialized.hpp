@@ -432,7 +432,8 @@ public:
     using namespace cute;
     using X = Underscore;
 
-    static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "SMEM usage exceeded capacity.");
+    static_assert(SharedStorageSize <= ArchTag::kSharedMemoryCapacityBytes, "SMEM usage exceeded capacity.");
+
     // Separate out problem shape for convenience
     // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
@@ -793,6 +794,8 @@ public:
 
     else if (is_participant.main_sf_load) {
       set_warpgroup_reg_dealloc();
+      cutlass::arch::wait_on_dependent_grids();
+
       bool do_load_order_arrive = is_epi_load_needed;
       auto load_inputs = collective_mainloop.load_sf_init(
           problem_shape_MNKL, params.mainloop, shared_storage.tensors.mainloop);
@@ -874,7 +877,7 @@ public:
     else if (is_participant.mma) {
       set_warpgroup_reg_dealloc();
       // Tmem allocation sequence
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
       tmem_allocation_result_barrier.arrive();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
@@ -953,7 +956,7 @@ public:
       }
 
       // Free entire tmem allocation
-      tmem_allocator.free(tmem_base_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+      tmem_allocator.free(tmem_base_ptr, ArchTag::kTmemCapacityColumns);
     }
     else if (not IsNoSmemEpilogue and is_participant.epi_load) {
       set_warpgroup_reg_dealloc();

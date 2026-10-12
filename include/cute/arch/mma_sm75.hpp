@@ -82,6 +82,42 @@ struct SM75_16x8x8_F32F16F16F32_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 //
+// SM75 MMA 1688 F16F16F16
+//
+
+struct SM75_16x8x8_F16F16F16F16_TN
+{
+  using DRegisters = uint32_t[2];
+  using ARegisters = uint32_t[2];
+  using BRegisters = uint32_t[1];
+  using CRegisters = uint32_t[2];
+
+  // Register asm fma
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t &d0, uint32_t &d1,
+      uint32_t const &a0, uint32_t const &a1,
+      uint32_t const &b0,
+      uint32_t const &c0, uint32_t const &c1)
+  {
+#if defined(CUTE_ARCH_MMA_SM75_ENABLED)
+    asm volatile("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16"
+                 "{%0, %1},"
+                 "{%2, %3},"
+                 "{%4},"
+                 "{%5, %6};\n"
+        : "=r"(d0), "=r"(d1)
+        :  "r"(a0),  "r"(a1),
+           "r"(b0),
+           "r"(c0),  "r"(c1));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM75_16x8x8_F16F16F16F16_TN without CUTE_ARCH_MMA_SM75_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//
 // SM75 MMA 8816 S8S8S32
 //
 

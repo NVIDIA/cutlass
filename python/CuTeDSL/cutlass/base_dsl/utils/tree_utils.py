@@ -10,14 +10,21 @@
 # is strictly prohibited.
 
 from collections.abc import Callable, Iterable, Iterator
-from typing import Any, NamedTuple, get_origin
+from typing import Any, NamedTuple, get_origin, get_type_hints
 
 import dataclasses
+import functools
 import itertools as it
 from types import SimpleNamespace
 
-from ..typing import as_numeric, Numeric, Constexpr, implements_dynamic_expression
-from .._mlir_helpers.arith import ArithValue
+from ..typing import (
+    as_numeric,
+    Numeric,
+    Constexpr,
+    implements_dynamic_expression,
+    implements_jit_argument,
+)
+from ..._mlir_helpers.arith import ArithValue
 from ..common import DSLBaseError
 from ..._mlir import ir
 
@@ -78,15 +85,6 @@ class DSLTreeFlattenError(DSLBaseError):
     def __init__(self, msg: str, type_str: str):
         super().__init__(msg)
         self.type_str = type_str
-
-
-def unzip2(pairs: Iterable[tuple[Any, Any]]) -> tuple[list[Any], list[Any]]:
-    """Unzip a sequence of pairs into two lists."""
-    lst1, lst2 = [], []
-    for x1, x2 in pairs:
-        lst1.append(x1)
-        lst2.append(x2)
-    return lst1, lst2
 
 
 def unzip3(
@@ -161,21 +159,40 @@ def is_namedtuple_instance(x: Any) -> bool:
     """
     t = type(x)
     return (
-        issubclass(t, tuple)
-        and hasattr(t, "_fields")
-        and isinstance(t._fields, tuple)
+        issubclass(t, tuple) and hasattr(t, "_fields") and isinstance(t._fields, tuple)
     )
 
 
-def is_constexpr_field(field: dataclasses.Field) -> bool:
+@functools.lru_cache(maxsize=None)
+def _resolved_type_hints(cls: type) -> dict:
+    """Resolve a dataclass's annotations, including PEP 563 string forms.
+
+    Cached per class -- ``get_type_hints`` walks the MRO and the defining
+    module's globals, too costly to repeat on every flatten / adapt call.
+    Returns ``{}`` if resolution fails (e.g. an unresolvable forward
+    reference), so callers fall back to the raw annotation.
     """
-    Check if a field is a constexpr field.
+    try:
+        return get_type_hints(cls)
+    except Exception:
+        return {}
+
+
+def is_constexpr_field(field: dataclasses.Field, owner: Any = None) -> bool:
+    """Check if a dataclass field is annotated ``Constexpr`` / ``Constexpr[T]``.
+
+    Under ``from __future__ import annotations`` (PEP 563) ``field.type`` is a
+    string (e.g. ``"Constexpr[int]"``); pass ``owner`` -- the dataclass type or
+    an instance of it -- so the annotation is resolved via ``get_type_hints``
+    before the check. Without ``owner`` only already-resolved annotations are
+    recognized (a stringized one is otherwise misread as non-constexpr, which
+    silently keeps a constexpr field as a runtime argument).
     """
-    if field.type is Constexpr:
-        return True
-    elif get_origin(field.type) is Constexpr:
-        return True
-    return False
+    annotation = field.type
+    if isinstance(annotation, str) and owner is not None:
+        cls = owner if isinstance(owner, type) else type(owner)
+        annotation = _resolved_type_hints(cls).get(field.name, annotation)
+    return annotation is Constexpr or get_origin(annotation) is Constexpr
 
 
 # =============================================================================
@@ -263,7 +280,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[str]]:
     members = []
     constexpr_fields = []
     for field in dataclasses.fields(x):
-        if is_constexpr_field(field):
+        if is_constexpr_field(field, x):
             constexpr_fields.append(field.name)
             fields.remove(field.name)
             v = getattr(x, field.name)
@@ -458,7 +475,15 @@ def dynamic_expression_from_iterable(
         values = _unflatten_mlir_values(children_list, metadata.template)
     else:
         values = children_list
-    return metadata.original_obj.__new_from_mlir_values__(values)
+    rebuilt = metadata.original_obj.__new_from_mlir_values__(values)
+    # The pytree unflatten bypasses ``new_from_mlir_values``: re-root the rebuilt
+    # node's place at the template's owner token here too (tables only; the
+    # token table pins non-weakrefable keys itself, so adoption cannot raise
+    # for any admitted object).
+    from ..pyir_runtime import _pyir_adopt_rebuilt_owner_token
+
+    _pyir_adopt_rebuilt_owner_token(metadata.original_obj, rebuilt)
+    return rebuilt
 
 
 def default_dict_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
@@ -761,11 +786,49 @@ def _tree_flatten(
     elif isinstance(x, ArithValue):
         return [x], [ir.DictAttr.get({})], create_leaf_for_value(x, is_numeric=True)
 
+    elif (
+        implements_dynamic_expression(x)
+        and implements_jit_argument(x)
+        and x.__extract_mlir_values__() is None
+    ):
+        if return_ir_values:
+            raise DSLTreeFlattenError(
+                "Flatten Error: children is None",
+                get_fully_qualified_class_name(x),
+            )
+        return (
+            [x],
+            [ir.DictAttr.get({})],
+            create_leaf_for_value(
+                x,
+                node_metadata=SimpleNamespace(is_dynamic_expression=1, original_obj=x),
+                ir_type_str="unknown",
+            ),
+        )
+
     elif implements_dynamic_expression(x) and isinstance(x, ir.Value):
-        # Only for ir.Value subclasses (e.g. ctm.Pointer). Check before plain ir.Value
+        # Only for ir.Value subclasses. Check before plain ir.Value
         # so they are unflattened via __new_from_mlir_values__. Other dynamic
         # expressions (e.g. TmemAllocator with 2 values) use the registered/node path.
-        v = _flatten_mlir_values(x.__extract_mlir_values__())
+        extracted = x.__extract_mlir_values__()
+        if extracted is None:
+            if return_ir_values:
+                raise DSLTreeFlattenError(
+                    "Flatten Error: children is None",
+                    get_fully_qualified_class_name(x),
+                )
+            return (
+                [x],
+                [ir.DictAttr.get({})],
+                create_leaf_for_value(
+                    x,
+                    node_metadata=SimpleNamespace(
+                        is_dynamic_expression=1, original_obj=x
+                    ),
+                    ir_type_str="unknown",
+                ),
+            )
+        v = _flatten_mlir_values(extracted)
         a = (
             [ir.DictAttr.get({})]
             if not hasattr(x, "__extract_mlir_attributes__")
@@ -806,6 +869,12 @@ def _tree_flatten(
         )
 
     else:
+        # Transparency protocol (F-TRANSPARENT): an observation wrapper that
+        # declares its plain counterpart flattens AS its plain value -- the
+        # wrapper type is a host-trace artifact and never crosses a boundary.
+        # Protocol dispatch by getattr: no wrapper-class imports here.
+        if getattr(type(x), "__pyir_plain_type__", None) is not None:
+            return _tree_flatten(x.__pyir_plain_view__(), return_ir_values)
         node_type = get_registered_node_types_or_insert(x)
         if node_type:
             node_metadata, children = node_type.to_iterable(x)
@@ -821,9 +890,7 @@ def _tree_flatten(
 
             if hasattr(x, "__extract_mlir_attributes__"):
                 # If x has extract mlir attributes it overrides the child's default attributes
-                child_attrs_flat = [x.__extract_mlir_attributes__()] * len(
-                    child_attrs_flat
-                )
+                child_attrs_flat = [x.__extract_mlir_attributes__()]
             child_attrs_flattened = it.chain.from_iterable(child_attrs_flat)
             return (
                 flattened,
@@ -889,7 +956,16 @@ def _tree_unflatten(treedef: PyTreeDef | Leaf, xs: Iterator[Any]) -> Any:
             return None
         metadata = getattr(treedef, "node_metadata", None)
         if metadata and getattr(metadata, "is_dynamic_expression", False):
-            return metadata.original_obj.__new_from_mlir_values__([next(xs)])
+            rebuilt = metadata.original_obj.__new_from_mlir_values__([next(xs)])
+            # Pytree-leaf reconstruction of a dynamic-expression node: re-root
+            # its place at the template token (guarded, token tables only).
+            try:
+                from ..pyir_runtime import _pyir_adopt_rebuilt_owner_token
+
+                _pyir_adopt_rebuilt_owner_token(metadata.original_obj, rebuilt)
+            except Exception:
+                pass
+            return rebuilt
         if getattr(treedef, "is_numeric", False):
             return as_numeric(next(xs))
         return next(xs)
@@ -934,6 +1010,115 @@ def _check_tree_equal(lhs: PyTreeDef | Leaf, rhs: PyTreeDef | Leaf) -> bool:
 
     else:
         return False
+
+
+def _tree_value_description(tree: PyTreeDef | Leaf) -> str:
+    """Format a tree node or leaf for structure-change diagnostics.
+
+    Leaves report ``None``, an IR type, or a scalar value. Lists and tuples
+    report their arity, while metadata-backed containers report their type and
+    fields when available.
+    """
+    if isinstance(tree, Leaf):
+        if tree.is_none:
+            return "`None`"
+        if tree.ir_type_str:
+            return f"type `{tree.ir_type_str}`"
+        return "a scalar value"
+
+    node_name = tree.node_type.name
+    child_count = len(tree.child_treedefs)
+    if node_name == str(list):
+        noun = "item" if child_count == 1 else "items"
+        return f"`list` with {child_count} {noun}"
+    if node_name == str(tuple):
+        noun = "item" if child_count == 1 else "items"
+        return f"`tuple` with {child_count} {noun}"
+
+    metadata = tree.node_metadata
+    type_str = getattr(metadata, "type_str", None)
+    if type_str:
+        type_name = type_str.rsplit(".", 1)[-1]
+        fields = getattr(metadata, "fields", [])
+        if fields:
+            return f"`{type_name}` with fields {fields!r}"
+        return f"`{type_name}`"
+
+    noun = "part" if child_count == 1 else "parts"
+    return f"`{node_name}` with {child_count} {noun}"
+
+
+def _tree_child_path(tree: PyTreeDef, path: str, index: int) -> str:
+    """Build a child path from a named field or positional index.
+
+    Structured fields use attribute notation, dictionary fields use key
+    notation, and nodes without named fields use positional notation.
+    """
+    metadata = tree.node_metadata
+    fields = getattr(metadata, "fields", [])
+    if index < len(fields):
+        field = fields[index]
+        original_obj = getattr(metadata, "original_obj", None)
+        if isinstance(original_obj, dict):
+            return f"{path}[{field!r}]"
+        return f"{path}.{field}"
+    return f"{path}[{index}]"
+
+
+def describe_tree_difference(
+    lhs: PyTreeDef | Leaf,
+    rhs: PyTreeDef | Leaf,
+    path: str,
+) -> str:
+    """Describe the first deterministic structural difference between two trees.
+
+    The returned fragment is suitable for a diagnostic detail, for example
+    ``"`state.pending` changed from `None` to type `i32`"``. An empty string
+    means the trees have the same structure.
+    """
+    if _check_tree_equal(lhs, rhs):
+        return ""
+
+    if isinstance(lhs, Leaf) or isinstance(rhs, Leaf):
+        return (
+            f"`{path}` changed from {_tree_value_description(lhs)} "
+            f"to {_tree_value_description(rhs)}"
+        )
+
+    if lhs.node_type != rhs.node_type:
+        return (
+            f"`{path}` changed from {_tree_value_description(lhs)} "
+            f"to {_tree_value_description(rhs)}"
+        )
+
+    lhs_metadata = lhs.node_metadata
+    rhs_metadata = rhs.node_metadata
+    lhs_fields = getattr(lhs_metadata, "fields", [])
+    rhs_fields = getattr(rhs_metadata, "fields", [])
+    lhs_constexpr_fields = getattr(lhs_metadata, "constexpr_fields", [])
+    rhs_constexpr_fields = getattr(rhs_metadata, "constexpr_fields", [])
+    if (
+        lhs_fields != rhs_fields
+        or lhs_constexpr_fields != rhs_constexpr_fields
+        or len(lhs.child_treedefs) != len(rhs.child_treedefs)
+    ):
+        return (
+            f"`{path}` changed from {_tree_value_description(lhs)} "
+            f"to {_tree_value_description(rhs)}"
+        )
+
+    for index, (lhs_child, rhs_child) in enumerate(
+        zip(lhs.child_treedefs, rhs.child_treedefs)
+    ):
+        if _check_tree_equal(lhs_child, rhs_child):
+            continue
+        child_path = _tree_child_path(lhs, path, index)
+        return describe_tree_difference(lhs_child, rhs_child, child_path)
+
+    return (
+        f"`{path}` changed from {_tree_value_description(lhs)} "
+        f"to {_tree_value_description(rhs)}"
+    )
 
 
 def check_tree_equal(lhs: PyTreeDef, rhs: PyTreeDef) -> int:

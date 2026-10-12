@@ -30,6 +30,8 @@ import sys
 import os
 import torch
 
+import cuda.bindings.driver as cuda
+
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.runtime import from_dlpack
@@ -51,6 +53,7 @@ def bmm(
     a: cute.Tensor,  # (l, m, k)
     b: cute.Tensor,  # (l, k, n)
     c: cute.Tensor,  # (l, m, n)
+    stream: cuda.CUstream,
 ):
     gemm_op = TensorOpGemm(cutlass.Float16, cutlass.Float16, cutlass.Float32, (2, 2, 1))
 
@@ -63,11 +66,11 @@ def bmm(
     # (l, m, n) -> (m, n, l)
     c = cute.make_tensor(c.iterator, cute.select(c.layout, mode=[1, 2, 0]))
 
-    gemm_op(a, b, c)
+    gemm_op(a, b, c, stream)
 
 
 def compile_bmm_dynamic_layout():
-    from cutlass.cute.runtime import make_fake_compact_tensor
+    from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 
     m = cute.sym_int()
     n = cute.sym_int(divisibility=16)
@@ -87,12 +90,15 @@ def compile_bmm_dynamic_layout():
         cutlass.Float16, (l, m, n), stride_order=(2, 1, 0), assumed_align=16
     )
 
-    compiled_fn = cute.compile(bmm, fake_a, fake_b, fake_c, options="--enable-tvm-ffi")
+    fake_stream = make_fake_stream()
+    compiled_fn = cute.compile(
+        bmm, fake_a, fake_b, fake_c, fake_stream, options="--enable-tvm-ffi"
+    )
     return compiled_fn
 
 
 def compile_bmm_static_layout(m, n, k, l):
-    from cutlass.cute.runtime import make_fake_compact_tensor
+    from cutlass.cute.runtime import make_fake_compact_tensor, make_fake_stream
 
     fake_a = make_fake_compact_tensor(
         cutlass.Float16, (l, m, k), stride_order=(2, 1, 0), assumed_align=16
@@ -104,7 +110,10 @@ def compile_bmm_static_layout(m, n, k, l):
         cutlass.Float16, (l, m, n), stride_order=(2, 1, 0), assumed_align=16
     )
 
-    compiled_fn = cute.compile(bmm, fake_a, fake_b, fake_c, options="--enable-tvm-ffi")
+    fake_stream = make_fake_stream()
+    compiled_fn = cute.compile(
+        bmm, fake_a, fake_b, fake_c, fake_stream, options="--enable-tvm-ffi"
+    )
     return compiled_fn
 
 
@@ -120,8 +129,11 @@ def run_bmm_and_verify(compiled_fn, m, n, k, l):
     print(f"b: {b.shape=}, {b.stride()=}, {b.dtype=}")
     print(f"c: {c.shape=}, {c.stride()=}, {c.dtype=}\n")
 
+    torch_stream = torch.cuda.current_stream()
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
+
     # pass in torch tensor as input
-    compiled_fn(a, b, c)
+    compiled_fn(a, b, c, current_stream)
     torch.cuda.synchronize()
 
     ref = torch.bmm(a, b)
@@ -140,12 +152,15 @@ if __name__ == "__main__":
     run_bmm_and_verify(compiled_fn_static, m, n, k, l)
 
     # Error Check:
+    torch_stream = torch.cuda.current_stream()
+    current_stream = cuda.CUstream(torch_stream.cuda_stream)
+
     #   1. mis-matched tensor dim raise error
     a = torch.randn(l, m, k, dtype=torch.float16, device="cuda")
     b = torch.randn(l, 2 * k, n, dtype=torch.float16, device="cuda")
     c = torch.randn(l, m, n, dtype=torch.float16, device="cuda")
     try:
-        compiled_fn_dynamic(a, b, c)
+        compiled_fn_dynamic(a, b, c, current_stream)
     except Exception as e:
         print(f"\n[Runtime Error]: {e}")
 
@@ -155,7 +170,7 @@ if __name__ == "__main__":
     c = torch.randn(l, m, n, dtype=torch.float16, device="cuda")
 
     try:
-        compiled_fn_dynamic(a, b, c)
+        compiled_fn_dynamic(a, b, c, current_stream)
     except Exception as e:
         print(f"\n[Runtime Error]: {e}")
 
@@ -165,6 +180,6 @@ if __name__ == "__main__":
     c = torch.randn(l * 2, m, n, dtype=torch.float16, device="cuda")
 
     try:
-        compiled_fn_static(a, b, c)
+        compiled_fn_static(a, b, c, current_stream)
     except Exception as e:
         print(f"\n[Runtime Error]: {e}")

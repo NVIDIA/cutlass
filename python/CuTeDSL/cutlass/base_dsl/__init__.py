@@ -9,10 +9,15 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from typing import TYPE_CHECKING
+
 # Local module imports
+from .enums import AddressSpace, Arch
+from . import vector as vector
 from .dsl import *
+from .pointer import *
 from .runtime import *
-from ._mlir_helpers import lru_cache_ir, dsl_user_op
+from .._mlir_helpers import lru_cache_ir, dsl_user_op
 from .env_manager import get_str_env_var, detect_gpu_arch
 
 from .utils.tree_utils import (

@@ -32,6 +32,8 @@ class MLIRTypeBuilder:
         self.i16_type = ir.IntegerType.get_signless(16)
         self.i8_type = ir.IntegerType.get_signless(8)
         self.i1_type = ir.IntegerType.get_signless(1)
+        self.f16_type = ir.Type.parse("f16")
+        self.bf16_type = ir.Type.parse("bf16")
         self.f32_type = ir.Type.parse("f32")
         self.f64_type = ir.Type.parse("f64")
         self.ptr_type = llvm.PointerType.get()
@@ -51,14 +53,6 @@ class MLIRTypeBuilder:
     def as_attr(self, tp: ir.Type) -> ir.TypeAttr:
         """Convert the type to a type attribute."""
         return ir.TypeAttr.get(tp)
-
-    def int_type(self, bits: int) -> ir.Type:
-        """Get the `i<bits>` type."""
-        return ir.IntegerType.get_signless(bits)
-
-    def uint_type(self, bits: int) -> ir.Type:
-        """Get the `ui<bits>` type."""
-        return ir.IntegerType.get_unsigned(bits)
 
     def struct_type(
         self,
@@ -91,10 +85,6 @@ class MLIRTypeBuilder:
         else:
             return llvm.StructType.new_identified(name, fields, packed=packed)
 
-    def identified_struct_type(self, name: str) -> ir.Type:
-        """Get a previously created identified struct type by its name."""
-        return llvm.StructType.get_identified(name)
-
     def func_type(self, *, params: Sequence[ir.Type] = (), ret: ir.Type) -> ir.Type:
         """Get a function type.
 
@@ -114,15 +104,6 @@ class MLIRTypeBuilder:
             "!llvm.func<{} ({})>".format(str(ret), ", ".join(map(str, params)))
         )  # did not find a programmatic way to get the function type
 
-    def global_dtor_entry_type(self) -> ir.Type:
-        """Get the type of the global destructor entry.
-
-        See Also:
-        - https://llvm.org/docs/LangRef.html#the-llvm-global-dtors-global-variable
-        - https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirglobal_dtors-llvmglobaldtorsop
-        """
-        return self.struct_type(fields=[self.i32_type, self.ptr_type, self.ptr_type])
-
 
 class MLIRBuilder(MLIRTypeBuilder):
     """A builder for MLIR related types and operations.
@@ -133,11 +114,13 @@ class MLIRBuilder(MLIRTypeBuilder):
     but not set the insersion point.
     """
 
+    MLIR_DYNAMIC_INDEX = -(2**31)
+
     def __init__(self) -> None:
         """Initialize the MLIR builder."""
         super().__init__()
         self.module: Optional[ir.Module] = None
-        self.const_str_table: dict[str, ir.Value] = {}
+        self.const_str_table: dict[str, str] = {}
 
         self.get_element_extra_kwargs: dict[str, Any] = {}
 
@@ -170,6 +153,28 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Create an i64 constant with the given value."""
         return self.integer_constant(self.i64_type, value)
 
+    def fptrunc(self, value: ir.Value, res_type: ir.Type) -> ir.Value:
+        """Truncate a floating-point value to a narrower float type.
+
+        Routes through f32 intermediate to avoid emitting compiler-rt calls
+        (__truncdfhf2, __truncdfbf2) that are unavailable in the JIT engine.
+        For bf16, uses integer bit manipulation from f32.
+        """
+        if value.type == res_type:
+            return value
+        if res_type == self.bf16_type:
+            if value.type != self.f32_type:
+                value = llvm.fptrunc(res=self.f32_type, arg=value)
+            v_i32 = llvm.bitcast(self.i32_type, value)
+            v_shifted = llvm.lshr(v_i32, self.i32(16))
+            v_i16 = llvm.trunc(
+                self.i16_type, v_shifted, overflow_flags=llvm.IntegerOverflowFlags.none
+            )
+            return llvm.bitcast(self.bf16_type, v_i16)
+        if res_type == self.f16_type and value.type != self.f32_type:
+            value = llvm.fptrunc(res=self.f32_type, arg=value)
+        return llvm.fptrunc(res=res_type, arg=value)
+
     def mul(self, lhs: ir.Value, rhs: ir.Value) -> ir.Value:
         """Create a multiplication operation between two values."""
         return llvm.mul(lhs, rhs, overflow_flags=llvm.IntegerOverflowFlags.none)
@@ -195,7 +200,11 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Create a logical NOT operation."""
         # Ensure we're working with i1 type for boolean operations
         if value.type != self.i1_type:
-            value = llvm.trunc(res=self.i1_type, arg=value)
+            value = llvm.trunc(
+                res=self.i1_type,
+                arg=value,
+                overflow_flags=llvm.IntegerOverflowFlags.none,
+            )
         return llvm.xor(value, self.i1(1))
 
     def i64_divisible_const(self, value: ir.Value, align_const: int) -> ir.Value:
@@ -258,7 +267,11 @@ class MLIRBuilder(MLIRTypeBuilder):
         return llvm.AddressOfOp(tp, name).result
 
     def getelementptr(
-        self, ptr: ir.Value, constant_indices: Sequence[int], elem_type: ir.Type
+        self,
+        ptr: ir.Value,
+        constant_indices: Sequence[int],
+        elem_type: ir.Type,
+        dynamic_indices: Sequence[ir.Value] = [],
     ) -> ir.Value:
         """Create a getelementptr operation.
 
@@ -266,10 +279,13 @@ class MLIRBuilder(MLIRTypeBuilder):
         ----------
         ptr : ir.Value
             The pointer to the element.
-        indices : Sequence[ir.Value]
-            The indices to the element.
+        constant_indices : Sequence[int]
+            The indices to the element. Use ``MLIR_DYNAMIC_INDEX`` as a
+            placeholder for an index taken from ``dynamic_indices`` instead.
         elem_type : ir.Type
             The type of the element.
+        dynamic_indices : Sequence[ir.Value], optional
+            Runtime index values.
 
         Returns
         -------
@@ -280,7 +296,7 @@ class MLIRBuilder(MLIRTypeBuilder):
             return llvm.getelementptr(
                 self.ptr_type,
                 ptr,
-                [],
+                dynamic_indices,
                 raw_constant_indices=ir.DenseI32ArrayAttr.get(constant_indices),
                 elem_type=elem_type,
                 **self.get_element_extra_kwargs,
@@ -291,11 +307,20 @@ class MLIRBuilder(MLIRTypeBuilder):
             return llvm.getelementptr(
                 self.ptr_type,
                 ptr,
-                [],
+                dynamic_indices,
                 raw_constant_indices=ir.DenseI32ArrayAttr.get(constant_indices),
                 elem_type=elem_type,
                 **self.get_element_extra_kwargs,
             )
+
+    def offset_ptr_bytes(self, ptr: ir.Value, byte_offset: ir.Value) -> ir.Value:
+        """Displace ``ptr`` by a runtime number of bytes."""
+        return self.getelementptr(
+            ptr,
+            [self.MLIR_DYNAMIC_INDEX],
+            self.i8_type,
+            dynamic_indices=[byte_offset],
+        )
 
     def return_(self, ret: Optional[ir.Value] = None) -> None:
         """Create a return statement."""
@@ -355,7 +380,13 @@ class MLIRBuilder(MLIRTypeBuilder):
         """Define a global string symbol with the given content using standard MLIR APIs."""
         if content in self.const_str_table:
             return self.const_str_table[content]
-        symbol = f"__tvm_ffi__str_{len(self.const_str_table)}"
+        symbol_index = len(self.const_str_table)
+        symbol = f"__tvm_ffi__str_{symbol_index}"
+        module = self.module
+        if module is not None:
+            while self._module_symbol_exists(module, symbol):
+                symbol_index += 1
+                symbol = f"__tvm_ffi__str_{symbol_index}"
 
         # The string_attr.value gives us the original string, but we need to escape it for
         # MLIR parsing. Let's use a simple approach: escape quotes and backslashes
@@ -370,6 +401,15 @@ class MLIRBuilder(MLIRTypeBuilder):
             module_body.append(parsed_op)
             self.const_str_table[content] = symbol
         return symbol
+
+    def _module_symbol_exists(self, module: ir.Module, symbol: str) -> bool:
+        """Return whether a top-level module symbol already exists."""
+        for op in module.body:
+            if "sym_name" not in op.attributes:
+                continue
+            if str(op.attributes["sym_name"]).strip('"') == symbol:
+                return True
+        return False
 
     # function
     def function(

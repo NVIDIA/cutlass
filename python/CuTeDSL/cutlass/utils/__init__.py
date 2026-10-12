@@ -9,6 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import importlib
+import warnings
+from typing import Any
+
 from .static_persistent_tile_scheduler import (
     WorkTileInfo,
     PersistentTileSchedulerParams,
@@ -69,12 +73,13 @@ from .grouped_gemm_persistent_tile_scheduler import (
     GroupedGemmTileSchedulerHelper,
 )
 
-from .tensormap_manager import (
-    TensorMapUpdateMode,
-    TensorMapManager,
-)
+from .tensormap_manager import TensorMapManager
 
-from .smem_allocator import SmemAllocator, get_smem_capacity_in_bytes
+from .smem_allocator import (
+    SmemAllocator,
+    get_smem_capacity_in_bytes,
+    get_kernel_smem_size,
+)
 from .tmem_allocator import (
     TmemAllocator,
     TmemBufferPool,
@@ -82,7 +87,8 @@ from .tmem_allocator import (
     compute_tmem_cols_from_layout,
 )
 
-from .layout import LayoutEnum
+from . import layout
+from .block import block_copy
 
 from .mixed_input_helpers import (
     TransformMode,
@@ -107,6 +113,7 @@ from .mixed_input_helpers import (
     contiguous_group_search,
     make_contiguous_group_work_tile_info,
     cvt_tensor_a,
+    cvt_tensor_a_mxf8,
     store_transformed_a,
 )
 
@@ -115,7 +122,11 @@ from . import distributed
 
 from . import hopper_helpers as sm90
 from . import blackwell_helpers as sm100
-from .print_latex import print_latex, print_latex_tv
+from . import rubin_helpers as sm107
+from .print_latex import (
+    print_latex,
+    print_latex_tv,
+)
 
 from .tensor_helpers import (
     is_fp8_dtype,
@@ -124,6 +135,7 @@ from .tensor_helpers import (
 
 __all__ = [
     "get_smem_capacity_in_bytes",
+    "get_kernel_smem_size",
     "SmemAllocator",
     "TmemAllocator",
     "TmemBufferPool",
@@ -176,11 +188,39 @@ __all__ = [
     "sm90",
     "sm100",
     "gemm",
+    "block_copy",
     "ClcDynamicPersistentTileSchedulerParams",
     "ClcDynamicPersistentTileScheduler",
     "print_latex",
     "print_latex_tv",
+    "PALETTES",
+    "Band",
     "is_fp8_dtype",
     "create_cute_tensor_for_fp8",
     "distributed",
 ]
+
+# Enums and shared data objects moved out of cutlass.utils compare by object
+# identity, so the canonical objects themselves must be handed out rather
+# than deprecated wrapper copies. A package-level __getattr__ (PEP 562) adds
+# the deprecation warning a wrapper cannot.
+_MOVED_ALIASES = {
+    "LayoutEnum": "cutlass.tensor_utils",
+    "TensorMapUpdateMode": "cutlass.tensor_utils",
+    "SmemPartition": "cutlass.memory",
+    "PALETTES": "cutlass.cute.viz",
+    "Band": "cutlass.cute.viz",
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _MOVED_ALIASES:
+        home = _MOVED_ALIASES[name]
+        warnings.warn(
+            f"cutlass.utils.{name} is deprecated; use {home}.{name} instead. "
+            "It will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return getattr(importlib.import_module(home), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

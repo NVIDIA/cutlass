@@ -422,7 +422,7 @@ public:
         "selp.u32 %3, 1, 0, p1;\n\t"
         "@p1 clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {%0, %1, %2, _}, clc_result;\n\t"
         "}\n"
-        : "=r"(work_tile_info.M_idx), "=r"(work_tile_info.N_idx), "=r"(work_tile_info.L_idx), "=r"(valid)
+        : "+r"(work_tile_info.M_idx), "+r"(work_tile_info.N_idx), "+r"(work_tile_info.L_idx), "=r"(valid)
         : "r"(result_addr)
         : "memory"
       );

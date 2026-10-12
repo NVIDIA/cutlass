@@ -29,7 +29,6 @@
 
 add_subdirectory(hopper)
 add_subdirectory(blackwell)
-
 cutlass_example_add_executable(
   cute_tutorial_sgemm_1
   sgemm_1.cu

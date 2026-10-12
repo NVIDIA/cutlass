@@ -407,7 +407,6 @@ public:
 
   /// Fills a buffer in Global Memory with a byte sequence copied from host memory
   template<class FillValueType>
-  CUTLASS_HOST_DEVICE
   Status memsetDevice(
       void* destination,
       FillValueType fill_value, 

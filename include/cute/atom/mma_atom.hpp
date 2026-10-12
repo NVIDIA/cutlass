@@ -699,6 +699,7 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 #include <cute/atom/mma_traits_sm90.hpp>
 #include <cute/atom/mma_traits_sm90_gmma.hpp>
 #include <cute/atom/mma_traits_sm100.hpp>
+#include <cute/atom/mma_traits_sm107.hpp>
 #include <cute/atom/mma_traits_sm120.hpp>
 #include <cute/atom/mma_traits_sm120_sparse.hpp>
 

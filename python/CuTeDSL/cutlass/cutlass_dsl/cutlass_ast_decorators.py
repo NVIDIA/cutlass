@@ -16,14 +16,29 @@ from cutlass._mlir import ir
 from cutlass._mlir.dialects import scf
 from collections.abc import Sequence
 
-from ..base_dsl.common import DSLRuntimeError, DSLNotImplemented
+from ..base_dsl.common import is_pyir_enabled
+from ..base_dsl.common import (
+    DSLRuntimeError,
+    DSLUserCodeError,
+    DSLNotImplemented,
+)
+from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.dsl import is_dynamic_expression
-from ..base_dsl._mlir_helpers.arith import ArithValue
+from .._mlir_helpers.arith import ArithValue
 from ..base_dsl.ast_helpers import *  # noqa: F401,F403
+from ..base_dsl.pyir_runtime import (
+    PYIR_REGION_ATTR_WRITES_ATTR,
+    PYIR_REGION_FREE_CALLS_ATTR,
+    PYIR_REGION_METHOD_CALLS_ATTR,
+)
 from ..base_dsl.utils.logger import log
 from ..base_dsl import typing as t
-from ..base_dsl.typing import Boolean, Numeric, as_numeric
-from ..base_dsl.utils.tree_utils import PyTreeDef, check_tree_equal
+from ..base_dsl.typing import Boolean, Numeric, as_numeric, _binary_op_type_promote
+from ..base_dsl.utils.tree_utils import (
+    PyTreeDef,
+    check_tree_equal,
+    describe_tree_difference,
+)
 from . import cutlass as cutlass_dsl
 
 # =============================================================================
@@ -31,6 +46,17 @@ from . import cutlass as cutlass_dsl
 # =============================================================================
 
 NoneType = type(None)
+
+
+def _create_control_flow_generator() -> "ScfGenerator":
+    """
+    Create appropriate control flow generator based on runtime configuration.
+    """
+    if is_pyir_enabled():
+        from .cutlass_ast_decorators_pyir import PyIRScfGenerator
+
+        return PyIRScfGenerator()
+    return ScfGenerator()
 
 
 class LoopUnroll(ir.Attribute):
@@ -60,8 +86,19 @@ class ScfGenerator:
     Encapsulates common scf dialect functionality: pack, unpack, and SCF execution.
     """
 
-    def __init__(self) -> None:
-        pass
+    # The (base, attr) pairs a staged loop body's ORIGINAL code assigns directly
+    # (preprocessor-tagged declared fact); set by the loop executor before building
+    region_attr_writes: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The (base, method) pairs a staged loop body's ORIGINAL code calls on
+    # Name-rooted receiver paths (preprocessor-tagged; completed via class facts).
+    region_method_calls: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The (func_name, arg_base) pairs a staged loop body's ORIGINAL code calls
+    # as bare-Name free functions with a Name-rooted first argument
+    # (preprocessor-tagged; completed via the callee's first-parameter facts).
+    region_free_calls: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The staged loop-body function itself: a read-only captured receiver
+    # name resolves through its closure at region entry.
+    region_body_func: "Optional[Callable[..., Any]]" = None
 
     @staticmethod
     def _normalize_region_result_to_list(region_result: Any) -> List[Any]:
@@ -159,14 +196,12 @@ class ScfGenerator:
                 new_type_name = new_type.__name__
 
         if type_mismatch:
-            raise DSLRuntimeError(
-                f"`{arg_name}` is {old_type_name} prior to this `{op_type_name}`, "
-                f"and update to {new_type_name} inside of this `{op_type_name}` is not supported.",
-                suggestion=(
-                    f"Please avoid changing type inside a dynamic `{op_type_name}`, "
-                    f"or change to compile-time control flow by marking this `{op_type_name}` with "
-                    f"`{'range_constexpr' if op_type_name == 'for' else 'const_expr'}`."
-                ),
+            raise DSLUserCodeError(
+                DiagId.TYPE_UNSTABLE_JOIN,
+                var=arg_name,
+                old_type=old_type_name,
+                new_type=new_type_name,
+                op_type=op_type_name,
             )
 
     def scf_execute_dynamic(
@@ -237,24 +272,92 @@ class ScfGenerator:
                                 mix_iter_args, mix_iter_arg_names, full_write_args_count
                             )
                         )
+                        detail = describe_tree_difference(
+                            pytree_def.child_treedefs[mismatch],
+                            yield_pytree_def.child_treedefs[mismatch],
+                            filterd_arg_names[mismatch],
+                        )
+                        if detail:
+                            detail = f" ({detail})"
 
-                        raise DSLRuntimeError(
-                            f"`{filterd_arg_names[mismatch]}` is structured different after this `{op_type_name}`.",
-                            suggestion=(
-                                f"Please avoid changing type structure inside a dynamic `{op_type_name}`, "
-                                f"or change to compile-time control flow by marking this `{op_type_name}` with "
-                                f"`{'range_constexpr' if op_type_name == 'for' else 'const_expr'}`."
-                            ),
+                        raise DSLUserCodeError(
+                            DiagId.CONTAINER_STRUCTURE_CHANGED,
+                            var=filterd_arg_names[mismatch],
+                            op_type=op_type_name,
+                            detail=detail,
                         )
 
                     scf.YieldOp(region_values)
 
         log().debug("Completed scf.%s \n[%s]", op_type_name, op)
 
-        # 4) Pack final results
+        # 4) Pack final results.
+        #
+        # Rebind pass-through loop-carried slots to their INIT value instead of
+        # the op result: a slot every region terminator forwards unchanged (the
+        # terminator operand IS the entry block argument) has a result that is
+        # value-equal to its init for every trip count, and the init is the
+        # only form guaranteed to dominate the enclosing scope.  The loop may
+        # sit inside a region-opening context manager (``with elect_one():``)
+        # that the AST-level value threading cannot see; a result-backed rebind
+        # leaks this region's SSA outward, and the enclosing staged-CF executor
+        # then yields it from a non-dominating region.
+        # Operand/argument accessors return value-caster wrappers (ArithValue,
+        # cute pointers) whose ``==`` stages an IR comparison; SSA identity must
+        # go through the base ir.Value equality on the unwrapped values.
+        def _same_ssa(a: object, b: object) -> bool:
+            def unwrap(v: object) -> Optional[ir.Value]:
+                if isinstance(v, ir.Value):
+                    return v
+                inner = getattr(v, "value", None)
+                return inner if isinstance(inner, ir.Value) else None
+
+            raw_a, raw_b = unwrap(a), unwrap(b)
+            if raw_a is None or raw_b is None:
+                return False
+            return ir.Value.__eq__(ir.Value(raw_a), ir.Value(raw_b)) is True
+
+        # Accessing operands/arguments runs the registered value casters, and
+        # wrapper construction (e.g. the memref _Tensor caster) emits IR at the
+        # current insertion point -- park the insertion point at the region's
+        # terminator during inspection so those emissions land as valid (dead)
+        # in-region ops instead of parent-block ops referencing region values.
+        def _terminator_operands_and_args(
+            block: ir.Block, skip_args: int = 0
+        ) -> "tuple[List[Any], List[Any]]":
+            term = block.operations[len(block.operations) - 1]
+            with ir.InsertionPoint(term):
+                return list(term.operands), list(block.arguments)[skip_args:]
+
+        results: List[ir.Value] = list(op.results)
+        if len(results) == len(ir_values):
+            if op_type_name == "for":
+                # Block args are [induction var, carried...].
+                yield_operands, carried_args = _terminator_operands_and_args(
+                    op.regions[0].blocks[0], skip_args=1
+                )
+                for i, (yielded, entry) in enumerate(
+                    zip(yield_operands, carried_args)
+                ):
+                    if _same_ssa(yielded, entry):
+                        results[i] = ir_values[i]
+            elif op_type_name == "while":
+                cond_operands, before_args = _terminator_operands_and_args(
+                    op.regions[0].blocks[0]
+                )
+                yield_operands, after_args = _terminator_operands_and_args(
+                    op.regions[1].blocks[0]
+                )
+                for i, (yielded, entry) in enumerate(zip(yield_operands, after_args)):
+                    # cond_operands[0] is the loop condition; forwards start at 1.
+                    if _same_ssa(yielded, entry) and _same_ssa(
+                        cond_operands[i + 1], before_args[i]
+                    ):
+                        results[i] = ir_values[i]
+
         assert isinstance(pytree_def, PyTreeDef)
         final_results = cutlass_dsl.pack_from_irvalue(
-            op.results, pytree_def, mix_iter_args, full_write_args_count
+            results, pytree_def, mix_iter_args, full_write_args_count
         )
 
         # 5) Return in a nice pattern
@@ -267,9 +370,15 @@ class ScfGenerator:
 
 def _attr_const_check(attr: object, expected_type: type, attr_name: str) -> None:
     # Use strict type equality to prevent `bool` being accepted where `int` is required.
-    if is_dynamic_expression(attr) or type(attr) is not expected_type:
-        raise DSLRuntimeError(
-            f"loop attribute `{attr_name}` must be a Python value of type `{expected_type.__name__}`, got `{type(attr).__name__}`."
+    # PyIR's ``_WatchedM`` wraps Python primitives as ``int``/``float`` subclasses for
+    # transparent ``isinstance`` propagation; unwrap to the underlying primitive so a
+    # ``_WatchedInt`` is accepted where ``int`` is expected.  Bool-vs-int separation is
+    # preserved because ``_WatchedBool.python_value`` still returns a real ``bool``.
+    raw = getattr(attr, "python_value", attr) if hasattr(attr, "_slot_key") else attr
+    if is_dynamic_expression(attr) or type(raw) is not expected_type:
+        raise DSLUserCodeError(
+            DiagId.PHASE_ASSIGN_PYTHON_TO_TRACKED,
+            attr_name=attr_name,
         )
 
 
@@ -292,7 +401,13 @@ def _loop_execute_range_dynamic(
     """
     Example: build an scf.for with optional unroll, using our universal helper.
     """
-    scf_gen = ScfGenerator()
+    scf_gen = _create_control_flow_generator()
+    # The (base, attr) pairs the loop body's ORIGINAL code assigns directly (declared
+    # syntactic fact tagged by the PyIR preprocessor); the PyIR generator adopts each
+    scf_gen.region_attr_writes = getattr(func, PYIR_REGION_ATTR_WRITES_ATTR, None)
+    scf_gen.region_method_calls = getattr(func, PYIR_REGION_METHOD_CALLS_ATTR, None)
+    scf_gen.region_free_calls = getattr(func, PYIR_REGION_FREE_CALLS_ATTR, None)
+    scf_gen.region_body_func = func
 
     def create_for_op(dyn_yield_ops: List[ir.Value]) -> ir.Operation:
         for d in dyn_yield_ops:
@@ -301,19 +416,23 @@ def _loop_execute_range_dynamic(
                     f"Invalid dyn_yield_ops: {dyn_yield_ops} \n\tExpected ir.Value, got {type(d)}"
                 )
 
-        # Convert Python ints or values to IR constants if needed
-        start_ = t.as_numeric(start)
-        stop_ = t.as_numeric(stop)
-        step_ = t.as_numeric(step)
-        if start_.dtype is not t.Int32:
-            raise DSLRuntimeError(f"expected Int32 for start, got {start_.dtype}")
-        if stop_.dtype is not t.Int32:
-            raise DSLRuntimeError(f"expected Int32 for stop, got {stop_.dtype}")
-        if step_.dtype is not t.Int32:
-            raise DSLRuntimeError(f"expected Int32 for step, got {step_.dtype}")
-        start_ = start_.ir_value()
-        stop_ = stop_.ir_value()
-        step_ = step_.ir_value()
+        # Convert to Numeric, require integers, then promote to a common integer type
+        start_n = as_numeric(start)
+        stop_n = as_numeric(stop)
+        step_n = as_numeric(step)
+        for name, n in (("start", start_n), ("stop", stop_n), ("step", step_n)):
+            if not n.dtype.is_integer:
+                raise DSLUserCodeError(
+                    DiagId.ARG_WRONG_TYPE,
+                    name=name,
+                    dtype=n.dtype,
+                )
+        # Promote to a common integer type using pairwise type promotion
+        _, _, tmp_dtype = _binary_op_type_promote(start_n, stop_n)
+        _, _, dst_dtype = _binary_op_type_promote(start_n.to(tmp_dtype), step_n)
+        start_ = start_n.to(dst_dtype)
+        stop_ = stop_n.to(dst_dtype)
+        step_ = step_n.to(dst_dtype)
 
         # Attributes must be pure Python value, add a check
         _attr_const_check(unroll, int, "unroll")
@@ -335,19 +454,21 @@ def _loop_execute_range_dynamic(
                     ir.IntegerType.get_signless(32), prefetch_stages
                 )
             else:
-                raise DSLRuntimeError(
-                    f"loop attribute `prefetch_stages` must be non-negative, got `{prefetch_stages}`."
+                raise DSLUserCodeError(
+                    DiagId.CONFIG_INVALID_VALUE,
+                    value=prefetch_stages,
                 )
         log().debug("prefetch_stages attribute: %s", prefetch_stages_attr)
 
         vectorize_attr = None
         if vectorize:
-            from ..base_dsl.arch import Arch
+            from ..base_dsl import Arch
 
             arch = cutlass_dsl.CuTeDSL._get_dsl().get_arch_enum()
             if arch < Arch.sm_100:
-                raise DSLRuntimeError(
-                    f"vectorize is supported for sm_100 and above, got {arch}."
+                raise DSLUserCodeError(
+                    DiagId.UNSUP_ARCH,
+                    arch=arch,
                 )
             _attr_const_check(vectorize, bool, "vectorize")
             vectorize_attr = ir.BoolAttr.get(True)
@@ -362,13 +483,22 @@ def _loop_execute_range_dynamic(
             step_,
             type(step_),
         )
+        # LOC_TRACEBACKS captures full Python call stacks automatically —
+        # no explicit loc needed.
 
         # Create scf.ForOp, passing iteration args if any
         try:
             if not dyn_yield_ops:
-                for_op = scf.ForOp(start_, stop_, step_)
+                for_op = scf.ForOp(
+                    start_.ir_value(), stop_.ir_value(), step_.ir_value()
+                )
             else:
-                for_op = scf.ForOp(start_, stop_, step_, list(dyn_yield_ops))
+                for_op = scf.ForOp(
+                    start_.ir_value(),
+                    stop_.ir_value(),
+                    step_.ir_value(),
+                    list(dyn_yield_ops),
+                )
         except Exception as e:
             yield_ops = "\n".join(
                 f"\t\t{i} => {d} : type : {type(d)}"
@@ -411,20 +541,19 @@ def _loop_execute_range_dynamic(
             block_args,
             full_write_args_count,
         )
-        # block_args[1:] are iteration variables
-        func_args = []
-        func_args.extend(
-            cutlass_dsl.pack_from_irvalue(
-                block_args[1:],
-                pytree_def,  # type: ignore[arg-type]
-                mix_iter_args,
-                full_write_args_count,
+        if pytree_def is None:
+            # PyIR mode: no iter_arg block_args.  Pass original objects.
+            func_args = list(mix_iter_args)
+        else:
+            # Non-pyir: reconstruct from block_args
+            func_args = list(
+                cutlass_dsl.pack_from_irvalue(
+                    block_args[1:], pytree_def, mix_iter_args, full_write_args_count
+                )
             )
-        )
         if not func_args:
-            # No iteration arguments, or only the induction var
             func(iv)
-            return []  # yield nothing
+            return []
         else:
             updated_func_args = func(iv, *func_args)
             return updated_func_args
@@ -447,12 +576,11 @@ def _if_execute_dynamic(
     mix_yield_args: List[object] = [],
     full_write_args_count: int = 0,
     mix_yield_arg_names: List[str] = [],
-    if_constexpr: Optional[bool] = None,
 ) -> object:
     """
     Build an scf.if with optional else, using our universal helper.
     """
-    scf_gen = ScfGenerator()
+    scf_gen = _create_control_flow_generator()
 
     def create_if_op(dyn_yield_ops: List[ir.Value]) -> ir.Operation:
         # Assume final result types match the dynamic yields
@@ -463,8 +591,8 @@ def _if_execute_dynamic(
         try:
             if_op = scf.IfOp(
                 pred_.ir_value(),
-                hasElse=(else_block is not None),
                 results_=result_types,
+                has_else=else_block is not None,
             )
         except Exception as e:
             raise DSLRuntimeError(
@@ -480,12 +608,12 @@ def _if_execute_dynamic(
         mix_iter_args: List[object],
         full_write_args_count: int,
     ) -> object:
+        if pytree_def is None:
+            # PyIR mode: pass original objects directly
+            return then_block(*mix_iter_args)
         flat_args = list(
             cutlass_dsl.pack_from_irvalue(
-                dyn_yield_ops,
-                pytree_def,  # type: ignore[arg-type]
-                mix_iter_args,
-                full_write_args_count,
+                dyn_yield_ops, pytree_def, mix_iter_args, full_write_args_count
             )
         )
         return then_block(*flat_args)
@@ -502,12 +630,12 @@ def _if_execute_dynamic(
             mix_iter_args: List[object],
             full_write_args_count: int,
         ) -> object:
+            if pytree_def is None:
+                # PyIR mode: pass original objects directly
+                return else_block(*mix_iter_args)
             flat_args = list(
                 cutlass_dsl.pack_from_irvalue(
-                    dyn_yield_ops,
-                    pytree_def,  # type: ignore[arg-type]
-                    mix_iter_args,
-                    full_write_args_count,
+                    dyn_yield_ops, pytree_def, mix_iter_args, full_write_args_count
                 )
             )
             return else_block(*flat_args)
@@ -544,8 +672,22 @@ def _while_execute_dynamic(
     """
     log().debug("_while_execute_dynamic")
     while_op_type_name = "while"
-    scf_gen = ScfGenerator()
+    scf_gen = _create_control_flow_generator()
 
+    # PyIR-specific path for while loops
+    if is_pyir_enabled():
+        from .cutlass_ast_decorators_pyir import PyIRScfGenerator
+
+        assert isinstance(scf_gen, PyIRScfGenerator)
+        return scf_gen.create_while_op_pyir(
+            while_before_block,
+            while_after_block,
+            write_args,
+            full_write_args_count,
+            write_args_names,
+        )
+
+    # Non-PyIR path
     def create_while_op(dyn_yield_ops: List[ir.Value]) -> ir.Operation:
         # Create the while operation with the types from yield_args
         result_types = [arg.type for arg in dyn_yield_ops]
@@ -569,18 +711,14 @@ def _while_execute_dynamic(
         op: ir.Operation,
         block_args: List[ir.Value],
         _: List[ir.Value],
-        pytree_def: Optional[PyTreeDef],
+        pytree_def: PyTreeDef,
         mix_iter_args: List[Any],
         full_write_args_count: int,
     ) -> Any:
         # Build the before (condition) block
-        flat_args = []
-        flat_args.extend(
+        flat_args = list(
             cutlass_dsl.pack_from_irvalue(
-                block_args,
-                pytree_def,  # type: ignore[arg-type]
-                mix_iter_args,
-                full_write_args_count,
+                block_args, pytree_def, mix_iter_args, full_write_args_count
             )
         )
 
@@ -604,10 +742,10 @@ def _while_execute_dynamic(
     ) -> None:
         # Generate a condition op instead of yield op.
         cond = cond_and_results[0]
+        ir_cond = as_numeric(cond).ir_value()
         before_result_list = ScfGenerator._normalize_region_result_to_list(
             cond_and_results[1]
         )
-        ir_cond = as_numeric(cond).ir_value()
         ir_results_list, pytree_def = cutlass_dsl.unpack_to_irvalue(
             before_result_list, while_op_type_name, full_write_args_count
         )
@@ -622,18 +760,14 @@ def _while_execute_dynamic(
         op: ir.Operation,
         block_args: List[ir.Value],
         _: List[ir.Value],
-        pytree_def: Optional[PyTreeDef],
+        pytree_def: PyTreeDef,
         mix_iter_args: List[object],
         full_write_args_count: int,
     ) -> object:
         # Build the after (body) block
-        flat_args = []
-        flat_args.extend(
+        flat_args = list(
             cutlass_dsl.pack_from_irvalue(
-                block_args,
-                pytree_def,  # type: ignore[arg-type]
-                mix_iter_args,
-                full_write_args_count,
+                block_args, pytree_def, mix_iter_args, full_write_args_count
             )
         )
 
@@ -732,8 +866,8 @@ def _ifexp_execute_dynamic(
         assert isinstance(then_tree, PyTreeDef)
         assert isinstance(else_tree, PyTreeDef)
         if check_tree_equal(then_tree, else_tree) != -1:
-            raise DSLRuntimeError(
-                "Then and else blocks of ifexp return different types"
+            raise DSLUserCodeError(
+                DiagId.TYPE_CONDITIONAL_BRANCH_MISMATCH,
             )
 
         # Collect result types for the SCF IfOp
@@ -749,8 +883,8 @@ def _ifexp_execute_dynamic(
         try:
             if_op = scf.IfOp(
                 pred_.ir_value(),
-                hasElse=True,
                 results_=result_types,
+                has_else=else_block is not None,
             )
         except Exception as e:
             raise DSLRuntimeError(
@@ -767,8 +901,10 @@ def _ifexp_execute_dynamic(
     # Prepare the list of region builders for the SCF IfOp: first for "then", then for "else"
     region_builders = [then_builder, else_builder]
 
+    # IfExp (ternary) always has results and its create_if_op hardcodes
+    # result_types, so use "ifexp" as op_type_name to ensure standard execution.
     ret = scf_gen.scf_execute_dynamic(
-        op_type_name="if",
+        op_type_name="ifexp",
         mix_iter_args=mix_iter_args,
         full_write_args_count=0,
         mix_iter_arg_names=["unknown" for _ in mix_iter_args],

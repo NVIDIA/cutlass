@@ -34,17 +34,22 @@ def _ensure_mlir_type_compat() -> None:
 
 _ensure_mlir_type_compat()
 del _ensure_mlir_type_compat
+
 __version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
 # Monkey patch CUDA version query function
 from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
+    NumericCast as _NumericCast,
     get_cuda_version as _get_cuda_version,
 )
 from .base_dsl import common as _common
+from .base_dsl import typing as _base_dsl_typing
 
 _common._get_cuda_version = _get_cuda_version
+_base_dsl_typing._native_numeric_cast = _NumericCast
 
 # Import CUDA version from base_dsl
 from .base_dsl.version_info import CUDA_VERSION
+from .base_dsl import AddressSpace, Arch
 
 from .cutlass_dsl import (
     Constexpr,
@@ -73,7 +78,7 @@ from .cutlass_dsl import (
     # Data types
     dtype,  # Provides conversions to types inheriting from NumericType
     DSLRuntimeError,
-    DSLAstPreprocessorError,
+    DSLUserCodeError,
     JitArgAdapterRegistry,
     # Construction utilities for user-defined classes
     extract_mlir_values,
@@ -83,12 +88,39 @@ from .cutlass_dsl import (
 )
 
 from .cute.typing import *
+from .base_dsl.typing import Pointer as Pointer  # type: ignore[assignment]
+from .base_dsl.typing import (
+    TypedPointer,
+    Uint128,
+    align,
+    GridConstant,
+    grid_constant,
+)
+from .base_dsl.pointer import inttoptr
+from .base_dsl.jit_executor import (
+    register_library_unload_callback,
+    unregister_library_unload_callback,
+)
+from .base_dsl.swizzle import Swizzle, apply_swizzle, load_swizzled, store_swizzled
+from ._mlir_helpers.vector import Vector, full, full_like, print_nd_vector
 
 # Utilities not belonging to CuTe
+from .base_dsl import vector as vector
+
+# Array view factory: build a cutlass.Array over an existing cute.Tensor (no
+# allocation). Defined next to the Array type in base_dsl.array. To view a raw
+# pointer, call cutlass.Array(pointer, shape=..., dtype=...) directly. For a typed
+# TMEM pointer, use prims.make_tmem_ptr(addr, dtype).
+from .base_dsl.array import make_array_view
+
+from . import runtime as runtime
+from . import block as block
+from . import memory as memory
+from . import tensor_utils as tensor_utils
 from . import utils as utils
 from . import pipeline as pipeline
-
-# Used as internal symbol
+from . import testing as testing
+# Package-private symbol used by exported aliases below.
 from . import cutlass_dsl as _dsl
 
 # Aliases
@@ -97,7 +129,50 @@ register_jit_arg_adapter = _dsl.JitArgAdapterRegistry.register_jit_arg_adapter
 gpu = _dsl.cutlass_gpu
 cuda = _dsl.cuda_helpers
 
+import sys as _sys
+
+_sys.modules.setdefault(__name__ + ".cuda", cuda)
+del _sys
+
 # Jax Framework support
 from . import jax as jax
 
 CACHE_FILE = "compiled_cache.db"
+
+# --- cutlass namespace extension gate ----------------------------------------
+# `cutlass` is shipped as a regular package (this __init__.py)
+# rather than a PEP 420 namespace, so this file fully controls
+# what goes in the `cutlass.*` namespace.
+#
+# A small, explicitly-named set of NVIDIA-owned sibling distributions outside of
+# nvidia-cutlass-dsl are permitted to ship subpackages under `cutlass.*`.
+# They are listed below. For each one that is actually installed, we resolve where
+# pip placed its `cutlass/` portion on disk and append that directory to
+# cutlass.__path__, so that `import cutlass.<sibling>` finds it via the standard
+# import system.
+#
+# Anything NOT in this allowlist is silently ignored, even if it ships
+# files at <site-packages>/cutlass/<X>/: the regular-package rule keeps it
+# invisible. Adding a new approved sibling requires a release of
+# nvidia-cutlass-dsl.
+_APPROVED_CUTLASS_SIBLINGS = ("nvidia-cutlass-operators",)
+
+
+def _extend_cutlass_path_for_approved_siblings() -> None:
+    import importlib.metadata as _md
+    from pathlib import Path
+
+    for dist_name in _APPROVED_CUTLASS_SIBLINGS:
+        try:
+            dist = _md.distribution(dist_name)
+        except _md.PackageNotFoundError:
+            continue
+
+        sibling_path = str(dist.locate_file("cutlass"))
+        if Path(sibling_path).is_dir() and sibling_path not in __path__:
+            __path__.append(sibling_path)
+
+
+_extend_cutlass_path_for_approved_siblings()
+del _extend_cutlass_path_for_approved_siblings
+# --- end namespace extension gate --------------------------------------------

@@ -405,7 +405,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 complement(ComposedLayout<A,O,B> const& layout)
 {
-  return complement(layout, cosize(layout));
+  return complement(layout.layout_b());
 }
 
 //

@@ -28,3 +28,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 add_subdirectory(tutorial)
+if (NOT CUTLASS_CLANG_DEVICE_COMPILE)
+  add_subdirectory(rubin)
+endif()

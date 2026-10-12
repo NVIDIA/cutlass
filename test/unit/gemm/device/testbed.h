@@ -314,11 +314,28 @@ struct Testbed {
     if (result != cudaSuccess) {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
+    int oversized_smem_size = properties.sharedMemPerBlockOptin;
+#if defined(CUDA_OVERSIZED_SMEM_ENABLED)
+    result = cudaDeviceGetAttribute(&oversized_smem_size, cudaDevAttrOversizedSharedMemoryPerBlock, device_idx);
+    if (result != cudaSuccess) {
+      cudaGetLastError(); // Clear the sticky error so it does not propagate to kernel launches
+      CUTLASS_TRACE_HOST("warnig: query oversized smem size failed, use default smem size\n");
+    }
+#endif
+    if (oversized_smem_size != int(properties.sharedMemPerBlockOptin)) {
+      if (size_t(oversized_smem_size) < smem_size) {
+        printf("failed due to smem_size\n");
+        printf("hardware smem_size: %d, required smem_size: %d\n\n", int(oversized_smem_size), int(smem_size));
+        return false;
+      }
+    } else {
       if (properties.sharedMemPerBlockOptin < smem_size) {
         printf("failed due to smem_size\n");
         printf("hardware smem_size: %d, required smem_size: %d\n\n", int(properties.sharedMemPerBlockOptin), int(smem_size));
         return false;
       }
+    } 
+
     return true;
   }
 

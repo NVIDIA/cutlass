@@ -345,7 +345,7 @@ class GemmOperation:
     Get the tile shape passed to the collective builder.
     On Blackwell, this is different than the operation.tile_description.tile_shape.
     """
-    is_sm100_kernel = (self.arch == 100 or self.arch == 103)
+    is_sm100_kernel = (self.arch == 100 or self.arch == 103 or self.arch == 107)
     if not is_sm100_kernel:
       return self.tile_description.tile_shape
 
@@ -355,6 +355,22 @@ class GemmOperation:
     if opcode_class_main in [OpcodeClass.TensorOp, OpcodeClass.BlockScaledTensorOp, OpcodeClass.SparseTensorOp, OpcodeClass.BlockScaledSparseTensorOp]:
       tile_shape_m = instruction_shape[0]
       tile_shape_n = instruction_shape[1]
+
+      _sm107_breuse_schedules = {
+        KernelScheduleType.TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithBreuse,
+        KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithBreuse,
+      }
+      # Re-adjusting the tile shape m-mode, since it can be double the instruction's
+      # m-mode if b-reuse is enabled
+      if self.kernel_schedule in _sm107_breuse_schedules:
+        tile_shape_m = tile_shape_m * 2
+
     return (tile_shape_m, tile_shape_n, tile_shape_k)
 
   # Generates the full kernel function name

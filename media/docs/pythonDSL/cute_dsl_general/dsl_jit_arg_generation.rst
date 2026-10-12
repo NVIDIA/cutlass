@@ -83,6 +83,9 @@ an elementwise lambda function can be passed in as the ``epilogue_op`` argument.
 
 Refer to the `Blackwell dense GEMM example <https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_gemm_persistent.py>`__ for a complete example.
 
+.. note::
+   For the per-thread/partition naming convention used above (``tTR_rAcc``, ``tTR_rC``, and related tokens such as ``tAgA``, ``bSG_sC``, ``tQgQ_qdl``, …), see the :ref:`cute_dsl_naming_conventions`.
+
 Type safety
 -----------
 

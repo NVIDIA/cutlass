@@ -14,7 +14,7 @@ from typing import Optional
 from cutlass.cutlass_dsl import BaseDSL, dsl_user_op
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
-from cutlass._mlir.dialects import nvvm, scf
+from cutlass._mlir.dialects import nvvm as _nvvm, scf
 from cutlass._mlir import ir
 
 from ..typing import Int, Int32
@@ -48,6 +48,8 @@ class IfOpRegion:
     A context manager for if Op.
     Automatically inserts `scf.yield([])` when exiting the context.
     """
+
+    __dsl_trace_time_ctxmgr__ = True
 
     def __init__(
         self,
@@ -141,9 +143,9 @@ def elect_one(
        - PTX ISA documentation on ``elect.sync``
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
-    from cutlass.base_dsl.arch import Arch
+    from cutlass import base_dsl
 
-    BaseDSL._get_dsl().check_arch(lambda arch: arch >= Arch.sm_90)
-    is_thread_leader = nvvm.elect_sync()
+    BaseDSL._get_dsl().check_arch(lambda arch: arch >= base_dsl.Arch.sm_90)
+    is_thread_leader = _nvvm.elect_sync()
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
     return IfOpRegion(if_op.then_block, loc=loc, ip=ip)

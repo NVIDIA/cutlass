@@ -231,7 +231,7 @@ struct CallbacksBuilder<
   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
               && not cute::is_subbyte_v<typename FusionOp::ElementAux>> // aux subbyte tensor doesn't use smem
 > {
-  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+  using GmemStrideTypeAux = cute::remove_pointer_t<gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>>;
   using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
     GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
   using CopyOpR2S = decltype(detail::sm90_get_smem_store_op_for_accumulator<

@@ -1,6 +1,18 @@
 # Blackwell Low Latency GQA
 
 This example introduces TGV GQA, a CuTe C++-based Blackwell kernel optimized for low latency (low batch) generation phase GQA.
+The example ships two variants:
+
+- `tgv_gqa.cuh` — contiguous KV cache (default, `--mode 0`).
+- `tgv_gqa_paged.cuh` — paged KV cache (`--mode 1`). Layout matches a typical paged-attention serving runtime: a combined KV
+  buffer of shape `(num_pages_total, 2, Page_Size, kvH, dH)` (BS folded into `num_pages_total`, mode-1 selects K vs V) plus a
+  `(kvL/Page_Size, BS)` page table that maps `(bs, per_batch_page_idx) -> physical page id`. The example harness builds the
+  page table host-side using a Fisher-Yates shuffle to stress non-contiguous mappings; replacing that with another placement
+  policy needs no kernel changes.
+
+`common.cuh` holds the shared inline PTX wrappers used by both variants (`cp_async`, `tmem_load`/`tmem_store`,
+`store_shared_remote_f32`, `get_dsmem_tensor`).
+
 To compile and run this example:
 ```bash
 # in cutlass top level directory
@@ -8,7 +20,10 @@ mkdir build && cd build
 cmake .. -DCUTLASS_NVCC_ARCHS=100a -DCUTLASS_ENABLE_TESTS=OFF -DCUTLASS_ENABLE_EXAMPLES=ON -DCUTLASS_ENABLE_LIBRARY=OFF
 cd examples/93_blackwell_low_latency_gqa
 make
+# contiguous KV cache (default)
 ./93_blackwell_low_latency_gqa --kvL 8192 --kvH 8 --qH 64 --BS 1
+# paged KV cache
+./93_blackwell_low_latency_gqa --kvL 8192 --kvH 8 --qH 64 --BS 1 --mode 1
 ```
 
 Supported configs are:
@@ -20,11 +35,11 @@ Supported configs are:
 - Flash decoding, configurable number of splits
 - Cluster reduction with configurable number of reduction cta
 - Attention sink and sliding window
+- Paged KV cache (`--mode 1`)
 
 Unsupported features are:
 - Persistent schedule
 - MTP
-- Paged KV cache
 
 ## Kernel Design
 

@@ -202,7 +202,11 @@ struct PipelineState {
 
   CUTLASS_DEVICE
   void operator++() {
-    if constexpr (Stages > 0) {
+    if constexpr (Stages == 1) {
+      phase_ ^= 1;
+      ++count_;
+    }
+    else if constexpr (Stages > 0) {
       ++index_;
       ++count_;
       if (index_ == Stages) {
@@ -241,6 +245,20 @@ struct PipelineState {
       count_ += num_iterations;
     }
     return *this;
+  }
+
+  template<uint32_t NumIterations>
+  CUTLASS_DEVICE
+  PipelineState& advance() {
+    if constexpr (Stages > 0 && NumIterations == Stages) {
+      // A full traversal returns to the same stage and flips the phase once.
+      phase_ ^= 1;
+      count_ += NumIterations;
+      return *this;
+    }
+    else {
+      return advance(NumIterations);
+    }
   }
 
   CUTLASS_DEVICE

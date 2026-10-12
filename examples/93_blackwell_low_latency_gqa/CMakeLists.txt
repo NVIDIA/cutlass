@@ -31,6 +31,9 @@ if (NOT MSVC AND CUTLASS_NVCC_ARCHS MATCHES "100a|100f|103a|103f")
 cutlass_example_add_executable(
   93_blackwell_low_latency_gqa
   tgv_gqa.cu
+  common.cuh
+  tgv_gqa.cuh
+  tgv_gqa_paged.cuh
 )
 
 endif()

@@ -195,6 +195,11 @@ class BlockwiseContiguousGroupedGemmKernel:
         self.acc_dtype: Type[cutlass.Numeric] = acc_dtype
         self.use_2cta_instrs = use_2cta_instrs
         self.cluster_shape_mn = cluster_shape_mn
+        # CUDA 12.9 favors vectorized RMEM/O2 for 2CTA, but
+        # scalar RMEM/O3 for 1CTA. Keep this choice shared with compilation.
+        self.use_newer_backend_codegen = cutlass.target_version(min_version="13.1") or (
+            use_2cta_instrs and cutlass.target_version(exact_version="12.9")
+        )
         # K dimension is deferred in _setup_attributes
         self.mma_tiler = (*mma_tiler_mn, 1)
 
@@ -1664,13 +1669,30 @@ class BlockwiseContiguousGroupedGemmKernel:
                         tTR_rSFA_subtile = tTR_rSFA[(None, None, None, subtile_idx)]
                         tTR_rSFB_subtile = tTR_rSFB[(None, None, None, subtile_idx)]
 
-                        acc_vec = tTR_rAcc.load()
-                        final_vec = tTR_rAcc_subtile.load()
-                        scale_a = tTR_rSFA_subtile.load()
-                        scale_b = tTR_rSFB_subtile.load()
-                        scale = scale_a * scale_b
-                        final_vec = acc_vec * scale + final_vec
-                        tTR_rAcc_subtile.store(final_vec.to(self.acc_dtype))
+                        if cutlass.const_expr(self.use_newer_backend_codegen):
+                            acc_vec = tTR_rAcc.load()
+                            final_vec = tTR_rAcc_subtile.load()
+                            scale_a = tTR_rSFA_subtile.load()
+                            scale_b = tTR_rSFB_subtile.load()
+                            scale = scale_a * scale_b
+                            final_vec = acc_vec * scale + final_vec
+                            tTR_rAcc_subtile.store(final_vec.to(self.acc_dtype))
+                        else:
+                            scale = cute.make_rmem_tensor(
+                                tTR_rSFA_subtile.shape, self.acc_dtype
+                            )
+                            for fma_idx in cutlass.range_constexpr(cute.size(scale)):
+                                scale[fma_idx] = (
+                                    tTR_rSFA_subtile[fma_idx]
+                                    * tTR_rSFB_subtile[fma_idx]
+                                )
+                            for fma_idx in cutlass.range_constexpr(
+                                cute.size(tTR_rAcc_subtile)
+                            ):
+                                tTR_rAcc_subtile[fma_idx] = (
+                                    tTR_rAcc[fma_idx] * scale[fma_idx]
+                                    + tTR_rAcc_subtile[fma_idx]
+                                )
 
                     #
                     # Async arrive accumulator buffer empty
@@ -2822,6 +2844,9 @@ def run(
         gidx_mapping,
         max_active_clusters,
         current_stream,
+        options=(
+            "--opt-level 2" if gemm.use_newer_backend_codegen else "--opt-level 3"
+        ),
     )
 
     # Execution
@@ -3041,4 +3066,3 @@ if __name__ == "__main__":
         args.use_cold_l2,
         args.fixed_m,
     )
-    print("PASS")

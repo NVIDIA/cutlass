@@ -28,6 +28,10 @@ Overview
      - **No**
      - Tuple subclass — fields fixed at construction.
        Flattened field-by-field through the pytree system.
+   * - ``@native_struct``
+     - **Yes**
+     - Generates an LLVM struct type.
+       ``llvm.insertvalue`` replaces field values in-place.
    * - ``@dataclass(frozen=True)``
      - **No**
      - Frozen dataclass — treated as a read-only pytree container,
@@ -107,6 +111,39 @@ To "update" a field, construct a replacement NamedTuple:
         out[0] = scaled.x
         out[1] = scaled.y
         out[2] = scaled.z
+
+
+``@native_struct``
+------------------
+
+Use ``@native_struct`` when kernel logic needs to **accumulate into or
+update** a struct field.  Unlike NamedTuple, fields are mutable: each write
+generates an ``llvm.insertvalue`` to replace the field in the underlying LLVM
+struct.
+
+.. code-block:: python
+
+    import cutlass
+    import cutlass.cute as cute
+
+    @cute.native_struct
+    class Accumulator:
+        total: cutlass.Int32
+        count: cutlass.Int32
+
+    @cute.jit
+    def accumulate(acc: Accumulator, values: cute.Tensor, n: cutlass.Int32):
+        for i in range(n):
+            acc.total = acc.total + values[i]
+            acc.count = acc.count + cutlass.Int32(1)
+
+``@native_struct`` also supports:
+
+- ``zero_init=False`` — initialize with ``llvm.mlir.undef`` instead of zero.
+- ``packed=True`` — create a packed LLVM struct (no padding between fields).
+- ``Constexpr`` fields — excluded from the native struct and passed as
+  ordinary Python values.
+
 
 Choosing the right type
 -----------------------

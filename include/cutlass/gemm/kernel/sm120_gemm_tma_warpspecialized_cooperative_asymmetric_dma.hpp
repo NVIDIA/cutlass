@@ -178,7 +178,7 @@ public:
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
-  static_assert(SharedStorageSize <= cutlass::arch::sm120_smem_capacity_bytes, "SMEM usage exceeded capacity.");
+  static_assert(SharedStorageSize <= ArchTag::kSharedMemoryCapacityBytes, "SMEM usage exceeded capacity.");
 
   // Device side arguments
   struct Arguments {

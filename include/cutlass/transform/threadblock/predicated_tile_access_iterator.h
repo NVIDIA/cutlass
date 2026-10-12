@@ -397,7 +397,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   UnderlyingPredicates the_predicates;
 
   /// Parameters object with precomputed internal state
-  Params params_;
+  Params const &params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;
@@ -1162,7 +1162,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
   //
 
   /// Parameters object with precomputed internal state
-  Params params_;
+  Params const &params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;

@@ -55,6 +55,10 @@ add_subdirectory(sm100_blockscaled_tensorop_gemm)
 add_subdirectory(sm100_tensorop_gemm)
 add_subdirectory(sm100_blockscaled_sparse_tensorop_gemm)
 add_subdirectory(sm100_sparse_tensorop_gemm)
+if (CUTLASS_NVCC_ARCHS MATCHES 107a|107f|109a|109f)
+  add_subdirectory(sm107_tensorop_gemm)
+  add_subdirectory(sm107_blockscaled_tensorop_gemm)
+endif()
 add_subdirectory(sm120_blockscaled_sparse_tensorop_gemm)
 add_subdirectory(sm120_sparse_tensorop_gemm)
 add_subdirectory(sm120_tensorop_gemm)
@@ -571,6 +575,12 @@ cutlass_test_unit_gemm_device_add_executable(
   gemm_f8t_f8n_f8t_tensor_op_f32_sm89.cu
 #  gemm_f8t_f8n_f8t_tensor_op_f32_sparse_sm89.cu
   gemm_f8t_f8n_f8t_tensor_op_f16_sm89.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm89_blockwise
+
+  gemm_f8t_f8n_bf16t_tensor_op_f32_blockwise_sm89.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(
@@ -1201,3 +1211,18 @@ cutlass_test_unit_gemm_device_add_executable(
   sm100_gemm_f32_f32_f32_simt_align1_ptr_array.cu
 )
 
+if (CUTLASS_NVCC_ARCHS MATCHES 107a
+   )
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_sm107
+  # setting batch size fo 1 to control memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm107_gemm_umma.cu
+  sm107_gemm_f32_f32_f32_simt_align1_multi_cluster_shape.cu
+  sm107_gemm_f8_f8_f8_tensor_op_f32_blockwise.cu
+  sm107_gemm_f8_f8_f8_tensor_op_f32_alignx.cu
+  sm107_gemm_f4_f4_f32_tensor_op_f32_2sm_256x192.cu
+)
+endif()

@@ -17,9 +17,8 @@ from functools import lru_cache
 from dataclasses import dataclass
 from typing import Any
 from enum import IntEnum
-import numpy as np
-import os
 import ctypes
+import os
 
 import cuda.bindings.driver as cuda
 import cuda.bindings.runtime as cudart
@@ -60,6 +59,56 @@ def _cudaGetErrorEnum(error: Any) -> Any:
         raise DSLRuntimeError("Unknown error type: {}".format(error))
 
 
+def get_cuda_error_name_from_code(
+    error_code: int,
+    cuda_error_type: type[
+        cuda.CUresult | cudart.cudaError_t | nvrtc.nvrtcResult
+    ] = cuda.CUresult,
+) -> Union[str, bytes]:
+    """
+    Return the CUDA error name for a raw integer error code.
+    :param error_code: The raw integer CUDA error code.
+    :type error_code: int
+    :param cuda_error_type: The CUDA enum class used to decode the error code.
+    :type cuda_error_type: type(cuda.CUresult or cudart.cudaError_t or nvrtc.nvrtcResult)
+    :return: The decoded CUDA error name, or a string describing an unknown code.
+    :rtype: str or bytes
+    """
+    try:
+        cu_err = cuda_error_type(error_code)
+        return _cudaGetErrorEnum(cu_err)
+    except (ValueError, AttributeError):
+        return f"<unknown CUDA error code {error_code}>"
+
+
+def create_cuda_runtime_error(
+    error_code: int,
+    cuda_error_type: type[
+        cuda.CUresult | cudart.cudaError_t | nvrtc.nvrtcResult
+    ] = cuda.CUresult,
+    cause: BaseException | None = None,
+) -> DSLCudaRuntimeError:
+    """
+    Create a DSLCudaRuntimeError from a raw CUDA integer error code.
+    :param error_code: The raw integer CUDA error code.
+    :type error_code: int
+    :param cuda_error_type: The CUDA enum class used to decode the error code.
+    :type cuda_error_type: type(cuda.CUresult or cudart.cudaError_t or nvrtc.nvrtcResult)
+    :param cause: The original exception that caused this runtime error.
+    :type cause: BaseException or None
+    :return: The DSL CUDA runtime error.
+    :rtype: DSLCudaRuntimeError
+    """
+    error = DSLCudaRuntimeError(
+        error_code,
+        get_cuda_error_name_from_code(error_code, cuda_error_type),
+    )
+    if cause is not None:
+        error.__cause__ = cause
+        error.__suppress_context__ = True
+    return error
+
+
 def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
     """
     Get GPU architecture information and compatibility details.
@@ -82,12 +131,16 @@ def _get_gpu_arch_info(major: int, minor: int) -> tuple[str, str, list[str]]:
         (8, 7): ("Ampere", "sm_87", ["sm_87", "sm_86", "sm_80"]),  # A10, A40
         (9, 0): ("Hopper", "sm_90a", ["sm_90a"]),  # H100
         (10, 0): ("Blackwell", "sm_100a", ["sm_100a"]),  # B200
+        (10, 1): ("Thor", "sm_101a", ["sm_101a"]),  # Thor (pre 13.0)
         (10, 3): ("Blackwell", "sm_103a", ["sm_103a"]),
+        (10, 7): ("Rubin", "sm_107a", ["sm_107a"]),
+        (11, 0): ("Thor", "sm_110a", ["sm_110a"]),  # Thor (post 13.0)
         (12, 0): (
             "Blackwell",
             "sm_120a",
             ["sm_120a"],
         ),  # RTX PRO 6000 / RTX 50 Series
+        (12, 1): ("Blackwell", "sm_121a", ["sm_121a"]),  # DGX Spark
     }
     return gpu_arch_map.get(
         (major, minor), ("Unknown", f"sm_{major}{minor}", [f"sm_{major}{minor}"])
@@ -108,18 +161,13 @@ def get_compute_capability_major_minor(
     """
     try:
         checkCudaErrors(cuda.cuInit(0))
-        device = checkCudaErrors(cuda.cuDeviceGet(device_id))
-        major = checkCudaErrors(
-            cuda.cuDeviceGetAttribute(
-                cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-                device,
-            )
+        major = get_device_attribute(
+            cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+            device_id,
         )
-        minor = checkCudaErrors(
-            cuda.cuDeviceGetAttribute(
-                cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
-                device,
-            )
+        minor = get_device_attribute(
+            cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+            device_id,
         )
         return major, minor
     except RuntimeError as e:
@@ -175,18 +223,22 @@ class DeviceInfo:
     def pretty_str(self) -> str:
         """
         Convert DeviceInfo to a formatted string for display.
+
         :return: The formatted string.
         :rtype: str
-        Example:
-        On success:
-            CUDA devices available: <device_count> (current: <current_device>)
-           - Architecture: <arch_name> (<sm_arch>)
-           - Compatible SM archs: <compatible_archs>
-           - Total Memory: <memory_gb> GB
-        On failure:
-            1. CUDA initialization failed
-            2. Failed to get GPU info: <error_message>
-            3. No devices available
+
+        Example success output::
+
+            - CUDA devices available: <device_count> (current: <current_device>)
+            - Architecture: <arch_name> (<sm_arch>)
+            - Compatible SM archs: <compatible_archs>
+            - Total Memory: <memory_gb> GB
+
+        Example failure output::
+
+            - CUDA initialization failed
+            - Failed to get GPU info: <error_message>
+            - No devices available
         """
         info = ""
 
@@ -283,7 +335,7 @@ def get_device_info() -> DeviceInfo:
                     except:
                         pass
 
-            except Exception as e:
+            except Exception:
                 pass  # Compute capability info will remain None
 
     except Exception as e:
@@ -382,11 +434,11 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0) -> Any:
 
     driver_version = get_driver_version()
 
-    # Check the CUDA driver version works for the installed cuda-python package
+    # Check the CUDA driver version works for the installed cuda-bindings package
     if driver_version < 13000 and cuda.CUDA_VERSION >= 13000:
         raise DSLRuntimeError(
-            f"CUDA driver version {driver_version} is below the minimum required version for the installed cuda-python package {cuda.CUDA_VERSION}.",
-            suggestion=f"Consider updating your NVIDIA driver to version 580 or above. Or install cuda-python package with version 12.9 or below.",
+            f"CUDA driver version {driver_version} is below the minimum required version for the installed cuda-bindings package {cuda.CUDA_VERSION}.",
+            suggestion=f"Consider updating your NVIDIA driver to version 580 or above. Or install cuda-bindings package with version 12.9 or below.",
         )
 
     # Check if a valid CUDA context already exists (e.g., created by PyTorch or
@@ -462,16 +514,12 @@ def load_cubin_module(cubin_file: str) -> Any:
     :rtype: cuda.CUmodule
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
-    # Load CUBIN file as binary data
+    # Load CUBIN file as binary data, then delegate to the data loader
+    # (mirrors load_library delegating to load_library_data).
     _log().info(f"read cubin {cubin_file}")
     with open(cubin_file, "rb") as f:
         cubin_data = f.read()
-    # Load module data
-    _log().info(f"cuModuleLoadData {np.char.array(cubin_data).ctypes.data}")
-    module = checkCudaErrors(
-        cuda.cuModuleLoadData(np.char.array(cubin_data).ctypes.data)
-    )
-    return module
+    return load_cubin_module_data(cubin_data)
 
 
 def unload_cubin_module(module: Any) -> None:
@@ -494,11 +542,13 @@ def load_cubin_module_data(cubin_data: bytes) -> Any:
     :rtype: cuda.CUmodule
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
-    # Load module data
-    _log().info(f"cuModuleLoadData {np.char.array(cubin_data).ctypes.data}")
-    module = checkCudaErrors(
-        cuda.cuModuleLoadData(np.char.array(cubin_data).ctypes.data)
-    )
+    # Load module data. Keep the buffer alive in a local across the
+    # cuModuleLoadData call: `address` is only a raw address into it, so a bare
+    # temporary could be garbage-collected before the driver reads it.
+    _cubin_buf = ctypes.create_string_buffer(cubin_data)
+    address = ctypes.addressof(_cubin_buf)
+    _log().info(f"cuModuleLoadData {address}")
+    module = checkCudaErrors(cuda.cuModuleLoadData(address))
     return module
 
 
@@ -559,9 +609,15 @@ def load_library_data(cubin_data: bytes | int) -> Any:
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
     # Load module data
+    # Keep the buffer alive in a local (`_cubin_buf`) across the
+    # cuLibraryLoadData call: the address is only a raw address into the
+    # buffer, so if the buffer were a bare temporary it could be
+    # garbage-collected before the driver reads the address (use-after-free).
+    _cubin_buf = None
     if isinstance(cubin_data, bytes):
-        cubin_data = np.char.array(cubin_data).ctypes.data
-    _log().info(f"cuLibraryLoadData {cubin_data}")
+        _cubin_buf = ctypes.create_string_buffer(cubin_data)
+        cubin_data = ctypes.addressof(_cubin_buf)
+    _log().info(f"cuLibraryLoadData {cubin_data!r}")
 
     library = checkCudaErrors(
         cuda.cuLibraryLoadData(cubin_data, None, None, 0, None, None, 0)

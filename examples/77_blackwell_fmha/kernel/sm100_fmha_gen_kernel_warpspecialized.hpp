@@ -478,14 +478,14 @@ struct Sm100FmhaGenKernelWarpspecialized {
         static_assert(NumWarpsCorrection == 1);
 
         uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-        tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+        tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
       }
 
     }
     else if (role == WarpRole::MMA) {
       warpgroup_reg_set<NumRegsOther>();
 
-      tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+      tmem_allocator.allocate(ArchTag::kTmemCapacityColumns, &shared_storage.tmem_base_ptr);
       __syncwarp();
 
       CUTLASS_PRAGMA_NO_UNROLL
@@ -564,7 +564,7 @@ struct Sm100FmhaGenKernelWarpspecialized {
       static_assert(NumWarpsEpilogue <= 1);
       if constexpr (NumWarpsEpilogue == 1) {
         uint32_t free_stage_ptr = shared_storage.tmem_base_ptr;
-        tmem_allocator.free(free_stage_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+        tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
       }
 
     }

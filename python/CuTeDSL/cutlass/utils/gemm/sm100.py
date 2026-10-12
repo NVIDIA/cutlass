@@ -7,13 +7,14 @@
 #
 # Any use, reproduction, disclosure, or distribution of this software
 # and related documentation outside the scope permitted by the EULA
-# is strictly prohibited
+# is strictly prohibited.
 
 from typing import Any, Optional, Tuple, Union
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import Int32, Boolean, Constexpr, const_expr
 import cutlass.pipeline as pipeline
 from cutlass.utils.blackwell_helpers import get_tmem_load_op, get_smem_store_op
+from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.nvgpu.common import CacheEvictionPriority
 
@@ -45,12 +46,18 @@ def transform_partitioned_tensor_layout(tensor: cute.Tensor) -> cute.Tensor:
 
     shape = layout.shape
     stride = layout.stride  # type: ignore[union-attr]
+    assert isinstance(shape, tuple)
+    assert isinstance(stride, tuple)
+    shape_0 = shape[0]
+    stride_0 = stride[0]
+    assert isinstance(shape_0, tuple)
+    assert isinstance(stride_0, tuple)
 
     # Build new shape: ((shape[0][0], shape[1]), (shape[0][1], shape[2]), ...rest)
-    new_shape = ((shape[0][0], shape[1]), (shape[0][1], shape[2]), *shape[3:])  # type: ignore[index]
+    new_shape = ((shape_0[0], shape[1]), (shape_0[1], shape[2]), *shape[3:])
 
     # Build new stride: ((stride[0][0], stride[1]), (stride[0][1], stride[2]), ...rest)
-    new_stride = ((stride[0][0], stride[1]), (stride[0][1], stride[2]), *stride[3:])  # type: ignore[index]
+    new_stride = ((stride_0[0], stride[1]), (stride_0[1], stride[2]), *stride[3:])
 
     new_layout = cute.make_layout(shape=new_shape, stride=new_stride)
 
@@ -93,7 +100,9 @@ def epilogue_tmem_copy_and_partition(
         - tTR_rAcc: The accumulated tensor in register used to hold t2r results
     :rtype: Tuple[cute.TiledCopy, cute.Tensor, cute.Tensor]
     """
-    # Make tiledCopy for tensor memory load
+    # Make tiledCopy for tensor memory load.
+    # Kernels may expose `tmem_warp_shape_mn` to override the default
+    # (2CTA+M64 -> (2,2), else (4,1)) rule.
     copy_atom_t2r = get_tmem_load_op(
         gemm_kernel.cta_tile_shape_mnk,
         gemm_kernel.c_layout,
@@ -101,6 +110,7 @@ def epilogue_tmem_copy_and_partition(
         gemm_kernel.acc_dtype,
         epi_tile,
         use_2cta_instrs,
+        tmem_warp_shape_mn=getattr(gemm_kernel, "tmem_warp_shape_mn", None),
     )
     # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, STAGE)
     tAcc_epi = cute.flat_divide(
@@ -217,7 +227,7 @@ def epilogue_tma_store(
 
     epilog_sync_barrier = pipeline.NamedBarrier(
         barrier_id=gemm_kernel.epilog_sync_bar_id,
-        num_threads=32 * len(gemm_kernel.epilogue_warp_id),
+        num_threads=WARP_SIZE * len(gemm_kernel.epilogue_warp_id),
     )
 
     #
@@ -254,7 +264,7 @@ def epilogue_tma_store(
         # Convert to C type
         #
         acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
-        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))  # type: ignore[operator]
+        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
         tRS_rC.store(acc_vec)
 
         #
@@ -307,7 +317,7 @@ def epilogue(
     acc_pipeline: pipeline.PipelineAsync,
     tCcC_base: Optional[cute.Tensor] = None,
     mC_mnl: Optional[cute.Tensor] = None,
-    overlapping_accum: Constexpr = False,  # type: ignore[assignment]
+    overlapping_accum: Constexpr = False,
 ) -> pipeline.PipelineState:
     """
     Epilogue function that stores accumulator results directly to global memory.
@@ -480,7 +490,7 @@ def epilogue(
         # Convert to C type
         #
         acc_vec = tTR_rAcc.load()
-        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))  # type: ignore[operator]
+        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
         tTR_rC.store(acc_vec)
 
         if const_expr(use_predication):

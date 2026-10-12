@@ -152,6 +152,7 @@ struct CollectiveBuilder<
     BuilderScheduleTag,
     cute::enable_if_t<
       (cute::is_same_v<ArchTag, arch::Sm100> 
+      || cute::is_same_v<ArchTag, arch::Sm107>
       ) &&
       // Blockscaled Sparse Gemm
       cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>

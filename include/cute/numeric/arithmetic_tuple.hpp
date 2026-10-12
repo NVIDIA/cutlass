@@ -369,7 +369,13 @@ CUTE_HOST_DEVICE constexpr
 auto
 operator==(ScaledBasis<T,Ns...> const& t, ScaledBasis<U,Ms...> const& u) {
   if constexpr (sizeof...(Ns) == sizeof...(Ms)) {
-    return bool_constant<((Ns == Ms) && ...)>{} && t.value() == u.value();
+    // Values of different bases need not be comparable types, so only form the value
+    // comparison when the bases match.
+    if constexpr (((Ns == Ms) && ...)) {
+      return bool_constant<true>{} && t.value() == u.value();
+    } else {
+      return false_type{};
+    }
   } else {
     return false_type{};
   }
@@ -513,18 +519,12 @@ struct tuple_element<I, cute::ArithmeticTuple<T...>>
 namespace std
 {
 
-#if (__CUDACC_VER_MAJOR__ >= 13)
+#if defined(CUTE_CUDA_STD_NEEDS_TUPLE_PRIMARY_DECLARATIONS)
+template <class _Tp>
+struct tuple_size;
 
-#include <cuda/std/__tuple_dir/structured_bindings.h>
-
-#else
-#if defined(__CUDACC_RTC__)
-  template <class... _Tp>
-  struct tuple_size;
-
-  template <size_t _Ip, class... _Tp>
-  struct tuple_element;
-#endif
+template <size_t _Ip, class _Tp>
+struct tuple_element;
 #endif
 
 template <class... T>

@@ -36,8 +36,10 @@ from cutlass.cute.runtime import from_dlpack
 
 @cute.kernel
 def _unary_ops_kernel(
-    absf_inp: cute.Tensor, absf_out: cute.Tensor,
-    floor_inp: cute.Tensor, floor_out: cute.Tensor,
+    absf_inp: cute.Tensor,
+    absf_out: cute.Tensor,
+    floor_inp: cute.Tensor,
+    floor_out: cute.Tensor,
 ):
     tidx, _, _ = cute.arch.thread_idx()
     absf_out[tidx] = cute.math.absf(absf_inp[tidx])
@@ -46,8 +48,10 @@ def _unary_ops_kernel(
 
 @cute.jit
 def _unary_ops_host(
-    absf_inp: cute.Tensor, absf_out: cute.Tensor,
-    floor_inp: cute.Tensor, floor_out: cute.Tensor,
+    absf_inp: cute.Tensor,
+    absf_out: cute.Tensor,
+    floor_inp: cute.Tensor,
+    floor_out: cute.Tensor,
 ):
     _unary_ops_kernel(absf_inp, absf_out, floor_inp, floor_out).launch(
         grid=[1, 1, 1], block=[absf_inp.shape[0], 1, 1]
@@ -77,7 +81,9 @@ def test_unary_ops():
 
 @cute.kernel
 def _binary_ops_kernel(
-    mag_inp: cute.Tensor, sign_inp: cute.Tensor, out: cute.Tensor,
+    mag_inp: cute.Tensor,
+    sign_inp: cute.Tensor,
+    out: cute.Tensor,
 ):
     tidx, _, _ = cute.arch.thread_idx()
     out[tidx] = cute.math.copysign(mag_inp[tidx], sign_inp[tidx])
@@ -85,7 +91,9 @@ def _binary_ops_kernel(
 
 @cute.jit
 def _binary_ops_host(
-    mag_inp: cute.Tensor, sign_inp: cute.Tensor, out: cute.Tensor,
+    mag_inp: cute.Tensor,
+    sign_inp: cute.Tensor,
+    out: cute.Tensor,
 ):
     _binary_ops_kernel(mag_inp, sign_inp, out).launch(
         grid=[1, 1, 1], block=[mag_inp.shape[0], 1, 1]

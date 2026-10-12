@@ -212,3 +212,14 @@ TEST(CuTe_core, Logical_product)
     test_logical_product(vec, tile);
   }
 }
+
+TEST(CuTe_core, LogicalProductUsesPureComplement)
+{
+  auto block  = make_layout(make_shape(_4{}, _2{}),
+                            make_stride(_2{}, Int<14>{}));
+  auto tiler  = Layout<_2,_2>{};
+  auto result = logical_product(block, tiler);
+
+  EXPECT_TRUE(bool(result == make_layout(block, Layout<_2,Int<28>>{})));
+  EXPECT_EQ(layout<1>(result)(1), 28);
+}

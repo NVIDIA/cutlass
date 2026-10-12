@@ -176,6 +176,12 @@ bool relatively_equal<float_e4m3_t>(float_e4m3_t a, float_e4m3_t b, float_e4m3_t
 
 template <>
 CUTLASS_HOST_DEVICE
+bool relatively_equal<float_ue5m3_t>(float_ue5m3_t a, float_ue5m3_t b, float_ue5m3_t epsilon, float_ue5m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
 bool relatively_equal<float_e5m2_t>(float_e5m2_t a, float_e5m2_t b, float_e5m2_t epsilon, float_e5m2_t nonzero_floor) {
   return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
 }
