@@ -2652,6 +2652,13 @@ class BlackwellFusedMultiHeadAttentionBackward:
             )
         return workspace_bytes
 
+    @staticmethod
+    def _allocate_workspace(workspace_size: int):
+        workspace_torch = torch.zeros(workspace_size, dtype=torch.uint8, device="cuda")
+        # Only the byte pointer is consumed; a dynamic extent can overflow Int32.
+        workspace = from_dlpack(workspace_torch, assumed_align=16)
+        return workspace_torch, workspace
+
     def make_and_init_load_mma_Q_pipeline(self, load_mma_Q_mbar_ptr):
         load_mma_Q_producer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread, len([self.load_warp_id])
@@ -3072,8 +3079,7 @@ def run(
     workspace_size = BlackwellFusedMultiHeadAttentionBackward._get_workspace_size(
         s_q_max, s_k_max, d, h_q, orig_b, acc_dtype
     )
-    workspace_torch = torch.zeros(workspace_size, dtype=torch.uint8).cuda()
-    workspace = from_dlpack(workspace_torch, assumed_align=16).mark_layout_dynamic()
+    workspace_torch, workspace = fmha_bwd._allocate_workspace(workspace_size)
 
     # Initialize Stream
     current_stream = cutlass_torch.default_stream()
