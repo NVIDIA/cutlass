@@ -21,7 +21,7 @@ from cutlass._mlir.dialects import func
 
 def offset_ir(space=cute.AddressSpace.gmem, *, nested=False, identity=False,
               constant=False, dynamic_stride=False, row_type=cutlass.Int32,
-              divisor=1):
+              divisor=1, coord_override=None):
     with ir.Context(), ir.Location.unknown():
         module = ir.Module.create()
         with ir.InsertionPoint(module.body):
@@ -40,6 +40,8 @@ def offset_ir(space=cute.AddressSpace.gmem, *, nested=False, identity=False,
                     shape, strides, coord = (2**29 + 1, 4), (stride, 1), (row, 0)
                 if constant:
                     coord = (2, 0)
+                if coord_override is not None:
+                    coord = coord_override
                 if identity:
                     tensor = cute.make_identity_tensor(shape)
                 else:
@@ -98,6 +100,30 @@ class TestDomainOffset(unittest.TestCase):
         text, _ = offset_ir(row_type=cutlass.Uint32)
         self.assertIn("arith.extui", text)
         self.assertNotIn("arith.extsi", text)
+
+    def test_assumed_unsigned_coordinate_zero_extends(self):
+        for space in (cute.AddressSpace.gmem, cute.AddressSpace.generic):
+            for nested in (False, True):
+                with self.subTest(space=space, nested=nested):
+                    text, pointer_type = offset_ir(
+                        space, nested=nested, row_type=cutlass.Uint32, divisor=8
+                    )
+                    self.assertIn("arith.extui", text)
+                    self.assertNotIn("arith.extsi", text)
+                    self.assertIn("?{i64 div=32}", text)
+                    self.assertIn("align<16>", pointer_type)
+
+    def test_float_literal_coordinate_is_rejected(self):
+        for space in (cute.AddressSpace.gmem, cute.AddressSpace.generic):
+            with self.subTest(space=space):
+                with self.assertRaisesRegex(ValueError, "Expected Coord"):
+                    offset_ir(space, nested=True, coord_override=((1.5, 0), 0))
+
+    def test_dynamic_float_coordinate_is_rejected(self):
+        for space in (cute.AddressSpace.gmem, cute.AddressSpace.generic):
+            with self.subTest(space=space):
+                with self.assertRaisesRegex(ValueError, "Expected Coord"):
+                    offset_ir(space, row_type=cutlass.Float32)
 
     def test_dynamic_i64_stride_stays_wide(self):
         text, _ = offset_ir(dynamic_stride=True)

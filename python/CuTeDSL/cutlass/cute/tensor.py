@@ -1232,12 +1232,23 @@ def domain_offset(
         # Widen before the coordinate-stride product, not after it overflows.
         # Preserve static leaves and existing alignment/divisibility facts.
         def widen_coord(c):
-            if isinstance(c, int) or c is None:
+            # Leave invalid leaves for crd2idx's coordinate validation.
+            if isinstance(c, int) or not is_integer(c):
                 return c
             if isinstance(c, Integer) and c.width >= 64:
                 return c
+            if isinstance(c, Integer) and not c.signed:
+                # Constrained IntValue is signed even inside a Uint wrapper.
+                # Use the declared coordinate type to preserve its high bit.
+                wide = Int64(
+                    arith.extui(
+                        Int64.mlir_type, c.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+                    )
+                )
+            else:
+                wide = Int64(c, loc=loc, ip=ip)
             return assume(
-                Int64(c, loc=loc, ip=ip),
+                wide,
                 divby=get_divisibility(c),
                 loc=loc,
                 ip=ip,
