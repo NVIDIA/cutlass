@@ -1273,6 +1273,9 @@ class JitFunctionArtifacts:
     # Device compilation artifacts (set when DeviceTarget is enabled)
     device_header: str | None = None
     device_object_path: str | None = None
+    # Raw (pre-pass) IR, set with KEEP=ir-debug. MLIR holds the same IR unless
+    # KEEP=ir is also set, in which case MLIR holds the clean IR.
+    MLIR_RAW: str | None = None
 
     @staticmethod
     def _read_artifact_file(path: str, label: str, *, binary: bool = False) -> Any:
@@ -1290,6 +1293,7 @@ class JitFunctionArtifacts:
             ("CUBIN", "CUBIN", True),
             ("SASS", "SASS", False),
             ("MLIR", "MLIR", False),
+            ("MLIR_RAW", "raw MLIR", False),
         ]
         for attr, label, binary in text_fields:
             path = getattr(self, attr)

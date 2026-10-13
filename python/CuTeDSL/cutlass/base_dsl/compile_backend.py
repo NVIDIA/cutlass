@@ -169,6 +169,7 @@ class CompilerBackend(ABC):
                 if (dsl.envar.keep_ir or dsl.envar.keep_ir_clean)
                 else None
             ),
+            MLIR_RAW=(str(dsl.dump_mlir_raw_path) if dsl.envar.keep_ir else None),
         )
 
     def _finalize_cache(
