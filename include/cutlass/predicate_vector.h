@@ -166,7 +166,7 @@ struct PredicateVector {
   }
 
   /// Returns word mask.
-  CUTLASS_HOST_DEVICE static constexpr bool computeWordMask() {
+  CUTLASS_HOST_DEVICE static constexpr Storage computeWordMask() {
     Storage mask(0);
     CUTLASS_PRAGMA_UNROLL
     for (size_t byte = 0; byte < sizeof(Storage); ++byte) {
@@ -176,10 +176,13 @@ struct PredicateVector {
   }
 
   /// Returns mask of last word.
-  CUTLASS_HOST_DEVICE static constexpr bool computeLastWordMask() {
+  CUTLASS_HOST_DEVICE static constexpr Storage computeLastWordMask() {
     Storage mask(0);
+    // When the last word is fully occupied (kBytes is an exact multiple of
+    // sizeof(Storage)), every byte of it holds predicates and must be masked in.
+    constexpr int count = (kBytes % sizeof(Storage) == 0) ? sizeof(Storage) : (kBytes % sizeof(Storage));
     CUTLASS_PRAGMA_UNROLL
-    for (int byte = 0; byte < kBytes % sizeof(Storage); ++byte) {
+    for (int byte = 0; byte < count; ++byte) {
       mask |= (kByteMask << (byte * 8));
     }
     return mask;
@@ -278,7 +281,7 @@ struct PredicateVector {
     /// Iterator recedes by some amount
     CUTLASS_HOST_DEVICE
     Iterator operator-(int offset) {
-      ConstIterator ret(*this);
+      Iterator ret(*this);
       ret.bit_ -= offset;
       return ret;
     }
