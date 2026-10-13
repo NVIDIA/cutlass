@@ -28,7 +28,9 @@
 
 
 def pytest_configure(config):
-    config.default_SMs[__file__] = "90a"
+    if hasattr(config, "default_SMs"):
+        config.default_SMs[__file__] = "90a"
+
     config.addinivalue_line(
         "markers",
         "bench: mark test as a performance benchmark (skipped by default; run with -m bench).",
