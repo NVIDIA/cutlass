@@ -191,7 +191,7 @@ public:
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
   void add_pointer_offset(LongIndex pointer_offset) {
-    pointer_ += pointer_offset * 8 / sizeof_bits<Element>::value;
+    pointer_ += pointer_offset * sizeof_bits<Element>::value / 8;
   }
 
   CUTLASS_HOST_DEVICE
