@@ -770,6 +770,9 @@ int main(int argc, char const** argv) {
 
   bool satisfied;
   if (props.major < 10) {
+    // Pre-Blackwell 
+    satisfied =  (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4);
+    satisfied &= (props.major > 8) || (props.major == 8 && props.minor == 9); 
   }
   else {
     satisfied = (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8);
