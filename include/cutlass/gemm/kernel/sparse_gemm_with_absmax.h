@@ -319,7 +319,7 @@ struct SparseGemmWithAbsmax {
 
     cutlass::MatrixCoord tb_offset_E{
       threadblock_tile_offset.m() * Mma::Shape::kM,
-      threadblock_tile_offset.k() * params.gemm_k_size / kSparse,
+      threadblock_tile_offset.k() * params.gemm_k_size / kSparse / kElementsPerElementE,
     };
 
     // Problem size is a function of threadblock index in the K dimension
