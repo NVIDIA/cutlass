@@ -48,7 +48,7 @@ def run_l0_oss_dsl_test(context: TestContext) -> int:
                 context = configured_context
 
         test_groups = (
-            ("pytest", run_pytest_flow),
+            ("pytest_execution", run_pytest_flow),
             # TODO: Re-enable the TVM FFI and CuTe export test groups after
             # their temporary L0_oss_dsl_test disablement is lifted.
             # ("tvm_ffi", run_tvm_ffi_flow),
