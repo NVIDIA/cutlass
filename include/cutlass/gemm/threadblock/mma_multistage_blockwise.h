@@ -209,7 +209,8 @@ public:
       cutlass::TensorRef<ElementScale, LayoutScale> scale_B,     // blockwise scale tensor for B
       int k_iter_idx,  ///< current K-block index processed by this iteration
       int block_m_idx, ///< threadblock index along M dimension (row)
-      int block_n_idx) ///< threadblock index along N dimension (col)
+      int block_n_idx, ///< threadblock index along N dimension (col)
+      int k_tile_offset)
   {
     // Unroll the warp-level MMA tiles of a threadblock's mainloop iteration
     CUTLASS_PRAGMA_UNROLL
@@ -241,7 +242,7 @@ public:
       // pipeline executes Stages-1 extra iterations with gemm_k_iterations < 0.
 
       int ldA = int(scale_A.layout().stride(0));
-      int k_block_idx = k_iter_idx;
+      int k_block_idx = k_iter_idx + k_tile_offset;
       if (k_block_idx >= ldA) {
         k_block_idx = ldA - 1;
       }
@@ -342,7 +343,8 @@ public:
       cutlass::TensorRef<ElementScale, LayoutScale> scale_A, // blockwise scale tensor for A
       cutlass::TensorRef<ElementScale, LayoutScale> scale_B, // blockwise scale tensor for B
       int block_m_idx,
-      int block_n_idx) ///< [in|out] iterator over B operand in global memory
+      int block_n_idx, ///< [in|out] iterator over B operand in global memory
+      int k_tile_offset)
   {
     PipeState pipe_state;
 
@@ -377,7 +379,7 @@ public:
     for (; gemm_k_iterations > (-Base::kStages + 1); ++k_iter_idx) {
       mac_loop_iter(pipe_state, accum, iterator_A, iterator_B,
                     gemm_k_iterations, scale_A, scale_B, k_iter_idx,
-                    block_m_idx, block_n_idx);
+                    block_m_idx, block_n_idx, k_tile_offset);
     }
 
     if (Detail::kStagedAccumulation) {
@@ -410,7 +412,8 @@ public:
       ///< logical threadblock tile index along M after swizzling
       int threadblock_tile_m,
       ///< logical threadblock tile index along N after swizzling
-      int threadblock_tile_n) {
+      int threadblock_tile_n,
+      int k_tile_offset) {
 
     constexpr int kScaleBlock = 128;
     // Row-wise block index for A (and output C/D) – one per 128 rows.
@@ -434,7 +437,7 @@ public:
 
     // Perform the MAC-iterations with blockwise dequantization
     gemm_iters(gemm_k_iterations, accum, iterator_A, iterator_B, scaleA, scaleB,
-               block_m_idx, block_n_idx);
+               block_m_idx, block_n_idx, k_tile_offset);
   }
 };
 
