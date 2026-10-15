@@ -82,7 +82,7 @@ make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>, int64_t> s, cute::Shape
   cute::get<0>(s_copy) = static_cast<IntT>(cute::get<1>(shape_MKL));
   int batch_count =  cute::get<2>(shape_MKL);
   if (batch_count > 1) {
-    cute::get<2>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL) * cute::get<1>(shape_MKL));
+    cute::get<2>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL)) * static_cast<IntT>(cute::get<1>(shape_MKL));
   }
   else {
     cute::get<2>(s_copy) = static_cast<IntT>(0);
@@ -100,7 +100,7 @@ make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT, int64_t> s, cute::Shape
   cute::get<1>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL));
   int batch_count =  cute::get<2>(shape_MKL);
   if (batch_count > 1) {
-    cute::get<2>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL) * cute::get<1>(shape_MKL));
+    cute::get<2>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL)) * static_cast<IntT>(cute::get<1>(shape_MKL));
   }
   else {
     cute::get<2>(s_copy) = static_cast<IntT>(0);
