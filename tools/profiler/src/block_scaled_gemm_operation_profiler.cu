@@ -1355,20 +1355,20 @@ bool BlockScaledGemmOperationProfiler::verify_with_reference_(
   //
   // Verify results
   //
-  auto resultD = compare_tensors(
+  auto resultD = compare_tensor_batches(
     options,
     *gemm_workspace_.Computed,
     *gemm_workspace_.Reference,
-    gemm_workspace_.Computed->batch_stride()
+    problem_.batch_count
   );
   
   auto resultSFD = Disposition::kPassed;
   if (gemm_desc.SFD.element != library::NumericTypeID::kVoid) {
-    resultSFD = compare_tensors(
+    resultSFD = compare_tensor_batches(
       options,
       *gemm_workspace_.Computed_SFD,
       *gemm_workspace_.Reference_SFD,
-      gemm_workspace_.Computed_SFD->batch_stride()
+      problem_.batch_count
     );
   }
   
@@ -1658,4 +1658,3 @@ Status BlockScaledGemmOperationProfiler::profile_cutlass_(
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
