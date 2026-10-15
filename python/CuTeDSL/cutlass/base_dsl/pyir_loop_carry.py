@@ -599,7 +599,15 @@ def _pyir_carry_region_mutated_leaves(
         else:
             rec_index = arg_index
         records.append(
-            (rebind_holder, attr_name, ref, reconstruct_obj, leaf_index, rec_index)
+            (
+                rebind_holder,
+                attr_name,
+                ref,
+                reconstruct_obj,
+                leaf_index,
+                rec_index,
+                snap_owner if reconstruct_obj is not None else None,
+            )
         )
         log().info(
             "[pyir %s] carried updated value-tree leaf '%s' as %s (%s)",
@@ -656,12 +664,13 @@ def _pyir_rebind_carried_leaves_post_loop(
         return {}
     # Group whole-object-rebind records by the object to reconstruct, tracking
     # each object's ``mix_iter_args`` slot (the last non-negative ``arg_index``).
-    rebuilds: "dict[int, tuple[Any, dict[int, ir.Value], int]]" = {}
+    rebuilds: "dict[int, tuple[Any, dict[int, ir.Value], int, Any]]" = {}
     # Self-leaf rebinds: ``{arg_index: loaded_dsl_value}`` -- slot re-pointed at the WRAPPED load.
     self_leaf_binds: "dict[int, Any]" = {}
     for record in records:
         holder, attr_name, ref, reconstruct_obj, leaf_index = record[:5]
         arg_index = record[5] if len(record) > 5 else -1
+        alias_owner = record[6] if len(record) > 6 else None
         # SELF-LEAF: keep the WRAPPED ``pyir.load`` as the new slot binding so a post-region DSL read
         # sees a proper typed value, not a bare SSA.
         if _is_self_leaf_record(holder, attr_name):
@@ -689,12 +698,12 @@ def _pyir_rebind_carried_leaves_post_loop(
                 _pyir_setattr_raw(holder, attr_name, loaded)
             else:
                 key = id(reconstruct_obj)
-                _obj, leaves, ai = rebuilds.setdefault(
-                    key, (reconstruct_obj, {}, arg_index)
+                _obj, leaves, ai, owner = rebuilds.setdefault(
+                    key, (reconstruct_obj, {}, arg_index, alias_owner)
                 )
                 leaves[leaf_index] = loaded
                 if arg_index >= 0 and ai < 0:
-                    rebuilds[key] = (_obj, leaves, arg_index)
+                    rebuilds[key] = (_obj, leaves, arg_index, owner)
         except Exception as exc:
             # Fail-loud wall: a swallowed store-back rebind failure would
             # silently drop this leaf's carry (post-loop reads go stale).
@@ -705,7 +714,7 @@ def _pyir_rebind_carried_leaves_post_loop(
     # Reconstruct each whole-object-rebound compound from its loaded canonical
     # leaves and copy the rebuilt state in place.
     arg_index_to_obj: "dict[int, Any]" = {}
-    for obj, leaves, arg_index in rebuilds.values():
+    for obj, leaves, arg_index, alias_owner in rebuilds.values():
         try:
             cur_leaves = _pyir_extract_any_leaf_values(obj)
             if cur_leaves is None:
@@ -725,9 +734,18 @@ def _pyir_rebind_carried_leaves_post_loop(
                     arg_index_to_obj[arg_index] = rebuilt
                 continue
             # Copy the rebuilt instance state into ``obj`` so every alias observes
-            # the re-derived (carried) leaves.
-            for k, v in list(vars(rebuilt).items()):
-                _pyir_setattr_raw(obj, k, v)
+            # the re-derived (carried) leaves.  A generated region binding may be
+            # a reconstructed twin of the pre-region owner; update that owner too.
+            targets = [obj]
+            if (
+                alias_owner is not None
+                and alias_owner is not obj
+                and _pyir_same_container_structure(alias_owner, obj)
+            ):
+                targets.append(alias_owner)
+            for target in targets:
+                for k, v in list(vars(rebuilt).items()):
+                    _pyir_setattr_raw(target, k, v)
             if arg_index >= 0:
                 arg_index_to_obj[arg_index] = obj
         except Exception as exc:
