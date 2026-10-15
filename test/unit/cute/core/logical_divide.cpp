@@ -55,6 +55,34 @@ test_logical_divide(LayoutA const& layoutA,
   ASSERT_TRUE(compatible(layoutB, layout<0>(layoutR)));
 }
 
+TEST(CuTe_core, Zipped_divide_underscore)
+{
+  {
+  auto layout = make_layout(
+      make_shape(_12{}, make_shape(_4{}, _8{})),
+      make_stride(_7{}, make_stride(_1{}, C<30>{})));
+  auto result = zipped_divide(layout, make_tuple(_2{}, Underscore{}));
+
+  ASSERT_TRUE(bool(shape(result) ==
+                   make_shape(make_shape(_2{}, _1{}),
+                              make_shape(_6{}, make_shape(_4{}, _8{})))));
+  ASSERT_TRUE(bool(stride(result) ==
+                   make_stride(make_stride(_7{}, _0{}),
+                               make_stride(C<14>{}, make_stride(_1{}, C<30>{})))));
+  }
+
+  {
+  auto layout = make_layout(make_shape(_12{}, _4{}),
+                            make_stride(_4{}, _1{}));
+  auto result = zipped_divide(layout, make_tuple(_2{}, Underscore{}));
+
+  ASSERT_TRUE(bool(shape(result) ==
+                   make_shape(make_shape(_2{}, _1{}), make_shape(_6{}, _4{}))));
+  ASSERT_TRUE(bool(stride(result) ==
+                   make_stride(make_stride(_4{}, _0{}), make_stride(_8{}, _1{}))));
+  }
+}
+
 TEST(CuTe_core, Logical_divide)
 {
   {
