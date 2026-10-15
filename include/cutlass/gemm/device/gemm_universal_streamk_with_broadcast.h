@@ -61,7 +61,18 @@ namespace device {
 
 /*!
   The universal GEMM with a broadcast epilogue.
-  Supports
+
+  With the default output operator (LinearCombinationBiasElementwise), the epilogue computes
+  Z = ElementwiseOp(BinaryOp(alpha * AB + beta * C, V)) and optionally stores
+  T = BinaryOp(alpha * AB + beta * C, V). The broadcast vector V (ptr_Vector) is indexed along the
+  contiguous dimension of the output:
+
+    - RowMajor output:    V has N elements and V[j] is broadcast to column j of every row.
+    - ColumnMajor output: V has M elements and V[i] is broadcast to row i of every column.
+
+  ldr is the offset in elements between the vectors used by consecutive threadblock tiles along the
+  strided dimension of the output (0 to broadcast a single vector), and batch_stride_Vector is the
+  offset between batches.
 */
 template <
     /// Element type for A matrix operand
@@ -199,6 +210,10 @@ class GemmUniversalStreamkWithBroadcast :
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for column-major output exchanges problem size and operand.
+///
+/// The underlying row-major kernel computes the transposed problem D^T = B^T A^T, so its broadcast
+/// vector runs along its own columns, which are the rows of the column-major output. ptr_Vector
+/// therefore holds M elements (one per row of D), and ldr strides over threadblock tiles along N.
 template <
     /// Element type for A matrix operand
     typename ElementA_,
