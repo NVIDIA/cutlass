@@ -51,6 +51,7 @@ add_cutlass_compiler_base_conversion_library(MLIRBaseToTargets
   MLIRLLVMCommonConversion
   MLIRLLVMDialect
   MLIRMathDialect
+  MLIRMathToFuncs
   MLIRNVVMDialect
   MLIRPass
   MLIRSCFDialect
