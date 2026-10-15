@@ -30,8 +30,6 @@ from .common import DSLBaseError, DSLUserCodeError
 from . import diagnostics as _diagnostics
 from .utils.logger import log
 from .env_manager import EnvironmentVarManager
-_SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
-
 
 def _split_options(text: str) -> list:
     """shlex.split an option string, keeping Windows path separators intact.
@@ -98,8 +96,6 @@ def _unbuffer_jit_c_stdout() -> None:
     except (OSError, AttributeError) as e:
         log().warning(f"could not unbuffer the JIT's C stdout: {e}")
 
-
-sys.path.append(_SCRIPT_PATH)
 
 from .._mlir import ir
 
