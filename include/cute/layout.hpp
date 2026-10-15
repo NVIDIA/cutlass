@@ -1099,9 +1099,9 @@ composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_st
                      // Weak divisibility condition
                      if constexpr (is_static<decltype(new_shape)>::value and is_static<decltype(rest_shape)>::value) {
                        CUTE_STATIC_ASSERT_V(((rest_shape % new_shape) == Int<0>{}), "Shape Divisibility Condition");
-                     } else {
-                       // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
-                       //assert(((rest_shape % new_shape) == 0) && "Shape Divisibility Condition");
+                     } else if constexpr (is_static<decltype(curr_shape)>::value) {
+                       // A static lhs with a dynamic rhs still requires runtime validation.
+                       assert(((rest_shape % new_shape) == 0) && "Shape Divisibility Condition");
                      }
 
                      return cute::make_tuple(append(result_shape,  new_shape),
