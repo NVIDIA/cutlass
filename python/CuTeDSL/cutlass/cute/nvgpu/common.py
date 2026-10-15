@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 import enum
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Type
 
@@ -334,6 +335,15 @@ class SharedSpace(enum.Enum):
 
 COPY_CACHE_POLICY_FIELD_NAME = "cache_policy"
 
+# The G2R atom type prints its invariant flag as ``invariant = true`` (it is
+# omitted when false). The Python binding of ``CopyAtomG2RType`` does not expose
+# the flag, so read it back from the type's textual form.
+_G2R_INVARIANT_RE = re.compile(r"\binvariant\s*=\s*true\b")
+
+
+def _is_invariant_g2r_atom(value: ir.Value) -> bool:
+    return _G2R_INVARIANT_RE.search(str(value.type)) is not None
+
 
 @dataclass(frozen=True)
 class CopyUniversalOp(atom.CopyOp):
@@ -415,6 +425,13 @@ class CopyG2ROp(atom.CopyOp):
             shared_space=cute.nvgpu.SharedSpace.CTA,
             invariant=False,
         )
+
+    ``invariant=True`` selects the non-coherent read-only path (``ld.global.nc``)
+    and cannot be combined with the other memory attributes or with a runtime
+    L2 ``cache_policy`` passed to :func:`cute.copy`: the invariant load is
+    emitted without any cache qualifier, so a policy would be silently
+    dropped. Creating such an Atom, or copying with it and a ``cache_policy``,
+    raises instead.
     """
 
     def __str__(self) -> str:
@@ -465,6 +482,19 @@ class CopyG2RTrait(atom.Trait):
     ) -> ir.Value:
         if cache_policy is None:
             return self.value
+        if _is_invariant_g2r_atom(self.value):
+            # The invariant (``ld.global.nc``) lowering carries no cache
+            # qualifier, so the policy set below would be dropped without any
+            # diagnostic (see NVIDIA/cutlass#3726). Mirror the atom-creation
+            # check that already rejects ``invariant=True`` together with the
+            # other non-default memory attributes.
+            raise ValueError(
+                "'cache_policy' cannot be applied to a CopyG2ROp Atom created with "
+                "invariant=True: the invariant load is emitted as a plain "
+                "'ld.global.nc' and the L2 cache policy would be silently dropped. "
+                "Create the Atom with invariant=False to use 'cache_policy', or "
+                "drop the 'cache_policy' argument to keep the invariant load."
+            )
         cache_policy_attr_str = (
             f"#cute_nvgpu.atom_copy_field_g2r<{COPY_CACHE_POLICY_FIELD_NAME}>"
         )
