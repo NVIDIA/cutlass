@@ -2136,6 +2136,11 @@ def printf(
 
         # Using format string with C-style format specifiers
         cute.printf("a={}, b=%.2f", a, b)
+
+    A ``%`` conversion must match its value's type: ``%d`` for a 32-bit integer,
+    ``%lld`` for a 64-bit one, ``%f`` for a float. A mismatch such as ``%f`` on an
+    integer is undefined behavior: printf reads a register or buffer slot the
+    value was not passed in and silently prints a wrong value.
     """
     from .tensor import _Tensor
 

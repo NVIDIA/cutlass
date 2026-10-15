@@ -2457,6 +2457,29 @@ def _tensormap_value_str(value: object, enum_ty: Any, field: str) -> str:
     )
 
 
+_TENSORMAP_FIXUP_FIELDS = frozenset({"global_dim", "global_stride"})
+_TENSORMAP_FIXUP_WORD = 2
+_TENSORMAP_FIXUP_MASK = ~(1 << 21) & 0xFFFFFFFF
+
+
+def _apply_tensormap_fixup(
+    addr: Array | Pointer,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> None:
+    """Reset a descriptor copy to the always-safe out-of-bounds fetch mode."""
+    ptr = addr.data_ptr() if hasattr(addr, "data_ptr") else addr
+    word_ptr = (
+        Pointer(ptr, dtype=_cutlass.Uint32, loc=loc, ip=ip) + _TENSORMAP_FIXUP_WORD
+    )
+    word_ptr.store(
+        word_ptr.load(loc=loc, ip=ip) & _cutlass.Uint32(_TENSORMAP_FIXUP_MASK),
+        loc=loc,
+        ip=ip,
+    )
+
+
 @dsl_user_op
 def tensormap_replace(
     field: TensormapField,
@@ -2472,6 +2495,7 @@ def tensormap_replace(
         | TensormapFillMode
         | None
     ) = None,
+    keep_oob_fetch_window: bool = False,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> None:
@@ -2509,6 +2533,14 @@ def tensormap_replace(
         verifier for the target build.
     :param new_value_attr: New value for an enum-valued field, as the matching
         enum (or its string).  Mutually exclusive with ``new_value``.
+    :param keep_oob_fetch_window: Replacing ``global_dim`` or ``global_stride``
+        normally resets the descriptor to the always-safe out-of-bounds fetch
+        mode (the host-side encode already applies the matching fix-up for
+        small tensors). Pass ``True`` to keep the mode
+        encoded in the template; only legal when at least 128 KiB of mapped
+        memory follows the descriptor's global address after the replacement
+        (for example a group that is not the last one in a packed buffer).
+    :type keep_oob_fetch_window: bool
     :raises ValueError: if ``field`` is not a :class:`TensormapField` (raw NVVM
         dialect enums are rejected); if the wrong one of
         ``new_value`` / ``new_value_attr`` is supplied for the field; if
@@ -2580,9 +2612,12 @@ def tensormap_replace(
     if new_value is None:
         raise ValueError(f"tensormap.replace: field '{field}' requires 'new_value'")
     coerce = Int64 if field in _TENSORMAP_B64_FIELDS else Int32
-    return _nvvm.tensormap_replace(
+    result = _nvvm.tensormap_replace(
         dialect_field, addr, new_value=coerce(new_value), ord=ord, loc=loc, ip=ip
     )
+    if field in _TENSORMAP_FIXUP_FIELDS and not keep_oob_fetch_window:
+        _apply_tensormap_fixup(addr, loc=loc, ip=ip)
+    return result
 
 
 @dsl_user_op
