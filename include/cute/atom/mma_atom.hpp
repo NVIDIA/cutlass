@@ -401,13 +401,24 @@ struct TiledMMA : MMA_Atom
     // (M,N) -> (M,N)
     auto ref_C = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<1>()));
 
+    // ((ThrV,(ThrM,ThrN)),(FrgV,(RestM,RestN))) -> (M,N)
+    auto tv_C = thrfrg_C(ref_C);
+
+    // Threads that differ only in ThrK hold partial accumulators of the same C elements, so keep
+    // them distinct: give ThrK its own mode and place K-slice k at offset k * size(ref_C)
+    // ((ThrV,((ThrM,ThrN),ThrK)),(FrgV,(RestM,RestN))) -> (M,N,ThrK)
+    auto thr_C = make_layout(layout<0,0>(tv_C),
+                             make_layout(layout<0,1>(tv_C),
+                                         make_layout(size<3>(thr_layout_vmnk_), size(ref_C))));
+    auto tvk_C = make_layout(thr_C, layout<1>(tv_C));
+
     // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
     auto thridx_2_thrid = composition(make_layout(make_shape (size(thr_layout_vmnk_), Int<1>{}),
                                                   make_stride(Int<1>{},               Int<0>{})),
                                       right_inverse(make_layout(thr_layout_vmnk_, complement(thr_layout_vmnk_))));
 
-    // (thr_idx,val) -> (M,N)
-    return thrfrg_C(ref_C).compose(thridx_2_thrid, _);
+    // (thr_idx,val) -> (M,N,ThrK)
+    return tvk_C.compose(thridx_2_thrid, _);
   }
 
 

@@ -51,5 +51,6 @@ cutlass_test_unit_add_executable(
   reverse.cpp
   swizzle_layout.cpp
   tensor_algs.cpp
+  tiled_mma.cpp
   tuple.cpp
 )
