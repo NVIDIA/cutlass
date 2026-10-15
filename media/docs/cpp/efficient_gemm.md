@@ -245,6 +245,74 @@ The distinctive feature of the Warp-Specialized Persistent Ping-Pong kernel is t
 * The two *consumer* warp groups are assigned a different output tile using the Tile Scheduler. This allows for *epilogue* of one *consumer* warp group to be overlapped with the math operations of the other *consumer* warp group - thus maximizing tensor core utilization. 
 * The *producer* warp group synchronizes using the [Ordered Sequence Barrier](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/pipeline/pipeline.hpp) to fill buffers of the two *consumer* warp groups one after the other in order.
 
+### Practical tuning notes for Hopper 16-bit dense GEMM
+
+The notes below summarize kernel-selection guidance for FP16/BF16 dense GEMM on
+Hopper (SM90), based on profiling with the [CUTLASS profiler](profiler.md) on
+H100. They apply equally to FP16 and BF16, which share the same WGMMA datapath
+with an FP32 accumulator.
+
+**Accumulator register budget.** Every math warp group keeps its 4-byte
+accumulator fragment in the register file. For a CTA tile of shape
+`cta_m x cta_n`:
+
+| Kernel schedule | Accumulator registers per thread |
+|---|---|
+| `TmaWarpSpecialized`, `TmaWarpSpecializedPingpong` | `cta_m * cta_n / 128` (full tile per math warp group) |
+| `TmaWarpSpecializedCooperative` | `cta_m * cta_n / 256` (tile split across two math warp groups along M) |
+
+When this quantity exceeds 128 registers per thread (per-warp-group tile larger
+than 64x256), the accumulator no longer fits in the 255-register budget
+alongside mainloop state, and it is spilled to local memory on every mainloop
+iteration. Such configurations run an order of magnitude slower than fitting
+ones (for example, a 128x256 ping-pong configuration reaches only ~5% of the
+throughput of the same tile with the cooperative schedule). Prefer the
+cooperative schedule for large tiles and reserve ping-pong for per-warp-group
+tiles of at most 64x256.
+
+**Small-M (skinny) problems.** For problems with small M (for example M <= 128
+with large N and K, common in decode phases of LLM inference), wide tiles such
+as 128x128 or larger produce too few thread blocks to occupy all SMs or to
+saturate DRAM with memory requests. Narrow-N tiles (64x64, 64x128), a 1x1x1
+cluster, deeper `cta_k` (128), and the non-persistent `TmaWarpSpecialized`
+schedule move throughput back toward the memory bandwidth limit (measured up to
++44% at M=16 and up to +74% at M=128 on Llama-style projection shapes, FP16 and
+BF16 alike; shapes whose best tile is already in the default set change little).
+These configurations are not emitted at the default instantiation level. To
+generate them, configure the library with a non-default instantiation level and
+a kernel filter, for example:
+
+```bash
+cmake .. -DCUTLASS_NVCC_ARCHS=90a \
+  -DCUTLASS_LIBRARY_KERNELS="cutlass3x_sm90_tensorop_gemm_f16_f16_f32_void_f16_*,cutlass3x_sm90_tensorop_gemm_bf16_bf16_f32_void_bf16_*" \
+  -DCUTLASS_LIBRARY_INSTANTIATION_LEVEL=1242
+```
+
+See the [profiler documentation](profiler.md) for the meaning of the
+instantiation-level digits.
+
+**Threadblock rasterization and swizzling.** For large, memory-bandwidth-heavy
+shapes (large M and N, DRAM throughput above ~80%), the tile scheduler's
+rasterization options improve L2 reuse. In profiler terms:
+
+```bash
+cutlass_profiler --operation=Gemm --kernels=<kernel> \
+  --m=16384 --n=28672 --k=8192 --raster_order=along_m --swizzle_size=2
+```
+
+improved sustained throughput by 8-10% over the defaults on H100 for this
+shape class (median of interleaved repetitions, FP16 and BF16), while on
+very-large-N problems (for example a 128k-column LM head)
+`--raster_order=along_n` degraded throughput by ~25%. Sweep
+`--swizzle_size={1,2,4,8}` and both raster orders when tuning a deployment
+shape; `--enable-best-kernel-for-fixed-shape` automates this search.
+
+**Sustained-clock effects.** Long back-to-back runs of near-peak kernels can
+reduce GPU clocks under the board power limit. When comparing kernels or
+computing efficiency against a fixed theoretical peak, fix or record clocks
+(for example with `nvidia-smi dmon`) and prefer duration-based profiling
+(`--profiling-duration`) over very long fixed iteration counts.
+
 # Resources
 
 The following additional resources describe design and implementation details of GEMMs
