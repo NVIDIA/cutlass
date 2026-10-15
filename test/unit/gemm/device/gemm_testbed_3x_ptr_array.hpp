@@ -389,8 +389,10 @@ struct HostCollectiveMainloop {
 
       // It is possible to randomly initialize to all zeros, so override this with non-zeros
       // in the upper left corner of each operand.
-      tensors_A[i].host_view().at({0, 0}) = ElementA(1);
-      tensors_B[i].host_view().at({0, 0}) = ElementB(1);
+      if (K > 0) {
+        tensors_A[i].host_view().at({0, 0}) = ElementA(1);
+        tensors_B[i].host_view().at({0, 0}) = ElementB(1);
+      }
 
       tensors_A[i].sync_device();
       tensors_B[i].sync_device();
@@ -501,8 +503,12 @@ struct HostCollectiveMainloop {
 
   bool compare_reference(
       ProblemShapeType problem_shapes, int batch) {
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_A[batch].host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_B[batch].host_view()), 0);
+    if (tensors_A[batch].size() > 0) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_A[batch].host_view()), 0);
+    }
+    if (tensors_B[batch].size() > 0) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_B[batch].host_view()), 0);
+    }
 
     bool passed = true;
     return passed;
