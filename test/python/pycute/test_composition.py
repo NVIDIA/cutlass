@@ -209,5 +209,56 @@ class TestComposition(unittest.TestCase):
     layoutB = Layout(6,12)
     self.helper_test_composition(layoutA, layoutB)
 
+    # RHS fits within a mode of the LHS without dividing it
+    layoutA = Layout((4,3),(1,10))
+    layoutB = Layout(3,1)
+    self.helper_test_composition(layoutA, layoutB)
+
+    layoutA = Layout((4,6,8),(1,10,100))
+    layoutB = Layout(4,4)
+    self.helper_test_composition(layoutA, layoutB)
+
+    # RHS overflows into the last mode of the LHS
+    layoutA = Layout((2,2),(1,4))
+    layoutB = Layout(8,1)
+    self.helper_test_composition(layoutA, layoutB)
+
+    layoutA = Layout((2,3),(1,10))
+    layoutB = Layout(5,2)
+    self.helper_test_composition(layoutA, layoutB)
+
+    # Stride-0 mode in the LHS
+    layoutA = Layout((2,2,4),(1,0,8))
+    layoutB = Layout(8,1)
+    self.helper_test_composition(layoutA, layoutB)
+
+    # Stride-0 RHS
+    layoutA = Layout((2,2),(1,4))
+    layoutB = Layout(3,0)
+    self.helper_test_composition(layoutA, layoutB)
+
+  def test_composition_invalid(self):
+    # Shape divisibility condition: when the RHS spans more than one mode of the
+    # (coalesced) LHS, its shape must be divisible by each non-last mode it spans.
+    # E.g., (2,2):(1,4) o 3:1 would need offsets 0,1,4, which no layout can represent.
+    with self.assertRaises(AssertionError):
+      composition(Layout((2,2),(1,4)), Layout(3,1))
+
+    with self.assertRaises(AssertionError):
+      composition(Layout((4,3),(1,10)), Layout(6,1))
+
+    with self.assertRaises(AssertionError):
+      composition(Layout((4,6,8),(1,10,100)), Layout(9,4))
+
+    with self.assertRaises(AssertionError):
+      composition(Layout((2,2,4),(1,0,8)), Layout(3,1))
+
+    with self.assertRaises(AssertionError):
+      composition(Layout((2,2),(1,4)), Layout((2,3),(4,1)))
+
+    # Stride divisibility condition
+    with self.assertRaises(AssertionError):
+      composition(Layout((6,8),(1,10)), Layout(4,4))
+
 if __name__ == "__main__":
   unittest.main()
