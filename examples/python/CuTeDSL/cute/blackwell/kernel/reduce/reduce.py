@@ -81,7 +81,8 @@ Mbarrier Requirements (Cluster Reduction)
 -----------------------------------------
 For cluster reduction, the caller must:
 1. Allocate an mbarrier in shared memory
-2. Initialize it with `cute.arch.mbarrier_init(mbar_ptr, thread_count)`
+2. Initialize it with `cute.arch.mbarrier_init(mbar_ptr, 1)` -- a single
+   elected thread performs the one arrive (with expect-tx) per phase
 3. Pass the mbarrier pointer to `cluster_reduce()`
 
 The cluster_reduce function handles:
@@ -124,8 +125,9 @@ Usage Example
 
 References
 ----------
-The cluster synchronization primitives (set_block_rank, store_shared_remote)
-are inspired by Quack: https://github.com/Dao-AILab/quack
+The cluster reduction scheme (each warp pushing its partial result into the
+shared memory of every CTA in the cluster with ``st.async`` and tracking
+completion with an mbarrier) is inspired by Quack: https://github.com/Dao-AILab/quack
 """
 
 import operator
@@ -134,102 +136,19 @@ from collections.abc import Callable
 import cutlass
 import cutlass.cute as cute
 from cutlass import Float32, Int32
-from cutlass._mlir.dialects import llvm
-from cutlass.cutlass_dsl import T, dsl_user_op
+from cutlass.cutlass_dsl import dsl_user_op
 
 
 # =============================================================================
-# Inline PTX Operations for Cluster Communication
+# Cluster Helpers
 # =============================================================================
 #
-# These operations enable cross-CTA communication within a cluster (SM90+).
-# They use inline PTX assembly for functionality not yet exposed in MLIR.
+# Cross-CTA communication within a cluster (SM90+) uses the CuTe DSL
+# built-in ``cute.arch.store_async_dsmem``, which maps the destination and
+# mbarrier pointers to the peer CTA (``mapa.shared::cluster``, also exposed
+# standalone as ``cute.arch.map_dsmem_ptr``) and issues
+# ``st.async.shared::cluster`` -- no inline PTX needed.
 # =============================================================================
-
-
-@dsl_user_op
-def set_block_rank(
-    smem_ptr: cute.Pointer, peer_cta_rank_in_cluster: Int32, *, loc=None, ip=None
-) -> Int32:
-    """
-    Map a shared memory pointer to the equivalent address in another CTA's
-    shared memory within the same cluster.
-
-    This uses the PTX `mapa.shared::cluster` instruction to translate a local
-    shared memory address to the corresponding address in a peer CTA's shared
-    memory space.
-
-    Args:
-        smem_ptr: Pointer to local shared memory
-        peer_cta_rank_in_cluster: Target CTA's rank within the cluster (0 to cluster_size-1)
-
-    Returns:
-        Int32 representing the mapped address in the peer CTA's shared memory
-
-    Note:
-        This operation requires SM90+ with cluster support enabled.
-        The cluster must be launched with the appropriate cluster dimensions.
-    """
-    smem_ptr_i32 = smem_ptr.toint(loc=loc, ip=ip).ir_value()
-    return Int32(
-        llvm.inline_asm(
-            T.i32(),
-            [smem_ptr_i32, peer_cta_rank_in_cluster.ir_value()],
-            "mapa.shared::cluster.u32 $0, $1, $2;",
-            "=r,r,r",
-            has_side_effects=False,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
-        )
-    )
-
-
-@dsl_user_op
-def store_shared_remote(
-    val: Float32,
-    smem_ptr: cute.Pointer,
-    mbar_ptr: cute.Pointer,
-    peer_cta_rank_in_cluster: Int32,
-    *,
-    loc=None,
-    ip=None,
-) -> None:
-    """
-    Asynchronously store a Float32 value to shared memory on a remote CTA
-    within the cluster, with mbarrier completion tracking.
-
-    This uses the PTX `st.async.shared::cluster` instruction which:
-    1. Translates the local smem address to the peer CTA's address space
-    2. Performs an asynchronous store to the remote shared memory
-    3. Signals the mbarrier when the store completes
-
-    Args:
-        val: The Float32 value to store
-        smem_ptr: Pointer to the destination in local shared memory coordinates
-        mbar_ptr: Pointer to the mbarrier that tracks completion
-        peer_cta_rank_in_cluster: Target CTA's rank within the cluster
-
-    Note:
-        - The mbarrier must be initialized with the expected transaction byte count
-        - Use `cute.arch.mbarrier_arrive_and_expect_tx()` to set up the transaction
-        - Use `cute.arch.mbarrier_wait()` to wait for all stores to complete
-        - This operation requires SM90+ with cluster support enabled
-    """
-    remote_smem_ptr_i32 = set_block_rank(
-        smem_ptr, peer_cta_rank_in_cluster, loc=loc, ip=ip
-    ).ir_value()
-    remote_mbar_ptr_i32 = set_block_rank(
-        mbar_ptr, peer_cta_rank_in_cluster, loc=loc, ip=ip
-    ).ir_value()
-    llvm.inline_asm(
-        None,
-        [remote_smem_ptr_i32, val.ir_value(loc=loc, ip=ip), remote_mbar_ptr_i32],
-        "st.async.shared::cluster.mbarrier::complete_tx::bytes.f32 [$0], $1, [$2];",
-        "r,f,r",
-        has_side_effects=True,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
-    )
 
 
 @dsl_user_op
@@ -342,7 +261,7 @@ def cluster_reduce(
     4. Reduces across all collected values
 
     Args:
-        val: The warp-reduced value (only lane 0's value is used for stores)
+        val: The warp-reduced value (lanes 0..cluster_n-1 each store it to one CTA)
         op: Binary reduction operator, e.g., `operator.add` or `cute.arch.fmax`
         reduction_buffer: Shared memory tensor with hierarchical shape
                           (rows_per_block, (warps_per_row, cluster_n))
@@ -376,9 +295,16 @@ def cluster_reduce(
                 Float32
             )
 
-            # Initialize mbarrier (once per kernel)
+            # Initialize mbarrier (once per kernel, by a single thread); the
+            # arrival count is 1 because one elected thread does the
+            # arrive_and_expect_tx. Fence the init and sync the cluster before
+            # any CTA may store into a peer's buffer / mbarrier.
             mbar = cute.make_smem_tensor(cute.make_layout((1,)), cute.arch.Mbarrier)
-            cute.arch.mbarrier_init(mbar.iterator, thread_count)
+            if cute.arch.thread_idx()[0] == 0:
+                cute.arch.mbarrier_init(mbar.iterator, 1)
+            cute.arch.mbarrier_init_fence()
+            cute.arch.cluster_arrive_relaxed()
+            cute.arch.cluster_wait()
 
             # Perform cluster reduction
             result = cluster_reduce(
@@ -405,13 +331,17 @@ def cluster_reduce(
             cute.arch.mbarrier_arrive_and_expect_tx(mbar_ptr, expected_bytes)
 
     # Each lane < cluster_n writes to a different CTA's shared memory
-    # This distributes the warp's value to all CTAs in the cluster
+    # This distributes the warp's value to all CTAs in the cluster.
+    # store_async_dsmem maps both the destination and the mbarrier to the
+    # peer CTA (mapa) and issues st.async with mbarrier::complete_tx::bytes,
+    # so the transaction bytes set up above are consumed on the peer side.
+    # The store moves raw 32-bit words, hence the Float32 -> Int32 bitcast.
     if lane_idx < cluster_n:
-        store_shared_remote(
-            val,
+        cute.arch.store_async_dsmem(
             elem_pointer(reduction_buffer, (row_idx, (col_idx, cta_rank_in_cluster))),
+            val.bitcast(Int32),
             mbar_ptr,
-            peer_cta_rank_in_cluster=lane_idx,
+            peer_cta_rank=lane_idx,
         )
 
     # Wait for all cross-CTA stores to complete
