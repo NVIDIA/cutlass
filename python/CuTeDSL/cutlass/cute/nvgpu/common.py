@@ -363,6 +363,10 @@ class CopyUniversalOp(atom.CopyOp):
     - ``num_bits_per_copy`` is a kw argument specifying the number of bits to copy per Atom \
         execution. This can be larger than the width of the above data type. When not provided, \
         the compiler will do a best effort at auto-vectorizing.
+
+    Memory attributes such as ``l1c_evict_priority``, ``memory_order``, ``memory_scope`` or \
+    ``invariant`` are not supported by this operation and raise a ``TypeError``; use one of the \
+    specialized copy operations listed above instead.
     """
 
     def __str__(self) -> str:
@@ -377,6 +381,15 @@ class CopyUniversalOp(atom.CopyOp):
         ip: Optional[ir.InsertionPoint] = None,
         **kwargs: Any,
     ) -> "CopyUniversalTrait":
+        _reject_unknown_copy_trait_kwargs(
+            self,
+            kwargs,
+            hint=(
+                "CopyUniversalOp carries no memory attributes; use a specialized copy "
+                "operation instead (CopyG2ROp for gmem->rmem, CopyR2GOp for rmem->gmem, "
+                "CopyS2ROp for smem->rmem, CopyR2SOp for rmem->smem)."
+            ),
+        )
         if not isinstance(num_bits_per_copy, int) or num_bits_per_copy < 0:
             raise ValueError(
                 f"'num_bits_per_copy' must be a non-negative int when creating a copy Atom for {self.__class__.__name__!r}"
@@ -558,13 +571,20 @@ class CopyR2GTrait(atom.Trait):
         return val
 
 
-def _reject_unknown_copy_trait_kwargs(op: object, kwargs: Mapping[str, Any]) -> None:
-    """Shared-memory load/store traits do not accept global-only keyword fields."""
+def _reject_unknown_copy_trait_kwargs(
+    op: object, kwargs: Mapping[str, Any], *, hint: Optional[str] = None
+) -> None:
+    """Raise for keyword fields that the copy trait of ``op`` does not accept.
+
+    Silently dropping an attribute would turn e.g. a cache hint or a memory
+    ordering request into a plain copy, so unknown fields are rejected instead.
+    """
     if kwargs:
         name = next(iter(kwargs))
-        raise TypeError(
-            f"{type(op).__name__}._make_trait() got an unexpected keyword argument {name!r}"
-        )
+        msg = f"{type(op).__name__}._make_trait() got an unexpected keyword argument {name!r}"
+        if hint:
+            msg = f"{msg}. {hint}"
+        raise TypeError(msg)
 
 
 @dataclass(frozen=True)

@@ -85,7 +85,7 @@ def atomicAdd(
 def ld_bypass(input_tensor: cute.Tensor) -> cute.Tensor:
     fragment = cute.make_rmem_tensor(input_tensor.layout, input_tensor.element_type)
     copy_atom = cute.make_copy_atom(
-        cute.nvgpu.CopyUniversalOp(),
+        cute.nvgpu.CopyG2ROp(),
         input_tensor.element_type,
         memory_order=cute.nvgpu.common.MemoryOrder.VOLATILE,
         memory_scope=cute.nvgpu.common.MemoryScope.SYS,
