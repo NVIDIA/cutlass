@@ -82,7 +82,7 @@ __global__ void kernel_dump(typename GmemIterator::Params params,
                              {EXAMPLE_MATRIX_ROW, EXAMPLE_MATRIX_COL},
                              tb_thread_id);
 
-  typename GmemIterator::Fragment frag;
+  alignas(16) typename GmemIterator::Fragment frag;
 
   frag.clear();
   gmem_iterator.load(frag);
