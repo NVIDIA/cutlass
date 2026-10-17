@@ -2273,6 +2273,15 @@ class DiagId(_DiagMixin, enum.Enum):
         "Pointer alignment must be created using align(...), not a plain integer",
         ("Wrap the alignment value with align(), e.g. align(4) instead of just 4",),
     )
+    ARG_UNIVERSAL_COPY_ATTRS_REJECTED = (
+        "`CopyUniversalOp` does not accept {attrs}: the universal copy atom carries "
+        "no memory attributes.",
+        (
+            "Use a specialized copy operation instead: `CopyG2ROp` (gmem->rmem), "
+            "`CopyR2GOp` (rmem->gmem), `CopyS2ROp` (smem->rmem), or `CopyR2SOp` "
+            "(rmem->smem).",
+        ),
+    )
     ARG_UNORDERED_CONTAINER = (
         "Arguments cannot be sets because sets are unordered and the compiler needs to preserve argument order.",
         (
@@ -2729,8 +2738,7 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Make `{var}` a {staged} before the if (e.g. `{var} = "
             "Int32(...)`) so the update is carried on every path.",
-            "Or keep every read of `{var}` inside the same if branch that "
-            "changes it.",
+            "Or keep every read of `{var}` inside the same if branch that changes it.",
         ),
     )
     PHASE_PREDICATE_FOLDED_STALE = (
@@ -3090,6 +3098,14 @@ class WarnId(_DiagMixin, enum.Enum):
         (
             "Use a wider float type that can represent {value}, e.g. "
             "`Float64({value})`.",
+        ),
+    )
+    ARG_UNIVERSAL_COPY_ATTRS_IGNORED = (
+        "`CopyUniversalOp` ignores {attrs}: the universal copy atom carries no "
+        "memory attributes, so they take no effect.",
+        (
+            "Use `CopyG2ROp` for `invariant`, and use `CopyG2ROp` or `CopyR2GOp` "
+            "for `l1c_evict_priority`.",
         ),
     )
 
