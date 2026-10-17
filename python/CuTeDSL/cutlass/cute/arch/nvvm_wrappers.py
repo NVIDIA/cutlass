@@ -1339,6 +1339,19 @@ def setmaxregister_increase(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    """Increase the per-thread register budget for the issuing warp.
+
+    ``reg_count`` must be a multiple of 8 in the inclusive range ``[24, 256]``.
+    Every warp in a warpgroup must execute the same ``setmaxregister`` operation.
+
+    .. warning::
+        If ptxas cannot determine the register count at kernel entry, it can ignore
+        the generated ``setmaxnreg`` instruction and emit diagnostic C7508. Set a
+        launch bound, for example
+        ``kernel(...).launch(..., min_blocks_per_mp=1)``, when relying on dynamic
+        register budgeting. The launch bound can affect register allocation,
+        occupancy, and spilling, so revalidate kernel performance after adding it.
+    """
     from cutlass._mlir.dialects.nvvm import SetMaxRegisterAction
 
     return nvvm.setmaxregister(reg_count, SetMaxRegisterAction.increase, loc=loc, ip=ip)
@@ -1351,6 +1364,19 @@ def setmaxregister_decrease(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
+    """Decrease the per-thread register budget for the issuing warp.
+
+    ``reg_count`` must be a multiple of 8 in the inclusive range ``[24, 256]``.
+    Every warp in a warpgroup must execute the same ``setmaxregister`` operation.
+
+    .. warning::
+        If ptxas cannot determine the register count at kernel entry, it can ignore
+        the generated ``setmaxnreg`` instruction and emit diagnostic C7508. Set a
+        launch bound, for example
+        ``kernel(...).launch(..., min_blocks_per_mp=1)``, when relying on dynamic
+        register budgeting. The launch bound can affect register allocation,
+        occupancy, and spilling, so revalidate kernel performance after adding it.
+    """
     from cutlass._mlir.dialects.nvvm import SetMaxRegisterAction
 
     return nvvm.setmaxregister(reg_count, SetMaxRegisterAction.decrease, loc=loc, ip=ip)
