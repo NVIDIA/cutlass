@@ -71,7 +71,9 @@ namespace cutlass {
 
 #if !defined(__CUDACC_RTC__)
   inline std::string getVersionString() {
-    std::string version = "@CUTLASS_VERSION@";
+    std::string version = std::to_string(CUTLASS_MAJOR) + "." +
+                          std::to_string(CUTLASS_MINOR) + "." +
+                          std::to_string(CUTLASS_PATCH);
     if (getVersionBuild()) {
       version += "." + std::to_string(getVersionBuild());
     }
@@ -79,7 +81,7 @@ namespace cutlass {
   }
 
   inline std::string getGitRevision() {
-    return "@CUTLASS_REVISION@";
+    return CUTLASS_REVISION;
   }
 #endif // !defined(__CUDACC_RTC__)
 
