@@ -288,6 +288,21 @@ def _normalize_cuda_error_name(error_name: Union[str, bytes]) -> str:
     return str(error_name)
 
 
+def _target_arch_from_env_manager(env_manager: Any) -> str:
+    """Architecture already known to the env manager, or ``unknown``.
+
+    Must not read ``env_manager.arch``. That property probes the CUDA driver
+    and a failed probe raises ``DSLCudaRuntimeError``, whose constructor
+    calls this module again.
+    """
+    if env_manager is None:
+        return "unknown"
+    configured = getattr(env_manager, "configured_arch", None)
+    if callable(configured):
+        return configured() or "unknown"
+    return "unknown"
+
+
 def _get_friendly_cuda_error_message(
     error_code: int, error_name: Union[str, bytes]
 ) -> tuple[str, str, Union[str, tuple[str, ...]]]:
@@ -299,7 +314,7 @@ def _get_friendly_cuda_error_message(
     lookup_key = _cuda_error_lookup_key(error_name)
 
     env_manager = get_current_env_manager()
-    target_arch = env_manager.arch if env_manager is not None else "unknown"
+    target_arch = _target_arch_from_env_manager(env_manager)
     arch_is_relevant = lookup_key in _ARCH_RELATED_CUDA_ERRORS
     invalid_launch_value_suggestion = (
         "Check `.launch(...)`: grid, block, dynamic shared memory, stream, "
