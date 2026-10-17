@@ -35,9 +35,9 @@ class TestIsMajorListMode(unittest.TestCase):
                 )
 
     def test_hierarchical_list_mode(self):
-        # A multi-index path into a nested stride must resolve, not crash.
-        self.assertIsInstance(is_major([0, 1], ((8, 1), 4)), bool)
-        self.assertIsInstance(is_major([0, 0], ((8, 1), 4)), bool)
+        # A multi-index path into a nested stride selects that sub-stride.
+        self.assertTrue(is_major([0, 1], ((8, 1), 4)))
+        self.assertFalse(is_major([0, 0], ((8, 1), 4)))
 
 
 if __name__ == "__main__":
