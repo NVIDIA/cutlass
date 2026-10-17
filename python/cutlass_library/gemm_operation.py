@@ -1032,7 +1032,9 @@ ${compile_guard_end}
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
 
-      if is_moe(operation.gemm_kind):
+      # SM120 PtrArray schedules have no NVF4 variant, so grouped SM120 kernels take the
+      # 16-element ue4m3 vector size from nv_float4_t, as MoE kernels do.
+      if is_moe(operation.gemm_kind) or (grouped and operation.arch == 120):
         if DataTypeSize[operation.A.element] == 4 and operation.ScaleFactorA == DataType.ue4m3:
           element_a = f"cutlass::nv_float4_t<{DataTypeTag[operation.A.element]}>"
 
