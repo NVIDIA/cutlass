@@ -35,12 +35,14 @@ class TestMakePtrSubByte(unittest.TestCase):
         ):
             with self.subTest(dtype=dtype.__name__):
                 # Must not raise ZeroDivisionError.
-                self.assertIsNotNone(make_ptr(dtype, 0x1000))
+                ptr = make_ptr(dtype, 0x1000)
+                self.assertEqual(ptr._assumed_align, 1)
 
     def test_byte_dtypes_unchanged(self):
         for dtype in (cutlass.Int8, cutlass.Float16, cutlass.Float32):
             with self.subTest(dtype=dtype.__name__):
-                self.assertIsNotNone(make_ptr(dtype, 0x1000))
+                ptr = make_ptr(dtype, 0x1000)
+                self.assertEqual(ptr._assumed_align, dtype.width // 8)
 
 
 if __name__ == "__main__":
