@@ -39,6 +39,7 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/util/device_memory.h"
+#include <limits>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -76,6 +77,10 @@ TEST(tfloat32_t, host_arithmetic) {
       EXPECT_TRUE(static_cast<int>(x + y) == (i + j));
     }
   }
+}
+
+TEST(tfloat32_t, numeric_limits) {
+  EXPECT_EQ(std::numeric_limits<cutlass::tfloat32_t>::epsilon().raw(), 0x3a800000);
 }
 
 TEST(tfloat32_t, host_round_nearest) {

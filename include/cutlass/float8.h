@@ -1544,7 +1544,7 @@ struct numeric_limits<cutlass::float_ue8m0_t> :
   static bool const is_signed = false;
 
   /// Minimum finite value
-  static cutlass::float_ue8m0_t lowest() { return cutlass::float_ue8m0_t::bitcast(0xfe); }
+  static cutlass::float_ue8m0_t lowest() { return cutlass::float_ue8m0_t::bitcast(0x00); }
 
   /// Machine epsilon, that is, the difference between 1.0 and the next representable value (2^0)
   static cutlass::float_ue8m0_t epsilon() { return cutlass::float_ue8m0_t::bitcast(0x7f); }
@@ -1700,7 +1700,7 @@ struct numeric_limits<cutlass::float_ue8m0_t> :
   static bool const is_signed = false;
 
   /// Minimum finite value
-  static cutlass::float_ue8m0_t lowest() { return cutlass::float_ue8m0_t::bitcast(0xfe); }
+  static cutlass::float_ue8m0_t lowest() { return cutlass::float_ue8m0_t::bitcast(0x00); }
 
   /// Machine epsilon, that is, the difference between 1.0 and the next representable value (2^0)
   static cutlass::float_ue8m0_t epsilon() { return cutlass::float_ue8m0_t::bitcast(0x7f); }
