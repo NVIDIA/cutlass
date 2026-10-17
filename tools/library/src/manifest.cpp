@@ -36,6 +36,8 @@
 */
 
 #include <memory>
+#include <iostream>
+#include <dlfcn.h>
 #include "cutlass/library/manifest.h"
 
 namespace cutlass {
@@ -46,6 +48,16 @@ namespace library {
 void initialize_reference_operations(Manifest &manifest);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Manifest::~Manifest() {
+  operations_.clear();
+  for (auto *handle : loaded_libraries_) {
+    if (handle) {
+      dlclose(handle);
+    }
+  }
+  loaded_libraries_.clear();
+}
 
 /// Top-level initialization
 Status Manifest::initialize() {
@@ -90,6 +102,29 @@ OperationVector::const_iterator Manifest::begin() const {
 /// Returns a const iterator
 OperationVector::const_iterator Manifest::end() const {
   return operations_.end();
+}
+
+/// Dynamically load a kernel shared library via dlopen
+Status Manifest::load_kernel_library(std::string const &path) {
+  void *handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!handle) {
+    std::cerr << "Failed to load kernel library: " << path << "\n"
+              << "  dlopen error: " << dlerror() << std::endl;
+    return Status::kErrorInternal;
+  }
+
+  using RegisterFn = void (*)(Manifest &);
+  auto register_fn = reinterpret_cast<RegisterFn>(dlsym(handle, "cutlass_register_operations"));
+  if (!register_fn) {
+    std::cerr << "Failed to find cutlass_register_operations in: " << path << "\n"
+              << "  dlsym error: " << dlerror() << std::endl;
+    dlclose(handle);
+    return Status::kErrorInternal;
+  }
+
+  register_fn(*this);
+  loaded_libraries_.push_back(handle);
+  return Status::kSuccess;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
