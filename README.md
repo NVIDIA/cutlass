@@ -1,9 +1,9 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 # Overview
 
-# CUTLASS 4.8.0
+# CUTLASS 4.8.1
 
-_CUTLASS 4.8.0 - Sept 2026_
+_CUTLASS 4.8.1 - Oct. 2026_
 
 CUTLASS is a collection of abstractions for implementing high-performance matrix-matrix multiplication (GEMM)
 and related computations at all levels and scales within CUDA. It incorporates strategies for
@@ -135,14 +135,35 @@ The pipeline is expected to preserve program behavior and performance, but gener
   ([!3413](https://github.com/NVIDIA/cutlass/issues/3413))
   - Fixed a cuDNN Frontend FROST SDPA backward compilation failure issue ([!3594](https://github.com/NVIDIA/cutlass/issues/3594))
   - Fixed SIGABRTs in TVM-FFI launch for cuDNN Frontend SM100 ragged SDPA kernel ([!3595](https://github.com/NVIDIA/cutlass/issues/3595))
+  - Fixed an issue with `cute.extern` where functions with zero arguments would generate invalid type signatures.  Compiling such functions a second time would fail.
+  - Clear error/warning are now emitted for `CopyUniversalOp` with memory attributes specified ([!3711](https://github.com/NVIDIA/cutlass/issues/3711)).
+  - CUTLASS Primitives' `tensormap_replace` now keeps device-side TMA descriptor updates safe when a descriptor is shrunk below its original extent (e.g. grouped GEMM) and fixes a possible illegal memory access on Blackwell/Rubin.  This behavior can be opted out by specifying `keep_oob_fetch_window=True`. See https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-595-91-07/index.html#known-issues for more details on the known `cuTensorMapEncodeTiled` bug.
+  - Fixed unintended `sys.path` modification that could break imports in some environments where Torch was not installed e.g. JAX.  
+
+* Known issues
+  - Due to a bug in CTK, the use of some packed instructions result in invalid code generation.  Given the nature of the instructions and how they are explicitly used, we have chosen to not silently rewrite these, but rather are flagging until the upstream compiler fixes are available.
+  - Avoid packed higher-throughput FP8 (MMA_K=128) subtraction via inline PTX `sub.rn.e4m3x4.e4m3x4` or `sub.rn.e5m2x4.e5m2x4`, as incorrect code generation can produce wrong results.
+  - Some CUTLASS Primitives packed mixed-input ops compile incorrectly on Rubin (sm107a/sm107f), resulting in wrong code generation. The specific patterns include:
+    - Packed mul, sub, and add ops with bf16x2 or fp16x2 result type and f32x2 input type when result is converted to fp32 later. APIs affected: `add_packed_f16x2_f32x2_f32x2`, `add_packed_bf16x2_f32x2_f32x2`, `mul_packed_f16x2_f32x2_f32x2`, `mul_packed_bf16x2_f32x2_f32x2`, `sub_packed_f16x2_f32x2_f32x2`, `sub_packed_bf16x2_f32x2_f32x2`
+      - For example:
+        ```
+        x = prims.mul_packed_bf16x2_f32x2_f32x2(a, b)
+        out[0], out[1] = f32(x[0]), f32(x[1])  # out[0], out[1] are wrong
+        ```
+    - Packed mul op with bf16x2 or fp16x2 result type and mixed bf16x2 and fp16x2 input types when the first operand is a compilation-time constant. APIs affected: `mul_packed_bf16x2_bf16x2_f16x2`, `mul_packed_f16x2_f16x2_bf16x2`
+      - For example:
+        ```
+        x = prims.mul_packed_bf16x2_bf16x2_f16x2(2.0, b) # x is wrong
+        x = prims.mul_packed_f16x2_f16x2_bf16x2(2.0, b)  # x is wrong
+        ```
 
 This release has been tested against the following packages:
-  - FlashAttention: [main (8d3a3b8)](https://github.com/Dao-AILab/flash-attention/commit/8d3a3b80d4758ebde5a867c50d24d4351443cf2b)
-  - Quack: [main (35266c3)](https://github.com/Dao-AILab/quack/commit/35266c3298f0e9bf6d5f46c30aace2eaeae517e3)
-  - FlashInfer: [main (5d0c89e)](https://github.com/flashinfer-ai/flashinfer/commit/5d0c89eacae6ca08f2a1ce92eba557bbad7a1bfc)
-  - cuDNN-Frontend: [deveop (e0317d1)](https://github.com/NVIDIA/cudnn-frontend/commit/e0317d1f6cbc1bb8e50abce5870b6bf59b9d4a74)
-  - Pytorch: [main (7d5f021)](https://github.com/pytorch/pytorch/commit/7d5f0216450b8253e62d88284d49de725d88bd42)
-  - TensorRT-LLM: [main (c295dd9)](https://github.com/NVIDIA/TensorRT-LLM/commit/c295dd9fca143a3fdd2769617699fdd4d4a93eb5)
+  - FlashAttention: [main (1fc0221)](https://github.com/Dao-AILab/flash-attention/commit/1fc0221183e799363001394a12dd9e78e15f5dda)
+  - Quack: [main (35266c32)](https://github.com/Dao-AILab/quack/commit/35266c3298f0e9bf6d5f46c30aace2eaeae517e3)
+  - FlashInfer: [main (399b6c1)](https://github.com/flashinfer-ai/flashinfer/commit/399b6c1d31a13f38dd827018f89c6a04c8487acb)
+  - cuDNN-Frontend: [deveop (986ef4d)](https://github.com/NVIDIA/cudnn-frontend/commit/986ef4d9078089ae9f0656dd65f15011309e4347)
+  - Pytorch: [main (ca883d5)](https://github.com/pytorch/pytorch/commit/ca883d596dd5c0ce182976ed979d69d167ad706c)
+  - TensorRT-LLM: [main (cc63e66)](https://github.com/NVIDIA/TensorRT-LLM/commit/cc63e66daf52644f1441e117bb7ba67d20566016)
 
 ## CUTLASS Operator API
 * Dense and blockscaled GEMMs in Operator API have preliminary Rubin support.  These are provided as a preview and may need additional performance tuning.

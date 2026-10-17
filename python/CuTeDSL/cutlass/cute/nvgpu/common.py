@@ -12,6 +12,8 @@ import enum
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Type
 
+from cutlass.base_dsl.common import DSLUserCodeTypeError
+from cutlass.base_dsl.diagnostics import DiagId, WarnId, report_warning
 from cutlass.cutlass_dsl import DSLUserCodeError, DSLRuntimeError
 
 import cutlass._mlir.dialects.cute as _cute_ir
@@ -363,6 +365,11 @@ class CopyUniversalOp(atom.CopyOp):
     - ``num_bits_per_copy`` is a kw argument specifying the number of bits to copy per Atom \
         execution. This can be larger than the width of the above data type. When not provided, \
         the compiler will do a best effort at auto-vectorizing.
+
+    Memory attributes are not supported by this operation; use one of the specialized copy \
+    operations listed above instead. ``memory_order`` and ``memory_scope`` raise a ``TypeError``; \
+    ``l1c_evict_priority`` and ``invariant`` only affect performance, so they take no effect and \
+    emit a ``DSLWarning``.
     """
 
     def __str__(self) -> str:
@@ -380,6 +387,18 @@ class CopyUniversalOp(atom.CopyOp):
         if not isinstance(num_bits_per_copy, int) or num_bits_per_copy < 0:
             raise ValueError(
                 f"'num_bits_per_copy' must be a non-negative int when creating a copy Atom for {self.__class__.__name__!r}"
+            )
+        ignored = sorted(k for k in kwargs if k in ("l1c_evict_priority", "invariant"))
+        rejected = sorted(k for k in kwargs if k not in ignored)
+        if rejected:
+            raise DSLUserCodeTypeError(
+                DiagId.ARG_UNIVERSAL_COPY_ATTRS_REJECTED,
+                attrs=", ".join(f"`{name}`" for name in rejected),
+            )
+        if ignored:
+            report_warning(
+                WarnId.ARG_UNIVERSAL_COPY_ATTRS_IGNORED,
+                attrs=", ".join(f"`{name}`" for name in ignored),
             )
 
         atom_type = _cute_nvgpu_ir.CopyAtomSIMTSyncCopyType.get(
@@ -436,6 +455,7 @@ class CopyG2ROp(atom.CopyOp):
         ip: Optional[ir.InsertionPoint] = None,
         **kwargs: Any,
     ) -> "CopyG2RTrait":
+        _reject_unknown_copy_trait_kwargs(self, kwargs)
         if not isinstance(num_bits_per_copy, int) or num_bits_per_copy < 0:
             raise ValueError(
                 f"'num_bits_per_copy' must be a non-negative int when creating a copy Atom for {self.__class__.__name__!r}"
@@ -517,6 +537,7 @@ class CopyR2GOp(atom.CopyOp):
         ip: Optional[ir.InsertionPoint] = None,
         **kwargs: Any,
     ) -> "CopyR2GTrait":
+        _reject_unknown_copy_trait_kwargs(self, kwargs)
         if not isinstance(num_bits_per_copy, int) or num_bits_per_copy < 0:
             raise ValueError(
                 f"'num_bits_per_copy' must be a non-negative int when creating a copy Atom for {self.__class__.__name__!r}"
@@ -559,7 +580,7 @@ class CopyR2GTrait(atom.Trait):
 
 
 def _reject_unknown_copy_trait_kwargs(op: object, kwargs: Mapping[str, Any]) -> None:
-    """Shared-memory load/store traits do not accept global-only keyword fields."""
+    """Raise ``TypeError`` for keyword fields that the copy trait of ``op`` does not accept."""
     if kwargs:
         name = next(iter(kwargs))
         raise TypeError(
