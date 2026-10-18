@@ -248,8 +248,9 @@ public:
 
     // Tile scheduler
     void* scheduler_workspace = workspace_ptr + workspace_offset;
-    workspace_offset += TileScheduler::template get_workspace_size<decltype(problem_shape_mnkl), ElementAccumulator>(
-      args.scheduler, problem_shape_mnkl, args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
+    auto linear_problem_shape_MNKL = cutlass::conv::detail::get_linearized_problem_shape_MNKL(args.problem_shape);
+    workspace_offset += TileScheduler::template get_workspace_size<decltype(linear_problem_shape_MNKL), ElementAccumulator>(
+      args.scheduler, linear_problem_shape_MNKL, args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     return {

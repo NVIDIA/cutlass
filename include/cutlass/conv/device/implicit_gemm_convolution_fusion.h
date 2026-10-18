@@ -114,6 +114,28 @@ public:
       return status;
     }
 
+    // Check that tensor sizes don't exceed maximum supported size
+    if (kConvolutionalOperator == conv::Operator::kFprop) {
+      if (args.problem_size.activation_size() * sizeof(ElementA) >= (1ull << 31) ||
+          args.problem_size.filter_size() * sizeof(ElementB) >= (1ull << 31) ||
+          args.problem_size.output_size() * sizeof(ElementC) >= (1ull << 31)) {
+        return Status::kErrorInvalidProblem;
+      }
+    } else if (kConvolutionalOperator == conv::Operator::kDgrad ||
+               kConvolutionalOperator == conv::Operator::kDeconv) {
+      if (args.problem_size.activation_size() * sizeof(ElementC) >= (1ull << 31) ||
+          args.problem_size.filter_size() * sizeof(ElementB) >= (1ull << 31) ||
+          args.problem_size.output_size() * sizeof(ElementA) >= (1ull << 31)) {
+        return Status::kErrorInvalidProblem;
+      }
+    } else if (kConvolutionalOperator == conv::Operator::kWgrad) {
+      if (args.problem_size.activation_size() * sizeof(ElementB) >= (1ull << 31) ||
+          args.problem_size.filter_size() * sizeof(ElementC) >= (1ull << 31) ||
+          args.problem_size.output_size() * sizeof(ElementA) >= (1ull << 31)) {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+
     // Determine grid shape
     ThreadblockSwizzle threadblock_swizzle;
 
@@ -209,15 +231,7 @@ public:
   Status update(Arguments const &args, void *workspace = nullptr) {
 
     // update the params structure from the arguments
-    params_.ptr_A = args.ref_A.data();
-    params_.ptr_B = args.ref_B.data();
-    params_.ptr_scale = args.ref_A_scale.data();
-    params_.ptr_bias = args.ref_A_bias.data();
-    params_.ptr_C = args.ref_C.data();
-    params_.ptr_D = args.ref_D.data();
-    params_.output_op = args.output_op;
-    params_.semaphore = static_cast<int *>(workspace);
-
+    params_ = typename ImplicitGemmFusionKernel::Params(args, static_cast<int *>(workspace));
     return Status::kSuccess;
   }
 
