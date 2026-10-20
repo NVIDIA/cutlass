@@ -323,10 +323,10 @@ gemm_nt(int m, int n, int k,
 
   // Define the thread layouts (static)
   TiledCopy copyA = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, TA>{},
-                                    Layout<Shape<_16,_8>>{}, // Thr layout 32x4 m-major
+                                    Layout<Shape<_16,_8>>{}, // Thr layout 16x8 m-major
                                     Layout<Shape< _8,_1>>{});// Val layout  8x1 m-major
   TiledCopy copyB = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, TB>{},
-                                    Layout<Shape<_16,_8>>{}, // Thr layout 32x4 n-major
+                                    Layout<Shape<_16,_8>>{}, // Thr layout 16x8 n-major
                                     Layout<Shape< _8,_1>>{});// Val layout  8x1 n-major
 
   TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{});
