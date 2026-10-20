@@ -50,6 +50,8 @@ This GEMM kernel supports the following features:
     - Utilizes Tensor Memory Access (TMA) for efficient memory operations
     - Utilizes Blackwell MMA for matrix multiply-accumulate (MMA) operations
     - Supports multi-stage pipeline to overlap computation and memory access
+    - Supports a compile-time elementwise epilogue_op on the fp32 accumulators,
+      before conversion to the output type (identity by default)
 
 This GEMM works as follows:
 1. Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
@@ -75,6 +77,10 @@ The above example command compute batched gemm with M=8192, N=8192, K=8192,
 batch_count=1. The tile shape is 128x256x64 and the cluster shape is (1,1).
 The input, mma accumulator and output data type are set as fp16, fp32
 and fp16, respectively.
+
+Add ``--activation gelu`` to fuse GELU into the epilogue. Programmatic callers
+can pass an elementwise ``epilogue_op`` to ``cute.compile``; the callable
+receives an fp32 TensorSSA and must preserve its shape.
 
 To collect performance with NCU profiler:
 
@@ -162,6 +168,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--b_major", choices=["k", "n"], type=str, default="k")
     parser.add_argument("--c_major", choices=["n", "m"], type=str, default="n")
     parser.add_argument(
+        "--activation",
+        choices=["identity", "gelu"],
+        default="identity",
+        help="Elementwise activation applied before output conversion",
+    )
+    parser.add_argument(
         "--epi_stage",
         type=int,
         default=4,
@@ -206,6 +218,11 @@ def parse_arguments() -> argparse.Namespace:
 # /////////////////////////////////////////////////////////////////////////////
 #  Host setup and device kernel launch
 # /////////////////////////////////////////////////////////////////////////////
+
+
+@cute.jit
+def gelu(x):
+    return 0.5 * x * (1.0 + cute.math.erf(x * 0.7071067811865476))
 
 
 class Sm120GemmKernel:
@@ -335,6 +352,7 @@ class Sm120GemmKernel:
         c: cute.Tensor,
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         """Execute the GEMM operation in steps:
         - Setup static attributes
@@ -351,6 +369,8 @@ class Sm120GemmKernel:
         :type c: cute.Tensor
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
+        :param epilogue_op: Shape-preserving elementwise operation on fp32 accumulators
+        :type epilogue_op: cutlass.Constexpr
         """
 
         # setup static attributes before smem/grid/tma computation
@@ -441,6 +461,7 @@ class Sm120GemmKernel:
             self.b_smem_layout_staged,
             self.epi_smem_layout_staged,
             tile_sched_params,
+            epilogue_op,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -467,6 +488,7 @@ class Sm120GemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: cute.ComposedLayout,
         tile_sched_params: utils.PersistentTileSchedulerParams,
+        epilogue_op: cutlass.Constexpr,
     ):
         """
         GPU device kernel performing the batched GEMM computation.
@@ -906,12 +928,13 @@ class Sm120GemmKernel:
                                     (None, mma_m_in_epi, mma_n_in_epi)
                                 ]
                                 tRS_rAcc_slice = tRS_rAcc[(None, mma_m, mma_n)]
+                                acc_vec = epilogue_op(tRS_rAcc_slice.load())
                                 for elem_idx in cutlass.range_constexpr(
                                     cute.size(tRS_rD_slice)
                                 ):
-                                    tRS_rD_slice[elem_idx] = tRS_rAcc_slice[
-                                        elem_idx
-                                    ].to(self.c_dtype)
+                                    tRS_rD_slice[elem_idx] = acc_vec[elem_idx].to(
+                                        self.c_dtype
+                                    )
 
                         # Register to shared memory
                         cute.copy(
@@ -1228,10 +1251,14 @@ def run(
     skip_ref_check: bool,
     use_cold_l2: bool = False,
     epi_stage: int = 4,
+    activation: str = "identity",
     **kwargs,
 ):
     import torch
     import cutlass.torch as cutlass_torch
+
+    if activation not in ("identity", "gelu"):
+        raise ValueError(f"Unsupported activation: {activation}")
 
     print("Running GeForce Dense GEMM with:")
     print(f"Target arch (CUTE_DSL_ARCH): {os.environ.get('CUTE_DSL_ARCH', 'not set')}")
@@ -1247,6 +1274,7 @@ def run(
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {use_cold_l2}")
     print(f"Epi stage: {epi_stage}")
+    print(f"Activation: {activation}")
 
     a_dtype = getattr(cutlass, a_dtype) if isinstance(a_dtype, str) else a_dtype
     b_dtype = getattr(cutlass, b_dtype) if isinstance(b_dtype, str) else b_dtype
@@ -1300,7 +1328,13 @@ def run(
     stream = cutlass_torch.default_stream()
     # compile gemm kernel
     compiled_gemm = cute.compile(
-        gemm, a_tensor, b_tensor, c_tensor, max_active_clusters, stream
+        gemm,
+        a_tensor,
+        b_tensor,
+        c_tensor,
+        max_active_clusters,
+        stream,
+        epilogue_op=gelu if activation == "gelu" else lambda x: x,
     )
 
     if not skip_ref_check:
@@ -1315,6 +1349,8 @@ def run(
             a_torch_cpu.to(dtype=torch.float32),
             b_torch_cpu.to(dtype=torch.float32),
         )
+        if activation == "gelu":
+            ref = torch.nn.functional.gelu(ref, approximate="none")
 
         # Copy gpu tensor to cpu
         kernel_result = c_torch_gpu.cpu()
@@ -1380,5 +1416,6 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_cold_l2,
         args.epi_stage,
+        args.activation,
     )
     print("PASS")
