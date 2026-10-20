@@ -115,6 +115,7 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
 
   int problem_size_trs;
   int problem_size_c;
+  int split_k_slices_;
   int filter_trs_;
 
   TensorCoord thread_offset_;
@@ -139,6 +140,7 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
       : params_(params),
         problem_size_trs(problem_size.R * problem_size.S),
         problem_size_c(problem_size.C),
+        split_k_slices_(problem_size.split_k_slices),
         filter_trs_(0) {
     pointer_ = (thread_id < kThreads)
                    ? reinterpret_cast<BytePointer>(
@@ -173,6 +175,7 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
       : params_(params),
         problem_size_trs(problem_size.T * problem_size.R * problem_size.S),
         problem_size_c(problem_size.C),
+        split_k_slices_(problem_size.split_k_slices),
         filter_trs_(0) {
     pointer_ = (thread_id < kThreads)
                    ? reinterpret_cast<BytePointer>(
@@ -258,7 +261,7 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
     ++filter_trs_;
     if (filter_trs_ == problem_size_trs) {
       filter_trs_ = 0;
-      add_tile_offset(TensorCoord(1, 0));
+      add_tile_offset(TensorCoord(split_k_slices_, 0));
     }
   }
 
