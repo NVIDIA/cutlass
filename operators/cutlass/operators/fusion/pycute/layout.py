@@ -222,6 +222,7 @@ def composition(layoutA, layoutB):
         ):
             assert curr_shape % rest_stride == 0 or rest_stride % curr_shape == 0
             new_shape = min(max(1, curr_shape // rest_stride), rest_shape)
+            assert rest_shape % new_shape == 0  # Shape divisibility condition
 
             if new_shape != 1:
                 result_shape.append(new_shape)
