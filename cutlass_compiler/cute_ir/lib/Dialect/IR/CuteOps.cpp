@@ -1378,31 +1378,39 @@ DiceOp::inferReturnTypes(MLIRContext *context, std::optional<Location> location,
 // Shared inferReturnTypes body for cute.right_inverse and
 // cute.left_inverse. The two ops differ in:
 //   - the cutegen function called (cgFn),
-//   - the diagnostic noun ("right" / "left"), and
-//   - the stride pre-condition: right_inverse accepts dynamic
-//     stride leaves (cutegen/layout.hpp, dyn_t allowed in the
-//     stride leaf-type predicate), while left_inverse requires the
-//     stride to be fully static (cutegen/layout.hpp).
-// Both overloads require a static shape.
+//   - the diagnostic noun ("right" / "left"),
+//   - the shape pre-condition, and
+//   - the stride pre-condition: right_inverse accepts dynamic stride leaves
+//     for static-shape inputs and fully static integer strides for dynamic
+//     shapes, while left_inverse requires the stride to be fully static
+//     (cutegen/layout.hpp).
 //
 
-// requireStaticStride toggles the stride check. cgFn is passed as
-// a callable so cutegen's template TDynTraits parameter is deduced
-// from cg::layout at the call site.
+// requireStaticShape and requireStaticStride toggle the corresponding
+// pre-condition checks. cgFn is passed as a callable so cutegen's template
+// TDynTraits parameter is deduced from cg::layout at the call site.
 template <typename Fn>
 static LogicalResult
 inferInverseReturnTypes(MLIRContext *context, std::optional<Location> location,
                         LayoutType inputTy, StringRef kindName,
-                        bool requireStaticStride, Fn &&cgFn,
+                        bool requireStaticShape, bool requireStaticStride,
+                        Fn &&cgFn,
                         SmallVectorImpl<Type> &inferredReturnTypes) {
   const auto &ref = inputTy.getRef();
-  if (!cg::is_static(ref.shape())) {
+  if (requireStaticShape && !cg::is_static(ref.shape())) {
     return emitOptionalError(location,
                              "expects a static-shape input layout, "
                              "but got ",
                              inputTy);
   }
-  // left inverse requires static stride
+  if (!requireStaticShape && !cg::is_static(ref.shape()) &&
+      !cg::is_integral_only(ref.stride())) {
+    return emitOptionalError(
+        location,
+        "expects a dynamic-shape input layout to have fully static integer "
+        "strides, but got ",
+        inputTy);
+  }
   if (requireStaticStride && !cg::is_static(ref.stride())) {
     return emitOptionalError(location,
                              "expects a static-stride input layout for ",
@@ -1433,7 +1441,8 @@ LogicalResult RightInverseOp::inferReturnTypes(
                              adaptor.getInput().getType());
   }
   return inferInverseReturnTypes(
-      context, location, inputTy, "right", /*requireStaticStride=*/false,
+      context, location, inputTy, "right", /*requireStaticShape=*/false,
+      /*requireStaticStride=*/false,
       [](const cg::layout &l) { return cg::right_inverse(l); },
       inferredReturnTypes);
 }
@@ -1454,7 +1463,8 @@ LogicalResult LeftInverseOp::inferReturnTypes(
                              adaptor.getInput().getType());
   }
   return inferInverseReturnTypes(
-      context, location, inputTy, "left", /*requireStaticStride=*/true,
+      context, location, inputTy, "left", /*requireStaticShape=*/true,
+      /*requireStaticStride=*/true,
       [](const cg::layout &l) { return cg::left_inverse(l); },
       inferredReturnTypes);
 }
