@@ -62,7 +62,7 @@ from typing import Any, Optional, Union
 from .._mlir import ir
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith, math as math_dialect, llvm, nvgpu, nvvm
-from .arith import ArithValue, is_float_type, element_type
+from .arith import ArithValue, is_float_type, element_type, expand_ipowi
 from .op import dsl_user_op
 from .vector import Vector
 
@@ -199,6 +199,15 @@ def _get_element_type(x: MathOperand) -> ir.Type:
     """Get the scalar element type of an operand."""
     v = _get_ir_value(x)
     return element_type(v.type)
+
+
+def _is_signed(x: MathOperand) -> bool:
+    """Signedness of an integer operand (``True`` when it cannot be determined)."""
+    x = _coerce_operand(x)
+    if isinstance(x, ArithValue):
+        return bool(x.signed)
+    dtype = getattr(x, "dtype", None) or getattr(x, "_dtype", None) or type(x)
+    return bool(getattr(dtype, "signed", True))
 
 
 def _is_float(x: MathOperand) -> bool:
@@ -2061,10 +2070,14 @@ def ipowi(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> MathOperand:
-    """Integer raised to integer power: base^exponent."""
+    """Integer raised to integer power: base^exponent.
+
+    Expanded with ``cutlass._mlir_helpers.arith.expand_ipowi`` rather than emitted
+    as ``math.ipowi``, whose device lowering crashes (NVIDIA/cutlass#3735).
+    """
     base_ir = _get_ir_value(base, ip=ip)
     exp_ir = _get_ir_value(exponent, ip=ip)
-    result = math_dialect.ipowi(base_ir, exp_ir, loc=loc, ip=ip)
+    result = expand_ipowi(base_ir, exp_ir, signed=_is_signed(base), loc=loc, ip=ip)
     return _wrap_result(base, result)
 
 
