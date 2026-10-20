@@ -33,6 +33,16 @@ from ..common import *
 from ..typing import (
     Boolean,
     Float8E5M2,
+    Float8E5M2FNUZ,
+    Float8E4M3,
+    Float8E4M3FN,
+    Float8E4M3FNUZ,
+    Float8E4M3B11FNUZ,
+    Float8E3M4,
+    Float8E8M0FNU,
+    Float6E2M3FN,
+    Float6E3M2FN,
+    Float4E2M1FN,
     Int64,
     Int32,
     Int16,
@@ -120,6 +130,16 @@ class TensorDescriptor:
             "Float16": Float16,
             "BFloat16": BFloat16,
             "Float8E5M2": Float8E5M2,
+            "Float8E5M2FNUZ": Float8E5M2FNUZ,
+            "Float8E4M3": Float8E4M3,
+            "Float8E4M3FN": Float8E4M3FN,
+            "Float8E4M3FNUZ": Float8E4M3FNUZ,
+            "Float8E4M3B11FNUZ": Float8E4M3B11FNUZ,
+            "Float8E3M4": Float8E3M4,
+            "Float8E8M0FNU": Float8E8M0FNU,
+            "Float6E2M3FN": Float6E2M3FN,
+            "Float6E3M2FN": Float6E3M2FN,
+            "Float4E2M1FN": Float4E2M1FN,
         }
 
         if str_element_type not in dtype_map:
