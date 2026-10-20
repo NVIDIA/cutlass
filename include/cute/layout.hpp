@@ -1070,14 +1070,22 @@ composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_st
                    [[maybe_unused]] auto curr_stride = get<curr_i>(lhs_stride);
 
                    // Strong divisibility condition -- requires composition to be statically verifiable.
-                   //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                   //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or ((curr_shape % rest_stride) == Int<0>{}) or
+                   //                     ((rest_shape - Int<1>{}) * abs(rest_stride) < curr_shape), "Stride Divisibility Condition");
 
                    // Weak divisibility condition -- verify the divisibility condition whenever possible
                    if constexpr (is_static<decltype(curr_shape)>::value and is_static<decltype(rest_stride)>::value) {
-                     CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                     if constexpr (is_static<decltype(rest_shape)>::value) {
+                       CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or ((curr_shape % rest_stride) == Int<0>{}) or
+                                            ((rest_shape - Int<1>{}) * abs(rest_stride) < curr_shape), "Stride Divisibility Condition");
+                     } else {
+                       // Necessary for any rest_shape > 1
+                       CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (abs(rest_stride) < curr_shape), "Stride Divisibility Condition");
+                     }
                    } else {
                      // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
-                     //assert((((rest_stride % curr_shape) == 0) or (rest_stride < curr_shape)) && "Stride Divisibility Condition");
+                     //assert((((rest_stride % curr_shape) == 0) or ((curr_shape % rest_stride) == 0) or
+                     //        ((rest_shape - 1) * abs(rest_stride) < curr_shape)) && "Stride Divisibility Condition");
                    }
 
                    // next_shape:  ceil(exclusive_prefix_product<r>(lhs_shape) / rhs_stride)
