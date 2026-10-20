@@ -2,6 +2,40 @@
 
 # CUTLASS 4.x
 
+## [4.8.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.8.1) (2026-10-15)
+
+### CuTe DSL
+* Bug fixes and improvements:
+  - Fixed an issue with `cute.extern` where functions with zero arguments would generate invalid type signatures.  Compiling such functions a second time would fail.
+  - Clear error/warning are now emitted for `CopyUniversalOp` with memory attributes specified ([!3711](https://github.com/NVIDIA/cutlass/issues/3711)).
+  - CUTLASS Primitives' `tensormap_replace` now keeps device-side TMA descriptor updates safe when a descriptor is shrunk below its original extent (e.g. grouped GEMM) and fixes a possible illegal memory access on Blackwell/Rubin.  This behavior can be opted out by specifying `keep_oob_fetch_window=True`. See https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-595-91-07/index.html#known-issues for more details on the known `cuTensorMapEncodeTiled` bug.
+  - Fixed unintended `sys.path` modification that could break imports in some environments where Torch was not installed e.g. JAX.
+
+* Known issues
+  - Due to a bug in CTK, the use of some packed instructions result in invalid code generation.  Given the nature of the instructions and how they are explicitly used, we have chosen to not silently rewrite these, but rather are flagging until the upstream compiler fixes are available.
+  - Avoid packed higher-throughput FP8 (MMA_K=128) subtraction via inline PTX `sub.rn.e4m3x4.e4m3x4` or `sub.rn.e5m2x4.e5m2x4`, as incorrect code generation can produce wrong results.
+  - Some CUTLASS Primitives packed mixed-input ops compile incorrectly on Rubin (sm107a/sm107f), resulting in wrong code generation. The specific patterns include:
+    - Packed mul, sub, and add ops with bf16x2 or fp16x2 result type and f32x2 input type when result is converted to fp32 later. APIs affected: `add_packed_f16x2_f32x2_f32x2`, `add_packed_bf16x2_f32x2_f32x2`, `mul_packed_f16x2_f32x2_f32x2`, `mul_packed_bf16x2_f32x2_f32x2`, `sub_packed_f16x2_f32x2_f32x2`, `sub_packed_bf16x2_f32x2_f32x2`
+      - For example:
+  	    ```
+        x = prims.mul_packed_bf16x2_f32x2_f32x2(a, b)
+        out[0], out[1] = f32(x[0]), f32(x[1])  # out[0], out[1] are wrong
+        ```
+    - Packed mul op with bf16x2 or fp16x2 result type and mixed bf16x2 and fp16x2 input types when the first operand is a compilation-time constant. APIs affected: `mul_packed_bf16x2_bf16x2_f16x2`, `mul_packed_f16x2_f16x2_bf16x2`
+      - For example: 
+        ```
+        x = prims.mul_packed_bf16x2_bf16x2_f16x2(2.0, b) # x is wrong 
+        x = prims.mul_packed_f16x2_f16x2_bf16x2(2.0, b)  # x is wrong
+        ```
+
+* This release has been tested against the following packages:
+  - FlashAttention: [main (1fc0221)](https://github.com/Dao-AILab/flash-attention/commit/1fc0221183e799363001394a12dd9e78e15f5dda)
+  - Quack: [main (35266c32)](https://github.com/Dao-AILab/quack/commit/35266c3298f0e9bf6d5f46c30aace2eaeae517e3)
+  - FlashInfer: [main (399b6c1)](https://github.com/flashinfer-ai/flashinfer/commit/399b6c1d31a13f38dd827018f89c6a04c8487acb)
+  - cuDNN-Frontend: [deveop (986ef4d)](https://github.com/NVIDIA/cudnn-frontend/commit/986ef4d9078089ae9f0656dd65f15011309e4347)
+  - Pytorch: [main (ca883d5)](https://github.com/pytorch/pytorch/commit/ca883d596dd5c0ce182976ed979d69d167ad706c)
+  - TensorRT-LLM: [main (cc63e66)](https://github.com/NVIDIA/TensorRT-LLM/commit/cc63e66daf52644f1441e117bb7ba67d20566016)
+
 ## [4.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.8.0) (2026-09-17)
 
 ### CuTe DSL
