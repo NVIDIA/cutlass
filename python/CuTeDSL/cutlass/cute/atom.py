@@ -1025,6 +1025,13 @@ def _make_tiled_copy(
     assert is_static(layout_tv.type) and is_static(tiler_mn.type), (
         "layout tv and tiler mn must be static"
     )
+    atom_threads = size(atom.thr_id)
+    tiled_threads = size(layout_tv, mode=[0])
+    if tiled_threads % atom_threads != 0:
+        raise ValueError(
+            f"thread layout has {tiled_threads} threads, but the copy atom requires "
+            f"a multiple of {atom_threads} threads"
+        )
     tiled_copy_ty = _cute_nvgpu_ir.TiledCopyType.get(
         atom.type, layout_tv.type, tiler_mn.type
     )
@@ -1045,6 +1052,9 @@ def make_tiled_copy(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> TiledCopy:
     """Create a tiled type given a TV partitioner and tiler.
+
+    The thread mode of ``layout_tv`` must contain a whole number of the atom's
+    thread groups, including when that mode has a nested shape.
 
     :param atom: Copy atom, e.g. smit_copy and simt_async_copy, tma_load, etc.
     :type atom: CopyAtom
@@ -1075,7 +1085,7 @@ def make_tiled_copy_tv(
     """Create a tiled copy given separate thread and value layouts.
 
     A TV partitioner is inferred based on the input layouts. The input thread layout
-    must be compact.
+    must be compact and contain a whole number of the atom's thread groups.
 
     :param atom: Copy atom
     :type atom: CopyAtom
