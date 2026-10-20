@@ -256,6 +256,7 @@ composed of the types that are supported by TVM FFI. The example below shows how
 
 .. code-block:: python
 
+   from typing import Tuple
    import torch
    from cutlass import cute
 
@@ -507,6 +508,8 @@ Any CUDA errors encountered will also be automatically converted into Python exc
 
 .. code-block:: python
 
+   from cutlass.base_dsl import DSLCudaRuntimeError
+
    @cute.jit
    def add_one_invalid_launch(a: cute.Tensor, b: cute.Tensor):
       # Intentionally exceed the maximum block dimension (1024 threads) so the
@@ -525,9 +528,9 @@ Any CUDA errors encountered will also be automatically converted into Python exc
 
       try:
          compiled_add_one_invalid_launch(a_torch, b_torch)
-      except RuntimeError as e:
-         # raises RuntimeError: CUDA Error: cudaErrorInvalidValue
-         print(f"RuntimeError: {e}")
+      except DSLCudaRuntimeError as e:
+         # raises a CUDA launch diagnostic for cudaErrorInvalidValue
+         print(f"DSLCudaRuntimeError: {e}")
 
 
 Working with Devices
@@ -802,6 +805,7 @@ The example below shows how to use keyword arguments and defaults:
 
 .. code-block:: python
 
+   import cutlass
    import torch
    from cutlass import cute
 
@@ -843,6 +847,9 @@ The code block below shows how to do this:
 
 .. code-block:: python
 
+   import inspect
+   import subprocess
+
    def example_kwargs_and_defaults():
       n = cute.sym_int()
       a_cute = cute.runtime.make_fake_compact_tensor(cute.Float32, (n,))
@@ -859,7 +866,7 @@ The code block below shows how to do this:
       a_torch = torch.arange(10, dtype=torch.float32, device="cuda")
       b_torch = torch.empty(10, dtype=torch.float32, device="cuda")
 
-      mod = cute.runtime.load_module("./add_constant.so")
+      mod = cute.runtime.load_module("./add_constant.so", enable_tvm_ffi=True)
       try:
          mod.add_constant(a_torch, b_torch)
       except Exception as e:
