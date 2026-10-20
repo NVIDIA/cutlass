@@ -12,7 +12,7 @@
 """Hooks that a DSL fires at points of the compilation.
 
 Each point is a :class:`HookEvent`. A hook registered for an event is called
-synchronously with one event object, for example a :class:`CompilationEvent`,
+synchronously with one event object, for example a :class:`PostCompileEvent`,
 whose fields describe that point. Hooks are registered on the DSL instance
 with ``register_hook``/``remove_hook``, or for the duration of a ``with``
 block with ``hooks``; see ``BaseDSL.register_hook``.
@@ -36,16 +36,16 @@ class HookEvent(enum.Enum):
     """A point of the compilation at which hooks run."""
 
     #: After tracing and before the module is hashed. Hooks receive a
-    #: :class:`TraceFinalizeEvent` and may inspect or annotate the module
+    #: :class:`PostTraceEvent` and may inspect or annotate the module
     #: before its cache key is computed.
     POST_TRACE = "post_trace"
     #: After a compilation or an in-memory cache hit, once the compilation has
-    #: finished. Hooks receive a :class:`CompilationEvent`.
+    #: finished. Hooks receive a :class:`PostCompileEvent`.
     POST_COMPILE = "post_compile"
 
 
 @dataclass(frozen=True)
-class TraceFinalizeEvent:
+class PostTraceEvent:
     """Payload of :attr:`HookEvent.POST_TRACE`."""
 
     #: The DSL instance.
@@ -57,7 +57,7 @@ class TraceFinalizeEvent:
 
 
 @dataclass(frozen=True)
-class CompilationEvent:
+class PostCompileEvent:
     """Payload of :attr:`HookEvent.POST_COMPILE`.
 
     Device functions compiled with ``DeviceTarget`` are not reported, nor is

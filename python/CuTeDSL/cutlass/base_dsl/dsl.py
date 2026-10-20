@@ -82,10 +82,10 @@ from .compile_backend import CompileContext, get_compiler_backend
 from .cache_helpers import *
 from .jit_executor import JitCompiledFunction, JitFunctionArtifacts
 from .hooks_manager import (
-    CompilationEvent,
     HookChannel,
     HookEvent,
-    TraceFinalizeEvent,
+    PostCompileEvent,
+    PostTraceEvent,
 )
 from .utils.timer import timer
 from .utils.logger import log
@@ -1661,10 +1661,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         The hook is called synchronously with one event object describing that
         point of the compilation:
 
-        - ``HookEvent.POST_TRACE``: a ``TraceFinalizeEvent``, after tracing
+        - ``HookEvent.POST_TRACE``: a ``PostTraceEvent``, after tracing
           and before the module is hashed. The hook may inspect or annotate the
           module before its cache key is computed.
-        - ``HookEvent.POST_COMPILE``: a ``CompilationEvent``, after each
+        - ``HookEvent.POST_COMPILE``: a ``PostCompileEvent``, after each
           compilation and each in-memory cache hit, once the compilation has
           finished.
 
@@ -1723,7 +1723,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         same hook object more than once is ignored.
 
         Deprecated: use ``register_hook(HookEvent.POST_TRACE, hook)`` with
-        a hook accepting one ``TraceFinalizeEvent`` instead.
+        a hook accepting one ``PostTraceEvent`` instead.
         """
         warnings.warn(
             "register_trace_finalize_hook is deprecated; use "
@@ -1762,7 +1762,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 if any hook entry is ``None`` or not callable.
 
         Deprecated: use ``hooks(HookEvent.POST_TRACE, hooks)`` with hooks
-        accepting one ``TraceFinalizeEvent`` instead.
+        accepting one ``PostTraceEvent`` instead.
         """
         warnings.warn(
             "trace_finalize_hooks is deprecated; use "
@@ -1829,7 +1829,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         channel = self._hooks[HookEvent.POST_TRACE]
         if channel:
-            channel.run(TraceFinalizeEvent(self, module, function_name))
+            channel.run(PostTraceEvent(self, module, function_name))
 
     def _inspection_pipeline(self, passes: str) -> str:
         """Frame ``passes`` for IR-inspection dumps: under PyIR, prepend the
@@ -2515,7 +2515,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         compilation_hooks = self._hooks[HookEvent.POST_COMPILE]
         if compilation_hooks:
             compilation_hooks.run(
-                CompilationEvent(
+                PostCompileEvent(
                     owner=self,
                     function_name=function_name,
                     module_hash=module_hash,

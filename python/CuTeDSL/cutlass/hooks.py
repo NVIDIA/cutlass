@@ -21,7 +21,7 @@ with that instance's ``register_hook``, ``remove_hook`` and ``hooks`` methods.
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
-from .base_dsl.hooks_manager import CompilationEvent, HookEvent, TraceFinalizeEvent
+from .base_dsl.hooks_manager import HookEvent, PostCompileEvent, PostTraceEvent
 
 if TYPE_CHECKING:
     from .base_dsl.dsl import BaseDSL
@@ -61,9 +61,9 @@ def hooks(
 
 
 __all__ = [
-    "CompilationEvent",
     "HookEvent",
-    "TraceFinalizeEvent",
+    "PostCompileEvent",
+    "PostTraceEvent",
     "hooks",
     "register_hook",
     "remove_hook",

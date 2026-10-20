@@ -41,7 +41,7 @@ from cutlass._mlir import ir
 from cutlass.base_dsl.cache_helpers import JitCacheDict
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.compiler import CompileOptions
-from cutlass.hooks import CompilationEvent, HookEvent, TraceFinalizeEvent
+from cutlass.hooks import HookEvent, PostCompileEvent, PostTraceEvent
 from cutlass.base_dsl.jit_executor import JitFunctionArtifacts
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cutlass_dsl import CuTeDSL
@@ -256,7 +256,7 @@ class TestTraceFinalizeHook(_HookTestCase):
         self.register(HookEvent.POST_COMPILE, compilations)
         _launch(self.t, 1, 32)
         (event,) = traces.events
-        self.assertIsInstance(event, TraceFinalizeEvent)
+        self.assertIsInstance(event, PostTraceEvent)
         self.assertIs(event.owner, self.dsl)
         self.assertIsInstance(event.module, ir.Module)
         self.assertEqual(event.function_name, compilations.events[0].function_name)
@@ -411,7 +411,7 @@ class TestCompilationHook(_HookTestCase):
         with self.dsl.hooks(HookEvent.POST_COMPILE, hook):
             _launch(self.t, 1, 32)
         (event,) = hook.events
-        self.assertIsInstance(event, CompilationEvent)
+        self.assertIsInstance(event, PostCompileEvent)
         self.assertIs(event.owner, self.dsl)
         self.assertIsInstance(event.artifacts, JitFunctionArtifacts)
         self.assertIsInstance(event.compile_options, CompileOptions)
