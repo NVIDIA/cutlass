@@ -564,6 +564,12 @@ cutlass_test_unit_gemm_device_add_executable(
 )
 
 cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_sparse_absmax_update
+
+  gemm_sparse_with_absmax_update_sm89.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm89
 
   BATCH_SOURCES ON
