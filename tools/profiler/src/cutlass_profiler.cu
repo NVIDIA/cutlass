@@ -152,6 +152,15 @@ void CutlassProfiler::enumerate_() {
 /// Profiles all operations
 int CutlassProfiler::profile_() {
 
+  // Load dynamically-specified kernel libraries before profiling
+  for (auto const &lib_path : options_.kernel_libs) {
+    auto status = library::Singleton::get_mutable().load_kernel_library(lib_path);
+    if (status != Status::kSuccess) {
+      std::cerr << "Error: failed to load kernel library: " << lib_path << std::endl;
+      return 1;
+    }
+  }
+
   // Keep track of all device memory tensor in map
   DeviceContext device_context;
 
