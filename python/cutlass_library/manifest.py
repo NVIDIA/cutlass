@@ -534,6 +534,7 @@ class Manifest:
           , OperationKind.Conv2d
           , OperationKind.Conv3d
             , OperationKind.RankK
+            , OperationKind.Rank2K
             , OperationKind.Trmm
             , OperationKind.Symm
         ]
