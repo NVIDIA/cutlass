@@ -478,7 +478,6 @@ public:
     int lane_idx = canonical_lane_idx();
     int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
-    int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
     int mma_thread_idx = thread_idx % size(TiledMma{});
     auto warp_group_idx = canonical_warp_group_idx();
     auto warp_group_role = WarpGroupRole(warp_group_idx);
@@ -519,7 +518,9 @@ public:
     if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Consumer;
     }
-    mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
+    // The TMA-issuing lane (elected by the collective with the same full mask) posts the expect-tx arrival
+    mainloop_pipeline_params.is_leader = warp_group_role == WarpGroupRole::Producer &&
+        producer_warp_role == ProducerWarpRole::Mainloop && lane_predicate;
     mainloop_pipeline_params.num_consumers = NumMmaThreads;
     mainloop_pipeline_params.num_producers = NumProducerThreads;
     mainloop_pipeline_params.transaction_bytes = params.mainloop.tma_transaction_bytes;
