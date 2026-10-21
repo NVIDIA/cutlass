@@ -371,11 +371,16 @@ def filter_manifest_and_write_heuristics_file(manifest, args):
   all_configs_and_operations = []
   operations = []
   for problem in problems_with_configs:
+    problem_configs, problem_operations = [], []
     if any('90' in arch for arch in args.architectures.split(';')):
-        problem_configs, problem_operations = generate_sm90_from_heuristics_configs(None if args.heuristics_restrict_kernels else manifest, args.cuda_version, problem['configs'])
+        sm90_configs, sm90_operations = generate_sm90_from_heuristics_configs(None if args.heuristics_restrict_kernels else manifest, args.cuda_version, problem['configs'])
+        problem_configs += sm90_configs
+        problem_operations += sm90_operations
     if any(('100' in arch) or ('101' in arch) for arch in args.architectures.split(';')):
-        problem_configs, problem_operations = generate_sm100_from_heuristics_configs(None if args.heuristics_restrict_kernels else manifest, args.cuda_version, problem['configs'])
-        
+        sm100_configs, sm100_operations = generate_sm100_from_heuristics_configs(None if args.heuristics_restrict_kernels else manifest, args.cuda_version, problem['configs'])
+        problem_configs += sm100_configs
+        problem_operations += sm100_operations
+
     operations += problem_operations
     problem_without_configs = {k: v for k, v in problem.items() if k != 'configs'}
     with_problem_size = [{'operation_name': o.procedural_name(), **problem_without_configs, **c} for c, o in zip(problem_configs, problem_operations)]
