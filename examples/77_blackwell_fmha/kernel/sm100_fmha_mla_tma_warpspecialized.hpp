@@ -1949,14 +1949,13 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     constexpr int kNumThreads = kNumComputeWarps * NumThreadsPerWarp;
     using Sync = cutlass::detail::NamedBarrierSync<kNumThreads, kNamedBarrierExchange>;
 
+    // Inter-CTA barrier over the split-KV group. arrive_inc syncs the compute warps before thread 0's
+    // release increment, so every thread's exchange atomic is published with the arrival; wait_lt waits
+    // for at least `count`, so a peer's next-phase increment past `count` cannot strand a waiter.
     auto wait = [](int* lock, int count) {
-      __threadfence();
-      if (threadIdx.x == 0) {
-        atomicAdd(lock, 1);
-        while (atomicCAS(lock, count, count) != count) {};
-      }
-      __threadfence();
-      Sync::sync();
+      using Barrier = cutlass::GenericBarrier<Sync>;
+      Barrier::arrive_inc(lock, threadIdx.x, 0);
+      Barrier::wait_lt(lock, threadIdx.x, 0, count);
     };
 
     const ElementLSE lse  = cutlass::fast_log(row_sum) + mainloop_args.softmax_scale * row_max;
