@@ -37,6 +37,7 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/numeric_conversion.h"
 #include <bitset>
+#include <limits>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -124,6 +125,11 @@ TEST(float_e5m2_t, host_arithmetic) {
       EXPECT_TRUE(static_cast<int>(x + y) == (i + j));
     }
   }
+}
+
+TEST(float_ue8m0_t, numeric_limits) {
+  EXPECT_EQ(std::numeric_limits<cutlass::float_ue8m0_t>::lowest().raw(), 0x00);
+  EXPECT_EQ(cutlass::platform::numeric_limits<cutlass::float_ue8m0_t>::lowest().raw(), 0x00);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
