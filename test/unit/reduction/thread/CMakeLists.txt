@@ -29,5 +29,6 @@
 cutlass_test_unit_add_executable(
   cutlass_test_unit_reduction_thread
   reduction_thread.cu
+  reduction_operators.cu
   testbed.h
   )
