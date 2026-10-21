@@ -30,6 +30,7 @@ cutlass_test_unit_add_executable(
   cutlass_test_unit_epilogue_threadblock
   
   predicated_tile_iterator.cu
+  sm90_visitor_workspace.cu
   output_tile_threadmap.cu
   epilogue_simt.cu
   epilogue_simt_sm60.cu
