@@ -241,6 +241,27 @@ TEST(CuTe_core, Logical_divide)
   ASSERT_TRUE(bool(stride(result) == make_stride( _1{}, make_stride(_64{},_128{}))));
   }
 
+  {
+  auto layout = make_layout(make_shape(_12{}, make_shape(_4{}, _8{})),
+                            make_stride(_7{}, make_stride(_1{}, _30{})));
+  int tile = 12;
+
+  auto result = zipped_divide(layout, tile);
+  ASSERT_EQ(size(result), size(layout));
+  }
+
+#ifndef NDEBUG
+  EXPECT_DEATH(
+    {
+      auto layout = make_layout(make_shape(_12{}, make_shape(_4{}, _8{})),
+                                make_stride(_7{}, make_stride(_1{}, _30{})));
+      int tile = 128;
+      auto result = zipped_divide(layout, tile);
+      (void)result;
+    },
+    "Shape Divisibility Condition");
+#endif
+
 
   //
   // ALLOWED, but dangerous due to the dynamic lhs shapes
