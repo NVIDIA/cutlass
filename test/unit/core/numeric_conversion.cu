@@ -59,6 +59,26 @@ __global__ void convert(
   *destination = convert(*source);
 }
 
+__global__ void convert_s32_to_8bit_saturation(
+  cutlass::Array<int8_t, 4> *signed_result,
+  cutlass::Array<uint8_t, 4> *unsigned_result) {
+
+  int const signed_source[] = {-129, -128, 127, 128};
+  int const unsigned_source[] = {-1, 0, 255, 256};
+
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < 4; ++i) {
+    cutlass::Array<int, 1> source{signed_source[i]};
+    (*signed_result)[i] = cutlass::NumericArrayConverter<int8_t, int, 1>{}(source)[0];
+  }
+
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < 4; ++i) {
+    cutlass::Array<int, 1> source{unsigned_source[i]};
+    (*unsigned_result)[i] = cutlass::NumericArrayConverter<uint8_t, int, 1>{}(source)[0];
+  }
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Destination, typename Source, int Count>
@@ -441,6 +461,25 @@ TEST(NumericConversion, fe4m3_to_f32_rn) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(NumericConversion, s32_to_8bit_saturates) {
+  cutlass::HostTensor<int8_t, cutlass::layout::RowMajor> signed_result({1, 4});
+  cutlass::HostTensor<uint8_t, cutlass::layout::RowMajor> unsigned_result({1, 4});
+
+  test::core::kernel::convert_s32_to_8bit_saturation<<<1, 1>>>(
+    reinterpret_cast<cutlass::Array<int8_t, 4> *>(signed_result.device_data()),
+    reinterpret_cast<cutlass::Array<uint8_t, 4> *>(unsigned_result.device_data()));
+
+  signed_result.sync_host();
+  unsigned_result.sync_host();
+
+  int const expected_signed[] = {-128, -128, 127, 127};
+  int const expected_unsigned[] = {0, 0, 255, 255};
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(int(signed_result.host_data()[i]), expected_signed[i]);
+    EXPECT_EQ(int(unsigned_result.host_data()[i]), expected_unsigned[i]);
+  }
+}
 
 TEST(NumericConversion, f32x8_to_s8x8_rn) {
 
