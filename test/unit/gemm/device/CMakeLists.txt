@@ -629,6 +629,7 @@ cutlass_test_unit_gemm_device_add_executable(
   gemm_f32n_f32n_f32t_tensor_op_f32_sparse_sm80.cu
   gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu
+  ell_gemm_workspace.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(
