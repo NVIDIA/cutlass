@@ -28,13 +28,13 @@
 
 
 import argparse
+import importlib.util
 import os
 import sys
 from pathlib import Path
 from typing import Tuple, Type, Union, Literal, Optional
 
 import cuda.bindings.driver as cuda
-import torch
 
 import cutlass
 import cutlass.cute as cute
@@ -42,11 +42,18 @@ from cutlass import testing
 from cutlass.cute.runtime import make_ptr
 from cutlass.cute.nvgpu import cpasync, tcgen05, OperandMajorMode
 from cutlass.cute.nvgpu.tcgen05.mma import CollectorOp
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.rubin_helpers as sm107_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
+
+# Only the reference implementation and the test harness in this file use torch; the
+# kernel doesn't, so importing it (e.g. through cutlass.operators) doesn't need
+# torch.
+if importlib.util.find_spec("torch") is not None:
+    import torch
+
+    import cutlass.torch as cutlass_torch
 
 if __name__ == "__main__":
     current_dir = Path(__file__).resolve().parent
