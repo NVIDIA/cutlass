@@ -27,22 +27,29 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
+import importlib.util
 from typing import Type, Tuple, Union, Literal
 
 import cuda.bindings.driver as cuda
-import torch
 
 import cutlass
 import cutlass.cute as cute
 from cutlass import testing
 from cutlass.cute.nvgpu import cpasync, tcgen05, OperandMajorMode
-import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
 from cutlass.cute.runtime import make_ptr
+
+# Only the reference implementation and the test harness in this file use torch; the
+# kernel doesn't, so importing it (e.g. through cutlass.operators) doesn't need
+# torch.
+if importlib.util.find_spec("torch") is not None:
+    import torch
+
+    import cutlass.torch as cutlass_torch
 
 
 """
@@ -2412,11 +2419,11 @@ def to_blocked(input_matrix):
 
 # Reference implementation of the persistent dense blockscaled GEMM operation (emulated version)
 def reference_scaled_mm_emulated(
-    a: torch.Tensor,
-    b: torch.Tensor,
-    sfa: torch.Tensor,
-    sfb: torch.Tensor,
-    c: torch.Tensor,
+    a: "torch.Tensor",
+    b: "torch.Tensor",
+    sfa: "torch.Tensor",
+    sfb: "torch.Tensor",
+    c: "torch.Tensor",
     mnkl: Tuple[int, int, int, int],
     sf_vec_size: int,
     c_dtype: Type[cutlass.Numeric],
@@ -2442,11 +2449,11 @@ def reference_scaled_mm_emulated(
 
 # Reference implementation of the persistent dense blockscaled GEMM operation (non-emulated version)
 def reference_scaled_mm(
-    a: torch.Tensor,
-    b: torch.Tensor,
-    sfa: torch.Tensor,
-    sfb: torch.Tensor,
-    c: torch.Tensor,
+    a: "torch.Tensor",
+    b: "torch.Tensor",
+    sfa: "torch.Tensor",
+    sfb: "torch.Tensor",
+    c: "torch.Tensor",
     mnkl: Tuple[int, int, int, int],
     c_dtype: Type[cutlass.Numeric],
 ):
@@ -2475,11 +2482,11 @@ def reference_scaled_mm(
 
 # Construct CuTe Pointers for the persistent dense blockscaled GEMM operation (emulated version)
 def construct_cute_pointers_emulated(
-    a: torch.Tensor,
-    b: torch.Tensor,
-    sfa: torch.Tensor,
-    sfb: torch.Tensor,
-    c: torch.Tensor,
+    a: "torch.Tensor",
+    b: "torch.Tensor",
+    sfa: "torch.Tensor",
+    sfb: "torch.Tensor",
+    c: "torch.Tensor",
     a_dtype: Type[cutlass.Numeric],
     b_dtype: Type[cutlass.Numeric],
     sf_dtype: Type[cutlass.Numeric],
@@ -2524,11 +2531,11 @@ def construct_cute_pointers_emulated(
 
 # Construct CuTe Pointers for the persistent dense blockscaled GEMM operation (non-emulated version)
 def construct_cute_pointers(
-    a: torch.Tensor,
-    b: torch.Tensor,
-    sfa: torch.Tensor,
-    sfb: torch.Tensor,
-    c: torch.Tensor,
+    a: "torch.Tensor",
+    b: "torch.Tensor",
+    sfa: "torch.Tensor",
+    sfb: "torch.Tensor",
+    c: "torch.Tensor",
     a_dtype: Type[cutlass.Numeric],
     b_dtype: Type[cutlass.Numeric],
     sf_dtype: Type[cutlass.Numeric],
