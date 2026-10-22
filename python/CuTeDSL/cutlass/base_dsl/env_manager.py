@@ -987,6 +987,15 @@ class EnvironmentVarManager(LogEnvironmentManager):
         if _check_nvdisasm and self.keep_sass:
             _find_nvdisasm_binary()
 
+    def configured_arch(self) -> str | None:
+        """Return a known architecture without probing the CUDA driver.
+
+        ``arch`` detects on first access. Error formatting must not do that,
+        because a failed probe raises ``DSLCudaRuntimeError`` whose constructor
+        reads the architecture again.
+        """
+        return self._arch
+
     @property
     def arch(self) -> str:
         """GPU architecture, from ``{prefix}_ARCH`` or detected on first access.
