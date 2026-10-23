@@ -34,6 +34,10 @@
 
 #include "../common/cutlass_unit_test.h"
 
+#include <cmath>
+#include <random>
+#include <vector>
+
 #include "cutlass/numeric_conversion.h"
 
 #include "cutlass/layout/matrix.h"
@@ -137,6 +141,45 @@ void run_test_integer_range_all() {
    std::flush(std::cout);
 }
 
+/// Each thread converts one array
+template <typename Destination, typename Source, int Count>
+__global__ void convert_arrays(
+  cutlass::Array<Destination, Count> *destination,
+  cutlass::Array<Source, Count> const *source) {
+
+  cutlass::FastNumericArrayConverter<Destination, Source, Count> convert;
+
+  destination[threadIdx.x] = convert(source[threadIdx.x]);
+}
+
+void run_test_f32_to_s32_round_to_nearest(std::vector<float> const &values) {
+  constexpr int kCount = 4;
+  int const kArrays = int(values.size()) / kCount;
+  int const kN = kArrays * kCount;
+
+  cutlass::HostTensor<int, cutlass::layout::RowMajor> destination({1, kN});
+  cutlass::HostTensor<float, cutlass::layout::RowMajor> source({1, kN});
+
+  for (int i = 0; i < kN; ++i) {
+    source.host_view().at({0, i}) = values[i];
+  }
+
+  source.sync_device();
+
+  convert_arrays<int, float, kCount><<< 1, kArrays >>>(
+    reinterpret_cast<cutlass::Array<int, kCount> *>(destination.device_data()),
+    reinterpret_cast<cutlass::Array<float, kCount> const *>(source.device_data())
+  );
+
+  destination.sync_host();
+
+  for (int i = 0; i < kN; ++i) {
+    // The host rounds to nearest even by default.
+    int expected = int(std::nearbyint(values[i]));
+    EXPECT_EQ(destination.host_view().at({0, i}), expected) << " source " << values[i];
+  }
+}
+
 } // namespace kernel
 } // namespace core
 } // namespace test
@@ -196,4 +239,34 @@ TEST(FastNumericConversion, s4_to_s8_array) {
   using Source = cutlass::int4b_t;
   using Destination = int8_t;
   test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
+}
+
+TEST(FastNumericConversion, f32_to_s32_round_to_nearest_array) {
+  float const kLimit = 2147483648.0f;  // 2^31
+  std::vector<float> values = {
+    0.0f, -0.0f, 0.5f, -0.5f, 1.5f, -1.5f, 2.5f, -2.5f, 0.49999997f, -0.49999997f,
+    -kLimit, kLimit - 128.0f, -(kLimit - 128.0f), 1073741824.0f, -1073741824.0f,
+    8388607.5f, -8388607.5f, 16777215.0f, 16777216.0f, 4194304.5f
+  };
+
+  // Ties of the first rounding to a multiple of 512, and ties of the second to an integer.
+  for (float k : {0.0f, 1.0f, 2.0f, 3.0f, 1000.0f, 1048575.0f}) {
+    for (float sign : {1.0f, -1.0f}) {
+      for (float offset : {-256.0f, 256.0f, -256.5f, 256.5f, -255.5f, 255.5f, 0.5f, -0.5f}) {
+        values.push_back(sign * (512.0f * k + offset));
+      }
+    }
+  }
+
+  std::mt19937 rng(2026);
+  std::uniform_real_distribution<float> wide(-kLimit, kLimit - 128.0f);
+  std::uniform_real_distribution<float> narrow(-4096.0f, 4096.0f);
+  while (values.size() < 1024) {
+    values.push_back(wide(rng));
+    values.push_back(narrow(rng));
+    values.push_back(std::round(narrow(rng)) + 0.5f);
+    values.push_back(std::ldexp(narrow(rng), -10));
+  }
+
+  test::core::kernel::run_test_f32_to_s32_round_to_nearest(values);
 }
