@@ -11374,6 +11374,7 @@ def cvta_to(
             f"cvta.to.{space.value}.{size.value} {{$w0}}, {{$r0}};",
             write_only_types=[int_type],
             read_only_args=[addr],
+            has_side_effects=False,
             loc=loc,
             ip=ip,
         )
@@ -11414,6 +11415,7 @@ def cvt_e4m3x2_to_bf16x2(
         "cvt.rn.satfinite.bf16x2.e4m3x2 {$w0}, {$r0};",
         write_only_types=[Int32],
         read_only_args=[packed_fp8],
+        has_side_effects=False,
         loc=loc,
         ip=ip,
     )
@@ -11446,6 +11448,7 @@ def cvt_e2m1x2_byte_to_bf16x2(
         "cvt.rn.bf16x2.e2m1x2 {$w0}, byte; }",
         write_only_types=[Int32],
         read_only_args=[packed_byte & Int32(0xFF)],
+        has_side_effects=False,
         loc=loc,
         ip=ip,
     )
@@ -11464,6 +11467,7 @@ def cvt_e4m3x2_byte_to_bf16x2(
         "{ .reg .b16 sf; mov.b32 {sf, _}, {$r0}; cvt.rn.bf16x2.e4m3x2 {$w0}, sf; }",
         write_only_types=[Int32],
         read_only_args=[sf_pair],
+        has_side_effects=False,
         loc=loc,
         ip=ip,
     )
@@ -11510,6 +11514,7 @@ def cvt_e2m1_word_to_e4m3_words(
         "}\n",
         write_only_types=[Int32, Int32],
         read_only_args=[packed_word, sf_pair],
+        has_side_effects=False,
         loc=loc,
         ip=ip,
     )
@@ -11530,6 +11535,7 @@ def mul_bf16x2(
         "mul.bf16x2 {$w0}, {$r0}, {$r1};",
         write_only_types=[Int32],
         read_only_args=[a, b],
+        has_side_effects=False,
         loc=loc,
         ip=ip,
     )

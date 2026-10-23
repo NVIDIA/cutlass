@@ -1633,6 +1633,7 @@ def _add_packed_half2_ptx(
         write_only_types=[Int32],
         read_only_args=[a, b],
         predicate=predicate,
+        has_side_effects=predicate is not None,
         loc=loc,
         ip=ip,
     )
@@ -1657,6 +1658,7 @@ def _exp2_packed_half2_ptx(
         write_only_types=[Int32],
         read_only_args=[a],
         predicate=predicate,
+        has_side_effects=predicate is not None,
         loc=loc,
         ip=ip,
     )
@@ -1750,6 +1752,7 @@ def _sub_packed_half2_ptx(
         write_only_types=[Int32],
         read_only_args=[a, b],
         predicate=predicate,
+        has_side_effects=predicate is not None,
         loc=loc,
         ip=ip,
     )
@@ -2560,7 +2563,7 @@ def exp2(
             [Float32(a).ir_value(loc=loc, ip=ip)],
             "ex2.approx.ftz.f32 $0, $1;",
             "=f,f",
-            has_side_effects=True,
+            has_side_effects=False,
             is_align_stack=False,
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
@@ -2692,7 +2695,7 @@ def cvt_f32x2_bf16x2(
         ],
         "cvt.rn.satfinite.bf16x2.f32 $0, $1, $2;",
         "=r,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2769,7 +2772,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2782,7 +2785,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2795,7 +2798,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2808,7 +2811,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2819,7 +2822,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2830,7 +2833,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2841,7 +2844,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2852,7 +2855,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2887,7 +2890,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2900,7 +2903,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2911,7 +2914,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2922,7 +2925,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2950,7 +2953,7 @@ def prmt(
         ],
         "prmt.b32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
