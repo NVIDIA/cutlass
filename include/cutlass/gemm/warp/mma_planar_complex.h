@@ -135,10 +135,10 @@ public:
     frag_A.real = A_in.real;
 
     if (kTransformA == ComplexTransform::kConjugate) {
-      frag_A.imag = neg_A(frag_A.imag);
+      frag_A.imag = neg_A(A_in.imag);
     }
     else {
-      frag_A.imag = frag_A.imag;
+      frag_A.imag = A_in.imag;
     }
 
     FragmentB frag_B;
@@ -146,10 +146,10 @@ public:
 
     if (kTransformB == ComplexTransform::kConjugate) {
       negate<typename FragmentB::ArrayReal> neg;
-      frag_B.imag = neg(frag_B.imag);
+      frag_B.imag = neg(B_in.imag);
     }
     else {
-      frag_B.imag = frag_B.imag;
+      frag_B.imag = B_in.imag;
     }
 
     //
