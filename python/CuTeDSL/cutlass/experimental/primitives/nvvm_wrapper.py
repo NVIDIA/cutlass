@@ -1342,6 +1342,7 @@ def _hl_inline_ptx(
     read_only_args: list | None = None,
     read_write_args: list | None = None,
     pred: Boolean | None = None,
+    has_side_effects: bool = True,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> object:
@@ -1370,6 +1371,7 @@ def _hl_inline_ptx(
         write_only_types=write_only_types,
         read_only_args=read_only_args,
         read_write_args=read_write_args,
+        has_side_effects=has_side_effects,
         loc=loc,
         ip=ip,
     )
@@ -1949,6 +1951,7 @@ def inline_ptx(
     read_only_args: list[object] | None = None,
     read_write_args: list[object] | None = None,
     predicate: Boolean | None = None,
+    has_side_effects: bool = True,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Any:
@@ -1958,6 +1961,7 @@ def inline_ptx(
         read_only_args=_inline_ptx_args(read_only_args, loc, ip),
         read_write_args=_inline_ptx_args(read_write_args, loc, ip),
         predicate=predicate,
+        has_side_effects=has_side_effects,
         loc=loc,
         ip=ip,
     )
