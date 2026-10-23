@@ -789,6 +789,40 @@ shuffle_sync_bfly = partial(shuffle_sync_op, kind=nvvm.ShflKind.bfly)
 
 
 @dsl_user_op
+def movmatrix_trans(
+    src: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    """
+    Transposes an 8x8 matrix of 16-bit elements held across a warp, with
+    ``movmatrix.sync.aligned.m8n8.trans.b16``.
+
+    Before and after, lane ``4 * g + t`` holds row ``g``, columns ``2 * t`` (low
+    16 bits) and ``2 * t + 1`` (high 16 bits). This is the layout of an 8x8 tile
+    of an ``mma.sync`` fragment, so the result is the transposed tile's fragment
+    with no trip through shared memory. Every lane of the warp must execute it.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-movmatrix-instruction
+
+    :param src: this lane's two elements, packed in an Int32
+    :type src: Int32
+    :return: this lane's two elements of the transposed matrix
+    :rtype: Int32
+    """
+    return Int32(
+        nvvm.movmatrix(
+            Int32(src).ir_value(loc=loc, ip=ip),
+            ir.Attribute.parse("#nvvm.ld_st_matrix_shape<m = 8, n = 8>"),
+            nvvm.LdStMatrixEltType.B16,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
 def warp_reduction(
     val: Numeric,
     op: Callable,
