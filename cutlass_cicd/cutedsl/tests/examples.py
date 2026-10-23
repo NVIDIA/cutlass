@@ -33,6 +33,8 @@ EXAMPLE_DIRS_BY_SM = {
 }
 
 EXTRA_EXAMPLES_BY_SM = {
+    # Blackwell examples that use no tcgen05 or TMEM and run on Hopper as is.
+    "90": ("cute/blackwell/kernel/rmsnorm/rmsnorm.py",),
     "120": (
         "cute_ext/blackwell/dense_gemm/"
         "sm120_dense_block_scaled_gemm_persistent_pingpong.py",
