@@ -919,3 +919,18 @@ using fake tensor is limited in this case.
 Host cross-compilation is not supported on the TVM FFI path: the ``--host-target`` option cannot be combined with
 ``--enable-tvm-ffi`` (doing so raises an error). To cross-compile the host object for another CPU architecture (for example
 AArch64), use the low-level cute ABI AOT path described in :ref:`dsl_aot_host_cross_compilation`.
+
+Portable CPU targets for AOT exports
+-----------------------------------
+
+By default, TVM FFI AOT exports specialize their host-side initialization and
+launch code to the build CPU. Deploying such an object on a CPU without the
+same instruction-set extensions can cause an illegal-instruction failure, even
+when the GPU architecture matches. To select a baseline CPU within the same
+host architecture, pass an LLVM CPU name when exporting::
+
+   compiled_fn.export_to_c("kernel.o", "kernel", host_cpu="x86-64")
+
+This controls only host code generation; the compiled GPU kernel is unchanged.
+It does not enable cross-compilation between host architectures. Omitting
+``host_cpu`` preserves the existing native build-host behavior.

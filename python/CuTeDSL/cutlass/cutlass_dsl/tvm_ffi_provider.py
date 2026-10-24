@@ -937,6 +937,7 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         *,
         enable_pic: bool = True,
         export_only_tvm_ffi_symbols: bool = False,
+        host_cpu: Optional[str] = None,
     ) -> None:
         """Export the TVM FFI function to an object file.
 
@@ -944,6 +945,11 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         :param function_name: The name of the function to export.
         :param enable_pic: Whether to enable PIC relocation needed for shared library loading.
         :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
+        :param host_cpu: Optional LLVM CPU name for the current host architecture,
+            e.g. "x86-64" for portable x86-64 objects. When omitted, retain native
+            build-host specialization. This does not change the GPU target or
+            enable host cross-compilation. Explicit CPU selection clears inherited
+            function feature overrides so the CPU's baseline features are used.
         """
         if self.host_target.value:
             raise DSLUserCodeError(DiagId.CONFIG_INCOMPATIBLE_FLAGS)
@@ -959,6 +965,17 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         rename_tvm_ffi_function(mod, self.function_name, function_name)
         if export_only_tvm_ffi_symbols:
             _inplace_hide_symbols(mod, lambda x: not x.startswith("__tvm_ffi"))
+
+        if host_cpu is not None:
+            if not host_cpu.strip():
+                raise ValueError("host_cpu must be a non-empty LLVM CPU name")
+            with mod.context:
+                for op in mod.body.operations:
+                    if op.name == "llvm.func":
+                        op.attributes["target_cpu"] = ir.StringAttr.get(host_cpu)
+                        op.attributes["target_features"] = ir.Attribute.parse(
+                            "#llvm.target_features<[]>"
+                        )
 
         format = _get_format_from_object_file_path(object_file_path)
         out_bytes = _aot_support.export_module_to_bytes(
