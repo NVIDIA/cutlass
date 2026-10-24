@@ -738,12 +738,12 @@ class Manifest:
       target_text = SubstituteTemplate("""cutlass_target_sources(cutlass_library_objs PRIVATE
       """, { })
       manifest_file.write(target_text + '\n\n')
-      manifest_file.write("    %s\n" % str(top_level_path.replace('\\', '/')))
+      manifest_file.write('    "%s"\n' % str(top_level_path.replace('\\', '/')))
       generated_path = os.path.join(self.curr_build_dir, 'generated')
       for kind in self.operations.keys():
         kind_str = OperationKindNames[kind]
         all_kind_file = os.path.join(generated_path, kind_str, f"all_{kind_str}_operations.cu").replace('\\', '/')
-        manifest_file.write(f"    {all_kind_file}\n")
+        manifest_file.write(f'    "{all_kind_file}"\n')
       manifest_file.write(')\n\n')
 
       for kind in self.operations.keys():
@@ -755,7 +755,7 @@ class Manifest:
             manifest_file.write(target_text + '\n\n')
 
             for source_file in source_files[kind][min_cc][subclass]:
-              manifest_file.write("    %s\n" % str(source_file.replace('\\', '/')))
+              manifest_file.write('    "%s"\n' % str(source_file.replace('\\', '/')))
 
             manifest_file.write(")\n")
 
