@@ -247,3 +247,47 @@ TEST(PredicateVector, Count) {
         << "PredicateVector<64, 1> word count: " << int(PredicateVector::kWordCount);
   }
 }
+
+TEST(PredicateVector, IsZero) {
+  // PredicateVector<32> has kBytes == 8 and sizeof(Storage) == 4, so the last
+  // storage word is fully occupied. Bits 16..31 must be included in is_zero().
+  {
+    typedef cutlass::PredicateVector<32> PredicateVector;
+
+    PredicateVector predicates;
+    predicates.clear();
+    EXPECT_TRUE(predicates.is_zero());
+
+    // Set a bit in the second (last) storage word.
+    predicates.set(16, true);
+    EXPECT_FALSE(predicates.is_zero());
+
+    predicates.clear();
+    predicates.set(31, true);
+    EXPECT_FALSE(predicates.is_zero());
+  }
+
+  // PredicateVector<16> has kBytes == 4, a single fully-occupied storage word.
+  {
+    typedef cutlass::PredicateVector<16> PredicateVector;
+
+    PredicateVector predicates;
+    predicates.clear();
+    EXPECT_TRUE(predicates.is_zero());
+
+    predicates.set(15, true);
+    EXPECT_FALSE(predicates.is_zero());
+  }
+
+  // PredicateVector<12> has kBytes == 3, so the last word is partially occupied.
+  {
+    typedef cutlass::PredicateVector<12> PredicateVector;
+
+    PredicateVector predicates;
+    predicates.clear();
+    EXPECT_TRUE(predicates.is_zero());
+
+    predicates.set(11, true);
+    EXPECT_FALSE(predicates.is_zero());
+  }
+}
