@@ -617,10 +617,16 @@ public:
       clc_pipeline_params.producer_blockid = 0;
       clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
                                                  (NumMainloopTMALoadThreads + NumMainloopCpAsyncLoadThreads  + NumEpilogueThreads + NumMMAThreads);
+      if (is_epi_load_needed) {
+        clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
+      }
       clc_pipeline_params.transaction_bytes = CLCResponseSize;
     }
     else {
       clc_pipeline_params.consumer_arv_count = NumMainloopTMALoadThreads + NumMainloopCpAsyncLoadThreads + NumEpilogueThreads + NumMMAThreads;
+      if (is_epi_load_needed) {
+        clc_pipeline_params.consumer_arv_count += NumEpilogueLoadThreads;
+      }
     }
     
     clc_pipeline_params.initializing_warp = 1;
