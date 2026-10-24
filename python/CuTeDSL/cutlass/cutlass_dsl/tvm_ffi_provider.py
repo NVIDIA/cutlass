@@ -945,11 +945,9 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         :param function_name: The name of the function to export.
         :param enable_pic: Whether to enable PIC relocation needed for shared library loading.
         :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
-        :param host_cpu: Optional LLVM CPU name for the current host architecture,
-            e.g. "x86-64" for portable x86-64 objects. When omitted, retain native
-            build-host specialization. This does not change the GPU target or
-            enable host cross-compilation. Explicit CPU selection clears inherited
-            function feature overrides so the CPU's baseline features are used.
+        :param host_cpu: LLVM CPU name within the current host architecture,
+            e.g. "x86-64" for portable exports. Clears inherited CPU features;
+            the GPU target is unchanged. None preserves build-host specialization.
         """
         if self.host_target.value:
             raise DSLUserCodeError(DiagId.CONFIG_INCOMPATIBLE_FLAGS)
