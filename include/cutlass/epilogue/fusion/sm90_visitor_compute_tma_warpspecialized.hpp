@@ -267,7 +267,7 @@ struct Sm90TreeVisitor<
     auto const& scale_op = get<0>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
     if constexpr (detail::IsScalarBroadcast<InputScaleOp>::value && not is_void_v<ElementSource>) {
-      return (get<2>(scale_op.params_ptr->dScalar[0]) != 0 && scale_op.params_ptr->scalar_ptrs[0] != nullptr) ||
+      return scale_op.is_device_scalar() ||
               is_C_load_needed() ||
               added_op.is_producer_load_needed();
     }
