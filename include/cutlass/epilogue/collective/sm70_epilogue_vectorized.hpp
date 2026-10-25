@@ -257,12 +257,12 @@ public:
 
   CUTLASS_HOST_DEVICE
   Epilogue(Params const& params_)
-      : params(params_), epilogue_op(params_.thread) { }
+      : params(params_) { }
 
   CUTLASS_DEVICE
   bool
   is_source_needed() {
-    return epilogue_op.is_source_needed();
+    return ThreadEpilogueOp(params.thread).is_source_needed();
   }
 
   template<
@@ -290,6 +290,9 @@ public:
     static_assert(is_static<BlockShapeMNK>::value, "ThreadBlock tile shape must be static");
     static_assert(cute::rank(BlockShapeMNK{}) == 3, "BlockShapeMNK must be rank 3");
     static_assert(cute::rank(BlockCoordMNKL{}) == 4, "BlockCoordMNKL must be rank 3");
+
+    // Built here rather than in the constructor so device scalars are read after the PDL wait.
+    ThreadEpilogueOp epilogue_op{params.thread};
 
     // synchronizing function for smem reads/writes
 #if CUDA_BARRIER_ENABLED
@@ -536,7 +539,6 @@ public:
 
 private:
   Params params;
-  ThreadEpilogueOp epilogue_op;
 };
 
 
