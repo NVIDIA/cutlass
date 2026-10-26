@@ -21,7 +21,7 @@ answers it, the command that collects it, and what the trace turned out to say.
 | 06 | [Preferred and fallback clusters](notebooks/06_cluster_shapes.ipynb) | How much of a 148-SM GPU runs the fallback path |
 | 07 | [TMA prefetch into L2](notebooks/07_tma_prefetch.ipynb) | Whether the prefetch lands early enough to matter |
 | 08 | [PDL: when the profiler proves you wrong](notebooks/08_pdl.ipynb) | A hypothesis that failed, and why that was the useful result |
-| 09 | [The optimization ladder](notebooks/09_optimization_ladder.ipynb) | Six steps, 1.45×, and the metrics view of why it works |
+| 09 | [The optimization ladder](notebooks/09_optimization_ladder.ipynb) | Six steps, 1.45×, and what each one removed |
 | 10 | [FMHA: a multi-role pipeline](notebooks/10_fmha_multirole.ipynb) | Softmax dominates; the matmuls are noise |
 | 11 | [Profile your own kernel](notebooks/11_profile_your_own_kernel.ipynb) | The transferable method, and the traps |
 
@@ -53,5 +53,6 @@ Every quoted measurement states the GPU and the problem shape it came from. The 
 collected on a single **NVIDIA B300**. Numbers on other Blackwell parts will differ; the *shapes* in the
 traces — which phase dominates, which wait grows — are the transferable part.
 
-Kernel durations use the QMD basis (`QMD_START` → `QMD_PREEXIT_DONE`) rather than CUPTI `end − start`,
-which runs a near-constant ~0.65 µs high.
+Durations in the notebook tables are IKET warp-lifetime spans. The kernel-time chart in notebook 09 uses
+each kernel's own start and end timestamps rather than CUPTI `end − start`, which runs a near-constant
+~0.65 µs high.
