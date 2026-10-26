@@ -811,15 +811,9 @@ def movmatrix_trans(
     :return: this lane's two elements of the transposed matrix
     :rtype: Int32
     """
-    return Int32(
-        nvvm.movmatrix(
-            Int32(src).ir_value(loc=loc, ip=ip),
-            ir.Attribute.parse("#nvvm.ld_st_matrix_shape<m = 8, n = 8>"),
-            nvvm.LdStMatrixEltType.B16,
-            loc=loc,
-            ip=ip,
-        )
-    )
+    from cutlass.experimental.primitives import movmatrix_trans as _movmatrix_trans
+
+    return _movmatrix_trans(src, loc=loc, ip=ip)
 
 
 @dsl_user_op

@@ -6834,6 +6834,25 @@ def mma_sp_sync(
 
 
 @dsl_user_op
+def movmatrix_trans(
+    src: int | Int32 | Uint32,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """Wrapper over ``nvvm.movmatrix`` for ``movmatrix.sync.aligned.m8n8.trans.b16``."""
+    return _cutlass.Int32(
+        _nvvm.movmatrix(
+            _cutlass.Int32(src),
+            ir.Attribute.parse("#nvvm.ld_st_matrix_shape<m = 8, n = 8>"),
+            LdStMatrixEltType.B16,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
 def mul(
     a: Int16 | Int32 | Int64,
     b: Int16 | Int32 | Int64,
@@ -11718,6 +11737,7 @@ __all__ = [
     "mma_sp_sync",
     "mma_sync",
     "mov_b32",
+    "movmatrix_trans",
     "mul",
     "mul_bf16x2",
     "mul_packed_bf16x2_bf16x2_f16x2",
