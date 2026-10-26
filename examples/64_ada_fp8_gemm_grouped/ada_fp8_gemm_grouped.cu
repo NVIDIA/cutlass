@@ -1104,8 +1104,8 @@ int main(int argc, char const **args) {
     return 0;
   }
 
-  if (!(properties.major == 8 && properties.minor == 9)) {
-    std::cerr << "CUTLASS's Ada FP8 Gemm Grouped example requires a device of compute capability 89.\n" << std::endl;
+  if (properties.major < 8 || (properties.major == 8 && properties.minor < 9)) {
+    std::cerr << "CUTLASS's Ada FP8 Gemm Grouped example requires a device of compute capability 89 or higher.\n" << std::endl;
     return 0;
   }
   //
