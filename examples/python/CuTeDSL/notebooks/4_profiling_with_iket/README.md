@@ -53,5 +53,6 @@ Every quoted measurement states the GPU and the problem shape it came from. The 
 collected on a single **NVIDIA B300**. Numbers on other Blackwell parts will differ; the *shapes* in the
 traces — which phase dominates, which wait grows — are the transferable part.
 
-Kernel durations use the QMD basis (`QMD_START` → `QMD_PREEXIT_DONE`) rather than CUPTI `end − start`,
-which runs a near-constant ~0.65 µs high.
+Durations in the notebook tables are IKET warp-lifetime spans. The kernel-time chart in notebook 09 uses
+each kernel's own start and end timestamps rather than CUPTI `end − start`, which runs a near-constant
+~0.65 µs high.
