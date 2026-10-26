@@ -21,7 +21,7 @@ answers it, the command that collects it, and what the trace turned out to say.
 | 06 | [Preferred and fallback clusters](notebooks/06_cluster_shapes.ipynb) | How much of a 148-SM GPU runs the fallback path |
 | 07 | [TMA prefetch into L2](notebooks/07_tma_prefetch.ipynb) | Whether the prefetch lands early enough to matter |
 | 08 | [PDL: when the profiler proves you wrong](notebooks/08_pdl.ipynb) | A hypothesis that failed, and why that was the useful result |
-| 09 | [The optimization ladder](notebooks/09_optimization_ladder.ipynb) | Six steps, 1.45×, and what each one removed |
+| 09 | [The optimization ladder](notebooks/09_optimization_ladder.ipynb) | Six steps, 1.45×, and the metrics view of why it works |
 | 10 | [FMHA: a multi-role pipeline](notebooks/10_fmha_multirole.ipynb) | Softmax dominates; the matmuls are noise |
 | 11 | [Profile your own kernel](notebooks/11_profile_your_own_kernel.ipynb) | The transferable method, and the traps |
 
