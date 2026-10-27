@@ -452,7 +452,7 @@ public:
 
   // Kernel helper function to get next work tile
   template <class TileSchedulerPipeline, class TileSchedulerPipelineState>
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   auto
   fetch_next_work(
     WorkTileInfo work_tile_info,
