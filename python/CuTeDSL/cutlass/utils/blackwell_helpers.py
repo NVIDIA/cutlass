@@ -702,9 +702,19 @@ def get_smem_layout_atom_ab(
     assert major_mode_size_bits % inter_num_contiguous_bits == 0
 
     if not is_k_major:
-        if (element_type.width == 32) and (
-            major_mode_size_bits % sw128_num_contiguous_bits == 0
-        ):
+        if element_type.width == 32:
+            # UMMA only reads MN-major 32-bit operands through the 128B swizzle
+            # with 32B atomicity (SW128_32B); the other MN-major atoms produce
+            # wrong results silently, so reject major extents the atom does
+            # not tile (same rule as sm100_smem_selector in the C++ builders).
+            if major_mode_size_bits % sw128_num_contiguous_bits != 0:
+                raise ValueError(
+                    f"MN-major {element_type.__name__} operands need a major mode "
+                    f"extent that is a multiple of "
+                    f"{sw128_num_contiguous_bits // element_type.width} elements "
+                    f"(SW128_32B is the only available SMEM layout atom), got "
+                    f"{major_mode_size}"
+                )
             return SmemLayoutAtomKind.MN_SW128_32B
         if major_mode_size_bits % sw128_num_contiguous_bits == 0:
             return SmemLayoutAtomKind.MN_SW128
