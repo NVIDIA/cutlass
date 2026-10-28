@@ -11501,9 +11501,9 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
       for tile_size in tile_sizes:
         # nvf4 kernel only supports ue4m3 SF
         # mxf4 kernel only supports ue8m0 SF
-        # grouped schedules only support ue8m0 (MXF4); NVF4 (ue4m3) grouped requires
-        # NVF4-specific PtrArray schedule tags not yet available
-        if (is_grouped_schedule and math_inst.element_scale_factor == DataType.ue8m0) or \
+        # grouped schedules support both: the Nvf4 and Mxf4 Sm120 tags map onto the same PtrArray
+        # tags, and the emitter selects NVF4 for ue4m3 through cutlass::nv_float4_t
+        if is_grouped_schedule or \
            (not is_grouped_schedule and math_inst.element_scale_factor == DataType.ue4m3 and is_nvf4(kernel_schedule)) or \
            (not is_grouped_schedule and math_inst.element_scale_factor == DataType.ue8m0 and not is_nvf4(kernel_schedule)):
           tile_descriptions.append(
