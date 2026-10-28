@@ -28,9 +28,8 @@
 
 // RUN: cute-opt -cute-expand-ops --split-input-file %s | FileCheck %s
 
-// Tests `cute-expand-ops` lowering for `cute.right_inverse`. The op
-// requires a fully-static input layout (verifier-enforced), so the
-// result is always static and the static-fold shortcut always fires.
+// Tests `cute-expand-ops` lowering for `cute.right_inverse`. Static results
+// fold directly; dynamic-shape results are rebuilt from runtime scalars.
 
 // -----
 
@@ -54,4 +53,36 @@ func.func @expand_static_permutation(%src: !cute.layout<"(4,3):(3,1)">)
   %r = cute.right_inverse(%src)
          : (!cute.layout<"(4,3):(3,1)">) -> !cute.layout<"(3,4):(4,1)">
   return %r : !cute.layout<"(3,4):(4,1)">
+}
+
+// -----
+
+// Dynamic shape with static integer strides.
+// CHECK-LABEL: func.func @expand_dynamic_shape
+// CHECK-NOT:   cute.right_inverse
+// CHECK:       %[[DYN:.+]] = cute.get_scalars<{only_dynamic}>
+// CHECK:       %[[SHAPE:.+]] = cute.make_shape(%[[DYN]]) : (i32) -> !cute.shape<"(16,?)">
+// CHECK:       %[[STRIDE:.+]] = cute.make_stride() : () -> !cute.stride<"(1,16)">
+// CHECK:       cute.make_layout(%[[SHAPE]], %[[STRIDE]])
+func.func @expand_dynamic_shape(%src: !cute.layout<"(16,?):(1,16)">)
+    -> !cute.layout<"(16,?):(1,16)"> {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)">
+  return %r : !cute.layout<"(16,?):(1,16)">
+}
+
+// -----
+
+// Dynamic derived stride from the preserved runtime extent.
+// CHECK-LABEL: func.func @expand_dynamic_derived_stride
+// CHECK-NOT:   cute.right_inverse
+// CHECK:       %[[DYN:.+]] = cute.get_scalars<{only_dynamic}>
+// CHECK:       %[[SHAPE:.+]] = cute.make_shape() : () -> !cute.shape<"4">
+// CHECK:       %[[STRIDE:.+]] = cute.make_stride(%[[DYN]]) : (i32) -> !cute.stride<"?">
+// CHECK:       cute.make_layout(%[[SHAPE]], %[[STRIDE]]) : (!cute.shape<"4">, !cute.stride<"?">) -> !cute.layout<"4:?">
+func.func @expand_dynamic_derived_stride(%src: !cute.layout<"(?,4):(0,1)">)
+    -> !cute.layout<"4:?"> {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(?,4):(0,1)">) -> !cute.layout<"4:?">
+  return %r : !cute.layout<"4:?">
 }

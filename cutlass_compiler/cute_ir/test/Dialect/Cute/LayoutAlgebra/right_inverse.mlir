@@ -61,6 +61,42 @@ func.func @row_major(
 
 // -----
 
+// Dynamic shape with a statically provable first continuity step.
+// CHECK-LABEL: func.func @dynamic_shape_continuous
+// CHECK-SAME:  (%[[SRC:.+]]: !cute.layout<"(16,?):(1,16)">)
+func.func @dynamic_shape_continuous(
+    %src: !cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)"> {
+  // CHECK: %[[R:.+]] = cute.right_inverse(%[[SRC]]) : (!cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)">
+  %r = cute.right_inverse(%src) : (!cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)">
+  return %r : !cute.layout<"(16,?):(1,16)">
+}
+
+// -----
+
+// Unknown equality truncates the inverse rather than being treated as equal.
+// CHECK-LABEL: func.func @dynamic_shape_truncated
+// CHECK-SAME:  (%[[SRC:.+]]: !cute.layout<"(?,4):(1,16)">)
+func.func @dynamic_shape_truncated(
+    %src: !cute.layout<"(?,4):(1,16)">) -> !cute.layout<"?:1"> {
+  // CHECK: %[[R:.+]] = cute.right_inverse(%[[SRC]]) : (!cute.layout<"(?,4):(1,16)">) -> !cute.layout<"?:1">
+  %r = cute.right_inverse(%src) : (!cute.layout<"(?,4):(1,16)">) -> !cute.layout<"?:1">
+  return %r : !cute.layout<"?:1">
+}
+
+// -----
+
+// A zero-stride mode is skipped; the remaining derived stride is dynamic.
+// CHECK-LABEL: func.func @dynamic_shape_derived_stride
+// CHECK-SAME:  (%[[SRC:.+]]: !cute.layout<"(?,4):(0,1)">)
+func.func @dynamic_shape_derived_stride(
+    %src: !cute.layout<"(?,4):(0,1)">) -> !cute.layout<"4:?"> {
+  // CHECK: %[[R:.+]] = cute.right_inverse(%[[SRC]]) : (!cute.layout<"(?,4):(0,1)">) -> !cute.layout<"4:?">
+  %r = cute.right_inverse(%src) : (!cute.layout<"(?,4):(0,1)">) -> !cute.layout<"4:?">
+  return %r : !cute.layout<"4:?">
+}
+
+// -----
+
 // Identity layout is self-inverse.
 // CHECK-LABEL: func.func @scalar_identity
 // CHECK-SAME:  (%[[SRC:.+]]: !cute.layout<"8:1">)
