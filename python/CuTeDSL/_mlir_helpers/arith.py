@@ -666,8 +666,48 @@ class ArithValue(ir.Value):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "ArithValue":
         if self.is_float:
+            # floor(a / b) rounds the quotient before flooring, so it can
+            # disagree with Python and with __mod__ (1.0 // 0.1f gives 10, not
+            # 9; -1.0 // inf gives -0.0, not -1.0). Derive the quotient from
+            # the remainder instead, as Python, NumPy and PyTorch do.
             q = arith.divf(self, other, loc=loc, ip=ip)
-            return math.floor(q, loc=loc, ip=ip)
+            r = arith.remf(self, other, loc=loc, ip=ip)
+            zero = const(0.0, r.type, loc=loc, ip=ip)
+            one = const(1.0, r.type, loc=loc, ip=ip)
+            half = const(0.5, r.type, loc=loc, ip=ip)
+            div = arith.divf(arith.subf(self, r, loc=loc, ip=ip), other, loc=loc, ip=ip)
+            # Step down wherever __mod__ adds the divisor to the remainder.
+            r_neg = arith.cmpf(arith.CmpFPredicate.OLT, r, zero, loc=loc, ip=ip)
+            b_neg = arith.cmpf(arith.CmpFPredicate.OLT, other, zero, loc=loc, ip=ip)
+            r_nonzero = arith.cmpf(arith.CmpFPredicate.ONE, r, zero, loc=loc, ip=ip)
+            fix = arith.andi(
+                arith.xori(r_neg, b_neg, loc=loc, ip=ip), r_nonzero, loc=loc, ip=ip
+            )
+            div = arith.select(
+                fix, arith.subf(div, one, loc=loc, ip=ip), div, loc=loc, ip=ip
+            )
+            # div is an integer up to rounding error; snap it to the nearest.
+            fl = math.floor(div, loc=loc, ip=ip)
+            round_up = arith.cmpf(
+                arith.CmpFPredicate.OGT,
+                arith.subf(div, fl, loc=loc, ip=ip),
+                half,
+                loc=loc,
+                ip=ip,
+            )
+            fl = arith.select(
+                round_up, arith.addf(fl, one, loc=loc, ip=ip), fl, loc=loc, ip=ip
+            )
+            # A zero quotient takes the sign of a / b.
+            div_nonzero = arith.cmpf(arith.CmpFPredicate.UNE, div, zero, loc=loc, ip=ip)
+            res = arith.select(
+                div_nonzero, fl, math.copysign(zero, q, loc=loc, ip=ip), loc=loc, ip=ip
+            )
+            # Keep floor(a / b) for a zero divisor (+-inf or nan).
+            b_zero = arith.cmpf(arith.CmpFPredicate.OEQ, other, zero, loc=loc, ip=ip)
+            return arith.select(
+                b_zero, math.floor(q, loc=loc, ip=ip), res, loc=loc, ip=ip
+            )
         elif self.signed != False:  # noqa: E712
             return arith.floordivsi(self, other, loc=loc, ip=ip)
         else:
@@ -683,10 +723,35 @@ class ArithValue(ir.Value):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "ArithValue":
+        # Python % takes the divisor's sign (consistent with the flooring
+        # __floordiv__), while arith.remsi / arith.remf take the dividend's.
+        # r = rem(a, b); if r != 0 and sign(r) != sign(b): r += b.
         if self.is_float:
-            return arith.remf(self, other, loc=loc, ip=ip)
+            r = arith.remf(self, other, loc=loc, ip=ip)
+            zero = const(0.0, r.type, loc=loc, ip=ip)
+            r_neg = arith.cmpf(arith.CmpFPredicate.OLT, r, zero, loc=loc, ip=ip)
+            b_neg = arith.cmpf(arith.CmpFPredicate.OLT, other, zero, loc=loc, ip=ip)
+            r_nonzero = arith.cmpf(arith.CmpFPredicate.ONE, r, zero, loc=loc, ip=ip)
+            fix = arith.andi(
+                arith.xori(r_neg, b_neg, loc=loc, ip=ip), r_nonzero, loc=loc, ip=ip
+            )
+            r = arith.select(
+                fix, arith.addf(r, other, loc=loc, ip=ip), r, loc=loc, ip=ip
+            )
+            # A zero result also takes the divisor's sign (-4.0 % 2.0 == 0.0).
+            return math.copysign(r, other, loc=loc, ip=ip)
         elif self.signed != False:  # noqa: E712
-            return arith.remsi(self, other, loc=loc, ip=ip)
+            r = arith.remsi(self, other, loc=loc, ip=ip)
+            zero = const(0, r.type, loc=loc, ip=ip)
+            r_neg = arith.cmpi(arith.CmpIPredicate.slt, r, zero, loc=loc, ip=ip)
+            b_neg = arith.cmpi(arith.CmpIPredicate.slt, other, zero, loc=loc, ip=ip)
+            r_nonzero = arith.cmpi(arith.CmpIPredicate.ne, r, zero, loc=loc, ip=ip)
+            fix = arith.andi(
+                arith.xori(r_neg, b_neg, loc=loc, ip=ip), r_nonzero, loc=loc, ip=ip
+            )
+            return arith.select(
+                fix, arith.addi(r, other, loc=loc, ip=ip), r, loc=loc, ip=ip
+            )
         else:
             return arith.remui(self, other, loc=loc, ip=ip)
 
