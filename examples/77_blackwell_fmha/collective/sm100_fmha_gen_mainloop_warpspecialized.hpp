@@ -613,6 +613,9 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     tTMEM_STOREVrS(kIdxOldRowMax) = old_row_max;
     tTMEM_STOREVrS(kIdxNewRowMax) = row_max_safe;
     copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
+    // tcgen05.st is asynchronous: make sure the row statistics have been written to TMEM
+    // before pipeline_c.producer_commit() lets the correction warpgroup read them.
+    cutlass::arch::fence_view_async_tmem_store();
 
     pipeline_c.producer_commit(pipeline_c_producer_state);
     ++pipeline_c_producer_state;
@@ -723,6 +726,9 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       tTMEM_STOREVrS(kIdxFinalRowMax) = row_max;
       tTMEM_STOREVrS(kIdxFinalRowSum) = row_sum;
       copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
+      // tcgen05.st is asynchronous: make sure the row statistics have been written to TMEM
+      // before pipeline_c.producer_commit() lets the correction warpgroup read them.
+      cutlass::arch::fence_view_async_tmem_store();
     }
   }
 
