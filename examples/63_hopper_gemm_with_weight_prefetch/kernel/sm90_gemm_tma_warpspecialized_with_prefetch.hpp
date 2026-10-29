@@ -280,7 +280,9 @@ public:
     // Mainloop Load pipeline
     using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
     typename MainloopPipeline::Params mainloop_pipeline_params;
-    mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
+    // The TMA-issuing lane (elected by the collective with the same full mask) posts the expect-tx arrival
+    mainloop_pipeline_params.is_leader = warp_group_role == WarpGroupRole::Producer &&
+        producer_warp_role == ProducerWarpRole::Warp0 && lane_predicate;
     if (warp_group_role == WarpGroupRole::Producer && (
           producer_warp_role == ProducerWarpRole::Warp0 ||
           producer_warp_role == ProducerWarpRole::Warp2)) {

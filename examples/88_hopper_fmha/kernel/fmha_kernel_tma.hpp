@@ -150,7 +150,6 @@ struct FmhaKernelTma {
     uint32_t block_rank_in_cluster = cute::block_rank_in_cluster();
 
     int warp_idx   = cutlass::canonical_warp_idx_sync();
-    int warp_group_thread_idx = thread_idx % cutlass::NumThreadsPerWarpGroup;
     int lane_predicate = cute::elect_one_sync();
 
     // Issue Tma Descriptor Prefetch from a single thread
@@ -162,13 +161,13 @@ struct FmhaKernelTma {
     PipelineParamsQ pipeline_params_q;
     pipeline_params_q.transaction_bytes = size(SmemLayoutQ{}(_,_,_0{})) * sizeof(Element); // Q
     pipeline_params_q.role = MainloopPipelineQ::ThreadCategory::ProducerConsumer;
-    pipeline_params_q.is_leader = warp_group_thread_idx == 0;
+    pipeline_params_q.is_leader = warp_idx == 0 && lane_predicate;  // the TMA-issuing lane
     pipeline_params_q.num_consumers = cutlass::NumThreadsPerWarpGroup;
 
     PipelineParams pipeline_params;
     pipeline_params.transaction_bytes = size(SmemLayoutK{}(_,_,_0{})) * sizeof(Element); // KV
     pipeline_params.role = MainloopPipeline::ThreadCategory::ProducerConsumer;
-    pipeline_params.is_leader = warp_group_thread_idx == 0;
+    pipeline_params.is_leader = warp_idx == 0 && lane_predicate;  // the TMA-issuing lane
     pipeline_params.num_consumers = cutlass::NumThreadsPerWarpGroup;
 
     MainloopPipelineQ pipeline_q(storage.pipeline_storage_q, pipeline_params_q, Shape<_1, _1, _1>{});

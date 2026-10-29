@@ -326,12 +326,13 @@ struct CollectiveMma<
 
     // Obtain warp index
     int warp_idx = canonical_warp_idx_sync();
-    int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
 
     PipelineParams params;
     params.transaction_bytes = TmaTransactionBytes;
     params.role = MainloopPipeline::ThreadCategory::ProducerConsumer;
-    params.is_leader = warp_group_thread_idx == 0;
+    // The leader must be the lane that issues the TMA loads below; elect.sync with the same
+    // full mask elects the same lane, so the two elections agree
+    params.is_leader = warp_idx == 0 && cute::elect_one_sync();
     params.num_consumers = NumThreadsPerWarpGroup;
 
     MainloopPipeline pipeline(storage.pipeline_storage, params, ClusterShape{});

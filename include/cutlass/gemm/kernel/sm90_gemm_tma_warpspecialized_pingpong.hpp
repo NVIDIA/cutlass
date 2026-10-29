@@ -460,7 +460,9 @@ public:
     if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Consumer;
     }
-    mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
+    // The TMA-issuing lane (elected by the collective with the same full mask) posts the expect-tx arrival
+    mainloop_pipeline_params.is_leader = warp_group_role == WarpGroupRole::Producer &&
+        producer_warp_role == ProducerWarpRole::Mainloop && lane_predicate;
     mainloop_pipeline_params.num_consumers = NumThreadsPerWarpGroup;
     mainloop_pipeline_params.num_producers = NumProducerThreads;
     mainloop_pipeline_params.transaction_bytes = params.mainloop.tma_transaction_bytes;
