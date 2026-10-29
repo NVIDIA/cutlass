@@ -307,7 +307,7 @@ def LDMC(
             comm_out_uc_ptr = tTR_gCommOutUC[None, i, j].iterator.llvm_ptr
             x, y, z, w = tmp_results[i * loop_n + j]
             vec_type = ir.VectorType.get([4], cutlass.Int32.mlir_type)
-            vec = vector.from_elements(vec_type, [x, y, z, w])
+            vec = vector.from_elements(vec_type, [r.ir_value() for r in (x, y, z, w)])
             cute.arch.store(comm_out_uc_ptr, vec)
 
 
