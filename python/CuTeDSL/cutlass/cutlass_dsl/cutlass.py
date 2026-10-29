@@ -1130,15 +1130,15 @@ class CutlassBaseDSL(BaseDSL):
 
             def _make_compiled_func(*args: Any, **kwargs: Any) -> Any:
                 # Route through the kwargs-capable compiled class whenever
-                # the signature has kwonly/defaults OR any positional arg
-                # carries a dataclass instance (detected by the spec
-                # converter, including Union[...] over dataclasses). The
-                # kwargs wrapper is the only place tvm-ffi's
+                # the signature permits keyword arguments, has defaults, or
+                # any positional arg carries a dataclass instance (detected
+                # by the spec converter, including Union[...] over
+                # dataclasses). The kwargs wrapper is the only place tvm-ffi's
                 # ``map_dataclass_to_tuple`` unpack hook fires.
                 if (
                     kwargs_wrapper_spec.kwonly_names
                     or kwargs_wrapper_spec.arg_defaults
-                    or kwargs_wrapper_spec.arg_names
+                    or kwargs_wrapper_spec.has_pos_or_kw
                     or map_dataclass_to_tuple
                 ):
                     return TVMFFIJitCompiledFunctionWithKwargs(
