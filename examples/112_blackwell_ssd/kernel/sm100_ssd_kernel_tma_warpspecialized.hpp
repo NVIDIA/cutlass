@@ -376,6 +376,10 @@ struct SsdKernelTmaWarpSpecialized {
     if (warp_category == WarpCategory::MMAInter || warp_category == WarpCategory::PreIntra || warp_category == WarpCategory::PreInter) {
       tmem_allocation_result_barrier.arrive_and_wait();
     }
+    // The PreInter and PreIntra warpgroups read TMEM until their last tile. Both arrive here before
+    // TMEM is freed. Reuses the allocation barrier id, which every participant has passed by then.
+    arch::NamedBarrier tmem_deallocation_barrier(NumEpilogueThreads + NumEpilogueThreads,
+                                                 cutlass::arch::ReservedNamedBarriers::TmemAllocBarrier);
 
     // Kernel implement(TBD)
     
@@ -488,8 +492,12 @@ struct SsdKernelTmaWarpSpecialized {
           ++epi_load_pipe_d_consumer;
         }
       }
-      uint32_t free_stage_ptr = storage.tmem_base_ptr;
-      tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
+      // Wait for the PreInter warpgroup's last TMEM read, then free TMEM from a single warp.
+      tmem_deallocation_barrier.arrive_and_wait();
+      if (warp_idx == static_cast<int>(WarpCategory::PreIntra)) {
+        uint32_t free_stage_ptr = storage.tmem_base_ptr;
+        tmem_allocator.free(free_stage_ptr, ArchTag::kTmemCapacityColumns);
+      }
     }
     else if (warp_category == WarpCategory::PreInter) {
       for (; tile_scheduler.is_valid(); ++tile_scheduler) {
@@ -512,6 +520,8 @@ struct SsdKernelTmaWarpSpecialized {
           storage.tensors.mainloop
         );
       }
+      // pre_inter waits for its last TMEM load (tcgen05.wait::ld), so TMEM can now be freed.
+      tmem_deallocation_barrier.arrive();
     }
   }
 };
