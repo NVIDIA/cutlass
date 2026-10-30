@@ -533,6 +533,10 @@ public:
     if (is_participant.main_load) {
       cutlass::arch::warpgroup_reg_dealloc<NonEpilogueWarpRegs>();
 
+      // Ensure that the prefetched kernel does not touch
+      // unflushed global memory prior to this instruction
+      cutlass::arch::wait_on_dependent_grids();
+
       auto load_inputs = collective_mainloop.load_init(
           problem_shape_MNKL, params.mainloop, shared_storage.tensors.mainloop);
       Tensor gA_mkl = get<0>(load_inputs);
@@ -672,6 +676,10 @@ public:
 
     else if (is_participant.epi_load) {
       cutlass::arch::warpgroup_reg_dealloc<NonEpilogueWarpRegs>();
+
+      // Ensure that the prefetched kernel does not touch
+      // unflushed global memory prior to this instruction
+      cutlass::arch::wait_on_dependent_grids();
 
       bool do_tail_load = false;
       do {
