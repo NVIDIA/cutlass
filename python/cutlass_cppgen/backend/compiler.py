@@ -132,6 +132,11 @@ def CDLLBin(host_binary):
     return host_lib
 
 
+def set_get_params_signature(func, argtypes, param_size):
+    func.argtypes = argtypes
+    func.restype = ctypes.POINTER(ctypes.c_char * param_size)
+
+
 class ArtifactManager:
     """
     Artifact manager
@@ -183,7 +188,7 @@ class ArtifactManager:
         connection.commit()
         cursor.close()
 
-    def load_operation(self, op_key, extra_funcs):
+    def load_operation(self, op_key, argtypes, extra_funcs):
         connection = sqlite3.connect(CACHE_FILE)
         cursor = connection.cursor()
         sqlite_fetch_blob_query = """SELECT * from compiled_operations where op_key = ?"""
@@ -206,7 +211,7 @@ class ArtifactManager:
 
             func_name = operation_name + "_get_params"
             func = getattr(host_lib, func_name)
-            func.restype = ctypes.POINTER(ctypes.c_char * op_attr[0])
+            set_get_params_signature(func, argtypes, op_attr[0])
             compiled_host_fns["get_args"] = func
 
             func_name = operation_name + "_shared_memory_size"
@@ -384,7 +389,11 @@ class ArtifactManager:
             compiled_kernel = self.compiled_cache_device.get(key)
 
             if compiled_kernel is None and not bypass_cache:
-                hit = self.load_operation(key, getattr( operation.rt_module, "extra_funcs", {}))
+                hit = self.load_operation(
+                    key,
+                    operation.rt_module.argtype,
+                    getattr(operation.rt_module, "extra_funcs", {}),
+                )
                 if hit:
                     compiled_kernel = self.compiled_cache_device.get(key)
                     assert compiled_kernel is not None
@@ -428,8 +437,7 @@ class ArtifactManager:
 
                 func_name = operation.name() + "_get_params"
                 func = getattr(host_lib, func_name)
-                func.argtype = operation.argtype
-                func.restype = ctypes.POINTER(ctypes.c_char * param_size)
+                set_get_params_signature(func, operation.argtype, param_size)
                 setattr(operation, "get_args", func)
                 compiled_host_fns["get_args"] = func
 
