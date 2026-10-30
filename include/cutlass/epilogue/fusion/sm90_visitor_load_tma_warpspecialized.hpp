@@ -1057,7 +1057,7 @@ struct Sm90ScalarBroadcast {
     return false;
   }
 
-  // This must be called after update_scalar is called
+  // May be called before update_scalar (e.g. by is_producer_load_needed) or after update_scalar
   CUTLASS_DEVICE bool
   is_zero() const {
     if (get<2>(params_ptr->dScalar[0]) == 0) {
@@ -1068,7 +1068,20 @@ struct Sm90ScalarBroadcast {
       // multiple batch
       if (valid_scalar == false) {
         // for stridedBatch kernel, if ptr has a valid address, we need to enable the epi_load warps.
-        return params_ptr->scalar_ptrs[0] == nullptr;
+        // With a null ptr, update_scalar() falls back to the scalar for every batch, so decide from it here too.
+        bool all_null = true;
+        Element fallback_scalar = params_ptr->scalars[0];
+        ReductionFn<Element> reduction_fn;
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < BroadcastCount; ++i) {
+          if (params_ptr->scalar_ptrs[i] != nullptr) {
+            all_null = false;
+          }
+          if (i > 0) {
+            fallback_scalar = reduction_fn(fallback_scalar, params_ptr->scalars[i]);
+          }
+        }
+        return all_null && fallback_scalar == Element(0);
       }
       else {
         // Check whether each batch is ZERO or not.
