@@ -211,7 +211,9 @@ void pipeline_device(KernelParams params)
 
   [[maybe_unused]] auto cta_layout = Layout<ClusterShape>{};            // (m,n) -> cta_id
   int warp_group_idx = __shfl_sync(0xffffffff, threadIdx.x / NumThreadsPerWarpGroup, 0);
-  int warp_group_thread_idx = threadIdx.x % NumThreadsPerWarpGroup;
+  int warp_idx_in_warpgroup = __shfl_sync(0xffffffff, (threadIdx.x / 32) % 4, 0);
+  int lane_predicate = cute::elect_one_sync();
+
   dim3 block_id_in_cluster = cute::block_id_in_cluster();
 
   auto cluster_shape = ClusterShape{};
@@ -229,7 +231,7 @@ void pipeline_device(KernelParams params)
   else {
     pipeline_params.role = MainloopPipeline::ThreadCategory::Consumer;
   }
-  pipeline_params.is_leader = warp_group_thread_idx == 0;
+  pipeline_params.is_leader = (warp_group_idx == 0) && (warp_idx_in_warpgroup == 0) && lane_predicate;
   pipeline_params.num_consumers = NumThreadsPerWarpGroup;
 
   MainloopPipeline pipeline(shared_storage.pipeline_storage, pipeline_params, cluster_shape);
