@@ -158,11 +158,12 @@ public:
 
   CUTLASS_HOST_DEVICE
   EpilogueTensorBroadcast(Params const& params_)
-      : params(params_), epilogue_op(params_.thread) { }
+      : params(params_) { }
 
   CUTLASS_DEVICE
   bool
   is_source_needed() {
+    ThreadEpilogueOp epilogue_op(params.thread);
     return epilogue_op.is_source0_needed() || epilogue_op.is_source1_needed();
   }
 
@@ -242,6 +243,9 @@ public:
     auto cD = make_identity_tensor(make_shape(unwrap(shape<0>(gD)), unwrap(shape<1>(gD))));
     Tensor tCcD = thr_mma.partition_C(cD);
 
+    // Built here rather than in the constructor so device scalars are read after the PDL wait.
+    ThreadEpilogueOp epilogue_op{params.thread};
+
     bool bias_needed = params.ptr_Bias != nullptr;
     bool c0_needed = (params.ptr_C0 != nullptr) && epilogue_op.is_source0_needed();
     bool c1_needed = (params.ptr_C1 != nullptr) && epilogue_op.is_source1_needed();
@@ -259,7 +263,6 @@ public:
 
 private:
   Params params;
-  ThreadEpilogueOp epilogue_op;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

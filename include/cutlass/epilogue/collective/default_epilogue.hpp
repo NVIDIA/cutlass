@@ -143,12 +143,12 @@ public:
   // Note: SharedStorage is unused for DefaultEpilogue
   CUTLASS_HOST_DEVICE
   DefaultEpilogue(Params const& params_, SharedStorage const& shared_storage = SharedStorage())
-      : params(params_), epilogue_op(params_.thread) { }
+      : params(params_) { }
 
   CUTLASS_DEVICE
   bool
   is_source_needed() {
-    return epilogue_op.is_source_needed();
+    return ThreadEpilogueOp(params.thread).is_source_needed();
   }
 
   template<
@@ -229,6 +229,9 @@ public:
     using FragCType = remove_cvref_t<decltype(tCgC(0))>;
     using FragDType = remove_cvref_t<decltype(tCgD(0))>;
 
+    // Built here rather than in the constructor so device scalars are read after the PDL wait.
+    ThreadEpilogueOp epilogue_op{params.thread};
+
     // source is needed
     if (epilogue_op.is_source_needed()) {
       CUTLASS_PRAGMA_UNROLL
@@ -253,7 +256,6 @@ public:
 
 private:
   Params params;
-  ThreadEpilogueOp epilogue_op;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
