@@ -11,7 +11,7 @@ and head dims 128, and 256 for fp8.
 All kernels use the Tensor Memory Accelerator for loads.
 Kernels with head dims 128 and 256 have warp-specialized cooperative schedules.
 
-Backward pass kernels (fp16 only) support head dims 32, 64, and 128, and all support
+Backward pass kernels (fp16 and bf16) support head dims 32, 64, and 128, and all support
 warp-specialized cooperative schedules.
 
 ## Customization
@@ -33,6 +33,11 @@ for GQA it is normal in Q and (numHeads/numGroups,numGroups:headStride,0) in KV,
 and for MQA it is normal for Q and (numHeads:0) in KV.
 As such, beyond general stride handling, no additional work is needed to support these,
 and the example will just demonstrate regular multi-head attention.
+
+### BF16
+
+The runner uses fp16 by default. Defining `BFLOAT16` switches the forward and backward
+passes to bf16; the `88_hopper_fmha_bf16` target is built that way.
 
 ### FP8
 
