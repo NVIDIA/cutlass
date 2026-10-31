@@ -55,7 +55,7 @@ void __global__ fmha_reference_kernel(
   using ElementAccumulator = typename TensorLSE::value_type;
   
   extern __shared__ char mS_mem[];
-  Element* mS = reinterpret_cast<Element*>(mS_mem);
+  ElementAccumulator* mS = reinterpret_cast<ElementAccumulator*>(mS_mem);
 
   ElementAccumulator softmax_scale = static_cast<ElementAccumulator>(1.0 / sqrt(1.0 * size<1>(mO)));
 
@@ -65,12 +65,14 @@ void __global__ fmha_reference_kernel(
       for (int idx_K = threadIdx.x; idx_K < size<0>(mK); idx_K += blockDim.x) {
         ElementAccumulator acc = 0;
         for (int idx_D = 0; idx_D < size<1>(mK); idx_D++) {
-          acc += mQ(idx_Q, idx_D, idx_L) * mK(idx_K, idx_D, idx_L);
+          ElementAccumulator eQ = mQ(idx_Q, idx_D, idx_L);
+          ElementAccumulator eK = mK(idx_K, idx_D, idx_L);
+          acc += eQ * eK;
         }
         auto frag = make_tensor<ElementAccumulator>(Shape<_1, _1>{});
         frag(0) = acc;
         fusion.before_softmax(frag, make_tensor(id.data() + make_arithmetic_tuple(idx_Q, idx_K), id.layout()), problem_shape);
-        mS[idx_K] = static_cast<Element>(frag(0) * softmax_scale);
+        mS[idx_K] = frag(0) * softmax_scale;
       }
 
       __syncthreads();
@@ -84,7 +86,7 @@ void __global__ fmha_reference_kernel(
       __syncthreads();
 
       for (int idx_K = threadIdx.x; idx_K < size<0>(mK); idx_K += blockDim.x) {
-        mS[idx_K] = static_cast<Element>(exp(mS[idx_K] - maxS));
+        mS[idx_K] = exp(mS[idx_K] - maxS);
       }
 
       __syncthreads();
@@ -94,12 +96,14 @@ void __global__ fmha_reference_kernel(
         sum += mS[idx_K];
       }
 
-      Element scale = static_cast<Element>(1.0 / sum);
+      ElementAccumulator scale = static_cast<ElementAccumulator>(1.0 / sum);
 
       for (int idx_D = threadIdx.x; idx_D < size<1>(mO); idx_D += blockDim.x) {
         ElementAccumulator acc = 0;
         for (int idx_K = 0; idx_K < size<0>(mK); idx_K++) {
-          acc += mS[idx_K] * mV(idx_K, idx_D, idx_L) * scale;
+          ElementAccumulator eV = mV(idx_K, idx_D, idx_L);
+          ElementAccumulator eP = static_cast<Element>(mS[idx_K]);
+          acc += eP * eV * scale;
         }
         mO(idx_Q, idx_D, idx_L) = static_cast<Element>(acc);
       }
@@ -133,7 +137,7 @@ void fmha_reference(
 
   dim3 grid(size<0>(mO), size<2>(mO), 1);
   dim3 block(256);
-  int shared_mem = size<0>(mK) * sizeof(typename TensorO::value_type);
+  int shared_mem = size<0>(mK) * sizeof(typename TensorLSE::value_type);
 
   if (shared_mem >= (48 << 10)) {
     CUTLASS_TRACE_HOST("  Setting smem size to " << shared_mem);
