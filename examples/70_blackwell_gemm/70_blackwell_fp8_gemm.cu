@@ -641,8 +641,8 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
 
-  if (props.major != 10 || props.minor != 0) {
-    std::cerr << "This example requires a GPU with compute capability 100a)." << std::endl;
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 
