@@ -8291,6 +8291,46 @@ struct FastNumericArrayConverter<float, int, N, Round> {
   result_type operator()(source_type const &s) const { return convert(s); }
 };
 
+/// Partial specialization for Array<int> <= Array<float> rounding to nearest even.
+/// The source must be within [-2^31, 2^31), so that its rounded value fits in an int.
+template <int N>
+struct FastNumericArrayConverter<int, float, N, FloatRoundStyle::round_to_nearest> {
+  using result_type = Array<int, N>;
+  using source_type = Array<float, N>;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    // Adding kHigh, whose ulp is 2^9, rounds x to a multiple of 2^9 and leaves an exact
+    // remainder of at most 2^8. Adding kLow, whose ulp is 1, rounds the remainder to an
+    // integer. The first part is even, so the two roundings give x rounded to nearest
+    // even. This takes more instructions than cvt.rni, but none on the conversion pipe,
+    // which MUFU instructions such as ex2 also use.
+    constexpr float kHigh = 6442450944.0f;  // 1.5 * 2^32
+    constexpr float kLow = 12582912.0f;     // 1.5 * 2^23
+    constexpr uint32_t kHighBits = 0x4FC00000;
+    constexpr uint32_t kLowBits = 0x4B400000;
+
+    result_type result;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      float high = __fadd_rn(source[i], kHigh);
+      float rest = __fsub_rn(source[i], __fsub_rn(high, kHigh));
+      float low = __fadd_rn(rest, kLow);
+      uint32_t sum = (reinterpret_cast<uint32_t const &>(high) << 9) +
+                     reinterpret_cast<uint32_t const &>(low) -
+                     ((kHighBits << 9) + kLowBits);
+      result[i] = reinterpret_cast<int const &>(sum);
+    }
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { return convert(s); }
+};
+
 /// Partial specialization for Array<int8_t, 4> <= Array<float, 4>
 template <FloatRoundStyle Round>
 struct FastNumericArrayConverter<int8_t, float, 4, Round> {
