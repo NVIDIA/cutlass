@@ -63,7 +63,7 @@ except ImportError:  # pragma: no cover - exercised only via standalone-script i
     )
 
 """
-A high-performance batched dense blockscaled GEMM (C = A*SF_A * B*SF_B) example for the NVIDIA Blackwell Geforce architecture using CUTE DSL.
+A high-performance batched dense blockscaled GEMM (C = epilogue(A*SF_A * B*SF_B)) example for the NVIDIA Blackwell Geforce architecture using CUTE DSL.
 - Matrix A is MxKxL, L is batch dimension, A can only be row-major("K")
 - Matrix B is NxKxL, L is batch dimension, B can only be column-major("K")
 - Matrix C is MxNxL, L is batch dimension, C can only be row-major("N")
@@ -75,6 +75,7 @@ A high-performance batched dense blockscaled GEMM (C = A*SF_A * B*SF_B) example 
 This GEMM kernel supports the following features:
     - Utilizes Tensor Memory Access (TMA) for efficient memory operations
     - Utilizes warp-level block-scaled MMA for matrix multiply-accumulate (MMA) operations
+    - Supports a compile-time elementwise epilogue on the FP32 accumulators before output conversion
     - Supports persistent tile scheduling to better overlap memory load/store with MMA between tiles
     - Supports warp specialization to avoid explicit pipelining between mainloop load and MMA
     - Uses a ping-pong schedule: each warp group independently processes one output tile at a time.
@@ -115,6 +116,10 @@ batch_count=1. The tile shape is 128x128x128 and the cluster shape is (1,1).
 The input, mma accumulator and output data type are set as fp4, fp32
 and fp16, respectively.
 
+Add ``--activation gelu`` to fuse GELU into the epilogue. Programmatic callers
+can pass a shape-preserving elementwise ``epilogue_op`` to ``cute.compile``;
+it receives FP32 accumulator values and defaults to identity.
+
 To collect performance with NCU profiler:
 
 .. code-block:: bash
@@ -151,6 +156,11 @@ def parse_comma_separated_ints(s: str):
 # /////////////////////////////////////////////////////////////////////////////
 #  Host setup and device kernel launch
 # /////////////////////////////////////////////////////////////////////////////
+
+
+@cute.jit
+def gelu(x):
+    return 0.5 * x * (1.0 + cute.math.erf(x * 0.7071067811865476))
 
 
 class Sm120BlockScaledGemmKernel:
@@ -294,6 +304,7 @@ class Sm120BlockScaledGemmKernel:
         c: cute.Tensor,
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         """Execute the GEMM operation in steps:
         - Setup static attributes
@@ -310,6 +321,8 @@ class Sm120BlockScaledGemmKernel:
         :type c: cute.Tensor
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
+        :param epilogue_op: Shape-preserving elementwise operation on FP32 accumulators
+        :type epilogue_op: cutlass.Constexpr
         """
 
         # setup static attributes before smem/grid/tma computation
@@ -440,6 +453,7 @@ class Sm120BlockScaledGemmKernel:
             self.sfb_smem_layout_staged,
             self.epi_smem_layout_staged,
             tile_sched_params,
+            epilogue_op,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -500,6 +514,7 @@ class Sm120BlockScaledGemmKernel:
         sfb_smem_layout_staged: cute.Layout,
         epi_smem_layout_staged: cute.ComposedLayout,
         tile_sched_params: utils.PersistentTileSchedulerParams,
+        epilogue_op: cutlass.Constexpr,
     ):
         """
         GPU device kernel performing the batched GEMM computation.
@@ -1205,7 +1220,7 @@ class Sm120BlockScaledGemmKernel:
                         tRS_rD_out = cute.make_rmem_tensor(
                             tRS_rD_layout.shape, self.c_dtype
                         )
-                        acc_vec = tRS_rD.load()
+                        acc_vec = epilogue_op(tRS_rD.load())
                         tRS_rD_out.store(acc_vec.to(self.c_dtype))
 
                         # Register to shared memory
@@ -1607,6 +1622,7 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
+    activation: str = "identity",
     **kwargs,
 ):
     """Perf-framework-compatible entry point.
@@ -1632,6 +1648,7 @@ def run(
         iterations=iterations,
         skip_ref_check=skip_ref_check,
         use_cold_l2=use_cold_l2,
+        activation=activation,
     )
 
 
@@ -1653,10 +1670,14 @@ def run_bs(
     iterations: int,
     skip_ref_check: bool,
     use_cold_l2: bool = False,
+    activation: str = "identity",
     **kwargs,
 ):
     import torch
     import cutlass.torch as cutlass_torch
+
+    if activation not in ("identity", "gelu"):
+        raise ValueError(f"Unsupported activation: {activation}")
 
     print("Running Blackwell Geforce Blockscaled Dense GEMM with:")
     print(f"mnkl: {mnkl}")
@@ -1666,6 +1687,7 @@ def run_bs(
     print(f"Matrix majors - A: {a_major}, B: {b_major}, C: {c_major}")
     print(f"Tile Shape: {tile_shape_mnk}")
     print(f"Epilogue tile: {epi_tile}")
+    print(f"Activation: {activation}")
     print(f"Tolerance: {tolerance}")
     print(f"Warmup iterations: {warmup_iterations}")
     print(f"Iterations: {iterations}")
@@ -1843,6 +1865,7 @@ def run_bs(
         c_tensor,
         max_active_clusters,
         stream,
+        epilogue_op=gelu if activation == "gelu" else lambda x: x,
     )
 
     if not skip_ref_check:
@@ -1855,6 +1878,8 @@ def run_bs(
         res_a = torch.einsum("mkl,mkl->mkl", a_ref, sfa_ref)
         res_b = torch.einsum("nkl,nkl->nkl", b_ref, sfb_ref)
         ref = torch.einsum("mkl,nkl->mnl", res_a, res_b)
+        if activation == "gelu":
+            ref = torch.nn.functional.gelu(ref, approximate="none")
 
         # Convert c back to f32 for comparison.
         c_ref_device = c_ref.cuda()
@@ -2020,6 +2045,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--b_major", choices=["k"], type=str, default="k")
     parser.add_argument("--c_major", choices=["n"], type=str, default="n")
     parser.add_argument(
+        "--activation",
+        choices=["identity", "gelu"],
+        default="identity",
+        help="Elementwise activation applied before output conversion",
+    )
+    parser.add_argument(
         "--tolerance", type=float, default=1e-01, help="Tolerance for validation"
     )
     parser.add_argument(
@@ -2079,5 +2110,6 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
+        args.activation,
     )
     print("PASS")
