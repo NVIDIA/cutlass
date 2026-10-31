@@ -69,8 +69,9 @@ To collect performance with NCU profiler:
 
 Constraints for this example:
 * Supported head dimensions: 32, 64, 128, 256
-  ** 256 for `mma_tiler_mn` shoule be (64, 256) with non-persistent mode(not present `--is_persistent` in command line
-* Number of heads in Q must equal with  number of heads in K
+  ** For head dimension 256 with 16-bit types, the N tile of `mma_tiler_mn` must be below 128
+     (for example (64, 64)), or 32 or less with `--is_persistent`; FP8 permits an N tile up to 128
+* Number of heads in Q must be a multiple of the number of heads in K (MHA, GQA or MQA)
 * For causal masking, use --is_causal (note: specify without =True/False)
 * For persistent scheduling, use --is_persistent (note: specify without =True/False)
 * For sliding window, use --window_size x,y where x is left window size and y is right window size
@@ -2180,7 +2181,7 @@ def run(
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
     if scale_softmax == 0.0:  # default to 1/sqrt(d)
-        scale_softmax = 1.0 / math.sqrt(q_shape[1])
+        scale_softmax = 1.0 / math.sqrt(q_shape[3])
 
     scale_softmax = scale_q * scale_k * scale_softmax
 
