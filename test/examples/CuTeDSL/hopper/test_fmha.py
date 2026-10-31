@@ -38,9 +38,10 @@ L1 — correctness tests (GPU execution, checked against a PyTorch reference)
     Validate output and LSE for the same configurations, plus GQA,
     unaligned sequence lengths, fp8 inputs and the bottom-right causal mask.
 
-Head dimension 256 is supported only by the non-persistent kernel with an
-N tile below 128, and by the persistent kernel with an N tile of 32 or less
-(see ``HopperFusedMultiHeadAttentionForward.can_implement``).
+With 16-bit types, head dimension 256 is supported only by the
+non-persistent kernel with an N tile below 128, and by the persistent kernel
+with an N tile of 32 or less; FP8 permits an N tile up to 128 (see
+``HopperFusedMultiHeadAttentionForward.can_implement``).
 """
 
 import pytest

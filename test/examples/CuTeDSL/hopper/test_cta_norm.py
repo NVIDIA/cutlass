@@ -29,10 +29,18 @@
 """
 Pytest test suite for hopper/cta_norm/cta_norm.py.
 
-Each test runs the LayerNorm or RMSNorm kernel once and checks it against
-torch.layer_norm / torch.rms_norm. The kernel loads 8 elements per thread, so
-N must be a multiple of 8; the default thread count comes from a heuristic,
-and the explicit counts cover one warp up to a full 1024-thread CTA.
+Test organization
+-----------------
+L0 — one hidden size for each norm type and data type
+    ``run_layernorm`` launches the kernel only when it checks the result, so
+    these cases also check against torch.layer_norm / torch.rms_norm.
+
+L1 — correctness tests (GPU execution, checked against torch.layer_norm /
+    torch.rms_norm)
+    Cover hidden sizes, explicit thread counts and problem shapes. The kernel
+    loads 8 elements per thread, so N must be a multiple of 8; the default
+    thread count comes from a heuristic, and the explicit counts cover one
+    warp up to a full 1024-thread CTA.
 """
 
 import pytest
@@ -60,16 +68,26 @@ def _run(M, N, norm_type, dtype=F16, threads_per_cta=None):
 
 @pytest.mark.parametrize("norm_type", ["layer", "rms"])
 @pytest.mark.parametrize("dtype", [F16, BF16, F32], ids=["f16", "bf16", "f32"])
-@pytest.mark.parametrize("N", [256, 1024, 4096, 8192])
 @pytest.mark.L0
-def test_dtypes_and_hidden_sizes(norm_type, dtype, N):
+@pytest.mark.L1(0)
+def test_l0_dtypes(norm_type, dtype):
+    _run(512, 4096, norm_type, dtype)
+
+
+@pytest.mark.parametrize("norm_type", ["layer", "rms"])
+@pytest.mark.parametrize("dtype", [F16, BF16, F32], ids=["f16", "bf16", "f32"])
+@pytest.mark.parametrize("N", [256, 1024, 4096, 8192])
+@pytest.mark.L0(0)
+@pytest.mark.L1
+def test_l1_dtypes_and_hidden_sizes(norm_type, dtype, N):
     _run(512, N, norm_type, dtype)
 
 
 @pytest.mark.parametrize("norm_type", ["layer", "rms"])
 @pytest.mark.parametrize("threads_per_cta", [32, 128, 512, 1024])
-@pytest.mark.L0
-def test_threads_per_cta(norm_type, threads_per_cta):
+@pytest.mark.L0(0)
+@pytest.mark.L1
+def test_l1_threads_per_cta(norm_type, threads_per_cta):
     _run(256, 4096, norm_type, threads_per_cta=threads_per_cta)
 
 
@@ -83,6 +101,7 @@ def test_threads_per_cta(norm_type, threads_per_cta):
         pytest.param(64, 16384, id="large-N"),
     ],
 )
-@pytest.mark.L0
-def test_shapes(norm_type, M, N):
+@pytest.mark.L0(0)
+@pytest.mark.L1
+def test_l1_shapes(norm_type, M, N):
     _run(M, N, norm_type)
