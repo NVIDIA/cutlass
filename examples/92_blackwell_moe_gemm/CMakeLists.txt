@@ -39,7 +39,7 @@ set(TEST_IRREGULAR_MNK_FP4 --m=4080 --n=9 --k=4160 --groups=8 --iterations=0)
 set(TEST_FIXED --m=2048 --n=5120 --k=8192 --iterations=0)                           # Fixed problem sizes
 set(TEST_FIXED_SMALL --m=2048 --n=512 --k=8192 --groups=2 --iterations=0)                           # Fixed problem sizes
 
-if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+if (CUTLASS_NVCC_ARCHS MATCHES "100a|100f|103a|103f")
 cutlass_example_add_executable(
   92_blackwell_moe_gemm_regular
   92_blackwell_moe_gemm_regular.cu

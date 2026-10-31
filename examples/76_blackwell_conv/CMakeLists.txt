@@ -28,7 +28,7 @@
 
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+if (CUTLASS_NVCC_ARCHS MATCHES "100a|100f|103a|103f")
 cutlass_example_add_executable(
   76_blackwell_conv_fprop
   76_blackwell_conv_fprop.cu
