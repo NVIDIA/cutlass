@@ -65,6 +65,7 @@ __all__ = [
     "shuffle_sync_up",
     "shuffle_sync_down",
     "shuffle_sync_bfly",
+    "movmatrix_trans",
     "barrier",
     "barrier_arrive",
     "sync_threads",
