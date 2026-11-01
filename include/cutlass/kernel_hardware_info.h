@@ -59,17 +59,20 @@ struct KernelHardwareInfo {
   //
 
 #if !defined(__CUDACC_RTC__)
+  // A device_id of -1 queries the calling thread's current device.
   static inline int
-  query_device_multiprocessor_count(int device_id = 0) {
-    cudaError_t result = cudaGetDevice(&device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaGetDevice() returned error "
-        << cudaGetErrorString(result));
-      return 0;
+  query_device_multiprocessor_count(int device_id = -1) {
+    if (device_id == -1) {
+      cudaError_t result = cudaGetDevice(&device_id);
+      if (result != cudaSuccess) {
+        CUTLASS_TRACE_HOST(
+          "  cudaGetDevice() returned error "
+          << cudaGetErrorString(result));
+        return 0;
+      }
     }
     int multiprocessor_count;
-    result = cudaDeviceGetAttribute(&multiprocessor_count,
+    cudaError_t result = cudaDeviceGetAttribute(&multiprocessor_count,
       cudaDevAttrMultiProcessorCount, device_id);
     if (result != cudaSuccess) {
       CUTLASS_TRACE_HOST(
