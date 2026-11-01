@@ -45,8 +45,8 @@ struct KernelHardwareInfo {
   // Data members
   //
 
-  // Hardware properties
-  int device_id = 0;
+  // Hardware properties. A device_id of -1 uses the calling thread's current device.
+  int device_id = -1;
   int sm_count  = 0;
 
   // Kernel properties
@@ -134,7 +134,7 @@ struct KernelHardwareInfo {
   // against that stream's green context partition instead of the full device.
   template <typename Kernel>
   static inline KernelHardwareInfo
-  make_kernel_hardware_info(int const device_id = 0, int sm_count = 0, int max_active_clusters = 0,
+  make_kernel_hardware_info(int const device_id = -1, int sm_count = 0, int max_active_clusters = 0,
                             cudaStream_t stream = nullptr) {
     if (sm_count == 0) {
       sm_count = query_device_multiprocessor_count(device_id);
