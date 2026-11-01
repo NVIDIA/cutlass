@@ -130,6 +130,9 @@ struct KernelHardwareInfo {
   }
 
   // Create a KernelHardwareInfo by querying device properties.
+  // Automatic cluster occupancy queries require the current device and stream
+  // to match the requested device. To prepare hardware info for another device,
+  // supply its max_active_clusters.
   // When a green context stream is provided, max_active_clusters is queried
   // against that stream's green context partition instead of the full device.
   template <typename Kernel>
