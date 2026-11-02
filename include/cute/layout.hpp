@@ -1075,6 +1075,11 @@ composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_st
                    // Weak divisibility condition -- verify the divisibility condition whenever possible
                    if constexpr (is_static<decltype(curr_shape)>::value and is_static<decltype(rest_stride)>::value) {
                      CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                     // A stride that does not divide curr_shape is only valid while rhs stays within this mode
+                     if constexpr (is_static<decltype(rest_shape)>::value) {
+                       CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or ((curr_shape % abs(rest_stride)) == Int<0>{}) or
+                                            (rest_shape <= cute::ceil_div(curr_shape, abs(rest_stride))), "Stride Divisibility Condition");
+                     }
                    } else {
                      // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
                      //assert((((rest_stride % curr_shape) == 0) or (rest_stride < curr_shape)) && "Stride Divisibility Condition");
