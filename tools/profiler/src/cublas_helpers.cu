@@ -277,6 +277,19 @@ Status cublas_satisfies(library::GemmDescription const &desc) {
     return Status::kErrorNotSupported;
   }
 
+  // The verification path allocates a single "Reference" buffer with the D element type and hands
+  // it to cuBLAS as both the C and the D operand, while cublasLtGemmExDispatcher builds both
+  // matrix descriptors with the C element type. That is only sound when the kernel's C and D
+  // element types match. When they differ, cuBLAS navigates the buffer with the wrong element
+  // size -- e.g. an FP32 C with an FP8 D makes cuBLASLt walk an FP8-sized buffer as if it held
+  // FP32 elements -- and faults with an illegal memory access instead of returning an error.
+  // The resulting sticky CUDA error aborts the whole profiling session (it surfaces later as a
+  // misleading "Failed to allocate workspace" failure). This affects the SM90 kernels that write
+  // narrow FP8 output from an FP32/F16/BF16 C, so report those problems as not supported instead.
+  if (desc.C.element != desc.D.element) {
+    return Status::kErrorNotSupported;
+  }
+
 
   // output type S4 and S8 not supported in cuBLAS
   if (desc.C.element == library::NumericTypeID::kS4 || 
