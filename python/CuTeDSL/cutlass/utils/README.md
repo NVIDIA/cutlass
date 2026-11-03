@@ -541,9 +541,9 @@ The `examples/block_api/` directory contains complete working examples:
 
 | Example | Description | Key Concepts |
 |---------|-------------|--------------|
-| [`blackwell/tutorial_gemm/nvfp4_gemm_0.py`](../examples/blackwell/tutorial_gemm/nvfp4_gemm_0.py) | NVFP4 block-scaled GEMM | S2T copy, scale factors |
-| [`blackwell/dense_gemm_persistent.py`](../examples/blackwell/dense_gemm_persistent.py) | Persistent GEMM | Full production pattern |
-| [`hopper/dense_gemm_persistent.py`](../examples/hopper/dense_gemm_persistent.py) | Hopper persistent GEMM | WGMMA with pipelines |
+| [`blackwell/tutorial_gemm/nvfp4_gemm_0.py`](../../../../examples/python/CuTeDSL/cute/blackwell/tutorial/tutorial_gemm/nvfp4_gemm_0.py) | NVFP4 block-scaled GEMM | S2T copy, scale factors |
+| [`blackwell/dense_gemm_persistent.py`](../../../../examples/python/CuTeDSL/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py) | Persistent GEMM | Full production pattern |
+| [`hopper/dense_gemm_persistent.py`](../../../../examples/python/CuTeDSL/cute/hopper/kernel/dense_gemm/dense_gemm_persistent.py) | Hopper persistent GEMM | WGMMA with pipelines |
 
 ### Comparing Block API vs. Manual Implementation
 
