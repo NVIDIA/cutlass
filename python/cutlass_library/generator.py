@@ -11241,6 +11241,49 @@ def GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version,
                           conv_kind = ConvKind.Fprop,
                           log_indent_level = log_indent_level)
 
+def sm120_blockscaled_supports_tile_n(tile_n, data_type):
+  """
+  Returns whether an SM120 blockscaled dense GEMM can be built for a CTA tile N with
+  row-major C/D and EpilogueTileAuto.
+
+  Mirrors the compile-time checks of the collective builders:
+    - The B smem copy atom for 6-bit B (sm120_rr_smem_copy_selector_B) is always the x4 LDSM,
+      which needs a tile N of at least 32.
+    - sm120_compute_tile_shape_or_override (sm120_builder.inl) uses an epilogue tile N of
+      min(CTA_N, 32), or 128 for FP6 D, which also requires CTA_N to be a multiple of 128.
+    - The C/D smem swizzle atom (ss_smem_selector) needs the epilogue tile N to span a
+      multiple of 128 bits. FP6 is stored in 8-bit containers.
+    - The block scale factor store (Sm120BlockScaleFactorRowStore) needs the epilogue tile N
+      to be 1, 2, 4 or 8 scale factor vectors.
+  """
+  fp6_types = [DataType.e3m2, DataType.e2m3]
+  d_type = data_type["d_type"]
+
+  if data_type["b_type"] in fp6_types and tile_n < 32:
+    return False
+
+  if d_type in fp6_types:
+    if tile_n % 128 != 0:
+      return False
+    epi_n = 128
+  else:
+    epi_n = min(tile_n, 32)
+
+  for element in [data_type["c_type"], d_type]:
+    if element == DataType.void:
+      continue
+    element_bits = 8 if element in fp6_types else DataTypeSize[element]
+    if (epi_n * element_bits) % 128 != 0:
+      return False
+
+  sfd_type = data_type.get("sfd_type", {"type": DataType.void})
+  if sfd_type["type"] != DataType.void:
+    vector_size = sfd_type["vector_size"]
+    if epi_n % vector_size != 0 or epi_n // vector_size not in [1, 2, 4, 8]:
+      return False
+
+  return True
+
 def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.BlockScaledUniversal3x):
   # SM120 MMA with mixed F4/F6/F8 inputs + block scale
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 8):
@@ -11259,19 +11302,22 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
   # Cooperative supports TileN >= 8 (see sm120_blockscaled_mma_builder.inl AtomLayoutMNK).
   # Pingpong uses AtomLayout Shape<_2,_2,_1>, giving a natural TiledMma N of 16,
   # so pingpong tiles start at N = 16.
+  # Keep the largest tiles first: without a kernel filter, CreateGemmUniversal3xOperator only
+  # instantiates the first tile description. Small N tiles are further restricted per data type
+  # by sm120_blockscaled_supports_tile_n.
   tile_sizes_cooperative = [
-    [128,   8, 128],
-    [128,  16, 128],
-    [128,  32, 128],
+    [128, 128, 128],
     [128,  64, 128],
-    [128, 128, 128]
+    [128,  32, 128],
+    [128,  16, 128],
+    [128,   8, 128]
   ]
 
   tile_sizes_pingpong = [
-    [128,  16, 128],
-    [128,  32, 128],
+    [128, 128, 128],
     [128,  64, 128],
-    [128, 128, 128]
+    [128,  32, 128],
+    [128,  16, 128]
   ]
 
   cluster_shape = [1,1,1]
@@ -11381,7 +11427,11 @@ def GenerateSM120_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
           TileDescription(tile_size, 0, [4, 1, 1], math_inst, min_cc, max_cc, cluster_shape))
 
       for data_type in data_types:
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+        supported_tile_descriptions = [
+          td for td in tile_descriptions
+          if sm120_blockscaled_supports_tile_n(td.threadblock_shape[1], data_type)
+        ]
+        CreateGemmUniversal3xOperator(manifest, layouts, supported_tile_descriptions, data_type,
           [[kernel_schedule, EpilogueScheduleType.ScheduleAuto]],
           tile_schedulers = tile_schedulers(data_type["sfd_type"], kernel_schedule),
           gemm_kind = gemm_kind
@@ -11406,29 +11456,32 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
   # Cooperative supports TileN >= 8 (see sm120_blockscaled_mma_builder.inl AtomLayoutMNK).
   # Pingpong uses AtomLayout Shape<_2,_2,_1>, giving a natural TiledMma N of 16,
   # so pingpong tiles start at N = 16.
+  # Keep the largest tiles first: without a kernel filter, CreateGemmUniversal3xOperator only
+  # instantiates the first tile description. Small N tiles are further restricted per data type
+  # by sm120_blockscaled_supports_tile_n.
   tile_sizes_cooperative = [
-    [128,   8, 128],
-    [128,   8, 256],
-    [128,  16, 128],
-    [128,  16, 256],
-    [128,  32, 128],
-    [128,  32, 256],
-    [128,  64, 128],
-    [128,  64, 256],
     [128, 128, 128],
     [128, 128, 256],
-    [256, 128, 128]
+    [256, 128, 128],
+    [128,  64, 128],
+    [128,  64, 256],
+    [128,  32, 128],
+    [128,  32, 256],
+    [128,  16, 128],
+    [128,  16, 256],
+    [128,   8, 128],
+    [128,   8, 256]
   ]
 
   tile_sizes_pingpong = [
-    [128,  16, 128],
-    [128,  16, 256],
-    [128,  32, 128],
-    [128,  32, 256],
+    [128, 128, 128],
+    [128, 128, 256],
     [128,  64, 128],
     [128,  64, 256],
-    [128, 128, 128],
-    [128, 128, 256]
+    [128,  32, 128],
+    [128,  32, 256],
+    [128,  16, 128],
+    [128,  16, 256]
   ]
 
   cluster_shape = [1,1,1]
@@ -11587,7 +11640,11 @@ def GenerateSM120_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
         layout[2][1] = 128 // DataTypeSize[data_types[0]["d_type"]]
 
       for data_type in data_types:
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+        supported_tile_descriptions = [
+          td for td in tile_descriptions
+          if sm120_blockscaled_supports_tile_n(td.threadblock_shape[1], data_type)
+        ]
+        CreateGemmUniversal3xOperator(manifest, layouts, supported_tile_descriptions, data_type,
           [[kernel_schedule, EpilogueScheduleType.ScheduleAuto]],
           tile_schedulers = tile_schedulers(data_type["sfd_type"], kernel_schedule),
           gemm_kind = gemm_kind
