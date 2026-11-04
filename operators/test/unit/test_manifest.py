@@ -165,3 +165,80 @@ def test_all_unique_operator_names():
                 f"--- Duplicate operator ---\n{duplicate}"
             )
         operator_map[k.metadata.operator_name] = k
+
+
+class _ManifestTestOperator(ops.Operator):
+    supported_args_type = ops.GemmArguments
+    designed_for_min_cc = 90
+    _provider = object()
+
+    def _supports(self, args, target_sm=None):
+        return ops.Status.success() if args.accepted else ops.Status.fail("rejected")
+
+    def _compile(self, args, target_sm=None):
+        raise NotImplementedError
+
+    def _run(self, args, compiled_artifact, stream, workspace=None):
+        raise NotImplementedError
+
+    @classmethod
+    def _generate_operators(
+        cls, metadata_filter, epilogue_args=None, target_sm=None, args=None
+    ):
+        raise NotImplementedError
+
+
+class _AcceptOperands:
+    def supports(self, args):
+        return ops.Status.success()
+
+
+def _manifest_test_operator(name, target):
+    metadata = ops.OperatorMetadata(
+        operator_name=name,
+        operator_class=_ManifestTestOperator,
+        supported_targets=[ops.TargetSm(target)],
+        operands=_AcceptOperands(),
+    )
+    return _ManifestTestOperator(metadata)
+
+
+def test_manifest_filter_without_runtime_arguments():
+    manifest = ops.Manifest()
+    sm90 = _manifest_test_operator("sm90", "90a")
+    sm100 = _manifest_test_operator("sm100", "100a")
+    manifest.add_operators([sm90, sm100])
+
+    assert manifest.filter_operators() == [sm90, sm100]
+    assert manifest.filter_operators(
+        metadata_filter=lambda m: m.operator_name == "sm100"
+    ) == [sm100]
+    assert manifest.filter_operators(providers=[]) == []
+    assert manifest.filter_operators(providers=[_ManifestTestOperator._provider]) == [
+        sm90,
+        sm100,
+    ]
+
+
+def test_manifest_filter_target_without_runtime_arguments():
+    manifest = ops.Manifest()
+    sm90 = _manifest_test_operator("sm90", "90a")
+    sm100 = _manifest_test_operator("sm100", "100a")
+    manifest.add_operators([sm90, sm100])
+
+    assert manifest.filter_operators(target_sm="90a") == [sm90]
+    assert manifest.filter_operators(target_sm="100a") == [sm100]
+
+
+def test_manifest_filter_with_runtime_arguments():
+    from types import SimpleNamespace
+
+    manifest = ops.Manifest()
+    sm90 = _manifest_test_operator("sm90", "90a")
+    sm100 = _manifest_test_operator("sm100", "100a")
+    manifest.add_operators([sm90, sm100])
+    accepted = SimpleNamespace(accepted=True, performance=None, epilogue=None)
+    rejected = SimpleNamespace(accepted=False, performance=None, epilogue=None)
+
+    assert manifest.filter_operators(args=accepted, target_sm="90a") == [sm90]
+    assert manifest.filter_operators(args=rejected, target_sm="100a") == []
