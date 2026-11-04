@@ -332,18 +332,18 @@ class PredicatedTileAccessIterator2dThreadTile<Shape_, Element_, layout::PitchLi
 
       if (kAdvanceRank) {
         pointer_ += params_.inc_advance_ * (tile_offset.strided() - 1);
-        pointer_ += Shape::kContiguous * tile_offset.contiguous();
+        add_pointer_offset(Shape::kContiguous * LongIndex(tile_offset.contiguous()));
       } else {
         pointer_ += params_.inc_advance_ * (tile_offset.contiguous() - 1);
-        pointer_ += Shape::kStrided * tile_offset.strided();
+        add_pointer_offset(Shape::kStrided * LongIndex(tile_offset.strided()) * params_.stride_);
       }
     } else {
       if (kAdvanceRank) {
         pointer_ += params_.inc_advance_ * tile_offset.strided();
-        pointer_ += Shape::kContiguous * tile_offset.contiguous();
+        add_pointer_offset(Shape::kContiguous * LongIndex(tile_offset.contiguous()));
       } else {
         pointer_ += params_.inc_advance_ * tile_offset.contiguous();
-        pointer_ += Shape::kStrided * tile_offset.strided();
+        add_pointer_offset(Shape::kStrided * LongIndex(tile_offset.strided()) * params_.stride_);
       }
     }
     is_residue_tile_ = false;
