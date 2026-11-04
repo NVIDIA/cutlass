@@ -87,7 +87,8 @@ class DenseTensorConstraints(OperandConstraints):
 
     ptr_alignment_bytes: int
     """The alignment of the tensor's data pointer, in bytes
-    By default, it matches the number of bytes in stride/shape alignment.
+    By default, it matches the number of bytes in stride/shape alignment,
+    with a minimum of one byte for sub-byte types.
     """
 
     def __init__(
@@ -100,8 +101,8 @@ class DenseTensorConstraints(OperandConstraints):
         self.dtype = dtype
         self.stride = stride
         self.divisibility = divisibility
-        self.ptr_alignment_bytes = ptr_alignment_bytes or (
-            (divisibility * dtype.width) // 8
+        self.ptr_alignment_bytes = ptr_alignment_bytes or max(
+            1, (divisibility * dtype.width) // 8
         )
 
     def supports(self, operand: DenseTensor | DenseTensorConstraints) -> Status:

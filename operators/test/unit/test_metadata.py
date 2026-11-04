@@ -320,3 +320,20 @@ def test_dense_constraint_concrete_pointer_alignment(address, expected):
     )
     required = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, 16)
     assert bool(required.supports(DenseTensor(tensor))) is expected
+
+
+@pytest.mark.parametrize(("divisibility", "alignment"), [(1, 1), (2, 1), (4, 2)])
+def test_dense_constraint_subbyte_default_pointer_alignment(divisibility, alignment):
+    from types import SimpleNamespace
+
+    from cutlass.operators.arguments import DenseTensor
+
+    constraint = DenseTensorConstraints(cutlass.Float4E2M1FN, (0, 1), divisibility)
+    assert constraint.ptr_alignment_bytes == alignment
+    tensor = DenseTensor(
+        SimpleNamespace(
+            dtype=cutlass.Float4E2M1FN, shape=(8, 8), stride=(8, 1), data_ptr=32
+        )
+    )
+    assert constraint.supports(tensor)
+    assert constraint.supports(constraint)
