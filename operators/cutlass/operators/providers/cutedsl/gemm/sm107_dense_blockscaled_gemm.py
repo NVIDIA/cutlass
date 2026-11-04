@@ -62,6 +62,7 @@ from cutlass.operators.utils.tensor import (
 )
 
 from ...cutedsl import CuTeDSLProvider
+from ...cutedsl.integration_utils.blockscaled import validate_blockscaled_factors
 from ...cutedsl.integration_utils.builders import (
     gemm_major_modes,
     make_ptr,
@@ -76,6 +77,7 @@ if TYPE_CHECKING:
 
     from cutlass.operators.arguments import EpilogueArguments
     from cutlass.operators.artifact import CompiledArtifact
+    from cutlass.operators.status import Status
 
 
 @CuTeDSLProvider.register
@@ -112,6 +114,11 @@ class Sm107DenseBlockScaledGemmOperator(CuteDslOperator):
             fallback_cluster_shape_mn=fallback_cluster_shape_mn,
             prefetch_dist=None,
         )
+
+    def _supports(
+        self, args: GemmArguments, target_sm: TargetSm | None = None
+    ) -> Status:
+        return validate_blockscaled_factors(args)
 
     def _compile(
         self, args: GemmArguments, target_sm: TargetSm | None = None
