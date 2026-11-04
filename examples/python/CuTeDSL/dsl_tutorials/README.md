@@ -41,6 +41,7 @@ dsl/
     error_reporting.py             Error reporting and diagnostics
   call_bypass_dlpack.py          Calling kernels bypassing DLPack
   call_from_jit.py               Calling conventions from JIT-compiled code
+  tensor_layout_manipulation.py  Flat tensor views inside host JIT functions
   cooperative_launch.py          Cooperative kernel launch (multi-CTA)
   dynamic_smem_size.py           Dynamic shared memory allocation
   inline_ptx.py                  Embedding inline PTX assembly
@@ -91,6 +92,9 @@ compilation (no GPU required at compile time) and symbolic integer arguments.
 The top-level Python files demonstrate individual DSL features:
 
 - **`call_bypass_dlpack.py`** / **`call_from_jit.py`** -- Kernel calling conventions
+- **`tensor_layout_manipulation.py`** -- Permute, transpose, unsqueeze, and
+  read-only expand using host JIT layouts; optional CPU submission benchmark
+  with per-call and cached PyTorch views as references
 - **`inline_ptx.py`** -- Embedding inline PTX assembly in CuTe DSL kernels
 - **`launch_completion_and_programmatic_events.py`** -- Examples of 
   ``launch_completion_event`` and ``programmatic_event`` launch attributes,
