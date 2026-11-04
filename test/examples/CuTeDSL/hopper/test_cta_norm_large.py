@@ -43,13 +43,14 @@ def test_heuristic_never_exceeds_block_limit(N, expected):
 
 @pytest.mark.parametrize("norm_type", ["rms", "layer"])
 @pytest.mark.parametrize("N", [33544, 65536])
-def test_large_hidden_size_auto_threads(N, norm_type):
+@pytest.mark.parametrize("dtype", [cutlass.Float16, cutlass.Float32])
+def test_large_hidden_size_auto_threads(N, norm_type, dtype):
     run_layernorm(
         M=2,
         N=N,
         threads_per_cta=None,
         norm_type=norm_type,
-        dtype=cutlass.Float16,
+        dtype=dtype,
         benchmark=False,
     )
 
