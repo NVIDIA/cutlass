@@ -134,6 +134,10 @@ class DenseTensorConstraints(OperandConstraints):
                 else None
             )
         else:
+            if is_constraint and operand.stride is None:
+                return Status.fail(
+                    f"Expected a specific stride pattern {self.stride}, got arbitrary stride"
+                )
             # If the operand is batched, the expected stride is the same as the self.stride
             if len(self.stride) == len(operand.stride):
                 expected_stride = self.stride
@@ -180,10 +184,19 @@ class DenseTensorConstraints(OperandConstraints):
                     f"by {self.divisibility}"
                 )
 
-        # Check data ptr alignment, if available
+        # A peer constraint must guarantee the same pointer alignment, just as
+        # a concrete operand must have an aligned address.
         if is_operand and operand.data_ptr % self.ptr_alignment_bytes != 0:
             return Status.fail(
                 f"Expected data pointer to be {self.ptr_alignment_bytes}B-aligned."
+            )
+        if (
+            is_constraint
+            and operand.ptr_alignment_bytes % self.ptr_alignment_bytes != 0
+        ):
+            return Status.fail(
+                f"Expected pointer alignment {operand.ptr_alignment_bytes} to be divisible "
+                f"by {self.ptr_alignment_bytes}."
             )
 
         return Status.success()
@@ -198,7 +211,6 @@ class DenseTensorConstraints(OperandConstraints):
         return all(
             t % divisibility == 0 for dim, t in enumerate(tup) if dim != contiguous_dim
         )
-
 
 
 @dataclass
@@ -252,5 +264,3 @@ class ScaledOperandConstraints(OperandConstraints):
             raise AttributeError(
                 f"'{self.__class__.__name__}' object has no attribute '{attr}'"
             )
-
-
