@@ -169,20 +169,25 @@ class RMSNormConfig:
 
         # Vector size for 128-bit loads
         self.vec_size = self.COPY_BITS // dtype.width
+        if N <= 0 or N % self.vec_size:
+            raise ValueError(
+                f"N must be positive and divisible by {self.vec_size} for 128-bit {dtype} copies, got {N}"
+            )
 
         # Compute cluster size (SM90+ only)
         self.cluster_n = self._compute_cluster_n(N, dtype, self.sm_version)
 
         # N per CTA for cluster case
-        self.N_per_cta = N // self.cluster_n
+        self.N_per_cta = (N + self.cluster_n - 1) // self.cluster_n
 
         # Thread configuration using static methods
         self.threads_per_row = self._compute_threads_per_row(self.N_per_cta)
         self.num_threads = self._compute_num_threads(self.N_per_cta)
 
         # Derived values
+        num_vectors = (self.N_per_cta + self.vec_size - 1) // self.vec_size
         self.num_vec_blocks = max(
-            1, (self.N_per_cta // self.vec_size + self.threads_per_row - 1) // self.threads_per_row
+            1, (num_vectors + self.threads_per_row - 1) // self.threads_per_row
         )
         self.rows_per_block = self.num_threads // self.threads_per_row
         self.cols_per_tile = self.vec_size * self.num_vec_blocks * self.threads_per_row
@@ -483,6 +488,17 @@ class RMSNormKernel:
         # =====================================================================
         # Async copy global → shared
         # =====================================================================
+        # Predicated-off loads leave shared memory unchanged. Initialize
+        # padding before async writes; a full column tile needs zeros only for
+        # rows past M, which never receive an async copy.
+        if cutlass.const_expr(cfg.N != cfg.cols_per_tile * cfg.cluster_n):
+            tXrX.fill(0)
+            cute.autovec_copy(tXrX, tXsX)
+            cute.arch.fence_view_async_shared()
+            cute.arch.sync_threads()
+        elif not row_in_bounds:
+            tXrX.fill(0)
+            cute.autovec_copy(tXrX, tXsX)
         if row_in_bounds:
             cute.copy(copy_atom_load_async, tXgX, tXsX, pred=tXpX)
 
@@ -491,6 +507,7 @@ class RMSNormKernel:
         # Load weight while waiting
         if cutlass.const_expr(cfg.has_weight and mW is not None):
             tWpW = predicate_k(thr_copy_W.partition_S(cX), limit=cfg.N)
+            tWrW.fill(0)
             cute.copy(copy_atom_load_W, tWgW, tWrW, pred=tWpW)
 
         cute.arch.cp_async_wait_group(0)
@@ -571,7 +588,7 @@ def get_compiled_kernel(
 
     :param dtype: Data type (Float16, BFloat16, Float32)
     :type dtype: type[cutlass.Numeric]
-    :param N: Hidden dimension size
+    :param N: Positive hidden dimension, divisible by 128 / dtype.width
     :type N: int
     :param has_weight: Whether weight is applied
     :type has_weight: bool
@@ -659,7 +676,7 @@ def run(
 
     :param M: Number of rows (batch size * sequence length)
     :type M: int
-    :param N: Hidden dimension size
+    :param N: Positive hidden dimension, divisible by 128 / dtype.width
     :type N: int
     :param dtype: Data type (Float16, BFloat16, Float32)
     :type dtype: type[cutlass.Numeric]
@@ -694,11 +711,13 @@ def run(
     torch_stream = torch.cuda.current_stream()
     stream = cuda.CUstream(torch_stream.cuda_stream)
 
+    # Validate and configure before allocating tensors.
+    config = RMSNormConfig(dtype, N, has_weight)
+
     # Create tensors
     x, weight, out = create_tensors(M, N, dtype, has_weight)
 
     # Get configuration info
-    config = RMSNormConfig(dtype, N, has_weight)
     print(f"  cluster_n: {config.cluster_n}")
     print(f"  threads_per_row: {config.threads_per_row}")
     print(f"  rows_per_block: {config.rows_per_block}")
