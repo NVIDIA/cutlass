@@ -26,7 +26,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import builtins
 import logging
+import traceback
 from collections.abc import Callable
 
 from cutlass.operators.providers.provider import Provider
@@ -69,15 +71,39 @@ def register_provider(name: str) -> Callable[[type[Provider]], type[Provider]]:
     return wrapper
 
 
+def _detach_import_tracebacks(exc: ImportError) -> ImportError:
+    """Keep diagnostic text without retaining importing frames and their locals."""
+    original_traceback = "".join(traceback.format_exception(exc)).rstrip()
+    if hasattr(exc, "add_note"):
+        exc.add_note(original_traceback)
+    else:  # Python 3.10 has no exception notes.
+        exc._provider_traceback_text = original_traceback
+    pending = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        current.__traceback__ = None
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+        if isinstance(current, getattr(builtins, "BaseExceptionGroup", ())):
+            pending.extend(current.exceptions)
+    return exc
+
+
 # Import provider submodules' ``*Provider`` subclasses independently.  A
 # failure in one must never block the others.  Failures are logged and stored
-# so __getattr__ can surface the traceback.
+# so __getattr__ can surface the error without retaining live traceback frames.
 
 try:
     from cutlass.operators.providers.cutedsl import CuTeDSLProvider
 except ImportError as _exc:
-    _import_errors["CuTeDSLProvider"] = _exc
     _logger.debug("CuTeDSLProvider unavailable: %s", _exc, exc_info=True)
+    _import_errors["CuTeDSLProvider"] = _detach_import_tracebacks(_exc)
 
 
 def __getattr__(name: str) -> object:
@@ -95,12 +121,12 @@ def __getattr__(name: str) -> object:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
     if isinstance(exc, ModuleNotFoundError) or exc is None:
-        raise ImportError(
-            f"{name} is unavailable: {PROVIDER_INSTALL_HINTS[name]}."
-        ) from exc
-    raise ImportError(
-        f"{name} failed to import."
-    ) from exc
+        message = f"{name} is unavailable: {PROVIDER_INSTALL_HINTS[name]}."
+    else:
+        message = f"{name} failed to import."
+    if exc is not None and hasattr(exc, "_provider_traceback_text"):
+        message += f"\nOriginal provider traceback:\n{exc._provider_traceback_text}"
+    raise ImportError(message) from exc
 
 
 __all__ = [
