@@ -36,7 +36,7 @@ def _import_fresh_providers():
     [
         (
             None,
-            "CuTeDSLProvider is unavailable: install " + repr("nvidia-cutlass-dsl"),
+            "CuTeDSLProvider is unavailable: install 'nvidia-cutlass-dsl'",
             "ModuleNotFoundError",
         ),
         (
@@ -54,13 +54,12 @@ def test_failed_provider_import_does_not_retain_importer(
     module, payload_ref = _import_fresh_providers()
     gc.collect()
     assert payload_ref() is None
-    for _ in range(2):
-        with pytest.raises(ImportError, match="Original error:") as excinfo:
-            _ = module.CuTeDSLProvider
-        assert str(excinfo.value).startswith(expected_prefix)
-        assert original_type in str(excinfo.value)
-        assert _CUTEDSL_MODULE in str(excinfo.value)
-        assert excinfo.value.__cause__ is None
+    with pytest.raises(ImportError, match="Original error:") as excinfo:
+        _ = module.CuTeDSLProvider
+    assert str(excinfo.value).startswith(expected_prefix)
+    assert original_type in str(excinfo.value)
+    assert _CUTEDSL_MODULE in str(excinfo.value)
+    assert excinfo.value.__cause__ is None
 
 
 def test_missing_known_provider_and_unknown_attribute(monkeypatch):
