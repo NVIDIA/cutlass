@@ -176,6 +176,25 @@ TEST(ComposedLayoutTest, SliceStaticSwizzledLayouts)
             EXPECT_EQ(sl.layout_b(), cg::slice(c, l.layout_b()));
         }
     }
+    {
+        // NVIDIA/cutlass#3454: swizzle-projection composition fails for (10,2):(2,1)
+        // and must soft-error instead of asserting in static_size.
+        cg::swizzle         sw(3, 4, 3);
+        cg::composed_layout bad(sw, cg::int_tuple(0),
+                                cg::layout(cg::shape(10, 2), cg::stride(2, 1)));
+        auto [sliced_bad, offset_bad] =
+            cg::slice_and_offset(cg::coord(cg::_, 0), bad);
+        EXPECT_FALSE(cg::is_valid(sliced_bad));
+        (void)offset_bad;
+
+        cg::composed_layout ok(sw, cg::int_tuple(0),
+                               cg::layout(cg::shape(8, 2), cg::stride(2, 1)));
+        auto [sliced_ok, offset_ok] = cg::slice_and_offset(cg::coord(cg::_, 0), ok);
+        EXPECT_TRUE(cg::is_valid(sliced_ok));
+        EXPECT_TRUE(sliced_ok.is_normal_layout());
+        EXPECT_EQ(cg::to_string(sliced_ok.layout_b()), std::string("(8):(2)"));
+        EXPECT_EQ(offset_ok.as_int(), 0);
+    }
 }
 
 TEST(ComposedLayoutTest, SliceAffineLayouts)
