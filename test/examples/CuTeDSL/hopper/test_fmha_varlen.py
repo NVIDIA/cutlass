@@ -41,7 +41,7 @@ into the next one, and sequence starts that are not tile aligned.
 import pytest
 
 import cutlass
-from hopper.kernel.attention.fmha import run
+from hopper.kernel.attention.fmha import default_softmax_scale, run
 
 
 F16 = cutlass.Float16
@@ -202,3 +202,14 @@ def test_l0_varlen_empty_keys(is_persistent):
     # Query rows of a sequence without keys are not written, so only check
     # that the kernel skips the sequence and completes.
     _run((64, 129, 1), (64, 0, 1), is_persistent, skip_ref_check=True)
+
+
+@pytest.mark.L0(0)
+def test_l0_default_softmax_scale_uses_head_dim_for_a_non_square_shape():
+    """`run`'s default (scale_softmax=0.0) is 1/sqrt(head_dim), also when S_q is
+    packed and differs from head_dim. ``1/sqrt(S_q)`` would silently change the
+    result for a non-square shape, and S_q is a tuple on a variable-length side."""
+    # S_q = 129 (packed) and S_q = 700, both with head_dim = 64.
+    assert default_softmax_scale((3, (1, 65, 300, 129), 8, 64)) == pytest.approx(1 / 8)
+    assert default_softmax_scale((3, 700, 8, 64)) == pytest.approx(1 / 8)
+    assert default_softmax_scale((2, 129, 8, 128)) == pytest.approx(1 / 128**0.5)

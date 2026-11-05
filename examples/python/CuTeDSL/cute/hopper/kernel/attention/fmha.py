@@ -1477,7 +1477,21 @@ class HopperFusedMultiHeadAttentionForward:
     ):
         """Copy an epilogue tile from shared to global memory, skipping rows >= residue_m."""
         copy_elems = 128 // self.o_dtype.width
+        assert self.epi_tile[1] % copy_elems == 0, (
+            f"the row store copies {copy_elems}-element vectors along D, so the "
+            f"epilogue tile must cover a multiple of {copy_elems} columns; got "
+            f"{self.epi_tile[1]} for {self.o_dtype}"
+        )
         thr_n = self.epi_tile[1] // copy_elems
+        assert self.num_threads_per_warp_group % thr_n == 0, (
+            f"{thr_n} threads per row do not divide the "
+            f"{self.num_threads_per_warp_group}-thread warp group"
+        )
+        if cutlass.const_expr(cute.is_static(gO.stride[0])):
+            assert gO.stride[0] == 1, (
+                "the row store copies 128-bit vectors along D, so O must be "
+                f"contiguous in D; got stride {gO.stride[0]}"
+            )
         tiled_copy = cute.make_tiled_copy_tv(
             cute.make_copy_atom(
                 cute.nvgpu.CopyUniversalOp(), self.o_dtype, num_bits_per_copy=128
@@ -2166,6 +2180,16 @@ class HopperFusedMultiHeadAttentionForward:
         return True, None
 
 
+def default_softmax_scale(q_shape: Tuple[int, int, int, int]) -> float:
+    """The scale ``run`` uses when the caller passes ``scale_softmax=0.0``.
+
+    It is ``1/sqrt(head_dim)``, the usual attention scale, and not ``1/sqrt(S_q)``:
+    a variable-length ``S_q`` is a tuple, and a non-square ``S_q != head_dim`` must
+    keep the same scale as the fixed-length path.
+    """
+    return 1.0 / math.sqrt(q_shape[3])
+
+
 def run(
     q_shape: Tuple[int, int, int, int],
     k_shape: Tuple[int, int, int, int],
@@ -2456,8 +2480,8 @@ def run(
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    if scale_softmax == 0.0:  # default to 1/sqrt(d)
-        scale_softmax = 1.0 / math.sqrt(q_shape[3])
+    if scale_softmax == 0.0:  # default to 1/sqrt(d), also for a non-square S_q
+        scale_softmax = default_softmax_scale(q_shape)
 
     scale_softmax = scale_q * scale_k * scale_softmax
 
