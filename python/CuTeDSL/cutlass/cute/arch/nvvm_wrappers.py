@@ -3633,6 +3633,57 @@ def _normalize_ptr(
     return addr
 
 
+def _ext_mem_op_storage_type(ty: ir.Type) -> ir.Type:
+    """
+    Return the type used to carry ``ty`` through ``nvvm.load.ext`` / ``nvvm.store.ext``.
+
+    The ext load/store ops (and the LLVM translation behind them) only accept integer,
+    f32 and f64 values, vectors of those and f16/bf16 vectors. Every other float type,
+    i.e. f16/bf16 scalars and all f8/f6/f4 types, is moved through memory as a signless
+    integer of the same bit width; a vector becomes a vector of i8 covering the same
+    number of bits. Callers bitcast on either side of the memory operation.
+    """
+    is_vector = ir.VectorType.isinstance(ty)
+    elem_ty = ir.VectorType(ty).element_type if is_vector else ty
+    if not ir.FloatType.isinstance(elem_ty):
+        return ty
+    if ir.F32Type.isinstance(elem_ty) or ir.F64Type.isinstance(elem_ty):
+        return ty
+    width = ir.FloatType(elem_ty).width
+    if is_vector:
+        if ir.F16Type.isinstance(elem_ty) or ir.BF16Type.isinstance(elem_ty):
+            return ty
+        num_elems = 1
+        for d in ir.VectorType(ty).shape:
+            num_elems *= d
+        num_bits = num_elems * width
+        if num_bits % 8 != 0:
+            raise ValueError(
+                f"cannot load/store a {ty} vector: {num_bits} bits is not a whole number of bytes"
+            )
+        return ir.VectorType.get([num_bits // 8], ir.IntegerType.get_signless(8))
+    if width % 8 != 0:
+        raise ValueError(
+            f"cannot load/store a scalar of type {ty}: sub-byte types must be loaded/stored as vectors"
+        )
+    return ir.IntegerType.get_signless(width)
+
+
+def _bitcast_for_ext_mem_op(
+    val: ir.Value,
+    target_ty: ir.Type,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Bitcast ``val`` to ``target_ty`` (vector or scalar); no-op if the types already match."""
+    if val.type == target_ty:
+        return val
+    if ir.VectorType.isinstance(target_ty):
+        return vector.bitcast(target_ty, val, loc=loc, ip=ip)
+    return arith.bitcast(target_ty, val, loc=loc, ip=ip)
+
+
 def _atomic(
     ptr: Union[ir.Value, Pointer],
     val: Union[Numeric, ir.Value],
@@ -4158,7 +4209,9 @@ def store(
     :param ptr: Pointer to store to. Supports:
         - ir.Value (LLVM pointer)
         - cute.ptr (_Pointer instance)
-    :param val: Value to store (scalar Numeric or vector ir.Value)
+    :param val: Value to store (scalar Numeric or vector ir.Value). Narrow float
+        types (f16/bf16 scalars, f8/f6/f4 scalars and vectors) are stored through
+        a same-width integer bitcast; the bytes written are the element bit patterns.
     :type val: Union[Numeric, ir.Value]
     :param level1_eviction_priority: L1 cache eviction policy string literal:
         "evict_normal" : .level1::eviction_priority = .L1::evict_normal
@@ -4211,6 +4264,12 @@ def store(
             val = as_numeric(val)
         val_ir = val.ir_value(loc=loc, ip=ip)
 
+    # nvvm.store.ext cannot carry narrow float types (f16/bf16 scalars, f8/f6/f4);
+    # move them as same-width integers.
+    val_ir = _bitcast_for_ext_mem_op(
+        val_ir, _ext_mem_op_storage_type(val_ir.type), loc=loc, ip=ip
+    )
+
     nvvm.store_ext(
         val_ir,
         ptr,
@@ -4255,6 +4314,8 @@ def load(
     :param dtype: Data type to load. Can be:
         - Scalar: Numeric type class (Int8, Uint8, Int32, Float32, etc.)
         - Vector: ir.VectorType for vectorized load (e.g., ir.VectorType.get([4], Int64.mlir_type))
+        Narrow float types (f16/bf16 scalars, f8/f6/f4 scalars and vectors) are loaded
+        through a same-width integer bitcast; the result has the requested type.
     :type dtype: Union[type[Numeric], ir.VectorType]
     :param sem: Memory semantic string literal:
     :param scope: Memory scope string literal:
@@ -4315,8 +4376,12 @@ def load(
         mlir_type = dtype.mlir_type
         scalar_dtype = dtype
 
+    # nvvm.load.ext cannot carry narrow float types (f16/bf16 scalars, f8/f6/f4);
+    # load them as same-width integers and bitcast to the requested type.
+    storage_type = _ext_mem_op_storage_type(mlir_type)
+
     result = nvvm.load_ext(
-        res=mlir_type,
+        res=storage_type,
         addr=ptr,
         order=sem,
         scope=scope,
@@ -4327,6 +4392,8 @@ def load(
         loc=loc,
         ip=ip,
     )
+
+    result = _bitcast_for_ext_mem_op(result, mlir_type, loc=loc, ip=ip)
 
     # Return raw ir.Value for vectors, wrapped Numeric for scalars
     if is_vector:
