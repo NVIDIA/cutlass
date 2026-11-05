@@ -231,7 +231,7 @@ def composition(layoutA, layoutB):
 # Layout complement
 def complement(layout, max_idx=1):
   if is_int(layout):
-    return complement(Layout(layout))
+    return complement(Layout(layout), max_idx)
 
   result_shape  = []
   result_stride = []
@@ -313,7 +313,7 @@ def logical_product(layoutA, layoutB):
   if layoutB is None:
     return layoutA
   elif is_int(layoutB):
-    return logical_divide(layoutA, Layout(layoutB))
+    return logical_product(layoutA, Layout(layoutB))
   elif is_tuple(layoutB):
     assert len(layoutA) >= len(layoutB)
     return make_layout(chain((logical_product(layoutA[i], layoutB[i]) for i in range(           0,len(layoutB))),
