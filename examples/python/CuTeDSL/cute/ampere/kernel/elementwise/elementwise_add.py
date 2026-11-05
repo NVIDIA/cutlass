@@ -349,17 +349,17 @@ def run_elementwise_add(
         c = torch.zeros_like(a)
 
         if not is_a_dynamic_layout:
-            a_tensor = from_dlpack(a).mark_layout_dynamic()
+            a_tensor = from_dlpack(a)
         else:
             a_tensor = a
 
         if not is_b_dynamic_layout:
-            b_tensor = from_dlpack(b).mark_layout_dynamic()
+            b_tensor = from_dlpack(b)
         else:
             b_tensor = b
 
         if not is_result_dynamic_layout:
-            c_tensor = from_dlpack(c).mark_layout_dynamic()
+            c_tensor = from_dlpack(c)
         else:
             c_tensor = c
 
