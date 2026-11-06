@@ -41,6 +41,7 @@ from .typing import (
     Int4,
     Int8,
     Int32,
+    Int64,
     FloatNV8E5M3FNU,
     BFloat16,
     Float32,
@@ -68,6 +69,8 @@ from .core import (
     _ComposedLayout,
     _ComposedLayoutWithInnerFunc,
     append_ones,
+    assume,
+    get_divisibility,
     is_major,
     is_static,
     is_weakly_congruent,
@@ -1241,6 +1244,36 @@ def domain_offset(
         offset_tensor = domain_offset((3, 5), tensor)
         # offset_tensor now points to element at (3, 5)
     """
+    iterator = tensor.iterator
+    if isinstance(iterator, Pointer) and iterator.memspace in (
+        AddressSpace.gmem, AddressSpace.generic
+    ):
+        # Widen before the coordinate-stride product, not after it overflows.
+        # Preserve static leaves and existing alignment/divisibility facts.
+        def widen_coord(c):
+            # Leave invalid leaves for crd2idx's coordinate validation.
+            if isinstance(c, int) or not is_integer(c):
+                return c
+            if isinstance(c, Integer) and c.width >= 64:
+                return c
+            if isinstance(c, Integer) and not c.signed:
+                # Constrained IntValue is signed even inside a Uint wrapper.
+                # Use the declared coordinate type to preserve its high bit.
+                wide = Int64(
+                    arith.extui(
+                        Int64.mlir_type, c.ir_value(loc=loc, ip=ip), loc=loc, ip=ip
+                    )
+                )
+            else:
+                wide = Int64(c, loc=loc, ip=ip)
+            return assume(
+                wide,
+                divby=get_divisibility(c),
+                loc=loc,
+                ip=ip,
+            )
+
+        coord = transform_leaf(widen_coord, coord)
     offset = crd2idx(coord, tensor.layout, loc=loc, ip=ip)
     if isinstance(tensor.iterator, Pointer):
         return make_tensor(
