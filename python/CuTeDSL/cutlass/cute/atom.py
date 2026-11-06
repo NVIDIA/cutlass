@@ -21,6 +21,8 @@ from .typing import (
     Numeric,
     Int32,
     XTuple,
+    Pointer,
+    AddressSpace,
     is_int_tuple_type,
 )
 from .core import (
@@ -1453,6 +1455,32 @@ def _normalize_variadic_tensor_operand(
     raise TypeError(f"`{name}` must be a Tensor or a sequence of Tensors")
 
 
+def _accumulator_in_place(
+    d: Tensor,
+    c: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Tensor:
+    """Return the tensor to pass as the MMA ``C`` operand.
+
+    The MMA lowering currently ignores a register ``C`` that is a separate
+    tensor from ``D``: the result is written to ``C`` and ``D`` is left
+    unwritten (NVIDIA/cutlass#3689). Copy ``C`` into ``D`` and accumulate in
+    place instead, which computes the same ``D = A * B + C``.
+    """
+    if c is d or c.value == d.value:
+        return c
+    if not (isinstance(c.iterator, Pointer) and isinstance(d.iterator, Pointer)):
+        return c
+    if c.memspace != AddressSpace.rmem or d.memspace != AddressSpace.rmem:
+        return c
+    if c.element_type != d.element_type:
+        return c
+    d.store(c.load(loc=loc, ip=ip), loc=loc, ip=ip)
+    return d
+
+
 @dsl_user_op
 def copy_atom_call(
     atom: CopyAtom,
@@ -1632,6 +1660,7 @@ def mma_atom_call(
     a_list = _normalize_variadic_tensor_operand(a, "a")
     b_list = _normalize_variadic_tensor_operand(b, "b")
 
+    c = _accumulator_in_place(d, c, loc=loc, ip=ip)
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
     a_vals = [t.value for t in a_list]
     b_vals = [t.value for t in b_list]

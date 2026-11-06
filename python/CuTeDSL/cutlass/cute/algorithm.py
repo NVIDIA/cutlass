@@ -53,6 +53,7 @@ from .atom import (
     CopyAtom,
     make_atom,
     _normalize_variadic_tensor_operand,
+    _accumulator_in_place,
     copy_atom_call,
 )
 from .nvgpu.common import (
@@ -156,6 +157,7 @@ def gemm(
         if c_rank != 3:
             raise ValueError("`c` must have rank 3 when `a` has rank 3")
 
+    c = _accumulator_in_place(d, c, loc=loc, ip=ip)
     value = atom._unpack(loc=loc, ip=ip, **kwargs)
     a_vals = [t.value for t in a_list]
     b_vals = [t.value for t in b_list]
