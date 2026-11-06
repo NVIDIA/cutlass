@@ -253,6 +253,12 @@ struct GemmDescription : public OperationDescription {
   /// Transformation on B operand
   ComplexTransform transform_B;
 
+  /// Schedule metadata for CUTLASS 3.x kernels. Older/custom kernels default to unknown.
+  MainloopScheduleKind mainloop_schedule = MainloopScheduleKind::kUnknown;
+  MainloopLoadKind mainloop_load = MainloopLoadKind::kUnknown;
+  EpilogueScheduleKind epilogue_schedule = EpilogueScheduleKind::kUnknown;
+  AccumulationKind accumulation_kind = AccumulationKind::kUnknown;
+
   //
   // Methods
   //
@@ -379,6 +385,12 @@ struct BlockScaledGemmDescription : public OperationDescription {
   /// Describes the Output ScaleFactor VectorSize 
   int EpilogueSFVecSize;
 
+  /// Schedule metadata for CUTLASS 3.x kernels. Older/custom kernels default to unknown.
+  MainloopScheduleKind mainloop_schedule = MainloopScheduleKind::kUnknown;
+  MainloopLoadKind mainloop_load = MainloopLoadKind::kUnknown;
+  EpilogueScheduleKind epilogue_schedule = EpilogueScheduleKind::kUnknown;
+  AccumulationKind accumulation_kind = AccumulationKind::kUnknown;
+
   //
   // Methods
   //
@@ -468,6 +480,12 @@ struct BlockwiseGemmDescription : public OperationDescription {
   int SFMVecSize;
   int SFNVecSize;
   int SFKVecSize;
+
+  /// Schedule metadata for CUTLASS 3.x kernels. Older/custom kernels default to unknown.
+  MainloopScheduleKind mainloop_schedule = MainloopScheduleKind::kUnknown;
+  MainloopLoadKind mainloop_load = MainloopLoadKind::kUnknown;
+  EpilogueScheduleKind epilogue_schedule = EpilogueScheduleKind::kUnknown;
+  AccumulationKind accumulation_kind = AccumulationKind::kUnknown;
 
   //
   // Methods

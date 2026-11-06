@@ -173,6 +173,7 @@ add_custom_target(cutlass_test_unit)
 add_custom_target(test_unit)
 
 set(SUBDIRS
+  library
   core
   cute
   gemm
