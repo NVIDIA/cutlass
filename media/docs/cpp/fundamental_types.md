@@ -223,7 +223,7 @@ int const kN = 16;
 Array<int8_t, kN> destination;
 Array<int,    kN> source;
 
-NumericConverter<descltype(destination), decltype(source)> convert;
+NumericArrayConverter<int8_t, int, kN> convert;
 
 destination = convert(source);
 ```
@@ -342,17 +342,6 @@ Array<half_t, kN> d;
 multiply_add<Array<half_t, kN>> mad_op;
 
 d = mad_op(a, b, c);   // efficient multiply-add for Array of half-precision elements
-```
-
-## Numeric Conversion
-
-Operators are define to convert between numeric types in `numeric_conversion.h`. Conversion operators are defined in
-terms of individual numeric elements and on arrays which enable the possibility of efficient hardware
-support on current and future NVIDIA GPUs.
-
-**Example:** Converting between 32-b and 8-b integers.
-```c++
-
 ```
 
 ### Copyright
