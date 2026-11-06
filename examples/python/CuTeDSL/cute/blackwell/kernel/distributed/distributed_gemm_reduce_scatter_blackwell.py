@@ -53,8 +53,6 @@ from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cutlass_dsl import BaseDSL
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cute.runtime import from_dlpack
-from cutlass._mlir import ir
-from cutlass._mlir.dialects import vector
 
 """
 SM100 GEMM + ReduceScatter (LDMC) Fusion Kernel
@@ -306,8 +304,7 @@ def LDMC(
         for j in cutlass.range_constexpr(loop_n):
             comm_out_uc_ptr = tTR_gCommOutUC[None, i, j].iterator.llvm_ptr
             x, y, z, w = tmp_results[i * loop_n + j]
-            vec_type = ir.VectorType.get([4], cutlass.Int32.mlir_type)
-            vec = vector.from_elements(vec_type, [x, y, z, w])
+            vec = cutlass.Vector.from_elements((x, y, z, w), dtype=cutlass.Int32)
             cute.arch.store(comm_out_uc_ptr, vec)
 
 
