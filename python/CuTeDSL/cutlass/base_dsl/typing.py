@@ -1615,6 +1615,9 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             res = type(self)(abs(self.value))
             _pyir_mark_fold_srcs(res, (self,))
             return res
+        elif getattr(type(self), "signed", None) is False:
+            # math.absi reads its operand as signed; an unsigned value is its own abs
+            return type(self)(self.value, loc=loc, ip=ip)  # type: ignore[arg-type]
         else:
             return type(self)(abs(self.value), loc=loc, ip=ip)  # type: ignore[arg-type]
 
