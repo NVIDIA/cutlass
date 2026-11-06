@@ -582,6 +582,79 @@ struct TestbedGemvFp4SFDBase
     return true;
   }
 
+
+  // Exercise the K boundary with nonzero isolated contributions, then check
+  // that changing batch 1 cannot affect the logical D/SFD of batch 0.
+  bool test_k_boundaries(cutlass::MatrixCoord problem_size, int32_t batch_count) {
+    int m = problem_size.row(), k = problem_size.column();
+    int tile_k = Gemv::kThreadsPerRow * Gemv::GemvKernel::kElementsPerAccess;
+    int full_end = k / tile_k * tile_k;
+    if (batch_count < 2 || full_end == 0 || full_end == k) {
+      std::cerr << "Boundary tests require at least two batches, a full K tile and a scalar tail.\n";
+      return false;
+    }
+    if (!initialize(problem_size, batch_count)) return false;
+    cutlass::reference::host::TensorFill(tensor_B.host_view(), ElementB(1));
+    cutlass::reference::host::TensorFill(tensor_SFA.host_view(), ElementSFA(1));
+    cutlass::reference::host::TensorFill(tensor_SFB.host_view(), ElementSFB(1));
+    tensor_B.sync_device();
+    tensor_SFA.sync_device();
+    tensor_SFB.sync_device();
+
+    auto set_active_columns = [&](int begin, int end) {
+      for (int row = 0; row < batch_count * m; ++row) {
+        for (int col = 0; col < k; ++col) {
+          tensor_A.host_view().at({row, col}) = ElementA(col >= begin && col < end ? 1 : 0);
+        }
+      }
+      tensor_A.sync_device();
+    };
+    auto output_batch0 = [&]() {
+      auto shape = cute::make_shape(m, 1, k, batch_count);
+      auto sf = cute::make_tensor(tensor_SFD.host_data(),
+          Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(shape));
+      std::vector<float> result;
+      for (int row = 0; row < m; ++row) {
+        result.push_back(float(tensor_D.host_view().at({row, 0})));
+        result.push_back(float(sf(row, 0, 0)));
+      }
+      return result;
+    };
+    auto verify = [&]() {
+      if (!run_gemv(problem_size, batch_count, 1.0f, 0.0f, 1.0f, false, 1) ||
+          !run_reference(problem_size, batch_count, 1.0f, 0.0f, 1.0f) ||
+          !compare_reference()) return false;
+      auto output = output_batch0();
+      for (size_t i = 0; i < output.size(); i += 2) {
+        if (output[i] != 0 && output[i + 1] != 0) return true;
+      }
+      std::cerr << "Boundary test produced only zero outputs.\n";
+      return false;
+    };
+
+    set_active_columns(full_end - tile_k, full_end);
+    if (!verify()) return false;
+    set_active_columns(full_end, k);
+    if (!verify()) return false;
+    set_active_columns(0, k);
+    if (!verify()) return false;
+    auto before = output_batch0();
+    for (int col = 0; col < k; ++col) {
+      tensor_B.host_view().at({k + col, 0}) = ElementB(2);
+      for (int row = m; row < 2 * m; ++row) {
+        tensor_A.host_view().at({row, col}) = ElementA(2);
+      }
+    }
+    tensor_A.sync_device();
+    tensor_B.sync_device();
+    if (!verify()) return false;
+    if (before != output_batch0()) {
+      std::cerr << "Batch 0 changed when only batch 1 inputs were modified.\n";
+      return false;
+    }
+    return true;
+  }
+
   bool profile(cutlass::MatrixCoord problem_size,
            int32_t batch_count,
            ElementCompute alpha,
@@ -728,6 +801,7 @@ struct TestbedGemvFp4SFD : public TestbedGemvFp4SFDBase<
 
 struct Options {
   bool help = false;
+  bool test_k_boundaries = false;
 
   int m = 4096;
   int k = 2048;
@@ -750,6 +824,7 @@ struct Options {
       return;
     }
 
+    test_k_boundaries = cmd.check_cmd_line_flag("test-k-boundaries");
     cmd.get_cmd_line_argument("m", m);
     cmd.get_cmd_line_argument("k", k);
     cmd.get_cmd_line_argument("batch", batch);
@@ -766,6 +841,7 @@ struct Options {
     out << "91_fp4_gemv\n\n"
       << "  FP4 GEMV with block-scaled inputs and outputs.\n\n"
       << "Options:\n\n"
+      << "  --test-k-boundaries                                          Run deterministic K-boundary and batch-isolation checks (alpha=1, beta=0, ST=1)\n"
       << "  --help                                                       If specified, displays this usage statement\n\n"
       << "  --m=<int>                                                    Sets the M extent of the GEMM\n"
       << "  --k=<int>                                                    Sets the K extent of the GEMM\n"
@@ -839,6 +915,9 @@ run_fp4_gemv_device(Options const& options)
           GemvBlockScaled<ElementA, LayoutA, ElementB, ElementD, ElementAccumulatorMainloop, EpilogueOp, kElementsPerAccess>>;
 
   TestbedGemvFp4SFD<Gemv> testbed;
+  if (options.test_k_boundaries) {
+    return testbed.test_k_boundaries({options.m, options.k}, options.batch);
+  }
   
   bool pass = true;
 
@@ -877,7 +956,7 @@ main(int argc, char const** argv)
   }
 
 
-  if (options.profiling) {
+  if (options.profiling && !options.test_k_boundaries) {
     // Start profiling
     printf("\nProfiling...\n");
     passed = run_fp4_gemv_device(options);
