@@ -45,8 +45,8 @@ struct KernelHardwareInfo {
   // Data members
   //
 
-  // Hardware properties
-  int device_id = 0;
+  // Hardware properties. A device_id of -1 uses the calling thread's current device.
+  int device_id = -1;
   int sm_count  = 0;
 
   // Kernel properties
@@ -59,17 +59,20 @@ struct KernelHardwareInfo {
   //
 
 #if !defined(__CUDACC_RTC__)
+  // A device_id of -1 queries the calling thread's current device.
   static inline int
-  query_device_multiprocessor_count(int device_id = 0) {
-    cudaError_t result = cudaGetDevice(&device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaGetDevice() returned error "
-        << cudaGetErrorString(result));
-      return 0;
+  query_device_multiprocessor_count(int device_id = -1) {
+    if (device_id == -1) {
+      cudaError_t result = cudaGetDevice(&device_id);
+      if (result != cudaSuccess) {
+        CUTLASS_TRACE_HOST(
+          "  cudaGetDevice() returned error "
+          << cudaGetErrorString(result));
+        return 0;
+      }
     }
     int multiprocessor_count;
-    result = cudaDeviceGetAttribute(&multiprocessor_count,
+    cudaError_t result = cudaDeviceGetAttribute(&multiprocessor_count,
       cudaDevAttrMultiProcessorCount, device_id);
     if (result != cudaSuccess) {
       CUTLASS_TRACE_HOST(
@@ -127,11 +130,14 @@ struct KernelHardwareInfo {
   }
 
   // Create a KernelHardwareInfo by querying device properties.
+  // Automatic cluster occupancy queries require the current device and stream
+  // to match the requested device. To prepare hardware info for another device,
+  // supply its max_active_clusters.
   // When a green context stream is provided, max_active_clusters is queried
   // against that stream's green context partition instead of the full device.
   template <typename Kernel>
   static inline KernelHardwareInfo
-  make_kernel_hardware_info(int const device_id = 0, int sm_count = 0, int max_active_clusters = 0,
+  make_kernel_hardware_info(int const device_id = -1, int sm_count = 0, int max_active_clusters = 0,
                             cudaStream_t stream = nullptr) {
     if (sm_count == 0) {
       sm_count = query_device_multiprocessor_count(device_id);
