@@ -266,7 +266,7 @@ struct Sm1xxGemmSparseConfig {
                    int32_t(L)),
         make_stride(int64_t(K_AlignedAC),
                     make_stride(_1{}, ElementASparsity{}),
-                    (L == 1) ? int64_t(0) : int64_t(M_AlignedAC * K_AlignedAC))
+                    (L == 1) ? int64_t(0) : int64_t(M_AlignedAC) * int64_t(K_AlignedAC))
       );
     }
     else {
@@ -276,7 +276,7 @@ struct Sm1xxGemmSparseConfig {
                    int32_t(L)),
         make_stride(ElementASparsity{},
                     make_stride(_1{}, int64_t(M_AlignedAC) * ElementASparsity{}),
-                    (L == 1) ? int64_t(0) : int64_t(M_AlignedAC * K_AlignedAC))
+                    (L == 1) ? int64_t(0) : int64_t(M_AlignedAC) * int64_t(K_AlignedAC))
       );
     }
   }
@@ -302,8 +302,8 @@ struct Sm1xxGemmSparseConfig {
                  make_shape(shape<1>(TensorEAtom{}), int32_t(K_AlignedE / TensorEAtomK{})),
                  int32_t(L)),
       make_stride(make_stride(stride<0>(TensorEAtom{}), cute::Int<cute::cosize(TensorEAtom{})>{}),
-                  make_stride(stride<1>(TensorEAtom{}), int64_t(M_AlignedE * TensorEAtomK{})),
-                  (L == 1) ? int64_t(0) : int64_t(M_AlignedE * K_AlignedE))
+                  make_stride(stride<1>(TensorEAtom{}), int64_t(M_AlignedE) * int64_t(TensorEAtomK{})),
+                  (L == 1) ? int64_t(0) : int64_t(M_AlignedE) * int64_t(K_AlignedE))
     );
   }
 };

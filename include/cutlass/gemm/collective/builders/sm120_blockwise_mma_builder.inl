@@ -133,6 +133,7 @@ struct CollectiveBuilder<
                 "SM120 TmaWarpSpecialized blockwise scaling builder currently only supports F8F6F4 MMA.");
   static_assert(cute::is_static_v<TileShape_MNK>, "TileShape has to be static");
   static_assert(cute::is_static_v<ClusterShape_MNK>, "Cluster has to be static");
+  static_assert(cute::size(ClusterShape_MNK{}) == Int<1>{}, "no programmatic multicast on this arch");
 
   using GmemLayoutATag   = cute::remove_cvref_t<decltype(get<0>(GmemLayoutATagPair{}))>;
   using GmemLayoutSFATag = cute::remove_cvref_t<decltype(get<1>(GmemLayoutATagPair{}))>;
