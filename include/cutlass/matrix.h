@@ -147,13 +147,13 @@ struct Matrix<Element_, 1, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 1 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 1 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -706,13 +706,13 @@ struct Matrix<Element_, 1, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 1 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 1 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -1335,13 +1335,13 @@ struct Matrix<Element_, 1, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 1 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 1 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -2012,13 +2012,13 @@ struct Matrix<Element_, 2, 1> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -2655,13 +2655,13 @@ struct Matrix<Element_, 2, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -3395,7 +3395,7 @@ struct Matrix<Element_, 2, 3> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[3] = diag.data[1];
+    m.data[4] = diag.data[1];
 
     return m;
   }
@@ -3406,7 +3406,7 @@ struct Matrix<Element_, 2, 3> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[3] = diag.data[1];
+    m.data[4] = diag.data[1];
 
     return m;
   }
@@ -3417,7 +3417,7 @@ struct Matrix<Element_, 2, 3> {
     Matrix<Element, 2, 1> diag;
     
     diag.data[0] = data[0];
-    diag.data[1] = data[3];
+    diag.data[1] = data[4];
 
     return diag;
   }
@@ -3440,13 +3440,13 @@ struct Matrix<Element_, 2, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -4272,7 +4272,7 @@ struct Matrix<Element_, 2, 4> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[3] = diag.data[1];
+    m.data[5] = diag.data[1];
 
     return m;
   }
@@ -4283,7 +4283,7 @@ struct Matrix<Element_, 2, 4> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[3] = diag.data[1];
+    m.data[5] = diag.data[1];
 
     return m;
   }
@@ -4294,7 +4294,7 @@ struct Matrix<Element_, 2, 4> {
     Matrix<Element, 2, 1> diag;
     
     diag.data[0] = data[0];
-    diag.data[1] = data[3];
+    diag.data[1] = data[5];
 
     return diag;
   }
@@ -4319,13 +4319,13 @@ struct Matrix<Element_, 2, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 2 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -5247,13 +5247,13 @@ struct Matrix<Element_, 3, 1> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -5921,8 +5921,7 @@ struct Matrix<Element_, 3, 2> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[4] = diag.data[1];
-    m.data[8] = diag.data[2];
+    m.data[3] = diag.data[1];
 
     return m;
   }
@@ -5933,8 +5932,7 @@ struct Matrix<Element_, 3, 2> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[4] = diag.data[1];
-    m.data[8] = diag.data[2];
+    m.data[3] = diag.data[1];
 
     return m;
   }
@@ -5945,8 +5943,7 @@ struct Matrix<Element_, 3, 2> {
     Matrix<Element, 2, 1> diag;
     
     diag.data[0] = data[0];
-    diag.data[1] = data[4];
-    diag.data[2] = data[8];
+    diag.data[1] = data[3];
 
     return diag;
   }
@@ -5969,13 +5966,13 @@ struct Matrix<Element_, 3, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -6879,13 +6876,13 @@ struct Matrix<Element_, 3, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -8057,8 +8054,8 @@ struct Matrix<Element_, 3, 4> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[4] = diag.data[1];
-    m.data[8] = diag.data[2];
+    m.data[5] = diag.data[1];
+    m.data[10] = diag.data[2];
 
     return m;
   }
@@ -8069,8 +8066,8 @@ struct Matrix<Element_, 3, 4> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[4] = diag.data[1];
-    m.data[8] = diag.data[2];
+    m.data[5] = diag.data[1];
+    m.data[10] = diag.data[2];
 
     return m;
   }
@@ -8081,8 +8078,8 @@ struct Matrix<Element_, 3, 4> {
     Matrix<Element, 3, 1> diag;
     
     diag.data[0] = data[0];
-    diag.data[1] = data[4];
-    diag.data[2] = data[8];
+    diag.data[1] = data[5];
+    diag.data[2] = data[10];
 
     return diag;
   }
@@ -8111,13 +8108,13 @@ struct Matrix<Element_, 3, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 3 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -9327,13 +9324,13 @@ struct Matrix<Element_, 4, 1> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -10070,9 +10067,7 @@ struct Matrix<Element_, 4, 2> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[5] = diag.data[1];
-    m.data[10] = diag.data[2];
-    m.data[15] = diag.data[3];
+    m.data[3] = diag.data[1];
 
     return m;
   }
@@ -10083,9 +10078,7 @@ struct Matrix<Element_, 4, 2> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[5] = diag.data[1];
-    m.data[10] = diag.data[2];
-    m.data[15] = diag.data[3];
+    m.data[3] = diag.data[1];
 
     return m;
   }
@@ -10096,9 +10089,7 @@ struct Matrix<Element_, 4, 2> {
     Matrix<Element, 2, 1> diag;
     
     diag.data[0] = data[0];
-    diag.data[1] = data[5];
-    diag.data[2] = data[10];
-    diag.data[3] = data[15];
+    diag.data[1] = data[3];
 
     return diag;
   }
@@ -10123,13 +10114,13 @@ struct Matrix<Element_, 4, 2> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -11123,9 +11114,8 @@ struct Matrix<Element_, 4, 3> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[5] = diag.data[1];
-    m.data[10] = diag.data[2];
-    m.data[15] = diag.data[3];
+    m.data[4] = diag.data[1];
+    m.data[8] = diag.data[2];
 
     return m;
   }
@@ -11136,9 +11126,8 @@ struct Matrix<Element_, 4, 3> {
     Matrix m;
     
     m.data[0] = diag.data[0];
-    m.data[5] = diag.data[1];
-    m.data[10] = diag.data[2];
-    m.data[15] = diag.data[3];
+    m.data[4] = diag.data[1];
+    m.data[8] = diag.data[2];
 
     return m;
   }
@@ -11149,9 +11138,8 @@ struct Matrix<Element_, 4, 3> {
     Matrix<Element, 3, 1> diag;
     
     diag.data[0] = data[0];
-    diag.data[1] = data[5];
-    diag.data[2] = data[10];
-    diag.data[3] = data[15];
+    diag.data[1] = data[4];
+    diag.data[2] = data[8];
 
     return diag;
   }
@@ -11180,13 +11168,13 @@ struct Matrix<Element_, 4, 3> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
@@ -12543,13 +12531,13 @@ struct Matrix<Element_, 4, 4> {
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element at(int i, int j) const {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
   CUTLASS_HOST_DEVICE
   Element & at(int i, int j) {
-    return data[i * 4 + j];
+    return data[i * kColumns + j];
   }
 
   /// Accesses an element by coordinate
