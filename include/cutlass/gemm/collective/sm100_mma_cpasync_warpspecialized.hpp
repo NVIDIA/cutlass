@@ -564,6 +564,8 @@ struct CollectiveMma<
     CUTLASS_PRAGMA_NO_UNROLL
     while (k_tile_count > 0) {
       mainloop_pipeline.consumer_wait(mainloop_pipe_consumer_state);
+      // cp.async writes A and B through the generic proxy and tcgen05.mma reads them through the async proxy
+      cutlass::arch::fence_view_async_shared();
 
       int read_stage = mainloop_pipe_consumer_state.index();
 
