@@ -15,6 +15,7 @@ This module provides MLIR Arith Dialect helper functions
 
 import array
 import sys
+from math import copysign as _copysign
 from typing import Any, Callable, Optional, Union, TYPE_CHECKING
 
 from ..base_dsl.common import *
@@ -382,6 +383,10 @@ def const(
     if _WatchedM is not None and isinstance(value, _WatchedM):
         return value.ir_value()
 
+    # The cache sees 0.0 == -0.0 with equal hashes, so one zero would come
+    # back as the other; build -0.0 uncached.
+    if isinstance(value, float) and value == 0.0 and _copysign(1.0, value) < 0:
+        return _const_cached.__wrapped__(value, ty, signed=signed, loc=loc, ip=ip)
     return _const_cached(value, ty, signed=signed, loc=loc, ip=ip)
 
 
