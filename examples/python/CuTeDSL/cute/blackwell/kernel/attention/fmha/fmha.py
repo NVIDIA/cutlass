@@ -3799,6 +3799,20 @@ def run(
         map(int, cutlass.__version__.split(".")[:2])
     )
     compile_options = "--opt-level=2" if cutlass_major_minor >= (4, 6) else ""
+    if (
+        fmha_class is BlackwellFusedMultiHeadAttentionForward
+        and qk_dtype == pv_dtype == out_dtype == cutlass.Float16
+        and d == dv == 64
+        and is_persistent
+        and enable_ex2_emulation
+        and enable_skip_correction
+        and not is_causal
+        and window_size_left is None
+        and window_size_right is None
+        and not isinstance(s_q, tuple)
+        and not isinstance(s_k, tuple)
+    ):
+        compile_options += " cute{use-auto-fdd-pass=false}"
     start_time = time.time()
     # compile fmha kernel
     compiled_fmha = cute.compile(
