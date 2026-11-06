@@ -73,6 +73,14 @@ void test_right_inverse(const Layout& layout, const Layout& exp)
         }
     }
 }
+
+template <class Layout>
+void test_dynamic_shape_right_inverse(const Layout& layout, const Layout& exp)
+{
+    // Do not use test_right_inverse here: its finite-domain checks require a
+    // static result size and are not meaningful for a runtime extent.
+    EXPECT_EQ(cg::right_inverse(layout), exp) << " for layout " << layout;
+}
 } // namespace
 
 ////////////////////////////////////////////////////////////////////////
@@ -194,6 +202,34 @@ TEST(RightInverseTest, Basic)
         auto test     = cg::layout(cg::shape(1), cg::stride(cg::dynamic_t{}));
         auto expected = cg::layout(cg::shape(1), cg::stride(0));
         test_right_inverse(test, expected);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////
+// RightInverseTest.DynamicShape
+TEST(RightInverseTest, DynamicShape)
+{
+    using dyn_t = cg::dynamic_t;
+
+    { // (16,N):(1,16) => (16,N):(1,16)
+        auto test     = cg::layout(cg::shape(16, dyn_t{}), cg::stride(1, 16));
+        auto expected = cg::layout(cg::shape(16, dyn_t{}), cg::stride(1, 16));
+        test_dynamic_shape_right_inverse(test, expected);
+    }
+    { // (N,4):(1,16) => N:1; unknown N != 16 must truncate.
+        auto test     = cg::layout(cg::shape(dyn_t{}, 4), cg::stride(1, 16));
+        auto expected = cg::layout(cg::shape(dyn_t{}), cg::stride(1));
+        test_dynamic_shape_right_inverse(test, expected);
+    }
+    { // (4,N):(1,16) => 4:1
+        auto test     = cg::layout(cg::shape(4, dyn_t{}), cg::stride(1, 16));
+        auto expected = cg::layout(cg::shape(4), cg::stride(1));
+        test_dynamic_shape_right_inverse(test, expected);
+    }
+    { // (N,4):(0,1) => 4:N
+        auto test     = cg::layout(cg::shape(dyn_t{}, 4), cg::stride(0, 1));
+        auto expected = cg::layout(cg::shape(4), cg::stride(dyn_t{}));
+        test_dynamic_shape_right_inverse(test, expected);
     }
 }
 

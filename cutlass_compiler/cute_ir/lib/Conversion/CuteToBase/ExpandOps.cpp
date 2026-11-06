@@ -1100,21 +1100,16 @@ struct DiceOpConversion final : public OpConversionPattern<DiceOp> {
   }
 };
 
-// right_inverse and left_inverse reject dynamic input via
-// inferReturnTypes (run by the InferTypeOpInterface trait
-// verifier), so the result is always static and the static-fold
-// shortcut at the top always fires. The dynamic path is therefore
-// unreachable in practice; kept as a defensive
-// notifyMatchFailure. The two ops have identical lowering logic —
-// InverseOpConversion<OpTy> captures the shared body, and the two
-// concrete types alias the template below.
+// right_inverse folds static results directly. Dynamic right_inverse results
+// are rebuilt from runtime-bound cutegen values. left_inverse remains
+// static-only.
 
 template <typename OpTy>
 struct InverseOpConversion final : public OpConversionPattern<OpTy> {
   using OpConversionPattern<OpTy>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(OpTy op, typename OpTy::Adaptor /*adaptor*/,
+  matchAndRewrite(OpTy op, typename OpTy::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     auto resTy = llvm::cast<LayoutType>(op.getResult().getType());
@@ -1122,11 +1117,17 @@ struct InverseOpConversion final : public OpConversionPattern<OpTy> {
       rewriter.replaceOp(op, StaticOp::create(b, resTy));
       return success();
     }
-    return rewriter.notifyMatchFailure(
-        op, llvm::formatv("{0} requires fully-static input — "
-                          "inferReturnTypes should have rejected a "
-                          "dynamic operand before this pattern fires",
-                          OpTy::getOperationName()));
+    if constexpr (std::is_same_v<OpTy, RightInverseOp>) {
+      cg::dynamic_listener listener(b);
+      auto src = buildCutegenFromCuteValue<LayoutType>(
+          b, adaptor.getInput(), &listener);
+      auto res = cg::right_inverse(src);
+      rewriter.replaceOp(op, buildLayout(b, res));
+      return success();
+    } else {
+      return rewriter.notifyMatchFailure(
+          op, "left_inverse requires a fully-static input");
+    }
   }
 };
 

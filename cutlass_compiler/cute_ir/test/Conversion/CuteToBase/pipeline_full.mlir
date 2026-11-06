@@ -212,6 +212,73 @@ func.func @layout_algebra_composition(%a: !cute.layout<"(4,8):(1,4)">,
 
 // -----
 
+// LayoutAlgebra — dynamic right_inverse keeps the runtime extent through the
+// complete expansion and base-lowering pipeline.
+// CHECK-LABEL: func.func @layout_algebra_right_inverse_dynamic_shape
+// CHECK-SAME:    (%[[SRC:.+]]: !llvm.struct<(i32, struct<()>)>) -> i32
+// CHECK-NOT:     cute.
+// CHECK:         %[[N:.+]] = llvm.extractvalue %[[SRC]][0]
+// CHECK:         %[[WITH_N:.+]] = llvm.insertvalue %[[N]], %{{.+}}[0]
+// CHECK:         %[[OUT:.+]] = llvm.insertvalue %{{.+}}, %[[WITH_N]][1]
+// CHECK:         %[[RESULT_N:.+]] = llvm.extractvalue %[[OUT]][0]
+// CHECK:         return %[[RESULT_N]] : i32
+func.func @layout_algebra_right_inverse_dynamic_shape(
+    %src: !cute.layout<"(16,?):(1,16)">) -> i32 {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)">
+  %n = cute.get_scalars<{only_dynamic}> (%r)
+         : !cute.layout<"(16,?):(1,16)">
+  return %n : i32
+}
+
+// -----
+
+// LayoutAlgebra — a dynamic middle extent contributes to the runtime prefix
+// product used as the second retained inverse mode's stride.
+// CHECK-LABEL: func.func @layout_algebra_right_inverse_dynamic_stride_product
+// CHECK-SAME:    (%[[SRC:.+]]: !llvm.struct<(i32, struct<()>)>) -> i32
+// CHECK-NOT:     cute.
+// CHECK:         %[[N:.+]] = llvm.extractvalue %[[SRC]][0]
+// CHECK:         %[[FOUR:.+]] = arith.constant 4 : i32
+// CHECK:         %[[STRIDE:.+]] = arith.muli %[[N]], %[[FOUR]]
+// CHECK:         %[[WITH_STRIDE:.+]] = llvm.insertvalue %[[STRIDE]], %{{.+}}[1]
+// CHECK:         %[[RESULT_STRIDE:.+]] = llvm.extractvalue %[[WITH_STRIDE]][1]
+// CHECK:         return %[[RESULT_STRIDE]] : i32
+func.func @layout_algebra_right_inverse_dynamic_stride_product(
+    %src: !cute.layout<"(4,?,2):(1,16,4)">) -> i32 {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(4,?,2):(1,16,4)">) -> !cute.layout<"(4,2):(1,?)">
+  %stride = cute.get_scalars<{only_dynamic}> (%r)
+              : !cute.layout<"(4,2):(1,?)">
+  return %stride : i32
+}
+
+// -----
+
+// LayoutAlgebra — after a static zero-stride mode is skipped, the second
+// runtime extent becomes the inverse shape while the first becomes its stride.
+// CHECK-LABEL: func.func @layout_algebra_right_inverse_zero_stride_order
+// CHECK-SAME:    (%[[SRC:.+]]: !llvm.struct<(struct<(i32, i32)>, struct<()>)>)
+// CHECK-SAME:    -> (i32, i32)
+// CHECK-NOT:     cute.
+// CHECK:         %[[EXTENT0:.+]] = llvm.extractvalue %[[SRC]][0, 0]
+// CHECK:         %[[EXTENT1:.+]] = llvm.extractvalue %[[SRC]][0, 1]
+// CHECK:         %[[WITH_SHAPE:.+]] = llvm.insertvalue %[[EXTENT1]], %{{.+}}[0]
+// CHECK:         %[[WITH_STRIDE:.+]] = llvm.insertvalue %[[EXTENT0]], %[[WITH_SHAPE]][1]
+// CHECK:         %[[RESULT_SHAPE:.+]] = llvm.extractvalue %[[WITH_STRIDE]][0]
+// CHECK:         %[[RESULT_STRIDE:.+]] = llvm.extractvalue %[[WITH_STRIDE]][1]
+// CHECK:         return %[[RESULT_SHAPE]], %[[RESULT_STRIDE]] : i32, i32
+func.func @layout_algebra_right_inverse_zero_stride_order(
+    %src: !cute.layout<"(?,?):(0,1)">) -> (i32, i32) {
+  %r = cute.right_inverse(%src)
+         : (!cute.layout<"(?,?):(0,1)">) -> !cute.layout<"?:?">
+  %shape, %stride = cute.get_scalars<{only_dynamic}> (%r)
+                       : !cute.layout<"?:?">
+  return %shape, %stride : i32, i32
+}
+
+// -----
+
 // Arithmetic — tuple_sub on dynamic operands, then print.
 // CHECK-LABEL: func.func @arith_tuple_sub_print
 // CHECK-NOT:     cute.
