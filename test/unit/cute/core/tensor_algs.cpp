@@ -31,6 +31,8 @@
 
 #include "cutlass_unit_test.h"
 
+#include <cute/tensor.hpp>
+#include <cute/algorithm/copy.hpp>
 #include <cute/algorithm/tensor_algorithms.hpp>
 #include <cute/algorithm/tensor_reduce.hpp>
 #include <cute/numeric/complex.hpp>
@@ -197,4 +199,67 @@ TEST(CuTe_algorithm, TensorLogicalReduce) {
     }
   }
 
+}
+
+// A Copy_Atom moves one instruction's worth of elements per rest-slice. Here a 128b universal copy
+// moves 4 floats, so src and dst must both be (4, Rest...) tensors.
+TEST(CuTe_algorithm, CopyAtom) {
+  using namespace cute;
+
+  alignas(16) float src_data[12];
+  alignas(16) float dst_data[12];
+  for (int i = 0; i < 12; ++i) {
+    src_data[i] = float(i);
+    dst_data[i] = -1.0f;
+  }
+
+  Tensor src = make_tensor(&src_data[0], Shape<_4,_3>{});
+  Tensor dst = make_tensor(&dst_data[0], Shape<_4,_3>{});
+
+  copy(Copy_Atom<UniversalCopy<uint128_t>, float>{}, src, dst);
+
+  for (int i = 0; i < 12; ++i) {
+    EXPECT_EQ(dst_data[i], float(i));
+  }
+}
+
+TEST(CuTe_algorithm, CopyIfAtom) {
+  using namespace cute;
+
+  alignas(16) float src_data[12];
+  alignas(16) float dst_data[12];
+  bool prd_data[12];
+  for (int i = 0; i < 12; ++i) {
+    src_data[i] = float(i);
+    dst_data[i] = -1.0f;
+    prd_data[i] = (i / 4) != 1;     // Skip the second rest-slice
+  }
+
+  Tensor src = make_tensor(&src_data[0], Shape<_4,_3>{});
+  Tensor dst = make_tensor(&dst_data[0], Shape<_4,_3>{});
+  Tensor prd = make_tensor(&prd_data[0], Shape<_4,_3>{});
+
+  copy_if(Copy_Atom<UniversalCopy<uint128_t>, float>{}, prd, src, dst);
+
+  for (int i = 0; i < 12; ++i) {
+    EXPECT_EQ(dst_data[i], (i / 4) != 1 ? float(i) : -1.0f);
+  }
+}
+
+TEST(CuTe_algorithm, CopyIfElementwise) {
+  using namespace cute;
+
+  int src_data[6] = {0, 1, 2, 3, 4, 5};
+  int dst_data[6] = {-1, -1, -1, -1, -1, -1};
+  bool prd_data[6] = {true, false, true, false, true, false};
+
+  Tensor src = make_tensor(&src_data[0], Shape<_2,_3>{});
+  Tensor dst = make_tensor(&dst_data[0], Shape<_2,_3>{});
+  Tensor prd = make_tensor(&prd_data[0], Shape<_2,_3>{});
+
+  copy_if(prd, src, dst);
+
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_EQ(dst_data[i], prd_data[i] ? i : -1);
+  }
 }

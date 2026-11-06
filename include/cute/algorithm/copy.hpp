@@ -53,6 +53,10 @@ copy_if(PrdTensor                    const& pred,
   using SrcType = typename SrcEngine::value_type;
   using DstType = typename DstEngine::value_type;
 
+  if constexpr (is_static<decltype(size(src))>::value && is_static<decltype(size(dst))>::value) {
+    CUTE_STATIC_ASSERT_V(size(src) == size(dst), "copy_if: src and dst must have the same size.");
+  }
+
   CUTE_UNROLL
   for (int i = 0; i < size(dst); ++i) {
     if (pred(i)) {

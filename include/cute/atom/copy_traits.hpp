@@ -130,6 +130,15 @@ copy_unpack(AnyCPYTraits            const&,
   CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumDst>{},
     "Copy_Traits: dst failed to vectorize into registers. Layout is incompatible with this CopyOp.");
 
+  // recast<> rounds a partial register up to a whole one, so also require the tensors to hold
+  // exactly as many bits as the registers. Otherwise the instruction accesses memory past the tensor.
+  CUTE_STATIC_ASSERT_V(size(src) * Int<sizeof_bits_v<typename SEngine::value_type>>{} ==
+                       Int<RegNumSrc * sizeof_bits_v<RegTypeSrc>>{},
+    "Copy_Traits: src tensor size does not match this CopyOp. The copy would access memory outside the src tensor.");
+  CUTE_STATIC_ASSERT_V(size(dst) * Int<sizeof_bits_v<typename DEngine::value_type>>{} ==
+                       Int<RegNumDst * sizeof_bits_v<RegTypeDst>>{},
+    "Copy_Traits: dst tensor size does not match this CopyOp. The copy would access memory outside the dst tensor.");
+
   detail::explode(detail::CallCOPY<CopyOp>{},
                   rS, make_int_sequence<RegNumSrc>{},
                   rD, make_int_sequence<RegNumDst>{});
