@@ -120,6 +120,7 @@ from . import tensor_utils as tensor_utils
 from . import utils as utils
 from . import pipeline as pipeline
 from . import testing as testing
+from . import hooks as hooks
 # Package-private symbol used by exported aliases below.
 from . import cutlass_dsl as _dsl
 
