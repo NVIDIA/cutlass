@@ -275,8 +275,11 @@ def int_to_int(
     if dst_width == src_width:
         return a
     elif src_signed != False and not dst_signed:  # noqa: E712
-        # Signed -> Unsigned
+        # Signed -> Unsigned: widen with sign extension, as a C cast does,
+        # (uint32_t)(int8_t)-1 == 0xFFFFFFFF
         if dst_width > src_width:
+            if src_width > 1:
+                return arith.extsi(dst_mlir_type, a, loc=loc, ip=ip)
             return arith.extui(dst_mlir_type, a, loc=loc, ip=ip)
         else:
             return arith.trunci(dst_mlir_type, a, loc=loc, ip=ip)
