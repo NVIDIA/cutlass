@@ -84,7 +84,10 @@ token-based range, and a stack-based range.
        cute.experimental.iket.range_pop()
 
 A complete CuTe DSL GEMM example with IKET instrumentation is available at
-``examples/python/CuTeDSL/dsl_tutorials/fp16_gemm_4_iket.py``.
+``examples/python/CuTeDSL/dsl_tutorials/fp16_gemm_4_iket.py``. That example builds a
+Blackwell (``tcgen05``) GEMM, so it requires a Blackwell GPU. ``run-iket`` and the
+IKET APIs also work on Hopper (SM90): instrument an SM90-compatible kernel with the
+same marker/range calls and profile it the same way.
 
 **Step 2: Run the application under** ``run-iket``. The profiler automatically
 requests IKET lowering for kernels that are JIT-compiled during the profiled
@@ -129,8 +132,8 @@ Alternatively, enable IKET for one explicit compilation:
 
    compiled = cute.compile(host_function, *args, options="iket")
 
-A runnable example of both activation paths is available at
-``examples/python/CuTeDSL/dsl_tutorials/iket_compile_options.py``.
+The environment variable applies to a whole process; the ``options`` argument applies
+to one explicit compilation.
 
 API Reference
 -------------
