@@ -345,7 +345,10 @@ def run_layernorm(
             ref = torch.layer_norm(x, (N,), weight, bias, eps)
         else:
             ref = torch.rms_norm(x, (N,), weight, eps)
-        torch.testing.assert_close(y, ref, atol=1e-3, rtol=1e-3)
+        # bf16 keeps 8 mantissa bits, so a one-ulp rounding difference from
+        # the PyTorch reference is already about 4e-3 relative.
+        tol = 1.6e-2 if dtype == cutlass.BFloat16 else 1e-3
+        torch.testing.assert_close(y, ref, atol=tol, rtol=tol)
         print("Results verified successfully!")
 
     if not benchmark:
@@ -415,7 +418,7 @@ if __name__ == "__main__":
         args.N,
         args.threads,
         args.norm_type,
-        dtype=cutlass.Float16,
+        dtype=DTYPE_MAP[args.dtype],
         skip_ref_check=args.skip_ref_check,
         benchmark=args.benchmark,
         warmup_iterations=args.warmup_iterations,
