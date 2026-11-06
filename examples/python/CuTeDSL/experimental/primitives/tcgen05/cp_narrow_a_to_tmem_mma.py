@@ -123,7 +123,7 @@ def _check_sm100() -> bool:
     if not torch.cuda.is_available():
         return False
     cap = torch.cuda.get_device_capability()
-    return cap == (10, 0)
+    return cap in ((10, 0), (10, 3))
 
 
 def _normalize_a_dtype(a_dtype: str) -> AType:
