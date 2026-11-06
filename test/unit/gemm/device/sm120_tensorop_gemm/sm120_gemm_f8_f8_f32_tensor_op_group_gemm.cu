@@ -106,6 +106,58 @@ TEST(SM120_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_f32_group_pingpong, 128x128x128
   EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5));
 }
 
+// Groups with K = 0: no mainloop loads are issued and D = beta * C
+TEST(SM120_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_f32_group_pingpong, 128x128x128_1x1x1_k0) {
+  using ElementA           = cutlass::float_e4m3_t;
+  using ElementB           = cutlass::float_e4m3_t;
+  using ElementC           = float;
+  using ElementD           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+  using LayoutA            = cutlass::layout::RowMajor;
+  using LayoutB            = cutlass::layout::ColumnMajor;
+  using LayoutC            = cutlass::layout::RowMajor;
+
+  constexpr int Alignment  = 128 / cutlass::sizeof_bits<ElementA>::value;
+  constexpr int AlignmentC = 128 / cutlass::sizeof_bits<ElementC>::value;
+
+  using TileShape_MNK    = Shape<_128, _128, _128>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, LayoutC *, AlignmentC,
+      ElementD, LayoutC *, AlignmentC,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm120, cutlass::arch::OpClassTensorOp,
+      ElementA, LayoutA *, Alignment,
+      ElementB, LayoutB *, Alignment,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+          static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongSm120<2>
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::GroupProblemShape<Shape<int, int, int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestSmall<Gemm>(1.0, 0.5,
+      test::gemm::device::CheckEquality::RELATIVE,
+      test::gemm::device::ScalarLoc::ON_DEVICE,
+      test::gemm::device::VectorScale::ENABLED,
+      {0}));
+}
+
 // Narrower N tile: exercises non-square TileShape_N path in the builder
 TEST(SM120_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_f32_group_pingpong, 128x64x128_1x1x1) {
   using ElementA           = cutlass::float_e4m3_t;
