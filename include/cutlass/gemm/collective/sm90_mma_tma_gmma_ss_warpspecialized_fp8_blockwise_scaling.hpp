@@ -940,6 +940,10 @@ struct CollectiveMma<
           }
         }
         if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile  > 1) {
+          // M waves alias B's registers; restore B before combining the next A scale.
+          if (m_split != 0) {
+            copy(tCsSFB(_,_,_,make_coord(_0{}, read_stage)), tCrSFB);
+          }
           ElementBlockScale scale_a = tCrSFA_local(_0{});
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(filter_zeros(tCrSFB_local)); i++) {
@@ -1030,6 +1034,10 @@ struct CollectiveMma<
           }
         }
         if constexpr (ScaleMsPerWave == 1 && ScaleNsPerTile  > 1) {
+          // M waves alias B's registers; restore B before combining the next A scale.
+          if (m_split != 0) {
+            copy(tCsSFB(_,_,_,make_coord(_0{}, read_stage)), tCrSFB);
+          }
           ElementBlockScale scale_a = tCrSFA_local(_0{});
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(filter_zeros(tCrSFB_local)); i++) {
