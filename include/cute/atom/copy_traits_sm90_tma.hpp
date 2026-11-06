@@ -994,12 +994,16 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
     smem_box_shape[i] *= size<i>(tma_gbasis);
   });
   // Finally, truncate the tma box by the num_multicast
-  for (uint32_t i = tma_dim-1, multicast = num_multicast; multicast > 1; --i) {
+  // Stop at mode 0. num_multicast can exceed the product of the box modes, and
+  // a condition on multicast alone lets the index run below 0.
+  uint32_t multicast = num_multicast;
+  for (int i = tma_dim-1; i >= 0 && multicast > 1; --i) {
     assert(smem_box_shape[i] % multicast == 0 || multicast % smem_box_shape[i] == 0);
     uint32_t new_mult = ceil_div(multicast, smem_box_shape[i]);
     smem_box_shape[i] = ceil_div(smem_box_shape[i], multicast);
     multicast = new_mult;
   }
+  assert(multicast <= 1 && "TMA box is too small for the requested multicast size");
 
   assert(smem_box_shape[0] >= (uint32_t(1)));                // Size must be min 1
   assert(smem_box_shape[0] <= (uint32_t(1) << 8));           // Size must be max 2^8 = 256

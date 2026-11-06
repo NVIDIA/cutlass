@@ -363,10 +363,13 @@ tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 
 {
 #if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
   uint32_t smem_int_desc = cast_smem_ptr_to_uint(&smem_desc);
-  uint64_t const smem_int64_desc = 0;
+  // cvt.u64.u32 writes its first operand, so that operand needs an output
+  // constraint. As an input the compiler still models the value as 0.
+  uint64_t smem_int64_desc = 0;
   asm volatile (
     "cvt.u64.u32 %0, %1;"
-    :: "l"(smem_int64_desc), "r"(smem_int_desc));
+    : "=l"(smem_int64_desc)
+    : "r"(smem_int_desc));
   asm volatile (
     "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 0, %1;"
     :: "l"(smem_int64_desc), "r"(prob_shape[0]));
