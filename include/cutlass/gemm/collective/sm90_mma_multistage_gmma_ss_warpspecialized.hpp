@@ -409,6 +409,8 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
+      // cp.async writes are generic-proxy; make them visible to wgmma's async-proxy reads
+      cutlass::arch::fence_view_async_shared();
 
       int read_stage = smem_pipe_read.index();
 
@@ -434,6 +436,8 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
+      // cp.async writes are generic-proxy; make them visible to wgmma's async-proxy reads
+      cutlass::arch::fence_view_async_shared();
 
       int read_stage = smem_pipe_read.index();
 
@@ -458,6 +462,8 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
+      // cp.async writes are generic-proxy; make them visible to wgmma's async-proxy reads
+      cutlass::arch::fence_view_async_shared();
 
       int read_stage = smem_pipe_read.index();
 
