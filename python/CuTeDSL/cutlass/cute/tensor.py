@@ -2343,6 +2343,9 @@ class TensorSSA(Vector):
         :return: The element-wise absolute value of the tensor
         :rtype: TensorSSA
         """
+        if getattr(self.dtype, "signed", None) is False:
+            # math.absi reads its operand as signed; unsigned values are their own abs
+            return self
         res_vect = abs(self.maybe_downcast())
         return TensorSSA(res_vect, self._shape, self.dtype)
 
