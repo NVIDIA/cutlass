@@ -1049,6 +1049,8 @@ struct Sm100FmhaGenMainloopWarpspecialized {
         correction_rescale(scale, uint32_t(TmemAllocation::O0));
       }
 
+      // the stats loads (tcgen05.ld) must complete before their TMEM columns are released
+      cutlass::arch::fence_view_async_tmem_load();
       pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
       ++pipeline_s1_c_consumer_state;
 
@@ -1070,6 +1072,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
         correction_rescale(scale, uint32_t(TmemAllocation::O1));
       }
 
+      cutlass::arch::fence_view_async_tmem_load();
       pipeline_s0_c.consumer_release(pipeline_s0_c_consumer_state);
       ++pipeline_s0_c_consumer_state;
 
@@ -1079,6 +1082,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
       ++pipeline_o_consumer_state;
     }
 
+    cutlass::arch::fence_view_async_tmem_load();
     pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
     ++pipeline_s1_c_consumer_state;
 
@@ -1094,6 +1098,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     Tensor tTMEM_LOADVrS0 = make_tensor<ElementQK>(shape(tTMEM_LOADVcS));
     copy(tiled_tmem_loadv, tTMEM_LOADVtS0, tTMEM_LOADVrS0);
 
+    cutlass::arch::fence_view_async_tmem_load();
     pipeline_s0_c.consumer_release(pipeline_s0_c_consumer_state);
     ++pipeline_s0_c_consumer_state;
 
@@ -1103,6 +1108,7 @@ struct Sm100FmhaGenMainloopWarpspecialized {
     Tensor tTMEM_LOADVrS1 = make_tensor<ElementQK>(shape(tTMEM_LOADVcS));
     copy(tiled_tmem_loadv, tTMEM_LOADVtS1, tTMEM_LOADVrS1);
 
+    cutlass::arch::fence_view_async_tmem_load();
     pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
     ++pipeline_s1_c_consumer_state;
 

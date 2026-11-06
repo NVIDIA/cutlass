@@ -154,7 +154,6 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
   static const int NumRegsSoftmax = KernelSchedule::NumRegsSoftmax;
   static const int NumRegsCorrection = KernelSchedule::NumRegsCorrection;
   static const int NumRegsOther = KernelSchedule::NumRegsOther;
-  static const int NumRegsEmpty = 24;
 
   static const int NumWarps = KernelSchedule::NumWarps;
 
@@ -434,6 +433,12 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
     CollectiveMainloop mainloop;
     CollectiveEpilogue epilogue{params.epilogue};
 
+    // All warps of a warpgroup must execute the same setmaxnreg, so warpgroup 3
+    // (MMA, Load, Epilogue, Empty) sets its register count once, before the role dispatch.
+    if (warp_idx / 4 == 3) {
+      warpgroup_reg_set<NumRegsOther>();
+    }
+
     if (role == WarpRole::Softmax0 || role == WarpRole::Softmax1) {
       warpgroup_reg_set<NumRegsSoftmax>();
 
@@ -521,8 +526,6 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
 
     }
     else if (role == WarpRole::MMA) {
-      warpgroup_reg_set<NumRegsOther>();
-
       bool allocated = false;
 
       CUTLASS_PRAGMA_NO_UNROLL
@@ -560,8 +563,6 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
       }
     }
     else if (role == WarpRole::Load) {
-      warpgroup_reg_set<NumRegsOther>();
-
       if constexpr (IsMla && CollectiveMainloop::IsOrderLoadEpilogue) {
         cutlass::arch::NamedBarrier::arrive((NumWarpsLoad + NumWarpsEpilogue) * NumThreadsPerWarp, 
                                       cutlass::arch::ReservedNamedBarriers::EpilogueBarrier);
@@ -593,8 +594,6 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
       }
     }
     else if (role == WarpRole::Epilogue) {
-      warpgroup_reg_set<NumRegsOther>();
-
       bool has_valid = false;
 
       CUTLASS_PRAGMA_NO_UNROLL
@@ -629,8 +628,6 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
 
     }
     else if (role == WarpRole::Empty) {
-      warpgroup_reg_set<NumRegsEmpty>();
-
       /* no-op, donate regs and exit */
     }
 #endif
