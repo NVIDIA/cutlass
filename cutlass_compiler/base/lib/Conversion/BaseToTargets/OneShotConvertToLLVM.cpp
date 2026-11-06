@@ -47,6 +47,7 @@
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/GPUCommon/GPUCommonPass.h"
 #include "mlir/Conversion/GPUToNVVM/GPUToNVVMPass.h"
+#include "mlir/Conversion/MathToFuncs/MathToFuncs.h"
 #include "mlir/Conversion/LLVMCommon/LoweringOptions.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
@@ -103,6 +104,52 @@ static LogicalResult convertHostCode(ModuleOp module,
   return applyPartialConversion(module, target, std::move(patterns));
 }
 
+static LogicalResult localizeIpowiHelpers(ModuleOp module) {
+  SmallVector<func::FuncOp> helpers;
+  for (func::FuncOp func : module.getOps<func::FuncOp>())
+    if (func.getName().starts_with("__mlir_math_ipowi"))
+      helpers.push_back(func);
+
+  SmallVector<gpu::GPUModuleOp> gpuModules;
+  module.walk([&](gpu::GPUModuleOp gpuModule) {
+    gpuModules.push_back(gpuModule);
+  });
+
+  for (gpu::GPUModuleOp gpuModule : gpuModules) {
+    DenseMap<func::FuncOp, func::FuncOp> localized;
+    SmallVector<func::CallOp> calls;
+    gpuModule.walk([&](func::CallOp call) {
+      if (call.getCallee().starts_with("__mlir_math_ipowi"))
+        calls.push_back(call);
+    });
+
+    for (func::CallOp call : calls) {
+      func::FuncOp helper;
+      for (func::FuncOp candidate : helpers) {
+        if (candidate.getName() == call.getCallee()) {
+          helper = candidate;
+          break;
+        }
+      }
+      if (!helper)
+        return failure();
+
+      func::FuncOp &clone = localized[helper];
+      if (!clone) {
+        clone = helper.clone();
+        clone.setName((gpuModule.getName() + "_" + helper.getName()).str());
+        gpuModule.getBody()->push_back(clone.getOperation());
+      }
+      call.setCallee(clone.getName());
+    }
+  }
+
+  for (func::FuncOp helper : helpers)
+    if (helper.use_empty())
+      helper.erase();
+  return success();
+}
+
 /// GPU module partial conversion to LLVM/NVVM. The gpu→nvvm patterns
 /// take precedence for overlapping ops over the generic per-dialect
 /// interface population.
@@ -141,6 +188,20 @@ struct OneShotConvertToLLVMPass
           OneShotConvertToLLVMPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
+
+    // Lower integer power before GPU LLVM/NVVM conversion because the generic
+    // math-to-LLVM path does not lower integer power on device kernels.
+    {
+      PassManager mathPm(module.getContext(), ModuleOp::getOperationName());
+      // MathToFuncs temporarily creates module-scope helpers for calls inside
+      // gpu.module. Localize those helpers before normal verification resumes.
+      mathPm.enableVerifier(false);
+      mathPm.addPass(createConvertMathToFuncs());
+      if (failed(mathPm.run(module)) || failed(localizeIpowiHelpers(module))) {
+        signalPassFailure();
+        return;
+      }
+    }
 
     // Upstream MLIR doesn't expose a ConvertToLLVMInterface for SCF
     // (scf lowers via scf→cf→llvm, not directly), so run convert-scf-to-cf
