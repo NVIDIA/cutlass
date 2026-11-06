@@ -178,6 +178,57 @@ TEST(ComposedLayoutTest, SliceStaticSwizzledLayouts)
     }
 }
 
+TEST(ComposedLayoutTest, SliceSwizzledLayoutsAffineCodomainCollide)
+{
+    {
+        // A non-power-of-2 size carries within a single mode: 10 is not divisible by the
+        // projection's 8. This is the layout from the original repro.
+        cg::swizzle         sw(3, 4, 3);
+        cg::composed_layout master_layout(sw, cg::int_tuple(0), cg::layout(cg::shape(10, 2), cg::stride(2, 1)));
+        auto [sliced_layout, offset] = cg::slice_and_offset(cg::coord(cg::_, 0), master_layout);
+        ASSERT_TRUE(cg::is_valid(sliced_layout));
+        // The non-power-of-two extent no longer blocks a safe affine decay.
+        EXPECT_TRUE(sliced_layout.is_normal_layout());
+        for(cg::layout::int_t i = 0; i < cg::static_size(sliced_layout); i++)
+            EXPECT_EQ(master_layout(cg::coord(i, 0)), offset.as_int() + sliced_layout(i).as_int());
+    }
+    {
+        // A non-power-of-2 stride and the resulting additions both create active bits outside the
+        // stride itself: {0, 3, 6, 9} activates bits 0 through 3.
+        cg::swizzle         sw(3, 4, 3);
+        cg::composed_layout master_layout(sw, cg::int_tuple(0), cg::layout(cg::shape(4, 2), cg::stride(3, 1)));
+        auto [sliced_layout, offset] = cg::slice_and_offset(cg::coord(cg::_, 0), master_layout);
+        ASSERT_TRUE(cg::is_valid(sliced_layout));
+        EXPECT_FALSE(sliced_layout.is_normal_layout());
+        for(cg::layout::int_t i = 0; i < cg::static_size(sliced_layout); i++)
+            EXPECT_EQ(master_layout(cg::coord(i, 0)), offset.as_int() + sliced_layout(i).as_int());
+    }
+    {
+        // A negative stride makes the codomain negative, whose two's complement representation
+        // sets every bit above its magnitude. The active bits are not exactly known, so no decay.
+        cg::swizzle         sw(2, 1, 2);
+        cg::composed_layout master_layout(sw, cg::int_tuple(0), cg::layout(cg::shape(4, 2), cg::stride(-2, 1)));
+        auto [sliced_layout, offset] = cg::slice_and_offset(cg::coord(cg::_, 0), master_layout);
+        ASSERT_TRUE(cg::is_valid(sliced_layout));
+        EXPECT_FALSE(sliced_layout.is_normal_layout());
+        for(cg::layout::int_t i = 0; i < cg::static_size(sliced_layout); i++)
+            EXPECT_EQ(master_layout(cg::coord(i, 0)), offset.as_int() + sliced_layout(i).as_int());
+    }
+    {
+        // Two active modes set overlapping bits (mode 0 spans bits 0-1, mode 1 spans bits 1-2),
+        // so summing them can carry into higher bits and the per-bit decay reasoning breaks down.
+        cg::swizzle         sw(3, 4, 3);
+        cg::composed_layout master_layout(sw, cg::int_tuple(0), cg::layout(cg::shape(4, 4, 2), cg::stride(1, 2, 16)));
+        auto [sliced_layout, offset] = cg::slice_and_offset(cg::coord(cg::_, cg::_, 0), master_layout);
+        ASSERT_TRUE(cg::is_valid(sliced_layout));
+        EXPECT_FALSE(sliced_layout.is_normal_layout());
+        for(cg::layout::int_t i = 0; i < 4; i++)
+            for(cg::layout::int_t j = 0; j < 4; j++)
+                EXPECT_EQ(master_layout(cg::coord(i, j, 0)),
+                          offset.as_int() + sliced_layout(cg::coord(i, j)).as_int());
+    }
+}
+
 TEST(ComposedLayoutTest, SliceAffineLayouts)
 {
     { // dereference
