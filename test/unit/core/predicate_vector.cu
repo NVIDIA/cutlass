@@ -75,6 +75,24 @@ __global__ void load_predicates(unsigned *output, unsigned const *input) {
     output[word_idx] = result;
   }
 }
+
+template <int Predicates>
+void test_is_zero() {
+  cutlass::PredicateVector<Predicates> predicates(true);
+  EXPECT_FALSE(predicates.is_zero());
+
+  for (int i = 0; i < Predicates; ++i) {
+    predicates.set(i, false);
+  }
+  EXPECT_TRUE(predicates.is_zero()) << "Predicates: " << Predicates;
+
+  for (int i = 0; i < Predicates; ++i) {
+    predicates.set(i);
+    EXPECT_FALSE(predicates.is_zero()) << "Predicates: " << Predicates << ", index: " << i;
+    predicates.set(i, false);
+    EXPECT_TRUE(predicates.is_zero()) << "Predicates: " << Predicates << ", index: " << i;
+  }
+}
 }
 
 TEST(PredicateVector, Basic) {
@@ -123,6 +141,13 @@ TEST(PredicateVector, Basic) {
         << std::dec;
     }
   }
+}
+
+TEST(PredicateVector, IsZero) {
+  test::test_is_zero<4>();
+  test::test_is_zero<16>();
+  test::test_is_zero<20>();
+  test::test_is_zero<32>();
 }
 
 TEST(PredicateVector, Count) {
