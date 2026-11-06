@@ -669,6 +669,9 @@ public:
       }
       else if (producer_warp_role == ProducerWarpRole::MainloopAux) {
         if constexpr (IsMainloopAuxiliaryLoadNeeded) {
+          // Ensure that the prefetched kernel does not touch
+          // unflushed global memory prior to this instruction
+          cutlass::arch::wait_on_dependent_grids();
           while (work_tile_info.is_valid()) {
             if (!TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
               auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);

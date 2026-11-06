@@ -769,6 +769,10 @@ public:
     }
 
     else if (is_participant.main_load_cpasync) {
+      // Ensure that the prefetched kernel does not touch
+      // unflushed global memory prior to this instruction
+      cutlass::arch::wait_on_dependent_grids();
+
       auto load_inputs = collective_mainloop.load_init_cpasync(
           problem_shape_MNKL, params.mainloop, shared_storage.tensors.mainloop,
           scheduler, work_tile_info);
@@ -947,6 +951,10 @@ public:
     }
 
     else if (is_participant.epi_load) {
+      // Ensure that the prefetched kernel does not touch
+      // unflushed global memory prior to this instruction
+      cutlass::arch::wait_on_dependent_grids();
+
       bool do_tail_load = false;
       do {
         bool compute_epilogue = TileScheduler::compute_epilogue(work_tile_info, params.scheduler);
