@@ -142,6 +142,10 @@ private:
   static_assert(OutputOp::kCount >= 2, 
     "The direct store epilogue for Tensor Ops requires the output functor have kCount >= 2.");
 
+  static_assert(kPartitionsK == 1,
+    "The direct store epilogue does not reduce accumulators across K partitions (sliced-K). "
+    "Use a warp shape whose K extent equals the threadblock shape's K extent.");
+
 private:
 
   LongIndex warp_offset;
@@ -168,7 +172,7 @@ public:
     
     // warp offsetting calculations
     warp_offset = warp_idx * WarpShape::kM * WarpShape::kN;
-    int warp_id_mn = warp_idx % (WarpCount::kM * WarpShape::kN);
+    int warp_id_mn = warp_idx % (WarpCount::kM * WarpCount::kN);
     warp_m = warp_id_mn % WarpCount::kM;
     warp_n = warp_id_mn / WarpCount::kM;
     MatrixCoord warp_offset_coord(warp_m*WarpShape::kM, warp_n*WarpShape::kN);
