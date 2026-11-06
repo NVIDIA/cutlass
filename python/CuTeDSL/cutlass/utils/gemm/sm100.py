@@ -298,6 +298,7 @@ def epilogue_tma_store(
     #
     # Async arrive accumulator buffer empty
     #
+    cute.arch.fence_view_async_tmem_load()
     with cute.arch.elect_one():
         acc_pipeline.consumer_release(acc_consumer_state)
     acc_consumer_state.advance()
@@ -482,6 +483,7 @@ def epilogue(
         else:
             # Release early for perf at the last subtile
             if subtile_idx == subtile_cnt - 1:
+                cute.arch.fence_view_async_tmem_load()
                 with cute.arch.elect_one():
                     acc_pipeline.consumer_release(acc_consumer_state)
                 acc_consumer_state.advance()
