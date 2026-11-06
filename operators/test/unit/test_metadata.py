@@ -216,7 +216,6 @@ def _dense_constraints(dtype, stride=None):
     )
 
 
-
 class TestIndexPtrGroupedGemmOperandsMetadata:
     def _metadata(self):
         # Operator that partitions along M; A and B are plain dense fp16 matrices.
@@ -278,3 +277,63 @@ class TestIndexPtrGroupedGemmOperandsMetadata:
         assert isinstance(metadata, IndexPtrGroupedGemmOperandsMetadata)
         assert metadata.offsets_along == "m"
         assert metadata.supports(args)
+
+
+@pytest.mark.parametrize(
+    ("provided_alignment", "expected"),
+    [(1, False), (8, False), (16, True), (24, False), (32, True)],
+)
+def test_dense_constraint_comparison_pointer_alignment(provided_alignment, expected):
+    required = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, 16)
+    provided = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, provided_alignment)
+    assert bool(required.supports(provided)) is expected
+
+
+def test_dense_constraint_comparison_arbitrary_stride():
+    restricted = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, 16)
+    arbitrary = DenseTensorConstraints(cutlass.Float16, None, 8, 16)
+    assert not restricted.supports(arbitrary)
+    assert arbitrary.supports(restricted)
+    assert arbitrary.supports(arbitrary)
+
+
+def test_gemm_metadata_comparison_respects_alignment():
+    from cutlass.operators.metadata import GemmOperandsMetadata
+
+    aligned = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, 16)
+    weakly_aligned = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, 8)
+    required = GemmOperandsMetadata(aligned, aligned, aligned, cutlass.Float32)
+    provided = GemmOperandsMetadata(weakly_aligned, aligned, aligned, cutlass.Float32)
+    status = required.supports(provided)
+    assert not status
+    assert "A" in str(status.error)
+
+
+@pytest.mark.parametrize(("address", "expected"), [(32, True), (40, False)])
+def test_dense_constraint_concrete_pointer_alignment(address, expected):
+    from types import SimpleNamespace
+
+    from cutlass.operators.arguments import DenseTensor
+
+    tensor = SimpleNamespace(
+        dtype=cutlass.Float16, shape=(8, 32), stride=(32, 1), data_ptr=address
+    )
+    required = DenseTensorConstraints(cutlass.Float16, (0, 1), 8, 16)
+    assert bool(required.supports(DenseTensor(tensor))) is expected
+
+
+@pytest.mark.parametrize(("divisibility", "alignment"), [(1, 1), (2, 1), (4, 2)])
+def test_dense_constraint_subbyte_default_pointer_alignment(divisibility, alignment):
+    from types import SimpleNamespace
+
+    from cutlass.operators.arguments import DenseTensor
+
+    constraint = DenseTensorConstraints(cutlass.Float4E2M1FN, (0, 1), divisibility)
+    assert constraint.ptr_alignment_bytes == alignment
+    tensor = DenseTensor(
+        SimpleNamespace(
+            dtype=cutlass.Float4E2M1FN, shape=(8, 8), stride=(8, 1), data_ptr=32
+        )
+    )
+    assert constraint.supports(tensor)
+    assert constraint.supports(constraint)
