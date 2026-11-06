@@ -386,6 +386,25 @@ def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
     return kernel_attrs
 
 
+def _build_cuda_kernel_cu_attrs(
+    preferred_smem_carveout: Optional[int] = None,
+) -> ir.DictAttr:
+    """Build the CUDA attributes applied by the generated kernel loaders."""
+    attrs = {
+        str(
+            cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
+        ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
+        str(
+            cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
+        ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
+    }
+    if preferred_smem_carveout is not None:
+        attrs[
+            str(cuda_dialect.CUFunctionAttribute.preferred_shared_memory_carveout)
+        ] = ir.IntegerAttr.get(ir.IntegerType.get_signless(32), preferred_smem_carveout)
+    return ir.DictAttr.get(attrs)
+
+
 def _is_pyir_watched_meta(value: object) -> bool:
     """Return whether ``value`` may be promoted from a PyIR meta value.
 
@@ -754,6 +773,10 @@ class CutlassBaseDSL(BaseDSL):
         )
 
         ret = {LAUNCH_FACTS_ATTR: _build_launch_facts_attr(config)}
+        if config.preferred_smem_carveout is not None:
+            ret["cu_attrs"] = _build_cuda_kernel_cu_attrs(
+                config.preferred_smem_carveout
+            )
         if not config.has_max_number_threads():
             block_str = ", ".join(map(str, config.block))
             has_dynamic = any(is_dynamic_expression(dim) for dim in config.block)
@@ -2028,16 +2051,7 @@ class CuTeDSL(CutlassBaseDSL):
         func_op = cuda_dialect.KernelOp(
             kernel_name, ir.FunctionType.get(arg_types, []), loc=loc
         )
-        func_op.attributes["cu_attrs"] = ir.DictAttr.get(
-            {
-                str(
-                    cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
-                ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
-                str(
-                    cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
-                ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
-            }
-        )
+        func_op.attributes["cu_attrs"] = _build_cuda_kernel_cu_attrs()
         if arg_attrs is not None:
             log().debug(arg_attrs)
             func_op.arg_attrs = arg_attrs
@@ -2544,16 +2558,7 @@ class CuteExperimentalDSL(CutlassBaseDSL):
             ir.TypeAttr.get(ir.FunctionType.get(arg_types, [])),
             loc=loc,
         )
-        func_op.attributes["cu_attrs"] = ir.DictAttr.get(
-            {
-                str(
-                    cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
-                ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
-                str(
-                    cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
-                ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
-            }
-        )
+        func_op.attributes["cu_attrs"] = _build_cuda_kernel_cu_attrs()
         if arg_attrs is not None:
             func_op.arg_attrs = ir.ArrayAttr.get(arg_attrs)
         # Monkey patch FuncOp to add an add_entry_block method, if not already defined.
