@@ -41,6 +41,21 @@ available_providers: dict[str, type[Provider]] = {}
 _import_errors: dict[str, ImportError] = {}
 
 
+def _record_import_error(name: str, exc: ImportError) -> None:
+    """Store a provider's ImportError without the traceback that raised it.
+
+    This module dict lives for the whole process, so keeping ``exc.__traceback__``
+    would pin every frame that was on the stack during the first import -- and
+    with it their locals, e.g. a training step's activations -- because the
+    traceback's ``f_back`` chain reaches the importer's caller.  The exception
+    type and message are all ``__getattr__`` needs for its diagnostic.
+    """
+    exc.__traceback__ = None
+    exc.__context__ = None
+    exc.__cause__ = None
+    _import_errors[name] = exc
+
+
 def register_provider(name: str) -> Callable[[type[Provider]], type[Provider]]:
     """
     Decorator used to register a provider class with the given name.
@@ -76,7 +91,7 @@ def register_provider(name: str) -> Callable[[type[Provider]], type[Provider]]:
 try:
     from cutlass.operators.providers.cutedsl import CuTeDSLProvider
 except ImportError as _exc:
-    _import_errors["CuTeDSLProvider"] = _exc
+    _record_import_error("CuTeDSLProvider", _exc)
     _logger.debug("CuTeDSLProvider unavailable: %s", _exc, exc_info=True)
 
 
