@@ -1193,11 +1193,11 @@ bool BlockwiseGemmOperationProfiler::verify_with_reference_(
   //
   // Verify results
   //
-  auto resultD = compare_tensors(
+  auto resultD = compare_tensor_batches(
     options,
     *gemm_workspace_.Computed,
     *gemm_workspace_.Reference,
-    gemm_workspace_.Computed->batch_stride()
+    problem_.batch_count
   );
   
   results_.back().verification_map[library::Provider::kReferenceHost] = resultD;
@@ -1549,4 +1549,3 @@ Status BlockwiseGemmOperationProfiler::profile_cutlass_(
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

@@ -1342,12 +1342,12 @@ bool GemmOperationProfiler::verify_with_cublas_(
 
     gemm_op.initialize_cublaslt();
 
-    if(!gemm_op.get_cublaslt_algo(handle, AlgorithmMode::kDefault)){
+    if (gemm_op.status != Status::kSuccess) {
+      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kNotRun;
       return true;
     }
 
-    if (gemm_op.status != Status::kSuccess) {
-      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kNotRun;
+    if (!gemm_op.get_cublaslt_algo(handle, AlgorithmMode::kDefault)) {
       return true;
     }
 
@@ -1366,11 +1366,11 @@ bool GemmOperationProfiler::verify_with_cublas_(
     // Verify results
     //
 
-    results_.back().verification_map[library::Provider::kCUBLAS] = compare_tensors(
+    results_.back().verification_map[library::Provider::kCUBLAS] = compare_tensor_batches(
       options,
       *gemm_workspace_.Computed,
       *gemm_workspace_.Reference,
-      gemm_workspace_.Computed->batch_stride()
+      problem_.batch_count
     );
 
     // Save workspace if incorrect
@@ -1416,8 +1416,10 @@ bool GemmOperationProfiler::verify_with_reference_(
   //
   for (auto provider : options.verification.providers) {
 
-    // Skip providers that are not enabled
-    if (!options.verification.provider_enabled(provider)) {
+    // This path only dispatches reference operations. Other providers have
+    // dedicated verification paths.
+    if (provider != library::Provider::kReferenceHost &&
+        provider != library::Provider::kReferenceDevice) {
       continue;
     }
 
@@ -1539,11 +1541,11 @@ bool GemmOperationProfiler::verify_with_reference_(
       // Verify results
       //
 
-      results_.back().verification_map[provider] = compare_tensors(
+      results_.back().verification_map[provider] = compare_tensor_batches(
         options,
         *gemm_workspace_[i].Computed,
         *gemm_workspace_[i].Reference,
-        gemm_workspace_[i].Computed->batch_stride()
+        problem_.batch_count
       );
 
       // Save workspace if incorrect
