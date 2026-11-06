@@ -437,8 +437,8 @@ struct NonFusedDualGemmRun
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D1.host_view()), 0);
 
     bool passed0 = cutlass::reference::host::TensorEquals(
-      reference_D1.host_view(), 
-      tensor_D1.host_view());
+      reference_D0.host_view(),
+      tensor_D0.host_view());
     CHECK_TRUE(passed0);
 
     bool passed1 = cutlass::reference::host::TensorEquals(
@@ -460,6 +460,7 @@ struct NonFusedDualGemmRun
         << "\nC0 =\n" << tensor_C0.host_view()
         << "\nBias0:\n" << tensor_Bias0.host_view() << "\n"
         << "\nD0 =\n" << tensor_D0.host_view()
+        << "\nReference D0 =\n" << reference_D0.host_view()
         << "\nB1 =\n" << tensor_B1.host_view()
         << "\nC1 =\n" << tensor_C1.host_view()
         << "\nBias1:\n" << tensor_Bias1.host_view() << "\n"
