@@ -166,6 +166,28 @@ def _use_optimized_mbarrier_wait():
         arch_mod.mbarrier_wait = orig_wait
 
 
+import contextlib as _contextlib
+
+
+def _want_mbar_wrapper(self):
+    import cutlass
+    return (
+        self.q_dtype is cutlass.Float16
+        and self.qk_mma_tiler[2] == 128
+        and getattr(self, "_mbar_wsl", None) is None
+        and getattr(self, "_mbar_wsr", None) is None
+    )
+
+
+def _mbar_ctx_for(self):
+    # Return the mbarrier-wait wrapper context only for the gated cell; else a no-op.
+    # Kept a plain module fn (not a with-inline ternary) so the DSL AST preprocessor sees a
+    # simple Call context_expr in the `with`, like the unconditional wrapper.
+    if _want_mbar_wrapper(self):
+        return _use_optimized_mbarrier_wait()
+    return _contextlib.nullcontext()
+
+
 class HopperFusedMultiHeadAttentionForward:
     def __init__(
         self,
@@ -278,6 +300,8 @@ class HopperFusedMultiHeadAttentionForward:
         self.k_dtype = k.element_type
         self.v_dtype = v.element_type
         self.o_dtype = o.element_type
+        self._mbar_wsl = window_size_left
+        self._mbar_wsr = window_size_right
 
         # (s, d, ((h_r, h_k), b)), 0-stride for h_r to broadcast
         k = cute.make_tensor(
@@ -500,7 +524,38 @@ class HopperFusedMultiHeadAttentionForward:
         self.shared_storage = SharedStorage
 
         # Launch the kernel synchronously
-        with _use_optimized_mbarrier_wait():
+        if _want_mbar_wrapper(self):
+            with _use_optimized_mbarrier_wait():
+                self.kernel(
+                    qk_tiled_mma,
+                    pv_tiled_mma,
+                    tma_atom_q,
+                    tma_tensor_q,
+                    tma_atom_k,
+                    tma_tensor_k,
+                    tma_atom_v,
+                    tma_tensor_v,
+                    tma_atom_o,
+                    tma_tensor_o,
+                    lse,
+                    scale_softmax_log2,
+                    scale_softmax,
+                    scale_output,
+                    window_size_left,
+                    window_size_right,
+                    q_smem_layout_staged,
+                    k_smem_layout_staged,
+                    v_smem_layout_staged,
+                    o_smem_layout_staged,
+                    self.tile_sched_params,
+                ).launch(
+                    grid=grid,
+                    block=[self.threads_per_cta, 1, 1],
+                    cluster=self.cluster_shape_mnk,
+                    stream=stream,
+                    min_blocks_per_mp=1,
+                )
+        else:
             self.kernel(
                 qk_tiled_mma,
                 pv_tiled_mma,
@@ -1423,7 +1478,8 @@ class HopperFusedMultiHeadAttentionForward:
 
                 # Linear reduction is faster here, as well
                 for j in cutlass.range_constexpr(cute.size(acc_qk_mn, mode=[1])):
-                    s_max[i] = cutlass.max(s_max[i], acc_qk_mn[i, j])
+                    # hardware max (FMNMX) on the serial row-max chain, as in the first-iteration branch above
+                    s_max[i] = cute.arch.fmax(s_max[i], acc_qk_mn[i, j])
 
             # reduce max
             for r in cutlass.range_constexpr(red_rank):
