@@ -41,6 +41,7 @@ The kernel implements key optimizations including:
 - Support for different precision data types
 - Optional causal masking for autoregressive models
 - Sliding window attention masking for efficient long sequence processing
+- Variable sequence lengths (packed batches described by cumulative sequence lengths)
 
 To run this example:
 
@@ -74,6 +75,10 @@ Constraints for this example:
 * For causal masking, use --is_causal (note: specify without =True/False)
 * For persistent scheduling, use --is_persistent (note: specify without =True/False)
 * For sliding window, use --window_size x,y where x is left window size and y is right window size
+* For variable sequence lengths, list the per-sequence lengths in parentheses, e.g.
+  --q_shape 3,(1,129,700),8,128 --k_shape 3,(65,300,700),2,128. Sequences may be empty;
+  rows of a sequence with no keys are not written. With fp8 inputs, key lengths must be
+  multiples of 16
 """
 
 import argparse
@@ -266,6 +271,9 @@ class HopperFusedMultiHeadAttentionForward:
         v: cute.Tensor,
         o: cute.Tensor,
         lse: cute.Tensor,
+        cum_seqlen_q: Optional[cute.Tensor],
+        cum_seqlen_k: Optional[cute.Tensor],
+        max_seqlen_q: Optional[cutlass.Int32],
         scale_softmax_log2: cutlass.Float32,
         scale_softmax: cutlass.Float32,
         scale_output: cutlass.Float32,
@@ -278,6 +286,16 @@ class HopperFusedMultiHeadAttentionForward:
         self.k_dtype = k.element_type
         self.v_dtype = v.element_type
         self.o_dtype = o.element_type
+
+        # Variable-length tensors are packed along s with a batch extent of 1.
+        # Broadcast them over the batch (0-stride) so that the batch coordinate
+        # selects the sequence through cum_seqlen_q / cum_seqlen_k.
+        b = q.shape[4]
+        if cutlass.const_expr(cum_seqlen_q is not None):
+            b = cum_seqlen_q.shape[0] - 1
+            q, o, lse = [self._broadcast_batch(t, b) for t in (q, o, lse)]
+        if cutlass.const_expr(cum_seqlen_k is not None):
+            k, v = [self._broadcast_batch(t, b) for t in (k, v)]
 
         # (s, d, ((h_r, h_k), b)), 0-stride for h_r to broadcast
         k = cute.make_tensor(
@@ -463,7 +481,11 @@ class HopperFusedMultiHeadAttentionForward:
         self.tma_copy_kv_bytes = k_copy_size
 
         self.tile_sched_params, grid = fmha_utils.compute_grid(
-            o.shape,
+            (
+                o.shape
+                if cutlass.const_expr(cum_seqlen_q is None)
+                else (max_seqlen_q, o.shape[1], o.shape[2])
+            ),
             self.cta_tiler,
             self.is_persistent,
         )
@@ -499,6 +521,31 @@ class HopperFusedMultiHeadAttentionForward:
 
         self.shared_storage = SharedStorage
 
+        # Variable-length queries store O with a row predicate instead of TMA. The
+        # row and head strides are multiples of the head dimension, so 128-bit
+        # stores stay aligned.
+        o_varlen = None
+        if cutlass.const_expr(cum_seqlen_q is not None):
+            align = 128 // self.o_dtype.width
+            (stride_h_r, stride_h_k), stride_b = o.stride[2]
+            o_varlen = cute.make_tensor(
+                o.iterator,
+                cute.make_layout(
+                    o.shape,
+                    stride=(
+                        cute.assume(o.stride[0], align),
+                        o.stride[1],
+                        (
+                            (
+                                cute.assume(stride_h_r, align),
+                                cute.assume(stride_h_k, align),
+                            ),
+                            stride_b,
+                        ),
+                    ),
+                ),
+            )
+
         # Launch the kernel synchronously
         with _use_optimized_mbarrier_wait():
             self.kernel(
@@ -512,7 +559,10 @@ class HopperFusedMultiHeadAttentionForward:
                 tma_tensor_v,
                 tma_atom_o,
                 tma_tensor_o,
+                o_varlen,
                 lse,
+                cum_seqlen_q,
+                cum_seqlen_k,
                 scale_softmax_log2,
                 scale_softmax,
                 scale_output,
@@ -545,7 +595,10 @@ class HopperFusedMultiHeadAttentionForward:
         mV_dkl: cute.Tensor,
         tma_atom_o: cute.CopyAtom,
         mO_qdl: cute.Tensor,
+        mO_varlen_qdl: Optional[cute.Tensor],
         mLse_qdl: cute.Tensor,
+        cum_seqlen_q: Optional[cute.Tensor],
+        cum_seqlen_k: Optional[cute.Tensor],
         scale_softmax_log2: cutlass.Float32,
         scale_softmax: cutlass.Float32,
         scale_output: cutlass.Float32,
@@ -597,8 +650,14 @@ class HopperFusedMultiHeadAttentionForward:
         :type tma_atom_o: cute.CopyAtom
         :param mO_qdl: Partitioned output tensor for TMA storage
         :type mO_qdl: cute.Tensor
+        :param mO_varlen_qdl: Output tensor for the row-predicated store used with variable-length queries
+        :type mO_varlen_qdl: Optional[cute.Tensor]
         :param mLse_qdl: Tensor for lse
         :type mLse_qdl: cute.Tensor
+        :param cum_seqlen_q: Cumulative query sequence lengths, or None for fixed length
+        :type cum_seqlen_q: Optional[cute.Tensor]
+        :param cum_seqlen_k: Cumulative key sequence lengths, or None for fixed length
+        :type cum_seqlen_k: Optional[cute.Tensor]
         :param scale_softmax_log2: The log2 scale factor for softmax computation
         :type scale_softmax_log2: cutlass.Float32
         :param scale_softmax: The scale factor for softmax (currently unused)
@@ -669,40 +728,8 @@ class HopperFusedMultiHeadAttentionForward:
                 o_smem_layout_staged.outer,
             )
 
-        seqlen_q = mQ_qdl.shape[0]
-        gQ_qdl = cute.flat_divide(mQ_qdl, cute.select(self.qk_mma_tiler, mode=[0, 2]))
         qk_thr_mma = qk_tiled_mma.get_slice(tidx)
-        tSgQ_qdl = qk_thr_mma.partition_A(gQ_qdl)
-
-        tQsQ, tQgQ_qdl = cute.nvgpu.cpasync.tma_partition(
-            tma_atom_q,
-            0,  # no multicast
-            cute.make_layout(1),
-            cute.group_modes(sQ, 0, 2),
-            cute.group_modes(tSgQ_qdl, 0, 3),
-        )
-
-        seqlen_k = mK_kdl.shape[0]
-        gK_kdl = cute.flat_divide(mK_kdl, cute.select(self.qk_mma_tiler, mode=[1, 2]))
-        tSgK_kdl = qk_thr_mma.partition_B(gK_kdl)
-        tKsK, tKgK_kdl = cute.nvgpu.cpasync.tma_partition(
-            tma_atom_k,
-            0,  # no multicast
-            cute.make_layout(1),
-            cute.group_modes(sK, 0, 2),
-            cute.group_modes(tSgK_kdl, 0, 3),
-        )
-
-        gV_dkl = cute.flat_divide(mV_dkl, cute.select(self.pv_mma_tiler, mode=[1, 2]))
         pv_thr_mma = pv_tiled_mma.get_slice(tidx)
-        tSgV_dkl = pv_thr_mma.partition_B(gV_dkl)
-        tVsV, tVgV_dkl = cute.nvgpu.cpasync.tma_partition(
-            tma_atom_v,
-            0,  # no multicast
-            cute.make_layout(1),
-            cute.group_modes(sV, 0, 2),
-            cute.group_modes(tSgV_dkl, 0, 3),
-        )
 
         producer_warp_role = warp_idx % 4  # self.num_warps_per_warp_group
 
@@ -733,9 +760,33 @@ class HopperFusedMultiHeadAttentionForward:
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
             work_tile = tile_sched.initial_work_tile_info()
+            tile_sched, work_tile = self.skip_empty_tiles(
+                tile_sched, work_tile, cum_seqlen_q, cum_seqlen_k
+            )
 
             while work_tile.is_valid_tile:
                 curr_block_coord = work_tile.tile_idx
+                cuseqlen_q, seqlen_q = self.get_seqlen(
+                    cum_seqlen_q, curr_block_coord, mQ_qdl.shape[0]
+                )
+                cuseqlen_k, seqlen_k = self.get_seqlen(
+                    cum_seqlen_k, curr_block_coord, mK_kdl.shape[0]
+                )
+
+                # Partition global Q/K/V starting at the current sequence
+                tQsQ, tQgQ_qdl, tKsK, tKgK_kdl, tVsV, tVgV_dkl = self.tma_partition_qkv(
+                    qk_thr_mma,
+                    pv_thr_mma,
+                    tma_atom_q,
+                    cute.domain_offset((cuseqlen_q, 0, ((0, 0), 0)), mQ_qdl),
+                    sQ,
+                    tma_atom_k,
+                    cute.domain_offset((cuseqlen_k, 0, ((0, 0), 0)), mK_kdl),
+                    sK,
+                    tma_atom_v,
+                    cute.domain_offset((0, cuseqlen_k, ((0, 0), 0)), mV_dkl),
+                    sV,
+                )
 
                 q0_index = 0
                 k_index = fmha_utils.FusedMask.get_trip_start(
@@ -844,6 +895,9 @@ class HopperFusedMultiHeadAttentionForward:
 
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
+                tile_sched, work_tile = self.skip_empty_tiles(
+                    tile_sched, work_tile, cum_seqlen_q, cum_seqlen_k
+                )
 
         # Mainloop
         if (
@@ -856,10 +910,13 @@ class HopperFusedMultiHeadAttentionForward:
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
             work_tile = tile_sched.initial_work_tile_info()
+            tile_sched, work_tile = self.skip_empty_tiles(
+                tile_sched, work_tile, cum_seqlen_q, cum_seqlen_k
+            )
 
             kOuterLoads = 1
 
-            cP = cute.make_identity_tensor((mQ_qdl.shape[0], seqlen_k))
+            cP = cute.make_identity_tensor((mQ_qdl.shape[0], mK_kdl.shape[0]))
             gPcP = cute.local_tile(cP, self.qk_mma_tiler[:2], (None, None))
 
             while work_tile.is_valid_tile:
@@ -867,6 +924,12 @@ class HopperFusedMultiHeadAttentionForward:
                     load_q_consumer.advance()
 
                 curr_block_coord = work_tile.tile_idx
+                cuseqlen_q, seqlen_q = self.get_seqlen(
+                    cum_seqlen_q, curr_block_coord, mQ_qdl.shape[0]
+                )
+                _, seqlen_k = self.get_seqlen(
+                    cum_seqlen_k, curr_block_coord, mK_kdl.shape[0]
+                )
 
                 # _wg_coord_1 is work_tile.tile_idx[1], which is always 0.
                 _wg_coord_0 = self.num_mma_warp_groups * curr_block_coord[0] + (
@@ -1129,7 +1192,9 @@ class HopperFusedMultiHeadAttentionForward:
                 thr_mma = pv_tiled_mma.get_slice(tidx)
 
                 gLSE_full = cute.local_tile(
-                    mLse_qdl, self.pv_mma_tiler[:2], (None, None, None)
+                    cute.domain_offset((cuseqlen_q, 0, ((0, 0), 0)), mLse_qdl),
+                    self.pv_mma_tiler[:2],
+                    (None, None, None),
                 )
                 gLSE = cute.slice_(
                     gLSE_full, (None, None, wg_coord[0], wg_coord[1], wg_coord[2])
@@ -1212,6 +1277,17 @@ class HopperFusedMultiHeadAttentionForward:
 
                 epi_tile_num = cute.size(tcgc_for_tma_partition, mode=[1])
 
+                if cutlass.const_expr(mO_varlen_qdl is not None):
+                    gO = cute.local_tile(
+                        cute.domain_offset((cuseqlen_q, 0, ((0, 0), 0)), mO_varlen_qdl),
+                        self.pv_mma_tiler[:2],
+                        (wg_coord[0], 0, wg_coord[2]),
+                    )
+                    gO_varlen = cute.zipped_divide(gO, self.epi_tile)
+                    cO_varlen = cute.zipped_divide(
+                        cute.make_identity_tensor(gO.shape), self.epi_tile
+                    )
+
                 for epi_idx in cutlass.range_constexpr(epi_tile_num):
                     # Copy from accumulators to D registers
                     for epi_v in cutlass.range_constexpr(size_tRS_rD):
@@ -1239,16 +1315,27 @@ class HopperFusedMultiHeadAttentionForward:
                         num_threads=self.num_threads_per_warp_group,
                     )
 
-                    # only one warp in each warpgroup copy shared memory to global memory
-                    if warp_idx == 4 or warp_idx == 8:
-                        cute.copy(
-                            tma_atom_o,
-                            bSG_sD[(None, epi_buffer, warp_group_idx - 1)],
-                            bSG_gD[(None, epi_idx)],
-                        )
+                    if cutlass.const_expr(mO_varlen_qdl is None):
+                        # only one warp in each warpgroup copy shared memory to global memory
+                        if warp_idx == 4 or warp_idx == 8:
+                            cute.copy(
+                                tma_atom_o,
+                                bSG_sD[(None, epi_buffer, warp_group_idx - 1)],
+                                bSG_gD[(None, epi_idx)],
+                            )
 
-                        tma_store_pipeline.producer_commit()
-                        tma_store_pipeline.producer_acquire()
+                            tma_store_pipeline.producer_commit()
+                            tma_store_pipeline.producer_acquire()
+                    else:
+                        # The tile may extend into the next sequence, so the TMA
+                        # store cannot be used: copy only the rows inside this one.
+                        self.store_o_rows(
+                            sO[(None, None, epi_buffer, warp_group_idx - 1)],
+                            gO_varlen[(None, epi_idx)],
+                            cO_varlen[(None, epi_idx)],
+                            seqlen_q - wg_coord[0] * self.pv_mma_tiler[0],
+                            tidx % self.num_threads_per_warp_group,
+                        )
 
                     pipeline.arrive_and_wait(
                         barrier_id=warp_group_idx,
@@ -1259,7 +1346,170 @@ class HopperFusedMultiHeadAttentionForward:
 
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
+                tile_sched, work_tile = self.skip_empty_tiles(
+                    tile_sched, work_tile, cum_seqlen_q, cum_seqlen_k
+                )
         return
+
+    @staticmethod
+    def _broadcast_batch(t: cute.Tensor, b) -> cute.Tensor:
+        # (s, d, h_r, h_k, 1) -> (s, d, h_r, h_k, b) with a 0-stride batch mode
+        return cute.make_tensor(
+            t.iterator,
+            cute.make_layout((*t.shape[:4], b), stride=(*t.stride[:4], 0)),
+        )
+
+    @cute.jit
+    def get_seqlen(
+        self,
+        cum_seqlen: Optional[cute.Tensor],
+        blk_coord: cute.Coord,
+        seqlen: cutlass.Int32,
+    ) -> Tuple[cutlass.Int32, cutlass.Int32]:
+        """Return the start row and the length of the sequence of the current tile.
+
+        For fixed-length inputs the start row is 0 and ``seqlen`` is returned unchanged.
+        """
+        cuseqlen = 0
+        if cutlass.const_expr(cum_seqlen is not None):
+            batch_coord = blk_coord[2][1]
+            cuseqlen = cum_seqlen[batch_coord]
+            seqlen = cum_seqlen[batch_coord + 1] - cuseqlen
+        return cuseqlen, seqlen
+
+    @cute.jit
+    def skip_empty_tiles(
+        self,
+        tile_sched: fmha_utils.FmhaStaticTileScheduler,
+        work_tile: utils.WorkTileInfo,
+        cum_seqlen_q: Optional[cute.Tensor],
+        cum_seqlen_k: Optional[cute.Tensor],
+    ) -> Tuple[fmha_utils.FmhaStaticTileScheduler, utils.WorkTileInfo]:
+        """Advance the scheduler past tiles that have no work.
+
+        With variable sequence lengths the grid covers the longest query sequence, so
+        tiles that start past the end of their query sequence, or whose key sequence is
+        empty, are skipped. All warp groups skip the same tiles.
+        """
+        if cutlass.const_expr(cum_seqlen_q is not None or cum_seqlen_k is not None):
+            is_empty = self.is_empty_tile(work_tile, cum_seqlen_q, cum_seqlen_k)
+            while is_empty:
+                tile_sched.advance_to_next_work()
+                work_tile = tile_sched.get_current_work()
+                is_empty = self.is_empty_tile(work_tile, cum_seqlen_q, cum_seqlen_k)
+        return tile_sched, work_tile
+
+    @cute.jit
+    def is_empty_tile(
+        self,
+        work_tile: utils.WorkTileInfo,
+        cum_seqlen_q: Optional[cute.Tensor],
+        cum_seqlen_k: Optional[cute.Tensor],
+    ) -> cutlass.Boolean:
+        is_empty = cutlass.Boolean(False)
+        if work_tile.is_valid_tile:
+            blk_coord = work_tile.tile_idx
+            if cutlass.const_expr(cum_seqlen_q is not None):
+                _, seqlen_q = self.get_seqlen(cum_seqlen_q, blk_coord, 0)
+                if blk_coord[0] * self.cta_tiler[0] >= seqlen_q:
+                    is_empty = cutlass.Boolean(True)
+            if cutlass.const_expr(cum_seqlen_k is not None):
+                _, seqlen_k = self.get_seqlen(cum_seqlen_k, blk_coord, 0)
+                if seqlen_k <= 0:
+                    is_empty = cutlass.Boolean(True)
+        return is_empty
+
+    @cute.jit
+    def tma_partition_qkv(
+        self,
+        qk_thr_mma: cute.ThrMma,
+        pv_thr_mma: cute.ThrMma,
+        tma_atom_q: cute.CopyAtom,
+        mQ_qdl: cute.Tensor,
+        sQ: cute.Tensor,
+        tma_atom_k: cute.CopyAtom,
+        mK_kdl: cute.Tensor,
+        sK: cute.Tensor,
+        tma_atom_v: cute.CopyAtom,
+        mV_dkl: cute.Tensor,
+        sV: cute.Tensor,
+    ):
+        gQ_qdl = cute.flat_divide(mQ_qdl, cute.select(self.qk_mma_tiler, mode=[0, 2]))
+        tSgQ_qdl = qk_thr_mma.partition_A(gQ_qdl)
+
+        tQsQ, tQgQ_qdl = cute.nvgpu.cpasync.tma_partition(
+            tma_atom_q,
+            0,  # no multicast
+            cute.make_layout(1),
+            cute.group_modes(sQ, 0, 2),
+            cute.group_modes(tSgQ_qdl, 0, 3),
+        )
+
+        gK_kdl = cute.flat_divide(mK_kdl, cute.select(self.qk_mma_tiler, mode=[1, 2]))
+        tSgK_kdl = qk_thr_mma.partition_B(gK_kdl)
+        tKsK, tKgK_kdl = cute.nvgpu.cpasync.tma_partition(
+            tma_atom_k,
+            0,  # no multicast
+            cute.make_layout(1),
+            cute.group_modes(sK, 0, 2),
+            cute.group_modes(tSgK_kdl, 0, 3),
+        )
+
+        gV_dkl = cute.flat_divide(mV_dkl, cute.select(self.pv_mma_tiler, mode=[1, 2]))
+        tSgV_dkl = pv_thr_mma.partition_B(gV_dkl)
+        tVsV, tVgV_dkl = cute.nvgpu.cpasync.tma_partition(
+            tma_atom_v,
+            0,  # no multicast
+            cute.make_layout(1),
+            cute.group_modes(sV, 0, 2),
+            cute.group_modes(tSgV_dkl, 0, 3),
+        )
+        return tQsQ, tQgQ_qdl, tKsK, tKgK_kdl, tVsV, tVgV_dkl
+
+    @cute.jit
+    def store_o_rows(
+        self,
+        sO: cute.Tensor,
+        gO: cute.Tensor,
+        cO: cute.Tensor,
+        residue_m: cutlass.Int32,
+        tidx: cutlass.Int32,
+    ):
+        """Copy an epilogue tile from shared to global memory, skipping rows >= residue_m."""
+        copy_elems = 128 // self.o_dtype.width
+        assert self.epi_tile[1] % copy_elems == 0, (
+            f"the row store copies {copy_elems}-element vectors along D, so the "
+            f"epilogue tile must cover a multiple of {copy_elems} columns; got "
+            f"{self.epi_tile[1]} for {self.o_dtype}"
+        )
+        thr_n = self.epi_tile[1] // copy_elems
+        assert self.num_threads_per_warp_group % thr_n == 0, (
+            f"{thr_n} threads per row do not divide the "
+            f"{self.num_threads_per_warp_group}-thread warp group"
+        )
+        if cutlass.const_expr(cute.is_static(gO.stride[0])):
+            assert gO.stride[0] == 1, (
+                "the row store copies 128-bit vectors along D, so O must be "
+                f"contiguous in D; got stride {gO.stride[0]}"
+            )
+        tiled_copy = cute.make_tiled_copy_tv(
+            cute.make_copy_atom(
+                cute.nvgpu.CopyUniversalOp(), self.o_dtype, num_bits_per_copy=128
+            ),
+            cute.make_layout(
+                (self.num_threads_per_warp_group // thr_n, thr_n), stride=(thr_n, 1)
+            ),
+            cute.make_layout((1, copy_elems)),
+        )
+        thr_copy = tiled_copy.get_slice(tidx)
+        tOsO = thr_copy.partition_S(sO)
+        tOgO = thr_copy.partition_D(cute.flatten(gO))
+        tOcO = thr_copy.partition_D(cute.flatten(cO))
+        tOrO = cute.make_rmem_tensor_like(tOsO)
+        cute.copy(tiled_copy, tOsO, tOrO)
+        for m in cutlass.range_constexpr(cute.size(tOgO, mode=[1])):
+            if tOcO[(0, m, 0)][0] < residue_m:
+                cute.copy(tiled_copy, tOrO[(None, m, None)], tOgO[(None, m, None)])
 
     @cute.jit
     def compute(
@@ -1855,6 +2105,19 @@ class HopperFusedMultiHeadAttentionForward:
         if b != b_:
             return False, "q & k must have the same batch size"
 
+        for s in (s_q, s_k):
+            if isinstance(s, tuple) and len(s) != b:
+                return False, "variable sequence lengths must have one entry per batch"
+        # FP8 V is s-major: its row stride and the start of each key sequence
+        # along s must be 16-byte aligned for TMA
+        if in_dtype.width == 8 and any(
+            s % 16 for s in (s_k if isinstance(s_k, tuple) else (s_k,))
+        ):
+            return False, "fp8 inputs need key sequence lengths divisible by 16"
+        # For variable sequence lengths, check the window against the longest sequences
+        s_q = max(s_q) if isinstance(s_q, tuple) else s_q
+        s_k = max(s_k) if isinstance(s_k, tuple) else s_k
+
         if d != d_:
             return False, "q & k must have the same head dimension"
 
@@ -1915,6 +2178,16 @@ class HopperFusedMultiHeadAttentionForward:
             return False, "not supported persistent"
 
         return True, None
+
+
+def default_softmax_scale(q_shape: Tuple[int, int, int, int]) -> float:
+    """The scale ``run`` uses when the caller passes ``scale_softmax=0.0``.
+
+    It is ``1/sqrt(head_dim)``, the usual attention scale, and not ``1/sqrt(S_q)``:
+    a variable-length ``S_q`` is a tuple, and a non-square ``S_q != head_dim`` must
+    keep the same scale as the fixed-length path.
+    """
+    return 1.0 / math.sqrt(q_shape[3])
 
 
 def run(
@@ -2061,6 +2334,29 @@ def run(
 
     torch.manual_seed(1111)
 
+    # Variable-length sequences are packed along s into a single batch, and are
+    # described by cumulative sequence lengths [0, s_0, s_0 + s_1, ...].
+    def create_cumulative_sequence_lengths(s):
+        if not isinstance(s, tuple):
+            return None, None, [s] * b
+        s_cumsum = [0]
+        for s_i in s:
+            s_cumsum.append(s_cumsum[-1] + s_i)
+        s_cumsum_cute_tensor, s_cumsum_torch_tensor = cutlass_torch.cute_tensor_like(
+            torch.tensor(s_cumsum, dtype=torch.int32),
+            cutlass.Int32,
+            is_dynamic_layout=True,
+            assumed_align=16,
+        )
+        return s_cumsum_cute_tensor, s_cumsum_torch_tensor, list(s)
+
+    cum_seqlen_q, cum_seqlen_q_torch, s_q_list = create_cumulative_sequence_lengths(s_q)
+    cum_seqlen_k, cum_seqlen_k_torch, s_k_list = create_cumulative_sequence_lengths(s_k)
+    max_seqlen_q = cutlass.Int32(max(s_q_list)) if cum_seqlen_q is not None else None
+    # (batch, s) of the q/o/lse and k/v tensors
+    b_q, s_q = (1, sum(s_q_list)) if cum_seqlen_q is not None else (b, s_q)
+    b_k, s_k = (1, sum(s_k_list)) if cum_seqlen_k is not None else (b, s_k)
+
     def create_and_permute_tensor(
         b, s, h_k, h_r, d, dtype, is_dynamic_layout=True, tensor_name=""
     ):
@@ -2110,19 +2406,19 @@ def run(
         return f32_torch_tensor, cute_tensor, torch_tensor_gpu
 
     q_ref, q_tensor, q_torch = create_and_permute_tensor(
-        b, s_q, h_k, h_r, d, in_dtype, is_dynamic_layout=True
+        b_q, s_q, h_k, h_r, d, in_dtype, is_dynamic_layout=True
     )
     k_ref, k_tensor, k_torch = create_and_permute_tensor(
-        b, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True
+        b_k, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True
     )
     v_ref, v_tensor, v_torch = create_and_permute_tensor(
-        b, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True, tensor_name="v"
+        b_k, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True, tensor_name="v"
     )
     o_ref, o_tensor, o_torch = create_and_permute_tensor(
-        b, s_q, h_k, h_r, d, out_dtype, is_dynamic_layout=True
+        b_q, s_q, h_k, h_r, d, out_dtype, is_dynamic_layout=True
     )
     lse_ref, lse_tensor, lse_torch = create_and_permute_tensor(
-        b, s_q, h_k, h_r, 1, qk_acc_dtype, is_dynamic_layout=True
+        b_q, s_q, h_k, h_r, 1, qk_acc_dtype, is_dynamic_layout=True
     )
 
     mma_tiler = (*mma_tiler_mn, d)
@@ -2133,7 +2429,9 @@ def run(
     if is_causal:
         window_size_right = 0
     elif window_size_left is None and window_size_right is None:
-        if s_k % mma_tiler_mn[1] != 0:
+        # Variable-length keys always need the residual mask: the last K/V tile of a
+        # sequence may hold rows of the next one
+        if cum_seqlen_k is not None or s_k % mma_tiler_mn[1] != 0:
             mask_type = fmha_utils.MaskEnum.RESIDUAL_MASK
 
     # To avoid mask out the whole row which results in NaN in softmax
@@ -2157,14 +2455,17 @@ def run(
     need_check_seqlen_valid = (
         window_size_left is not None or window_size_right is not None
     )
-    if need_check_seqlen_valid and not check_seqlen_valid(
-        s_q,
-        s_k,
-        window_size_left,
-        window_size_right,
-        bottom_right_align,
-    ):
-        raise ValueError("sliding window doesn't support current setting")
+    for s_q_i, s_k_i in zip(s_q_list, s_k_list):
+        if s_q_i > 0 and s_k_i == 0 and not skip_ref_check:
+            raise ValueError("reference check needs keys for every non-empty query")
+        if need_check_seqlen_valid and not check_seqlen_valid(
+            s_q_i,
+            s_k_i,
+            window_size_left,
+            window_size_right,
+            bottom_right_align,
+        ):
+            raise ValueError("sliding window doesn't support current setting")
 
     fmha = HopperFusedMultiHeadAttentionForward(
         qk_acc_dtype,
@@ -2179,8 +2480,8 @@ def run(
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    if scale_softmax == 0.0:  # default to 1/sqrt(d)
-        scale_softmax = 1.0 / math.sqrt(q_shape[1])
+    if scale_softmax == 0.0:  # default to 1/sqrt(d), also for a non-square S_q
+        scale_softmax = default_softmax_scale(q_shape)
 
     scale_softmax = scale_q * scale_k * scale_softmax
 
@@ -2198,6 +2499,9 @@ def run(
         v_tensor,
         o_tensor,
         lse_tensor,
+        cum_seqlen_q,
+        cum_seqlen_k,
+        max_seqlen_q,
         scale_softmax_log2,
         scale_softmax,
         scale_output,
@@ -2281,6 +2585,9 @@ def run(
             v_tensor,
             o_tensor,
             lse_tensor,
+            cum_seqlen_q,
+            cum_seqlen_k,
+            max_seqlen_q,
             scale_softmax_log2,
             scale_softmax,
             scale_output,
@@ -2298,16 +2605,45 @@ def run(
         )
 
         print("Verifying results...")
-        o_ref, lse_ref = run_torch_fmha(
-            q_ref,
-            k_ref,
-            v_ref,
-            scale_softmax,
-            scale_output,
-            is_causal,
-            window_size_left,
-            window_size_right,
-        )
+        if cum_seqlen_q is None and cum_seqlen_k is None:
+            o_ref, lse_ref = run_torch_fmha(
+                q_ref,
+                k_ref,
+                v_ref,
+                scale_softmax,
+                scale_output,
+                is_causal,
+                window_size_left,
+                window_size_right,
+            )
+        else:
+            o_ref, lse_ref = torch.zeros_like(o_ref), torch.zeros_like(lse_ref)
+            cu_q = cu_k = 0
+            for i, (s_q_i, s_k_i) in enumerate(zip(s_q_list, s_k_list)):
+                # (rows, batch) of sequence i in a packed or a fixed-length tensor
+                q_idx = (
+                    (slice(cu_q, cu_q + s_q_i), Ellipsis, slice(0, 1))
+                    if cum_seqlen_q is not None
+                    else (Ellipsis, slice(i, i + 1))
+                )
+                k_idx = (
+                    (slice(cu_k, cu_k + s_k_i), Ellipsis, slice(0, 1))
+                    if cum_seqlen_k is not None
+                    else (Ellipsis, slice(i, i + 1))
+                )
+                if s_q_i > 0:
+                    o_ref[q_idx], lse_ref[q_idx] = run_torch_fmha(
+                        q_ref[q_idx],
+                        k_ref[k_idx],
+                        v_ref[k_idx],
+                        scale_softmax,
+                        scale_output,
+                        is_causal,
+                        window_size_left,
+                        window_size_right,
+                    )
+                cu_q += s_q_i
+                cu_k += s_k_i
 
         # convert o back to f32 for comparison
         o_fp32, o_fp32_torch = cutlass_torch.cute_tensor_like(
@@ -2350,19 +2686,19 @@ def run(
 
     def generate_tensors():
         _, q_tensor_workspace, _ = create_and_permute_tensor(
-            b, s_q, h_k, h_r, d, in_dtype, is_dynamic_layout=True
+            b_q, s_q, h_k, h_r, d, in_dtype, is_dynamic_layout=True
         )
         _, k_tensor_workspace, _ = create_and_permute_tensor(
-            b, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True
+            b_k, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True
         )
         _, v_tensor_workspace, _ = create_and_permute_tensor(
-            b, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True, tensor_name="v"
+            b_k, s_k, h_k, 1, d, in_dtype, is_dynamic_layout=True, tensor_name="v"
         )
         _, o_tensor_workspace, _ = create_and_permute_tensor(
-            b, s_q, h_k, h_r, d, out_dtype, is_dynamic_layout=True
+            b_q, s_q, h_k, h_r, d, out_dtype, is_dynamic_layout=True
         )
         _, lse_tensor_workspace, _ = create_and_permute_tensor(
-            b, s_q, h_k, h_r, 1, qk_acc_dtype, is_dynamic_layout=True
+            b_q, s_q, h_k, h_r, 1, qk_acc_dtype, is_dynamic_layout=True
         )
 
         return testing.JitArguments(
@@ -2371,6 +2707,9 @@ def run(
             v_tensor_workspace,
             o_tensor_workspace,
             lse_tensor_workspace,
+            cum_seqlen_q,
+            cum_seqlen_k,
+            max_seqlen_q,
             scale_softmax_log2,
             scale_softmax,
             scale_output,
@@ -2427,6 +2766,42 @@ if __name__ == "__main__":
                 "Invalid format. Expected comma-separated integers."
             )
 
+    def parse_nested_comma_separated_ints(s: str):
+        try:
+            s = s.strip()
+            if "(" not in s:
+                return tuple(int(x.strip()) for x in s.split(","))
+
+            start = s.find("(")
+            end = s.find(")")
+            if start == -1 or end == -1:
+                raise ValueError("Mismatched parentheses")
+
+            before = s[:start].strip().rstrip(",")
+            middle = s[start + 1 : end].strip()
+            after = s[end + 1 :].strip().lstrip(",")
+
+            result = []
+            if before:
+                result.extend(int(x.strip()) for x in before.split(","))
+
+            if middle:
+                nested_tuple = tuple(int(x.strip()) for x in middle.split(","))
+                result.append(nested_tuple)
+
+            if after:
+                result.extend(int(x.strip()) for x in after.split(","))
+
+            return tuple(result)
+
+        except ValueError as e:
+            if str(e) == "Mismatched parentheses":
+                raise argparse.ArgumentTypeError("Mismatched parentheses in input")
+            else:
+                raise argparse.ArgumentTypeError(
+                    "Invalid format. Expected comma-separated integers with optional parentheses for nested tuple."
+                )
+
     parser = argparse.ArgumentParser(
         description="""
 This example showcases the use of CUTE DSL builders to easily construct fused multi-head attention forward-pass kernels targeting NVIDIA's Hopper architecture.
@@ -2482,16 +2857,16 @@ This example showcases the use of CUTE DSL builders to easily construct fused mu
 
     parser.add_argument(
         "--q_shape",
-        type=parse_comma_separated_ints,
+        type=parse_nested_comma_separated_ints,
         default=[1, 128, 16, 128],
-        help="Shape of Q (B, S_q, H, D)",
+        help="Shape of Q (B, S_q, H, D); S_q may be per-sequence lengths, e.g. (128,1,300)",
     )
 
     parser.add_argument(
         "--k_shape",
-        type=parse_comma_separated_ints,
+        type=parse_nested_comma_separated_ints,
         default=[1, 128, 16, 128],
-        help="Shape of K (B, S_k, H_k, D)",
+        help="Shape of K (B, S_k, H_k, D); S_k may be per-sequence lengths, e.g. (128,1,300)",
     )
 
     parser.add_argument(
