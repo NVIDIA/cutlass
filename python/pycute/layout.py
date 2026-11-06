@@ -208,8 +208,9 @@ def composition(layoutA, layoutB):
     rest_stride   = layoutB.stride
     flat_A = coalesce(layoutA)
     for (curr_shape, curr_stride) in zip(flatten(flat_A.shape)[:-1], flatten(flat_A.stride)[:-1]):
-      assert curr_shape % rest_stride == 0 or rest_stride % curr_shape == 0
-      new_shape = min(max(1, curr_shape // rest_stride), rest_shape)
+      assert (curr_shape % rest_stride == 0 or rest_stride % curr_shape == 0 or
+              (0 < rest_stride and (rest_shape - 1) * rest_stride < curr_shape))
+      new_shape = min(max(1, -(-curr_shape // rest_stride)), rest_shape)  # ceil_div(curr_shape, rest_stride)
 
       if new_shape != 1:
         result_shape.append(new_shape)
