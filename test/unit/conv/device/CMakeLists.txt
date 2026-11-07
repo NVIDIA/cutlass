@@ -200,6 +200,9 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_f32_sm80
 
+    # Fused scale/bias/ReLU mainloop, Conv2d and Conv3d split-K
+    conv_fprop_fusion_split_k_sm80.cu
+
     # Conv2d
     conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
     conv2d_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
