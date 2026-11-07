@@ -12,23 +12,35 @@
 import enum
 import warnings
 from dataclasses import dataclass
-from typing import Any, Optional, Type, Union, cast
+from typing import Any, Dict, List, Optional, Type, Union, cast
 from typing_extensions import deprecated
 from abc import ABCMeta, abstractmethod
 
 from cutlass import base_dsl
-from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL
+from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL, dsl_user_op
 
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
 from cutlass._mlir.dialects.cute import ReductionOp as _CuteReductionOp
 from cutlass._mlir.dialects.nvvm import ReductionOp as _NvvmReductionOp
+from cutlass._mlir.dialects import llvm
 from cutlass._mlir import ir
 
 ReductionOp = ReductionKind
 
 from ...atom import CopyOp, Trait, TmaTrait, make_atom
-from ...typing import Int16, Int32, Int64, Pointer, Integer, Numeric
+from ...typing import (
+    Int16,
+    Int32,
+    Int64,
+    Pointer,
+    Integer,
+    Numeric,
+    Float16,
+    BFloat16,
+    Float32,
+    Float64,
+)
 from ..common import LoadCacheMode as LoadCacheMode_
 
 from ..tcgen05.mma import CtaGroup
@@ -1846,6 +1858,139 @@ class CopyBulkS2GOp(CopyOp):
 
 class CopyBulkS2GTrait(Trait):
     pass
+
+
+#: PTX ``.op.type`` suffix for each arithmetic type supported by the non-TMA bulk
+#: reduction. ``.noftz`` is required for the FP16/BF16 ``add`` forms and is derived
+#: from the element type, never a user-facing switch. FP32 and FP64 keep the
+#: instruction's own subnormal semantics.
+_BULK_REDUCE_OP_TYPE: Dict[Type[Numeric], str] = {
+    Float16: "add.noftz.f16",
+    BFloat16: "add.noftz.bf16",
+    Float32: "add.f32",
+    Float64: "add.f64",
+}
+
+
+class CopyReduceBulkS2GTrait(Trait):
+    """Trait for :class:`CopyReduceBulkS2GOp`.
+
+    Deliberately not a :class:`CopyBulkS2GTrait`: ``CopyAtomBulkCopyS2GType`` has no
+    field describing a reduction, so the arithmetic type and the PTX qualifier are
+    carried here and ``cute.copy`` keys its verifier and lowering on this class
+    rather than on the plain bulk-copy trait.
+    """
+
+    def __init__(self, value: ir.Value, dtype: Type[Numeric], op_type: str) -> None:
+        super().__init__(value)
+        self.dtype = dtype
+        self.op_type = op_type
+
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "CopyReduceBulkS2GTrait":
+        return self.__class__(values[0], self.dtype, self.op_type)
+
+
+@dataclass(frozen=True)
+class CopyReduceBulkS2GOp(CopyBulkS2GOp):
+    """Non-TMA shared-to-global bulk floating point ``add`` reduction Copy Operation.
+
+    ``cute.copy`` accepts one contiguous, 16-byte-aligned tile per call and emits
+    ``cp.reduce.async.bulk.global.shared::cta.bulk_group.add<.noftz>.<type>``. The
+    source, the destination and the atom must use the same arithmetic type. FP16 and
+    BF16 lower to the ``.noftz`` forms that ptxas requires for ``add``; FP32 and FP64
+    keep whatever subnormal behaviour the instruction itself defines.
+
+    The compiler does not perform thread election for this operation. One thread
+    issues the copy after a generic-to-async proxy fence, and the caller commits and
+    waits on the bulk group before the destination may be read. Neither the CopyOp
+    nor ``cute.copy`` emits a fence, commit, wait or barrier.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-reduce-async-bulk>`__.
+    """
+
+    reduction_kind: ReductionKind = ReductionKind.ADD
+
+    def __post_init__(self) -> None:
+        kind = self.reduction_kind
+        if isinstance(kind, _NvvmReductionOp):
+            kind = ReductionKind[kind.name]
+        if not isinstance(kind, ReductionKind):
+            raise TypeError(
+                "expects a 'reduction_kind' kw argument of type cute.ReductionKind "
+                f"when creating a copy Atom for {self.__class__.__name__}, but got "
+                f"{type(kind).__module__}.{type(kind).__name__}"
+            )
+        if kind is not ReductionKind.ADD:
+            raise ValueError(
+                f"{self.__class__.__name__} currently supports ReductionKind.ADD "
+                f"only, but got ReductionKind.{kind.name}"
+            )
+        object.__setattr__(self, "reduction_kind", kind)
+        super().__post_init__()
+
+    def __str__(self) -> str:
+        return "cp.reduce.async.bulk SMEM -> GMEM add Operation"
+
+    def _make_trait(
+        self,
+        copy_internal_type: Type[Numeric],
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "CopyReduceBulkS2GTrait":
+        op_type = _BULK_REDUCE_OP_TYPE.get(copy_internal_type)
+        if op_type is None:
+            raise ValueError(
+                f"{self.__class__.__name__} supports Float16, BFloat16, Float32 and "
+                f"Float64, but got {copy_internal_type}"
+            )
+        num_bits_per_copy = kwargs.get("num_bits_per_copy", 0)
+        if (
+            not isinstance(num_bits_per_copy, int)
+            or num_bits_per_copy < 128
+            or num_bits_per_copy % 128
+        ):
+            raise ValueError(
+                "expects a 'num_bits_per_copy' kw argument that is a positive "
+                f"multiple of 128 when creating a copy Atom for "
+                f"{self.__class__.__name__}, but got {num_bits_per_copy!r}"
+            )
+        # The bulk-copy atom type supplies the partition layouts; the reduction
+        # itself is described by the returned trait and emitted by cute.copy.
+        ty = _cute_nvgpu_ir.CopyAtomBulkCopyS2GType.get(
+            copy_internal_type.mlir_type, num_bits_per_copy, False
+        )
+        return CopyReduceBulkS2GTrait(
+            make_atom(ty, loc=loc, ip=ip), copy_internal_type, op_type
+        )
+
+
+@dsl_user_op
+def _copy_reduce_bulk_s2g(
+    dst: Pointer,
+    src: Pointer,
+    byte_count: int,
+    op_type: str,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    llvm.inline_asm(
+        None,
+        [
+            dst.toint().ir_value(),
+            Int32(src.toint()).ir_value(),
+            Int32(byte_count).ir_value(),
+        ],
+        f"cp.reduce.async.bulk.global.shared::cta.bulk_group.{op_type} [$0], [$1], $2;",
+        "l,r,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
 
 
 #

@@ -28,6 +28,7 @@ __all__ = [
     "CopyBulkG2SOp",
     "CopyBulkG2SMulticastOp",
     "CopyBulkS2GOp",
+    "CopyReduceBulkS2GOp",
     "CopyBulkS2GByteMaskOp",
     "CopyBulkS2SOp",
     "TmaCopyOp",
