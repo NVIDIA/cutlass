@@ -12470,7 +12470,7 @@ def GenerateSM107_TensorOp_mxnvf4_UMMA_gemm_with_block_scaled(
 ###################################################################################################
 
 def GenerateSM100(manifest, cuda_version):
-  arch_family_cc = ['100f', '101f', '103a', '107f']
+  arch_family_cc = ['100f', '101f', '103a', '103f', '107f']
   if CudaToolkitVersionSatisfies(cuda_version, 13, 0):
     for old_cc, new_cc in [('101f', '110f')]:
       arch_family_cc = [cc.replace(old_cc, new_cc) for cc in arch_family_cc]
