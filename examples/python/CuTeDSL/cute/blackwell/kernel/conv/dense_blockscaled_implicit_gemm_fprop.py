@@ -3508,6 +3508,7 @@ class Sm100BlockScaledPersistentDenseImplicitGemmFpropKernel(
                 # only the non-overlapping path releases here.
                 #
                 if cutlass.const_expr(not self.overlapping_accum):
+                    cute.arch.fence_view_async_tmem_load()
                     with cute.arch.elect_one():
                         acd_pipeline.consumer_release(acc_consumer_state)
                     acc_consumer_state.advance()

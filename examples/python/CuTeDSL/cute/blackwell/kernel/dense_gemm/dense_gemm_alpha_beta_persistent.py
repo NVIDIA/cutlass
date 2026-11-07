@@ -1227,6 +1227,7 @@ class SM100PersistentDenseGemmAlphaBetaKernel:
                 #
                 # Async arrive accumulator buffer empty
                 #
+                cute.arch.fence_view_async_tmem_load()
                 with cute.arch.elect_one():
                     acc_pipeline.consumer_release(acc_consumer_state)
                 acc_consumer_state.advance()
