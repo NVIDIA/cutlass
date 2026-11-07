@@ -139,12 +139,18 @@ class Manifest:
         else:
             full_metadata_filter = metadata_filter
 
-        # Filter self._candidate_operators to those that support inputs & full_metadata_filter
+        # Operator-specific support checks require runtime arguments. With only
+        # a target, metadata can check architecture compatibility on its own.
         return [
             op
             for op in self._candidate_operators
-            if op.supports(args, target_sm=target_sm)
-            and full_metadata_filter(op.metadata)
+            if full_metadata_filter(op.metadata)
+            and (
+                op.supports(args, target_sm=target_sm)
+                if args is not None
+                else target_sm is None
+                or op.metadata.supports(None, target_sm=target_sm)
+            )
         ]
 
     @property
