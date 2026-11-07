@@ -726,8 +726,8 @@ int main(int argc, char** argv)
     return -1;
   }
 
-  if ((props.major != 10) || (props.major == 10 && props.minor > 1)) {
-    std::cerr << "This example requires NVIDIA's Blackwell Architecture GPU with compute capability 100a." << std::endl;
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires NVIDIA's Blackwell Architecture GPU with compute capability 100a, 101a or 103a." << std::endl;
     std::cerr << "  Found " << props.major << "." << props.minor << std::endl;
     return -1;
   }

@@ -793,10 +793,10 @@ int main(int argc, char const **args) {
       << "later (compute capability 100 or greater) and CUDA 12.0 or greater.\n";
     return 0;
   }
-  else if (__CUDACC_VER_MAJOR__ < 12 || (props.major != 10 || props.minor != 0)) {
+  else if (__CUDACC_VER_MAJOR__ < 12 || (props.major != 10 || (props.minor != 0 && props.minor != 3))) {
     std::cout
       << "This example requires a GPU of NVIDIA's Blackwell Architecture "
-      << "(compute capability 100) and CUDA 12.0 or greater.\n";
+      << "(compute capability 100 or 103) and CUDA 12.0 or greater.\n";
     return 0;
   }
 

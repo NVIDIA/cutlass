@@ -505,14 +505,14 @@ int main(int argc, char const **args) {
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
   
   if (__CUDACC_VER_MAJOR__ < 13) {
-    if (props.major != 10 && (props.minor != 0 || props.minor != 1)) {
-      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 101)." << std::endl;
+    if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100, 101 or 103)." << std::endl;
       return 0;
     }
   }
   else {
-    if ((props.major != 10 || props.major != 11) && props.minor != 0) {
-      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100 or 110)." << std::endl;
+    if (!((props.major == 10 && (props.minor == 0 || props.minor == 3)) || (props.major == 11 && props.minor == 0))) {
+      std::cerr << "This example requires a GPU of NVIDIA's Blackwell architecture (compute capability 100, 103 or 110)." << std::endl;
       return 0;
     }
   }
