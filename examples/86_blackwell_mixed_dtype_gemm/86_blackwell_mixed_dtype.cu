@@ -437,7 +437,7 @@ int main(int argc, char const **args) {
 
   // CUTLASS must be compiled with CUDA 12.8 Toolkit to run this example
   // and must have compute capability at least 100a.
-  bool is_correct_cuda_version = (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 8);
+  bool is_correct_cuda_version = (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8);
   if (!is_correct_cuda_version) {
     std::cerr << "Version is " << __CUDACC_VER_MINOR__ << "\n";
     std::cerr << "This example requires CUDA 12.8 or newer.\n";
@@ -450,10 +450,8 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 10 || props.minor != 0) {
-    std::cerr
-      << "This example requires a GPU of NVIDIA's Blackwell Architecture or "
-      << "later (compute capability 100a or greater).\n";
+  if (props.major != 10 || (props.minor != 0 && props.minor != 1 && props.minor != 3)) {
+    std::cerr << "This example requires a GPU with compute capability 100a|f, 101a|f, or 103a|f)." << std::endl;
     return 0;
   }
 
