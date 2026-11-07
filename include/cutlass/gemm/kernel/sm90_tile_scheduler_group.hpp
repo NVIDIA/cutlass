@@ -163,7 +163,7 @@ public:
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
       problem_shapes,
       hw_info,
-      tile_shape, cluster_shape);
+      tile_shape, cluster_shape, arguments.max_swizzle_size);
 
     Params params;
     params.initialize(
@@ -195,7 +195,7 @@ public:
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
       problem_shapes,
       hw_info,
-      tile_shape, cluster_shape);
+      tile_shape, cluster_shape, arguments.max_swizzle_size);
 
     return Params::get_grid_shape(
       problem_blocks,
@@ -212,7 +212,7 @@ public:
   template<class BlockShape, class ClusterShape>
   CUTLASS_HOST_DEVICE static
   dim3
-  get_tiled_cta_shape_mnl(GroupProblemShape const& problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
+  get_tiled_cta_shape_mnl(GroupProblemShape const& problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape, int max_swizzle_size) {
     int groups = problem_shapes.groups();
     uint32_t total_ctas = 0;
     uint32_t cta_in_N_dim = 1; // We linearize the blocks across all the problems here
@@ -228,8 +228,11 @@ public:
         auto ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes.get_host_problem_shape(group)), cute::shape<1>(cta_shape)));
         if(ctas_along_m <= 0) ctas_along_m = 1;
         if(ctas_along_n <= 0) ctas_along_n = 1;
-        auto problem_blocks_m = round_up(ctas_along_m, cute::get<0>(cluster_shape));
-        auto problem_blocks_n = round_up(ctas_along_n, cute::get<1>(cluster_shape));
+        // Match the device-side per-group tile counts, which round each
+        // dimension up to (1 << log_swizzle_size) * cluster extent.
+        int32_t log_swizzle_size = get_log_swizzle_size(static_cast<int>(ctas_along_m), static_cast<int>(ctas_along_n), max_swizzle_size);
+        auto problem_blocks_m = round_up(ctas_along_m, (1 << log_swizzle_size) * cute::get<0>(cluster_shape));
+        auto problem_blocks_n = round_up(ctas_along_n, (1 << log_swizzle_size) * cute::get<1>(cluster_shape));
         total_ctas += problem_blocks_m * problem_blocks_n;
       }
     }
@@ -246,7 +249,7 @@ public:
   }
 
   // Calculate the log of the swizzle size based on the problem CTAs and the max swizzle size
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static int32_t
   get_log_swizzle_size(int problem_ctas_m, int problem_ctas_n, int max_swizzle_size) {
     int min_cta_dim = platform::min(problem_ctas_m, problem_ctas_n);
