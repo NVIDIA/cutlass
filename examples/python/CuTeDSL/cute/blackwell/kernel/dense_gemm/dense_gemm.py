@@ -828,6 +828,7 @@ class DenseGemmKernel:
         #
         # Dealloc the tensor memory buffer
         #
+        cute.arch.fence_view_async_tmem_load()
         pipeline.sync(barrier_id=1)
         tmem.free(tmem_ptr)
 

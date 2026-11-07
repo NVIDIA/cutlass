@@ -871,6 +871,7 @@ class Sm100BlockScaledDenseGemmKernel:
         # Store C to global memory
         cute.copy(simt_atom, tTR_rC, tTR_gC)
 
+        cute.arch.fence_view_async_tmem_load()
         acc_full.release()
 
         # Ensure used buffers are properly synchronized before producer exit.
