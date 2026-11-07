@@ -213,6 +213,10 @@ def kernel(
             dst_idx = (coord_m + row) * (k_tiles * TILE_K) + k_offset + col
             (dst_ptr + dst_idx).store((smem_ptr + smem_idx).load())
 
+        # The next iteration can refill this stage before its wait/barrier.
+        # Hold the producer until every consumer warp finishes its reads.
+        prims.barrier_cta_sync(0)
+
 
 # ---------------------------------------------------------------------------
 # Host
