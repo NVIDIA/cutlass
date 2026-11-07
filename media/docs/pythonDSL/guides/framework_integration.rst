@@ -222,9 +222,9 @@ The following example demonstrates how to use ``mark_layout_dynamic`` to specify
 
     # (8,4,16,2):(2,16,64,1)
     a = torch.empty(16, 4, 8, 2).permute(2, 1, 0, 3)
-    # (1,4,1,32,1):(4,1,4,4,4) => torch tensor when dimension has shape 1, its stride is degenerated to 1,
-    # resulting in (1,4,1,32,1):(1,1,1,4,1)
-    b = torch.empty(32, 1, 1, 1, 4).permute(3, 4, 1, 0, 2)
+    # Explicit singleton strides let dimensions 0 and 2 serve as leading dimensions.
+    # (1,4,1,32,1):(1,1,1,4,1)
+    b = torch.empty_strided((1, 4, 1, 32, 1), (1, 1, 1, 4, 1))
     # (2,2):(8,2)
     c = torch.empty(3, 4)[::2, ::2]
     # (3,1,1,5):(5,0,0,1)
@@ -236,11 +236,11 @@ The following example demonstrates how to use ``mark_layout_dynamic`` to specify
     # (?,?,?,?):(?,?,?,1)
 
     t1 = from_dlpack(b).mark_layout_dynamic(leading_dim=0)
-    print(t2)
+    print(t1)
     # (?,?,?,?,?):(1,?,?,?,?)
 
     t2 = from_dlpack(b).mark_layout_dynamic(leading_dim=2)
-    print(t3)
+    print(t2)
     # (?,?,?,?,?):(?,?,1,?,?)
 
     t3 = from_dlpack(c).mark_layout_dynamic()
