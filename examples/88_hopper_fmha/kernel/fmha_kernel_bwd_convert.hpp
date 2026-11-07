@@ -119,7 +119,7 @@ struct FmhaKernelBwdConvert {
         *reinterpret_cast<VecSrc*>(value_src) = *reinterpret_cast<const VecSrc*>(&ptr_src_bhs[idx_d]);
 
         for (int v = 0; v < kElementsPerLoad; v++) {
-          value_dest[v] = value_src[v];
+          value_dest[v] = Element(value_src[v]);
         }
 
         *reinterpret_cast<VecDest*>(&ptr_dest_bhs[idx_d]) = *reinterpret_cast<const VecDest*>(value_dest);

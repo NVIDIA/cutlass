@@ -748,7 +748,7 @@ struct FmhaBwdMainloopTmaWarpSpecialized {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(acc_DS); i++) {
         // We could move the scale out and into the respective epilogues (or a final scaling step)
-        acc_DS(i) = acc_P(i) * params.scale_softmax * (acc_DP(i) - reg_ODO(i));
+        acc_DS(i) = Element(acc_P(i) * params.scale_softmax * (acc_DP(i) - reg_ODO(i)));
       }
 
       // GEMM PdO -> dV

@@ -89,7 +89,7 @@ void __global__ fmha_bwd_reference_dQ_kernel(
         for (int idx_K = 0; idx_K < size<0>(mK); idx_K++) {
           acc += mS[idx_K] * mK(idx_K, idx_D, idx_L);
         }
-        mDQ(idx_Q, idx_D, idx_L) = acc;
+        mDQ(idx_Q, idx_D, idx_L) = static_cast<typename TensorDQ::value_type>(acc);
       }
     }
   }
@@ -150,7 +150,7 @@ void __global__ fmha_bwd_reference_dK_kernel(
         for (int idx_Q = 0; idx_Q < size<0>(mDO); idx_Q++) {
           acc += mS[idx_Q] * mQ(idx_Q, idx_D, idx_L);
         }
-        mDK(idx_K, idx_D, idx_L) = acc;
+        mDK(idx_K, idx_D, idx_L) = static_cast<typename TensorDK::value_type>(acc);
       }
     }
   }
@@ -207,7 +207,7 @@ void __global__ fmha_bwd_reference_dV_kernel(
         for (int idx_Q = 0; idx_Q < size<0>(mDO); idx_Q++) {
           acc += mS[idx_Q] * mDO(idx_Q, idx_D, idx_L);
         }
-        mDV(idx_K, idx_D, idx_L) = acc;
+        mDV(idx_K, idx_D, idx_L) = static_cast<typename TensorDV::value_type>(acc);
       }
     }
   }

@@ -47,4 +47,13 @@ target_compile_definitions(
   88_hopper_fmha_fp8
   PRIVATE FP8)
 
+cutlass_example_add_executable(
+  88_hopper_fmha_bf16
+  88_hopper_fmha.cu
+  )
+
+target_compile_definitions(
+  88_hopper_fmha_bf16
+  PRIVATE BFLOAT16)
+
 endif()

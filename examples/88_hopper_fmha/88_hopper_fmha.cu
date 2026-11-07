@@ -96,6 +96,21 @@ using namespace cutlass::fmha;
 
 // Uncomment for FP8
 // #define FP8
+// Uncomment for BF16 inputs (the default is FP16); not named BF16, which
+// clashes with enumerators in the CuTe headers
+// #define BFLOAT16
+
+#if defined(FP8) && defined(BFLOAT16)
+#error "Define at most one of FP8 and BFLOAT16"
+#endif
+
+#ifdef BFLOAT16
+using Element16 = cutlass::bfloat16_t;
+#else
+using Element16 = cutlass::half_t;
+#endif
+
+constexpr bool kIsBF16 = std::is_same_v<Element16, cutlass::bfloat16_t>;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -238,7 +253,7 @@ struct FwdRunner {
   using Element = cutlass::float_e4m3_t;
   using ElementAccumulatorQK = find_option_t<Tag::kAccQK, float, KernelOptions...>;
 #else
-  using Element = cutlass::half_t;
+  using Element = Element16;
   using ElementAccumulatorQK = float;
 #endif
 
@@ -317,7 +332,9 @@ struct FwdRunner {
       return false;
     }
 
-    const double kMaxDiffThresh = sizeof(Element) == 1 ? 1e-1 : 1e-2;
+    // BF16 keeps three fewer mantissa bits than FP16, and the reference rounds
+    // the scores and probabilities to Element, so allow 8x the FP16 max error.
+    const double kMaxDiffThresh = sizeof(Element) == 1 ? 1e-1 : (kIsBF16 ? 8e-2 : 1e-2);
     const double kMeanDiffThresh = sizeof(Element) == 1 ? 1e-1 : 1e-3;
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
@@ -540,7 +557,7 @@ template<
 >
 struct BwdRunner {
 
-  using Element = cutlass::half_t;
+  using Element = Element16;
   using ElementAccumulator = float;
 
   // B H Q K D
@@ -648,22 +665,26 @@ struct BwdRunner {
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     double max_diff = 0;
     double mean_diff = 0;
+    // See FwdRunner::verify for the BF16 max error.
+    const double kMaxDiffThresh = kIsBF16 ? 8e-2 : 1e-2;
+    const double kMeanDiffThresh = 1e-3;
+
     reference_abs_diff(block_dQ, block_ref_dQ, max_diff, mean_diff);
-    bool passed_dQ = (max_diff < 1e-2) && (mean_diff < 1e-3);
+    bool passed_dQ = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_dQ) {
       std::cerr << "failed dQ: max diff " << max_diff 
                 << " mean " << mean_diff << std::endl;
     }
 
     reference_abs_diff(block_dK, block_ref_dK, max_diff, mean_diff);
-    bool passed_dK = (max_diff < 1e-2) && (mean_diff < 1e-3);
+    bool passed_dK = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_dK) {
       std::cerr << "failed dK: max diff " << max_diff 
                 << " mean " << mean_diff << std::endl;
     }
 
     reference_abs_diff(block_dV, block_ref_dV, max_diff, mean_diff);
-    bool passed_dV = (max_diff < 1e-2) && (mean_diff < 1e-3);
+    bool passed_dV = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_dV) {
       std::cerr << "failed dV: max diff " << max_diff 
                 << " mean " << mean_diff << std::endl;
