@@ -32,8 +32,71 @@ from .nvvm_wrappers import (
     cvt_f32_bf16,
     cvt_i4x8_to_mxf8x8,
     sext_unpacked_i4x4_to_i8x4,
+    nvvm,
 )
-from ..typing import Int4, Int8, Float32, BFloat16, Int32, Numeric
+from ..typing import (
+    Int4,
+    Int8,
+    Float32,
+    BFloat16,
+    Int32,
+    Float8E4M3FN,
+    Float8E5M2,
+    Numeric,
+)
+
+
+@dsl_user_op
+def cvt_f32_to_fp8_intrinsic(
+    src_f32: ir.Value,
+    length: int,
+    dst_type: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert f32 lanes with packed NVVM ops, padding an odd tail with zero."""
+    assert dst_type in (Float8E4M3FN, Float8E5M2)
+
+    vec_dst_type = ir.VectorType.get([length], dst_type.mlir_type, loc=loc)
+    vec_dst_type_i8 = ir.VectorType.get([length], Int8.mlir_type, loc=loc)
+    zero_attr = ir.IntegerAttr.get(Int8.mlir_type, 0)
+    vec_dst = arith.ConstantOp(
+        vec_dst_type_i8,
+        ir.DenseElementsAttr.get_splat(vec_dst_type_i8, zero_attr),
+        loc=loc,
+        ip=ip,
+    ).result
+
+    vec_i8x2_type = ir.VectorType.get([2], Int8.mlir_type, loc=loc)
+    for src_pos in range(0, length, 2):
+        src_lo = vector.extract(src_f32, [], [src_pos], loc=loc, ip=ip)
+        src_hi = (
+            vector.extract(src_f32, [], [src_pos + 1], loc=loc, ip=ip)
+            if src_pos + 1 < length
+            else Float32(0).ir_value(loc=loc, ip=ip)
+        )
+        converted = nvvm.convert_f32x2_to_f8x2(
+            vec_i8x2_type,
+            src_hi,
+            src_lo,
+            ir.TypeAttr.get(dst_type.mlir_type),
+            rnd=nvvm.FPRoundingMode.RN,
+            sat=nvvm.SaturationMode.SATFINITE,
+            loc=loc,
+            ip=ip,
+        )
+        if src_pos + 1 < length:
+            vec_dst = vector.insert_strided_slice(
+                converted, vec_dst, [src_pos], [1], loc=loc, ip=ip
+            )
+        else:
+            src_lo_i8 = vector.extract(converted, [], [0], loc=loc, ip=ip)
+            vec_dst = vector.insert(
+                src_lo_i8, vec_dst, [], [src_pos], loc=loc, ip=ip
+            )
+
+    return vector.bitcast(vec_dst_type, vec_dst, loc=loc, ip=ip)
 
 
 @dsl_user_op
