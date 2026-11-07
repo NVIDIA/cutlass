@@ -44,6 +44,8 @@ from .typing import (
     FloatNV8E5M3FNU,
     BFloat16,
     Float32,
+    Float8E4M3FN,
+    Float8E5M2,
     IntTuple,
     Coord,
     Shape,
@@ -92,6 +94,7 @@ from .arch import (
     cvt_i8_bf16_intrinsic,
     cvt_i4_bf16_intrinsic,
     cvt_f32x4_to_fnv8e5m3x4,
+    cvt_f32_to_fp8_intrinsic,
 )
 
 from cutlass._mlir_helpers.dominance import value_reaches_current_ip
@@ -2562,23 +2565,31 @@ class TensorSSA(Vector):
                 src, dtype.signed, dtype.mlir_type, loc=loc, ip=ip
             )
         elif issubclass(src_dtype, Integer) and dtype.is_float:
-            # check if there is a fast conversion path for given data types and arch
-            fast_cvt_func = None
-            # cvt_i8_bf16_intrinsic is signed-only (cvt.rn.bf16.s8 / dp4a.s32.s32
-            # / scaled s2f6), so it is restricted to signed Int8. Uint8 falls
-            # through to the signedness-aware itofp path below; using the signed
-            # intrinsic would mis-convert Uint8 values >= 128 (e.g. 128 -> -128).
-            if src_dtype == Int8 and dtype == BFloat16:
-                fast_cvt_func = cvt_i8_bf16_intrinsic
-            elif src_dtype == Int4 and dtype == BFloat16:
-                fast_cvt_func = cvt_i4_bf16_intrinsic
-            arch = BaseDSL._get_dsl().get_arch_enum()
-            if fast_cvt_func is not None and arch in fast_cvt_func.supported_archs:  # type: ignore[attr-defined]
-                res_vect = fast_cvt_func(src, size(self.shape), loc=loc, ip=ip)
-            else:
-                res_vect = cutlass_arith.itofp(
-                    src, src_dtype.signed, dtype.mlir_type, loc=loc, ip=ip
+            if dtype in (Float8E4M3FN, Float8E5M2):
+                src_f32 = cutlass_arith.itofp(
+                    src, src_dtype.signed, Float32.mlir_type, loc=loc, ip=ip
                 )
+                res_vect = cvt_f32_to_fp8_intrinsic(
+                    src_f32, size(self.shape), dtype, loc=loc, ip=ip
+                )
+            else:
+                # check if there is a fast conversion path for given data types and arch
+                fast_cvt_func = None
+                # cvt_i8_bf16_intrinsic is signed-only (cvt.rn.bf16.s8 / dp4a.s32.s32
+                # / scaled s2f6), so it is restricted to signed Int8. Uint8 falls
+                # through to the signedness-aware itofp path below; using the signed
+                # intrinsic would mis-convert Uint8 values >= 128 (e.g. 128 -> -128).
+                if src_dtype == Int8 and dtype == BFloat16:
+                    fast_cvt_func = cvt_i8_bf16_intrinsic
+                elif src_dtype == Int4 and dtype == BFloat16:
+                    fast_cvt_func = cvt_i4_bf16_intrinsic
+                arch = BaseDSL._get_dsl().get_arch_enum()
+                if fast_cvt_func is not None and arch in fast_cvt_func.supported_archs:  # type: ignore[attr-defined]
+                    res_vect = fast_cvt_func(src, size(self.shape), loc=loc, ip=ip)
+                else:
+                    res_vect = cutlass_arith.itofp(
+                        src, src_dtype.signed, dtype.mlir_type, loc=loc, ip=ip
+                    )
         else:
             res_vect = cutlass_arith.int_to_int(src, dtype, loc=loc, ip=ip)
 
