@@ -144,6 +144,11 @@ def kernel(dst_arr: cutlass.Array, CLUSTER_SIZE_C: cutlass.Constexpr):
         peer_value = peer_ptr[0]
         dst_arr[my_rank] = peer_value
 
+    # PTX requires the owner CTA to remain alive until peer SMEM accesses finish.
+    # Use an ordered arrival to complete every remote read before any CTA exits.
+    prims.barrier_cluster_arrive()
+    prims.barrier_cluster_wait()
+
 
 # ---------------------------------------------------------------------------
 # Host launcher
