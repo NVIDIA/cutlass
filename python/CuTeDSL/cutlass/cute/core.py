@@ -260,6 +260,36 @@ def _pack_int_tuple(
     )
 
 
+def _as_width_carrying_leaf(
+    x: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    """
+    Wrap a dynamic 64-bit integer leaf as a depth-0 int_tuple value so that
+    ``pack_tile`` sees its width.
+
+    ``_cute_ir.pack_tile`` reads the bit-width of a leaf only from an
+    ``IntTupleType`` value (e.g. ``?{i64}``); a bare ``IntegerType`` value is
+    typed as a 32-bit leaf. Passing a bare ``i64`` leaf therefore yields a tile
+    type ``[?:1]`` whose ``make_tile`` operand is ``i64`` and the IR verifier
+    rejects the op ("expected (div=1, width=32) but got (div=1, width=64)").
+    ``pack_int_tuple`` already handles bare integers of any width, so we go
+    through it, mirroring ``IntValue.get_typed_value``. 32-bit leaves are
+    returned unchanged so the IR emitted for the common case does not change;
+    i32 and i64 are the only integer leaf widths the CuTe IR accepts.
+    """
+    if (
+        isinstance(x, ir.Value)
+        and isinstance(x.type, ir.IntegerType)
+        and x.type.width == 64
+    ):
+        res_ty, _ = _cute_ir.pack_int_tuple(x)
+        return _cute_ir.MakeIntTupleOp(res_ty, [x], loc=loc, ip=ip).result
+    return x
+
+
 def _pack_tile(
     tile: Tile,
     *,
@@ -285,7 +315,9 @@ def _pack_tile(
     ]
 
     tile = transform_leaf(_get_typed_value, tile)
-    res_ty = _cute_ir.pack_tile(tile)
+    res_ty = _cute_ir.pack_tile(
+        transform_leaf(partial(_as_width_carrying_leaf, loc=loc, ip=ip), tile)
+    )
     return _cute_ir.make_tile(res_ty, dyn_elems, loc=loc, ip=ip)
 
 
