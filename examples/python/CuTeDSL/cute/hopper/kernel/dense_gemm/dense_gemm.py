@@ -1477,11 +1477,11 @@ def run(
         shape = (l, mode1, mode0) if is_mode0_major else (l, mode0, mode1)
         permute_order = (2, 1, 0) if is_mode0_major else (1, 2, 0)
         is_unsigned = dtype in {cutlass.Uint8}
-        # Temporarily use uint8 as torch does not support fp8 type
+        # Hold fp8 data as int8 so the random init keeps its negative values
         torch_dtype = (
             cutlass_torch.dtype(dtype)
             if dtype not in {cutlass.Float8E5M2, cutlass.Float8E4M3FN}
-            else torch.uint8
+            else torch.int8
         )
 
         # Create dtype torch tensor (cpu)
@@ -1543,7 +1543,7 @@ def run(
             shape = (l, m, n) if c_major == "n" else (l, n, m)
             f8_torch_tensor = cutlass_torch.create_and_permute_torch_tensor(
                 shape,
-                torch.uint8,
+                torch.int8,
                 permute_order=permute_order,
                 init_type=cutlass_torch.TensorInitType.SKIP,
             ).cuda()
