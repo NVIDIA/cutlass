@@ -4391,7 +4391,7 @@ def red(
     :param sem: Memory ordering semantics string literal:
         "relaxed" : Relaxed memory ordering
         "release" : Release memory ordering
-        None : No memory ordering specified
+        None : Relaxed, as in PTX when no ordering is given
     :type sem: Optional[Literal["relaxed", "release"]]
     :param scope: Memory scope string literal:
         "gpu" : GPU scope
@@ -4457,7 +4457,8 @@ def red(
     # Convert string literals to enum types
     op_enum = ReductionOp.from_str(op)
     dtype_enum = ReductionType.from_str(dtype_str)
-    sem = MemOrderKind.from_str(sem)
+    # red without a .sem qualifier is relaxed in PTX; NVVM needs it spelled out
+    sem = MemOrderKind.from_str("relaxed" if sem is None else sem)
     scope = MemScopeKind.from_str(scope)
 
     # Normalize pointer type to MLIR ir.Value
