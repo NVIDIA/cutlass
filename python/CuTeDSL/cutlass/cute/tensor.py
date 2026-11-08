@@ -226,6 +226,15 @@ class _Tensor(Tensor):
         """
         iter_val = _cute_ir.get_iter(self.value, loc=loc, ip=ip)
         if isinstance(iter_val, Pointer):
+            # MLIR integers are signless; restore the signedness of the
+            # tensor's element type, e.g. Uint8 rather than Int8.
+            if (
+                isclass(self._dtype)
+                and issubclass(self._dtype, Integer)
+                and self._dtype is not iter_val.dtype
+                and self._dtype.mlir_type == iter_val.type.value_type
+            ):
+                return type(iter_val)(iter_val.value, self._dtype)
             return iter_val
         elif isinstance(iter_val.type, _cute_ir.ArithTupleIteratorType):
             itup_val = _cute_ir.deref_arith_tuple_iter(iter_val)
@@ -853,6 +862,7 @@ def make_tensor(
         layout = layout.outer
 
     res_ty = None
+    dtype = None
     if is_integer(iterator) or isinstance(iterator, tuple):
         itup_val = _pack_int_tuple(iterator, loc=loc, ip=ip)  # type: ignore[arg-type]
         iter_ty = _cute_ir.ArithTupleIteratorType.get(itup_val.type)
@@ -861,9 +871,13 @@ def make_tensor(
         )
         res_ty = _cute_ir.CoordTensorType.get(itup_val.type, layout.type)  # type: ignore[union-attr]
     elif isinstance(iterator, Pointer):
+        if isclass(iterator.dtype) and issubclass(iterator.dtype, Integer):
+            dtype = iterator.dtype
         iterator = iterator.value
         res_ty = _cute_ir.MemRefType.get(iterator.type, layout.type)  # type: ignore[union-attr]
     elif isinstance(iterator, _BasePointer):
+        if isclass(iterator.dtype) and issubclass(iterator.dtype, Integer):
+            dtype = iterator.dtype
         iterator = make_ptr(
             iterator.dtype,
             iterator.to_llvm_ptr(loc=loc, ip=ip),
@@ -891,9 +905,10 @@ def make_tensor(
 
     if isinstance(layout, _ComposedLayout):
         layout = layout.value
-    return _cute_ir.make_view(
+    res = _cute_ir.make_view(
         result=res_ty, iter=iterator, layout=layout, loc=loc, ip=ip
     )
+    return res if dtype is None else _Tensor(res, dtype, loc=loc, ip=ip)
 
 
 @dsl_user_op

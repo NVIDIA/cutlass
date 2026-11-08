@@ -1566,7 +1566,8 @@ class _Pointer(Pointer):
             f"Expected _Pointer or ir.Value, but got {type(values[0])}"
         )
         return _Pointer(
-            values[0] if isinstance(values[0], ir.Value) else values[0].value
+            values[0] if isinstance(values[0], ir.Value) else values[0].value,
+            self._dtype,
         )
 
     @property
@@ -1789,7 +1790,10 @@ class _Pointer(Pointer):
         :rtype: ir.Value
         """
         offset = _pack_int_tuple(offset, loc=loc, ip=ip)
-        return _cute_ir.add_offset(self.value, offset=offset, loc=loc, ip=ip)
+        return _Pointer(
+            _cute_ir.add_offset(self.value, offset=offset, loc=loc, ip=ip).value,
+            self._dtype,
+        )
 
     @dsl_user_op
     def __radd__(
@@ -1862,7 +1866,7 @@ class _Pointer(Pointer):
         if min_align <= self.alignment:
             return self
 
-        dtype = Numeric.from_mlir_type(self.type.value_type)
+        dtype = self._dtype
         # Convert pointer to integer
         address_int = self.toint(loc=loc, ip=ip)
         # Align the address
