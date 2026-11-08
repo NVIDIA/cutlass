@@ -2798,7 +2798,10 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
         except OverflowError:
             # binary32 pack raises rather than saturating to inf.
             bits = 0xFF800000 if self.value < 0 else 0x7F800000
-        # Truncate to 16 bits, keeping the high 16 bits
+        if math.isnan(self.value):
+            bits |= 0x00400000  # keep it a (quiet) NaN
+        else:
+            bits += 0x7FFF + ((bits >> 16) & 1)  # round to nearest even
         bf16_bits = bits >> 16
         # Create a short (16-bit int) with those bits
         c_val = ctypes.c_short(bf16_bits)
