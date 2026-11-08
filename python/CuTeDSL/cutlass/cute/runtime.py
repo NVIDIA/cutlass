@@ -12,7 +12,6 @@
 
 import ctypes
 import math
-from functools import lru_cache
 import itertools
 import operator
 from typing import Any, Union, Optional, Type, List, NoReturn
@@ -393,7 +392,6 @@ class _Tensor(Tensor):
         return strides
 
     @property
-    @lru_cache(maxsize=128, typed=True)
     def leading_dim(self) -> Union[int, tuple[int, ...], None]:
         """Get the leading dimension of this Tensor.
 
