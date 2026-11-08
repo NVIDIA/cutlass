@@ -111,6 +111,9 @@ class _Pointer(Pointer):
 
     def __new_from_mlir_values__(self, values: List[object]) -> object:  # type: ignore[override]
         assert len(values) == 1
+        if isinstance(values[0], core._Pointer):
+            # Keep the signedness that the MLIR pointer type cannot carry.
+            return core._Pointer(values[0].value, self._dtype)
         return values[0]
 
     # Move mlir Type out of __init__ to decouple with mlir Context
