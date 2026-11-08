@@ -2099,6 +2099,14 @@ def setmaxregister(
     :raises ValueError: if ``reg_count`` is outside ``[24, 256]`` or not
         a multiple of 8.
 
+    .. warning::
+        If ptxas cannot determine the register count at kernel entry, it can ignore
+        the generated ``setmaxnreg`` instruction and emit diagnostic C7508. Set a
+        launch bound, for example
+        ``kernel(...).launch(..., min_blocks_per_mp=1)``, when relying on dynamic
+        register budgeting. The launch bound can affect register allocation,
+        occupancy, and spilling, so revalidate kernel performance after adding it.
+
     .. code-block:: python
 
         warpgroup = cute.arch.warp_idx() // 4
