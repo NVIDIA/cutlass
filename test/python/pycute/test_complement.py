@@ -87,6 +87,12 @@ class TestComplement(unittest.TestCase):
     test = Layout((4,10),(1,10))
     self.helper_test_complement(test)
 
+  def test_complement_int(self):
+    # An integer layout n is shorthand for Layout(n,1), including when max_idx is given
+    self.assertEqual(complement(4), complement(Layout(4,1)))
+    self.assertEqual(complement(4, 24), complement(Layout(4,1), 24))
+    self.assertEqual(complement(4, 24), Layout(6,4))
+
 
 if __name__ == "__main__":
   unittest.main()
