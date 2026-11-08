@@ -1395,6 +1395,36 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         extra_exprs: list[ast.stmt] = [start, stop, step]
 
+        # start_ori, stop_ori, step_ori, zero = range_bounds_promote(...), so
+        # the selects below see one integer type
+        zero_name = f"zero_{self.session_data.counter}"
+        names = (start_ori_name, stop_ori_name, step_ori_name)
+        extra_exprs.append(
+            ast.copy_location(
+                ast.Assign(
+                    targets=[
+                        ast.Tuple(
+                            elts=[
+                                ast.Name(id=n, ctx=ast.Store())
+                                for n in (*names, zero_name)
+                            ],
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Call(
+                        func=_create_module_attribute(
+                            "range_bounds_promote",
+                            lineno=node.lineno,
+                            col_offset=node.col_offset,
+                        ),
+                        args=[ast.Name(id=n, ctx=ast.Load()) for n in names],
+                        keywords=[],
+                    ),
+                ),
+                node,
+            )
+        )
+
         # Handle possible negative step, generates the following code in Python:
         # isNegative = step < 0
         isNegative_name = f"isNegative_{self.session_data.counter}"
@@ -1442,7 +1472,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             location=step,
         )
 
-        # offset = start + stop if isNegative else 0
+        # offset = start + stop if isNegative else zero
         offset_name = f"offset_{self.session_data.counter}"
         offset = self._build_select_and_assign(
             name=offset_name,
@@ -1452,7 +1482,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                 left=ast.Name(id=start_name, ctx=ast.Load()),
                 right=ast.Name(id=stop_name, ctx=ast.Load()),
             ),
-            orelse=ast.Constant(value=0),
+            orelse=ast.Name(id=zero_name, ctx=ast.Load()),
             location=node,
         )
 

@@ -592,6 +592,25 @@ def range_value_check(*args: Any) -> tuple[int, int, int]:
         )
 
 
+def range_bounds_promote(start: Any, stop: Any, step: Any) -> tuple[Any, Any, Any, Any]:
+    """
+    Give dynamic integer range bounds the type the loop will use.
+
+    A range with a runtime step selects between ``start`` and ``stop``, and
+    between ``start + stop`` and zero, which fails when they differ in type,
+    e.g. an Int32 start and an Int64 stop. Returns the bounds and a zero of
+    that type.
+    """
+    from .typing import Integer, as_numeric, _binary_op_type_promote
+
+    if not any(isinstance(v, Integer) for v in (start, stop, step)):
+        return start, stop, step, 0
+    start, stop, step = (as_numeric(v) for v in (start, stop, step))
+    _, _, dtype = _binary_op_type_promote(start, stop)
+    _, _, dtype = _binary_op_type_promote(start.to(dtype), step)
+    return start.to(dtype), stop.to(dtype), step.to(dtype), dtype(0)
+
+
 @lru_cache(maxsize=1)
 def _get_self_module() -> types.ModuleType | None:
     """
