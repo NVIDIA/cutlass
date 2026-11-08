@@ -2900,11 +2900,16 @@ class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
     def _get_c_pointer(value: float) -> ctypes.c_void_p:
         """Marshal ``value`` as its bfloat16 bit pattern.
 
-        bfloat16 keeps the high 16 bits of the host ``float`` cast, which is
-        NumPy's scalar ``float32`` conversion. A signaling NaN is quieted when
-        that cast quiets it.
+        The host ``float`` cast, which is NumPy's scalar ``float32``
+        conversion, is rounded to nearest even to 16 bits, as torch does.
+        A NaN is not rounded and stays a (quiet) NaN.
         """
-        bf16_bits = _host_float32_bits(value) >> 16
+        bits = _host_float32_bits(value)
+        if value != value:
+            bits |= 0x00400000
+        else:
+            bits += 0x7FFF + ((bits >> 16) & 1)
+        bf16_bits = bits >> 16
         return _make_owning_c_pointer(ctypes.c_short(bf16_bits))
 
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
