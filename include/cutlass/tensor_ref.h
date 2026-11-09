@@ -105,10 +105,13 @@ public:
   }
 
   /// Compute the number of contiguous elements needed to store a tensor with the given size
+  ///
+  /// Each operand becomes a LongIndex before the multiplication. A tensor of 2 to the
+  /// 31 elements or more thus gets an exact capacity.
   CUTLASS_HOST_DEVICE
   LongIndex capacity(TensorCoord const &size) const {
     int idx = stride_.max_dim_index();
-    return stride_[idx] * size[idx];
+    return LongIndex(stride_[idx]) * LongIndex(size[idx]);
   }
 };
 

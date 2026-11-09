@@ -254,10 +254,14 @@ public:
   CUTLASS_HOST_DEVICE Index const& operator[](int dim) const { return idx[dim]; }
 
   /// Computes the dot product with anotherCoord object
+  ///
+  /// Each operand becomes a LongIndex before the multiplication. A product of two
+  /// Index values that does not fit in an Index thus stays exact. The free function
+  /// cutlass::dot() in cutlass/fast_math.h widens in the same way.
   CUTLASS_HOST_DEVICE
   LongIndex dot(Coord const& b, LongIndex sum = LongIndex(0)) const {
     for (int i = 0; i < kRank; ++i) {
-      sum += idx[i] * b.idx[i];
+      sum += LongIndex(idx[i]) * LongIndex(b.idx[i]);
     }
     return sum;
   }
