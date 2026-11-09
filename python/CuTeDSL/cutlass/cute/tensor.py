@@ -2700,21 +2700,31 @@ class TensorSSA(Vector):
                 f"but got {reduction_profile} and {self.shape}"
             )
 
+        elem_type = self.element_type
         if op is ReductionOp.ADD:
             red_kind = vector.CombiningKind.ADD
         elif op is ReductionOp.MUL:
             red_kind = vector.CombiningKind.MUL
         elif op is ReductionOp.MAX:
-            red_kind = vector.CombiningKind.MAXIMUMF
+            if not elem_type.is_integer:
+                red_kind = vector.CombiningKind.MAXIMUMF
+            elif elem_type.signed:
+                red_kind = vector.CombiningKind.MAXSI
+            else:
+                red_kind = vector.CombiningKind.MAXUI
         elif op is ReductionOp.MIN:
-            red_kind = vector.CombiningKind.MINIMUMF
+            if not elem_type.is_integer:
+                red_kind = vector.CombiningKind.MINIMUMF
+            elif elem_type.signed:
+                red_kind = vector.CombiningKind.MINSI
+            else:
+                red_kind = vector.CombiningKind.MINUI
         else:
             # Defensive check: ReductionOp enum only has 4 valid values
             raise NotImplementedError(
                 f"{op} is not supported, expected one of "
                 f"{ReductionOp.ADD, ReductionOp.MUL, ReductionOp.MAX, ReductionOp.MIN}"
             )
-        elem_type = self.element_type
         # Canonicalize to `Numeric` and convert into MLIR value
         init_val = (
             as_numeric(init_val).to(elem_type, loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
