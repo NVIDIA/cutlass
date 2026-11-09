@@ -1584,8 +1584,8 @@ auto
 tile_unzip(Layout<LShape,LStride> const& layout,
            Tiler                  const& tiler)
 {
-  return make_layout(zip2_by(layout.shape(),  tiler),
-                     zip2_by(layout.stride(), tiler));
+  return make_layout(zip2_by(layout.shape(),  tiler, Int<1>{}),
+                     zip2_by(layout.stride(), tiler, Int<0>{}));
 }
 
 //
