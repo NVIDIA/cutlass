@@ -21,7 +21,7 @@ from ..base_dsl.common import *
 from ..base_dsl.common import DSLRuntimeError, DSLNotImplemented
 from .._mlir import ir
 from .._mlir.extras import types as T
-from .._mlir.dialects import arith, math, builtin
+from .._mlir.dialects import arith, math, builtin, scf, vector
 from .op import dsl_user_op
 
 from .lru_cache_ir import lru_cache_ir
@@ -453,6 +453,128 @@ def _const_cached(
     return arith.constant(ty, value, loc=loc, ip=ip)
 
 
+def _constant_int_splat(value: ir.Value, *, signed: bool) -> Optional[int]:
+    """Python int behind ``value`` if it is an ``arith.constant`` integer scalar or
+    splat vector, else ``None``. Unsigned operands are read back as non-negative."""
+    owner = value.owner
+    if isinstance(owner, ir.Block):  # block argument
+        return None
+    op = owner.opview if isinstance(owner, ir.Operation) else owner
+    if not isinstance(op, arith.ConstantOp):
+        return None
+    attr = op.value.maybe_downcast()
+    if isinstance(attr, ir.DenseElementsAttr):
+        if not attr.is_splat:
+            return None
+        attr = attr.get_splat_value().maybe_downcast()
+    if not isinstance(attr, ir.IntegerAttr):
+        return None
+    result = attr.value
+    if not signed and result < 0:
+        result += 1 << element_type(value.type).width
+    return result
+
+
+def expand_ipowi(
+    base: ir.Value,
+    exponent: ir.Value,
+    *,
+    signed: bool,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Emit ``base ** exponent`` for integer scalars or vectors of the same type.
+
+    ``math.ipowi`` is not emitted: lowering it inside a GPU kernel crashes the
+    compiler (NVIDIA/cutlass#3735), while every op used here lowers on both the
+    host and the device path. The expansion keeps the semantics of
+    ``math.ipowi`` (see MLIR's MathToFuncs): square-and-multiply with wrapping
+    overflow; for a *signed* operand and a negative exponent, a base of ``1``
+    gives ``1``, a base of ``-1`` gives ``1`` or ``-1`` by exponent parity and
+    any other base gives ``0`` (MLIR divides by zero for base ``0``; ``0`` is
+    returned here instead). A constant non-negative exponent is unrolled into
+    straight-line multiplications.
+    """
+    ty = base.type
+    elem_ty = element_type(ty)
+    if not isinstance(elem_ty, ir.IntegerType) or ty != exponent.type:
+        raise DSLNotImplemented(f"Unsupported '{base} ** {exponent}'")
+    is_vector = isinstance(ty, ir.VectorType)
+
+    def splat(v: int) -> ir.Value:
+        return const(v, ty, signed=signed, loc=loc, ip=ip)
+
+    def mul(a: ir.Value, b: ir.Value) -> ir.Value:
+        return arith.muli(a, b, loc=loc, ip=ip)
+
+    def cmp(pred: arith.CmpIPredicate, a: ir.Value, b: ir.Value) -> ir.Value:
+        return arith.cmpi(pred, a, b, loc=loc, ip=ip)
+
+    one = splat(1)
+    zero = splat(0)
+
+    # Constant exponent: unroll square-and-multiply, no loop in the kernel.
+    n = _constant_int_splat(exponent, signed=signed)
+    if n is not None and n >= 0:
+        result = None
+        square = base
+        while n:
+            if n & 1:
+                result = square if result is None else mul(result, square)
+            n >>= 1
+            if n:
+                square = mul(square, square)
+        return one if result is None else result
+
+    # Dynamic exponent: scf.while on (result, square, remaining exponent).
+    # A negative signed exponent runs zero iterations; it is resolved below.
+    if signed:
+        negative = cmp(arith.CmpIPredicate.slt, exponent, zero)
+        loop_exponent = arith.select(negative, zero, exponent, loc=loc, ip=ip)
+    else:
+        loop_exponent = exponent
+    while_op = scf.WhileOp([ty, ty, ty], [one, base, loop_exponent], loc=loc, ip=ip)
+    before = while_op.before.blocks.append(ty, ty, ty)
+    with ir.InsertionPoint(before):
+        result, square, remaining = before.arguments
+        if is_vector:
+            # Keep iterating while any lane still has exponent bits left.
+            remaining = vector.reduction(
+                elem_ty, vector.CombiningKind.MAXUI, remaining, loc=loc
+            )
+            lane_zero = const(0, elem_ty, signed=signed, loc=loc)
+            cond = arith.cmpi(arith.CmpIPredicate.ne, remaining, lane_zero, loc=loc)
+        else:
+            cond = arith.cmpi(arith.CmpIPredicate.ne, remaining, zero, loc=loc)
+        scf.ConditionOp(cond, before.arguments, loc=loc)
+    after = while_op.after.blocks.append(ty, ty, ty)
+    with ir.InsertionPoint(after):
+        result, square, remaining = after.arguments
+        odd = arith.cmpi(
+            arith.CmpIPredicate.ne, arith.andi(remaining, one, loc=loc), zero, loc=loc
+        )
+        result = arith.select(odd, arith.muli(result, square, loc=loc), result, loc=loc)
+        square = arith.muli(square, square, loc=loc)
+        remaining = arith.shrui(remaining, one, loc=loc)
+        scf.YieldOp([result, square, remaining], loc=loc)
+    result = while_op.results[0]
+
+    if signed:
+        minus_one = splat(-1)
+        exponent_odd = cmp(
+            arith.CmpIPredicate.ne, arith.andi(exponent, one, loc=loc, ip=ip), zero
+        )
+        sign = arith.select(exponent_odd, minus_one, one, loc=loc, ip=ip)
+        negative_result = arith.select(
+            cmp(arith.CmpIPredicate.eq, base, minus_one), sign, zero, loc=loc, ip=ip
+        )
+        negative_result = arith.select(
+            cmp(arith.CmpIPredicate.eq, base, one), one, negative_result, loc=loc, ip=ip
+        )
+        result = arith.select(negative, negative_result, result, loc=loc, ip=ip)
+    return result
+
+
 def _dispatch_to_rhs_r_op(op: Callable[..., "ArithValue"]) -> Callable[..., Any]:
     """Decorator that dispatches to the right-hand-side's reverse operation.
 
@@ -577,7 +699,7 @@ class ArithValue(ir.Value):
             rhs = cvtf(other, T.f32(), loc=loc, ip=ip)
             return math.powf(lhs, rhs, loc=loc, ip=ip)
         elif not self.is_float and not other.is_float:
-            return math.ipowi(self, other, loc=loc, ip=ip)
+            return expand_ipowi(self, other, signed=bool(self.signed), loc=loc, ip=ip)
         else:
             raise DSLNotImplemented(f"Unsupported '{self} ** {other}'")
 
