@@ -1688,6 +1688,9 @@ class TensorSSA(Vector):
             operator.ne,
         ):
             res_type = Boolean
+        elif op is operator.truediv and issubclass(res_type, Integer):
+            # Integer true division is computed in f32, same as for scalars
+            res_type = Float32
 
         assert isinstance(rhs, TensorSSA), f"rhs must be TensorSSA but got {rhs}"
 
