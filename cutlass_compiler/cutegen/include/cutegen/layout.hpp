@@ -1674,7 +1674,8 @@ layout_t<TDynTraits> composition_impl(const cute_shape_t<TDynTraits>&  lhs_shape
     // Special case for a RHS ScaledBasis stride
     if(holds_scaled_basis(rhs_stride))
     {
-        if(!holds_int(rhs_shape)) return cg_error_t{};
+        // rhs_shape may be dynamic: it's forwarded as-is to composition_impl below,
+        // whose remaining cases already tolerate a dynamic shape.
         using sb_t                 = typename find_scaled_basis_in_rec_var<stride_t>::value;
         const auto& sb             = std::get<sb_t>(rhs_stride);
         const auto& v              = sb.modes();
