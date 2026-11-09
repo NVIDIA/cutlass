@@ -259,3 +259,30 @@ TEST(Array, Bin1x128) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Verifies that `back()` returns the last logical element (element N-1) rather
+/// than the highest sub-element of the last storage slot, which is padding when
+/// N does not fill its final storage unit.
+TEST(Array, SubbyteBack) {
+  // int4b_t packs 8 elements per 32-bit storage word.
+  {
+    cutlass::Array<cutlass::int4b_t, 5> a;
+    for (int i = 0; i < 5; ++i) {
+      a[i] = cutlass::int4b_t(i);
+    }
+    EXPECT_EQ(int(a.back()), 4);
+    EXPECT_EQ(int(a[4]), 4);
+  }
+
+  // bin1_t packs 32 elements per 32-bit storage word.
+  {
+    cutlass::Array<cutlass::bin1_t, 33> a;
+    for (int i = 0; i < 33; ++i) {
+      a[i] = cutlass::bin1_t(i % 2);
+    }
+    EXPECT_EQ(int(a.back()), 1);
+    EXPECT_EQ(int(a[32]), 1);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
