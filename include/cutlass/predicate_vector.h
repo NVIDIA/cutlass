@@ -159,8 +159,8 @@ struct PredicateVector {
     int byte = (idx / kPredicatesPerByte);
     int bit_offset = (idx % kPredicatesPerByte);
 
-    word = byte / sizeof(Storage);
-    int byte_offset = (byte % sizeof(Storage));
+    word = byte / int(sizeof(Storage));
+    int byte_offset = (byte % int(sizeof(Storage)));
 
     bit = byte_offset * 8 + bit_offset + kPredicateStart;
   }
