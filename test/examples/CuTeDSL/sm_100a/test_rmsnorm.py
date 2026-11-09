@@ -37,6 +37,13 @@ Tests various configurations of:
 - Cluster mode for large N (SM90+/SM100)
 """
 
+import os
+import shutil
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 import cutlass
@@ -199,3 +206,75 @@ class TestRMSNormFloat32:
             skip_ref_check=False,
             benchmark=False,
         )
+
+
+class TestRMSNormTailRegression:
+    @pytest.mark.parametrize("N", [1032, 16392, 32776])
+    @pytest.mark.parametrize(
+        "dtype", [cutlass.Float16, cutlass.BFloat16, cutlass.Float32]
+    )
+    def test_aligned_tails_and_partial_rows(self, N, dtype):
+        if N > 16384 and not supports_cluster():
+            pytest.skip("cluster support required")
+        run(M=3, N=N, dtype=dtype, has_weight=True, benchmark=False)
+
+    @pytest.mark.parametrize("N", [1032, 16392])
+    def test_tails_without_weight(self, N):
+        if N > 16384 and not supports_cluster():
+            pytest.skip("cluster support required")
+        run(M=3, N=N, dtype=cutlass.BFloat16, has_weight=False, benchmark=False)
+
+    @pytest.mark.parametrize("N", [0, 15, 1025])
+    def test_rejects_unaligned_vector_copy(self, N):
+        with pytest.raises(ValueError, match="N must be positive and divisible"):
+            run(M=3, N=N, dtype=cutlass.BFloat16, benchmark=False)
+
+
+@pytest.mark.parametrize("N", [1024, 1032, 16392])
+def test_rmsnorm_shared_padding_initcheck(N):
+    from blackwell.kernel.rmsnorm import rmsnorm
+
+    toolkit = Path(os.environ.get("CUDA_HOME", "/usr/local/cuda"))
+    candidate = toolkit / "bin" / "compute-sanitizer"
+    sanitizer = (
+        str(candidate)
+        if candidate.is_file() and os.access(candidate, os.X_OK)
+        else shutil.which("compute-sanitizer")
+    )
+    if sanitizer is None:
+        pytest.skip("compute-sanitizer is not available")
+    command = [
+        sanitizer,
+        "--tool",
+        "initcheck",
+        "--initcheck-address-space",
+        "shared",
+        "--error-exitcode",
+        "99",
+        "--report-api-errors",
+        "no",
+        sys.executable,
+        str(Path(rmsnorm.__file__).resolve()),
+        "--M",
+        "3",
+        "--N",
+        str(N),
+        "--dtype",
+        "BFloat16",
+    ]
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        output, _ = proc.communicate(timeout=180)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        output, _ = proc.communicate()
+        pytest.fail(f"initcheck timed out: {output[-4000:]}")
+    assert proc.returncode == 0, output[-4000:]
+    assert "Correctness check passed!" in output, output[-4000:]
+    assert "ERROR SUMMARY: 0 errors" in output, output[-4000:]
