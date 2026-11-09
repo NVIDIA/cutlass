@@ -172,8 +172,10 @@ public:
     dilation_h(dilation.row()), dilation_w(dilation.column()),
     mode(mode), split_k_slices(split_k_slices), groups(groups) {
       // set output P and Q
-      P = ((H + pad_h + padding[1] - R * dilation_h) / stride_h) + 1;
-      Q = ((W + pad_w + padding[3] - S * dilation_w) / stride_w) + 1;
+      auto num_h = int(H + pad_h + padding[1] - R * dilation_h);
+      P = (num_h < 0) ? 0 : (num_h / stride_h + 1);
+      auto num_w = int(W + pad_w + padding[3] - S * dilation_w);
+      Q = (num_w < 0) ? 0 : (num_w / stride_w + 1);
     }
 
   /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord 
