@@ -1130,9 +1130,11 @@ class Sm120BlockScaledGemmKernel:
                 )
 
                 copy_atom_C = cute.make_copy_atom(
+                    # Use x4 so make_tiled_copy_C_atom covers the full C TV
+                    # layout for 32-bit outputs, whose r2s atom is CopyUniversalOp.
                     cute.nvgpu.warp.StMatrix8x8x16bOp(
                         self.c_layout.is_m_major_c(),
-                        2,
+                        4,
                     ),
                     self.c_dtype,
                 )
