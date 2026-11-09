@@ -293,9 +293,14 @@ cutlass_add_cutlass_library(
 
   )
 
-# For backward compatibility with the old name
+# For backward compatibility with the old name.
+# `cutlass_lib` consumers (e.g. tools/profiler) need a single target to link
+# against regardless of whether the user opted for a shared or static-only
+# build, so fall back to the static target when shared is disabled.
 if(CUTLASS_BUILD_SHARED_LIBS)
   add_library(cutlass_lib ALIAS cutlass_library)
+elseif(CUTLASS_BUILD_STATIC_LIBS)
+  add_library(cutlass_lib ALIAS cutlass_library_static)
 endif()
 
 if(CUTLASS_BUILD_STATIC_LIBS)
