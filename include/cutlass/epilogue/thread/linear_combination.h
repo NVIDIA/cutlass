@@ -323,7 +323,7 @@ public:
     ElementCompute intermediate;
     multiplies<ElementCompute> multiply;
 
-    intermediate = multiply(alpha_, accumulator);    // D = alpha * Accum
+    intermediate = multiply(alpha_, converted_accumulator);    // D = alpha * Accum
     return destination_converter(intermediate);
   }
 };
