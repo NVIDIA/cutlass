@@ -166,6 +166,15 @@ class MLIRBuilder(MLIRTypeBuilder):
             if value.type != self.f32_type:
                 value = llvm.fptrunc(res=self.f32_type, arg=value)
             v_i32 = llvm.bitcast(self.i32_type, value)
+            # Round to nearest even; keep NaN a (quiet) NaN
+            no_wrap = llvm.IntegerOverflowFlags.none
+            v_lsb = self.and_(llvm.lshr(v_i32, self.i32(16)), self.i32(1))
+            v_bias = llvm.add(v_lsb, self.i32(0x7FFF), overflow_flags=no_wrap)
+            v_rounded = llvm.add(v_i32, v_bias, overflow_flags=no_wrap)
+            is_nan = llvm.fcmp(llvm.FCmpPredicate.uno, value, value)
+            v_i32 = llvm.select(
+                is_nan, self.or_(v_i32, self.i32(0x00400000)), v_rounded
+            )
             v_shifted = llvm.lshr(v_i32, self.i32(16))
             v_i16 = llvm.trunc(
                 self.i16_type, v_shifted, overflow_flags=llvm.IntegerOverflowFlags.none
