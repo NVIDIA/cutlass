@@ -93,7 +93,6 @@ def kernel(
     tma_src_desc: cutlass.GridConstant[cuda.TensorMap],
     dst: cute.Tensor,
     k_tiles: cutlass.Int32,  # number of K-tiles
-    coord_m: cutlass.Int32,  # row offset in global tensor (element units)
 ) -> None:
     """NUM_STAGES-buffered TMA pipeline: copy all K-tiles of one block's rows.
 
@@ -113,6 +112,8 @@ def kernel(
     )
     full_bar = mbar  # one barrier per stage
 
+    coord_m, _, _ = cute.arch.block_idx()
+    coord_m *= TILE_M
     warp_idx = cute.arch.warp_idx()
     tidx, _, _ = cute.arch.thread_idx()
 
@@ -233,7 +234,7 @@ def host(src: cute.Tensor, dst: cute.Tensor, k_tiles: int) -> None:
     )
     # One thread block copies TILE_M rows; launch enough blocks to cover all rows.
     m_tiles = src.shape[0] // TILE_M
-    kernel(tma_src_desc, dst, k_tiles, 0).launch(
+    kernel(tma_src_desc, dst, k_tiles).launch(
         grid=(m_tiles, 1, 1), block=(_THREADS, 1, 1)
     )
 
