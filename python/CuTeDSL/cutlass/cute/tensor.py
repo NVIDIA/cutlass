@@ -2476,8 +2476,10 @@ class TensorSSA(Vector):
 
         flat_shp, flat_crd = self._flatten_shape_and_coord(crd, loc=loc, ip=ip)
 
-        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops
-        row_major_vec = _col2row(self, shape=self._shape, loc=loc, ip=ip)
+        # convert TensorSSA col-major vec to row-m to be compatible with mlir vector ops.
+        # Use the flattened shape: an integer coordinate indexes its collapsed mode
+        # in column-major order.
+        row_major_vec = _col2row(self, shape=flat_shp, loc=loc, ip=ip)
         multi_dim_ty = ir.VectorType.get(list(flat_shp), self.type.element_type)  # type: ignore[arg-type]
         # vector<NxTy> -> vector<N_0xN_1x...xTy>
         tmp_vect = vector.shape_cast(multi_dim_ty, row_major_vec, loc=loc, ip=ip)
@@ -2507,9 +2509,10 @@ class TensorSSA(Vector):
             ip=ip,
         )
 
-        # Slice and keep dims matching `_` or None
-        res_shp = slice_(self._shape, crd, loc=loc, ip=ip)
-        return self._build_result(res_vect, res_shp, row_major=True, loc=loc, ip=ip)
+        # Back to column-major over the flattened kept modes, then restore nesting
+        flat_res_shp = slice_(flat_shp, flat_crd, loc=loc, ip=ip)
+        res = self._build_result(res_vect, flat_res_shp, row_major=True, loc=loc, ip=ip)
+        return res.reshape(res_shp, loc=loc, ip=ip)
 
     @dsl_user_op
     def to(
