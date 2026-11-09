@@ -4193,6 +4193,13 @@ def crd2idx(
             print(idx)
         foo()  # Expected output: 11
     """
+    if isinstance(coord, int) and isinstance(layout, Layout) and not is_static(layout):
+        # Scalar indexing into a dynamic, hierarchical layout can fold to a
+        # static result while the crd2idx op still has a dynamic result type.
+        # Expand the scalar into a full hierarchical coordinate first so the
+        # generated arithmetic retains a dynamic result and lowers cleanly.
+        coord = idx2crd(coord, layout.shape, loc=loc, ip=ip)
+
     crd_val = _pack_coord(coord, loc=loc, ip=ip)
     if isinstance(layout, (tuple, int)):
         layout = make_layout(layout, loc=loc, ip=ip)
