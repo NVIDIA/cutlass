@@ -31,6 +31,7 @@ cutlass_test_unit_add_executable(
   WITHOUT_CUDA
   array_subbyte.cpp
   bitfield.cpp
+  blockwise_scale_layout.cpp
   coalesce.cpp
   compact_xmajor.cpp
   compare.cpp
