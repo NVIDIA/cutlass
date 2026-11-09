@@ -1382,6 +1382,9 @@ def abs(
     :param ftz: Flush denormals to zero (float only, uses nvvm.fabs)
     """
     _validate_fastmath_exclusive("abs", fastmath, ftz=ftz)
+    if _is_unsigned_int(x):
+        # math.absi reads its operand as signed; an unsigned value is its own abs
+        return x
     if ftz and _is_float(x):
         x_ir = _get_ir_value(x, ip=ip)
         result = nvvm.fabs(x_ir, ftz=True, loc=loc, ip=ip)
@@ -2172,6 +2175,9 @@ def absi(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> MathOperand:
     """Integer absolute value."""
+    if _is_unsigned_int(x):
+        # math.absi reads its operand as signed; an unsigned value is its own abs
+        return x
     x_ir = _get_ir_value(x, ip=ip)
     result = math_dialect.absi(x_ir, loc=loc, ip=ip)
     return _wrap_result(x, result)
