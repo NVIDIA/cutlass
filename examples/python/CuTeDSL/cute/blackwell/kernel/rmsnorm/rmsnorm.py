@@ -178,17 +178,15 @@ class RMSNormConfig:
         self.cluster_n = self._compute_cluster_n(N, dtype, self.sm_version)
 
         # N per CTA for cluster case
-        self.N_per_cta = (N + self.cluster_n - 1) // self.cluster_n
+        self.N_per_cta = cute.ceil_div(N, self.cluster_n)
 
         # Thread configuration using static methods
         self.threads_per_row = self._compute_threads_per_row(self.N_per_cta)
         self.num_threads = self._compute_num_threads(self.N_per_cta)
 
         # Derived values
-        num_vectors = (self.N_per_cta + self.vec_size - 1) // self.vec_size
-        self.num_vec_blocks = max(
-            1, (num_vectors + self.threads_per_row - 1) // self.threads_per_row
-        )
+        num_vectors = cute.ceil_div(self.N_per_cta, self.vec_size)
+        self.num_vec_blocks = max(1, cute.ceil_div(num_vectors, self.threads_per_row))
         self.rows_per_block = self.num_threads // self.threads_per_row
         self.cols_per_tile = self.vec_size * self.num_vec_blocks * self.threads_per_row
         self.warps_per_row = max(self.threads_per_row // 32, 1)
