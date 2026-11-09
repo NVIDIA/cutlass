@@ -1949,15 +1949,23 @@ def inline_ptx(
     read_only_args: list[object] | None = None,
     read_write_args: list[object] | None = None,
     predicate: Boolean | None = None,
+    immediate_args: list[object] | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Any:
+    """Inline PTX with ``cutlass.cute.arch.inline_ptx`` semantics.
+
+    ``immediate_args`` are referenced as ``{$n0}``, ``{$n1}``, ... and passed as
+    immediates when constant; giving it (even as ``[]``) also makes every
+    ``{$rX}`` operand a register. See ``cutlass.cute.arch.inline_ptx``.
+    """
     return _cute_inline_ptx(
         ptx_code,
         write_only_types=write_only_types,
         read_only_args=_inline_ptx_args(read_only_args, loc, ip),
         read_write_args=_inline_ptx_args(read_write_args, loc, ip),
         predicate=predicate,
+        immediate_args=_inline_ptx_args(immediate_args, loc, ip),
         loc=loc,
         ip=ip,
     )

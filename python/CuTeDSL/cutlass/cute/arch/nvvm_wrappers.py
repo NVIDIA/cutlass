@@ -10,12 +10,12 @@
 # is strictly prohibited.
 
 import enum
+import re
 import types
 from functools import partial
 from typing import (
     Any,
     Optional,
-    Sequence,
     Tuple,
     Union,
     Callable,
@@ -4590,15 +4590,23 @@ ScalarArg = Union[int, float, bool, Numeric]
 # compile-time constant that reaches such a slot is rejected by ptxas with
 # "Arguments mismatch for instruction 'max'".
 #
-# `force_register_args` names the read-only inputs that must be materialized
-# into a register first; unnamed operands keep the existing automatic behavior.
-# Materialization reuses this same interface with a single `mov`, so the operand
-# the target instruction sees is produced by an instruction instead of a
-# constant op and the ordinary type-based register constraint is selected.
+# Passing `immediate_args` makes the operand kinds explicit, as a Python-level
+# rewrite on top of the op's three operand groups:
+#   - every `{$rX}` operand is passed in a register; a constant is first moved
+#     into one with a single `mov`, so the target instruction sees a value
+#     produced by an instruction and gets the type-based register constraint;
+#   - `{$nX}` refers to the X-th entry of `immediate_args`. These are appended
+#     after `read_only_args` and the reference is renumbered to `{$r<R+X>}`, so
+#     they keep the automatic behavior and a constant stays an immediate.
+# Without `immediate_args` nothing changes.
 #
 # PTX `mov` type per MLIR integer width. Mirrors the register letters the
 # builder derives from MLIR types: i1 -> b, i16 -> h, i32 -> r, i64 -> l.
 _MOV_TYPE_BY_INTEGER_WIDTH = {1: "pred", 16: "b16", 32: "b32", 64: "b64"}
+
+_IMMEDIATE_REF = re.compile(r"\{\$n(\d+)\}")
+
+_CONSTANT_OP_NAMES = frozenset({"arith.constant", "llvm.mlir.constant"})
 
 
 def _mov_ptx_type(mlir_type: ir.Type) -> str:
@@ -4611,14 +4619,18 @@ def _mov_ptx_type(mlir_type: ir.Type) -> str:
         # Shared-memory (state space 3) pointers are addressed with 32 bits.
         return "b32" if mlir_type.address_space == 3 else "b64"
     raise TypeError(
-        "force_register_args: cannot materialize an operand of MLIR type "
-        f"{mlir_type} into a register. Only i1, i16, i32, i64 and pointer "
-        "operands are supported. Float constants are excluded because the "
-        "immediate constraint the builder selects for constants ('n') accepts "
-        "only integer constants, so a float constant cannot be forwarded "
-        "either way; that is a separate defect from the register request and "
-        "is not addressed by force_register_args."
+        "inline_ptx: cannot move a constant of MLIR type "
+        f"{mlir_type} into a register for a {{$rX}} operand when "
+        "immediate_args is given. Only i1, i16, i32, i64 and pointer constants "
+        "are supported."
     )
+
+
+def _is_constant(value: ir.Value) -> bool:
+    """Return whether `value` is produced by a constant op."""
+    owner = getattr(value, "owner", None)
+    operation = getattr(owner, "operation", owner)
+    return getattr(operation, "name", None) in _CONSTANT_OP_NAMES
 
 
 def _materialize_register(value: ir.Value, *, loc=None, ip=None) -> ir.Value:
@@ -4634,29 +4646,19 @@ def _materialize_register(value: ir.Value, *, loc=None, ip=None) -> ir.Value:
     )
 
 
-def _resolve_force_register_args(
-    force_register_args: Optional[Sequence[int]], num_read_only: int
-) -> list[int]:
-    """Validate `force_register_args` and return the indices to materialize."""
-    if force_register_args is None:
-        return []
-    indices: list[int] = []
-    for index in force_register_args:
-        if not isinstance(index, int):
-            raise TypeError(
-                "force_register_args entries must be integers, got "
-                f"{type(index).__name__}"
-            )
-        if not 0 <= index < num_read_only:
+def _rewrite_immediate_refs(ptx_code: str, num_read_only: int, num_immediate: int) -> str:
+    """Rewrite each `{$nX}` to `{$r<num_read_only + X>}`, checking X."""
+
+    def renumber(match: "re.Match[str]") -> str:
+        index = int(match.group(1))
+        if index >= num_immediate:
             raise IndexError(
-                f"force_register_args index {index} is out of range for "
-                f"{num_read_only} read-only argument(s). Indices refer to "
-                "positions in read_only_args only; use read_write_args for "
-                "read-write operands."
+                f"inline_ptx: {match.group(0)} is out of range for "
+                f"{num_immediate} immediate argument(s)"
             )
-        if index not in indices:
-            indices.append(index)
-    return indices
+        return "{$r" + str(num_read_only + index) + "}"
+
+    return _IMMEDIATE_REF.sub(renumber, ptx_code)
 
 
 @dsl_user_op
@@ -4667,7 +4669,7 @@ def inline_ptx(
     read_only_args: Optional[list[ScalarArg]] = None,
     read_write_args: Optional[list[ScalarArg]] = None,
     predicate: Optional[Boolean] = None,
-    force_register_args: Optional[Sequence[int]] = None,
+    immediate_args: Optional[list[ScalarArg]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, tuple[Numeric, ...], None]:
@@ -4689,12 +4691,14 @@ def inline_ptx(
     :type read_write_args: list[ScalarArg], optional
     :param predicate: Optional Boolean value for conditional execution (corresponds to @$p prefix).
     :type predicate: Boolean, optional
-    :param force_register_args: Optional indices into ``read_only_args`` that must be
-        materialized into a register first, for instructions that accept only a register in
-        that slot (for example ``max.xorsign.abs.bf16x2``); otherwise a compile-time
-        constant goes in as an immediate and ptxas rejects it. Supported operand types are
-        i1, i16, i32, i64 and pointers. Indices are validated; a bad index raises.
-    :type force_register_args: Sequence[int], optional
+    :param immediate_args: Optional operands referenced as ``{$n0}``, ``{$n1}``, ... in
+        ``ptx_code``, passed as immediates when they are compile-time constants. Giving this
+        argument, even as an empty list, also makes every ``{$rX}`` operand a register: a
+        constant in ``read_only_args`` is moved into one first, for instructions that accept
+        only a register in that slot (for example ``max.xorsign.abs.bf16x2``). Constants
+        moved this way must be i1, i16, i32, i64 or pointers. Without it, constants in
+        ``read_only_args`` are passed as immediates, as before.
+    :type immediate_args: list[ScalarArg], optional
     :param loc: MLIR location (advanced use, typically None).
     :type loc: Any, optional
     :param ip: MLIR insertion point (advanced use, typically None).
@@ -4764,12 +4768,11 @@ def inline_ptx(
 
     .. code-block:: python
 
-        zero = Int32(0)
         inline_ptx(
             "max.xorsign.abs.bf16x2 {$w0}, {$r0}, {$r1};",
             write_only_types=[Int32],
-            read_only_args=[zero, value],
-            force_register_args=[0],
+            read_only_args=[Int32(0), value],
+            immediate_args=[],
         )
 
     .. note::
@@ -4802,14 +4805,17 @@ def inline_ptx(
     read_only_ir = [convert_arg(arg) for arg in read_only_args]
     read_write_ir = [convert_arg(arg) for arg in read_write_args]
 
-    # Materialize the read-only inputs that must be supplied in a register.
-    # Applied by position, never by value, so two operands holding the same
-    # constant can still be treated differently.
-    for index in _resolve_force_register_args(force_register_args, len(read_only_ir)):
-        forced = read_only_ir[index]
-        if not isinstance(forced, ir.Value):
-            forced = forced.ir_value(loc=loc, ip=ip)
-        read_only_ir[index] = _materialize_register(forced, loc=loc, ip=ip)
+    if immediate_args is not None:
+        # Explicit operand kinds: {$rX} operands go in registers, {$nX} operands
+        # are appended after them and keep the automatic behavior.
+        ptx_code = _rewrite_immediate_refs(ptx_code, len(read_only_ir), len(immediate_args))
+        for index, operand in enumerate(read_only_ir):
+            value = operand if isinstance(operand, ir.Value) else operand.ir_value(loc=loc, ip=ip)
+            if _is_constant(value):
+                read_only_ir[index] = _materialize_register(value, loc=loc, ip=ip)
+        read_only_ir += [convert_arg(arg) for arg in immediate_args]
+    elif _IMMEDIATE_REF.search(ptx_code):
+        raise ValueError("inline_ptx: ptx_code uses {$nX} but immediate_args is not given")
 
     # Build write_only result types
     write_only_mlir_types = [dtype.mlir_type for dtype in write_only_types]
