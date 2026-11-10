@@ -210,6 +210,7 @@ def composition(layoutA, layoutB):
     for (curr_shape, curr_stride) in zip(flatten(flat_A.shape)[:-1], flatten(flat_A.stride)[:-1]):
       assert curr_shape % rest_stride == 0 or rest_stride % curr_shape == 0
       new_shape = min(max(1, curr_shape // rest_stride), rest_shape)
+      assert rest_shape % new_shape == 0  # Shape divisibility condition
 
       if new_shape != 1:
         result_shape.append(new_shape)
