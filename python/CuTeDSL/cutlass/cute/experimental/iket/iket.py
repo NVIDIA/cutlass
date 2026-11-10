@@ -104,6 +104,29 @@ def _make_i1_constant(
     ).result
 
 
+# Ops whose bodies are device code.
+_DEVICE_CODE_OPS = frozenset({"cuda.kernel", "gpu.func", "gpu.module", "lir.func"})
+
+
+def _in_device_code(ip: Optional[ir.InsertionPoint] = None) -> bool:
+    """
+    Return whether IR is being built inside a kernel rather than in host code.
+
+    IKET events are recorded by kernels only. iket ops in host code are not
+    lowered, and IKET lowering crashes on them, so the API emits nothing for
+    calls made outside a kernel.
+    """
+    if ip is None:
+        ip = ir.InsertionPoint.current
+    op = ip.block.owner
+    while op is not None:
+        operation = getattr(op, "operation", op)
+        if operation.name in _DEVICE_CODE_OPS:
+            return True
+        op = operation.parent
+    return False
+
+
 class RangeToken:
     """A token representing a range, carrying an ``!iket.range.token`` SSA value
     and an ``i1`` flag indicating whether the token is a *none* (sentinel) token.
@@ -161,6 +184,8 @@ def mark(
     :type ip: Optional[InsertionPoint], optional
     """
 
+    if not _in_device_code(ip):
+        return None
     if payload is not None:
         if is_dynamic_expression(payload):
             payload_value = payload.ir_value(loc=loc, ip=ip)
@@ -201,6 +226,8 @@ def sentinel_token(
     :rtype: RangeToken
     """
 
+    if not _in_device_code(ip):
+        return RangeToken()
     token = RangeToken()
     token.op = iket.sentinel_token(token.token, loc=loc, ip=ip)
     token._is_none_val = _make_i1_constant(True, loc=loc, ip=ip)
@@ -237,6 +264,8 @@ def range_start(
     :rtype: RangeToken
     """
 
+    if not _in_device_code(ip):
+        return RangeToken()
     token = RangeToken()
     if payload is not None:
         if is_dynamic_expression(payload):
@@ -281,6 +310,9 @@ def range_end(
     :param ip: Insertion point for MLIR, defaults to None
     :type ip: Optional[InsertionPoint], optional
     """
+
+    if not _in_device_code(ip):
+        return
 
     def _emit_range_end() -> None:
         event_name_kwarg = {}
@@ -334,6 +366,8 @@ def range_push(
     :type ip: Optional[InsertionPoint], optional
     """
 
+    if not _in_device_code(ip):
+        return None
     if payload is not None:
         if is_dynamic_expression(payload):
             payload_value = payload.ir_value(loc=loc, ip=ip)
@@ -360,4 +394,6 @@ def range_pop(
     :type ip: Optional[InsertionPoint], optional
     """
 
+    if not _in_device_code(ip):
+        return None
     return iket.range_pop(loc=loc, ip=ip)
