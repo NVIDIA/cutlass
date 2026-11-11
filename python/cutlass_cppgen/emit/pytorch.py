@@ -287,20 +287,16 @@ at::Tensor ${name}_kernel(const at::Tensor& A, const at::Tensor& B, at::optional
 _PYTORCH_GEMM_IMPL_TEMPLATE_3x = (
     common._CUTLASS_KERNEL_RUN_GEMM_3x
     + """
-bool hw_info_queried = false;
-cutlass::KernelHardwareInfo hw_info;
-
 at::Tensor ${name}_kernel(const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C, float alpha, float beta) {
     int M = A.size(0);
     int N = B.size(1);
     int K = A.size(1);
     int L = 1;
 
-    // Query hardware info if we haven't already
-    if (!hw_info_queried) {
-        hw_info.device_id = 0;
-        hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
-    }
+    cutlass::KernelHardwareInfo hw_info;
+    cudaError_t result = cudaGetDevice(&hw_info.device_id);
+    TORCH_CHECK(result == cudaSuccess, "cudaGetDevice failed: ", cudaGetErrorString(result));
+    hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
     typename DeviceKernel::ElementC* ptrC = (C == at::nullopt) ?
                                             nullptr :
