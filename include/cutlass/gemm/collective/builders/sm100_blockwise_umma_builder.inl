@@ -144,7 +144,7 @@ auto sm100_make_simt_gmem_tiled_copy_SFA() {
   else {
     // we expect scale Ks per tile to be small
     using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
-    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
+    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<Int<cute::min(32, ScaleMsPerTile * ScaleKsPerTile)>>>{}, Layout<Shape<_1>>{});
   }
 }
 
@@ -178,7 +178,7 @@ auto sm100_make_simt_gmem_tiled_copy_SFB() {
   else {
     // we expect scale Ks per tile to be small
     using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
-    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
+    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<Int<cute::min(32, ScaleNsPerTile * ScaleKsPerTile)>>>{}, Layout<Shape<_1>>{});
   }
 }
 

@@ -609,6 +609,9 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     tTMEM_STOREVrS(kIdxOldRowMax) = old_row_max;
     tTMEM_STOREVrS(kIdxNewRowMax) = row_max_safe;
     copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
+    // tcgen05.st is asynchronous: make sure the row statistics have been written to TMEM
+    // before pipeline_c.producer_commit() lets the correction warpgroup read them.
+    cutlass::arch::fence_view_async_tmem_store();
 
     pipeline_c.producer_commit(pipeline_c_producer_state);
     ++pipeline_c_producer_state;
@@ -719,6 +722,9 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       tTMEM_STOREVrS(kIdxFinalRowMax) = row_max;
       tTMEM_STOREVrS(kIdxFinalRowSum) = row_sum;
       copy(tiled_tmem_storev, tTMEM_STOREVrS, tTMEM_STOREVtS);
+      // tcgen05.st is asynchronous: make sure the row statistics have been written to TMEM
+      // before pipeline_c.producer_commit() lets the correction warpgroup read them.
+      cutlass::arch::fence_view_async_tmem_store();
     }
   }
 
@@ -1033,6 +1039,8 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
         correction_rescale(scale, uint32_t(TmemAllocation::O0));
       }
 
+      // the stats loads (tcgen05.ld) must complete before their TMEM columns are released
+      cutlass::arch::fence_view_async_tmem_load();
       pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
       ++pipeline_s1_c_consumer_state;
 
@@ -1054,6 +1062,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
         correction_rescale(scale, uint32_t(TmemAllocation::O1));
       }
 
+      cutlass::arch::fence_view_async_tmem_load();
       pipeline_s0_c.consumer_release(pipeline_s0_c_consumer_state);
       ++pipeline_s0_c_consumer_state;
 
@@ -1063,6 +1072,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       ++pipeline_o_consumer_state;
     }
 
+    cutlass::arch::fence_view_async_tmem_load();
     pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
     ++pipeline_s1_c_consumer_state;
 
@@ -1078,6 +1088,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     Tensor tTMEM_LOADVrS = make_tensor<ElementQK>(shape(tTMEM_LOADVcS));
     copy(tiled_tmem_loadv, tTMEM_LOADVtS0, tTMEM_LOADVrS);
 
+    cutlass::arch::fence_view_async_tmem_load();
     pipeline_s0_c.consumer_release(pipeline_s0_c_consumer_state);
     ++pipeline_s0_c_consumer_state;
 
@@ -1123,6 +1134,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     // load from V1
     copy(tiled_tmem_loadv, tTMEM_LOADVtS1, tTMEM_LOADVrS);
 
+    cutlass::arch::fence_view_async_tmem_load();
     pipeline_s1_c.consumer_release(pipeline_s1_c_consumer_state);
     ++pipeline_s1_c_consumer_state;
 
