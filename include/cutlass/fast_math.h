@@ -503,9 +503,10 @@ struct FastDivmodU64 {
       }
       else {
         uint64_t power_of_two = (uint64_t(1) << shift_right);
-        uint64_t multiplier_lo = uint128_t(0, power_of_two) / divisor;
-        multiplier = uint128_t(power_of_two, power_of_two) / divisor;
-        round_up = (multiplier_lo == multiplier ? 1 : 0);
+        uint64_t remainder;
+        multiplier = uint128_t(power_of_two, power_of_two).divmod(remainder, divisor);
+        // The smaller numerator has the same quotient exactly when the remainder covers power_of_two.
+        round_up = (remainder >= power_of_two);
       }
     }
   }
