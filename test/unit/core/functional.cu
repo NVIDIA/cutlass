@@ -36,6 +36,7 @@
 
 #include "cutlass/functional.h"
 #include "cutlass/core_io.h"
+#include "cutlass/epilogue/thread/linear_combination_clamp.h"
 
 #include "cutlass/layout/matrix.h"
 #include "cutlass/util/host_tensor.h"
@@ -424,6 +425,31 @@ TEST(Functional, multiply_add_bf16x16) {
 
 TEST(Functional, multiply_add_bf16x17) {
   Functional_multiply_add_TxN<cutlass::bfloat16_t, 17>();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Functional, linear_combination_clamp_float) {
+  using Fragment = cutlass::Array<float, 1>;
+  using Operator =
+    cutlass::epilogue::thread::LinearCombinationClamp<float, 1, float, float>;
+  using Tensor = cutlass::HostTensor<float, cutlass::layout::RowMajor>;
+
+  Fragment accumulator;
+  accumulator[0] = 2.0f;
+  EXPECT_EQ(Operator()(accumulator)[0], 2.0f);
+
+  Tensor output({1, 1});
+  Tensor input({1, 1});
+  input.host_data()[0] = 2.0f;
+  input.sync_device();
+
+  test::core::kernel::unary_operator<Fragment, Operator><<<1, 1>>>(
+    reinterpret_cast<Fragment *>(output.device_data()),
+    reinterpret_cast<Fragment const *>(input.device_data()));
+  output.sync_host();
+
+  EXPECT_EQ(output.host_data()[0], 2.0f);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
