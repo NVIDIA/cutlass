@@ -2366,6 +2366,17 @@ class DiagId(_DiagMixin, enum.Enum):
         "No function was provided to compile. Pass a callable decorated with @cute.jit.",
         ("Ensure you pass a valid @cute.jit-decorated function to cute.compile().",),
     )
+    CALL_IKET_OUTSIDE_KERNEL = (
+        "`{api}` records an in-kernel event and can only be called from device "
+        "code, but it was called from host code: a @cute.jit function that is "
+        "not running inside a @cute.kernel.",
+        (
+            "Move the call into the @cute.kernel function, or into a @cute.jit "
+            "helper that the kernel calls.",
+            "IKET does not trace host code. Use NVIDIA Nsight Systems to time "
+            "host-side work and kernel launches.",
+        ),
+    )
     CALL_KERNEL_TARGET = (
         "`{function_name}` is decorated with @cute.kernel. cute.compile() "
         "expects a @cute.jit-decorated function to compile its target as the host entry point.",

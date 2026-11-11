@@ -57,8 +57,8 @@ This section shows the minimal end-to-end flow: add IKET calls in kernel code,
 run the workload under ``run-iket``, and open the generated trace.
 
 **Step 1: Add IKET instrumentation.** Place IKET calls inside a
-``@cute.kernel`` function. IKET calls in host-side Python wrappers do not emit
-in-kernel events.
+``@cute.kernel`` function. An IKET call in a host-side ``@cute.jit`` wrapper is
+a compile error.
 
 The following example shows a small kernel fragment with a marker, a
 token-based range, and a stack-based range.
@@ -136,9 +136,11 @@ API Reference
 -------------
 
 IKET APIs are available under ``cutlass.cute.experimental.iket``. The table
-below uses ``iket`` as shorthand for that module. IKET API calls should be
-placed inside ``@cute.kernel`` code. Instrumentation in host-side Python code
-does not create in-kernel events.
+below uses ``iket`` as shorthand for that module. IKET API calls must be
+placed inside ``@cute.kernel`` code, or in ``@cute.jit`` helpers that a kernel
+calls. Calling them from host-side ``@cute.jit`` code raises a
+``CALL_IKET_OUTSIDE_KERNEL`` error at compile time, with or without IKET
+lowering enabled.
 
 IKET has three basic concepts:
 
@@ -245,7 +247,7 @@ Example Instrumentation Patterns
 --------------------------------
 
 The examples below use ``cute.experimental.iket`` inside ``@cute.kernel`` code.
-IKET calls in host-side Python wrappers do not emit in-kernel events.
+IKET calls in host-side Python wrappers are rejected at compile time.
 
 Before Adding Events
 ~~~~~~~~~~~~~~~~~~~~

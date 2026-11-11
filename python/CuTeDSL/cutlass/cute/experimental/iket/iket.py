@@ -13,7 +13,14 @@
 from typing import Any, List, Optional
 
 from cutlass._mlir.dialects import iket, arith
-from cutlass.cutlass_dsl import Boolean, dsl_user_op, if_generate, is_dynamic_expression
+from cutlass.cutlass_dsl import (
+    Boolean,
+    DSLUserCodeError,
+    dsl_user_op,
+    if_generate,
+    is_dynamic_expression,
+)
+from cutlass.base_dsl.diagnostics import DiagId
 from cutlass.base_dsl.typing import Numeric
 from cutlass._mlir import ir
 
@@ -108,23 +115,37 @@ def _make_i1_constant(
 _DEVICE_CODE_OPS = frozenset({"cuda.kernel", "gpu.func", "gpu.module", "lir.func"})
 
 
-def _in_device_code(ip: Optional[ir.InsertionPoint] = None) -> bool:
+def _check_device_code(api: str, ip: Optional[ir.InsertionPoint] = None) -> None:
     """
-    Return whether IR is being built inside a kernel rather than in host code.
+    Raise a user error if IR is being built in host code rather than in a kernel.
 
     IKET events are recorded by kernels only. iket ops in host code are not
-    lowered, and IKET lowering crashes on them, so the API emits nothing for
-    calls made outside a kernel.
+    lowered, and IKET lowering crashes on them, so a call made outside a kernel
+    is rejected while the function is traced.
+
+    :param api: Name of the IKET function being called, for the error message
+    :type api: str
+    :param ip: Insertion point for MLIR, defaults to the current one
+    :type ip: Optional[InsertionPoint], optional
+    :raises DSLUserCodeError: If the insertion point is not inside a kernel
     """
     if ip is None:
-        ip = ir.InsertionPoint.current
+        try:
+            ip = ir.InsertionPoint.current
+        except ValueError:
+            # Not tracing at all (plain Python). Building the op reports that.
+            return
+        if ip is None:
+            return
     op = ip.block.owner
     while op is not None:
         operation = getattr(op, "operation", op)
         if operation.name in _DEVICE_CODE_OPS:
-            return True
+            return
         op = operation.parent
-    return False
+    raise DSLUserCodeError(
+        DiagId.CALL_IKET_OUTSIDE_KERNEL, api=f"cute.experimental.iket.{api}"
+    )
 
 
 class RangeToken:
@@ -184,8 +205,7 @@ def mark(
     :type ip: Optional[InsertionPoint], optional
     """
 
-    if not _in_device_code(ip):
-        return None
+    _check_device_code("mark", ip)
     if payload is not None:
         if is_dynamic_expression(payload):
             payload_value = payload.ir_value(loc=loc, ip=ip)
@@ -226,8 +246,7 @@ def sentinel_token(
     :rtype: RangeToken
     """
 
-    if not _in_device_code(ip):
-        return RangeToken()
+    _check_device_code("sentinel_token", ip)
     token = RangeToken()
     token.op = iket.sentinel_token(token.token, loc=loc, ip=ip)
     token._is_none_val = _make_i1_constant(True, loc=loc, ip=ip)
@@ -264,8 +283,7 @@ def range_start(
     :rtype: RangeToken
     """
 
-    if not _in_device_code(ip):
-        return RangeToken()
+    _check_device_code("range_start", ip)
     token = RangeToken()
     if payload is not None:
         if is_dynamic_expression(payload):
@@ -311,8 +329,7 @@ def range_end(
     :type ip: Optional[InsertionPoint], optional
     """
 
-    if not _in_device_code(ip):
-        return
+    _check_device_code("range_end", ip)
 
     def _emit_range_end() -> None:
         event_name_kwarg = {}
@@ -366,8 +383,7 @@ def range_push(
     :type ip: Optional[InsertionPoint], optional
     """
 
-    if not _in_device_code(ip):
-        return None
+    _check_device_code("range_push", ip)
     if payload is not None:
         if is_dynamic_expression(payload):
             payload_value = payload.ir_value(loc=loc, ip=ip)
@@ -394,6 +410,5 @@ def range_pop(
     :type ip: Optional[InsertionPoint], optional
     """
 
-    if not _in_device_code(ip):
-        return None
+    _check_device_code("range_pop", ip)
     return iket.range_pop(loc=loc, ip=ip)
