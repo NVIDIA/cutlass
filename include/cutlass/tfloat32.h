@@ -308,8 +308,8 @@ struct numeric_limits<cutlass::tfloat32_t> {
   /// Maximum finite value
   static cutlass::tfloat32_t max() { return cutlass::tfloat32_t::bitcast(0x7f7fffff); }
 
-  /// Returns smallest finite value
-  static cutlass::tfloat32_t epsilon() { return cutlass::tfloat32_t::bitcast(0x1000); }
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
+  static cutlass::tfloat32_t epsilon() { return cutlass::tfloat32_t::bitcast(0x3a800000); }
 
   /// Returns smallest finite value
   static cutlass::tfloat32_t round_error() { return cutlass::tfloat32_t(0.5f); }

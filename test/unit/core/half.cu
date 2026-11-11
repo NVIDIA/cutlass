@@ -38,6 +38,7 @@
 #include "cutlass/array.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/util/device_memory.h"
+#include <limits>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -85,6 +86,11 @@ TEST(half_t, host_arithmetic) {
       EXPECT_TRUE(static_cast<int>(x * y) == (i * j));
     }
   }
+}
+
+TEST(half_t, numeric_limits) {
+  EXPECT_EQ(std::numeric_limits<cutlass::half_t>::epsilon().raw(), 0x1400);
+  EXPECT_EQ(cutlass::platform::numeric_limits<cutlass::half_t>::epsilon().raw(), 0x1400);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
