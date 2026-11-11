@@ -994,7 +994,7 @@ struct Sm90VisitorImplBase<Op0, Op1> {
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     size_t op_0_workspace_size = Op0::get_workspace_size(problem_shape, args.op_0);
     uint8_t* op_0_workspace = reinterpret_cast<uint8_t*>(workspace);
-    uint8_t* op_1_workspace = op_0_workspace + op_0_workspace_size;
+    uint8_t* op_1_workspace = op_0_workspace + round_nearest(op_0_workspace_size, MinWorkspaceAlignment);
     return Params{
       Op0::to_underlying_arguments(problem_shape, args.op_0, op_0_workspace),
       Op1::to_underlying_arguments(problem_shape, args.op_1, op_1_workspace)
@@ -1093,8 +1093,8 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2> {
     size_t op_0_workspace_size = Op0::get_workspace_size(problem_shape, args.op_0);
     size_t op_1_workspace_size = Op1::get_workspace_size(problem_shape, args.op_1);
     uint8_t* op_0_workspace = reinterpret_cast<uint8_t*>(workspace);
-    uint8_t* op_1_workspace = op_0_workspace + op_0_workspace_size;
-    uint8_t* op_2_workspace = op_1_workspace + op_1_workspace_size;
+    uint8_t* op_1_workspace = op_0_workspace + round_nearest(op_0_workspace_size, MinWorkspaceAlignment);
+    uint8_t* op_2_workspace = op_1_workspace + round_nearest(op_1_workspace_size, MinWorkspaceAlignment);
     return Params{
       Op0::to_underlying_arguments(problem_shape, args.op_0, op_0_workspace),
       Op1::to_underlying_arguments(problem_shape, args.op_1, op_1_workspace),
@@ -1211,9 +1211,9 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2, Op3> {
     size_t op_1_workspace_size = Op1::get_workspace_size(problem_shape, args.op_1);
     size_t op_2_workspace_size = Op2::get_workspace_size(problem_shape, args.op_2);
     uint8_t* op_0_workspace = reinterpret_cast<uint8_t*>(workspace);
-    uint8_t* op_1_workspace = op_0_workspace + op_0_workspace_size;
-    uint8_t* op_2_workspace = op_1_workspace + op_1_workspace_size;
-    uint8_t* op_3_workspace = op_2_workspace + op_2_workspace_size;
+    uint8_t* op_1_workspace = op_0_workspace + round_nearest(op_0_workspace_size, MinWorkspaceAlignment);
+    uint8_t* op_2_workspace = op_1_workspace + round_nearest(op_1_workspace_size, MinWorkspaceAlignment);
+    uint8_t* op_3_workspace = op_2_workspace + round_nearest(op_2_workspace_size, MinWorkspaceAlignment);
     return Params{
       Op0::to_underlying_arguments(problem_shape, args.op_0, op_0_workspace),
       Op1::to_underlying_arguments(problem_shape, args.op_1, op_1_workspace),
