@@ -1121,6 +1121,19 @@ def _binary_op(
             lhs_val, rhs_val = rhs_val, lhs_val
 
         res_val = op(lhs_val, rhs_val)
+        if (
+            type(res_val) is int
+            and issubclass(res_type, Integer)
+            and res_type is not Boolean
+            and res_type._exact_range is not None
+        ):
+            # Two Python-payload integers fold to the exact result. Wrap it
+            # into the result dtype the way the emitted arith op does, rather
+            # than handing it to the constructor as an out-of-range literal:
+            # that warns about a literal the user never wrote, and raises
+            # OverflowError once the exact result leaves the 64-bit range,
+            # e.g. ``Uint64(2**63) + Uint64(2**63)``.
+            res_val = _wrap_to_exact_range(res_val, res_type._exact_range)
         res = res_type(res_val, loc=loc, ip=ip)
         # A Python-payload compute is a trace-time fold: propagate its sources.
         if type(res_val) in (bool, int, float):
