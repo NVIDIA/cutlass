@@ -177,6 +177,47 @@ TMAOp = Union[
     CopyBulkTensor2DGather4G2SMulticastOp,
 ]
 
+_TMA_STRIDE_ALIGN_BITS = 128  # TMA global strides must be multiples of 16 bytes
+
+def _misaligned_tma_strides(shape, stride, elem_bits):
+    """shape, stride: flattened tuples; static entries are Python ints, anything
+    else is dynamic. Return [(mode, extent, stride)] for each misaligned mode."""
+    bad = []
+    for mode, (ext, st) in enumerate(zip(shape, stride)):
+        if not (isinstance(ext, int) and isinstance(st, int)):
+            continue
+
+        if st == 1:
+            continue
+
+        if ext == 1:
+            continue
+
+        if (st * elem_bits) % _TMA_STRIDE_ALIGN_BITS != 0:
+            bad.append((mode, ext, st))
+    return bad
+
+
+def _check_tma_gmem_strides(gmem_tensor):
+    elem_type = getattr(gmem_tensor, "element_type", None)
+    elem_bits = getattr(elem_type, "width", None)
+    if elem_bits is None:
+        return
+
+    shape, stride = gmem_tensor.shape, gmem_tensor.stride
+    if not isinstance(shape, tuple):
+        shape, stride = (shape,), (stride,)
+
+    bad_modes = _misaligned_tma_strides(shape, stride, elem_bits)
+    if bad_modes:
+        mode, ext, st = bad_modes[0]
+        stride_bytes = (st * elem_bits) // 8
+        raise ValueError(
+            f"Misaligned TMA gmem stride on mode {mode} (extent={ext}): "
+            f"stride is {st} elements ({stride_bytes} B), but TMA requires "
+            f"strides to be multiples of 16 B (128 bits). "
+            f"Fix: pad the tensor's leading/pitch dimension to a multiple of 16 B."
+        )
 
 @dsl_user_op
 def make_im2col_tma_atom(
@@ -206,7 +247,7 @@ def make_im2col_tma_atom(
         - upper_padding_whd
         - stride_whd
         - lower_srt
-        - stride_srt 
+        - stride_srt
     are only needed for the load mode (GMEM -> SMEM).
 
     Given
@@ -486,6 +527,8 @@ def make_tiled_tma_atom(
         "smem_layout must be non-staged (rank(smem_layout) == rank(cta_tiler)) "
         "or staged (rank(smem_layout) == rank(cta_tiler) + 1)"
     )
+
+    _check_tma_gmem_strides(gmem_tensor)
 
     # Keep the original SMEM layout object for later retrieval at Python level.
     stored_smem_layout = smem_layout_
@@ -978,4 +1021,3 @@ def group_bulk_copy_modes(
     mSrc = core.group_modes(src, 0, core.rank(src), loc=loc, ip=ip)
     mDst = core.group_modes(dst, 0, core.rank(dst), loc=loc, ip=ip)
     return (mSrc, mDst)
-
