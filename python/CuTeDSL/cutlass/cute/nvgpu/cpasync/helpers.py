@@ -62,8 +62,6 @@ from .copy import (
     CopyBulkTensorIm2ColS2GNonExecTrait,
 )
 
-import cute
-
 
 class TmaInfo:
     """
