@@ -1216,7 +1216,7 @@ def cvt_f32x4_to_f8x4_pack_i32(fp32x4, fp8_type, *, loc=None, ip=None):
         [src0, src1, src2, src3],
         asm_tmpl,
         "=r,f,f,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
