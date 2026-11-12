@@ -5701,7 +5701,9 @@ class struct:
         @property
         def size_in_bytes(cls) -> int:
             assert cls.size is not None
-            return cls.size * cls.elem_width // 8
+            # Round up so sub-byte element types (e.g. fp4) get their last
+            # partially filled byte instead of sharing it with the next member.
+            return (cls.size * cls.elem_width + 7) // 8
 
     class MemRange(metaclass=_MemRangeMeta):
         """
