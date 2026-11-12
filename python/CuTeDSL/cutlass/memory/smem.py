@@ -406,7 +406,7 @@ class SmemAllocator:
         element_width = element_type.width if element_type is not Boolean else 8
         byte_alignment = max(byte_alignment, element_width // 8)
         ptr = self.allocate(
-            element_width * num_elems // 8,
+            cute.ceil_div(element_width * num_elems, 8),
             byte_alignment,
             partition=partition,
             loc=loc,
