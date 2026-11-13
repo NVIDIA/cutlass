@@ -422,6 +422,8 @@ def transform_apply(
     - transform_apply(t0, t1, t2, ..., f, g): For multiple tuples of same length
 
     For non-tuple inputs, f is applied to the input(s) and g is applied to that single result.
+    All arguments must be congruent (same nested structure), but f only receives
+    the top-level modes, so nested modes are passed to f intact.
 
     :param args: One or more tuples (or non-tuples) to transform
     :param f: The function to apply to each element (or corresponding elements across tuples)
@@ -454,38 +456,27 @@ def transform_apply(
     if not args:
         raise ValueError("transform_apply requires at least one argument")
 
-    def _compatible_xtuples(args: Tuple[XTuple, ...]) -> bool:
+    def _congruent(args: Tuple[XTuple, ...]) -> bool:
         if isinstance(args[0], tuple):
-            if not all(isinstance(arg, tuple) for arg in args):
-                return False
             tuple_length = len(args[0])
-            for i, arg in enumerate(args, 1):
-                if len(arg) != tuple_length:
-                    return False
-            for i in range(tuple_length):
-                if not _compatible_xtuples(tuple([arg[i] for arg in args])):
-                    return False
-            return True
-        else:
-            return all(not isinstance(arg, tuple) for arg in args)
+            if not all(
+                isinstance(arg, tuple) and len(arg) == tuple_length for arg in args
+            ):
+                return False
+            return all(_congruent(elems) for elems in zip(*args))
+        return all(not isinstance(arg, tuple) for arg in args)
 
-    if not _compatible_xtuples(args):
+    if not _congruent(args):
         raise ValueError("All arguments must be congruent")
 
-    # Check if first argument is a tuple to determine behavior
+    # Like C++ CuTe, only the top-level modes are traversed: f receives
+    # t[i] (or t0[i], t1[i], ...) whatever it is, so nested modes are kept
+    # intact. Use transform_leaf to apply a function to every leaf instead.
     if isinstance(args[0], tuple):
-        flat_args = [flatten_to_tuple(arg) for arg in args]
-        tuple_length = len(flat_args[0])
-
-        # Apply f to corresponding elements across all tuples: g(f(args[0][i], args[1][i], ...), ...)
-        transformed_results = tuple(
-            f(*(arg[i] for arg in flat_args)) for i in range(tuple_length)
-        )
-        return g(*transformed_results)
+        return g(*(f(*elems) for elems in zip(*args)))
     else:
         # Non-tuple case: apply f to all args, then g to that single result
-        result = f(*args)
-        return g(result)
+        return g(f(*args))
 
 
 def filter_tuple(*args: XTuple, f: Callable[..., Tuple[Any, ...]]) -> Tuple[Any, ...]:
@@ -511,10 +502,10 @@ def filter_tuple(*args: XTuple, f: Callable[..., Tuple[Any, ...]]) -> Tuple[Any,
     .. code-block:: python
 
         >>> # Keep only even numbers, wrapped in tuples
-        >>> filter_tuple((1, 2, 3, 4), lambda x: (x,) if x % 2 == 0 else ())
+        >>> filter_tuple((1, 2, 3, 4), f=lambda x: (x,) if x % 2 == 0 else ())
         (2, 4)
         >>> # Duplicate each element
-        >>> filter_tuple((1, 2, 3), lambda x: (x, x))
+        >>> filter_tuple((1, 2, 3), f=lambda x: (x, x))
         (1, 1, 2, 2, 3, 3)
     """
     if not callable(f):
