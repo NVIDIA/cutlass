@@ -37,7 +37,10 @@ import re
 import sys
 
 import pytest
-from _pytest.assertion.util import running_on_ci
+try:
+    from _pytest.compat import running_on_ci  # pytest >= 9
+except ImportError:
+    from _pytest.assertion.util import running_on_ci
 
 
 # The dict class to record the default SMs for all subtests under certain directory.
