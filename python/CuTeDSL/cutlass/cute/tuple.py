@@ -422,6 +422,8 @@ def transform_apply(
     - transform_apply(t0, t1, t2, ..., f, g): For multiple tuples of same length
 
     For non-tuple inputs, f is applied to the input(s) and g is applied to that single result.
+    All arguments must be congruent (same nested structure), but f only receives
+    the top-level modes, so nested modes are passed to f intact.
 
     :param args: One or more tuples (or non-tuples) to transform
     :param f: The function to apply to each element (or corresponding elements across tuples)
@@ -454,17 +456,25 @@ def transform_apply(
     if not args:
         raise ValueError("transform_apply requires at least one argument")
 
+    def _congruent(args: Tuple[XTuple, ...]) -> bool:
+        if isinstance(args[0], tuple):
+            tuple_length = len(args[0])
+            if not all(
+                isinstance(arg, tuple) and len(arg) == tuple_length for arg in args
+            ):
+                return False
+            return all(_congruent(elems) for elems in zip(*args))
+        return all(not isinstance(arg, tuple) for arg in args)
+
+    if not _congruent(args):
+        raise ValueError("All arguments must be congruent")
+
     # Like C++ CuTe, only the top-level modes are traversed: f receives
     # t[i] (or t0[i], t1[i], ...) whatever it is, so nested modes are kept
     # intact. Use transform_leaf to apply a function to every leaf instead.
     if isinstance(args[0], tuple):
-        tuple_length = len(args[0])
-        if not all(isinstance(arg, tuple) and len(arg) == tuple_length for arg in args):
-            raise ValueError("All arguments must be tuples of the same rank")
         return g(*(f(*elems) for elems in zip(*args)))
     else:
-        if any(isinstance(arg, tuple) for arg in args):
-            raise ValueError("All arguments must be tuples of the same rank")
         # Non-tuple case: apply f to all args, then g to that single result
         return g(f(*args))
 

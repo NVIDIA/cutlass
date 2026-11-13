@@ -48,12 +48,11 @@ class TestTransformApply(unittest.TestCase):
             (2, 1, 3),
         )
 
-    def test_only_top_level_rank_must_match(self):
+    def test_nested_empty_mode_is_kept(self):
+        # Flattening would drop the empty mode; f must still receive it.
         self.assertEqual(
-            cute.transform_apply(
-                ((1, 2), 3), (4, 5), f=lambda a, b: (a,), g=cute.tuple_cat
-            ),
-            ((1, 2), 3),
+            cute.transform_apply(((), (1,)), f=lambda x: (x,), g=cute.tuple_cat),
+            ((), (1,)),
         )
 
     def test_non_tuple(self):
@@ -63,12 +62,27 @@ class TestTransformApply(unittest.TestCase):
         )
 
     def test_rank_mismatch_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "congruent"):
             cute.transform_apply((1, 2), (3,), f=lambda a, b: a, g=lambda *a: a)
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "congruent"):
             cute.transform_apply((1, 2), 3, f=lambda a, b: a, g=lambda *a: a)
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "congruent"):
             cute.transform_apply(1, (2, 3), f=lambda a, b: a, g=lambda *a: a)
+
+    def test_nested_mismatch_raises(self):
+        # Same top-level rank is not enough; the arguments must be congruent.
+        with self.assertRaisesRegex(ValueError, "congruent"):
+            cute.transform_apply(
+                (1, 2), (3, (4, 5)), f=lambda x, y: x + y, g=lambda *a: a
+            )
+        with self.assertRaisesRegex(ValueError, "congruent"):
+            cute.transform_apply(
+                ((1, 2), 3), (4, 5), f=lambda a, b: (a,), g=cute.tuple_cat
+            )
+        with self.assertRaisesRegex(ValueError, "congruent"):
+            cute.filter_tuple(
+                ((2, 3), 4), ((1, 2, 3), 0), f=lambda s, d: () if d == 0 else (s,)
+            )
 
 
 class TestFilterTuple(unittest.TestCase):
