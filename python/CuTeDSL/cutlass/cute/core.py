@@ -14,6 +14,7 @@ from collections.abc import Iterable
 from functools import partial, reduce
 import inspect
 from inspect import isclass
+import sys
 import warnings
 from typing import (
     Any,
@@ -6008,7 +6009,7 @@ class struct:
         self._cls = cls
         self.__name__ = f"cute.struct::{cls.__name__}"
         # Get the class annotations
-        self._annotations = getattr(cls, "__annotations__", {})
+        self._annotations = struct._resolve_annotations(cls, sys._getframe(1).f_locals)
         # Create a dictionary to store the offsets
         self._offsets: Dict[str, int] = {}
 
@@ -6144,6 +6145,29 @@ class struct:
     def __alignof__(self) -> int:
         return self._align_of
 
+    @staticmethod
+    def _resolve_annotations(
+        cls: type, caller_locals: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Return the field annotations of ``cls`` as objects.
+
+        Under ``from __future__ import annotations`` every annotation is stored
+        as a string, so evaluate those against the defining module's globals,
+        the scope the class was defined in and the class namespace.
+        """
+        annotations = dict(getattr(cls, "__annotations__", {}))
+        if not any(isinstance(a, str) for a in annotations.values()):
+            return annotations
+        module = sys.modules.get(cls.__module__)
+        globalns = dict(vars(module)) if module is not None else {}
+        localns = dict(caller_locals or {})
+        localns.update(vars(cls))
+        return {
+            name: eval(a, globalns, localns) if isinstance(a, str) else a
+            for name, a in annotations.items()
+        }
+
     # util func for aligning offset
     @staticmethod
     def align_offset(offset: Any, align: int) -> Any:
@@ -6222,7 +6246,11 @@ class union(struct):
         object.__setattr__(self, "_cls", cls)
         object.__setattr__(self, "__name__", f"cute.union::{cls.__name__}")
         # Get the class annotations
-        object.__setattr__(self, "_annotations", getattr(cls, "__annotations__", {}))
+        object.__setattr__(
+            self,
+            "_annotations",
+            struct._resolve_annotations(cls, sys._getframe(1).f_locals),
+        )
         # Create a dictionary to store the offsets (all zeros for union)
         object.__setattr__(self, "_offsets", {})
 
