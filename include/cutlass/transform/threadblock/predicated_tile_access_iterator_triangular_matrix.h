@@ -366,11 +366,11 @@ class PredicatedTileAccessIteratorTriangularMatrix<Shape_, Element_, layout::Pit
 
     if (kAdvanceRank) {
       pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
-      pointer_ += Shape::kContiguous * tile_offset.contiguous();
+      add_pointer_offset(Shape::kContiguous * LongIndex(tile_offset.contiguous()));
       thread_offset_ += TensorCoord{0, Shape::kStrided * tile_offset.strided()};
     } else {
       pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
-      pointer_ += Shape::kStrided * tile_offset.strided();
+      add_pointer_offset(Shape::kStrided * LongIndex(tile_offset.strided()) * params_.stride_);
       thread_offset_ += TensorCoord{Shape::kContiguous * tile_offset.contiguous(), 0};
     }
 
