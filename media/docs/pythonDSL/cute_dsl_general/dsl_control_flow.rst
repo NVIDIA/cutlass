@@ -124,13 +124,15 @@ Compiler will automatically generate the prefetch loop with `prefetch_stages` it
 
 .. note::
 
-   The compiler splits the loop at a TMA bulk copy: the loop body must
-   contain at least one ``cute.copy(tma_atom, ..., tma_bar_ptr=...)``
-   paired with an mbarrier wait on the same barrier. Loops built from
-   plain ``cute.copy``, ``cp.async``, or arithmetic currently have no
-   such split point: the compiler emits a warning
-   ("software pipelining ('prefetch_stages') skipped") and compiles the
-   loop without pipelining.
+   The compiler recognizes two split points. A TMA bulk copy: at least one
+   ``cute.copy(tma_atom, ..., tma_bar_ptr=...)`` paired with an mbarrier
+   wait on the same barrier. Or a cp.async group: copies with a cp.async
+   atom followed by ``cute.arch.cp_async_commit_group()`` and
+   ``cute.arch.cp_async_wait_group(0)``, in a canonical loop (start 0,
+   step 1) whose circular-buffer slot is indexed as ``i % stages``.
+   Loops with neither split point — or outside these shapes — get a
+   warning ("software pipelining ('prefetch_stages') skipped") and are
+   compiled without pipelining.
 
 This feature is experimental and only supported on sm90 and above.
 

@@ -47,8 +47,14 @@ from .copy import (
     CopyBulkTensorTileS2GOp,
     CopyBulkTensorIm2ColS2GOp,
     CopyReduceBulkTensorTileS2GOp,
+    CopyBulkTensor2DScatter4S2GOp,
+    CopyBulkTensor2DGather4G2SOp,
+    CopyBulkTensor2DGather4G2SMulticastOp,
     CopyBulkTensorTileG2SNonExecTrait,
     CopyBulkTensorTileG2SMulticastNonExecTrait,
+    CopyBulkTensor2DGather4G2SNonExecTrait,
+    CopyBulkTensor2DGather4G2SMulticastNonExecTrait,
+    CopyBulkTensor2DScatter4S2GNonExecTrait,
     CopyBulkTensorTileS2GNonExecTrait,
     CopyReduceBulkTensorTileS2GNonExecTrait,
     CopyBulkTensorIm2ColG2SNonExecTrait,
@@ -166,6 +172,9 @@ TMAOp = Union[
     CopyBulkTensorIm2ColG2SOp,
     CopyBulkTensorIm2ColS2GOp,
     CopyReduceBulkTensorTileS2GOp,
+    CopyBulkTensor2DScatter4S2GOp,
+    CopyBulkTensor2DGather4G2SOp,
+    CopyBulkTensor2DGather4G2SMulticastOp,
 ]
 
 
@@ -423,6 +432,7 @@ def make_tiled_tma_atom(
     cta_tiler: Tiler,
     num_multicast: int = 1,
     *,
+    gmem_coord_tensor: Optional[Tensor] = None,
     internal_type: Optional[Type[Numeric]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
@@ -463,6 +473,8 @@ def make_tiled_tma_atom(
     :type cta_tiler:      Tiler
     :param num_multicast: The multicast factor
     :type num_multicast:  int
+    :param gmem_coord_tensor: The GMEM index tensor for gather4/scatter4 mode (required for gather4 and scatter4 ops); see :func:`tma_partition` for layout conventions and restrictions
+    :type gmem_coord_tensor: Optional[Tensor]
     :param internal_type: Optional internal data type to use when the tensor data type is not supported by the TMA unit
     :type internal_type:  Type[Numeric]
     :return:              A TmaInfo containing the Copy Atom, TMA tensor, and SMEM layout
@@ -560,6 +572,23 @@ def make_tiled_tma_atom(
             res[1],
             stored_smem_layout,
         )
+    elif isinstance(op, CopyBulkTensor2DScatter4S2GOp):
+        if gmem_coord_tensor is None:
+            raise ValueError("gmem_coord_tensor is required for scatter4 TMA ops")
+        res = _cute_nvgpu_ir.atom_make_non_exec_2d_scatter4_tma_store(
+            cast(Any, gmem_tensor).value,
+            gmem_coord_tensor.layout,
+            smem_layout,
+            cta_v_map,
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyBulkTensor2DScatter4S2GNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
     elif isinstance(op, CopyBulkTensorTileS2GOp):
         res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_store(
             cast(Any, gmem_tensor).value,
@@ -586,6 +615,54 @@ def make_tiled_tma_atom(
         )
         return TmaInfo(
             atom.CopyAtom(op, CopyReduceBulkTensorTileS2GNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
+    elif isinstance(op, CopyBulkTensor2DGather4G2SOp):
+        if gmem_coord_tensor is None:
+            raise ValueError("gmem_coord_tensor is required for gather4 TMA ops")
+        if num_multicast != 1:
+            raise ValueError(
+                f"expects num_multicast to be 1 for non multicast gather4 G2S copies, "
+                f"but got {num_multicast}"
+            )
+        res = _cute_nvgpu_ir.atom_make_non_exec_2d_gather4_tma_load(
+            gmem_tensor.value,
+            gmem_coord_tensor.layout,
+            smem_layout,
+            cta_v_map,
+            op._to_ir(),
+            num_multicast=num_multicast,
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyBulkTensor2DGather4G2SNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
+    elif isinstance(op, CopyBulkTensor2DGather4G2SMulticastOp):
+        if gmem_coord_tensor is None:
+            raise ValueError("gmem_coord_tensor is required for gather4 TMA ops")
+        if num_multicast < 1:
+            raise ValueError(
+                f"expects num_multicast to be >= 1 for multicast gather4 G2S copies, "
+                f"but got {num_multicast}"
+            )
+        res = _cute_nvgpu_ir.atom_make_non_exec_2d_gather4_tma_load(
+            gmem_tensor.value,
+            gmem_coord_tensor.layout,
+            smem_layout,
+            cta_v_map,
+            op._to_ir(),
+            num_multicast=num_multicast,
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyBulkTensor2DGather4G2SMulticastNonExecTrait(res[0])),
             res[1],
             stored_smem_layout,
         )

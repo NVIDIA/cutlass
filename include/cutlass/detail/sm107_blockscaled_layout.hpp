@@ -136,14 +136,22 @@ struct Sm107BlockScaledConfig {
   CUTE_HOST_DEVICE
   static constexpr auto
   deduce_smem_layoutSFB(TiledMma tiled_mma, TileShape_MNK tileshape_mnk) {
-    // CTA-level MMA tile shape (TILE_N, TILE_K)
+    // CTA-level MMA tile shape (Round_Up(TILE_N, 128), TILE_K)
+    // This round_up workaround is used for TileShape_N == 64 or 192, which don't
+    // natively divide the SF atom's 128-wide MN mode;
+    // Copies (from GMEM to SMEM, and SMEM to TMEM) transfer SFB as if N were
+    // rounded up to 128/256.
     constexpr auto tile_shape_nk =
-      make_shape(size<1>(TileShape_MNK{}), size<2>(TileShape_MNK{}));
+      make_shape(Int<cutlass::ceil_div(size<1>(TileShape_MNK{}), Blk_MN{}) * Blk_MN{}>{},
+                 size<2>(TileShape_MNK{}));
 
-    // CTA-level MMA instruction shape (MMA_INST_N, MMA_INST_K)
-    constexpr auto mma_shape_nk =
-      make_shape(size<1>(typename TiledMma::AtomShape_MNK{}),
-                 size<2>(typename TiledMma::AtomShape_MNK{}));
+    // Number of MMA instructions needed to cover the CTA tile
+    constexpr auto mma_tile_inst_nk =
+      make_shape(size<1>(TileShape_MNK{}) / size<1>(typename TiledMma::AtomShape_MNK{}),
+                 size<2>(TileShape_MNK{}) / size<2>(typename TiledMma::AtomShape_MNK{}));
+
+    // Effective per-instruction atom size within the rounded-up SF tile (MMA_INST_N, MMA_INST_K)
+    constexpr auto mma_shape_nk = shape_div(tile_shape_nk, mma_tile_inst_nk);
 
     // Tiling the CTA-level tile shape with SF atoms, first accross the K-mode, and then N-mode
     auto smem_layout_tiled = tile_to_shape(SfAtom{}, tile_shape_nk, Step<_2, _1>{});

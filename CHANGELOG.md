@@ -2,24 +2,60 @@
 
 # CUTLASS 4.x
 
-## [4.8.0](https://github.com/NVIDIA/cutlass) (2026-08-25)
+## [4.8.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.8.1) (2026-10-15)
+
+### CuTe DSL
+* Bug fixes and improvements:
+  - Fixed an issue with `cute.extern` where functions with zero arguments would generate invalid type signatures.  Compiling such functions a second time would fail.
+  - Clear error/warning are now emitted for `CopyUniversalOp` with memory attributes specified ([!3711](https://github.com/NVIDIA/cutlass/issues/3711)).
+  - CUTLASS Primitives' `tensormap_replace` now keeps device-side TMA descriptor updates safe when a descriptor is shrunk below its original extent (e.g. grouped GEMM) and fixes a possible illegal memory access on Blackwell/Rubin.  This behavior can be opted out by specifying `keep_oob_fetch_window=True`. See https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-595-91-07/index.html#known-issues for more details on the known `cuTensorMapEncodeTiled` bug.
+  - Fixed unintended `sys.path` modification that could break imports in some environments where Torch was not installed e.g. JAX.
+
+* Known issues
+  - Due to a bug in CTK, the use of some packed instructions result in invalid code generation.  Given the nature of the instructions and how they are explicitly used, we have chosen to not silently rewrite these, but rather are flagging until the upstream compiler fixes are available.
+  - Avoid packed higher-throughput FP8 (MMA_K=128) subtraction via inline PTX `sub.rn.e4m3x4.e4m3x4` or `sub.rn.e5m2x4.e5m2x4`, as incorrect code generation can produce wrong results.
+  - Some CUTLASS Primitives packed mixed-input ops compile incorrectly on Rubin (sm107a/sm107f), resulting in wrong code generation. The specific patterns include:
+    - Packed mul, sub, and add ops with bf16x2 or fp16x2 result type and f32x2 input type when result is converted to fp32 later. APIs affected: `add_packed_f16x2_f32x2_f32x2`, `add_packed_bf16x2_f32x2_f32x2`, `mul_packed_f16x2_f32x2_f32x2`, `mul_packed_bf16x2_f32x2_f32x2`, `sub_packed_f16x2_f32x2_f32x2`, `sub_packed_bf16x2_f32x2_f32x2`
+      - For example:
+  	    ```
+        x = prims.mul_packed_bf16x2_f32x2_f32x2(a, b)
+        out[0], out[1] = f32(x[0]), f32(x[1])  # out[0], out[1] are wrong
+        ```
+    - Packed mul op with bf16x2 or fp16x2 result type and mixed bf16x2 and fp16x2 input types when the first operand is a compilation-time constant. APIs affected: `mul_packed_bf16x2_bf16x2_f16x2`, `mul_packed_f16x2_f16x2_bf16x2`
+      - For example: 
+        ```
+        x = prims.mul_packed_bf16x2_bf16x2_f16x2(2.0, b) # x is wrong 
+        x = prims.mul_packed_f16x2_f16x2_bf16x2(2.0, b)  # x is wrong
+        ```
+
+* This release has been tested against the following packages:
+  - FlashAttention: [main (1fc0221)](https://github.com/Dao-AILab/flash-attention/commit/1fc0221183e799363001394a12dd9e78e15f5dda)
+  - Quack: [main (35266c32)](https://github.com/Dao-AILab/quack/commit/35266c3298f0e9bf6d5f46c30aace2eaeae517e3)
+  - FlashInfer: [main (399b6c1)](https://github.com/flashinfer-ai/flashinfer/commit/399b6c1d31a13f38dd827018f89c6a04c8487acb)
+  - cuDNN-Frontend: [deveop (986ef4d)](https://github.com/NVIDIA/cudnn-frontend/commit/986ef4d9078089ae9f0656dd65f15011309e4347)
+  - Pytorch: [main (ca883d5)](https://github.com/pytorch/pytorch/commit/ca883d596dd5c0ce182976ed979d69d167ad706c)
+  - TensorRT-LLM: [main (cc63e66)](https://github.com/NVIDIA/TensorRT-LLM/commit/cc63e66daf52644f1441e117bb7ba67d20566016)
+
+## [4.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.8.0) (2026-09-17)
 
 ### CuTe DSL
 * New features
   - Initial Rubin support to accelerate dense GEMMs. The following features are available:  
-    - CuTe DSL
-      - Rubin new FP8 and FP4 Tensor Core support
+    - CuTe DSL and CuTe extensions
+      - Support for higher-throughput FP8 (MMA_K=64) and FP4 (MMA_K=128) Tensor Core MMA instructions
       - B collector reuse 
       - Extended TMEM size from 512 COL to 576 COL
       - Larger shared memory allocations (328KB)
       - Enhanced mixed precision throughput (FP8/FP4)
+      - Softmax acceleration related features
     - Primitives
-      - Rubin new FP8 and FP4 Tensor Core support
+      - Support for higher-throughput FP8 (MMA_K=64) and FP4 (MMA_K=128) Tensor Core MMA instructions
+      - B collector reuse
       - Extended TMEM size from 512 COL to 576 COL
-
-    NOTE: Executing Rubin kernels (SM107) requires the R615 driver which will be released
-          with CUDA Toolkit 13.4 GA.  R610 from CUDA Toolkit 13.4 Developer Preview is not
-          sufficient.
+      - Larger shared memory allocations (328KB)
+      - Enhanced mixed precision throughput (FP8/FP4)
+      - Softmax acceleration related feature
+      - 2:4 sparsity support for FP4
 
   - CuTe DSL extensions has several new features:
     - CTA-V maps are now inferred automatically for `cute_ext` TMA load, store, multicast, and reduce-store operations. Explicit CTA-V maps remain supported as overrides.
@@ -29,7 +65,7 @@
     - Improved device-side TMA descriptor updates and grouped GEMM performance through SMEM-staged updates, workspace reuse, and reduced prologue and synchronization overhead.
   - This release includes an opt-in preview of the CuTe DSL extensions (`cute_ext`) compiler pipeline for ordinary Cute DSL kernels. This pipeline lets user mix `cute_ext` APIs directly into `@cute.jit` and `@cute.kernel` code and is required for kernels that mix the two API surfaces. You may test this feature with the following:
   `CUTE_DSL_USE_EXTENSION_COMPILER=1 python your_program.py`
-The pipeline is expected to preserve program behavior, but generated PTX/SASS may differ. The pipeline is planned to become the default in a future release.
+The pipeline is expected to preserve program behavior and performance, but generated PTX/SASS may differ.  Note that this pipeline will become the default in the future, no earlier than 4.10.
   - Added examples for better control over Primitives' compiler warnings/errors introduced in 4.7.0.  See the `CuTeDSL/experimental/compiler_diagnostic/` directory.
   - IKET Profiler Tool
     - Rubin kernels (sm107) can now be profiled.
@@ -43,7 +79,7 @@ The pipeline is expected to preserve program behavior, but generated PTX/SASS ma
       - Grouped blockscaled GEMM with B collector reuse as applicable
       - Blockwise GEMM
     - Rubin (CuTe extension):
-      - FP4 blockscaled GEMM
+      - Support for higher-throughput FP8 (MMA_K=64) and FP4 (MMA_K=128) blockscaled GEMM with UE5M3 scale-factor
       - Grouped GEMM with B collector reuse
     - Blackwell (CuTe extension):
       - Dense GEMMs
@@ -57,6 +93,11 @@ The pipeline is expected to preserve program behavior, but generated PTX/SASS ma
         - Input transform GEMM
         - GeForce pingpong dense GEMM
         - Blackwell Ultra blockscaled GEMM
+      - Dense Convolutions
+        - Implicit-Gemm Fprop Conv
+        - Blocksclaed Implicit-Gemm Fprop Conv
+        - GeForce Implicit-Gemm Fprop Conv
+        - GeForce Blockscaled Implicit-Gemm Fporp Conv 
       - Attention
         - GQA Decode
       - Grouped GEMM
@@ -64,6 +105,11 @@ The pipeline is expected to preserve program behavior, but generated PTX/SASS ma
       - Top-K
     - Ampere (CuTe extension):
       - SIMT GEMM
+  - CuTe DSL now supports x86_64 Windows
+  - CuTe DSL AoT now supports new host target: QNX8.0 
+  - Notebooks are restructured under examples/python/CuTeDSL/cute/notebooks and new notebooks for primitives will be added under examples/python/CuTeDSL/notebooks 
+  - Numpy is now not a default dependency
+
 * Bug fixes and improvements:
   - `nvidia-cuda-nvdisasm` is now an optional dependency of `nvidia-cutlass-dsl` via the optional `[sass]` extra. SASS dumping (`CUTE_DSL_KEEP=sass` / KeepSASS) now resolves `nvdisasm` from the bundled wheel (recommended since its version matches the DSL toolchain) or from a local CUDA Toolkit (`CUDA_HOME`/`CUDA_PATH`). A locally-provided `nvdisasm` must come from a CUDA Toolkit at least as new as the toolchain that produced the CUBIN. Installations that never dump SASS are unaffected.
   - Reduced the protobuf version requirement of IKET profiler from 6.30 to 4.21.  This should make protobuf an easier requirement to satisfy in preparation for transioning IKET to an optional extra.
@@ -72,49 +118,61 @@ The pipeline is expected to preserve program behavior, but generated PTX/SASS ma
   vectorized instructions for tensors with a dynamic stride ([!3463](https://github.com/NVIDIA/cutlass/issues/3463))
   - Fixed TVM-FFI env stream detection for GPU tensors in tuple
 ([!3444](https://github.com/NVIDIA/cutlass/issues/3444))
+  - Fixed GPU `link-libraries` compile-option order so it is stable across processes
+  ([!3564](https://github.com/NVIDIA/cutlass/issues/3564))
+  - Fixed preprocessor `IndexError` on staged `bool()` with no arguments
+  ([!3506](https://github.com/NVIDIA/cutlass/issues/3506))
+  - Rejected `cute.compile` on `@cute.kernel` with a user error instead of an ICE
+  ([!3429](https://github.com/NVIDIA/cutlass/issues/3429))
+  - Fixed CuTe DSL crashing the Python interpreter when used in a REPL
+  ([!3413](https://github.com/NVIDIA/cutlass/issues/3413))
+  - Fixed a cuDNN Frontend FROST SDPA backward compilation failure issue ([!3594](https://github.com/NVIDIA/cutlass/issues/3594))
+  - Fixed SIGABRTs in TVM-FFI launch for cuDNN Frontend SM100 ragged SDPA kernel ([!3595](https://github.com/NVIDIA/cutlass/issues/3595))
 
 This release has been tested against the following packages:
-  - FlashAttention: [main (0251105)](https://github.com/Dao-AILab/flash-attention/commit/0251105a2fb19d2957484b7f023cd8c115286ced)
-  - Quack: [main (60d8808)](https://github.com/Dao-AILab/quack/commit/60d88082272a256fa9b3b2ab631c82cfa78337c6)
-  - FlashInfer: [main (109d44f)](https://github.com/flashinfer-ai/flashinfer/commit/109d44fceea027290d54efcfe927f8a5665b59de)
-  - cuDNN-Frontend: [deveop (25b3d51)](https://github.com/NVIDIA/cudnn-frontend/commit/25b3d5126b6544afc209e3c2e94a74f5d82db201)
-  - Pytorch: [main (cf30153)](https://github.com/pytorch/pytorch/commit/cf30153c4c131c8164ee7798e5022d810682e2cb)
-  - TensorRT-LLM: [main (1cef02e)](https://github.com/NVIDIA/TensorRT-LLM/commit/1cef02e901be43081b1ba6d4981e94ed3bd9c1e8)
+  - FlashAttention: [main (8d3a3b8)](https://github.com/Dao-AILab/flash-attention/commit/8d3a3b80d4758ebde5a867c50d24d4351443cf2b)
+  - Quack: [main (35266c3)](https://github.com/Dao-AILab/quack/commit/35266c3298f0e9bf6d5f46c30aace2eaeae517e3)
+  - FlashInfer: [main (5d0c89e)](https://github.com/flashinfer-ai/flashinfer/commit/5d0c89eacae6ca08f2a1ce92eba557bbad7a1bfc)
+  - cuDNN-Frontend: [deveop (e0317d1)](https://github.com/NVIDIA/cudnn-frontend/commit/e0317d1f6cbc1bb8e50abce5870b6bf59b9d4a74)
+  - Pytorch: [main (7d5f021)](https://github.com/pytorch/pytorch/commit/7d5f0216450b8253e62d88284d49de725d88bd42)
+  - TensorRT-LLM: [main (c295dd9)](https://github.com/NVIDIA/TensorRT-LLM/commit/c295dd9fca143a3fdd2769617699fdd4d4a93eb5)
 
 ### CUTLASS Operator API
-* Operator API features and functionality:
-  - Dense and blockscaled GEMMs in Operator API have preliminary Rubin support.  These are provided as a preview and may need additional performance tuning.
+* Dense and blockscaled GEMMs in Operator API have preliminary Rubin support.  These are provided as a preview and may need additional performance tuning.
 
-    Updated GEMMs include:
-      - Dense GEMMs: FP8xFP8
-      - Blockscaled GEMM: {MXFP8}x{MXFP4, MXFP8} and {MXFP4, NVFP4}x{MXFP4, NVFP4} (including support for the new UE5M3 scale factor dtype for NVFP4).
-    
-    These kernels utilize the below new features in Rubin:
-        - Higher SMEM (328KB) and TMEM capacity (288KB)
-        - B-buffer reuse
-        - Enhanced mixed precision throughput
+  - Updated GEMMs include:
 
-  - Operators can now be ranked by their estimated performance when nvMatmulHeuristics is available. See tutorial [here](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/007_heuristics.ipynb)
+    - Dense GEMMs: FP8xFP8
+    - Blockscaled GEMM: {MXFP8}x{MXFP4, MXFP8} and {MXFP4, NVFP4}x{MXFP4, NVFP4} (including support for the new UE5M3 scale factor dtype for NVFP4).
 
-    NOTE: This currently only supports Blackwell kernels as nvMatmulHeuristics does not yet support Rubin.
 
-  - Standalone kernel implementations are now exposed through `cutlass.kernels`, in addition to those exposed through the Operator interface in `cutlass.operators`.  This allows kernels to be called directly without looking them up first.
-  - Custom Epilogue fusions now support partial (per-row or per-column) reductions.
-  - `IndexPtrGroupedGemmArguments` is now used to represent Grouped GEMM with contiguous-offset/index-pointers. Existing `GroupedGemmArguments` is deprecated and will be removed in a future release.
+  - These kernels utilize the below new features in Rubin:
+
+    - Higher SMEM (328KB) and TMEM capacity (288KB)
+    - B-buffer reuse
+    - Enhanced mixed precision throughput
+
+* Operators can now be ranked by their estimated performance when nvMatmulHeuristics is available. See tutorial here. NOTE: This currently only supports Blackwell kernels as nvMatmulHeuristics does not yet support Rubin.
+
+* Standalone kernel implementations are now exposed through `cutlass.kernels`. These kernels can be used directly, in addition to being discoverable and usable via the Operator interface in `cutlass.operators`.
+
+* Custom Epilogue fusions now support per-row or per-column reductions.
+
+* `IndexPtrGroupedGemmArguments` is now used to represent Grouped GEMM with contiguous-offset/index-pointers. Existing `GroupedGemmArguments` is deprecated and will be removed in a future release.
 
 ### C++
 * Added initial Rubin support (SM107) with CuTe C++ building blocks:
-  - [Rubin Tensor Core MMA instructions](https://github.com/NVIDIA/cutlass/blob/main/include/cute/arch/mma_sm107_umma.hpp) and corresponding [CuTe MMA traits](https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm107.hpp).
+ - [Rubin Tensor Core MMA instructions](https://github.com/NVIDIA/cutlass/blob/main/include/cute/arch/mma_sm107_umma.hpp) and corresponding [CuTe MMA traits](https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm107.hpp).
 * CuTe examples that demonstrate the use of Rubin SM107 Tensor Core instructions:
-  - [Dense FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp8.cu).
-  - [Block-scaled FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp8_blockscaled.cu).
-  - [Mixed-precision block-scaled FP8/FP4 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp8_blockscaled.cu).
-  - [Block-scaled FP4 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp4_blockscaled.cu).
+ - [Dense FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp8.cu).
+ - [Block-scaled FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp8_blockscaled.cu).
+ - [Mixed-precision block-scaled FP8/FP4 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp8_blockscaled.cu).
+ - [Block-scaled FP4 GEMM](https://github.com/NVIDIA/cutlass/blob/main/examples/cute/rubin/rubin_fp4_blockscaled.cu).
 * Adjusted shared-memory and tensor-memory capacity handling for Rubin SM107:
-  - Set the [SM107 shared-memory capacity](https://github.com/NVIDIA/cutlass/blob/main/include/cutlass/arch/arch.h) to 327 KiB and added launch support for oversized shared-memory configurations.
-  - Set the [SM107 TMEM capacity](https://github.com/NVIDIA/cutlass/blob/main/include/cute/arch/tmem_capacity_sm100.hpp) to 576 columns per SM, updated the [CuTe 1SM and 2SM TMEM allocators](https://github.com/NVIDIA/cutlass/blob/main/include/cute/arch/tmem_allocator_sm100.hpp) for Rubin's exclusive allocation path.
+ - Set the [SM107 shared-memory capacity](https://github.com/NVIDIA/cutlass/blob/main/include/cutlass/arch/arch.h) to 327 KiB and added launch support for oversized shared-memory configurations.
+ - Set the [SM107 TMEM capacity](https://github.com/NVIDIA/cutlass/blob/main/include/cute/arch/tmem_capacity_sm100.hpp) to 576 columns per SM, updated the [CuTe 1SM and 2SM TMEM allocators](https://github.com/NVIDIA/cutlass/blob/main/include/cute/arch/tmem_allocator_sm100.hpp) for Rubin's exclusive allocation path.
 * Enabled the existing SM100-compatible [GEMM](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/gemm/collective/builders) and [convolution](https://github.com/NVIDIA/cutlass/blob/main/include/cutlass/conv/collective/builders/sm100_umma_builder.inl) for the new SM107 [`sm_107a` and `sm_107f` targets](https://github.com/NVIDIA/cutlass/blob/main/CMakeLists.txt):
-  - Set of unit tests for Rubin SM107 [SIMT GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f32_f32_f32_simt_align1_multi_cluster_shape.cu), [dense FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f8_f8_f8_tensor_op_f32_alignx.cu), [block-scaled FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f8_f8_f8_tensor_op_f32_blockwise.cu), [block-scaled FP4 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f4_f4_f32_tensor_op_f32_2sm_256x192.cu), and [mixed-precision, complex, and 9xBF16 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_umma.cu).
+ - Set of unit tests for Rubin SM107 [SIMT GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f32_f32_f32_simt_align1_multi_cluster_shape.cu), [dense FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f8_f8_f8_tensor_op_f32_alignx.cu), [block-scaled FP8 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f8_f8_f8_tensor_op_f32_blockwise.cu), [block-scaled FP4 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_f4_f4_f32_tensor_op_f32_2sm_256x192.cu), and [mixed-precision, complex, and 9xBF16 GEMM](https://github.com/NVIDIA/cutlass/blob/main/test/unit/gemm/device/sm107_gemm_umma.cu)
 * Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
 * Optimal code generation with CUDA toolkit versions 13.4.
 

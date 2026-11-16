@@ -90,6 +90,18 @@ struct FusionOperation {
   using GmemLayoutTagScalefactor = void;
 };
 
+// D = acc
+template<
+  class ElementOutput_,
+  class ElementCompute_,
+  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
+>
+struct PlainAcc : FusionOperation {
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  static constexpr auto RoundStyle = RoundStyle_;
+};
+
 // D = alpha * acc
 template<
   class ElementOutput_,

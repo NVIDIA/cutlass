@@ -16,5 +16,6 @@ The API reference is grouped into the following pages:
    operator
    arguments
    discovery
+   heuristics
    metadata
    misc

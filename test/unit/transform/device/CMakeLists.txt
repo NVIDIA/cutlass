@@ -63,8 +63,8 @@ add_custom_target(
     cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f16
     cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f8
     cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f6
-    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_qmma
-    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_omma
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_mxf8f6f4
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_mxf4
 )
 
 cutlass_test_unit_add_executable(
@@ -92,14 +92,26 @@ cutlass_test_unit_add_executable(
 )
 
 cutlass_test_unit_add_executable(
-    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_qmma
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_mxf8f6f4
 
-    sm100_sparse_gemm_compressor_f4_qmma.cu
+    sm100_sparse_gemm_compressor_mxf8f6f4.cu
 )
 
 cutlass_test_unit_add_executable(
-    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_f4_omma
+    cutlass_test_unit_sm100_structured_sparse_gemm_compressor_mxf4
 
-    sm100_sparse_gemm_compressor_f4_omma.cu
+    sm100_sparse_gemm_compressor_mxf4.cu
+)
+
+add_custom_target(
+    cutlass_test_unit_sm107_structured_sparse_gemm_compressor
+    DEPENDS
+    cutlass_test_unit_sm107_structured_sparse_gemm_compressor_k96_mxf4
+)
+
+cutlass_test_unit_add_executable(
+    cutlass_test_unit_sm107_structured_sparse_gemm_compressor_k96_mxf4
+
+    sm107_sparse_gemm_compressor_k96_mxf4.cu
 )
 

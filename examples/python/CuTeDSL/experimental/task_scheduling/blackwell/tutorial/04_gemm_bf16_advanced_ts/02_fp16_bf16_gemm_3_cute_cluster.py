@@ -91,17 +91,6 @@ import argparse
 from typing import Tuple, Optional, Type, Callable, Any
 from functools import partial, lru_cache
 from dataclasses import dataclass, field
-from pathlib import Path
-import sys
-
-_REPO_ROOT = Path(__file__).resolve().parents[10]
-_repo_root_str = str(_REPO_ROOT)
-if _repo_root_str not in sys.path:
-    sys.path.insert(0, _repo_root_str)
-try:
-    import sitecustomize  # noqa: F401
-except Exception:
-    pass
 
 import cutlass
 from cutlass import Numeric
@@ -352,15 +341,15 @@ class SmemAbResource(MemoryResource):
         self.cta_layout_size_v = cute.size(cta_layout_vmnk, mode=[0])
         self.cta_layout_size_m = cute.size(cta_layout_vmnk, mode=[1])
         self.cta_layout_size_n = cute.size(cta_layout_vmnk, mode=[2])
-        self.act_num_pair_cols = (
+        self.act_num_pair_cols = cutlass.Int32(
             act_num_pair_cols if act_num_pair_cols is not None else num_pair_cols
         )
-        self.act_a_mcast_template = (
+        self.act_a_mcast_template = cutlass.Int32(
             act_a_mcast_template
             if act_a_mcast_template is not None
             else _a_mcast_template
         )
-        self.act_b_mcast_template = (
+        self.act_b_mcast_template = cutlass.Int32(
             act_b_mcast_template
             if act_b_mcast_template is not None
             else _b_mcast_template
@@ -391,6 +380,11 @@ class SmemAbResource(MemoryResource):
             cute.recast_ptr(smem_ptr_b, self.b_smem_layout.inner),
             self.b_smem_layout.outer,
         )
+        self.cta_rank_in_cluster = cutlass.Int32(0)
+        self.cta_in_cluster_coord_vmnk = (cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0),cutlass.Int32(0))
+        self.mma_v_coord = cutlass.Int32(0)
+        self.tma_mcast_mask_a = cutlass.Int16(0)
+        self.tma_mcast_mask_b = cutlass.Int16(0)
 
     def get_smem_requirements(self):
         return [self._alloc_a, self._alloc_b]
@@ -621,6 +615,7 @@ class TmemCResource(MemoryResource):
             True,
             io_dtype.width,
         )
+        self.cta_rank_in_cluster = cutlass.Int32(0)
 
     def get_tmem_requirements(self):
         return [self._alloc_acc]
@@ -728,7 +723,7 @@ class TmemCResource(MemoryResource):
         tDtC_slice = tDtC_stage[(None, None, None, subtile_idx)]
         cute.copy(tiled_copy_t2r, tDtC_slice, tCrC)
         cute.arch.fence_view_async_tmem_load()
-        return tCrC.load()
+        return cutlass.Vector(tCrC.load())
 
     @producer_work
     @cute.jit

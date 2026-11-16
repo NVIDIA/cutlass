@@ -1194,6 +1194,11 @@ class PersistentDenseGemmKernel:
                     cute.make_layout(1), cutlass.Float32
                 )
 
+            # CLC queries are issued only by the scheduler warp, so the epilogue
+            # warp's scheduler-local counter does not advance. Track completed
+            # tiles locally to rotate TMA-store SMEM stages correctly.
+            num_tiles_executed = cutlass.Int32(0)
+
             while work_tile.is_valid_tile:
                 # Get tile coord from tile scheduler
                 cur_tile_coord = work_tile.tile_idx
@@ -1202,7 +1207,6 @@ class PersistentDenseGemmKernel:
                     cur_tile_coord[1],
                     cur_tile_coord[2] // self.split_k,
                 )
-                num_tiles_executed = tile_sched.num_tiles_executed
                 if cutlass.const_expr(self.split_k > 1):
                     # ---- Cluster split-K epilogue with DSMEM scatter-reduce ----
                     # Non-TMA epilogue sets epi_tile == cta_tile so subtile_cnt == 1.
@@ -1380,6 +1384,7 @@ class PersistentDenseGemmKernel:
                         acc_consumer_state,
                         acc_pipeline,
                     )
+                num_tiles_executed += cutlass.Int32(1)
                 #
                 # Advance to next tile
                 #

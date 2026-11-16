@@ -408,6 +408,7 @@ class CutlassCallJitCompiledFunction:
             "__llvm_ir__",
             "__mlir__",
             # JIT metadata / bookkeeping.
+            "seal_specialization",
             "function_name",
             "kernel_info",
             "execution_args",
@@ -498,7 +499,13 @@ class CutlassCallJitCompiledFunction:
             "and is not supported by the cutlass compiler backend yet."
         )
 
-    def get_aux_func(self, func_class: Any, kernel: Any) -> Any:
+    def get_aux_func(
+        self,
+        func_class: Any,
+        kernel: Any = None,
+        *,
+        required: bool = True,
+    ) -> Any:
         raise NotImplementedError(
             "CutlassCallJitCompiledFunction.get_aux_func() requires engine symbol "
             "lookup and is not supported by the cutlass compiler backend yet."

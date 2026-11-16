@@ -98,7 +98,7 @@ class CompilerBackend(ABC):
         dsl = self._dsl
         load_from_file_cache = False
 
-        if ctx.cache_enabled:
+        if ctx.cache_enabled and not dsl.envar.disable_file_caching:
             assert ctx.module_hash is not None
             fn = load_cache_from_path(
                 dsl.name, ctx.module_hash, bytecode_reader=read_bytecode_and_check_crc32
@@ -169,6 +169,7 @@ class CompilerBackend(ABC):
                 if (dsl.envar.keep_ir or dsl.envar.keep_ir_clean)
                 else None
             ),
+            MLIR_RAW=(str(dsl.dump_mlir_raw_path) if dsl.envar.keep_ir else None),
         )
 
     def _finalize_cache(

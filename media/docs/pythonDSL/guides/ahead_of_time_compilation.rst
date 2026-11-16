@@ -141,6 +141,7 @@ Dynamically load pre-compiled object files or shared libraries at runtime. By in
 
    #include "CuteDSLRuntime.h"
    #include <cuda_runtime.h>
+   #include <cstdio>
 
    void run_print_tensor() {
        // Load module from shared library
@@ -179,9 +180,14 @@ Dynamically load pre-compiled object files or shared libraries at runtime. By in
        cudaStreamCreate(&stream);
 
        // Call the function; the runtime function accepts packed arguments, refer to the wrapper in the header file
-       int ret;
+       // The trailing packed argument receives the CUDA error code of the kernel launch
+       int32_t ret = 0;
        void* args[] = {&tensor_a, &stream, &ret};
        err = CuteDSLRT_Function_Run(func, args, 3);
+       if (ret != cudaSuccess) {
+           fprintf(stderr, "kernel launch failed: %s\n",
+                   cudaGetErrorName(static_cast<cudaError_t>(ret)));
+       }
        check_error(err);
        cudaStreamSynchronize(stream);
        
@@ -192,13 +198,75 @@ Dynamically load pre-compiled object files or shared libraries at runtime. By in
 
 The ``CuteDSLRuntime.h`` header file can be found in ``<wheel_install_path>/include``. It includes:
 
-* The ``CuteDSLRT_Error_t`` type: Indicates error status.
+* The ``CuteDSLRT_Error_t`` type: Indicates the status of the runtime API call itself, not the CUDA error code of the kernel launch. See :ref:`dsl_aot_error_handling`.
 * The ``CuteDSLRT_Module_Load`` function: Loads the module.
 * The ``CuteDSLRT_Module_Get_Function`` function: Gets a function from the loaded module. The runtime API will load the CUDA module for kernel execution.
 * The ``CuteDSLRT_Function_Run`` function: Runs the function.
 * The ``CuteDSLRT_Module_Destroy`` function: Destroys the module.
 
 The compilation of the C++ executable requires the ``libcute_dsl_runtime.so`` library which is involved in ``<wheel_install_path>/lib``, along with the CUDA driver and runtime libraries, to function properly.
+
+.. _dsl_aot_error_handling:
+
+Return Values and Error Handling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The wrapper function in the generated header returns an ``int32_t``:
+
+.. code-block:: cpp
+
+   static inline int32_t cute_dsl_print_tensor_wrapper(
+       print_tensor_Kernel_Module_t *module,
+       print_tensor_Tensor_a_t *a,
+       cudaStream_t stream);
+
+The returned value is a CUDA runtime ``cudaError_t`` code:
+
+* ``0`` (``cudaSuccess``) means every kernel launch in the exported function was
+  submitted successfully.
+* Any other value is the code returned by ``cudaLaunchKernelExC`` for the first
+  launch that failed. The exported function returns at that point, so kernels
+  launched later in the same ``@cute.jit`` function do not run.
+
+Because the value is an ordinary ``cudaError_t``, the CUDA runtime helpers
+``cudaGetErrorName`` and ``cudaGetErrorString`` translate it into a
+human-readable message. The generated header also defines a
+``CUTE_DSL_CUDA_ERROR_CHECK`` macro, defined in terms of those two helpers,
+that reports the code this way:
+
+.. code-block:: cpp
+
+   #include "print_tensor_example.h"
+
+   int32_t ret = cute_dsl_print_tensor_wrapper(&module, &tensor_a, stream);
+   CUTE_DSL_CUDA_ERROR_CHECK(ret);
+
+   // Or inspect the code directly
+   if (ret != cudaSuccess) {
+       cudaError_t err = static_cast<cudaError_t>(ret);
+       fprintf(stderr, "kernel launch failed: %s: %s\n",
+               cudaGetErrorName(err), cudaGetErrorString(err));
+   }
+
+Note that:
+
+* **The return value only covers launch submission.** Kernel execution is
+  asynchronous, so faults such as ``cudaErrorIllegalAddress`` do not appear in
+  it. Check ``cudaStreamSynchronize`` or ``cudaDeviceSynchronize`` separately
+  for those.
+* **Dynamic loading reports two independent statuses.** ``CuteDSLRT_Error_t``
+  describes the runtime API call itself, such as module loading, symbol lookup
+  and invocation, and is decoded with ``CuteDSLRT_GetErrorName`` and
+  ``CuteDSLRT_GetErrorString``. It reports every kernel failure as the single
+  value ``CuteDSLRT_Error_CudaError`` and does not carry the underlying code;
+  that code is written to the trailing packed argument instead, as shown in the
+  dynamic loading example above.
+* **Loading in Python raises instead of returning.** A non-zero code is raised
+  as a ``DSLCudaRuntimeError`` carrying the ``cudaError_t`` name.
+* **The Apache TVM FFI ABI uses a different contract.** Its exported functions
+  return ``0`` on success and ``-1`` on failure, and the message is retrieved
+  through the TVM FFI error object rather than from the return value. See
+  :doc:`tvm_ffi_compilation`.
 
 .. _dsl_aot_host_cross_compilation:
 
@@ -288,10 +356,80 @@ Linking succeeds against the stub on the build host. Deploy ``kernel.so`` to the
 Limitations
 ~~~~~~~~~~~
 
-* **AArch64 only.** Only ``aarch64-unknown-linux-gnu`` is currently supported. Other architectures fail with a "target not registered" error during code generation.
+* **AArch64 only.** Only ``aarch64-unknown-linux-gnu`` and ``aarch64-unknown-nto-qnx8.0.0`` (see below) are currently supported. Other architectures fail with a "target not registered" error during code generation.
 * **Not compatible with TVM FFI.** Combining ``--enable-tvm-ffi`` with ``--host-target`` raises an error; drop ``--enable-tvm-ffi`` and use the plain AOT export path described here.
 * **CUDA runtime version must match.** The exported object depends on the CUDA runtime; the target's CUDA runtime/toolkit version must match the one |DSL| was built against (see :ref:`dsl_aot_object_compat`).
 * **Linking is your responsibility.** You must supply your own cross toolchain and a target sysroot with the CUDA headers and libraries; the stub only resolves the |DSL| runtime symbols.
+
+Host Cross-Compilation for QNX 8.0
+----------------------------------
+
+The same AOT export targets QNX 8.0 on AArch64. Only the **static-linking**
+integration is supported: the exported object is linked into your final QNX
+shared library or executable at build time. Dynamic loading
+(``CuteDSLRT_Module_*``, ``cute.runtime.load_module``)
+is not available on QNX, because the module loader is built on LLVM ORC JIT,
+which is not cross-built for that platform. Those entry points still exist and
+return ``CuteDSLRT_Error_UnsupportedOnPlatform``.
+
+Select the target with the ``qnx8-aarch64`` preset::
+
+   compiled = cute.compile(
+       my_function, *args,
+       options="--gpu-arch sm_110a --host-target qnx8-aarch64")
+
+   compiled.export_to_c(file_path="./artifacts", file_name="kernel",
+                        function_prefix="kernel")
+
+The preset maps to the triple ``aarch64-unknown-nto-qnx8.0.0``. LLVM has no QNX
+target, so that triple resolves to an unknown OS and generic AArch64 ELF
+codegen: the emitted object is identical to the one ``linux-aarch64`` produces.
+The distinct triple exists so that the runtime-library lookup below can tell the
+two targets apart. Because the object is plain AArch64 ELF and QNX uses the same
+AAPCS64 ABI, the QNX linker consumes it directly.
+
+Cross-link with the QNX 8.0 toolchain::
+
+   q++ -Vgcc_ntoaarch64le -shared -o kernel.so kernel.o \
+       $(python -m cutlass.cute.export.aot_config --ldflags --target aarch64-unknown-nto-qnx8.0.0) \
+       $(python -m cutlass.cute.export.aot_config --libs    --target aarch64-unknown-nto-qnx8.0.0)
+
+Obtaining the Target Runtime
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The wheel by default ships only the **link-time stub** for QNX, under
+``lib/stubs/aarch64-unknown-nto-qnx8.0.0/``. It resolves the |DSL| runtime
+symbols on the build host and is never executed. This mirrors how the CUDA
+toolkit ships ``lib/stubs/libcuda.so``.
+
+The real ``libcute_dsl_runtime.so`` for QNX is obtained separately via the extras
+``nvidia-cutlass-dsl[qnx]`` or ``nvidia-cutlass-dsl[qnx-cu13]`` on x86_64 Linux, and
+is installed at ``lib/aarch64-unknown-nto-qnx8.0.0/``. It is only
+needed on the target: deploy it into the QNX root filesystem as part of your
+image build, where the dynamic loader binds against it at run time.
+
+Version Compatibility
+~~~~~~~~~~~~~~~~~~~~~~
+
+Because the runtime and the wheel are obtained separately, they must be matched
+explicitly:
+
+* The QNX runtime artifact must come from the **same |DSL| build** as the wheel
+  that produced the object. The object embeds a version that is checked when a
+  module is loaded, and the two are only guaranteed consistent when they are
+  built together.
+* The QNX CUDA toolkit on the target must match the CUDA version |DSL| was built
+  against, exactly as in the AArch64 Linux case
+  (see :ref:`dsl_aot_object_compat`).
+
+QNX Limitations
+~~~~~~~~~~~~~~~~
+
+* **Static linking only.** Dynamic loading is unavailable; see above.
+* **AArch64 only.** QNX on other architectures is not supported.
+* **Restricted CUDA surface.** A safety or otherwise restricted QNX CUDA build
+  may not provide every CUDA entry point the |DSL| runtime references, which
+  surfaces as an unresolved symbol when linking the runtime for QNX.
 
 Supported Argument Types
 ------------------------

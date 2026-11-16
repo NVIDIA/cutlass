@@ -11,6 +11,9 @@ Operators that support a given operation, operands, and target. It returns
 Operators can be additionally discovered or filtered by target compute
 capability, which is described by :class:`~cutlass.operators.TargetSm`.
 
+For performance ranking and the ``heuristic=`` parameter, see
+:doc:`heuristics`.
+
 .. autofunction:: cutlass.operators.get_operators
 
 .. automodule:: cutlass.operators.manifest

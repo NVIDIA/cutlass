@@ -136,6 +136,10 @@ template <> struct NumericTypeMap<cutlass::float_ue4m3_t> {
   static NumericTypeID const kId = NumericTypeID::kFUE4M3;
 };
 
+template <> struct NumericTypeMap<cutlass::float_ue5m3_t> {
+  static NumericTypeID const kId = NumericTypeID::kFUE5M3;
+};
+
 
 template <> struct NumericTypeMap<uint16_t> {
   static NumericTypeID const kId = NumericTypeID::kU16;

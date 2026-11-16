@@ -139,6 +139,11 @@ category.
      - ``ptxas`` resource diagnostics surfaced through the remark stream,
        including register spills and local-memory usage.
      - Info (remark)
+   * - ``loop``
+     - ``remarks{loop}``
+     - Loop-optimization remarks, such as software pipelining and loop
+       unrolling applied by the compiler.
+     - Info (remark)
 
 For example, enable NVVM primitive diagnostics with:
 

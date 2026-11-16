@@ -371,7 +371,8 @@ class ExternCallHandler:
         else:
             raise DSLRuntimeError("multiple return types not supported")
 
-        key = tuple(params_types)
+        # The return type distinguishes contexts for zero-argument signatures.
+        key = (tuple(params_types), return_type)
         if key not in self.ffis:
             self.ffis[key] = FFI(
                 name=self.name,

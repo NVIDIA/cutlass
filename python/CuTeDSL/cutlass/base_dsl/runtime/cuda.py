@@ -17,7 +17,7 @@ from functools import lru_cache
 from dataclasses import dataclass
 from typing import Any
 from enum import IntEnum
-import numpy as np
+import ctypes
 import os
 
 import cuda.bindings.driver as cuda
@@ -434,11 +434,11 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0) -> Any:
 
     driver_version = get_driver_version()
 
-    # Check the CUDA driver version works for the installed cuda-python package
+    # Check the CUDA driver version works for the installed cuda-bindings package
     if driver_version < 13000 and cuda.CUDA_VERSION >= 13000:
         raise DSLRuntimeError(
-            f"CUDA driver version {driver_version} is below the minimum required version for the installed cuda-python package {cuda.CUDA_VERSION}.",
-            suggestion=f"Consider updating your NVIDIA driver to version 580 or above. Or install cuda-python package with version 12.9 or below.",
+            f"CUDA driver version {driver_version} is below the minimum required version for the installed cuda-bindings package {cuda.CUDA_VERSION}.",
+            suggestion=f"Consider updating your NVIDIA driver to version 580 or above. Or install cuda-bindings package with version 12.9 or below.",
         )
 
     # Check if a valid CUDA context already exists (e.g., created by PyTorch or
@@ -542,11 +542,13 @@ def load_cubin_module_data(cubin_data: bytes) -> Any:
     :rtype: cuda.CUmodule
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
-    # Load module data
-    _log().info(f"cuModuleLoadData {np.char.array(cubin_data).ctypes.data}")
-    module = checkCudaErrors(
-        cuda.cuModuleLoadData(np.char.array(cubin_data).ctypes.data)
-    )
+    # Load module data. Keep the buffer alive in a local across the
+    # cuModuleLoadData call: `address` is only a raw address into it, so a bare
+    # temporary could be garbage-collected before the driver reads it.
+    _cubin_buf = ctypes.create_string_buffer(cubin_data)
+    address = ctypes.addressof(_cubin_buf)
+    _log().info(f"cuModuleLoadData {address}")
+    module = checkCudaErrors(cuda.cuModuleLoadData(address))
     return module
 
 
@@ -607,14 +609,14 @@ def load_library_data(cubin_data: bytes | int) -> Any:
     :raise DSLRuntimeError: If the CUDA operation fails.
     """
     # Load module data
-    # Keep the numpy array alive in a local (`_cubin_arr`) across the
-    # cuLibraryLoadData call: `.ctypes.data` is only a raw address into the
-    # array's buffer, so if the array were a bare temporary it could be
+    # Keep the buffer alive in a local (`_cubin_buf`) across the
+    # cuLibraryLoadData call: the address is only a raw address into the
+    # buffer, so if the buffer were a bare temporary it could be
     # garbage-collected before the driver reads the address (use-after-free).
-    _cubin_arr = None
+    _cubin_buf = None
     if isinstance(cubin_data, bytes):
-        _cubin_arr = np.char.array(cubin_data)
-        cubin_data = _cubin_arr.ctypes.data
+        _cubin_buf = ctypes.create_string_buffer(cubin_data)
+        cubin_data = ctypes.addressof(_cubin_buf)
     _log().info(f"cuLibraryLoadData {cubin_data!r}")
 
     library = checkCudaErrors(

@@ -321,7 +321,11 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
                     cuda_library,
                 )
 
-            return JitExecutor(self.jit_module, None, self.jit_time_profiling)
+            # F-SPEC: the derived executor validates re-entries against the
+            # same sealed record as the handle it came from.
+            return JitExecutor(
+                self.jit_module, None, self.jit_time_profiling, spec=self._pyir_spec
+            )
 
     @property
     def library(self) -> "cuda_runtime.cudaLibrary_t":

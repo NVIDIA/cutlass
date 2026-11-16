@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Union, cast
 import warnings
 
+import cutlass
 import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass import base_dsl
@@ -99,7 +100,21 @@ class CooperativeGroup:
     CooperativeGroup contains size restrictions for an Agent.
     """
 
-    def __init__(self, agent: Agent, size: Union[int, Int32] = 1):
+    def __init__(
+        self,
+        agent: Agent,
+        size: Union[int, Int32] = 1,
+        alignment: Optional[int] = None,
+    ):
+        if alignment is not None:
+            warnings.warn(
+                "The 'alignment' parameter of CooperativeGroup's constructor is "
+                "deprecated and will be removed in a subsequent release, please "
+                "remove it from your code.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         if agent in [
             Agent.Thread,
             Agent.Warp,
@@ -867,10 +882,22 @@ class PipelineState:
     @cute.jit
     def advance(
         self,
+        count: int | Int32 = 1,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
+        if cutlass.const_expr(isinstance(count, int) and count < 1):
+            raise ValueError("count must be >= 1")
+
+        if cutlass.const_expr(isinstance(count, Int32) or count > 1):
+            self._count += count
+            self._index += count
+            phase_flips = self._index // self._stages
+            self._index = self._index % self._stages
+            self._phase ^= phase_flips % 2
+            return
+
         self._index += 1
         self._count += 1
 

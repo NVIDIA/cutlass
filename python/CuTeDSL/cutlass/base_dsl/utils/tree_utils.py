@@ -475,7 +475,15 @@ def dynamic_expression_from_iterable(
         values = _unflatten_mlir_values(children_list, metadata.template)
     else:
         values = children_list
-    return metadata.original_obj.__new_from_mlir_values__(values)
+    rebuilt = metadata.original_obj.__new_from_mlir_values__(values)
+    # The pytree unflatten bypasses ``new_from_mlir_values``: re-root the rebuilt
+    # node's place at the template's owner token here too (tables only; the
+    # token table pins non-weakrefable keys itself, so adoption cannot raise
+    # for any admitted object).
+    from ..pyir_runtime import _pyir_adopt_rebuilt_owner_token
+
+    _pyir_adopt_rebuilt_owner_token(metadata.original_obj, rebuilt)
+    return rebuilt
 
 
 def default_dict_to_iterable(x: Any) -> tuple[SimpleNamespace, list[Any]]:
@@ -861,6 +869,12 @@ def _tree_flatten(
         )
 
     else:
+        # Transparency protocol (F-TRANSPARENT): an observation wrapper that
+        # declares its plain counterpart flattens AS its plain value -- the
+        # wrapper type is a host-trace artifact and never crosses a boundary.
+        # Protocol dispatch by getattr: no wrapper-class imports here.
+        if getattr(type(x), "__pyir_plain_type__", None) is not None:
+            return _tree_flatten(x.__pyir_plain_view__(), return_ir_values)
         node_type = get_registered_node_types_or_insert(x)
         if node_type:
             node_metadata, children = node_type.to_iterable(x)
@@ -942,7 +956,16 @@ def _tree_unflatten(treedef: PyTreeDef | Leaf, xs: Iterator[Any]) -> Any:
             return None
         metadata = getattr(treedef, "node_metadata", None)
         if metadata and getattr(metadata, "is_dynamic_expression", False):
-            return metadata.original_obj.__new_from_mlir_values__([next(xs)])
+            rebuilt = metadata.original_obj.__new_from_mlir_values__([next(xs)])
+            # Pytree-leaf reconstruction of a dynamic-expression node: re-root
+            # its place at the template token (guarded, token tables only).
+            try:
+                from ..pyir_runtime import _pyir_adopt_rebuilt_owner_token
+
+                _pyir_adopt_rebuilt_owner_token(metadata.original_obj, rebuilt)
+            except Exception:
+                pass
+            return rebuilt
         if getattr(treedef, "is_numeric", False):
             return as_numeric(next(xs))
         return next(xs)

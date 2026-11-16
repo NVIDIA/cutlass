@@ -89,8 +89,9 @@ class DataType(enum.Enum):
   e3m2 = enum_auto()     
   e2m3 = enum_auto()     
   e2m1 = enum_auto()     
-  ue8m0 = enum_auto()    
-  ue4m3 = enum_auto()    
+  ue8m0 = enum_auto()
+  ue4m3 = enum_auto()
+  ue5m3 = enum_auto()
   f16 = enum_auto()
   bf16 = enum_auto()
   f32 = enum_auto()
@@ -154,8 +155,9 @@ DataTypeNames = {
   DataType.e2m3: 'e2m3',       
   DataType.e3m2: 'e3m2',       
   DataType.e2m1: 'e2m1',       
-  DataType.ue8m0: 'ue8m0',     
-  DataType.ue4m3: 'ue4m3',     
+  DataType.ue8m0: 'ue8m0',
+  DataType.ue4m3: 'ue4m3',
+  DataType.ue5m3: 'ue5m3',
   DataType.f16: "f16",
   DataType.bf16: "bf16",
   DataType.f32: "f32",
@@ -203,8 +205,9 @@ DataTypeTag = {
   DataType.e2m3: 'cutlass::float_e2m3_t',                       
   DataType.e3m2: 'cutlass::float_e3m2_t',                       
   DataType.e2m1: 'cutlass::float_e2m1_t',                       
-  DataType.ue8m0: 'cutlass::float_ue8m0_t',                     
-  DataType.ue4m3: 'cutlass::float_ue4m3_t',                     
+  DataType.ue8m0: 'cutlass::float_ue8m0_t',
+  DataType.ue4m3: 'cutlass::float_ue4m3_t',
+  DataType.ue5m3: 'cutlass::float_ue5m3_t',
   DataType.f16: "cutlass::half_t",
   DataType.bf16: "cutlass::bfloat16_t",
   DataType.f32: "float",
@@ -254,6 +257,7 @@ DataTypeSize = {
   DataType.e2m1: 4,
   DataType.ue8m0: 8,
   DataType.ue4m3: 8,
+  DataType.ue5m3: 8,
   DataType.f16: 16,
   DataType.bf16: 16,
   DataType.f32: 32,
@@ -599,6 +603,25 @@ class KernelScheduleType(enum.Enum):
   PtrArrayMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103TmaPrefetch = enum_auto()
   PtrArrayMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103TmaPrefetch = enum_auto()
 
+  TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithoutBreuse = enum_auto()
+  TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithoutBreuse = enum_auto()
+  TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithBreuse    = enum_auto()
+  TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithBreuse    = enum_auto()
+
+  TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithoutBreuse = enum_auto()
+  TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithoutBreuse = enum_auto()
+  TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithBreuse    = enum_auto()
+  TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithBreuse    = enum_auto()
+
+  TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithoutBreuse = enum_auto()
+  TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithoutBreuse = enum_auto()
+  TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithBreuse    = enum_auto()
+  TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithBreuse    = enum_auto()
+  TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithoutBreuse = enum_auto()
+  TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithoutBreuse = enum_auto()
+  TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithBreuse    = enum_auto()
+  TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithBreuse    = enum_auto()
+
   Mxf8f6f4TmaWarpSpecializedCooperativeSm120 = enum_auto()
   Mxf8f6f4TmaWarpSpecializedPingpongSm120 = enum_auto()
   Nvf4TmaWarpSpecializedCooperativeSm120 = enum_auto()
@@ -721,6 +744,25 @@ KernelScheduleTag = {
   KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized2SmVs16Sm103DisablePrefetch: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch',
   KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103DisablePrefetch: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch',
   KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103DisablePrefetch: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs32Sm103DisablePrefetch',
+
+  KernelScheduleType.TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithBreuse',
+
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithBreuse',
+
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithBreuse',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithoutBreuse: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithoutBreuse',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithBreuse',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithBreuse:    'cutlass::gemm::KernelTmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithBreuse',
 
   KernelScheduleType.Mxf8f6f4TmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedMxf8f6f4Sm120',
   KernelScheduleType.Mxf8f6f4TmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongMxf8f6f4Sm120',
@@ -849,6 +891,25 @@ KernelScheduleSuffixes = {
   KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized1SmVs32Sm103TmaPrefetch: '_o_vs32_ultra_1sm_tmapf',
   KernelScheduleType.PtrArrayMxNvf4UltraTmaWarpSpecialized2SmVs32Sm103TmaPrefetch: '_o_vs32_ultra_2sm_tmapf',
 
+  KernelScheduleType.TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithoutBreuse: '_no_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithoutBreuse: '_no_breuse_2sm',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107DenseGemmf8f6f4WithBreuse:    '_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107DenseGemmf8f6f4WithBreuse:    '_breuse_2sm',
+
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithoutBreuse: '_no_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithoutBreuse: '_no_breuse_2sm',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxf8f6f4WithBreuse:    '_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxf8f6f4WithBreuse:    '_breuse_2sm',
+
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithoutBreuse: '_o_vs16_no_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithoutBreuse: '_o_vs16_no_breuse_2sm',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs16WithBreuse:    '_o_vs16_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs16WithBreuse:    '_o_vs16_breuse_2sm',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithoutBreuse: '_o_vs32_no_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithoutBreuse: '_o_vs32_no_breuse_2sm',
+  KernelScheduleType.TmaWarpSpecialized1SmSm107BlockScaledMxNvf4Vs32WithBreuse:    '_o_vs32_breuse_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm107BlockScaledMxNvf4Vs32WithBreuse:    '_o_vs32_breuse_2sm',
+
   KernelScheduleType.Mxf8f6f4TmaWarpSpecializedCooperativeSm120: '_cooperative_q',
   KernelScheduleType.Mxf8f6f4TmaWarpSpecializedPingpongSm120: '_pingpong_q',
   KernelScheduleType.Nvf4TmaWarpSpecializedCooperativeSm120: '_cooperative_o_vs16',
@@ -972,12 +1033,12 @@ EpilogueScheduleSuffixes = {
 
 class EpilogueFunctor3x(enum.Enum):
   LinearCombination = enum_auto()
-  LinearCombinationBlockScaleFactor = enum_auto() 
+  LinearCombinationBlockScaleFactor = enum_auto()
 
 #
 EpilogueFunctor3xTag = {
   EpilogueFunctor3x.LinearCombination: 'cutlass::epilogue::fusion::LinearCombination',
-  EpilogueFunctor3x.LinearCombinationBlockScaleFactor: 'cutlass::epilogue::fusion::LinCombBlockScaleFactor',  
+  EpilogueFunctor3x.LinearCombinationBlockScaleFactor: 'cutlass::epilogue::fusion::LinCombBlockScaleFactor',
 }
 
 # TMA epilogues have certain alignment requirements as calculated in get_tma_alignment(data_type)

@@ -21,9 +21,10 @@ factored out of ``dsl.py`` so the core DSL class stays focused on JIT
 orchestration.
 """
 
+import contextlib
 import dataclasses
 from types import SimpleNamespace
-from typing import Any, get_origin
+from typing import Any, Iterator, get_origin
 
 from ..common import DSLUserCodeError
 from ..diagnostics import DiagId
@@ -34,6 +35,19 @@ from .tree_utils import (
     _unflatten_mlir_values,
 )
 from ..._mlir import ir
+from ..pyir_state import _EXTRACTION_WALK_OWNERS
+
+
+@contextlib.contextmanager
+def _extraction_walk_owner(obj: Any) -> Iterator[None]:
+    """Declare *obj* as the extraction walk's current owner context: a leaf
+    materialization under the walk resolves its place row against the declared
+    holders, never a first-sighted registry candidate."""
+    _EXTRACTION_WALK_OWNERS.append(obj)
+    try:
+        yield
+    finally:
+        _EXTRACTION_WALK_OWNERS.pop()
 
 
 def is_dynamic_expression(value: object) -> bool:
@@ -68,21 +82,24 @@ def extract_mlir_values(obj: object, *, structured: bool = False) -> Any:
     if structured:
         # Tree-structured mode: return __extract_mlir_values__ result directly
         if hasattr(obj, "__extract_mlir_values__"):
-            return obj.__extract_mlir_values__()
+            with _extraction_walk_owner(obj):
+                return obj.__extract_mlir_values__()
         elif dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-            return {
-                field.name: extract_mlir_values(
-                    getattr(obj, field.name), structured=True
-                )
-                for field in dataclasses.fields(obj)
-            }
+            with _extraction_walk_owner(obj):
+                return {
+                    field.name: extract_mlir_values(
+                        getattr(obj, field.name), structured=True
+                    )
+                    for field in dataclasses.fields(obj)
+                }
         elif isinstance(obj, (tuple, list)):
             return [extract_mlir_values(x, structured=True) for x in obj]
         elif isinstance(obj, SimpleNamespace):
-            return {
-                k: extract_mlir_values(v, structured=True)
-                for k, v in obj.__dict__.items()
-            }
+            with _extraction_walk_owner(obj):
+                return {
+                    k: extract_mlir_values(v, structured=True)
+                    for k, v in obj.__dict__.items()
+                }
         elif isinstance(obj, ir.Value):
             return obj
         elif isinstance(obj, ir.BlockArgumentList):
@@ -94,13 +111,15 @@ def extract_mlir_values(obj: object, *, structured: bool = False) -> Any:
         res = []
         if hasattr(obj, "__extract_mlir_values__"):
             # Flatten whatever __extract_mlir_values__ returns to ensure we always get a flat list
-            res = flatten_mlir_values(obj.__extract_mlir_values__())
+            with _extraction_walk_owner(obj):
+                res = flatten_mlir_values(obj.__extract_mlir_values__())
         elif isinstance(obj, (tuple, list)):
             res = sum((extract_mlir_values(x) for x in obj), [])
         elif isinstance(obj, SimpleNamespace):
             res = []
-            for k, v in obj.__dict__.items():
-                res.extend(extract_mlir_values(v))
+            with _extraction_walk_owner(obj):
+                for k, v in obj.__dict__.items():
+                    res.extend(extract_mlir_values(v))
         elif isinstance(obj, set):
             raise DSLUserCodeError(
                 DiagId.ARG_UNORDERED_CONTAINER,
@@ -193,7 +212,16 @@ def new_from_mlir_values(obj: Any, values: Any, *, structured: bool = False) -> 
     """
     # Objects with __new_from_mlir_values__ always receive values directly
     if hasattr(obj, "__new_from_mlir_values__"):
-        return obj.__new_from_mlir_values__(values)
+        rebuilt = obj.__new_from_mlir_values__(values)
+        # Re-root the rebuilt object's place at the source's owner token so
+        # place-keyed lookups re-resolve; guarded, token tables only.
+        try:
+            from ..pyir_runtime import _pyir_adopt_rebuilt_owner_token
+
+            _pyir_adopt_rebuilt_owner_token(obj, rebuilt)
+        except Exception:
+            pass
+        return rebuilt
 
     if structured:
         # Tree-structured mode

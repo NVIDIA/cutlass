@@ -2136,6 +2136,11 @@ def printf(
 
         # Using format string with C-style format specifiers
         cute.printf("a={}, b=%.2f", a, b)
+
+    A ``%`` conversion must match its value's type: ``%d`` for a 32-bit integer,
+    ``%lld`` for a 64-bit one, ``%f`` for a float. A mismatch such as ``%f`` on an
+    integer is undefined behavior: printf reads a register or buffer slot the
+    value was not passed in and silently prints a wrong value.
     """
     from .tensor import _Tensor
 
@@ -5185,6 +5190,8 @@ def local_partition(
 ) -> Tensor:
     if isinstance(index, cutlass_arith.ArithValue):
         index_val = index
+    elif isinstance(index, int):
+        index_val = const(index, Int32, loc=loc, ip=ip)
     else:
         index_val = index.ir_value(loc=loc, ip=ip)  # type: ignore[union-attr]
     if index_val.type.width > 32:
@@ -5253,9 +5260,9 @@ def local_tile(
             tiler = (2, 4)
             coord = (1, 1)
 
-            # output: (8, 6)
+            # output: (2, 4)
             # - zipped_divide(tensor, tiler)     -> ((2, 4), (8, 6))
-            # - local_tile(tensor, tiler, coord) -> (8, 6)
+            # - local_tile(tensor, tiler, coord) -> (2, 4)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord)
 
     2. Using a stride projection for specialized tiling:
@@ -5268,11 +5275,11 @@ def local_tile(
             coord = (0, 1, 1)
             proj = (1, None, 1)
 
-            # output: (8, 6)
+            # output: (2, 4)
             # projected_tiler: (2, 4)
             # projected_coord: (0, 1)
             # - zipped_divide(tensor, projected_tiler)               -> ((2, 4), (8, 6))
-            # - local_tile(tensor, projected_tiler, projected_coord) -> (8, 6)
+            # - local_tile(tensor, projected_tiler, projected_coord) -> (2, 4)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord, proj=proj)
     """
 

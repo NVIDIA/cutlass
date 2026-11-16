@@ -52,6 +52,8 @@
 #include "cutlass/gemm/collective/builders/sm100_mixed_tma_cpasync_umma_builder.inl"
 #include "cutlass/gemm/collective/builders/sm100_blockscaled_mixed_tma_cpasync_umma_builder.inl"
 #include "cutlass/gemm/collective/builders/sm103_blockscaled_umma_builder.inl"
+#include "cutlass/gemm/collective/builders/sm107_umma_builder.inl"
+#include "cutlass/gemm/collective/builders/sm107_blockscaled_umma_builder.inl"
 #include "cutlass/gemm/collective/builders/sm120_mma_builder.inl"
 #include "cutlass/gemm/collective/builders/sm120_blockscaled_mma_builder.inl"
 #include "cutlass/gemm/collective/builders/sm120_sparse_mma_builder.inl"

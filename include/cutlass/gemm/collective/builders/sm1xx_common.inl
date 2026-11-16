@@ -155,6 +155,7 @@ constexpr uint32_t find_vector_size() {
                 || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103TmaPrefetch>
                 || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch>
                 || cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmBlockScaledMxNvf4UltraVs16Sm103DisablePrefetch>
+                || cute::is_base_of_v<KernelScheduleSm107BlockScaledMxNvf4Vs16, BuilderScheduleTag>
               ) {
     return 16;
   }
@@ -168,7 +169,8 @@ constexpr uint32_t find_vector_size() {
                      cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmMxf4Sm100> ||
                      cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized1SmMxf8f6f4Sm100> ||
                      cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecialized2SmMxf8f6f4Sm100> ||
-                     cute::is_same_v<BuilderScheduleTag, KernelSparseTmaWarpSpecializedNvf4Sm120>) {           
+                     cute::is_base_of_v<KernelScheduleSm107BlockScaledMxNvf4Vs32, BuilderScheduleTag> ||
+                     cute::is_same_v<BuilderScheduleTag, KernelSparseTmaWarpSpecializedNvf4Sm120>) {
     return 32;
   }
   else if constexpr (cute::is_same_v<BuilderScheduleTag, KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100> ||
@@ -532,8 +534,9 @@ check_input_datatypes() {
      static_assert(!is_auto_instr_selection_policy(), "Auto instr selection isn't valid if scale factor vector size can't be determined from the types");
   }
 
-  static_assert(cute::is_same_v<ElementSFA, cutlass::float_ue8m0_t> 
-                || cute::is_same_v<ElementSFA, cutlass::float_ue4m3_t>, "Incorrect scale factor type");
+  static_assert(cute::is_same_v<ElementSFA, cutlass::float_ue8m0_t>
+                || cute::is_same_v<ElementSFA, cutlass::float_ue4m3_t>
+                || cute::is_same_v<ElementSFA, cutlass::float_ue5m3_t>, "Incorrect scale factor type");
 
     if constexpr (((sizeof_bits_v<ElementA> == 4 || sizeof_bits_v<ElementA> == 6 || sizeof_bits_v<ElementA> == 8) &&
                    (sizeof_bits_v<ElementB> == 4 || sizeof_bits_v<ElementB> == 6 || sizeof_bits_v<ElementB> == 8)    ) &&  // A and B are 4, 6, or 8 bit types and
@@ -589,6 +592,7 @@ check_input_datatypes() {
       || (SfVectorSizeA == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm120, BuilderScheduleTag>)
       || (SfVectorSizeA == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm120, BuilderScheduleTag>)
+      || (SfVectorSizeA == 32 && cute::is_base_of_v<KernelScheduleSm107BlockScaledMxf8f6f4, BuilderScheduleTag>)
         ), "Incorrect SfVectorSize for MX_F4F6F8 is deduced.");
 
       // 4. Check the kernel policy. Kernel policy should be either auto or *MXf8f6f4*
@@ -597,6 +601,7 @@ check_input_datatypes() {
                   || cute::is_base_of_v<KernelScheduleSparseMxf8f6f4Sm100, BuilderScheduleTag>
                   || cute::is_base_of_v<KernelScheduleMxf8f6f4Sm120, BuilderScheduleTag>
                   || cute::is_base_of_v<KernelScheduleSparseMxf8f6f4Sm120, BuilderScheduleTag>
+                  || cute::is_base_of_v<KernelScheduleSm107BlockScaledMxf8f6f4, BuilderScheduleTag>
                   || is_auto_instr_selection_policy()), "Incorrect Kernel Schedule Policy for Mx_F4F6F8 type inputs.");
 
       return true;
@@ -608,9 +613,11 @@ check_input_datatypes() {
       ///////////////////////////////////////////////////////////////////////
 
       // 1. Check Scale factor data type
-      static_assert(cute::is_same_v<ElementSFA, cutlass::float_ue8m0_t> 
+      static_assert(cute::is_same_v<ElementSFA, cutlass::float_ue8m0_t>
                       || cute::is_same_v<ElementSFA, cutlass::float_ue4m3_t>
-                      , "MXNV_F4 supports ue8m0 and ue4m3 SF types");
+                      || (cute::is_same_v<ElementSFA, cutlass::float_ue5m3_t>
+                          && cute::is_base_of_v<KernelScheduleSm107BlockScaledMxNvf4, BuilderScheduleTag>)
+                      , "MXNV_F4 supports ue8m0 and ue4m3 SF types; ue5m3 is only supported on SM107");
       // 2. Check whether A and B type combinations are valid or not
       static_assert(
          ( // If runtime datatypes are used, then both A and B should be runtime data type
@@ -637,6 +644,7 @@ check_input_datatypes() {
                        cute::is_base_of_v<KernelScheduleMxNvf4Sm120, BuilderScheduleTag>            ||
                        cute::is_base_of_v<KernelScheduleSparseMxf8f6f4Sm120, BuilderScheduleTag>    ||
                        cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm120, BuilderScheduleTag>      ||
+                       cute::is_base_of_v<KernelScheduleSm107BlockScaledMxNvf4, BuilderScheduleTag> ||
                        is_auto_instr_selection_policy()), "Incorrect Kernel Schedule Policy for F4 type inputs.");
 
         // If a policy is specified, do more checks
@@ -659,7 +667,8 @@ check_input_datatypes() {
                         || cute::is_base_of_v<KernelSchedulePtrArrayMxNvf4Sm100, BuilderScheduleTag>
                         || cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm100, BuilderScheduleTag>
                         || cute::is_base_of_v<KernelScheduleMxNvf4Sm120, BuilderScheduleTag>
-                        || cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm120, BuilderScheduleTag>) {
+                        || cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm120, BuilderScheduleTag>
+                        || cute::is_base_of_v<KernelScheduleSm107BlockScaledMxNvf4, BuilderScheduleTag>) {
             static_assert((UmmaMajorA == UMMA::Major::K && UmmaMajorB == UMMA::Major::K), "MX/NV_F4 only supports RowMajor A, and ColMajorB");
             static_assert(detail::find_vector_size<BuilderScheduleTag>() == SfVectorSizeA,
                           "Kernel Schedule policy doesn't match the scale factor vector size.");
@@ -744,14 +753,16 @@ select_instr() {
              || cute::is_base_of_v<KernelSchedulePtrArrayMxf8f6f4Sm100, BuilderScheduleTag>
              || cute::is_base_of_v<KernelScheduleSparseMxf8f6f4Sm100, BuilderScheduleTag>
              || cute::is_base_of_v<KernelScheduleMxf8f6f4Sm120, BuilderScheduleTag>
-             || cute::is_base_of_v<KernelScheduleSparseMxf8f6f4Sm120, BuilderScheduleTag>) {
+             || cute::is_base_of_v<KernelScheduleSparseMxf8f6f4Sm120, BuilderScheduleTag>
+             || cute::is_base_of_v<KernelScheduleSm107BlockScaledMxf8f6f4, BuilderScheduleTag>) {
     return detail::blockscaled::BlockScaledInstr::MXF4F6F8;
   }
   else if constexpr (cute::is_base_of_v<KernelScheduleMxNvf4Sm100, BuilderScheduleTag>
                   || cute::is_base_of_v<KernelSchedulePtrArrayMxNvf4Sm100, BuilderScheduleTag>
                   || cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm100, BuilderScheduleTag>
                   || cute::is_base_of_v<KernelScheduleMxNvf4Sm120, BuilderScheduleTag>
-                  || cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm120, BuilderScheduleTag>) {
+                  || cute::is_base_of_v<KernelScheduleSparseMxNvf4Sm120, BuilderScheduleTag>
+                  || cute::is_base_of_v<KernelScheduleSm107BlockScaledMxNvf4, BuilderScheduleTag>) {
     return detail::blockscaled::BlockScaledInstr::MXF4_NVF4;
   }
   else {
@@ -770,6 +781,7 @@ select_instr() {
       || (SfVectorSize == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm120, BuilderScheduleTag>)
       || (SfVectorSize == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm120, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelScheduleSm107BlockScaledMxf8f6f4, BuilderScheduleTag>)
         ), "Incorrect SfVectorSize for MX_F4F6F8 is deduced.");
       return detail::blockscaled::BlockScaledInstr::MXF4F6F8;
     }

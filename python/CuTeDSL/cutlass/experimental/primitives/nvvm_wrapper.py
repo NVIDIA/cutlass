@@ -2457,6 +2457,29 @@ def _tensormap_value_str(value: object, enum_ty: Any, field: str) -> str:
     )
 
 
+_TENSORMAP_FIXUP_FIELDS = frozenset({"global_dim", "global_stride"})
+_TENSORMAP_FIXUP_WORD = 2
+_TENSORMAP_FIXUP_MASK = ~(1 << 21) & 0xFFFFFFFF
+
+
+def _apply_tensormap_fixup(
+    addr: Array | Pointer,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> None:
+    """Reset a descriptor copy to the always-safe out-of-bounds fetch mode."""
+    ptr = addr.data_ptr() if hasattr(addr, "data_ptr") else addr
+    word_ptr = (
+        Pointer(ptr, dtype=_cutlass.Uint32, loc=loc, ip=ip) + _TENSORMAP_FIXUP_WORD
+    )
+    word_ptr.store(
+        word_ptr.load(loc=loc, ip=ip) & _cutlass.Uint32(_TENSORMAP_FIXUP_MASK),
+        loc=loc,
+        ip=ip,
+    )
+
+
 @dsl_user_op
 def tensormap_replace(
     field: TensormapField,
@@ -2472,6 +2495,7 @@ def tensormap_replace(
         | TensormapFillMode
         | None
     ) = None,
+    keep_oob_fetch_window: bool = False,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> None:
@@ -2509,6 +2533,14 @@ def tensormap_replace(
         verifier for the target build.
     :param new_value_attr: New value for an enum-valued field, as the matching
         enum (or its string).  Mutually exclusive with ``new_value``.
+    :param keep_oob_fetch_window: Replacing ``global_dim`` or ``global_stride``
+        normally resets the descriptor to the always-safe out-of-bounds fetch
+        mode (the host-side encode already applies the matching fix-up for
+        small tensors). Pass ``True`` to keep the mode
+        encoded in the template; only legal when at least 128 KiB of mapped
+        memory follows the descriptor's global address after the replacement
+        (for example a group that is not the last one in a packed buffer).
+    :type keep_oob_fetch_window: bool
     :raises ValueError: if ``field`` is not a :class:`TensormapField` (raw NVVM
         dialect enums are rejected); if the wrong one of
         ``new_value`` / ``new_value_attr`` is supplied for the field; if
@@ -2580,9 +2612,12 @@ def tensormap_replace(
     if new_value is None:
         raise ValueError(f"tensormap.replace: field '{field}' requires 'new_value'")
     coerce = Int64 if field in _TENSORMAP_B64_FIELDS else Int32
-    return _nvvm.tensormap_replace(
+    result = _nvvm.tensormap_replace(
         dialect_field, addr, new_value=coerce(new_value), ord=ord, loc=loc, ip=ip
     )
+    if field in _TENSORMAP_FIXUP_FIELDS and not keep_oob_fetch_window:
+        _apply_tensormap_fixup(addr, loc=loc, ip=ip)
+    return result
 
 
 @dsl_user_op
@@ -3439,6 +3474,40 @@ def _assert_tcgen05_swizzle(swizzle: int | Int8 | Uint8, instruction: str) -> No
 
 
 
+@dsl_user_op
+def add_packed_bf16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.add_packed_bf16x2_f32x2_f32x2``."""
+    return _nvvm.add_packed_bf16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.BFloat16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def add_packed_f16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.add_packed_f16x2_f32x2_f32x2``."""
+    return _nvvm.add_packed_f16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.Float16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
 
 
 def _packed_f32x2_to_vec(
@@ -3486,6 +3555,45 @@ def add_packed_f32x2(
     )
     return _unpack_packed_f32x2(vec_res) if returns_tuple else vec_res
 
+
+@dsl_user_op
+def add_packed_f32x2_bf16x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    rnd: FPRoundingMode | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.add_packed_f32x2_bf16x2_f32x2``."""
+    return _nvvm.add_packed_f32x2_bf16x2_f32x2(
+        T.vector(2, _cutlass.Float32.mlir_type),
+        src_a,
+        src_b,
+        rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def add_packed_f32x2_f16x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    rnd: FPRoundingMode | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.add_packed_f32x2_f16x2_f32x2``."""
+    return _nvvm.add_packed_f32x2_f16x2_f32x2(
+        T.vector(2, _cutlass.Float32.mlir_type),
+        src_a,
+        src_b,
+        rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+        loc=loc,
+        ip=ip,
+    )
 
 
 
@@ -4304,8 +4412,6 @@ def cp_async_bulk_tensor_prefetch(
     :type l2_cache_hint: int or cutlass.Int64 or cutlass.Uint64, optional
     :raises ValueError: if the ``coordinates`` count is invalid for ``mode``.
 
-    The descriptor-override path is exposed separately as
-    :func:`cp_async_bulk_tensor_prefetch_override`.
     """
     _assert_coords(coordinates, "cp.async.bulk.prefetch.tensor", mode=mode)
     if l2_cache_hint is not None:
@@ -4833,6 +4939,70 @@ def cvt_packfloat_f32(
     )
 
 
+@dsl_user_op
+def cvt_packfloat_f32_sf(
+    src_a: float | Float32,
+    src_b: float | Float32,
+    src_c: int | Int32 | Uint32,
+    sf: int | Int16 | Uint16,
+    to: CVTPackFloat,
+    *,
+    rnd: FPRoundingMode | None = None,
+    sat: SaturationModeKind | None = None,
+    relu: bool | None = None,
+    extract_hi: bool | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """Wrapper over ``nvvm.cvt_packfloat_f32_sf``."""
+    return _cutlass.Int32(
+        _nvvm.cvt_packfloat_f32_sf(
+            _cutlass.Float32(src_a),
+            _cutlass.Float32(src_b),
+            _cutlass.Int32(src_c),
+            _cutlass.Int16(sf),
+            _CVT_PACK_FLOAT_TO_DIALECT[to],
+            rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+            sat=_to_dialect(sat, _SATURATION_MODE_KIND_TO_DIALECT),
+            relu=relu,
+            extract_hi=extract_hi,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def cvt_packfloat_sf(
+    src_a: int | Int32 | Uint32,
+    src_c: int | Int32 | Uint32,
+    sf: int | Int16 | Uint16,
+    from_: CVTPackFloat,
+    to: CVTPackFloat,
+    *,
+    rnd: FPRoundingMode | None = None,
+    sat: SaturationModeKind | None = None,
+    relu: bool | None = None,
+    extract_hi: bool | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """Wrapper over ``nvvm.cvt_packfloat_sf``."""
+    return _cutlass.Int32(
+        _nvvm.cvt_packfloat_sf(
+            _cutlass.Int32(src_a),
+            _cutlass.Int32(src_c),
+            _cutlass.Int16(sf),
+            _CVT_PACK_FLOAT_TO_DIALECT[from_],
+            _CVT_PACK_FLOAT_TO_DIALECT[to],
+            rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+            sat=_to_dialect(sat, _SATURATION_MODE_KIND_TO_DIALECT),
+            relu=relu,
+            extract_hi=extract_hi,
+            loc=loc,
+            ip=ip,
+        )
+    )
 
 
 
@@ -5220,6 +5390,48 @@ def fma_packed_f32x2(
     return _unpack_packed_f32x2(vec_res) if returns_tuple else vec_res
 
 
+@dsl_user_op
+def fma_packed_f32x2_bf16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    src_c: Vector,
+    *,
+    rnd: FPRoundingMode | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.fma_packed_f32x2_bf16x2_f32x2_f32x2``."""
+    return _nvvm.fma_packed_f32x2_bf16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.Float32.mlir_type),
+        src_a,
+        src_b,
+        src_c,
+        rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def fma_packed_f32x2_f16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    src_c: Vector,
+    *,
+    rnd: FPRoundingMode | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.fma_packed_f32x2_f16x2_f32x2_f32x2``."""
+    return _nvvm.fma_packed_f32x2_f16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.Float32.mlir_type),
+        src_a,
+        src_b,
+        src_c,
+        rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+        loc=loc,
+        ip=ip,
+    )
 
 
 _VALID_LDST_MATRIX_NUM = frozenset({1, 2, 4})
@@ -6651,8 +6863,76 @@ def mul(
     )
 
 
+@dsl_user_op
+def mul_packed_bf16x2_bf16x2_f16x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.mul_packed_bf16x2_bf16x2_f16x2``."""
+    return _nvvm.mul_packed_bf16x2_bf16x2_f16x2(
+        T.vector(2, _cutlass.BFloat16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
 
 
+@dsl_user_op
+def mul_packed_bf16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.mul_packed_bf16x2_f32x2_f32x2``."""
+    return _nvvm.mul_packed_bf16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.BFloat16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def mul_packed_f16x2_f16x2_bf16x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.mul_packed_f16x2_f16x2_bf16x2``."""
+    return _nvvm.mul_packed_f16x2_f16x2_bf16x2(
+        T.vector(2, _cutlass.Float16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def mul_packed_f16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.mul_packed_f16x2_f32x2_f32x2``."""
+    return _nvvm.mul_packed_f16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.Float16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -7326,6 +7606,40 @@ def store_ext(
     )
 
 
+@dsl_user_op
+def sub_packed_bf16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.sub_packed_bf16x2_f32x2_f32x2``."""
+    return _nvvm.sub_packed_bf16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.BFloat16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sub_packed_f16x2_f32x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.sub_packed_f16x2_f32x2_f32x2``."""
+    return _nvvm.sub_packed_f16x2_f32x2_f32x2(
+        T.vector(2, _cutlass.Float16.mlir_type),
+        src_a,
+        src_b,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -7348,6 +7662,45 @@ def sub_packed_f32x2(
         ip=ip,
     )
 
+
+@dsl_user_op
+def sub_packed_f32x2_bf16x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    rnd: FPRoundingMode | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.sub_packed_f32x2_bf16x2_f32x2``."""
+    return _nvvm.sub_packed_f32x2_bf16x2_f32x2(
+        T.vector(2, _cutlass.Float32.mlir_type),
+        src_a,
+        src_b,
+        rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def sub_packed_f32x2_f16x2_f32x2(
+    src_a: Vector,
+    src_b: Vector,
+    *,
+    rnd: FPRoundingMode | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Vector:
+    """Wrapper over ``nvvm.sub_packed_f32x2_f16x2_f32x2``."""
+    return _nvvm.sub_packed_f32x2_f16x2_f32x2(
+        T.vector(2, _cutlass.Float32.mlir_type),
+        src_a,
+        src_b,
+        rnd=_to_dialect(rnd, _FP_ROUNDING_MODE_TO_DIALECT),
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -7946,6 +8299,7 @@ def tcgen05_mma(
     enable_input_d: int | Boolean,
     *,
     collector_op: Tcgen05MMACollectorOp | None = None,
+    b_collector_op: Tcgen05MMACollectorOp | None = None,
     a_shift: bool | None = None,
     scale_input_d: int | Int64 | Uint64 | None = None,
     write_disable_mask: Vector | None = None,
@@ -8073,6 +8427,15 @@ def tcgen05_mma(
         M-stack / M2 chain; that reuses B.
     :type collector_op: Tcgen05MMACollectorOp, optional
 
+    :param b_collector_op: Target-specific collector usage for operand B
+        (``.collector::b::*``).  Same values as *collector_op*.  Use only when
+        the target and MMA form support B-side collector reuse and the same
+        physical B operand is reused across the collector chain, for example an
+        M-stack / M2 chain.  Public Blackwell B collector reuse uses
+        :func:`tcgen05_mma_ws` with ``collector_b_buffer`` and ``collector_op``;
+        do not infer plain non-WS B collector legality from A collector support.
+    :type b_collector_op: Tcgen05MMACollectorOp, optional
+
     :param a_shift: When ``True``, emits the ``.ashift`` modifier.  In
         the ``.ashift`` MMA pipeline, the shift is a **post-MMA**
         operation: the current MMA reads unshifted A and produces
@@ -8187,6 +8550,9 @@ def tcgen05_mma(
         _cutlass.Int32(idesc),
         _cutlass.Boolean(enable_input_d),
         collector_op=_to_dialect(collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT),
+        collector_op_b=_to_dialect(
+            b_collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+        ),
         a_shift=a_shift,
         scale_input_d=scale_input_d,
         disable_output_lane=write_disable_mask,
@@ -11242,7 +11608,11 @@ inline_ptx_hl = _hl_inline_ptx
 
 
 __all__ = [
+    "add_packed_bf16x2_f32x2_f32x2",
+    "add_packed_f16x2_f32x2_f32x2",
     "add_packed_f32x2",
+    "add_packed_f32x2_bf16x2_f32x2",
+    "add_packed_f32x2_f16x2_f32x2",
     "atomicrmw",
     "auto",
     "bar_warp_sync",
@@ -11296,6 +11666,8 @@ __all__ = [
     "cvt_f32x2_to_f8x2",
     "cvt_packfloat",
     "cvt_packfloat_f32",
+    "cvt_packfloat_f32_sf",
+    "cvt_packfloat_sf",
     "dot_accumulate_2way",
     "dot_accumulate_4way",
     "elect_sync",
@@ -11312,6 +11684,8 @@ __all__ = [
     "fence_sc_cluster",
     "fence_sync_restrict",
     "fma_packed_f32x2",
+    "fma_packed_f32x2_bf16x2_f32x2_f32x2",
+    "fma_packed_f32x2_f16x2_f32x2_f32x2",
     "fmin",
     "griddepcontrol",
     "inline_ptx",
@@ -11346,6 +11720,10 @@ __all__ = [
     "mov_b32",
     "mul",
     "mul_bf16x2",
+    "mul_packed_bf16x2_bf16x2_f16x2",
+    "mul_packed_bf16x2_f32x2_f32x2",
+    "mul_packed_f16x2_f16x2_bf16x2",
+    "mul_packed_f16x2_f32x2_f32x2",
     "mul_packed_f32x2",
     "nanosleep",
     "pmevent",
@@ -11362,7 +11740,11 @@ __all__ = [
     "st_bulk",
     "stmatrix",
     "store_ext",
+    "sub_packed_bf16x2_f32x2_f32x2",
+    "sub_packed_f16x2_f32x2_f32x2",
     "sub_packed_f32x2",
+    "sub_packed_f32x2_bf16x2_f32x2",
+    "sub_packed_f32x2_f16x2_f32x2",
     "tcgen05_alloc",
     "tcgen05_commit",
     "tcgen05_cp",

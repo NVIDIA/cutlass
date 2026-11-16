@@ -32,6 +32,10 @@ from .cpasync.copy import (
     CopyBulkTensorTileG2SNonExecTrait,
     CopyBulkTensorTileG2SMulticastOp,
     CopyBulkTensorTileG2SMulticastNonExecTrait,
+    CopyBulkTensorTileS2GOp,
+    CopyBulkTensorTileS2GNonExecTrait,
+    CopyReduceBulkTensorTileS2GOp,
+    CopyReduceBulkTensorTileS2GNonExecTrait,
     CopyBulkTensorIm2ColG2SOp,
     CopyBulkTensorIm2ColG2SNonExecTrait,
     CopyBulkTensorIm2ColG2SMulticastOp,
@@ -43,6 +47,7 @@ from .cpasync.helpers import TmaInfo
 __all__ = [
     "make_tiled_tma_atom_A",
     "make_tiled_tma_atom_B",
+    "make_tiled_tma_atom_C",
     "make_im2col_tma_atom_A",
 ]
 
@@ -347,6 +352,135 @@ def make_tiled_tma_atom_B(
         res[1],
         stored_smem_layout,
     )
+
+@dsl_user_op
+def make_tiled_tma_atom_C(
+    op: Union[
+        CopyReduceBulkTensorTileS2GOp,
+        CopyBulkTensorTileS2GOp,
+    ],
+    gmem_tensor: Tensor,
+    smem_layout: Union[Layout, ComposedLayout],
+    mma_tiler_mnk: Shape,
+    tiled_mma: atom.TiledMma,
+    *,
+    internal_type: Optional[Type[Numeric]] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> TmaInfo:
+    """
+    Makes a TMA Copy atom mapping to ``.tile`` mode for ``cp.async.bulk.tensor`` PTX operation
+    accounting for the MN projections of the TiledMMA for C tensor store/reduce operations.
+
+    Given
+
+    - a GMEM tensor
+    - a SMEM layout
+    - a MMA Tiler
+    - a TiledMma
+    - a Cluster-level shape
+
+    this function figures out the bulk tensor asynchronous store/reduce instruction to use with the
+    maximum "TMA vector length" to copy tiles from the SMEM buffer to the GMEM tensor with the
+    provided layout and consistent with the provided Tiler & tiled_mma (considering the M-mode & N-mode).
+
+    This function returns two results:
+
+    1. the Copy Atom
+    2. the so-called TMA tensor used to map logical coordinates of the GMEM tensor to coordinates
+       that the TMA unit can consume. TMA tensors have so-called basis stride elements so that the
+       associated layout can output coordinates. Otherwise, TMA tensors can be partitioned
+       similarly to any other CuTe tensors using the algebra.
+
+    :param op:                 The Copy Operation to construct an Atom for
+    :type op:                  Union[CopyReduceBulkTensorTileS2GOp, CopyBulkTensorTileS2GOp]
+    :param gmem_tensor:        The GMEM tensor to be loaded by this copy atom
+    :type gmem_tensor:         Tensor
+    :param smem_layout:        Shared memory layout to load the tensor into (PDSL)
+    :type smem_layout:         Union[Layout, ComposedLayout]
+    :param mma_tiler_mnk:      The MMA Tiler shape (TILE_M, TILE_N, TILE_K) in MNK dimensions
+    :type mma_tiler_mnk:       Shape
+    :param tiled_mma:          The TiledMMA that will consume the load as operands
+    :type tiled_mma:           atom.TiledMma
+    :param internal_type:      Optional element-format override used when the
+                               tensor element type does not match the copy type
+    :type internal_type:       Type[Numeric]
+    :return:                   A TmaInfo containing the Copy Atom, TMA tensor, and SMEM layout
+    :rtype:                    TmaInfo
+
+    """
+    smem_rank = core.rank(smem_layout)
+    assert smem_rank == 3 or smem_rank == 4, (
+        "a_smem_layout must be non-staged (atom, rest_m, rest_k) "
+        "or staged (atom, rest_m, rest_k, stage), "
+        f"but got rank = {smem_rank}"
+    )
+
+    # Keep the original SMEM layout object for later retrieval at Python level.
+    stored_smem_layout = smem_layout
+
+    # Slice the smem_layout if it is staged
+    if smem_rank == 4:
+        smem_layout = core.select(smem_layout, mode=[0, 1, 2])
+
+    ident = core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
+    mma_mnk: Any = mma_tiler_mnk
+    mma_tiler_mn = mma_mnk[:2]
+    g_tile = core.composition(ident, mma_tiler_mn, loc=loc, ip=ip)
+    cta_v_map: Any = tiled_mma._thrfrg_C(g_tile)
+    cta_v_map = core.get(cta_v_map, mode=[1])
+    cta_v_map = core.dice(cta_v_map, (1, (1,) * core.rank(g_tile)))
+
+    smem_for_ir: Any = smem_layout
+    if isinstance(smem_for_ir, core._ComposedLayout):
+        smem_for_ir = smem_for_ir.value
+
+    tma_format = None
+    if internal_type is not None:
+        itype: Any = internal_type
+        if not isinstance(internal_type, NumericMeta):
+            raise TypeError(f"internal_type must be a Numeric, but got {internal_type}")
+
+        gmem_tensor_element_type = gmem_tensor.element_type
+        assert not is_int_tuple_type(gmem_tensor_element_type)
+
+        tma_format = _cute_nvgpu_ir.TmaDataFormat(
+            _cute_nvgpu_ir.get_default_tma_format(itype.mlir_type, False)
+        )
+
+    # res[0] = the IR Value for the non-executable atom instance
+    # res[1] = the IR Value for the associated TMA tensor
+    if isinstance(op, CopyReduceBulkTensorTileS2GOp):
+        res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_reduce(
+            cast(Any, gmem_tensor).value,
+            smem_for_ir,
+            cta_v_map,
+            op._to_ir(),
+            tma_format=tma_format,
+            loc=loc,
+            ip=ip,
+        )
+        return TmaInfo(
+            atom.CopyAtom(op, CopyReduceBulkTensorTileS2GNonExecTrait(res[0])),
+            res[1],
+            stored_smem_layout,
+        )
+
+    assert isinstance(op, CopyBulkTensorTileS2GOp)
+    res = _cute_nvgpu_ir.atom_make_non_exec_tiled_tma_store(
+        cast(Any, gmem_tensor).value,
+        smem_for_ir,
+        cta_v_map,
+        tma_format=tma_format,
+        loc=loc,
+        ip=ip,
+    )
+    return TmaInfo(
+        atom.CopyAtom(op, CopyBulkTensorTileS2GNonExecTrait(res[0])),
+        res[1],
+        stored_smem_layout,
+    )
+
 
 
 @dsl_user_op

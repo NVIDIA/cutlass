@@ -12,181 +12,133 @@
 
 """PyIR runtime -- corewalk layer; see facade for the public surface."""
 
-from .pyir_core import *  # noqa: F401,F403  (re-export lower layers up the chain)
-
-# -- BEGIN explicit imports for the type checker (do not edit the list by hand;
-# it mirrors names the chain re-exports at runtime via the wildcard + dynamic
-# ``__all__`` above, which a static type checker cannot evaluate -- so every
-# name is also imported explicitly from the layer that DEFINES it). Purely
-# additive: the wildcard import stays the runtime source of truth.
-from .pyir_state import (  # noqa: F401
-    Any,
-    _is_staged_value,
-    _slot_refs,
-    ir,
-    pyir,
-)
-from .pyir_core import (  # noqa: F401
-    _WatchedM,
-    _can_create_ref,
-    _check_all_fields_decomposable,
-    _create_ref,
-    _flatten_tuple,
-    _get_instance_attrs,
-    _load_as_dsl,
-)
-# -- END explicit imports for the type checker
+from .pyir_state import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
+from .pyir_core import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
 
 
-def _pyir_auto_load_arg(arg: Any) -> Any:
+def _pyir_auto_load_arg(arg: Any, *, row_authoritative: bool = False) -> Any:
     """If *arg* carries a ``_mutable_ref`` with an accessible ref, emit
     ``pyir.load`` and return a fresh value that dominates the current
     insertion point.  Otherwise return *arg* unchanged.
 
-    Called by ``@dsl_user_op`` on every positional argument so that
-    post-loop uses of pyir-tracked variables automatically get a load
-    from the ref instead of using a stale SSA value from inside the
-    loop body.
+    Called by ``@dsl_user_op`` on every positional argument so post-loop
+    uses of pyir-tracked variables load from the ref instead of using a
+    stale SSA value from inside the loop body.  That user channel follows
+    the route only while *arg* is provably the cell's current binding
+    (V-2); a retained snapshot keeps its own SSA (LAW 1).
 
-    Optimization: skip the auto-load when *arg* was itself produced by
-    the most recent ``MutableValue.load()`` (same ``_load_version``)
-    AND its underlying ``ir.Value`` still dominates the current
-    insertion point.  This eliminates the redundant load that would
-    otherwise follow an AST-inserted ``pyir_read``.  A ``store()``
-    bumps ``_load_version`` and invalidates the cache.
+    *row_authoritative* marks the carry engine's post-region rebind of
+    a carried binding: there the region just wrote the row, the row IS the
+    authority, and the reload deliberately skips the snapshot judgment
+    (not the superseded-scratch refusal: a sound carry presents the cell's
+    current handle, so a superseded handle here is never legitimate).
 
-    D1: when *arg* is a ``_WatchedM`` wrapper:
-      * If the slot has been promoted to ``pyir.ref`` (an entry in
-        ``_slot_refs``), emit ``pyir.load`` and wrap in the matching
-        DSL Numeric.
-      * Otherwise return the wrapper unchanged.  ``_WatchedInt`` /
-        ``_WatchedBool`` / ``_WatchedFloat`` subclass ``int`` / ``float``
-        so consumers that use the arg as a Python primitive (e.g.
-        ``ir.VectorType.get([vec_size], ...)`` reading ``vec_size`` as
-        the shape, ``isinstance(x, int)`` branches, ``const_expr``)
-        work transparently.  Consumers that need an SSA value
-        (Numeric ``__init__``, ``arith.const``, ``cute.printf`` arg
-        coercion) already invoke ``.ir_value()`` on the wrapper, which
-        performs the bake AND records into ``_meta_uses`` so D1's
-        retroactive rewrite still fires when the slot later mutates.
+    Optimization: skip the auto-load when *arg* is itself the most recent
+    ``MutableValue.load()`` (same ``_load_version``) AND still dominates the
+    current IP -- eliminating the redundant load after an AST ``pyir_read``.
+    A ``store()`` bumps ``_load_version`` and invalidates the cache.
+
+    D1, when *arg* is a ``_WatchedM`` wrapper: if the slot was promoted to a
+    ref (in ``_slot_refs``), emit ``pyir.load`` wrapped in the matching DSL
+    Numeric; otherwise return the wrapper unchanged. ``_WatchedM`` subclasses
+    int/float so primitive consumers (shapes, ``isinstance``, ``const_expr``)
+    work transparently, while SSA consumers invoke ``.ir_value()`` (which
+    bakes AND records into ``_meta_uses`` so retroactive rewrite still fires).
     """
+    # Candidate-holder registry: every ``@dsl_user_op`` argument is a sighting
+    # of an object the trace touches; the recursion below registers elements.
+    _pyir_register_candidate_holder(arg)
+
     if isinstance(arg, _WatchedM):
         slot = arg._slot_key
         if slot is not None and slot in _slot_refs:
-            return _load_as_dsl(_slot_refs[slot], arg.python_value)
-        # Unpromoted: return the bare wrapper so the consumer decides
-        # whether to bake (via ``.ir_value()``) or use as a Python
-        # primitive (via the int/float subclass nature of ``_WatchedM``).
+            _ref = _slot_refs[slot]
+            # One declared SNAPSHOT semantics: the cell serves this wrapper's
+            # read only while it still holds the creation-time value (same
+            # ref, same write epoch); a superseded wrapper materializes
+            # through ir_value()'s snapshot judgment instead.
+            if _ref is getattr(arg, "_pyir_birth_ref", None) and _ref_write_epoch(
+                _ref
+            ) == getattr(arg, "_pyir_birth_epoch", None):
+                return _load_as_dsl(_ref, place=slot, stamp_place=True)
+            return arg
+        # Unpromoted: return the bare wrapper so the consumer decides whether to
+        # bake (``.ir_value()``) or use it as a Python primitive.
         return arg
 
-    # Tuple recursion: tuples have no ``_mutable_ref`` themselves but
-    # their staged leaves often do.  Mirrors ``pyir_read``'s existing
-    # tuple recursion so ``@dsl_user_op`` boundaries like
-    # ``Vector.from_elements((rm, rm, ...))`` auto-load each element.
-    if isinstance(arg, tuple):
-        return tuple(_pyir_auto_load_arg(e) for e in arg)
+    # Tuple/list recursion: containers have no ``_mutable_ref`` but their staged
+    # leaves often do -- auto-load each element to mirror ``pyir_read``.
+    if isinstance(arg, (tuple, list)):
+        loaded = [
+            _pyir_auto_load_arg(e, row_authoritative=row_authoritative) for e in arg
+        ]
+        # ``type(arg)(genexpr)`` collapses / breaks a namedtuple; rebuild via
+        # the tuple-aware primitive and keep a list a list.
+        return loaded if isinstance(arg, list) else _rebuild_tuple_like(arg, loaded)
+
+    # Owner-less retained-handle read (e.g. a container element's leaf) reaches
+    # this auto-load with a superseded generation's own leaf wrapper.
+    if _SUPERSEDED_LEAF_WRAPPERS:
+        _pyir_check_superseded_wrapper_load(arg)
 
     mv = getattr(arg, "_mutable_ref", None)
 
     if mv is not None and mv.ref is not None:
         if mv._is_ref_accessible():
             # Dedup: arg is the latest load AND still dominates current IP.
-            cached_version = getattr(arg, "_pyir_load_version", None)
+            cached_version = _get_load_version(arg)
             if (
                 cached_version is not None
                 and cached_version == mv._load_version
-                and _arg_value_dominates_current_ip(arg)
+                # Depth-aware: only reuse a cached load at the SAME staged-CF depth,
+                # so a deeper consumer rebinds the inner loop's iter_arg.
+                and _get_load_depth(arg) == current_staged_cf_depth()
+                # Epoch-aware: a raw slot-ref store bumps the REF's write-epoch
+                # without touching this wrapper's version -- the load is stale.
+                and _get_load_epoch(arg) == _ref_write_epoch(mv.ref)
+                and _value_dominates_current_ip(arg)
             ):
                 return arg
-            return mv.load()
-        # Ref exists but is inaccessible (stale, from sibling/exited CF).
-        # Re-create at current scope to restore dominance -- but only
-        # when ``arg``'s SSA value still dominates the current IP.  If
-        # it doesn't, ``_create_ref`` would D-fallback to a
-        # ``ub.poison``-initialised ref at function entry with no
-        # accompanying store, and the subsequent ``mv.load()`` would
-        # silently read poison.  In that case fall through to
-        # returning ``arg`` unchanged -- the verifier (or the
-        # end-of-trace poison-read catcher, if a sibling code path
-        # did create the same poison-init pattern) will surface the
-        # real issue at trace time instead of producing wrong results.
-        if _can_create_ref(arg) and _arg_value_dominates_current_ip(arg):
+            # An ADMITTED rebound memref cell must not re-serve a SUPERSEDED
+            # wrapper (a handle retained from before the last in-region
+            # rebind, e.g. through a container): every in-region allocation
+            # aliases the one entry-hoisted buffer, so the reload would
+            # observe the fresh generation's overwrites instead of the
+            # buffer Python retained.  Refuse loudly at the use site.
+            _pyir_refuse_stale_memref_serve(arg, mv)
+            # R3: reload through the route when it IS its place's live row
+            # (place authority) or while *arg* is provably the cell's current
+            # binding (V-2); a retained snapshot keeps its own SSA (LAW 1).
+            if row_authoritative or _pyir_route_is_current(arg, mv):
+                return mv.load()
+            if _pyir_route_is_live_place_row(mv):
+                # LAW-1 counter-evidence: an epoch-tagged product a later
+                # store superseded, whose own SSA dominates, is a retained
+                # SNAPSHOT -- place authority does not govern that read.
+                _epoch_tag = _get_load_epoch(arg)
+                if (
+                    _epoch_tag is not None
+                    and _epoch_tag != _ref_write_epoch(mv.ref)
+                    and _value_dominates_current_ip(arg)
+                ):
+                    return arg
+                return mv.load()
+            return _pyir_resolve_snapshot(arg, type(arg).__name__)
+        # Ref inaccessible (stale, from sibling/exited CF): re-create at current scope to restore
+        # dominance, but only when ``arg``'s SSA still dominates the IP -- else return ``arg``.
+        if _can_create_ref(arg) and _value_dominates_current_ip(arg):
+            # The guards above screen out the legitimate not-creatable cases, so
+            # a failure here means re-creation was expected to succeed but did not.
             try:
                 new_mv = _create_ref(arg)
                 return new_mv.load()
-            except Exception:
-                pass  # fall through to return arg
+            except Exception as e:
+                raise DSLRuntimeError(
+                    f"failed to re-create a dominating ref for a "
+                    f"{type(arg).__name__} value after its original ref became "
+                    f"inaccessible"
+                ) from e
     return arg
-
-
-def _raw_ir_value(arg: Any) -> "ir.Value":
-    """Return *arg*'s backing ``ir.Value`` WITHOUT re-entering the
-    ``@dsl_user_op`` instrumentation in :func:`_pyir_auto_load_arg`.
-
-    ``_arg_value_dominates_current_ip`` needs only the raw MLIR value to
-    inspect its owner/defining-op; it must not trigger op emission or a
-    nested auto-load.  Calling ``arg.ir_value()`` directly is unsafe:
-    for DSL value types whose ``ir_value`` is itself ``@dsl_user_op``
-    -wrapped (e.g. ``cute.TensorSSA``), the wrapper auto-loads its own
-    ``self`` argument, which calls back into ``_pyir_auto_load_arg`` ->
-    ``_arg_value_dominates_current_ip`` -> ``ir_value()`` -> ... ad
-    infinitum (RecursionError).
-
-    DSL value wrappers (``ArithValue`` / ``Vector`` / ``TensorSSA``)
-    subclass ``ir.Value`` directly, so when *arg* is already an
-    ``ir.Value`` it IS its own raw MLIR value and no call is needed.
-    Otherwise fall back to the un-instrumented underlying ``ir_value``
-    (``__wrapped__`` strips the ``@dsl_user_op`` wrapper) so the
-    dominance probe stays side-effect-free.
-    """
-    if isinstance(arg, ir.Value):
-        return arg
-    iv = getattr(type(arg), "ir_value", None)
-    unwrapped = getattr(iv, "__wrapped__", None)
-    if unwrapped is not None:
-        return unwrapped(arg)
-    return arg.ir_value()
-
-
-def _arg_value_dominates_current_ip(arg: Any) -> bool:
-    """Return ``True`` if *arg*'s backing ``ir.Value`` dominates the
-    current MLIR insertion point.
-
-    Used by ``_pyir_auto_load_arg`` to decide whether a previously
-    loaded value can be reused without emitting a fresh
-    ``pyir.load``.  Conservative: returns ``False`` on any error so
-    the caller falls back to re-loading.
-
-    The region check via ``is_value_in_ancestor_region`` is necessary
-    but not sufficient: same-region values may still be defined after
-    the current insertion point.  For same-block defs we additionally
-    require the defining op to precede the IP using
-    ``is_before_in_block`` against the IP's reference operation (or
-    accept any same-block op when the IP is at the block end).
-    """
-    if pyir is None:
-        return False
-    try:
-        raw = _raw_ir_value(arg)
-        ip = ir.InsertionPoint.current
-        current_block = ip.block
-        if not pyir.is_value_in_ancestor_region(raw, current_block):
-            return False
-        owner = raw.owner
-        if isinstance(owner, ir.Block):
-            return True  # block argument — dominates everything in its region
-        def_op = getattr(owner, "operation", owner)
-        if def_op.block != current_block:
-            return True  # proper-ancestor region — structural dominance
-        ref_op = ip.ref_operation
-        if ref_op is None:
-            return True  # IP at block end; def was emitted earlier in trace
-        ref_op = getattr(ref_op, "operation", ref_op)
-        if def_op == ref_op:
-            return False
-        return def_op.is_before_in_block(ref_op)
-    except Exception:
-        return False
 
 
 def _has_decomposable_staged_fields(obj: object) -> bool:
@@ -201,28 +153,182 @@ def _has_decomposable_staged_fields(obj: object) -> bool:
     return _check_all_fields_decomposable(obj, _visited=set())
 
 
-def _has_any_staged_content(obj: object) -> bool:
+def _has_any_staged_content(obj: object, _visited: "set[int] | None" = None) -> bool:
     """Return True if any field (deeply) is a staged value.
 
     Used for the error vs passthrough decision: if the object has staged
     content that cannot be decomposed, we raise an error.  If it has NO
     staged content, it is a pure meta replacement (harmless).
+
+    A tuple/list passed directly (not as an object attribute) has no
+    ``__dict__``, so the attribute walk below would report it as having no
+    staged content.  Check its leaves explicitly so a top-level sequence
+    carrying staged values is correctly recognised as loop-carried state
+    (mirrors the nested-sequence branch inside the attribute walk).
+
+    *_visited* breaks self-referential object graphs: an object reachable from
+    itself (directly or via a cycle) is examined once, so the recursion cannot
+    diverge.  Mirrors the cycle guard the sibling walk
+    (:func:`_check_all_fields_decomposable`) already uses.
     """
+    if _visited is None:
+        _visited = set()
+    oid = id(obj)
+    if oid in _visited:
+        return False
+    _visited.add(oid)
+
+    if isinstance(obj, (tuple, list)):
+        return any(_is_staged_value(e) for e in _flatten_tuple(tuple(obj)))
     for attr_name in _get_instance_attrs(obj):
         value = getattr(obj, attr_name)
         if _is_staged_value(value):
             return True
-        if isinstance(value, tuple) and any(
-            _is_staged_value(e) for e in _flatten_tuple(value)
+        if isinstance(value, (tuple, list)) and any(
+            _is_staged_value(e) for e in _flatten_tuple(tuple(value))
         ):
             return True
         if (
-            hasattr(value, "__dict__")
+            _has_instance_storage(value)
             and not isinstance(value, (int, float, bool, str, bytes, type))
-            and _has_any_staged_content(value)
+            and _has_any_staged_content(value, _visited)
         ):
             return True
     return False
 
 
-__all__ = [name for name in list(globals()) if not name.startswith("__")]
+def _gather_captured_holders(
+    exclude_ids: "set[int] | None",
+    walk_obj: "Callable[[Any, set[int], list], Any]",
+) -> "list[tuple[Any, str, Any]]":
+    """Shared registry sweep behind the captured-holder gathers.
+
+    Collects leaf holders of objects CAPTURED by a staged region/loop body but
+    not passed as one of its ``mix_iter_args`` (captured free variables).
+
+    Discovery iterates the trace-scoped candidate-holder registry
+    (:data:`_PYIR_CANDIDATE_HOLDERS`) in sighting order.
+
+    Each live candidate is fed to *walk_obj*, which appends ``(holder, attr,
+    value)`` triples into the shared accumulator; the per-walker gate lives
+    entirely in *walk_obj*.
+
+    One shared visited set spans all candidates, so a holder reachable from
+    several candidates is walked once and each ``(holder, attr)`` pair is
+    collected exactly once.
+
+    Registration follows what the trace actually touched, not what happens to
+    sit in a Python frame, so a captured holder is reached at any stack depth.
+
+    *exclude_ids* holds ``id()`` of objects already snapshotted via
+    ``mix_iter_args``.  An empty result maps to the wrappers' sentinel.
+
+    Cross-sweep caching (value-tree walk only): a cacheable root's record
+    segment (:func:`_pyir_build_gather_segment`) is memoized against its
+    write stamp and spliced at the root's registry position when the root
+    stamp AND every recorded Numeric leaf's own guard stamp are unchanged AND
+    no earlier live walk already consumed the root this sweep (positional
+    splice validation); any failing takes the live walk in position, so
+    record multiset AND order equal the uncached sweep's."""
+    if exclude_ids is None:
+        exclude_ids = set()
+    holders: "list[tuple[Any, str, Any]]" = []
+    visited_objs: "set[int]" = set()
+    if walk_obj is not _walk_ir_value_holders_into:
+        for cand in _pyir_registry_candidate_objects():
+            if id(cand) in exclude_ids:
+                continue
+            walk_obj(cand, visited_objs, holders)
+        return holders
+    # Per-root decision flow (cached value-tree walk):
+    #
+    #   root already visited this sweep? ──yes──► live walk (a no-op; replay
+    #     │no                                     here would emit duplicate rows)
+    #   root has a write stamp? ──────────no───► live walk (no stamp to validate
+    #     │yes                                   a cached row against yet)
+    #   cached row at the SAME stamp?
+    #     │        ├─ negative row ────────────► live walk (judged uncacheable)
+    #     │        ├─ a leaf guard stamp moved ► rebuild segment below
+    #     │        └─ all guards intact ───────► replay cached (attr, val) rows
+    #     │no (stale or missing row)
+    #   build a fresh segment ── cacheable? ──yes──► store + replay it
+    #                                └──────────no──► store negative row + live walk
+    segments = _PYIR_GATHER_SEGMENTS
+    stamps = _PYIR_HOLDER_WRITE_STAMPS
+    for cand in _pyir_registry_candidate_objects():
+        oid = id(cand)
+        if oid in exclude_ids:
+            continue
+        if oid in visited_objs:
+            # An earlier live walk consumed this root at ITS position.
+            walk_obj(cand, visited_objs, holders)
+            continue
+        stamp = stamps.get(oid)
+        if stamp is None:
+            walk_obj(cand, visited_objs, holders)
+            continue
+        row = segments.get(oid)
+        if row is not None and row[0] == stamp:
+            records = row[1]
+            if records is None:
+                # Negative row: judged not cacheable at this stamp; no
+                # re-judgment until the root is written again.
+                walk_obj(cand, visited_objs, holders)
+                continue
+            # Numeric-leaf guards: an in-place write on a recorded wrapper
+            # stamps the WRAPPER's row (not the root's) and may flip its leaf
+            # classification -- any moved stamp takes the rebuild instead.
+            for w, ws in row[2]:
+                if stamps.get(id(w)) != ws:
+                    break
+            else:
+                visited_objs.add(oid)
+                for attr, val in records:
+                    holders.append((cand, attr, val))
+                continue
+        seg = _pyir_build_gather_segment(cand)
+        if seg is None:
+            segments[oid] = (stamp, None, ())
+            walk_obj(cand, visited_objs, holders)
+            continue
+        records, guards = seg
+        segments[oid] = (stamp, records, guards)
+        visited_objs.add(oid)
+        for attr, val in records:
+            holders.append((cand, attr, val))
+    return holders
+
+
+class _PyirCapturedSnapshot(list):
+    """Captured-holder snapshot carrying the write clock read at gather START
+    (any write during or after the sweep stamps later, so the repair's
+    stamp<=clock skip is exact); behaves as a plain record list."""
+
+    __slots__ = ("pyir_gather_clock",)
+    pyir_gather_clock: int
+
+
+def _pyir_gather_captured_leaf_holders(
+    exclude_ids: "set[int] | None" = None,
+) -> "list[tuple[Any, str, ir.Value]] | None":
+    """Collect value-tree ``ir.Value`` leaf holders of objects CAPTURED by a staged
+    region body but not passed as one of its ``mix_iter_args``."""
+    clock = _PYIR_WRITE_CLOCK[0]
+    holders = _gather_captured_holders(exclude_ids, _walk_ir_value_holders_into)
+    if not holders:
+        return None
+    snap = _PyirCapturedSnapshot(holders)
+    snap.pyir_gather_clock = clock
+    return snap
+
+
+# Static export surface (regenerate with scripts/gen_pyir_all.py): the
+# module's OWN names -- its namespace minus what lower chain modules
+# already export and minus the generator's INTERNAL_ONLY registry.
+__all__ = [
+    "_pyir_auto_load_arg",
+    "_has_decomposable_staged_fields",
+    "_has_any_staged_content",
+    "_PyirCapturedSnapshot",
+    "_pyir_gather_captured_leaf_holders",
+]

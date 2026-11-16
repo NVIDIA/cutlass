@@ -1111,8 +1111,8 @@ class PipelineProducer:
         self.__state.reset_count(loc=loc, ip=ip)
 
     def current_handle(self) -> ImmutableResourceHandle:
-        """Get the current handle for the producer."""
-        return PipelineProducer.ImmutableResourceHandle(self.__pipeline, self.__state)
+        """Get the current immutable handle for the producer."""
+        return PipelineProducer.ImmutableResourceHandle(self.__pipeline, self.__state.clone())
 
     @dsl_user_op
     def acquire(
@@ -1142,12 +1142,13 @@ class PipelineProducer:
     @dsl_user_op
     def advance(
         self,
+        count: int | Int32 = 1,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         """Move to the next pipeline stage."""
-        self.__state.advance(loc=loc, ip=ip)
+        self.__state.advance(count, loc=loc, ip=ip)
 
     @dsl_user_op
     def acquire_and_advance(
@@ -1356,8 +1357,8 @@ class PipelineConsumer:
         self.__state.reset_count(loc=loc, ip=ip)
 
     def current_handle(self) -> ImmutableResourceHandle:
-        """Get the current handle for the consumer."""
-        return PipelineConsumer.ImmutableResourceHandle(self.__pipeline, self.__state)
+        """Get the current immutable handle for the consumer."""
+        return PipelineConsumer.ImmutableResourceHandle(self.__pipeline, self.__state.clone())
 
     @dsl_user_op
     def wait(
@@ -1386,6 +1387,7 @@ class PipelineConsumer:
     @dsl_user_op
     def advance(
         self,
+        count: int | Int32 = 1,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -1395,7 +1397,7 @@ class PipelineConsumer:
         This updates the internal state to point to the next buffer in the pipeline.
         Should be called after consuming data from the current buffer.
         """
-        self.__state.advance(loc=loc, ip=ip)
+        self.__state.advance(count, loc=loc, ip=ip)
 
     @dsl_user_op
     def wait_and_advance(

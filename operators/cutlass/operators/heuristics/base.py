@@ -69,8 +69,9 @@ class Heuristic(ABC):
 
         Args:
             args (RuntimeArguments | None): Runtime arguments describing the
-                problem being ranked for (e.g. a :class:`GemmArguments`). May be
-                ``None`` if the caller did not provide arguments.
+                problem being ranked for (e.g.
+                :class:`~cutlass.operators.GemmArguments`). May be ``None`` if
+                the caller did not provide arguments.
             operators (list[Operator]): The already-filtered candidate Operators
                 to order. Every element is known to support ``args``.
             target_sm (TargetSm | str | None): Optional compute capability the

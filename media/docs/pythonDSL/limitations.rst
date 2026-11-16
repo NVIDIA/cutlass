@@ -117,16 +117,24 @@ Programming Model
     - An ``int`` outside the type's range **wraps**, dropping the high bits.
       For example, ``Int32(1 << 34)`` yields ``0`` and ``Int32(2**31)`` yields
       ``-2147483648``.
-    - A ``float`` whose magnitude is too large **overflows to** ``±inf``, and one
-      too small **underflows to** ``0``. For example, ``Float32(1e40)`` yields
-      ``inf`` and ``Float32(1e-50)`` yields ``0.0``.
+    - A ``float`` narrowed to an **integer** type truncates toward zero, and a
+      value the type cannot hold is then narrowed by the **host CPU's own
+      float-to-integer conversion** — the same cast NumPy performs for that
+      value on that machine. That result is architecture-defined:
+      ``Int32(1e40)`` yields ``-2147483648`` on x86-64 and ``2147483647`` on
+      AArch64. Treat it as unspecified and clamp before converting.
+    - A ``float`` narrowed to a **float** type whose magnitude is too large
+      **overflows to** ``±inf``, and one too small **underflows to** ``0``. For
+      example, ``Float32(1e40)`` yields ``inf`` and ``Float32(1e-50)`` yields
+      ``0.0``.
 
     Note the contrast: ``(1 << 34) + Int32(3)`` promotes to ``Int64`` and keeps
     the value, whereas the explicit ``Int32(1 << 34)`` wraps to ``0``.
 
     To surface this loss, the DSL emits a compiler **warning** for these
     catastrophic construction cases (``TYPE_INT_LITERAL_OUT_OF_RANGE``,
-    ``TYPE_FLOAT_LITERAL_OVERFLOW``, ``TYPE_FLOAT_LITERAL_UNDERFLOW``), pointing at
+    ``TYPE_FLOAT_TO_INT_OUT_OF_RANGE``, ``TYPE_FLOAT_LITERAL_OVERFLOW``,
+    ``TYPE_FLOAT_LITERAL_UNDERFLOW``), pointing at
     the exact source location and suggesting a wider type. Note that ordinary
     precision/rounding loss is *not* flagged, since it is inherent to every
     float literal and would be too noisy. For example, ``Float32(0.1)`` is
@@ -142,10 +150,12 @@ Programming Model
             b = cutlass.Float32(1e40)     # warns: overflows to inf
             c = cutlass.Float32(1e-50)    # warns: underflows to 0.0
             d = cutlass.Float32(0.1)      # no warning: ordinary rounding
+            e = cutlass.Int32(1e40)       # warns: host-defined narrowing
 
     Prefer a wider type (e.g. ``Int64`` / ``Float64``) when the value does not
     fit the constructor's type, or mask an ``int`` to the type width to make an
-    intentional wrap explicit.
+    intentional wrap explicit. Masking has no float spelling, so clamp a float
+    to ``[min, max]`` instead.
 
 **Python Function**
     The DSL currently has **limited support for return values** from Python functions.
