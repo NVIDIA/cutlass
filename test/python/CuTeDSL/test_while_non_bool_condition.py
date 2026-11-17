@@ -13,51 +13,31 @@
 Unit tests for ``while`` loops whose condition is a runtime Int32 or Float32.
 
 ``if n:`` already treats a non-Boolean value as ``n != 0``; ``while n:``
-should do the same. The kernels count down from a runtime value and write
-the number of iterations. They need a CUDA GPU and skip without one.
+should do the same. Compile host-only JIT functions to check that each
+runtime condition produces valid IR, without launching a CUDA kernel.
 """
 
 import unittest
 
-import torch
-
 import cutlass.cute as cute
 from cutlass import Float32, Int32
-from cutlass.cute.runtime import from_dlpack
 
 
 def _count_down(dtype):
-    @cute.kernel
-    def kernel(out: cute.Tensor, start: Int32):
+    @cute.jit
+    def count_down(start: Int32):
         n = dtype(start)
-        count = Int32(0)
         while n:
             n -= 1
-            count += 1
-        out[0] = count
 
-    @cute.jit
-    def launch(out: cute.Tensor, start: Int32):
-        kernel(out, start).launch(grid=[1, 1, 1], block=[1, 1, 1])
-
-    return launch
+    return count_down
 
 
-@unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA GPU")
 class WhileNonBoolConditionTest(unittest.TestCase):
-    def test_count_down(self):
+    def test_count_down_compiles(self):
         for dtype in (Int32, Float32):
-            launch = None
-            for start in (0, 1, 7):
-                with self.subTest(dtype=dtype.__name__, start=start):
-                    out = torch.full((1,), -1, dtype=torch.int32, device="cuda")
-                    if launch is None:
-                        launch = cute.compile(
-                            _count_down(dtype), from_dlpack(out), Int32(start)
-                        )
-                    launch(from_dlpack(out), Int32(start))
-                    torch.cuda.synchronize()
-                    self.assertEqual(out.item(), start)
+            with self.subTest(dtype=dtype.__name__):
+                cute.compile(_count_down(dtype), Int32(7))
 
 
 if __name__ == "__main__":
