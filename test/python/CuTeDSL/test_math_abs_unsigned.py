@@ -44,7 +44,7 @@ def _run(fn, dtype, vector):
     def kernel(src: cute.Tensor, dst: cute.Tensor):
         tidx, _, _ = cute.arch.thread_idx()
         if cutlass.const_expr(vector):
-            dst.store(fn(src.load()))  # every thread stores the same values
+            dst.store(fn(src.load()))
         else:
             dst[tidx] = fn(src[tidx])
 
@@ -52,7 +52,9 @@ def _run(fn, dtype, vector):
     def launch(src: cute.Tensor, dst: cute.Tensor):
         src = cute.recast_tensor(src, dtype)
         dst = cute.recast_tensor(dst, dtype)
-        kernel(src, dst).launch(grid=[1, 1, 1], block=[src.shape[0], 1, 1])
+        kernel(src, dst).launch(
+            grid=[1, 1, 1], block=[1 if vector else src.shape[0], 1, 1]
+        )
 
     return launch
 
