@@ -31,12 +31,11 @@ from functools import cache, lru_cache
 from typing import Any, Callable, get_args
 
 from ..base_dsl.runtime.cuda import get_compute_capability_major_minor
-from .common import DSLRuntimeError, DSLUserCodeError
+from .common import DSLRuntimeError, DSLUserCodeError, _warn_deprecated
 from .utils.logger import log
 from .cache_helpers import get_default_file_dump_root
 
 IS_WINDOWS = sys.platform == "win32"
-CLIB_EXT = ".dll" if IS_WINDOWS else ".so"
 
 # =============================================================================
 # [DSL]_KEEP token definitions
@@ -54,18 +53,6 @@ _KEEP_ALL_TOKENS: frozenset[str] = frozenset(
 )
 # "all" is a convenience alias that expands to every token above.
 _KEEP_VALID_TOKENS: frozenset[str] = _KEEP_ALL_TOKENS | {"all"}
-
-CUTLASS_FAMILY_DSL_PREFIXES: frozenset[str] = frozenset(
-    {
-        "CUTE_DSL",
-        "CUTE_EXPERIMENTAL_DSL",
-    }
-)
-
-
-def is_cutlass_family_dsl_prefix(prefix: str) -> bool:
-    """Return whether the prefix uses the shared CuTe DSL runtime."""
-    return prefix in CUTLASS_FAMILY_DSL_PREFIXES
 
 
 def _parse_keep_tokens(raw: str, prefix: str = "") -> frozenset[str]:
@@ -109,19 +96,23 @@ def _resolve_keep_tokens(prefix: str) -> frozenset[str]:
     """Artifacts requested by ``[DSL]_KEEP``, with the deprecated switches folded in.
 
     Each superseded switch warns and contributes its token, so the rest of the
-    DSL only ever consults the token set.
+    DSL only ever consults the token set. The warning checks
+    ``[DSL]_WARNINGS_IGNORE`` itself because the environment is parsed before
+    the DSL installs the filter that setting implies.
     """
     raw = get_str_env_var(f"{prefix}_KEEP", "")
     tokens: set[str] = set(_parse_keep_tokens(raw, prefix) if raw else frozenset())
     for switch, token in _DEPRECATED_KEEP_SWITCHES:
         if get_bool_env_var(f"{prefix}_{switch}", False):
-            warnings.warn(
-                f"{prefix}_{switch} is deprecated; use {prefix}_KEEP={token} instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if not get_bool_env_var(f"{prefix}_WARNINGS_IGNORE", False):
+                _warn_deprecated(
+                    f"{prefix}_{switch} is deprecated; "
+                    f"use {prefix}_KEEP={token} instead.",
+                    user_input=True,
+                )
             tokens.add(token)
     return frozenset(tokens)
+
 
 
 
@@ -436,60 +427,6 @@ def detect_gpu_arch(prefix: str) -> str:
     return f"sm_{major}{minor}{suffix}"
 
 
-def find_libs_in_ancestors(
-    start: str | Path, target_libs: set[str], lib_folder_guesses: list[str]
-) -> list[str] | None:
-    """
-    Search ancestor directories for a candidate library folder containing all required libraries.
-
-    Starting from the given path, this function traverses up through each parent directory.
-    For every ancestor, it checks candidate subdirectories (specified by lib_folder_guesses)
-    for files that match the required library extension (CLIB_EXT). Library file names are
-    canonicalized by removing the "lib" prefix from their stem. If a candidate directory contains
-    all of the required libraries (as specified in target_libs), the function returns a list of
-    absolute paths to these library files.
-
-    Parameters:
-        start (str or Path): The starting directory from which to begin the search.
-        target_libs (iterable of str): A collection of required library names (without the "lib" prefix).
-        lib_folder_guesses (iterable of str): Relative paths from an ancestor directory that may contain the libraries.
-
-    Returns:
-        list[str] or None: A list of resolved paths to the required library files if found; otherwise, None.
-    """
-    # Traverse through all parent directories of the resolved starting path.
-    for ancestor in Path(start).resolve().parents:
-        # Iterate over each candidate relative directory path.
-        for rel_path in lib_folder_guesses:
-            target_dir = ancestor / rel_path
-            # Skip if the candidate directory does not exist.
-            if not target_dir.is_dir():
-                continue
-
-            # Initialize a list to hold the resolved paths of matching library files.
-            libs_cand = []
-            # Create a set of the remaining libraries we need to find.
-            remaining_libs = set(target_libs)
-
-            # Iterate over all items in the candidate directory.
-            for p in target_dir.iterdir():
-                # Consider only files with the expected library extension.
-                if p.suffix == CLIB_EXT:
-                    # Canonicalize the library name by removing the "lib" prefix.
-                    lib_name = p.stem.removeprefix("lib")
-                    # If this library is required, add its resolved path and mark it as found.
-                    if lib_name in remaining_libs:
-                        libs_cand.append(str(p.resolve()))
-                        remaining_libs.remove(lib_name)
-
-            # If all required libraries have been found, return the list of library paths.
-            if len(remaining_libs) == 0:
-                return libs_cand
-
-    # Return None if no candidate directory contains all required libraries.
-    return None
-
-
 def _find_cuda_home() -> str | None:
     """Find the CUDA installation path using a series of heuristic methods.
     Methods below are checked in order, and the function returns on first match:
@@ -582,8 +519,9 @@ def _nvdisasm_from_wheel() -> str | None:
         return None
     if dist.files is None:
         return None
+    name = "nvdisasm.exe" if IS_WINDOWS else "nvdisasm"
     for entry in dist.files:
-        if entry.name == "nvdisasm":
+        if entry.name == name:
             binpath = Path(str(dist.locate_file(entry)))
             if binpath.is_file():
                 return str(binpath)
@@ -692,73 +630,6 @@ def dump_sass(
         subprocess.run(tokens, stdout=sys.stderr, check=True)
 
 
-# Cache the result to avoid re-searching the same directory multiple times
-@lru_cache(maxsize=5)
-def _get_libs_cand(start: str | Path) -> str | None:
-    target_dsl_runtime_libs = {
-        "cute_dsl_runtime",
-    }
-    lib_folder_guesses = [
-        "lib",
-    ]
-
-    try:
-        from .version_info import CUDA_VERSION
-
-        major = CUDA_VERSION.major
-        lib_folder_guesses.append(f"cu{major}/lib")
-    except Exception:
-        lib_folder_guesses.extend(["cu12/lib", "cu13/lib"])
-
-    for target_libs in [
-        target_dsl_runtime_libs,
-    ]:
-        libs_cand = find_libs_in_ancestors(start, target_libs, lib_folder_guesses)
-        if libs_cand:
-            # Consumers split this on os.pathsep, which is ";" on
-            # Windows -- ":" would tear the "C:\..." drive letters.
-            dsl_libs = os.pathsep.join(libs_cand)
-            return dsl_libs
-    return None
-
-
-def get_prefix_dsl_libs(prefix: str) -> str | None:
-    """
-    Return ``{prefix}_LIBS`` when set, then the runtime selected for CuTeDSL
-    when ``prefix`` is another CuTe-family DSL, and finally try filesystem
-    discovery. Return ``None`` if no runtime libraries can be found.
-    """
-    # Check if the environment variable is already set, if so, return it immediately.
-    try:
-        prefix_libs_existing = get_str_env_var(f"{prefix}_LIBS")
-        if prefix_libs_existing:
-            return prefix_libs_existing
-
-        # The startup hook selects the CuTeDSL runtime through CUTE_DSL_LIBS.
-        # CuTe-family aliases share that runtime and must not independently
-        # discover a different CTK flavor first.
-        if is_cutlass_family_dsl_prefix(prefix) and prefix != "CUTE_DSL":
-            cute_dsl_libs = os.getenv("CUTE_DSL_LIBS")
-            if cute_dsl_libs:
-                return cute_dsl_libs
-
-        # find from install folder
-        dsl_libs = _get_libs_cand(__file__)
-
-        if not dsl_libs:
-            # try to find from build folder structure
-            dsl_libs = _get_libs_cand(Path(__file__).parent.parent.resolve())
-
-        if dsl_libs:
-            return dsl_libs
-
-        return None
-
-    except Exception as e:
-        log().info("default_env: exception on get_prefix_dsl_libs", e)
-    return None
-
-
 class LogEnvironmentManager(EnvVarSpec):
     jit_time_profiling: bool = env_var(
         "JIT_TIME_PROFILING", affects_compile=False, default=False
@@ -826,7 +697,8 @@ class EnvironmentVarManager(LogEnvironmentManager):
     - [DSL_NAME]_LOG_LEVEL: Logging level to set, for LOG_TO_CONSOLE or LOG_TO_FILE (default: 1).
     - [DSL_NAME]_DRYRUN: Generates IR only (default: False)
     - [DSL_NAME]_ARCH: GPU architecture (default: "sm_100")
-    - [DSL_NAME]_WARNINGS_AS_ERRORS: Enable warnings as error (default: False)
+    - [DSL_NAME]_WARNINGS_AS_ERRORS: Treat Python warnings and ptxas register
+      spills as errors (default: False). Auto-enables warnings{ptx}.
     - [DSL_NAME]_WARNINGS_IGNORE: Ignore warnings (default: False)
     - [DSL_NAME]_ENABLE_OPTIMIZATION_WARNINGS: Enable warnings of optimization warnings (default: False)
     - [DSL_NAME]_JIT_TIME_PROFILING: Whether or not to profile the IR generation/compilation/execution time (default: False)
@@ -845,11 +717,18 @@ class EnvironmentVarManager(LogEnvironmentManager):
         warnings{nvvm}              — show only nvvm-category warnings
         remarks                     — show all remarks
         remarks{nvvm}               — show only nvvm (sync) remarks
-        remarks{ptx}                — show ptxas perf remarks (spills, local mem)
+        remarks{ptx}                — show ptxas perf remarks (local mem)
+        warnings{ptx}               — show ptxas warnings (register spills)
+        remarks{loop}               — show loop-optimization remarks (pipelining, unrolling)
+        warnings{ts}                — show Task Scheduling audit warnings
+        remarks{ts}                 — show Task Scheduling audit remarks
+                                      (unprovable balance, unverified arrivals)
         iket                        — enable IKET (In-Kernel Event Tracing) instrumentation
       Examples:
         CUTE_DSL_COMPILER_OPT="warnings{nvvm}"
+        CUTE_DSL_COMPILER_OPT="warnings{ptx}"
         CUTE_DSL_COMPILER_OPT="remarks{ptx}"
+        CUTE_DSL_WARNINGS_AS_ERRORS=1        # fail compile on ptxas register spills
         CUTE_DSL_COMPILER_OPT="iket"
       The same option strings are accepted by cute.compile(..., options=...).
 
@@ -879,6 +758,9 @@ class EnvironmentVarManager(LogEnvironmentManager):
     )
     enable_pyir: bool = env_var("ENABLE_PYIR", affects_compile=True, default=False)
     auto_m2s: bool = env_var("AUTO_M2S", affects_compile=True, default=False)
+    pyir_verify_scans: bool = env_var(
+        "PYIR_VERIFY_SCANS", affects_compile=False, default=False
+    )
     tolerate_m2m: bool = env_var("TOLERATE_M2M", affects_compile=True, default=True)
     lineinfo: bool = env_var(
         "LINEINFO", affects_compile=True, default=lambda mgr: mgr.debug
@@ -930,10 +812,13 @@ class EnvironmentVarManager(LogEnvironmentManager):
     _arch: str | None = env_var(
         "ARCH", affects_compile=True, default=None, read_as="arch"
     )
-    # Installs a warnings.filterwarnings("error") that turns a warning raised
-    # during compilation into an exception. Keyed because an artifact compiled
-    # while warnings were tolerated may be one that this setting is meant to
-    # reject, and a cache hit skips the compile that would have rejected it.
+    # Installs a warnings.filterwarnings("error") that turns a Python warning
+    # raised during compilation into an exception, and fails compile when
+    # ptxas reports register spills. Auto-enables warnings{ptx} so the spill
+    # check cannot be skipped by omitting that selector. Keyed because an
+    # artifact compiled while warnings were tolerated may be one that this
+    # setting is meant to reject, and a cache hit skips the compile that
+    # would have rejected it.
     warnings_as_errors: bool = env_var(
         "WARNINGS_AS_ERRORS", affects_compile=True, default=False
     )
@@ -949,15 +834,16 @@ class EnvironmentVarManager(LogEnvironmentManager):
     disable_file_caching: bool = env_var(
         "DISABLE_FILE_CACHING", affects_compile=False, default=False
     )
+    mangle_scalar_by_type: bool = env_var(
+        "MANGLE_SCALAR_BY_TYPE", affects_compile=True, default=False
+    )
     compiler_opt: str = env_var("COMPILER_OPT", affects_compile=True, default="")
     compiler_backend: str = env_var(
         "COMPILER_BACKEND", affects_compile=True, default="legacy"
     )
     # MLIR runtime libraries linked by the JIT.
-    shared_libs: str | None = env_var(
-        lambda mgr: get_prefix_dsl_libs(mgr.prefix), affects_compile=True
-    )
-    # Enables asserts in host and device code.
+    shared_libs: str | None = env_var("LIBS", affects_compile=True)
+    # Enables the cutlass.assert_/assume_true runtime checks in host and device code.
     enable_assertions: bool = env_var(
         "ENABLE_ASSERTIONS", affects_compile=True, default=False
     )
@@ -965,7 +851,6 @@ class EnvironmentVarManager(LogEnvironmentManager):
         "ENABLE_TVM_FFI", affects_compile=True, default=False
     )
     loc_tracebacks: int = env_var("LOC_TRACEBACKS", affects_compile=True, default=0)
-
     def __init__(self, prefix: str = "DSL") -> None:
         super().__init__(prefix)
 
@@ -988,6 +873,14 @@ class EnvironmentVarManager(LogEnvironmentManager):
             _find_nvdisasm_binary()
 
     @property
+    def missing_shared_libs_message(self) -> str:
+        """Explain how to configure this DSL's runtime libraries."""
+        return (
+            f"{self.prefix}_LIBS environment variable is not set. Set "
+            f"{self.prefix}_LIBS explicitly for this DSL runtime."
+        )
+
+    @property
     def arch(self) -> str:
         """GPU architecture, from ``{prefix}_ARCH`` or detected on first access.
 
@@ -1008,3 +901,21 @@ class EnvironmentVarManager(LogEnvironmentManager):
         """Reset to the construction-time state (``{prefix}_ARCH`` or lazy
         detection), so ``mock.patch.object`` teardown restores the default."""
         self._arch = get_str_env_var(f"{self.prefix}_ARCH")
+
+
+# These variables are read by computed settings or directly in ``__init__``, so
+# their suffixes are not discoverable from string-backed ``EnvVar`` entries.
+_COMPUTED_PREFIX_ENV_VAR_SUFFIXES: frozenset[str] = frozenset(
+    {"KEEP", "LIBS"}
+) | frozenset(switch for switch, _ in _DEPRECATED_KEEP_SWITCHES)
+
+@cache
+def _prefixed_env_var_suffixes() -> tuple[str, ...]:
+    """Return suffixes read under an ``EnvironmentVarManager`` prefix."""
+    suffixes = {
+        entry.source
+        for entry in EnvironmentVarManager._ENV_VAR_SPEC
+        if isinstance(entry.source, str)
+    }
+    suffixes.update(_COMPUTED_PREFIX_ENV_VAR_SUFFIXES)
+    return tuple(sorted(suffixes))

@@ -43,6 +43,23 @@ from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.torch as cutlass_torch
+from pathlib import Path
+
+import sys
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import PersistentTileSchedulerParams
+from helpers.grouped_gemm_persistent_tile_scheduler import (
+    GroupSearchResult,
+    StaticPersistentGroupTileScheduler,
+    create_initial_search_state,
+)
 
 
 """
@@ -522,7 +539,7 @@ class GroupedGemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         group_count: cutlass.Constexpr[int],
         problem_sizes_mnkl: cute.Tensor,
         strides_abc: cute.Tensor,
@@ -812,12 +829,12 @@ class GroupedGemmKernel:
                 pipeline.PipelineUserType.Consumer, self.num_sched_stage
             )
             # Create tile scheduler
-            tile_sched = utils.StaticPersistentGroupTileScheduler.create(
+            tile_sched = StaticPersistentGroupTileScheduler.create(
                 tile_sched_params,
                 bid,
                 grid_dim,
                 self.cluster_tile_shape_mnk,
-                utils.create_initial_search_state(),
+                create_initial_search_state(),
                 group_count,
                 problem_sizes_mnkl,
                 use_cached_problem_shapes=self.use_cached_problem_shapes,
@@ -994,7 +1011,7 @@ class GroupedGemmKernel:
                 tile_info_consumer_state.advance()
 
                 is_valid_tile = work_tile_info[0] == 1
-                group_search_result = utils.GroupSearchResult(
+                group_search_result = GroupSearchResult(
                     work_tile_info[1],
                     work_tile_info[2],
                     work_tile_info[3],
@@ -1016,12 +1033,12 @@ class GroupedGemmKernel:
             # Persistent tile scheduling loop
             #
             # Create tile scheduler
-            tile_sched = utils.StaticPersistentGroupTileScheduler.create(
+            tile_sched = StaticPersistentGroupTileScheduler.create(
                 tile_sched_params,
                 bid,
                 grid_dim,
                 self.cluster_tile_shape_mnk,
-                utils.create_initial_search_state(),
+                create_initial_search_state(),
                 group_count,
                 problem_sizes_mnkl,
                 use_cached_problem_shapes=self.use_cached_problem_shapes,
@@ -1085,12 +1102,12 @@ class GroupedGemmKernel:
             # Persistent tile scheduling loop
             #
             # Create tile scheduler
-            tile_sched = utils.StaticPersistentGroupTileScheduler.create(
+            tile_sched = StaticPersistentGroupTileScheduler.create(
                 tile_sched_params,
                 bid,
                 grid_dim,
                 self.cluster_tile_shape_mnk,
-                utils.create_initial_search_state(),
+                create_initial_search_state(),
                 group_count,
                 problem_sizes_mnkl,
                 use_cached_problem_shapes=self.use_cached_problem_shapes,
@@ -1186,7 +1203,7 @@ class GroupedGemmKernel:
                 tile_info_consumer_state.advance()
 
                 is_valid_tile = work_tile_info[0] == 1
-                group_search_result = utils.GroupSearchResult(
+                group_search_result = GroupSearchResult(
                     work_tile_info[1],
                     work_tile_info[2],
                     work_tile_info[3],
@@ -1213,12 +1230,12 @@ class GroupedGemmKernel:
             # Persistent tile scheduling loop
             #
             # Create tile scheduler
-            tile_sched = utils.StaticPersistentGroupTileScheduler.create(
+            tile_sched = StaticPersistentGroupTileScheduler.create(
                 tile_sched_params,
                 bid,
                 grid_dim,
                 self.cluster_tile_shape_mnk,
-                utils.create_initial_search_state(),
+                create_initial_search_state(),
                 group_count,
                 problem_sizes_mnkl,
                 use_cached_problem_shapes=self.use_cached_problem_shapes,
@@ -1444,7 +1461,7 @@ class GroupedGemmKernel:
                 tile_info_consumer_state.advance()
 
                 is_valid_tile = work_tile_info[0] == 1
-                group_search_result = utils.GroupSearchResult(
+                group_search_result = GroupSearchResult(
                     work_tile_info[1],
                     work_tile_info[2],
                     work_tile_info[3],
@@ -1778,7 +1795,7 @@ class GroupedGemmKernel:
         total_num_clusters: int,
         cluster_shape_mn: tuple[int, int],
         max_active_clusters: cutlass.Constexpr[int],
-    ) -> tuple[utils.PersistentTileSchedulerParams, tuple[int, int, int]]:
+    ) -> tuple[PersistentTileSchedulerParams, tuple[int, int, int]]:
         """Compute tile scheduler parameters and grid shape for grouped GEMM operations.
 
         :param total_num_clusters: Total number of clusters to process across all groups.
@@ -1791,7 +1808,7 @@ class GroupedGemmKernel:
         :return: A tuple containing:
             - tile_sched_params: Parameters for the persistent tile scheduler.
             - grid: Grid shape for kernel launch.
-        :rtype: tuple[utils.PersistentTileSchedulerParams, tuple[int, ...]]
+        :rtype: tuple[PersistentTileSchedulerParams, tuple[int, ...]]
         """
         # Create problem shape with M, N dimensions from cluster shape
         # and L dimension representing the total number of clusters.
@@ -1801,11 +1818,11 @@ class GroupedGemmKernel:
             cutlass.Int32(total_num_clusters),
         )
 
-        tile_sched_params = utils.PersistentTileSchedulerParams(
+        tile_sched_params = PersistentTileSchedulerParams(
             problem_shape_ntile_mnl, (*cluster_shape_mn, 1)
         )
 
-        grid = utils.StaticPersistentGroupTileScheduler.get_grid_shape(
+        grid = StaticPersistentGroupTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters
         )
 
@@ -1919,22 +1936,22 @@ def create_tensor_and_stride(
     """
     if torch_tensor_cpu is None:
         if init_normal:
-            # Create CPU tensor with normal distribution initialization
+            # Generate on device: both the kernel and the reference read these
+            # values, so a host round trip buys nothing.
             torch_dtype = cutlass_torch.dtype(dtype)
             if is_mode0_major:
                 torch_tensor_cpu = torch.empty(
-                    (l, mode1, mode0), dtype=torch.float32
+                    (l, mode1, mode0), dtype=torch.float32, device=torch.device("cuda")
                 ).permute(2, 1, 0)
             else:
                 torch_tensor_cpu = torch.empty(
-                    (l, mode0, mode1), dtype=torch.float32
+                    (l, mode0, mode1), dtype=torch.float32, device=torch.device("cuda")
                 ).permute(1, 2, 0)
             torch_tensor_cpu.normal_(mean=normal_mean, std=normal_std)
             torch_tensor_cpu = torch_tensor_cpu.to(dtype=torch_dtype)
         else:
-            # Create new CPU tensor with default random initialization
             torch_tensor_cpu = cutlass_torch.matrix(
-                l, mode0, mode1, is_mode0_major, dtype
+                l, mode0, mode1, is_mode0_major, dtype, device=torch.device("cuda")
             )
 
     # Create GPU tensor from CPU tensor (new or existing)
@@ -2098,12 +2115,16 @@ def run(
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
+    *,
+    benchmark: str = "default",
     **kwargs,
 ):
     """Run grouped GEMM example with specified configurations.
 
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
     :type use_cold_l2: bool, optional
+    :param benchmark: Benchmark mode: "default", "cupti", or "none" to skip timing
+    :type benchmark: str
     :param use_cached_problem_shapes: Enable double-buffered caching of problem
         shapes for better performance with many small groups, defaults to True.
     :type use_cached_problem_shapes: bool, optional
@@ -2118,6 +2139,9 @@ def run(
     :return: Execution time of the GEMM kernel in microseconds
     :rtype: float
     """
+    if benchmark not in ("default", "cupti", "none"):
+        raise ValueError(f"Unsupported benchmark mode: {benchmark}")
+
     print("Running Blackwell Grouped GEMM test with:")
     print(f"{num_groups} groups")
     for i, (m, n, k, l) in enumerate(problem_sizes_mnkl):
@@ -2351,18 +2375,23 @@ def run(
 
         # Compute reference result
         for i, (a, b, c) in enumerate(torch_tensors_abc):
+            # a/b/c are already device-resident; keep the reference einsum and
+            # the comparison on the GPU (fp16/bf16 -> native torch matmul).
             ref = torch.einsum(
                 "mkl,nkl->mnl",
-                a.cpu().to(dtype=torch.float32),
-                b.cpu().to(dtype=torch.float32),
+                a.to(dtype=torch.float32),
+                b.to(dtype=torch.float32),
             )
             print(f"checking group {i}")
             torch.testing.assert_close(
-                c.cpu(),
+                c,
                 ref.to(cutlass_torch.dtype(c_dtype)),
                 atol=tolerance,
                 rtol=1e-05,
             )
+
+    if benchmark == "none":
+        return 0
 
     if iterations <= 0:
         return 0
@@ -2471,6 +2500,7 @@ def run(
         stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     runtime_s = exec_time / 1.0e6
@@ -2600,6 +2630,13 @@ if __name__ == "__main__":
         help="Use circular buffer tensor sets to ensure L2 cold cache",
     )
     parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["cupti", "default", "none"],
+        help="Benchmark the kernel with cupti or default (cutlass.testing.benchmark) or none",
+    )
+    parser.add_argument(
         "--no_use_cached_problem_shapes",
         action="store_true",
         default=False,
@@ -2662,5 +2699,6 @@ if __name__ == "__main__":
         args.init_normal,
         args.normal_mean,
         args.normal_std,
+        benchmark=args.benchmark,
     )
     print("PASS")

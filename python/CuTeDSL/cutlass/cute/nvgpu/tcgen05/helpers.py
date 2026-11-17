@@ -18,6 +18,7 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects import nvvm, builtin
 
 from ...typing import (
+    AddressSpace,
     Pointer,
     Shape,
     IntTuple,
@@ -270,7 +271,7 @@ def commit(
     Perform an arrive operation on a mbarrier upon completion of previous MMA operations.
 
     **Single-Thread Execution Required - DSL Does NOT Handle Automatically**: This operation
-    **must** be wrapped in :func:`cute.arch.elect_one`. Without ``elect_one()``, all 32
+    **must** be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`. Without ``elect_one()``, all 32
     threads in the warp will execute the commit, causing 32x redundant ``tcgen05.commit`` PTX instructions.
 
     .. code-block:: python
@@ -290,8 +291,8 @@ def commit(
     :type cta_group: CtaGroup
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **REQUIRED** wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_arrive` - General barrier arrive operation
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **REQUIRED** wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_arrive <cutlass.cute.arch.mbarrier_arrive>` - General barrier arrive operation
     """
     if cta_group == CtaGroup.ONE:
         group = nvvm.CTAGroupKind.CTA_1
@@ -621,3 +622,72 @@ def make_umma_smem_desc(
     )
 
 
+
+@dsl_user_op
+def print_tmem_tensor(
+    tensor: Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Print a TMEM tensor element by element with its coordinates.
+
+    tcgen05.ld is warp-collective and a warp only reaches its own 32 TMEM lanes,
+    so all 128 threads of the warpgroup owning the tensor must call this. Output
+    is one line per element; very large tensors can exceed the device printf FIFO.
+    """
+    from cutlass.cutlass_dsl import for_generate, if_generate, yield_out
+
+    from ... import arch
+    from ...algorithm import copy
+    from ...atom import make_copy_atom
+    from ...core import printf
+    from ...tensor import make_fragment_like, make_identity_tensor
+    from .copy import Repetition
+
+    ptr = tensor.iterator
+    if not isinstance(ptr, Pointer) or ptr.memspace != AddressSpace.tmem:
+        raise ValueError(f"print_tmem_tensor expects a TMEM tensor, got {tensor}")
+
+    dtype = tensor.element_type
+    if dtype.width != 32:
+        raise ValueError(
+            f"print_tmem_tensor expects a 32-bit element type, got {dtype}; "
+            "recast_tensor to Int32/Float32 first"
+        )
+
+    tidx = arch.thread_idx(loc=loc, ip=ip)[0] % 128
+    atom = make_copy_atom(Ld32x32bOp(Repetition.x1), dtype, loc=loc, ip=ip)
+    tiled_copy = make_tmem_copy(atom, tensor, loc=loc, ip=ip)
+    thr_copy = tiled_copy.get_slice(tidx)
+    src = thr_copy.partition_S(tensor)
+    crd = thr_copy.partition_D(make_identity_tensor(tensor.shape, loc=loc, ip=ip))
+    frag = make_fragment_like(crd, dtype, loc=loc, ip=ip)
+    copy(tiled_copy, src, frag, loc=loc, ip=ip)
+    arch.fence_view_async_tmem_load(loc=loc, ip=ip)
+
+    addr = Int32(ptr.toint(loc=loc, ip=ip))
+    if_generate(
+        tidx == 0,
+        lambda: printf(
+            "tensor(tmem_ptr(lane {}, col {}) o {}, data= (",
+            addr >> 16,
+            addr & 0xFFFF,
+            tensor.layout,
+            loc=loc,
+            ip=ip,
+        ),
+        loc=loc,
+        ip=ip,
+    )
+
+    def print_fragment() -> None:
+        for k in range(core.size(frag)):
+            printf("\t{}= {}", crd[k], frag[k], loc=loc, ip=ip)
+
+    # Lanes take turns so each thread's elements stay together; warps still interleave.
+    lane = arch.lane_idx(loc=loc, ip=ip)
+    for i in for_generate(0, 32, loc=loc, ip=ip):
+        if_generate(lane == i, print_fragment, loc=loc, ip=ip)
+        arch.sync_warp(loc=loc, ip=ip)
+        yield_out()

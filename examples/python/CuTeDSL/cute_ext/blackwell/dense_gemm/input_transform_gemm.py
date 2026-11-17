@@ -83,7 +83,7 @@ class InputTransformSSAOnlyGemmKernel:
         self.input_transform = input_transform
         self.epilogue_op = epilogue_op
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         tile_mn = cute.core._pack_shape((*self.mn_tiler, 1))
         div = cute.tiled_divide(mD, tile_mn)
@@ -92,10 +92,9 @@ class InputTransformSSAOnlyGemmKernel:
             grid=grid,
             block=(384, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         ab_dtype, acc_dtype = self.ab_dtype, self.acc_dtype
         c_dtype = mD.element_type
@@ -217,20 +216,20 @@ class InputTransformSSAOnlyGemmKernel:
         pA = cute_ext.TMAToAsyncPipeline.create(
             num_stages=2,
             consumer=cute_ext.OperationTypeEnum.LD_SHARED,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pB = cute_ext.TMAToUMMAPipeline.create(num_stages=1, mma_operation_type=mma_op)
         pT = cute_ext.AsyncToUMMAPipeline.create(
             num_stages=1,
             producer=cute_ext.OperationTypeEnum.ST_SHARED,
-            producer_arv_count=128,
+            producer_commit_threads_per_cta=128,
             mma_operation_type=mma_op,
         )
         pM = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=2,
             mma_operation_type=mma_op,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pS = cute_ext.TMAStorePipeline(
             stages=ACCUM2STORE_STAGE, arv_count=128, barrier_id=1, tma_warp_id=0
@@ -249,6 +248,7 @@ class InputTransformSSAOnlyGemmKernel:
                     cute_ext.get_mbarrier(tok),
                 )
                 pA.producer_commit_and_advance()
+            pA.producer_tail()
 
         if warp == 6:
             for k in cutlass.range(0, K, 1, unroll=1):
@@ -259,6 +259,7 @@ class InputTransformSSAOnlyGemmKernel:
                     cute_ext.get_mbarrier(tok),
                 )
                 pB.producer_commit_and_advance()
+            pB.producer_tail()
 
         if (warp >= 8) & (warp < 12):
             for k in cutlass.range(0, K, 1, unroll=1):
@@ -341,7 +342,7 @@ class InputTransformTSAOnlyGemmKernel:
         self.input_transform = input_transform
         self.epilogue_op = epilogue_op
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         tile_mn = cute.core._pack_shape((*self.mn_tiler, 1))
         div = cute.tiled_divide(mD, tile_mn)
@@ -350,10 +351,9 @@ class InputTransformTSAOnlyGemmKernel:
             grid=grid,
             block=(384, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         ab_dtype, acc_dtype = self.ab_dtype, self.acc_dtype
         c_dtype = mD.element_type
@@ -476,20 +476,20 @@ class InputTransformTSAOnlyGemmKernel:
         pA = cute_ext.TMAToAsyncPipeline.create(
             num_stages=1,
             consumer=cute_ext.OperationTypeEnum.LD_SHARED,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pB = cute_ext.TMAToUMMAPipeline.create(num_stages=1, mma_operation_type=mma_op)
         pT = cute_ext.AsyncToUMMAPipeline.create(
             num_stages=2,
             producer=cute_ext.OperationTypeEnum.SM100_COPY_R2T,
-            producer_arv_count=128,
+            producer_commit_threads_per_cta=128,
             mma_operation_type=mma_op,
         )
         pM = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=3,
             mma_operation_type=mma_op,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pS = cute_ext.TMAStorePipeline(
             stages=ACCUM2STORE_STAGE, arv_count=128, barrier_id=1, tma_warp_id=0
@@ -508,6 +508,7 @@ class InputTransformTSAOnlyGemmKernel:
                     cute_ext.get_mbarrier(tok),
                 )
                 pA.producer_commit_and_advance()
+            pA.producer_tail()
 
         if warp == 6:
             for k in cutlass.range(0, K, 1, unroll=1):
@@ -518,6 +519,7 @@ class InputTransformTSAOnlyGemmKernel:
                     cute_ext.get_mbarrier(tok),
                 )
                 pB.producer_commit_and_advance()
+            pB.producer_tail()
 
         if (warp >= 8) & (warp < 12):
             for k in cutlass.range(0, K, 1, unroll=1):
@@ -600,7 +602,7 @@ class InputTransformSSGemmKernel:
         self.input_transform = input_transform
         self.epilogue_op = epilogue_op
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         tile_mn = cute.core._pack_shape((*self.mn_tiler, 1))
         div = cute.tiled_divide(mD, tile_mn)
@@ -609,10 +611,9 @@ class InputTransformSSGemmKernel:
             grid=grid,
             block=(384, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         ab_dtype, acc_dtype = self.ab_dtype, self.acc_dtype
         c_dtype = mD.element_type
@@ -764,19 +765,19 @@ class InputTransformSSGemmKernel:
         pL = cute_ext.TMAToAsyncPipeline.create(
             num_stages=load2transform_stage,
             consumer=cute_ext.OperationTypeEnum.LD_SHARED,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pT = cute_ext.AsyncToUMMAPipeline.create(
             num_stages=transform2mma_stage,
             producer=cute_ext.OperationTypeEnum.ST_SHARED,
-            producer_arv_count=128,
+            producer_commit_threads_per_cta=128,
             mma_operation_type=mma_op,
         )
         pM = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=mma2accum_stage,
             mma_operation_type=mma_op,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pS = cute_ext.TMAStorePipeline(
             stages=ACCUM2STORE_STAGE, arv_count=128, barrier_id=1, tma_warp_id=0
@@ -802,6 +803,7 @@ class InputTransformSSGemmKernel:
                     mbar,
                 )
                 pL.producer_commit_and_advance()
+            pL.producer_tail()
 
         # Transform warps: transform both A and B
         if (warp >= 8) & (warp < 12):
@@ -901,7 +903,7 @@ class InputTransformTSGemmKernel:
         self.input_transform = input_transform
         self.epilogue_op = epilogue_op
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         tile_mn = cute.core._pack_shape((*self.mn_tiler, 1))
         div = cute.tiled_divide(mD, tile_mn)
@@ -910,10 +912,9 @@ class InputTransformTSGemmKernel:
             grid=grid,
             block=(384, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         ab_dtype, acc_dtype = self.ab_dtype, self.acc_dtype
         c_dtype = mD.element_type
@@ -1064,7 +1065,7 @@ class InputTransformTSGemmKernel:
         pL = cute_ext.TMAToAsyncPipeline.create(
             num_stages=load2transform_stage,
             consumer=cute_ext.OperationTypeEnum.LD_SHARED,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         # Transform warps stage A into TMEM (via SM100_COPY_R2T into tAC)
         # *and* B into SMEM (into sBC) under a single producer-commit.
@@ -1077,14 +1078,14 @@ class InputTransformTSGemmKernel:
                 cute_ext.OperationTypeEnum.ST_SHARED,
                 cute_ext.OperationTypeEnum.SM100_COPY_R2T,
             ],
-            producer_arv_count=128,
+            producer_commit_threads_per_cta=128,
             mma_operation_type=mma_op,
         )
         pM = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=mma2accum_stage,
             mma_operation_type=mma_op,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         pS = cute_ext.TMAStorePipeline(
             stages=ACCUM2STORE_STAGE, arv_count=128, barrier_id=1, tma_warp_id=0
@@ -1110,6 +1111,7 @@ class InputTransformTSGemmKernel:
                     mbar,
                 )
                 pL.producer_commit_and_advance()
+            pL.producer_tail()
 
         # Transform warps: transform both A and B
         if (warp >= 8) & (warp < 12):
@@ -1298,7 +1300,7 @@ def run(
         mma_dtype=(ab_dtype, acc_dtype),
     )
 
-    compiled_kernel = cute_ext.compile(kernel, a_tensor, b_tensor, c_tensor)
+    compiled_kernel = cute.compile(kernel, a_tensor, b_tensor, c_tensor)
     compiled_kernel.engine.initialize()
     compiled_kernel(a_tensor, b_tensor, c_tensor)
 

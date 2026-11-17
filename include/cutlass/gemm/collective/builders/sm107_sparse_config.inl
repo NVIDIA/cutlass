@@ -89,8 +89,8 @@ struct Sm107GemmSparseConfig {
                              Stride<_128, _1>>;
 
   // Logical elems that construct the atomK for tensorE/A.  
-  using TensorEAtomK = Int<size<1>(TensorEAtom{})>;
-  using TensorEAtomM = Int<size<0>(TensorEAtom{})>;
+  using TensorEAtomK = decltype(size<1>(TensorEAtom{}));
+  using TensorEAtomM = decltype(size<0>(TensorEAtom{}));
 
   using TensorEAlignmentM = TensorEAtomM;
   using TensorEAlignmentK = TensorEAtomK;
@@ -161,7 +161,7 @@ struct Sm107GemmSparseConfig {
       make_shape(make_shape(shape<0>(TensorEAtom{}), int32_t(M_AlignedE / TensorEAlignmentM{})),
                  make_shape(shape<1>(TensorEAtom{}), int32_t(K_AlignedE / TensorEAlignmentK{})),
                  int32_t(L)),
-      make_stride(make_stride(stride<0>(TensorEAtom{}), cute::Int<cute::cosize(TensorEAtom{})>{}),
+      make_stride(make_stride(stride<0>(TensorEAtom{}), cute::cosize(TensorEAtom{})),
                   make_stride(stride<1>(TensorEAtom{}), int64_t(M_AlignedE * TensorEAlignmentK{})),
                   (L == 1) ? int64_t(0) : int64_t(M_AlignedE * K_AlignedE))
     );

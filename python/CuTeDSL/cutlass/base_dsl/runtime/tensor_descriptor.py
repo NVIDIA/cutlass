@@ -32,6 +32,7 @@ from ..utils.logger import log
 from ..common import *
 from ..typing import (
     Boolean,
+    Float8E4M3FN,
     Float8E5M2,
     Int64,
     Int32,
@@ -119,6 +120,7 @@ class TensorDescriptor:
             "Float32": Float32,
             "Float16": Float16,
             "BFloat16": BFloat16,
+            "Float8E4M3FN": Float8E4M3FN,
             "Float8E5M2": Float8E5M2,
         }
 

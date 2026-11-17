@@ -16,10 +16,17 @@ import array as _array_module
 import collections as _collections_module
 import dis as _dis_module
 import inspect as _inspect_module
+import weakref
 
 from . import pyir_class_facts as _pyir_class_facts
 from .pyir_state import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
 from .pyir_core import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
+from .pyir_core import (  # names kept out of the wildcard chain
+    _pyir_arm_path_covers,
+    _pyir_current_region_arm_path,
+    _pyir_holder_read,
+    _pyir_innermost_enclosing_region_op_at_ip,
+)
 from .pyir_corewalk import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
 from .pyir_loop_carry import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
 from .pyir_state import _Sentinel
@@ -135,6 +142,225 @@ def _decompose_tuple(
     # Preserve a namedtuple's subtype: ``tuple(result)`` would strip field names,
     # breaking later ``obj.field`` reads. Use the new tuple as the template.
     return _rebuild_tuple_like(new_tuple, result)
+
+
+def _pyir_regions_since_binding(slot: Any) -> "tuple[int, ...]":
+    """Entry tokens of the open staged regions entered AFTER the place *slot*
+    was last bound to a compound object, outermost first.  A place the choke
+    never saw bound (a parameter) counts as bound when its function scope
+    started; an unseen owner slot counts as bound before every open region."""
+    bound_in = _PYIR_SLOT_BIND_REGIONS.get(slot)
+    if bound_in is None:
+        bound_in = ()
+        if isinstance(slot, tuple) and slot and slot[0] == "local":
+            bound_in = _PYIR_SCOPE_REGION_BASE.get(slot[1], ())
+    return tuple(tok for tok in _pyir_open_region_tokens() if tok not in bound_in)
+
+
+def _pyir_identity_repoint_obstacle(
+    slot: Any,
+    target_name: Any,
+    owner: Any,
+    slot_name: Any,
+    old_value: Any,
+    new_value: Any,
+) -> "tuple[str, str] | None":
+    """Why a re-point of the place *slot* from *old_value* to *new_value* (an
+    object that pre-exists the innermost open staged region) is NOT a
+    trace-time static identity, as ``(detail, hint)`` for the refusal, or
+    ``None`` when it is static.
+
+    Static means: the place is a bare local that no other code can read (not
+    an attribute or container entry, not a parameter, not a name a nested
+    scope refers to); every region entered since the place's binding is a
+    staged loop body that provably runs at least once, in which the place is
+    dead on entry (``_collect_dead_on_entry_paths``), that *new_value*
+    already existed at, and in which *old_value* was not rebuilt by a
+    body-born rebind; and *new_value* has *old_value*'s class."""
+    name = str(target_name)
+    if owner is not None or slot_name is not None:
+        return (
+            f"`{name}` is an attribute or container entry that other holders of"
+            " the object can read",
+            "Re-point a plain local to the object instead, and use that local.",
+        )
+    between = _pyir_regions_since_binding(slot)
+    loops = {facts["entry"]: facts for facts in _pyir_open_loop_body_facts}
+    if any(tok not in loops for tok in between):
+        # Loop-free too: the region close would thread the chosen object's
+        # values into the entry object, which other bindings still see.
+        return (
+            "inside a run-time if",
+            f"Re-point `{name}` before the `if`, or choose values, not objects "
+            "(`a.idx if cond else b.idx`).",
+        )
+    for tok in between:
+        facts = loops[tok]
+        if not facts["guaranteed_trip"]:
+            return (
+                f"the enclosing {facts['kind']} may run zero times",
+                "Make the loop run at least once at trace time: a constant trip "
+                "count, or `range(..., at_least_once=True)`.",
+            )
+    for tok in between:
+        verdict = loops[tok]["dead_on_entry"].get(name, "read")
+        if verdict == "captured":
+            return (
+                f"`{name}` is a parameter or a name a nested function, lambda or"
+                " comprehension refers to",
+                "Re-point a fresh local instead (`cur = other`).",
+            )
+        if verdict == "swap":
+            return (
+                "a swap",
+                "Swap through fresh copies (`a, b = b.clone(), a.clone()`), or swap "
+                "the fields.",
+            )
+        if verdict == "read":
+            return (
+                f"`{name}` is read earlier in the same body",
+                f"Make the re-point the first use of `{name}` in the loop body, or "
+                "re-point before the loop.",
+            )
+        if verdict != "dead":
+            where = verdict.partition(":")[2]
+            return (
+                f"`{name}` is first stored inside {where}, which may not run on"
+                " every pass",
+                "Make the re-point an unconditional statement of the loop body, "
+                f"or re-point `{name}` before the loop.",
+            )
+    if between and _pyir_region_recarried(old_value):
+        return (
+            f"`{name}` was rebound to a new object earlier in this body",
+            "Build the new object under another name.",
+        )
+    if between and not _pyir_holder_preexists_region(new_value, between[0]):
+        return (
+            f"the object `{name}` is re-pointed to was created inside an enclosing"
+            " loop body",
+            "Re-point to an object created before the outermost loop.",
+        )
+    if type(new_value) is not type(old_value):
+        return (
+            f"`{name}` is re-pointed to an object of a different class "
+            f"(`{type(old_value).__name__}` to `{type(new_value).__name__}`)",
+            "Keep one class per name: bind the other object to a new name.",
+        )
+    return None
+
+
+def _pyir_select_join_owns_rebind(old_value: Any, new_value: Any) -> bool:
+    """Whether the whole-object branch-select join of ``_assign_m2m_compound``
+    owns this rebind: a loop-free run-time ``if`` selecting between two
+    value-tree objects whose compile-time fields differ.  The join rebuilds
+    the binding from the entry prototype at the ``if`` close, as the pytree
+    frontend does, and writes into neither object, so it is not a re-point
+    of the name.  Mirrors that arm's gate."""
+    return (
+        _implements_dynamic_expression(old_value)
+        and _innermost_enclosing_loop_op_at_ip() is None
+        and bool(_loop_free_enclosing_if_ops_at_ip())
+        and _value_tree_prototype_mismatch(old_value, new_value) is not None
+    )
+
+
+def _pyir_judge_identity_repoint(
+    target_name: Any,
+    owner: Any,
+    slot_name: Any,
+    old_value: Any,
+    new_value: Any,
+    filename: "str | None",
+    lineno: "int | None",
+    stmt_id: "int | None",
+) -> bool:
+    """Classify a whole-object rebind of a compound place inside staged
+    control flow; True when it is an ADMITTED identity re-point.
+
+    A replacement constructed inside the open region (the advance pattern,
+    ``clone()``, a ctor) is not judged here: its fields are carried into the
+    place's own object as before (False).  A replacement that pre-exists the
+    region is a Python re-point of the name: admitted (the caller binds the
+    replacement itself, no field copy) when the post-region identity is
+    trace-time static (see :func:`_pyir_identity_repoint_obstacle`), else
+    refused, as are a swap within one unpack statement and a run-time
+    ``x if cond else y`` selection between pre-existing objects."""
+    if (
+        old_value is None
+        or new_value is old_value
+        or not is_inside_staged_cf()
+        or not _pyir_open_region_tokens()
+        or isinstance(new_value, (list, tuple, dict, set, frozenset))
+        or not _pyir_is_generation_compound(old_value)
+        or not _pyir_is_generation_compound(new_value)
+        or not (
+            _has_any_staged_content(old_value) or _has_any_staged_content(new_value)
+        )
+    ):
+        return False
+    refusal: "tuple[str, str] | None" = None
+    rebind_cls: "type" = type(new_value)
+    selection_cls = (
+        _pyir_selection_rebind_candidates(new_value, old_value)
+        if _PYIR_STAGED_SELECTION_ARMS
+        else None
+    )
+    admitted = False
+    if stmt_id is not None and _pyir_stmt_rebind_overwrote(new_value, stmt_id):
+        refusal = (
+            "a swap",
+            "Swap through fresh copies (`a, b = b.clone(), a.clone()`), or swap "
+            "the fields.",
+        )
+    elif selection_cls is not None:
+        refusal = (
+            "a run-time selection",
+            "Choose values, not objects (`a.idx if cond else b.idx`), or choose "
+            "at trace time with `cutlass.const_expr(cond)`.",
+        )
+        rebind_cls = selection_cls
+    elif _pyir_select_join_owns_rebind(old_value, new_value):
+        pass
+    elif _pyir_holder_preexists_open_region(new_value):
+        slot = _make_slot_key(target_name, owner, slot_name)
+        refusal = _pyir_identity_repoint_obstacle(
+            slot, target_name, owner, slot_name, old_value, new_value
+        )
+        admitted = refusal is None
+    elif _PYIR_SLOT_REPOINTED:
+        # A body-born replacement is carried by copying its fields into the
+        # object the place names; after an identity re-point that object is
+        # a pre-existing one other bindings see, and Python leaves it alone.
+        slot = _make_slot_key(target_name, owner, slot_name)
+        if slot is not None and _PYIR_SLOT_REPOINTED.get(slot) is old_value:
+            refusal = (
+                f"`{target_name}` names a pre-existing `{type(old_value).__name__}`"
+                " it was re-pointed to, and a new object built in staged control"
+                " flow can only replace a name's own object",
+                "Build the new object under another name, or bind a copy "
+                f"(`{target_name} = other.clone()`) instead of re-pointing.",
+            )
+    if refusal is not None:
+        raise DSLUserCodeError(
+            DiagId.SCOPE_REBIND_IDENTITY_RUNTIME_DEPENDENT,
+            filename=filename,
+            lineno=lineno,
+            var=str(target_name),
+            cls=rebind_cls.__name__,
+            detail=refusal[0],
+            hint=refusal[1],
+        )
+    if stmt_id is not None:
+        _pyir_stmt_rebind_note(old_value, stmt_id)
+    if admitted:
+        log().info(
+            "[pyir_assign] '%s' re-pointed to a pre-existing %s -> identity "
+            "re-point (no field copy)",
+            target_name,
+            type(new_value).__name__,
+        )
+    return admitted
 
 
 def _unalias_tuple_leaves(value: tuple) -> tuple:
@@ -419,7 +645,7 @@ def _pyir_check_no_complex_m2m_call(
     mutating_values: "list | None" = None,
 ) -> None:
     """Reject in-place mutation of a meta ``list`` / ``dict`` / ``set`` /
-    ``collections.deque`` while inside staged control flow.
+    ``collections.deque`` / ``bytearray`` while inside staged control flow.
 
     The body of a staged loop / ``scf.if`` is traced exactly once, so a
     ``a.append(x)`` (or any other mutating method) would silently bake
@@ -469,6 +695,10 @@ def _pyir_check_no_complex_m2m_call(
         if method_name not in _PYIR_DEQUE_MUTATORS:
             return
         kind = "deque"
+    elif isinstance(container, bytearray):
+        if method_name not in _PYIR_BYTEARRAY_MUTATORS:
+            return
+        kind = "bytearray"
     else:
         return
     raise DSLUserCodeError(
@@ -514,11 +744,31 @@ def pyir_promote_loop_body_arg(
     bare_first_use: bool = False,
     carried_attr_paths: "tuple[tuple[str, ...], ...]" = (),
     whole_rebound: bool = False,
+    condition_bound: bool = False,
 ) -> object:
     """Materialise a loop-carried write_arg's ref at body entry so body reads
-    load the carry, not the pre-loop SSA; ``bare_first_use`` = plain-use first read."""
+    load the carry, not the pre-loop SSA; ``bare_first_use`` = plain-use first
+    read; ``condition_bound`` = a ``while``-condition walrus target with no
+    binding before the loop (its placeholder is ``None``)."""
     if not is_inside_staged_cf():
         return current_value
+    if condition_bound:
+        # The condition's first-def choke minted the name's row inside the
+        # before region (placeholder init at function entry, seed store at
+        # the binding), so the body binds the name to a load of that row --
+        # the value the condition just bound, as in Python.  No row means the
+        # condition bound a value kind the first-def choke does not carry;
+        # refuse with the pre-binding fix rather than serve the placeholder.
+        mv = _pyir_condition_bound_row(target_name)
+        if mv is None:
+            src_file, src_line = _first_non_dsl_caller_location()
+            raise DSLUserCodeError(
+                DiagId.SCOPE_WALRUS_IN_WHILE_CONDITION,
+                filename=src_file,
+                lineno=src_line,
+                name=target_name,
+            )
+        return _pyir_live_row_handle(target_name, mv, "condition-bound")
     # ``scf.while`` after-block re-load of the declared carried attr legs: the
     # before-block SSA the condition promotion rebound does not dominate here.
     if (
@@ -541,6 +791,7 @@ def pyir_promote_loop_body_arg(
                 )
                 for i, elem in enumerate(current_value)
             ],
+            region_carry=True,
         )
     if (
         whole_rebound
@@ -565,7 +816,34 @@ def pyir_promote_loop_body_arg(
                 list.__setitem__(current_value, _i, _fresh)  # type: ignore[arg-type]
         return current_value
     if ir is not None and isinstance(current_value, ir.Value):
+        # Refuse a finalized-compilation raw before any admission probe
+        # dereferences it (only ``.context`` is a safe probe on such a value).
         _pyir_refuse_stale_raw_carry(target_name, current_value, "loop-carried")
+    if whole_rebound:
+        # A bare local WHOLE-rebound in the body to an opaque handle
+        # (pointer ping-pong, one-way re-point): the rebind choke stores
+        # through the place cell, so body reads must load it too, or every
+        # iteration consumes the pre-loop handle.  Bind the body name to a
+        # region-entry load of the cell.  The emission-free raw probe gates
+        # the admission predicate (whose leaf walk may emit for a compound).
+        raw = _pyir_opaque_handle_raw(current_value)
+        if raw is not None and _pyir_is_opaque_handle_binding(current_value):
+            place = _make_slot_key(target_name, None, None)
+            ref = _pyir_adopt_opaque_local_carry_cell(place, raw, current_value)
+            if ref is None:
+                raise DSLRuntimeError(
+                    "PyIR emission self-check: the loop-carried handle "
+                    f"'{target_name}' has no dominating anchor for its carry "
+                    "cell; a body read would consume the pre-loop handle on "
+                    "every iteration."
+                )
+            return _load_as_dsl(ref, place=place, stamp_place=True)
+    # Vector wrappers subclass ir.Value but need the staged-value read below.
+    if (
+        ir is not None
+        and isinstance(current_value, ir.Value)
+        and not _is_vector_like(current_value)
+    ):
         if isinstance(current_value.type, (ir.IntegerType, ir.FloatType)):
             # A raw scalar SSA write_arg is a loop-carried place: mint its
             # cell (the body's write choke stores raw SSA rebinds through the
@@ -580,12 +858,25 @@ def pyir_promote_loop_body_arg(
         # it creates-or-reuses the place cell and returns a dominating load.
         if _is_boolean_like(current_value) or _is_vector_like(current_value):
             return pyir_read(target_name, current_value)
-        # A staged scalar with NO accessible ref and a plain-use first read
-        # must materialise the ref so the read loads the carried value.
-        if bare_first_use and not _has_accessible_loop_carried_ref(
-            target_name, current_value
-        ):
-            return pyir_read(target_name, current_value)
+        if bare_first_use:
+            # A plain-use first read of an SSA-backed scalar binds the body
+            # NAME to a route handle on the place's live row (when one is
+            # accessible), so every round reloads the carry instead of the
+            # pre-loop object; other kinds (a memref handle, a literal) keep
+            # their binding.
+            raw = _raw_backing_ir_value(current_value)
+            mv = (
+                _get_slot_mv(None, target_name)
+                if raw is not None
+                and isinstance(raw.type, (ir.IntegerType, ir.FloatType))
+                else None
+            )
+            if mv is not None and mv._ref is not None and mv._is_ref_accessible():
+                return _pyir_live_row_handle(target_name, mv, "bare-first-use")
+            # No row for the place: materialise the ref so the read loads the
+            # carried value.
+            if not _has_accessible_loop_carried_ref(target_name, current_value):
+                return pyir_read(target_name, current_value)
         return current_value
     # Value-tree compounds are already carried per leaf; pass through.
     if not isinstance(current_value, (bool, int, float)):
@@ -593,10 +884,52 @@ def pyir_promote_loop_body_arg(
     return _promote_loop_carried_meta(target_name, current_value)
 
 
+def _pyir_live_row_handle(target_name: str, mv: "MutableValue", context: str) -> Any:
+    """A route HANDLE on *mv*, the live row of loop-body name *target_name*: an
+    untagged wrapper of the row's content with the row attached, so every
+    read of the name reloads the row instead of retaining this entry load."""
+    handle = _fresh_wrapper(mv.load())
+    _attach_mutable_ref(handle, mv, f"{context} '{target_name}' body entry")
+    return handle
+
+
+_PYIR_PLACEHOLDER_INIT_ATTRS = (
+    "pyir.placeholder_init",
+    "pyir.placeholder_init_src_file",
+    "pyir.placeholder_init_src_line",
+)
+
+
+def _pyir_condition_bound_row(target_name: str) -> "MutableValue | None":
+    """The live row of a ``while``-condition-bound name with its placeholder
+    marker taken off the init constant (the before region stores the cell on
+    every round, so no load can observe the init); ``None`` when the place
+    has no accessible row or the init is a ``ub.poison`` stand-in."""
+    mv = _get_slot_mv(None, target_name)
+    if mv is None or mv._ref is None or not mv._is_ref_accessible():
+        return None
+    ref = mv._ref
+    try:
+        init = ref.owner.operands[0]
+        init_owner = init.owner
+    except Exception:
+        return None
+    if isinstance(init_owner, ir.Block):
+        return mv  # a block-argument init is a defined value already
+    init_op = getattr(init_owner, "operation", init_owner)
+    if init_op.name == "ub.poison":
+        return None
+    for key in _PYIR_PLACEHOLDER_INIT_ATTRS:
+        if key in init_op.attributes:
+            del init_op.attributes[key]
+    return mv
+
+
 def _pyir_record_fresh_entry_birth(owner: Any, slot_name: Any, entry: Any) -> None:
-    """Record the current block as the F-BIRTHPOS fact of a fresh container
-    entry's meta leaves (tuples recurse per leaf).  Recording only, no ref:
-    a never-promoted entry stays a plain meta value."""
+    """Record the current block as the F-BIRTHPOS fact of a region-born
+    place's meta leaves -- a fresh container entry or an attribute first-def
+    noted inside a staged body (tuples recurse per leaf).  Recording only, no
+    ref: a never-promoted leaf stays a plain meta value."""
     if isinstance(entry, tuple):
         for i, elem in enumerate(entry):
             _pyir_record_fresh_entry_birth(owner, _place_seg_child(slot_name, i), elem)
@@ -615,6 +948,10 @@ def _pyir_record_fresh_entry_birth(owner: Any, slot_name: Any, entry: Any) -> No
     _slot_first_def_depth[slot] = current_staged_cf_depth()
     _slot_first_def_block[slot] = block
     _pyir_keepalive_generation_obj(owner)
+    # Under a folded constant ``if`` arm the latch consumer owns the verdict:
+    # a latched gate discharges this birth as a once-per-key init.
+    if _PYIR_FOLD_FIRSTDEF_STACK:
+        _PYIR_FOLD_FIRSTDEF_STACK[-1].append(slot)
 
 
 def _pyir_fresh_container_init(
@@ -788,7 +1125,7 @@ def _pyir_judge_declared_surface_write(
     cls = type(owner)
     definer = _pyir_class_facts.staged_wrapper_hash_override(cls)
     if definer is not None:
-        from .pyir_call_boundary import _pyir_boundary_module_is_user
+        from .pyir_callee_rewrite import _pyir_boundary_module_is_user
 
         if _pyir_boundary_module_is_user(getattr(definer, "__module__", None)):
             raise DSLUserCodeError(
@@ -1036,11 +1373,15 @@ _GATE_META_SCALARS = (bool, int, float, str, bytes, type(None))
 def _all_meta_content(value: Any, seen: "set[int]") -> bool:
     """True when *value* is a meta scalar or a tuple/list/dict/set/plain
     object holding only such content, recursively.  Staged leaves and
-    value-protocol objects are not all-meta: a carry path owns them."""
+    value-protocol objects with staged content are not all-meta: a carry
+    path owns them.  A value-protocol object holding only meta leaves has
+    no carry path, so its fields are judged like a plain object's."""
     value = _unwrap_meta_or_self(value)
     if isinstance(value, _GATE_META_SCALARS):
         return True
-    if _is_staged_value(value) or _implements_dynamic_expression(value):
+    if _is_staged_value(value):
+        return False
+    if _implements_dynamic_expression(value) and not _pyir_meta_state_value_tree(value):
         return False
     if id(value) in seen:
         # A shared sub-object or a cycle adds no new content; the first
@@ -1163,6 +1504,75 @@ def _refuse_meta_compound_region_rebind(
     )
 
 
+def _pyir_is_opaque_handle_binding(value: Any) -> bool:
+    """Whether *value* is an OPAQUE HANDLE for carry purposes: a binding whose
+    staged state is one dialect-opaque leaf the place cell carries (pointer,
+    view, atom ...), not a scalar / container / meta value with a route of
+    its own.  A builtin mutable ``set`` is meta-container state, not a handle
+    (it has no ``__dict__``, so the staged-content probe misreads it)."""
+    return (
+        value is not None
+        and not isinstance(value, (bool, int, float, str, bytes, type))
+        and not isinstance(value, set)
+        and not isinstance(value, _WatchedM)
+        and (
+            not _is_staged_value(value)
+            # A STAGED wrapper that owns no cellable route of its own (no
+            # ``_pyir_ref_supported``, leaf not scalar-carryable) is an
+            # opaque HANDLE for carry purposes -- e.g. an Array/Pointer
+            # whose single ``!llvm.ptr`` leaf the place cell carries.
+            or (
+                not _can_create_ref(value)
+                and not _can_carry_leaf_ref(value)
+                and _is_opaque_leaf_value_tree(value)
+            )
+        )
+        and (
+            not _has_any_staged_content(value)
+            # An all-opaque-leaf value tree is carried by opaque-leaf carry;
+            # ``_has_any_staged_content`` misreports its derived fields.
+            or _is_opaque_leaf_value_tree(value)
+        )
+    )
+
+
+def _pyir_judge_exception_slot_write(
+    target_name: Any,
+    owner: Any,
+    slot_name: Any,
+    filename: "str | None",
+    lineno: "int | None",
+) -> None:
+    """An exception's C-level slot has no storage a place cell could shadow: in
+    staged CF the write is trace-time host state unless the exception is born
+    in the open loop body (a per-iteration object).  A composite ``_PlaceSeg``
+    slot names a container element, never one of these names."""
+    if (
+        owner is None
+        or not isinstance(owner, BaseException)
+        or slot_name not in _PYIR_EXCEPTION_SLOT_NAMES
+        or not is_inside_staged_cf()
+    ):
+        return
+    from .pyir_callee_rewrite import _pyir_boundary_birth_anchor
+
+    if _pyir_boundary_birth_anchor(owner) is not None:
+        return
+    # A CSE-hoisted ``_pyir_attr_N`` root is a preprocessor temp: name the
+    # receiver's class instead so no temporary reaches the user.
+    if not isinstance(target_name, str) or target_name.startswith("_pyir_"):
+        target_name = f"{type(owner).__name__}.{slot_name}"
+    raise _pyir_fatal_trace_error(
+        DSLUserCodeError(
+            DiagId.UNSUP_EXCEPTION_SLOT_WRITE_IN_STAGED_CF,
+            filename=filename,
+            lineno=lineno,
+            target=target_name,
+            attr=slot_name,
+        )
+    )
+
+
 def pyir_assign(
     target_name: Any,
     old_value: Any,
@@ -1175,6 +1585,9 @@ def pyir_assign(
     fresh_binding: bool = False,
     fresh_paths: tuple = (),
     rhs_ctor: Any = None,
+    rmw_self: bool = False,
+    rmw_path: "str | None" = None,
+    stmt_id: "int | None" = None,
 ) -> Any:
     """Called by AST-inserted code after every ``=`` and ``+=``.
 
@@ -1221,6 +1634,10 @@ def pyir_assign(
     # no diagnostics).
     if not isinstance(target_name, str):
         return _pyir_assign_simple(target_name, old_value, new_value)
+    # Diagnostics name the attribute as the user spelled it; the place is
+    # keyed on the storage slot that spelling resolves to.
+    _spelled_slot_name = slot_name
+    slot_name = _pyir_canonical_slot_name(owner, slot_name)
 
     # F-MEMORY: an element of a memref-backed owner lives in staged memory and
     # the owner's accessors emit its stores; memory, not a row, is the authority.
@@ -1231,6 +1648,63 @@ def pyir_assign(
         and _is_memref_like(owner)
     ):
         return new_value
+    # A field write whose owner is a fresh load product of a ref-carried
+    # opaque value (a staged copy, never the stored object) can reach neither
+    # the storage it was read from nor that storage's cell: the write would
+    # be lost, so it refuses.
+    if (
+        owner is not None
+        and isinstance(slot_name, str)
+        and _get_load_version(owner) is not None
+        and _is_staged_value(owner)
+        and _can_create_ref(owner)
+    ):
+        raise DSLUserCodeError(
+            DiagId.WRAPPER_FIELD_WRITE_ON_STAGED_COPY,
+            filename=filename,
+            lineno=lineno,
+            field=slot_name,
+            type=type(owner).__name__,
+        )
+    _pyir_judge_exception_slot_write(target_name, owner, slot_name, filename, lineno)
+    # Staged-selection wall: a field write through the product of a
+    # runtime-predicate ternary (``x if cond else y``) cannot reach either
+    # candidate and which one Python would mutate is a run-time fact -> refuse.
+    # The M->M decomposition's per-field replay of a judged whole-object rebind
+    # is machinery, not a user write.
+    if owner is not None and not _PYIR_M2M_DECOMPOSE_DEPTH[0]:
+        if _PYIR_STAGED_SELECTIONS:
+            _pyir_check_staged_selection_write(
+                owner, slot_name, target_name, filename, lineno
+            )
+        # An UNSIGHTED merge (two temporaries nobody else can observe) takes
+        # the write; its candidates are marked so a later field read of
+        # either refuses instead (OWNER_STAGED_SELECTION_CANDIDATE_READ).
+        if _PYIR_STAGED_SELECTION_ARMS:
+            _pyir_mark_selection_written_candidates(owner)
+        # A write to a candidate of a staged selection: the products taken
+        # before it no longer say what Python's (the candidate itself) would.
+        if _PYIR_SELECTION_CANDIDATE_PRODUCTS:
+            _pyir_mark_selection_products_stale(owner)
+    # Call-born witness (F-BIRTHPOS for a call-RHS first-def inside staged CF):
+    # a function callee cannot witness the allocation the way a direct ctor
+    # does, so the trace proves it here -- BEFORE this binding's own
+    # bookkeeping sights the object, while "never sighted" still means "born
+    # by this statement".  Consumed by ``_assign_first_def``.
+    rhs_call_born = False
+    if (
+        rhs_ctor is not None
+        and not isinstance(rhs_ctor, type)
+        and old_value is None
+        and is_inside_staged_cf()
+        and not is_inside_constexpr_loop()
+    ):
+        try:
+            rhs_call_born = _pyir_call_born_object_is_fresh(
+                new_value, owner, id(new_value) in _PYIR_CANDIDATE_HOLDERS
+            )
+        except Exception:
+            rhs_call_born = False
     # Declaration wall: a value-tree-protocol owner's observed field write in
     # dynamic staged CF must stay on its declared (extraction-touched) surface.
     _pyir_judge_declared_surface_write(
@@ -1274,6 +1748,21 @@ def pyir_assign(
     _pyir_register_candidate_holder(owner)
     _pyir_register_candidate_holder(old_value)
     _pyir_register_candidate_holder(new_value)
+    # A constructed container RHS binds its elements in Python VALUE terms
+    # (the plain-local first-def freeze, per element).  The freeze must run
+    # on the PLAIN container, before adoption installs the element write
+    # choke: a choked in-place freeze reads the routed element at the new
+    # place, claims its foreign cell as that place's row (first-wins
+    # rooting) and stores the snapshot back into the source cell, so the
+    # element keeps following the source binding.
+    if (
+        fresh_binding
+        and type(new_value) in (list, dict)
+        and _carries_foreign_slot_binding(new_value)
+    ):
+        new_value = _freeze_foreign_slot_binding(
+            new_value, f"first-def local '{target_name}'", fresh_container=True
+        )
     # Binding-choke adoption: a plain dict at a KNOWN holder slot adopts with the
     # holder replaced; owner-less bindings adopt only for FRESH constructions.
     if (
@@ -1304,23 +1793,59 @@ def pyir_assign(
             new_value = _pyir_adopt_list_value(
                 None, None, new_value, label=str(target_name)
             )
-    # Record stable-anchor rooting for a dotted attr access; ``alias_from=old_value``
-    # lets a NEW object at a rooted place adopt the old rooting (anti-twin).
-    _register_place_prefix(
-        target_name, owner, slot_name, old_value, new_value, alias_from=old_value
+    # Identity re-point decision for a whole-object compound rebind inside
+    # staged CF: a replacement that pre-exists the open region re-points the
+    # place (admitted when the post-region identity is trace-time static,
+    # refused otherwise); a body-born replacement keeps the per-field carry.
+    _identity_repoint = _pyir_judge_identity_repoint(
+        target_name, owner, slot_name, old_value, new_value, filename, lineno, stmt_id
     )
+    # Record stable-anchor rooting for a dotted attr access; ``alias_from=old_value``
+    # lets a NEW object at a rooted place adopt the old rooting (anti-twin).  A
+    # re-pointed place names an object that keeps its own places: no adoption.
+    if not _identity_repoint:
+        _register_place_prefix(
+            target_name, owner, slot_name, old_value, new_value, alias_from=old_value
+        )
 
     # A write through a stamped superseded generation would corrupt the one
     # live cell -> diagnostic; every compound binding is recorded for rebinds.
     if _SUPERSEDED_GENERATIONS and owner is not None:
         _pyir_check_superseded_owner_write(owner, slot_name, new_value, target_name)
     _pyir_record_compound_binding(
-        target_name, owner, slot_name, new_value, filename, lineno
+        target_name,
+        owner,
+        slot_name,
+        new_value,
+        filename,
+        lineno,
+        old_value=old_value,
+        identity_repoint=_identity_repoint,
     )
+    # A binding that sets the object the place names in the trace (first def,
+    # host-phase binding, admitted re-point; a body-born rebind in staged CF
+    # copies into the place's object instead) records the regions open at it:
+    # a later re-point of the place must prove static every region entered
+    # after it.
+    if (
+        (_identity_repoint or old_value is None or not is_inside_staged_cf())
+        and new_value is not None
+        and _pyir_is_generation_compound(new_value)
+    ):
+        _bind_slot = _make_slot_key(target_name, owner, slot_name)
+        if _bind_slot is not None:
+            _pyir_record_slot_bind_regions(_bind_slot, _pyir_open_region_tokens())
+            if _identity_repoint:
+                _PYIR_SLOT_REPOINTED[_bind_slot] = new_value
+            else:
+                _PYIR_SLOT_REPOINTED.pop(_bind_slot, None)
     # Region-conditional attr first-def maintenance: a reassignment may widen
     # or discharge an earlier in-region first-def record (read-before-set).
+    # A write on a SIBLING arm of the first-def replaces a value Python never
+    # bound on this path, so it is not a same-position reset (see D1 below).
+    _sibling_arm_write = False
     if old_value is not None and owner is not None and _PYIR_CF_ATTR_FIRST_DEFS:
-        _pyir_update_cf_attr_first_def_on_write(owner, slot_name)
+        _sibling_arm_write = _pyir_update_cf_attr_first_def_on_write(owner, slot_name)
 
     # Binding-depth bookkeeping for the within-body-local gate below: ``_prior_binding_depth`` is the depth
     # where ``old_value`` was last written; refreshed to THIS write. Tracked only inside staged CF.
@@ -1333,6 +1858,10 @@ def pyir_assign(
             if old_value is not None:
                 _prior_binding_depth = _slot_binding_depth.get(_binding_slot)
             _slot_binding_depth[_binding_slot] = _cur_cf_depth
+            try:
+                _slot_binding_block[_binding_slot] = ir.InsertionPoint.current.block
+            except Exception:
+                _slot_binding_block.pop(_binding_slot, None)
     log().info(
         "[pyir_assign] '%s' old=%s new=%s (%s:%d)",
         target_name,
@@ -1341,6 +1870,11 @@ def pyir_assign(
         filename,
         lineno,
     )
+    # An admitted identity re-point binds the pre-existing object itself: its
+    # fields stay in its own cells (mutations through the place reach them),
+    # and the object the place named before is left untouched.
+    if _identity_repoint:
+        return new_value
 
     if old_value is None:
         return _assign_first_def(
@@ -1353,7 +1887,22 @@ def pyir_assign(
             fresh_binding,
             fresh_paths,
             rhs_ctor,
+            rhs_call_born,
         )
+
+    # A witnessed direct-ctor RHS births its fields here (F-BIRTHPOS) only when
+    # the new object REPLACES the binding; when the M->M arm keeps the
+    # binding's own object as carrier, the leaf keys are that carrier's
+    # pre-existing places and must stay entry-seeded.
+    if (
+        is_inside_staged_cf()
+        and rhs_ctor is not None
+        and not (
+            type(old_value) is type(new_value)
+            and _has_decomposable_staged_fields(old_value)
+        )
+    ):
+        _pyir_record_fresh_object_leaf_first_defs(rhs_ctor, new_value)
 
     # D1 (META_VALUE_TABLE_DESIGN): retroactive promotion of M values.
     # When the old value is a ``_WatchedM`` wrapper, or the slot is
@@ -1380,6 +1929,7 @@ def pyir_assign(
             # keep-constexpr with an escape mark (out-of-arm consumptions
             # refuse at the read) is the faithful disposition.
             _fd_block = _slot_first_def_block.get(d1_slot)
+            _wr_block = None
             _reassign_strictly_nested = False
             _arm_local_write = False
             if _fd_block is not None and pyir is not None:
@@ -1404,13 +1954,26 @@ def pyir_assign(
                 except Exception:
                     _reassign_strictly_nested = False
                     _arm_local_write = False
+            # The reset disposition is a fact about the slot's OWN birth region:
+            # the write must sit in the birth block or strictly inside it.  A
+            # same-depth write in a later sibling region (a second loop after
+            # the one that bound the slot) is a carried write, not the next
+            # reset, and falls through to promotion / the off-mode audit.
+            _write_in_birth_region = (
+                _fd_block is None
+                or _wr_block is None
+                or _wr_block == _fd_block
+                or _reassign_strictly_nested
+            )
             if (
                 _slot_first_def_inside_cf.get(d1_slot, False)
+                and _write_in_birth_region
                 and (
                     current_staged_cf_depth() <= _slot_first_def_depth.get(d1_slot, 0)
                     or _is_subscript_counter
                     or _arm_local_write
                 )
+                and not _sibling_arm_write
                 and isinstance(new_value, (bool, int, float))
                 and not _is_staged_value(new_value)
                 and isinstance(old_value, _WatchedM)
@@ -1591,6 +2154,20 @@ def pyir_assign(
                 and _reassign_strictly_nested
             ):
                 already_tracked = True
+            # Mp->Mp on a SIBLING arm of the slot's first-def replaces a value
+            # Python never bound on this path: the two arms bind different
+            # values, so the slot must carry (promote; refuses loudly when
+            # automatic promotion is off).  Keeping it meta would bake the
+            # last-traced arm's constant on every path.
+            if (
+                not already_tracked
+                and (old_is_watched or isinstance(old_value, (bool, int, float)))
+                and new_is_primitive
+                and _sibling_arm_write
+            ):
+                # The old value is raw when it is the sibling arm's binding the
+                # arm entry unbound (a plain first-def store, never wrapped).
+                already_tracked = True
             # D1 accepts:
             #   * primitives / _WatchedM -> bake as IR constant
             #   * staged DSL values (Int32(a+b), Boolean, ...) -> store the
@@ -1600,6 +2177,29 @@ def pyir_assign(
                 # Promote if not yet promoted.
                 if d1_slot not in _slot_refs:
                     initial_py = old_value.python_value if old_is_watched else old_value
+                    # The statement's own RHS read this place (syntactic
+                    # witness) yet produced a PLAIN changed primitive with no
+                    # wrapper arm having run on the read: the value derives
+                    # from the payload through an operation the wrapper
+                    # cannot see (a float/bool left operand, a C builtin),
+                    # so no retargetable constant exists -- refuse loudly.
+                    if (
+                        rmw_self
+                        and old_is_watched
+                        and type(new_value) in (bool, int, float)
+                        and not _is_staged_value(new_value)
+                        and getattr(old_value, "_cached_ir", None) is None
+                        and d1_slot not in _PYIR_STRUCTURAL_META_CONSUMPTIONS
+                        and _innermost_enclosing_loop_op_at_ip() is not None
+                        and not _const_values_equal(new_value, initial_py)
+                    ):
+                        raise DSLUserCodeError(
+                            DiagId.PHASE_OPAQUE_READ_THEN_PROMOTED,
+                            filename=filename,
+                            lineno=lineno,
+                            var=target_name or str(d1_slot),
+                            reader="this statement's own right-hand side",
+                        )
                     if isinstance(initial_py, (bool, int, float)):
                         _meta_promote_slot(
                             d1_slot,
@@ -1658,6 +2258,32 @@ def pyir_assign(
                     except Exception:
                         _retyped = False
                     if _retyped:
+                        # A binding born OUTSIDE the enclosing staged LOOP body
+                        # whose row a body read already traced LOADS is a carry
+                        # in flight: the backedge re-executes that read against
+                        # the old cell while the new cell takes the stores.  A
+                        # binding born in the write's own block re-executes its
+                        # first def on every pass (a body-born local keeps its
+                        # placeholder cell in the entry block), a row no body
+                        # read loads yet, and an if/else arm (no backedge)
+                        # re-mint: a fresh redefinition.
+                        _region_op = _pyir_innermost_enclosing_region_op_at_ip()
+                        _born_in_write_block = (
+                            _fd_block is not None
+                            and _wr_block is not None
+                            and _wr_block == _fd_block
+                        )
+                        if (
+                            _region_op is not None
+                            and str(getattr(_region_op, "name", ""))
+                            in ("scf.for", "scf.while")
+                            and not _born_in_write_block
+                            and not _ir_value_defined_inside_op(ref, _region_op)
+                            and _pyir_ref_loaded_inside_op(ref, _region_op)
+                        ):
+                            _pyir_raise_type_changed_in_region(
+                                target_name, ref.type.pointee, new_ir.type
+                            )
                         ref = pyir.ref(new_ir)
                         _slot_refs[d1_slot] = ref
                     # W2 type step (F-TYPEID): a staged store advances the row's
@@ -1681,6 +2307,65 @@ def pyir_assign(
                         d1_slot,
                     )
                     return _load_as_dsl(ref, place=d1_slot)
+
+    # Off-mode RMW audit: a still-meta attribute slot whose RHS reads the path
+    # it writes diverges under trace-once -- per iteration in a loop body, and
+    # per taken path in an ``scf.if`` arm (the write executes at trace time
+    # whatever the run-time predicate, so the post-region value is wrong on
+    # the untaken path) -- so refuse with the promotion-entry diagnostic.
+    # ``rmw_self``/``rmw_path`` are the preprocessor's syntactic witness and
+    # its dotted spelling.  Region-born receivers are exempt (the write
+    # re-executes from its binding with the region).  In an ``if`` arm a
+    # value-tree-protocol owner is exempt as well: its meta fields are the
+    # trace-time counter channel, never carried state.
+    if (
+        rmw_self
+        and owner is not None
+        and slot_name is not None
+        and (
+            bool(_pyir_open_loop_body_blocks)
+            or (is_inside_staged_cf() and not _implements_dynamic_expression(owner))
+        )
+        and not is_inside_constexpr_loop()
+        and not is_auto_m2s_enabled()
+    ):
+        _audit_slot = _make_slot_key(target_name, owner, slot_name)
+        _audit_old = (
+            old_value.python_value if isinstance(old_value, _WatchedM) else old_value
+        )
+        _audit_new = _unwrap(new_value)
+        if (
+            _audit_slot is not None
+            and isinstance(_audit_slot, tuple)
+            and _audit_slot[0] == "attr"
+            and _audit_slot not in _slot_refs
+            and isinstance(_audit_old, (bool, int, float))
+            and isinstance(_audit_new, (bool, int, float))
+            and _audit_old != _audit_new
+            and not _pyir_place_is_region_born(_audit_slot)
+        ):
+            # Prefer ``rmw_path``'s user-spelled chain, unless an earlier CSE
+            # hoist already rewrote the root to a ``_pyir_attr_N`` temp (then
+            # it's as uninformative as ``target_name``) -- fall back to the
+            # receiver's class name so no preprocessor temp leaks to the user.
+            _audit_var = (
+                rmw_path
+                if rmw_path is not None and not rmw_path.startswith("_pyir_")
+                else (
+                    f"{type(owner).__name__}.{_spelled_slot_name}"
+                    if isinstance(target_name, str) and target_name.startswith("_pyir_")
+                    else target_name
+                )
+            )
+            _promoted_cls = _declared_m2s_promotion_class(_audit_old)
+            raise DSLUserCodeError(
+                DiagId.PHASE_AUTO_PROMOTE_DISABLED,
+                filename=filename,
+                lineno=lineno,
+                var=_audit_var,
+                value=repr(_audit_old),
+                type=_promoted_cls.__name__ if _promoted_cls is not None else "Int32",
+            )
 
     if (
         is_inside_staged_cf()
@@ -1774,7 +2459,9 @@ def pyir_assign(
         # paths' still-live cells (or mark them for a loud serve), so a later
         # place-routed element read resolves this rebind, not the prior
         # generation left in a read-minted row.
-        _pyir_route_restructured_tuple_leaves(target_name, owner, slot_name, new_value)
+        _pyir_route_restructured_tuple_leaves(
+            target_name, owner, slot_name, new_value, old_value
+        )
         return new_value
 
     # Tuple-vs-tuple rebind inside staged CF: a tuple has no ``__dict__`` so the M->M path never
@@ -1906,31 +2593,7 @@ def pyir_assign(
     # A builtin mutable ``set`` is NOT an opaque handle: it has no ``__dict__``
     # so the staged-content probe misreads it, but its rebind is meta-container
     # state (``s = s | {x}``) that must reach the phase check below and refuse.
-    if (
-        is_inside_staged_cf()
-        and old_value is not None
-        and not isinstance(old_value, (bool, int, float, str, bytes, type))
-        and not isinstance(old_value, set)
-        and not isinstance(old_value, _WatchedM)
-        and (
-            not _is_staged_value(old_value)
-            # A STAGED wrapper that owns no cellable route of its own (no
-            # ``_pyir_ref_supported``, leaf not scalar-carryable) is an
-            # opaque HANDLE for carry purposes -- e.g. an Array/Pointer
-            # whose single ``!llvm.ptr`` leaf the place cell carries.
-            or (
-                not _can_create_ref(old_value)
-                and not _can_carry_leaf_ref(old_value)
-                and _is_opaque_leaf_value_tree(old_value)
-            )
-        )
-        and (
-            not _has_any_staged_content(old_value)
-            # An all-opaque-leaf value tree is carried by opaque-leaf carry;
-            # ``_has_any_staged_content`` misreports its derived fields.
-            or _is_opaque_leaf_value_tree(old_value)
-        )
-    ):
+    if is_inside_staged_cf() and _pyir_is_opaque_handle_binding(old_value):
         d1_slot = _make_slot_key(target_name, owner, slot_name)
         # A place rebound to a same-type opaque value stores through its ONE
         # place cell, so one carry chain spans every region level.  An
@@ -1964,6 +2627,7 @@ def pyir_assign(
                 lineno,
             )
             if _carrier is not None:
+                _pyir_region_note_recarried(_carrier)
                 return _carrier
             # A compound field rebuilt inside staged CF would keep its
             # first-iteration content: refuse before passing through.
@@ -2065,7 +2729,7 @@ def pyir_assign(
             # Generation coherence: the fresh elements store through their
             # access paths' still-live cells (or mark them for a loud serve).
             _pyir_route_restructured_tuple_leaves(
-                target_name, owner, slot_name, new_value
+                target_name, owner, slot_name, new_value, old_value
             )
             return new_value
 
@@ -2155,16 +2819,80 @@ def pyir_assign(
         )
         return bool(_leaves) and all(_is_staged_value(_lf) for _lf in _leaves)
 
+    def _is_inert_meta_leaf(_lf: Any) -> bool:
+        """A trace-time-only tuple leaf: ``None`` or a plain Python scalar that
+        no cell ever carried.  A ``_WatchedM`` is EXCLUDED -- it is TRACKED
+        meta (a promotion the machinery may still owe), as is anything with a
+        live ``_mutable_ref``; both keep the strict all-staged judgment."""
+        if isinstance(_lf, _WatchedM):
+            return False
+        if getattr(_lf, "_mutable_ref", None) is not None:
+            return False
+        return _lf is None or isinstance(_lf, (bool, int, float, str, bytes, type))
+
+    def _mixed_inert_leaves(_v: Any) -> bool:
+        """OLD is a tuple of at least one staged leaf plus inert trace-time
+        structure -- e.g. quack's ``(sf_tensor, None)`` = one staged value and
+        a "there is no norm constant" marker.
+
+        An inert meta leaf is compile-time SHAPE no cell ever carried, so
+        unwrapping such a tuple onto one of its staged leaves drops nothing a
+        later read of the NAME could observe.  That makes the unwrap the same
+        whole-object replacement the all-staged premise above accepts -- but
+        only for a binding BORN inside this region (see the depth guard at the
+        use site): a binding that pre-dates the region still has the old tuple
+        live on the not-taken path, which is a genuine structural join."""
+        _leaves = (
+            list(_flatten_tuple(tuple(_v))) if isinstance(_v, (tuple, list)) else [_v]
+        )
+        if not _leaves:
+            return False
+        _staged_leaves = 0
+        for _lf in _leaves:
+            if _is_staged_value(_lf):
+                _staged_leaves += 1
+            elif not _is_inert_meta_leaf(_lf):
+                # A container / object / tracked-meta leaf may itself hold
+                # carried state: keep it out of the structural admission.
+                return False
+        # A container with NO staged leaf is a genuine meta binding, not a
+        # tracked one -- it stays on the phase-rule paths below.
+        return _staged_leaves > 0
+
     _old_is_tuple = isinstance(old_value, (tuple, list))
     _new_is_tuple = isinstance(new_value, (tuple, list))
+
+    def _old_leaves_structurally_tracked() -> bool:
+        """The gate's OLD premise: all-staged leaves (historic), or staged +
+        inert-meta leaves for a binding born in THIS region.
+
+        The born-in-region fact is the callee-parameter case the unpack idiom
+        ``param, norm_const = param`` needs: a traced callee entered inside a
+        run-time region records its parameter first-def at the region's depth,
+        and the binding dies at return, so no read can ever observe the
+        pre-unpack tuple.  A binding first-defined at a SHALLOWER depth
+        outlives the region and keeps the refusal."""
+        if _all_staged_leaves(old_value):
+            return True
+        if not _mixed_inert_leaves(old_value):
+            return False
+        _stl_first_depth = (
+            _slot_first_def_depth_any.get(_binding_slot)
+            if _binding_slot is not None
+            else None
+        )
+        # Fail closed on an unrecorded first-def (by convention here: a
+        # binding defined outside the traced region).
+        return _stl_first_depth is not None and _stl_first_depth >= _cur_cf_depth
+
     if (
         is_inside_staged_cf()
         and old_value is not None
         # Exactly ONE side is a tuple -- a structural wrap/unwrap, not a same-shape carry (a tuple->tuple
         # carry is owned by the tuple-vs-tuple decompose gate above; a staged->staged carry by Rule 4).
         and (_old_is_tuple != _new_is_tuple)
-        # OLD is already tracked through its leaves (single staged value, or tuple of all-staged leaves).
-        and _all_staged_leaves(old_value)
+        # OLD is already tracked through its leaves.
+        and _old_leaves_structurally_tracked()
         # NEW's every flattened leaf is a self-dominating carryable staged SSA.
         and _all_staged_carryable_dominating(new_value)
     ):
@@ -2172,16 +2900,24 @@ def pyir_assign(
         if _stl_slot is None or _stl_slot not in _slot_refs:
             log().info(
                 "[pyir_assign] '%s' structural tuple<->staged rebind "
-                "(old leaves staged, new leaves self-dominate) → passthrough "
-                "(region/loop carry owns the carry)",
+                "(old leaves staged-or-inert, new leaves self-dominate) → "
+                "passthrough (region/loop carry owns the carry)",
                 target_name,
             )
-            # Re-tupling direction: the fresh elements store through their
-            # access paths' still-live cells (generation coherence).
+            # Generation coherence in BOTH directions.  Re-tupling: the fresh
+            # elements store through their access paths' still-live cells.
+            # Un-tupling: the fresh scalar stores through the NAME's own
+            # still-live row (minted while it held the earlier scalar
+            # generation); left unadvanced, R1 row authority would serve that
+            # stale generation to the very next read at the place.
             if _new_is_tuple:
+                # ``old_value`` is a non-tuple here (exactly one side is a
+                # tuple), so only the write-through pass has work to do.
                 _pyir_route_restructured_tuple_leaves(
-                    target_name, owner, slot_name, new_value
+                    target_name, owner, slot_name, new_value, old_value
                 )
+            else:
+                _pyir_route_restructured_leaf(target_name, owner, slot_name, new_value)
             return new_value
 
     # Straight-line type-change rebind exemption (Rule 4 false positive).
@@ -2325,17 +3061,18 @@ def _assign_first_def(
     fresh_binding: bool,
     fresh_paths: tuple,
     rhs_ctor: Any,
+    rhs_call_born: bool = False,
 ) -> Any:
     # Freeze a fresh plain-local binding wired to a foreign storage slot, or
     # the local re-loads the source at its consumer (breaks value semantics).
 
     # Fires at ANY scope: Python binds the value at assignment time whether
-    # or not staged CF is open.
+    # or not staged CF is open.  A constructed list/dict was frozen at the
+    # assign choke before adoption (its elements no longer carry a route);
+    # an aliased container passes through untouched here.
     if owner is None and slot_name is None and _carries_foreign_slot_binding(new_value):
         new_value = _freeze_foreign_slot_binding(
-            new_value,
-            f"first-def local '{target_name}'",
-            fresh_container=fresh_binding,
+            new_value, f"first-def local '{target_name}'"
         )
     if owner is None and slot_name is None and isinstance(new_value, tuple):
         new_value = _unalias_tuple_leaves(new_value)
@@ -2463,10 +3200,13 @@ def _assign_first_def(
             new_value = _fresh_wrapper(new_value)
     else:
         log().info("[pyir_assign] '%s' first def → passthrough", target_name)
-    # Fresh-object first-def inside staged CF (witnessed direct-ctor RHS):
-    # record per-field first-def facts so promotion resets at this block.
+    # Fresh-object first-def inside staged CF (witnessed direct-ctor RHS, or a
+    # call RHS whose result the bind choke proved call-born): record per-field
+    # first-def facts so the lazy cell mint seeds at this block.
     if is_inside_staged_cf() and rhs_ctor is not None:
-        _pyir_record_fresh_object_leaf_first_defs(rhs_ctor, new_value)
+        _pyir_record_fresh_object_leaf_first_defs(
+            rhs_ctor, new_value, call_born=rhs_call_born
+        )
     # First-def depth bookkeeping for the straight-line type-change
     # rebind guard (see ``_slot_first_def_depth_any``).  Recorded for
     # EVERY local first-def -- primitive OR staged DSL value -- so a
@@ -2487,7 +3227,7 @@ def _assign_first_def(
     # Slot-identity wrap + per-iteration reset + first-def location
     # bookkeeping for literal first-defs; tuples recurse per leaf.
     if target_name is not None:
-        new_value = _record_meta_primitive_first_def(
+        new_value = _record_meta_primitive_first_def_and_store_if_registered(
             target_name, new_value, owner, slot_name
         )
     return new_value
@@ -2684,29 +3424,42 @@ def _assign_m2m_compound(
     # A value-tree whole-object BRANCH-SELECT must NOT take the ``__dict__``
     # walk (it would store a host-computed sub-leaf into a kernel ref).
 
-    # Passing through lets the region-close ``scf.if`` carry only the
-    # differing canonical leaves; the reconstruct restores prototype fields.
+    # The no-op arm (``old is new``) passes through: re-selecting the
+    # object the name already holds changes nothing to carry.
 
-    # Both the differing-prototype arm and the no-op arm (``old is new``)
-    # pass through, or the no-op arm re-creates the bad host-value stores.
+    # A select between two structurally DISTINCT prototypes of one class is
+    # joined as the pytree frontend joins it: the canonical leaves become
+    # ``scf.if`` results and the binding is rebuilt from the ENTRY prototype
+    # (its compile-time fields) at the ``if`` close; the arm itself keeps the
+    # selected object.
 
     # Gated to a LOOP-FREE ``scf.if``: a per-iteration meta change must
     # still hit the meta-primitive guard via the ``__dict__`` walk.
     if (
         _implements_dynamic_expression(old_value)
-        and (
-            old_value is new_value
-            or _value_trees_different_prototype(old_value, new_value)
-        )
         and _innermost_enclosing_loop_op_at_ip() is None
-        and _loop_free_enclosing_if_ops_at_ip()
+        and (_select_ifs := _loop_free_enclosing_if_ops_at_ip())
     ):
-        log().info(
-            "[pyir_assign] '%s' value-tree whole-object branch-select rebind "
-            "→ passthrough (region-close carry owns the carry)",
-            target_name,
-        )
-        return new_value
+        if old_value is new_value:
+            log().info(
+                "[pyir_assign] '%s' value-tree whole-object no-op branch-select "
+                "rebind → passthrough",
+                target_name,
+            )
+            return new_value
+        if _value_tree_prototype_mismatch(old_value, new_value) is not None:
+            if not _pyir_join_whole_object_select(
+                target_name, old_value, new_value, _select_ifs, filename, lineno
+            ):
+                # The binding was born in this arm: nothing outside the arm
+                # to join with, and a post-``if`` read is refused as a
+                # branch-born first-def.
+                log().info(
+                    "[pyir_assign] '%s' value-tree whole-object branch-select "
+                    "of an arm-born binding → passthrough",
+                    target_name,
+                )
+            return new_value
     # Whole-object rebind of a top-level LIST of ref-carryable staged
     # scalars: per-element ``pyir_assign`` on the OLD list's subscript slots.
 
@@ -2746,6 +3499,16 @@ def _assign_m2m_compound(
                 slot_name=_i,
             )
         return old_value  # old list carries the element refs
+    if old_value is new_value and _has_decomposable_staged_fields(old_value):
+        # ``x = x`` (or ``c = a`` while ``c`` already names ``a`` at trace
+        # time) is a no-op in Python.  Decomposing it would store each field's
+        # trace-entry wrapper back into the field's cell, resetting a loop-
+        # carried field to its entry value on every iteration.
+        log().info(
+            "[pyir_assign] '%s' whole-object self-assign → no-op",
+            target_name,
+        )
+        return old_value
     if _has_decomposable_staged_fields(old_value):
         log().info(
             "[pyir_assign] '%s' M→M auto-decomposition (type=%s)",
@@ -2774,6 +3537,13 @@ def _assign_m2m_compound(
         # Cells the decompose walk itself minted enter the baseline as
         # born-at-rebind (a pre-rebind alias read of them always diverges).
         _pyir_complete_generation_rebind_cells(_gen_rebind_rec, old_value)
+        # The old object now carries the NEW (body-born) object's state: a
+        # later re-point to it is not an identity-rebind to a pre-existing one.
+        _pyir_region_note_recarried(old_value)
+        # ... and stands for a staged selection the new object was (its write
+        # wall / candidate record follow the carrier).
+        if _PYIR_STAGED_SELECTION_ARMS:
+            _pyir_propagate_staged_selection(new_value, old_value)
         return old_value  # I1: return old — it accumulates refs
     if _has_any_staged_content(old_value):
         # An opaque-leaf value-tree is not scalar-decomposable but is legal:
@@ -2825,6 +3595,7 @@ def _assign_m2m_compound(
         lineno,
     )
     if _carrier is not None:
+        _pyir_region_note_recarried(_carrier)
         return _carrier
     log().info(
         "[pyir_assign] '%s' pure meta compound → passthrough",
@@ -2847,9 +3618,35 @@ def _assign_m2s_promotion(
     slot_name: Any,
 ) -> Any:
     dsl_type = type(new_value)
+    # Domain of the promotion choke: a meta PRIMITIVE old value -- the only
+    # shape with a declared staged counterpart to seed the cell with (cf.
+    # ``_declared_m2s_promotion_class``).  A CONTAINER old value has none, and
+    # blindly running ``dsl_type(old_value)`` on one mis-reports the judgment:
+    # a ``_Tensor`` target raises ``TypeError`` -> PHASE_CONVERSION_FAILED,
+    # whose "create it as a runtime value before the loop" fix-it is
+    # unactionable for a tuple, while a ``Numeric`` target raises
+    # ``DSLRuntimeError`` -> error[INTERNAL], which is not a DSL bug at all.
+    # Judge the SHAPE here instead: re-binding a container name to a runtime
+    # value inside a run-time region is a structure change the region cannot
+    # join.  (The structural tuple<->staged gate in ``pyir_assign`` admits the
+    # sound cases -- an all-staged tuple, and a staged + inert-meta tuple whose
+    # binding was born inside the region -- before reaching here.)
+    if isinstance(old_value, (tuple, list, dict, set, frozenset)):
+        raise DSLUserCodeError(
+            DiagId.CONTAINER_REBOUND_TO_RUNTIME_VALUE,
+            filename=filename,
+            lineno=lineno,
+            var=target_name,
+            old_type=type(old_value).__name__,
+            old_value=repr(old_value),
+            new_type=dsl_type.__name__,
+        )
     try:
         promoted = dsl_type(old_value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, DSLRuntimeError):
+        # ``DSLRuntimeError`` is the DSL's internal-bug envelope; a constructor
+        # raising it for an unconvertible old value is a user-code shape
+        # mismatch, so re-code it rather than let it surface as error[INTERNAL].
         raise DSLUserCodeError(
             DiagId.PHASE_CONVERSION_FAILED,
             filename=filename,
@@ -3197,38 +3994,394 @@ PYIR_REGION_METHOD_CALLS_ATTR = "__pyir_region_method_calls__"
 # Name-rooted first argument (``step(c)``); each pair completes into write
 # facts through the callee's first-parameter write facts at region entry.
 PYIR_REGION_FREE_CALLS_ATTR = "__pyir_region_free_calls__"
+# Attribute name carrying the ``(path, line)`` pairs of the places a staged
+# loop-body function's ORIGINAL code does not read before it first stores
+# them (dead on body entry); ``line`` is 0 for an unconditional top-level
+# store, else the line of the nested store that is the first occurrence.
+PYIR_REGION_DEAD_ON_ENTRY_ATTR = "__pyir_region_dead_on_entry__"
 
 
 def pyir_tag_region_attr_writes(
     attr_writes: "tuple[tuple[str, str], ...]",
     method_calls: "tuple[tuple[str, str], ...]" = (),
     free_calls: "tuple[tuple[str, str], ...]" = (),
+    dead_on_entry: "tuple[tuple[str, int], ...]" = (),
 ) -> "Callable[[Any], Any]":
     """Decorator factory tagging a staged loop-body function with the ``(base, attr)``
     pairs its ORIGINAL body assigns directly, the ``(base, method)`` pairs
-    it calls on Name-rooted receiver paths, and the ``(func_name, arg_base)``
-    pairs it calls as free functions with a Name-rooted first argument."""
+    it calls on Name-rooted receiver paths, the ``(func_name, arg_base)``
+    pairs it calls as free functions with a Name-rooted first argument, and
+    the ``(path, line)`` pairs of the places dead on body entry."""
 
     def _tag(func: Any) -> Any:
         setattr(func, PYIR_REGION_ATTR_WRITES_ATTR, tuple(attr_writes))
         setattr(func, PYIR_REGION_METHOD_CALLS_ATTR, tuple(method_calls))
         setattr(func, PYIR_REGION_FREE_CALLS_ATTR, tuple(free_calls))
+        setattr(func, PYIR_REGION_DEAD_ON_ENTRY_ATTR, tuple(dead_on_entry))
         return func
 
     return _tag
 
 
+_PYIR_BIND_VALUE_UNSET = object()
+
+
+def _meta_kind(v: Any) -> "type | None":
+    """The Python scalar kind of a meta value (``bool``/``int``/``float``,
+    watched wrappers included), ``type(None)`` for None, None for anything
+    else (a staged value or an object)."""
+    if v is None:
+        return type(None)
+    if _is_staged_value(v):
+        return None
+    for kind in (bool, int, float):
+        if isinstance(v, kind):
+            return kind
+    return None
+
+
+def _pyir_sibling_pair_conflict(prior: Any, value: Any) -> "str | None":
+    """Why *prior* (the value a sibling arm bound) and *value* (the value
+    this arm binds) cannot both be carried past the if by one slot, or None
+    when they can (the same meta value, or a pair promotion may join).  The
+    read after the if turns the kind into a diagnostic
+    (``_pyir_check_cf_attr_first_def_read``)."""
+    if value is prior and not _is_staged_value(value):
+        return None  # the same Python object on both arms: nothing to carry
+    prior_kind, value_kind = _meta_kind(prior), _meta_kind(value)
+    if (prior_kind is None and not _is_staged_value(prior)) or (
+        value_kind is None and not _is_staged_value(value)
+    ):
+        # An object bound per arm: objects live on the Python side and have
+        # no staged form, so which one the attribute holds cannot follow the
+        # runtime path.
+        return "object"
+    if (
+        prior_kind is not None
+        and value_kind is not None
+        and type(None) not in (prior_kind, value_kind)
+        and prior_kind is not value_kind
+    ):
+        # int on one arm, float on the other: carrying it would mean the
+        # compiler picks the join type and inserts the cast; that is the
+        # user's call, in the branch.
+        return "type"
+    if (
+        not _is_staged_value(value)
+        and value_kind is not None
+        and value_kind is prior_kind
+        and value == prior
+    ):
+        return None  # the same meta value on both arms: nothing to carry
+    if not is_auto_m2s_enabled() or prior is None or value is None:
+        # Different meta values with promotion off, or ``None`` on either arm
+        # (no staged form): the promotion diagnostic at the read after the if.
+        return "meta"
+    return None
+
+
+def _pyir_bind_sibling_first_def(
+    owner: Any,
+    slot_name: Any,
+    target_name: "str | None" = None,
+    site: "tuple | None" = None,
+    value: Any = _PYIR_BIND_VALUE_UNSET,
+) -> bool:
+    """A first-def of an attribute that a SIBLING arm already first defined
+    (the arm entry unbound the sibling's binding, so the store on this arm is
+    a first-def again in Python) is, for the record, a write over the
+    sibling's value: route it through ``pyir_assign`` with that value as the
+    old one, so the sibling-arm rule applies (a meta rewrite promotes, or
+    refuses loudly with automatic promotion off) and this arm's path joins the
+    record.  Returns False when there is no such sibling value to bind over,
+    leaving the plain first-def record to the caller."""
+    key = (id(owner), slot_name)
+    rec = _PYIR_CF_ATTR_FIRST_DEFS.get(key)
+    if rec is None:
+        return False
+    if any(
+        _pyir_arm_path_covers(p, _pyir_current_region_arm_path()) for p in rec["paths"]
+    ):
+        return False
+    prior = _PYIR_DROPPED_SIBLING_VALUES.get(key, _PYIR_BIND_VALUE_UNSET)
+    if prior is _PYIR_BIND_VALUE_UNSET:
+        return False  # nothing was unbound for this arm: a plain first-def
+    if _is_staged_value(prior):
+        # The sibling's value is an SSA of a closed arm: it cannot serve as the
+        # old value of a store here (it does not dominate).  Leave the plain
+        # first-def record to the caller; the read after the if refuses.
+        return False
+    # The place is bound on this arm too: a promotion here or later in the
+    # arm seeds the cell with the sibling's value at the enclosing entry (a
+    # load before this arm's own store then reads it), not with the
+    # placeholder of a binding born in the sibling arm alone.
+    try:
+        _place = _make_slot_key(None, owner, slot_name)
+    except Exception:
+        _place = None
+    if _place is not None:
+        _slot_first_def_inside_cf.pop(_place, None)
+        _slot_first_def_block.pop(_place, None)
+    if value is _PYIR_BIND_VALUE_UNSET:
+        try:
+            value = _pyir_holder_read(owner, slot_name)
+        except (AttributeError, KeyError):
+            return False  # the arm did not leave the attribute bound after all
+    label = (
+        target_name
+        if isinstance(target_name, str)
+        else f"{type(owner).__name__}.{slot_name}"
+    )
+    filename, lineno = site if site and site[0] is not None else (None, None)
+    # What the arms disagree on decides what happens at the read after the if
+    # (``_pyir_check_cf_attr_first_def_read``).  A read inside this arm sees
+    # its own value, exactly as Python does, so nothing is refused here; the
+    # record remembers the conflict and the if exit carries it to the
+    # enclosing path.  This is the FIRST value the arm binds; the arm's end
+    # compares its LAST (``_pyir_settle_sibling_arm_values``).
+    conflict = _pyir_sibling_pair_conflict(prior, value)
+    if conflict is not None:
+        rec["conflict"] = (conflict, prior, value, filename, lineno)
+        _pyir_update_cf_attr_first_def_on_write(owner, slot_name)
+        return True
+    value_kind = _meta_kind(value)
+    if (
+        value_kind is not None
+        and not _is_staged_value(value)
+        and value_kind is _meta_kind(prior)
+        and value == prior
+    ):
+        # Both arms bind the same meta value: nothing to carry, the slot may
+        # stay meta; this arm's path still joins the record.
+        _pyir_update_cf_attr_first_def_on_write(owner, slot_name)
+        return True
+    if value_kind is not None and _pyir_open_loop_body_blocks:
+        # Both arms bind meta values and promotion is on, but the if sits in
+        # a staged loop body: the promoted slot would have to be carried
+        # across iterations as well as across the arms, which is not done
+        # yet.  Refuse here, at the write, naming the fix.
+        raise DSLUserCodeError(
+            DiagId.PHASE_META_FIELD_CHANGED_IN_CF,
+            filename=filename,
+            lineno=lineno,
+            owner_class=type(owner).__name__,
+            attr=slot_name,
+            old_value=prior,
+            new_value=value,
+        )
+    result = pyir_assign(
+        label, prior, value, filename, lineno, owner=owner, slot_name=slot_name
+    )
+    if result is not value:
+        _pyir_holder_store(owner, slot_name, result)
+    return True
+
+
+def _pyir_short_repr(value: Any, limit: int = 40) -> str:
+    """A bounded ``repr`` for diagnostics (an object's repr may be long)."""
+    try:
+        text = repr(value)
+    except Exception:
+        text = f"<{type(value).__name__}>"
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _pyir_mark_if_arm_meta_leaves(
+    before: "dict[int, tuple[Any, frozenset, dict[str, Any]]]", arm_block: Any
+) -> None:
+    """Arm end of a runtime ``scf.if``: a meta-primitive attribute leaf that
+    was bound at the arm's start, is still meta and unpromoted at its end and
+    holds a different value was rewritten on one traced path only, so its
+    value after the if depends on the path taken.  A meta slot cannot carry
+    that, and whether the leaf is read afterwards is not visible here, so the
+    leaf gets the arm-local escape mark (``_PYIR_ARM_LOCAL_META_WRITES``):
+    a consumption inside the arm is exact, a consumption from outside it
+    refuses with PHASE_ARM_LOCAL_CONSTANT_ESCAPES, in both modes (with
+    promotion on a leaf still meta here was written by a spelling promotion
+    never saw).  A raw payload left by such a spelling (``setattr``, a tuple
+    target, ``__dict__``, a plain method) is wrapped so its consumption
+    reaches the check like a choked store's does.  Judged at EVERY arm's end
+    against that arm's start (``_pyir_attr_keysets``): an arm that moves the
+    leaf and a later arm that moves it back leave the if exit equal to the
+    entry.  A key born on the arm is not in *before* and stays with the
+    first-def rules.  A leaf that turned into a non-primitive (None, a tuple,
+    an object, a string) is refused here in both modes: no type joins the two
+    paths, and a read-side mark has no wrapper to live on."""
+    if not before:
+        return
+    site = None
+    for _hid, (holder, _keys, metas) in before.items():
+        if not metas:
+            continue
+        storage = _instance_storage_items(holder)
+        if storage is None:
+            continue
+        for attr, entry in metas.items():
+            if attr not in storage:
+                continue
+            cur = storage[attr]
+            if _is_staged_value(cur):
+                continue
+            now = _pyir_meta_leaf_value(cur)
+            if now is None:
+                # A meta primitive turned into None, a tuple, an object, a
+                # string: nothing in either mode can carry that across the
+                # if (no type to join on), so refuse here; a read-side mark
+                # has no wrapper to live on for such a value.
+                if site is None:
+                    site = _first_non_dsl_caller_location()
+                raise DSLUserCodeError(
+                    DiagId.PHASE_ARM_REWRITE_NOT_STAGEABLE,
+                    filename=site[0],
+                    lineno=site[1],
+                    var=f"{type(holder).__name__}.{attr}",
+                    old_type=type(entry).__name__,
+                    old_value=entry,
+                    new_type=type(cur).__name__,
+                    new_value=_pyir_short_repr(cur),
+                )
+            try:
+                moved = type(now) is not type(entry) or bool(now != entry)
+            except Exception:
+                moved = True
+            if not moved:
+                continue
+            try:
+                place = _make_slot_key(None, holder, attr)
+            except Exception:
+                place = None
+            if place is None or place in _slot_refs:
+                continue  # promoted: the staged cell carries it
+            if site is None:
+                site = _first_non_dsl_caller_location()
+            _pyir_arm_local_mark_leaf(holder, attr, now, place, arm_block, site)
+
+
+def _pyir_settle_sibling_arm_values(roots: "list") -> None:
+    """Arm end: an attribute a SIBLING arm first defined and this arm bound
+    again is carried past the if by the value the arm LEAVES, not the first
+    one it bound (``c.k = 1`` followed by ``c.k = c.k * 2`` leaves 2).  Compare
+    that final meta value with the sibling's saved value and record the
+    conflict the first bind did not see; a staged final value was carried by
+    the store that produced it.  Runs inside the arm's region scope, before
+    the arm exit restores the sibling's value."""
+    if not _PYIR_DROPPED_SIBLING_VALUES or _pyir_gen_events_suppressed():
+        return
+    cur = _pyir_current_region_arm_path()
+    if not cur:
+        return
+    for (oid, slot_name), prior in list(_PYIR_DROPPED_SIBLING_VALUES.items()):
+        rec = _PYIR_CF_ATTR_FIRST_DEFS.get((oid, slot_name))
+        if rec is None or rec.get("conflict") is not None:
+            continue
+        if not any(_pyir_arm_path_covers(cur, p) for p in rec["paths"]):
+            continue  # this arm did not bind it; the arm exit restores prior
+        handle = _GEN_OBJ_KEEPALIVE.get(oid)
+        owner = handle() if isinstance(handle, weakref.ReferenceType) else handle
+        if owner is None:
+            continue
+        items = _instance_storage_items(owner)
+        if items is None or slot_name not in items:
+            continue
+        final = items[slot_name]
+        if _is_staged_value(final) or _is_staged_value(prior):
+            continue
+        conflict = _pyir_sibling_pair_conflict(prior, final)
+        if conflict is None and final != prior:
+            # Promotion is on but no store promoted the slot (a meta rewrite
+            # after an equal first bind): the read after the if would see
+            # this arm's constant on every path.
+            conflict = "meta"
+        if conflict is not None:
+            site = rec.get("site") or (None, None)
+            rec["conflict"] = (conflict, prior, final, site[0], site[1])
+
+
 def pyir_note_attr_first_def(
-    target_name: str, owner: Any, slot_name: Any, value: Any
+    target_name: str,
+    owner: Any,
+    slot_name: Any,
+    value: Any,
+    rhs_ctor: Any = None,
+    site: "tuple | None" = None,
 ) -> None:
     """Trace-only note for an attr first-def inside staged CF (the
     preprocessor's first-def branch is a plain setattr, invisible otherwise).
-    The record is a binding-position fact, so every value kind records."""
+    The record is a binding-position fact, so every value kind records.
+
+    *rhs_ctor* is the re-loaded callee of a call RHS (same witness as
+    ``pyir_assign``): a freshly-constructed object bound to a brand-new
+    attribute records its fields' birth block here, since no ``pyir_assign``
+    choke runs on this branch.
+
+    *site* is the binding's ``(filename, lineno)`` when the caller has it."""
     if owner is None or slot_name is None:
         return
+    slot_name = _pyir_canonical_slot_name(owner, slot_name)
+    # An attr first-def binds its RHS in Python VALUE terms (the plain-local
+    # first-def freeze, one hop deeper).  The preprocessor's first-def
+    # branch is a plain setattr, so the storage holds the RHS object itself:
+    # a value still re-resolving a foreign cell would let this attribute's
+    # first place-named read claim that cell as its row (first-wins
+    # rooting), and every later read would follow the source binding
+    # instead of the stash.  Fires at ANY scope, before the region gates.
+    if _carries_foreign_slot_binding(value):
+        frozen = _freeze_foreign_slot_binding(value, f"attr first-def '{target_name}'")
+        if frozen is not value:
+            try:
+                bound = _pyir_holder_read(owner, slot_name)
+            except Exception:
+                bound = None
+            # Only plain storage holding the RHS object is rebound; a
+            # descriptor-mediated write already ran its setter once.
+            if bound is value:
+                _pyir_holder_store(owner, slot_name, frozen)
+                value = frozen
     if not is_inside_staged_cf() or is_inside_constexpr_loop():
         return
-    _pyir_record_cf_attr_first_def(owner, slot_name)
+    # The branch (absent at statement entry) was decided before the RHS ran,
+    # and the RHS seeded the leaf through a default-taken miss: the store is
+    # the seeded leaf's first UPDATE -- a write to an existing place whose
+    # entry value is the default -- so it takes the assign choke, not the
+    # first-def note (promotion in AUTO_M2S, the loud refusal otherwise).
+    seeded = _PYIR_CF_SEEDED_ATTRS.get((id(owner), slot_name))
+    if seeded is not None and "default" in seeded:
+        old = pyir_read(
+            target_name, seeded["default"], owner=owner, slot_name=slot_name
+        )
+        filename, lineno = _first_non_dsl_caller_location()
+        result = pyir_assign(
+            target_name, old, value, filename, lineno, owner=owner, slot_name=slot_name
+        )
+        if result is not value:
+            _pyir_holder_store(owner, slot_name, result)
+        return
+    if _pyir_bind_sibling_first_def(
+        owner, slot_name, target_name, site=site, value=value
+    ):
+        return
+    _pyir_record_cf_attr_first_def(owner, slot_name, site=site)
+    if rhs_ctor is not None:
+        call_born = False
+        if not isinstance(rhs_ctor, type):
+            try:
+                call_born = _pyir_call_born_object_is_fresh(
+                    value, owner, id(value) in _PYIR_CANDIDATE_HOLDERS
+                )
+            except Exception:
+                call_born = False
+        _pyir_record_fresh_object_leaf_first_defs(rhs_ctor, value, call_born=call_born)
+    # A meta-primitive attribute born in this region is region-born for the
+    # off-mode write audit (``_pyir_place_is_region_born``): a later
+    # read-modify-write of it in the same body re-executes from this binding
+    # on every iteration, so it is not a carried accumulation.  The same
+    # binding position is the place's F-BIRTHPOS fact: a same-depth rebind
+    # keeps the per-iteration meta value (keep-constexpr) and a promotion
+    # seeds the cell here, per iteration, instead of folding this reset into
+    # a once-seeded entry cell that the rebind then carries across iterations.
+    if isinstance(value, (bool, int, float)):
+        _pyir_note_region_birth(_make_slot_key(target_name, owner, slot_name))
+        _pyir_record_fresh_entry_birth(owner, slot_name, value)
 
 
 def pyir_generation_probe(target_name: str) -> None:
@@ -3239,6 +4392,7 @@ def pyir_generation_probe(target_name: str) -> None:
         or _ALIAS_CAPTURE_ROOT_NAMES
         or _SUPERSEDED_LEAF_WRAPPERS
         or _PYIR_CF_ATTR_FIRST_DEFS
+        or _PYIR_SELECTION_STALE_PRODUCTS
     ):
         return
     if _pyir_gen_events_suppressed():
@@ -3249,6 +4403,8 @@ def pyir_generation_probe(target_name: str) -> None:
     base = sys._getframe(1).f_locals.get(root_name)
     if base is None:
         return
+    if _PYIR_SELECTION_STALE_PRODUCTS:
+        _pyir_check_stale_selection_product_read(base, attr, target_name)
     _pyir_generation_read_checks(target_name, None, base, attr)
     _pyir_check_cf_attr_first_def_read(base, attr)
 
@@ -3329,7 +4485,7 @@ def _pyir_judge_fabricated_attr_read(
     definer = _pyir_class_facts.getattr_fabrication_definer(type(owner))
     if definer is None:
         return None
-    from .pyir_call_boundary import _pyir_boundary_module_is_user
+    from .pyir_callee_rewrite import _pyir_boundary_module_is_user
 
     if not _pyir_boundary_module_is_user(getattr(definer, "__module__", None)):
         return None  # wrapper-consumer contract: DSL/stdlib fabrication protocols
@@ -3381,6 +4537,24 @@ _PYIR_FGET_STORE_OPS = frozenset(
 _PYIR_FGET_DEREF_OPS = frozenset(("STORE_DEREF", "DELETE_DEREF"))
 
 
+def _pyir_canonical_slot_name(owner: Any, slot_name: Any) -> Any:
+    """The storage slot a choke's ``(owner, slot_name)`` pair names: the
+    backing attribute when *slot_name* is a storage-transparent property of
+    ``type(owner)`` (``return self._n`` / ``self._n = v``), else *slot_name*
+    unchanged.  Both spellings of the leaf must resolve to ONE place: a
+    read-modify-write through the property and a plain callee's raw write of
+    the backing field are updates of the same cell, and a place keyed on the
+    property name would name no storage (F-SHAPE) and never promote."""
+    # Only an attribute NAME can spell a property; an item key or a composite
+    # ``_PlaceSeg`` element slot passes through unchanged.
+    if not isinstance(slot_name, str) or owner is None:
+        return slot_name
+    if isinstance(owner, (dict, list, tuple, type)) or _is_staged_value(owner):
+        return slot_name
+    backing = _pyir_class_facts.transparent_property_backing(type(owner), slot_name)
+    return slot_name if backing is None else backing
+
+
 def _pyir_judge_mutating_property_read(owner: Any, slot_name: Any) -> None:
     """Mutating-getter guard: a user ``@property`` whose fget's own bytecode
     writes state executes once at trace time, so inside dynamic staged CF its
@@ -3393,7 +4567,8 @@ def _pyir_judge_mutating_property_read(owner: Any, slot_name: Any) -> None:
         return
     if not is_inside_staged_cf() or is_inside_constexpr_loop():
         return
-    descr = getattr(type(owner), slot_name, None)
+    # Inspect the descriptor itself without invoking a custom __get__ again.
+    descr = _inspect_module.getattr_static(type(owner), slot_name, None)
     if not isinstance(descr, property) or descr.fget is None:
         return
     fget = descr.fget
@@ -3402,7 +4577,7 @@ def _pyir_judge_mutating_property_read(owner: Any, slot_name: Any) -> None:
         return
     mutates = _PYIR_MUTATING_FGET_SCANS.get(code)
     if mutates is None:
-        from .pyir_call_boundary import _pyir_boundary_module_is_user
+        from .pyir_callee_rewrite import _pyir_boundary_module_is_user
 
         mutates = _pyir_boundary_module_is_user(
             getattr(fget, "__module__", None)
@@ -3434,6 +4609,7 @@ def pyir_read(
     slot_name: Any = None,
     force_promote_meta: bool = False,
     row_authoritative: bool = False,
+    maybe_written: bool = True,
 ) -> Any:
     """Called by AST-inserted code before every read of a tracked variable.
 
@@ -3465,7 +4641,10 @@ def pyir_read(
         current_value = None
     # Refuse a wrapper minted under a previous top-level compilation before any
     # dominance probe dereferences its already-finalized backing IR handle.
-    _pyir_guard_stale_epoch(current_value)
+    from .typing import _refuse_stale_staged  # lazy: typing imports this chain
+
+    _refuse_stale_staged(current_value)
+    slot_name = _pyir_canonical_slot_name(owner, slot_name)
     # F-MEMORY: an element of a memref-backed owner lives in staged memory and
     # the owner's accessors emit its loads; memory, not a row, is the authority.
     if (
@@ -3475,12 +4654,37 @@ def pyir_read(
         and _is_memref_like(owner)
     ):
         return current_value
+    # A candidate of an unsighted staged selection that a write went through:
+    # its fields no longer say what Python's would -> refuse the read.
+    if _PYIR_SELECTION_WRITTEN_CANDIDATES and owner is not None:
+        _pyir_check_selection_written_candidate_read(owner, slot_name, target_name)
+    # A staged-selection product read after a write to one of its candidates.
+    if _PYIR_SELECTION_STALE_PRODUCTS and owner is not None:
+        _pyir_check_stale_selection_product_read(owner, slot_name, target_name)
     # Fabrication guard: judge a ``__getattr__``-fabricated read here (refuse a
     # bare meta bake inside staged CF; tolerate + record everywhere else).
     _pyir_judge_fabricated_attr_read(owner, slot_name, current_value)
+    # Candidate-holder registry: an attribute read sights its owner, so a
+    # holder the body reads before any binding choke sees it joins the open
+    # meta-leaf audits with its pre-write value.
+    if owner is not None:
+        _pyir_register_candidate_holder(owner, adopt=False)
     # Mutating-getter guard: a user property whose fget writes state cannot
     # re-run its side effect per staged iteration -- refuse inside staged CF.
     _pyir_judge_mutating_property_read(owner, slot_name)
+    # Sighting: a user-class instance read here has its class instrumented so
+    # its implicit protocol code (dunders, properties) observes from now on.
+    if _PYIR_SIGHT_HOOK[0] is not None:
+        if owner is not None:
+            _PYIR_SIGHT_HOOK[0](owner)
+        if current_value is not None and type(current_value) not in (
+            int,
+            float,
+            bool,
+            str,
+            bytes,
+        ):
+            _PYIR_SIGHT_HOOK[0](current_value)
     # Read-choke adoption: a plain dict read off a KNOWN holder slot adopts with
     # the holder replaced; owner-less reads stay raw.
     if (
@@ -3524,6 +4728,9 @@ def pyir_read(
         _pyir_generation_read_checks(target_name, current_value, owner, slot_name)
     # Region-conditional attr first-def read check (read-before-set): a read
     # outside the first-def block's subtree is never-set on its reaching path.
+    # The pre-store refresh of an assignment target takes this check too: the
+    # refresh is the one tracked read of the target, and a read hidden from
+    # the preprocessor (``getattr``, ``__dict__``, a helper) may follow it.
     if _PYIR_CF_ATTR_FIRST_DEFS and owner is not None:
         _pyir_check_cf_attr_first_def_read(owner, slot_name)
 
@@ -3701,11 +4908,21 @@ def pyir_read(
                         mv = _set_slot_mv(None, target_name, route)
         if mv is not None and mv._is_ref_accessible():
             _pyir_refuse_superseded_row_serve(mv, target_name)
-            loaded = mv.load()
-            log().info(
-                "[pyir_read] '%s' outside CF but has ref → loaded",
-                target_name,
-            )
+            if _pyir_cell_read_is_fresh(current_value, mv):
+                # The binding IS the cell's content at this program point (a
+                # region-close reload left it there): a second load would
+                # read the same content, so the read shares that load.
+                loaded = _pyir_share_fresh_cell_load(current_value, mv)
+                log().info(
+                    "[pyir_read] '%s' outside CF: binding is a fresh load → reused",
+                    target_name,
+                )
+            else:
+                loaded = mv.load()
+                log().info(
+                    "[pyir_read] '%s' outside CF but has ref → loaded",
+                    target_name,
+                )
             if attach_ref:
                 _attach_mutable_ref(loaded, mv, f"pyir_read '{target_name}' outside-CF")
             return loaded
@@ -3764,6 +4981,11 @@ def pyir_read(
         if type(current_value) in (bool, int, float) and not force_promote_meta:
             # F-SPEC: the wrapped payload is what a later bake carries.
             _pyir_spec_record_read(d1_slot, current_value)
+            # Only ``bool`` unwraps: no write can promote this slot, while
+            # ``int``/``float`` keep the wrapper for its payload-width refusal
+            # and attributes keep it for their non-lexical write set.
+            if owner is None and not maybe_written and type(current_value) is bool:
+                return current_value
             return _WatchedM(current_value, d1_slot)
 
     if not _is_staged_value(current_value):
@@ -4312,6 +5534,34 @@ def _pyir_obs_global_read(name: str, value: Any, mod_name: "str | None" = None) 
     return value
 
 
+def _pyir_post_attr_read(
+    target_name: str,
+    owner: Any,
+    attr: str,
+    mod_name: "str | None" = None,
+) -> Any:
+    """Evaluate one lazy attribute read at its original Python evaluation site.
+
+    The receiver arrives already evaluated; getattr runs once. Meta reads need
+    specialization observation even outside staged CF, while staged reads use
+    the same owner-keyed snapshot path as ordinary attribute instrumentation.
+    """
+    if isinstance(owner, (types.ModuleType, type)):
+        return _pyir_obs_read(target_name, owner, attr, mod_name)
+    value = getattr(owner, attr)
+    value = pyir_read(target_name, value, attach_ref=False, owner=owner, slot_name=attr)
+    # A helper may run inside its caller's staged region while reading globals
+    # from a different module. Keep that module root even in staged CF, and
+    # observe the routed value so an existing row cannot seal a stale payload.
+    _pyir_spec_observe_attr_read(target_name, owner, attr, value, mod_name)
+    return value
+
+
+# Its ``getattr`` runs the program's read: a property that consumes a
+# trace-time payload (``python_value``) consumes it on the program's behalf.
+_PYIR_NATIVE_INVOKE_CODES.add(_pyir_post_attr_read.__code__)
+
+
 def _pyir_post_subscript_read(
     target_name: str,
     container: Any,
@@ -4360,6 +5610,13 @@ def _pyir_post_subscript_read(
             var=str(target_name),
             detail=f"key {key!r} created via {type(container).__name__}",
         )
+    # A plain dict / list no adoption tracks (or a subclass inheriting the
+    # builtin lookup): the watched containers' key / index wall, before the
+    # lookup misses by identity (a bare KeyError) or a Staged index falls to
+    # the generic ``__index__`` refusal.
+    _pyir_item_key_wall(
+        container, key, str(target_name).split("[", 1)[0], "__getitem__"
+    )
     val = container[key]
     if isinstance(container, (_WatchedDict, _WatchedList)):
         # The watched ``__getitem__`` already routed this read (single-fire
@@ -4458,7 +5715,8 @@ def _pyir_pre_subscript_assign(
     # Untracked Python-mutable sequences and dict/list SUBCLASSES never become
     # watched place owners: element writes inside dynamic staged CF are refused.
     _untracked = isinstance(
-        container, (bytearray, _array_module.array, _collections_module.deque)
+        container,
+        (bytearray, memoryview, _array_module.array, _collections_module.deque),
     ) or (isinstance(container, list) and type(container) is not list)
     if _untracked:
         # Human name computed from the type (module-qualified for stdlib
@@ -4489,6 +5747,10 @@ def _pyir_pre_subscript_assign(
             detail=f"key {key!r} created via {type(container).__name__}",
         )
     if isinstance(container, list):
+        # A plain list no adoption tracks: the watched-list index wall,
+        # whatever the CF depth, before a Staged index falls to the generic
+        # ``__index__`` refusal.
+        _pyir_list_index_wall(key, str(target_name).split("[", 1)[0])
         if not is_inside_locally_staged_cf():
             return _PYIR_SKIP
     elif not isinstance(container, dict):
@@ -4504,15 +5766,32 @@ def _pyir_pre_subscript_assign(
         if is_inside_staged_cf() and not is_inside_constexpr_loop():
             _pyir_arm_opaque_owner_audit(str(target_name), container)
         return _PYIR_SKIP
+    # A plain dict no adoption tracks (one a plain helper returned, or module
+    # state, or a subclass inheriting dict's store): the watched-dict write
+    # wall's key rule, before the store inserts an identity-hashed entry.
+    _pyir_item_key_wall(
+        container, key, str(target_name).split("[", 1)[0], "__setitem__"
+    )
     try:
         old = container[key]  # type: ignore[call-overload]
     except (KeyError, IndexError):
         return None
     if isinstance(container, dict) and isinstance(old, (bool, int, float)):
         return old
+    if _previous_compilation_value(old):
+        # A leftover of a previous compilation: its backing IR lives in another
+        # MLIR context, so this store overwrites it and nothing reads it here.
+        # The slot is absent for this compilation (a first-def at the store).
+        return None
     # Pass owner/slot_name so the slot registry distinguishes subscript entries that happen to hold the same
     # Python value; otherwise dict keys sharing one value would collapse onto a single ``pyir.ref``.
     return pyir_read(target_name, old, owner=container, slot_name=key)
+
+
+def _previous_compilation_value(value: object) -> bool:
+    """A leftover of a previous compilation: an SSA-backed value whose backing
+    IR lives in another MLIR context (see :func:`_pyir_is_stale_staged`)."""
+    return _pyir_is_stale_staged(value)
 
 
 def _attr_owner_plain_storage_setattr(owner: object) -> bool:
@@ -4575,6 +5854,9 @@ def _pyir_post_attr_assign(
     *,
     owner: object = None,
     slot_name: object = None,
+    rmw_self: bool = False,
+    rmw_path: "str | None" = None,
+    rhs_ctor: object = None,
 ) -> object:
     """Post-store bookkeeping for an ATTRIBUTE assignment target.
 
@@ -4589,6 +5871,15 @@ def _pyir_post_attr_assign(
     conversion.  They also catch a verbatim ``object.__setattr__`` forwarder
     , where the vetoed write-back would only
     re-store what ``getattr`` just returned.
+
+    ``rmw_self``/``rmw_path`` are the syntactic RMW witness: every
+    PREPROCESSOR injection site for an ATTRIBUTE target calls this wrapper,
+    so both kwargs must be declared here and forwarded, or the generated
+    call raises ``TypeError`` on every attribute read-modify-write.  Tracer-side
+    callers (M->M decomposition, the write-choke replay) call ``pyir_assign``
+    with ``owner``/``slot_name`` directly and carry no syntactic witness; a
+    read-modify-write through them is caught at the loop's close by the
+    owner-identity meta-leaf audit (``_pyir_verify_loop_meta_leaves``).
     """
     result = pyir_assign(
         target_name,
@@ -4598,6 +5889,9 @@ def _pyir_post_attr_assign(
         lineno,
         owner=owner,
         slot_name=slot_name,
+        rmw_self=rmw_self,
+        rmw_path=rmw_path,
+        rhs_ctor=rhs_ctor,
     )
     if (
         new_value is old_value
@@ -4720,6 +6014,215 @@ def pyir_promote_while_carried_arg(
     # The carried binding is the carry engine's re-presentation of the
     # place, not a user rebind: the row stays authoritative for this read.
     return pyir_read(target_name, current_value, row_authoritative=True)
+
+
+def _pyir_while_cond_hops_holder(root_obj: object, hops: "tuple[str, ...]") -> Any:
+    """The object at ``root_obj.<hops>`` read through instance storage only
+    (no descriptor runs); ``None`` when a hop is missing or not an object."""
+    obj: Any = root_obj
+    for hop in hops:
+        items = _instance_storage_items(obj)
+        if items is None or hop not in items:
+            return None
+        obj = items[hop]
+        if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+            return None
+    return obj
+
+
+def _pyir_while_cond_plain_def(fn: Any) -> "types.FunctionType | None":
+    """*fn* as the plain unbound Python def its writes are facts of (through
+    a declared ``__wrapped__`` chain); ``None`` for a bound method, class,
+    builtin, partial or callable object -- their first parameter is not the
+    passed object, so no receiver fact attributes their writes to it."""
+    hops = 0
+    while hasattr(fn, "__wrapped__") and hops < 8:
+        fn = fn.__wrapped__
+        hops += 1
+    if isinstance(fn, types.FunctionType) and getattr(fn, "__self__", None) is None:
+        return fn
+    return None
+
+
+def _pyir_while_cond_callee_written_legs(
+    root_obj: object,
+    cond_paths: "tuple[tuple[str, ...], ...]",
+    free_calls: "tuple[tuple[tuple[str, ...], str, Callable[[], Any]], ...]",
+    method_calls: "tuple[tuple[tuple[str, ...], str], ...]",
+    opaque_hops: "tuple[tuple[str, ...], ...]",
+) -> "tuple[tuple[str, ...], ...]":
+    """The condition-read paths under *root_obj* a body callee can rewrite.
+
+    Exact where the callee's def is resolvable and the passed object is
+    provably its receiver (first parameter of a plain def called with it
+    first, or the method's ``self``): the closure ``transitive_write_facts``
+    names the written fields.  That closure under-approximates, so an
+    partial closure, an unresolvable callee, and every pass the
+    preprocessor could not attribute widen to all paths under the passed
+    object -- a leg carried without a write is still correct; a write without
+    a carry is a loop-invariant condition."""
+    paths = [tuple(p) for p in cond_paths if p]
+    carried: "set[tuple[str, ...]]" = set()
+    opaque: "set[tuple[str, ...]]" = {tuple(h) for h in opaque_hops}
+
+    def _under(hops: "tuple[str, ...]") -> "list[tuple[str, ...]]":
+        return [p for p in paths if len(p) > len(hops) and p[: len(hops)] == hops]
+
+    def _exact(hops: "tuple[str, ...]", bound_callee: Any) -> None:
+        try:
+            writes, complete = _pyir_class_facts.transitive_write_facts(bound_callee)
+        except Exception:
+            writes, complete = frozenset(), False
+        for p in _under(hops):
+            if p[len(hops)] in writes:
+                carried.add(p)
+        if not complete:
+            opaque.add(hops)
+
+    for hops, fname, thunk in free_calls:
+        hops = tuple(hops)
+        holder = _pyir_while_cond_hops_holder(root_obj, hops)
+        if holder is None:
+            continue
+        try:
+            fn = thunk()
+        except Exception:
+            opaque.add(hops)  # unbound here: the body's own call decides
+            continue
+        plain = _pyir_while_cond_plain_def(fn)
+        if plain is not None:
+            # The def's first parameter IS the passed object: bind it so the
+            # closure resolves the def's receiver-method edges on its class.
+            _exact(hops, types.MethodType(plain, holder))
+            continue
+        if isinstance(fn, types.BuiltinFunctionType) and not isinstance(fn, type):
+            # A C builtin writes Python attributes only through the dynamic
+            # access surface; any other cannot rebind a field.
+            names = {fname, getattr(fn, "__name__", "")}
+            if names & _pyir_class_facts._SURFACE_OPAQUE_CALLS:
+                opaque.add(hops)
+            continue
+        opaque.add(hops)
+
+    for hops, meth in method_calls:
+        hops = tuple(hops)
+        holder = _pyir_while_cond_hops_holder(root_obj, hops)
+        if holder is None:
+            continue
+        # Class MRO only -- no instance getattr, so a property getter cannot
+        # run here; an instance-dict callable or a ``__getattr__`` product
+        # resolves to no def.
+        target = None
+        for klass in type(holder).__mro__:
+            cand = klass.__dict__.get(meth)
+            if cand is not None:
+                target = cand
+                break
+        if isinstance(target, (staticmethod, classmethod)):
+            continue  # the receiver is not passed
+        plain = _pyir_while_cond_plain_def(target) if target is not None else None
+        if plain is None or isinstance(target, property):
+            opaque.add(hops)
+            continue
+        _exact(hops, plain.__get__(holder, type(holder)))
+
+    for hops in opaque:
+        carried.update(_under(hops))
+    return tuple(sorted(carried))
+
+
+def _pyir_while_cond_leg_storage(
+    root_obj: object, path: "tuple[str, ...]"
+) -> "tuple[Any, Any] | None":
+    """``(holder, value)`` of the storage slot *path* names under *root_obj*;
+    ``None`` when the leaf is not an instance-storage slot (a property or
+    ``__getattr__`` product has no ``(owner, slot)`` cell to carry, and
+    reading it here would run its getter)."""
+    holder = _pyir_while_cond_hops_holder(root_obj, tuple(path[:-1]))
+    items = _instance_storage_items(holder) if holder is not None else None
+    if items is None or path[-1] not in items:
+        return None
+    return holder, items[path[-1]]
+
+
+def _pyir_while_cond_leg_is_meta(root_obj: object, path: "tuple[str, ...]") -> bool:
+    """True when the leaf of *path* under *root_obj* is a plain Python
+    number (or its watched wrap): the value the off mode must not promote."""
+    slot = _pyir_while_cond_leg_storage(root_obj, path)
+    if slot is None:
+        return False
+    v = slot[1]
+    py_v = v.python_value if isinstance(v, _WatchedM) else v
+    return type(py_v) in (bool, int, float)
+
+
+def _pyir_while_cond_leg_has_cell(root_obj: object, path: "tuple[str, ...]") -> bool:
+    holder = _pyir_while_cond_hops_holder(root_obj, tuple(path[:-1]))
+    if holder is None:
+        return False
+    try:
+        place = _make_slot_key(None, holder, path[-1])
+    except Exception:
+        return False
+    return place is not None and _slot_refs.get(place) is not None
+
+
+def pyir_promote_while_cond_callee_legs(
+    root_name: str,
+    root_obj: object,
+    *,
+    cond_paths: "tuple[tuple[str, ...], ...]",
+    free_calls: "tuple[tuple[tuple[str, ...], str, Callable[[], Any]], ...]" = (),
+    method_calls: "tuple[tuple[tuple[str, ...], str], ...]" = (),
+    opaque_hops: "tuple[tuple[str, ...], ...]" = (),
+    reload: bool = False,
+) -> None:
+    """Carry the ``scf.while`` condition's attribute reads that a BODY CALLEE
+    rewrites (``while m.remaining > 0: drain(m)``).
+
+    The body traces once, so a condition leg with no cell compares the
+    pre-loop SSA on every iteration: the loop would run to its other bound
+    while the body dutifully updates the field.  The body's own text shows
+    no write, so the carry is decided here from the callee's def (see
+    ``_pyir_while_cond_callee_written_legs``) and each written leg is routed
+    through its ``(owner, slot)`` cell before the condition reads it, exactly
+    as a declared ``condition_attr_paths`` leg is.  ``reload`` is the
+    after-block re-load of the same legs (the before-block load does not
+    dominate the body); only legs that already have a cell re-load.
+
+    Off mode: a plain-meta leg is left alone -- promoting it would turn a
+    Python value into a runtime value behind the author's back; the callee's
+    write of it is what the boundary refuses loudly."""
+    if not is_inside_staged_cf():
+        return
+    if (
+        root_obj is None
+        or isinstance(root_obj, (bool, int, float, str, bytes))
+        or not _has_instance_storage(root_obj)
+    ):
+        return
+    legs = tuple(
+        p
+        for p in _pyir_while_cond_callee_written_legs(
+            root_obj, cond_paths, free_calls, method_calls, opaque_hops
+        )
+        if _pyir_while_cond_leg_storage(root_obj, p) is not None
+    )
+    promote_meta = is_auto_m2s_enabled()
+    if not promote_meta:
+        legs = tuple(p for p in legs if not _pyir_while_cond_leg_is_meta(root_obj, p))
+    if reload:
+        legs = tuple(p for p in legs if _pyir_while_cond_leg_has_cell(root_obj, p))
+    if not legs:
+        return
+    log().info(
+        "[pyir while] callee-written condition legs of '%s': %s",
+        root_name,
+        ", ".join(".".join(p) for p in legs),
+    )
+    _promote_carried_attr_legs(
+        root_name, root_obj, legs, force_promote_meta=promote_meta and not reload
+    )
 
 
 def _pyir_refuse_stale_raw_carry(
@@ -5027,43 +6530,36 @@ def _pyir_watched_dict_write(
     An instance-``__dict__`` mapping routes str-keyed items to the INSTANCE's
     attr row -- one place row per storage, whatever the spelling."""
     label = _pyir_watched_dict_label(container, key)
-    # A key must NAME a compile-time place: staged / IR-backed keys are refused;
-    # any hashable trace-time value is a valid place name.
-    if _is_staged_value(key) or isinstance(key, ir.Value):
-        raise DSLUserCodeError(
-            DiagId.CONTAINER_DICT_KEY_STAGED,
-            filename=filename,
-            lineno=lineno,
-            var=getattr(container, "_pyir_label", None) or "dict",
-        )
-    # The same wall one hop deeper: a plain-object key whose own ``__hash__``
-    # consumes a staged value launders runtime identity into the key.  Probe
-    # the key's hash under the trace-scoped staged-hash witness; only this
-    # write-site correlation refuses -- hashing outside a keyed write never
-    # does.  An unhashable key raises the plain TypeError, as any dict write.
-    _hash_mark = _pyir_staged_hash_witness_count()
-    hash(key)
-    if _pyir_staged_hash_witness_count() != _hash_mark:
-        raise DSLUserCodeError(
-            DiagId.CONTAINER_DICT_KEY_STAGED_HASH,
-            filename=filename,
-            lineno=lineno,
-            var=getattr(container, "_pyir_label", None) or "dict",
-        )
+    # A key must NAME a compile-time place: a staged / IR-backed key, or a key
+    # whose own ``__hash__`` launders staged identity, is refused.
+    _pyir_dict_key_wall(key, getattr(container, "_pyir_label", None) or "dict")
     _inst = _pyir_instance_dict_owner(container, key)
     place_owner = _inst if _inst is not None else container
     missing = not dict.__contains__(container, key)
-    if missing:
+    seeded = _PYIR_CF_SEEDED_ATTRS.get((id(place_owner), key)) if missing else None
+    if seeded is not None and "default" in seeded:
+        # A default-taken miss earlier in this region seeded the entry: this
+        # store is the seeded entry's first UPDATE, a write to an existing
+        # place whose entry value is the default.
+        old = pyir_read(label, seeded["default"], owner=place_owner, slot_name=key)
+        missing = False
+    elif missing:
         # New-key insertion through SUBSCRIPT syntax stays supported (first-def
         # mints the cell; stale reads refuse at the READ). Mutator methods stay loud.
-        old: Any = None
-        # Inside dynamic staged CF the key SET changed on this one traced pass
-        # only: record it so a later whole-key-set consumption (membership,
-        # lookup miss) refuses instead of baking this pass's truth.
+        old = None
+        # A key probed absent earlier in this open region (an unseeded
+        # ``.get()`` miss) and created here: the probe's answer is fixed to
+        # the first iteration while Python finds the key afterwards.
         if is_inside_staged_cf() and not is_inside_constexpr_loop():
-            _PYIR_DICT_CF_CREATED_KEYS.setdefault(id(container), (container, set()))[
+            _pyir_check_absent_probe_then_bound(place_owner, key)
+        # Inside dynamic staged CF the key SET changed on this one traced pass
+        # only: record it (with the creating arm path) so a later whole-key-set
+        # consumption (membership, lookup miss, a walk outside the creating
+        # path) refuses instead of baking this pass's truth.
+        if is_inside_staged_cf() and not is_inside_constexpr_loop():
+            _PYIR_DICT_CF_CREATED_KEYS.setdefault(id(container), (container, {}))[
                 1
-            ].add(key)
+            ].setdefault(key, _pyir_current_region_arm_path())
         # Gate-once evidence: a first-def traced under a folded constant ``if`` arm
         # lifts keep-meta when the arm provably latched the gate (see pyir_state).
         if _PYIR_FOLD_FIRSTDEF_STACK:
@@ -5162,9 +6658,21 @@ def _pyir_watched_dict_mutate(
         )
 
 
-def _pyir_watched_dict_get_miss(container: "_WatchedDict", key: Any) -> None:
+def _pyir_watched_dict_get_miss(
+    container: "_WatchedDict", key: Any, default: Any = None
+) -> Any:
     """Object-side ``get()``-MISS choke: a miss default on a dict with tracked
-    writes inside dynamic staged CF would bake a leaked-arm constant -- loud."""
+    writes inside dynamic staged CF is path-dependent -- refused.
+
+    Inside an open staged LOOP body a primitive default is the entry value of
+    an entry the body creates by its own first update (``d[k] = d.get(k, 0)
+    + 1``): the miss is the read half of a carried accumulator, so the place
+    is seeded with the default (a record, the storage stays untouched) and
+    the read routes through the item read choke (the first write then takes
+    the assign choke: promotion, or the loud refusal in the default mode).
+    Returns the served read, or ``None`` when the plain default is Python's
+    answer; an unseeded miss records an absence probe so a first-def of the
+    key later in the same region refuses."""
     if (
         getattr(container, "_pyir_staged_writes", False)
         and is_inside_staged_cf()
@@ -5175,6 +6683,51 @@ def _pyir_watched_dict_get_miss(container: "_WatchedDict", key: Any) -> None:
             var=getattr(container, "_pyir_label", None) or "dict",
             detail=repr(key),
         )
+    if (
+        not is_inside_staged_cf()
+        or is_inside_constexpr_loop()
+        or not _pyir_open_loop_body_blocks
+        or _is_staged_value(key)
+        or isinstance(key, ir.Value)
+    ):
+        return None
+    _inst = _pyir_instance_dict_owner(container, key)
+    place_owner = _inst if _inst is not None else container
+    # A container with no recorded birth inside nested open loops cannot be
+    # anchored (its entry value may be per-outer-iteration): probe only.
+    from .pyir_callee_rewrite import _pyir_boundary_birth_anchor
+
+    seedable = type(default) in (bool, int, float) and (
+        len(_pyir_open_loop_body_blocks) == 1
+        or _pyir_boundary_birth_anchor(place_owner) is not None
+    )
+    if not seedable:
+        _pyir_note_absent_probe(place_owner, key, "a default-taken `.get()`")
+        return None
+    _pyir_check_absent_probe_then_bound(place_owner, key)
+    # The storage stays untouched (Python creates the key only at the write):
+    # the record alone makes a later first-def of the key in this region the
+    # seeded entry's first UPDATE, and a probe or iteration of the dict refuse.
+    place = _make_slot_key(None, place_owner, key)
+    from .pyir_callee_rewrite import _pyir_boundary_declare_birth_place
+
+    _pyir_boundary_declare_birth_place(place_owner, place)
+    src_file, src_line = _first_non_dsl_caller_location()
+    _PYIR_CF_SEEDED_ATTRS.setdefault(
+        (id(place_owner), key),
+        {
+            "arms": _pyir_current_region_arm_path(),
+            "site": (src_file, src_line),
+            "default": default,
+        },
+    )
+    return pyir_read(
+        _pyir_watched_dict_label(container, key),
+        default,
+        attach_ref=False,
+        owner=place_owner,
+        slot_name=key,
+    )
 
 
 def _pyir_watched_dict_iterate(container: Any, method: str) -> Any:
@@ -5187,19 +6740,39 @@ def _pyir_watched_dict_iterate(container: Any, method: str) -> Any:
     pair then stores through the tracked path naturally.  Key walks (bare
     ``iter()``/``.keys()``) raw-delegate: per-slot reads re-enter the item
     choke themselves.  The one UNSTABLE case refuses: a key CREATED inside
-    dynamic staged CF (subscript first-def) exists on the one traced pass
-    only, so the enumerated key set cannot follow the runtime path.
+    dynamic staged CF (subscript first-def) on a region-arm path the walk
+    does not lie under exists on the one traced pass only, so the enumerated
+    key set cannot follow the runtime path.  A key created earlier on a path
+    still open at the walk (same body, or an enclosing one) is created on
+    every runtime execution that reaches the walk, so the walk is exact.
     Returns the served sequence, or None to raw-delegate (constexpr scopes
     realize the walk at trace time)."""
     if not is_inside_staged_cf() or is_inside_constexpr_loop():
         return None
     entry = _PYIR_DICT_CF_CREATED_KEYS.get(id(container))
     if entry is not None:
+        cur_arms = _pyir_current_region_arm_path()
+        uncovered = [
+            k
+            for k, arms in entry[1].items()
+            if not (arms and _pyir_arm_path_covers(arms, cur_arms))
+        ]
+        if uncovered:
+            raise DSLUserCodeError(
+                DiagId.CONTAINER_DICT_ITERATED_IN_STAGED_CF,
+                var=getattr(container, "_pyir_label", None) or "dict",
+                method=method,
+                detail=", ".join(sorted(repr(k) for k in uncovered)),
+            )
+    # A key seeded by its own default-taken miss is absent on the first
+    # iteration only: the enumerated key set is iteration-dependent.
+    seeded = [k for (oid, k) in _PYIR_CF_SEEDED_ATTRS if oid == id(container)]
+    if seeded:
         raise DSLUserCodeError(
             DiagId.CONTAINER_DICT_ITERATED_IN_STAGED_CF,
             var=getattr(container, "_pyir_label", None) or "dict",
             method=method,
-            detail=", ".join(sorted(repr(k) for k in entry[1])),
+            detail=", ".join(sorted(repr(k) for k in seeded)),
         )
     name = method.strip(".()")
     if name not in ("values", "items"):
@@ -5216,11 +6789,7 @@ def _pyir_watched_list_index(
 ) -> "int | None":
     """Validate and normalise a list-leg index: staged indices refuse, negative
     trace-time indices normalise, anything else returns ``None`` (raw delegation)."""
-    if _is_staged_value(key) or isinstance(key, ir.Value):
-        raise DSLUserCodeError(
-            DiagId.CONTAINER_LIST_INDEX_STAGED,
-            var=getattr(container, "_pyir_label", None) or "list",
-        )
+    _pyir_list_index_wall(key, getattr(container, "_pyir_label", None) or "list")
     if not isinstance(key, int):
         return None
     idx = int(key)
@@ -5344,30 +6913,57 @@ _WATCHED_LIST_MUTATOR_HOOK[0] = _pyir_watched_list_mutate
 # already export and minus the generator's INTERNAL_ONLY registry.
 __all__ = [
     "_decompose_tuple",
+    "_pyir_regions_since_binding",
+    "_pyir_identity_repoint_obstacle",
+    "_pyir_select_join_owns_rebind",
+    "_pyir_judge_identity_repoint",
     "_unalias_tuple_leaves",
     "_pyir_check_no_complex_m2m_call",
     "_pyir_freeze_staged_container_inserts",
     "pyir_promote_loop_body_arg",
+    "_pyir_live_row_handle",
+    "_PYIR_PLACEHOLDER_INIT_ATTRS",
+    "_pyir_condition_bound_row",
     "_pyir_record_fresh_entry_birth",
+    "_pyir_is_opaque_handle_binding",
+    "_pyir_judge_exception_slot_write",
     "pyir_assign",
     "PYIR_REGION_ATTR_WRITES_ATTR",
     "PYIR_REGION_METHOD_CALLS_ATTR",
     "PYIR_REGION_FREE_CALLS_ATTR",
+    "PYIR_REGION_DEAD_ON_ENTRY_ATTR",
     "pyir_tag_region_attr_writes",
+    "_PYIR_BIND_VALUE_UNSET",
+    "_meta_kind",
+    "_pyir_sibling_pair_conflict",
+    "_pyir_bind_sibling_first_def",
+    "_pyir_short_repr",
+    "_pyir_mark_if_arm_meta_leaves",
+    "_pyir_settle_sibling_arm_values",
     "pyir_note_attr_first_def",
     "pyir_generation_probe",
     "_pyir_judge_fabricated_attr_read",
     "_PYIR_FGET_DEREF_OPS",
+    "_pyir_canonical_slot_name",
     "pyir_read",
     "pyir_bind_param",
     "_pyir_obs_read",
     "_pyir_obs_global_read",
+    "_pyir_post_attr_read",
     "_pyir_post_subscript_read",
     "_pyir_pre_subscript_assign",
+    "_previous_compilation_value",
     "_attr_owner_plain_storage_setattr",
     "_pyir_pre_attr_assign",
     "_pyir_post_attr_assign",
     "pyir_promote_while_carried_arg",
+    "_pyir_while_cond_hops_holder",
+    "_pyir_while_cond_plain_def",
+    "_pyir_while_cond_callee_written_legs",
+    "_pyir_while_cond_leg_storage",
+    "_pyir_while_cond_leg_is_meta",
+    "_pyir_while_cond_leg_has_cell",
+    "pyir_promote_while_cond_callee_legs",
     "_pyir_check_unpack_arity",
     "_pyir_pin_tuple_capture",
     "_pyir_anchor_statement_read",

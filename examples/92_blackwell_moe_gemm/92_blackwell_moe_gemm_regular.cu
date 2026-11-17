@@ -82,6 +82,7 @@ struct Options {
   bool verification;
 
   int m, n, k, l;
+  float alpha, beta;
 
   int iterations;
 
@@ -90,6 +91,7 @@ struct Options {
     error(false),
     verification(true),
     m(2048), n(2048), k(2048), l(1),
+    alpha(1.f), beta(0.f),
     iterations(10)
   { }
 
@@ -106,6 +108,8 @@ struct Options {
     cmd.get_cmd_line_argument("n", n, 2048);
     cmd.get_cmd_line_argument("k", k, 2048);
     cmd.get_cmd_line_argument("l", l, 1);
+    cmd.get_cmd_line_argument("alpha", alpha, 1.f);
+    cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations, 10);
 
     if (cmd.check_cmd_line_flag("no_verif")) {
@@ -124,6 +128,8 @@ struct Options {
       << "  --n=<int>                   Sets the N extent of the GEMM\n"
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
+      << "  --alpha=<f32>               Epilogue scalar alpha\n"
+      << "  --beta=<f32>                Epilogue scalar beta\n"
       << "  --iterations=<int>          Set the number of profiling iterations to perform\n"
       << "  --no_verif                  Do not run verification kernels\n";
 
@@ -366,8 +372,8 @@ struct ExampleRunner {
 
     // arguments.scheduler.max_swizzle_size = options.swizzle;
     
-    arguments.epilogue.thread.alpha = 1.0f;
-    arguments.epilogue.thread.beta = 0.0f;
+    arguments.epilogue.thread.alpha = options.alpha;
+    arguments.epilogue.thread.beta = options.beta;
 
     Gemm gemm_op;
 
@@ -405,7 +411,7 @@ struct ExampleRunner {
 
     if (options.verification) {
       // Verify that the result is correct
-      bool passed = verify(problem_size, 1.0f, 0.0f);
+      bool passed = verify(problem_size, options.alpha, options.beta);
 
       std::cout << "  Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 

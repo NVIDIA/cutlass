@@ -64,20 +64,30 @@ pure across phases: no side effects, no control flow conditional on
 state that differs between phases.
 """
 
-from ._base import EFC, VariadicParameters  # noqa: F401 — public re-export.
-from ._helpers import (  # noqa: F401 — public re-export.
+from ._base import EFC, VariadicParameters
+from ._helpers import (
     ACTIVATION_FUNCTIONS,
     NEWLINE_AND_TAB,
     TAB,
+    accum_split_across_lanes,
+    check_accum_split_fragment,
+    extend_split_n,
     create_named_epilogue,
     if_debug,
     if_info,
     log,
     mark_mlir,
+    SplitPart,
+    analysis_result_of,
+    narrow_epi_tile_n,
+    split_factor_of,
     trace_in_mlir,
 )
-from ._remap import remap_modes, torch_tensor_remap_modes  # noqa: F401
-from ._tensor import Transport  # noqa: F401 — public re-export.
+from ._remap import remap_modes, torch_tensor_remap_modes
+from ._tensor import (
+    Transport,
+    is_valid_reduce_destination_dtype,
+)
 
 __all__ = [
     "ACTIVATION_FUNCTIONS",
@@ -85,11 +95,19 @@ __all__ = [
     "NEWLINE_AND_TAB",
     "TAB",
     "VariadicParameters",
+    "accum_split_across_lanes",
+    "check_accum_split_fragment",
+    "extend_split_n",
     "create_named_epilogue",
     "if_debug",
     "if_info",
+    "is_valid_reduce_destination_dtype",
     "log",
     "mark_mlir",
+    "SplitPart",
+    "analysis_result_of",
+    "narrow_epi_tile_n",
+    "split_factor_of",
     "Transport",
     "remap_modes",
     "torch_tensor_remap_modes",

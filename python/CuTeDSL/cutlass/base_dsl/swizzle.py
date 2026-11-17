@@ -48,7 +48,7 @@ class Swizzle:
 
     Common presets (for use with ``tcgen05.mma kind::f16``)::
 
-        s128b = Swizzle(3, 4, 3)   # 128B XOR — required for SM100 tcgen05.mma
+        s128b = Swizzle(3, 4, 3)   # 128B XOR — usual choice for SM100 tcgen05.mma
         s64b  = Swizzle(2, 4, 3)
         s32b  = Swizzle(1, 4, 3)
         none  = Swizzle(0, 0, 0)   # identity — no-op

@@ -26,31 +26,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-
-# 1. Redistributions of source code must retain the above copyright notice, this
-# list of conditions and the following disclaimer.
-
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-# this list of conditions and the following disclaimer in the documentation
-# and/or other materials provided with the distribution.
-
-# 3. Neither the name of the copyright holder nor the names of its
-# contributors may be used to endorse or promote products derived from
-# this software without specific prior written permission.
-
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 import argparse
 import os
 import sys
@@ -101,7 +76,7 @@ class B2BGemmKernel:
         self.epilogue_op = epilogue_op
         self.mma1_transform = mma1_transform
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self, mA: cute.Tensor, mB0: cute.Tensor, mB1: cute.Tensor, mD: cute.Tensor
     ):
@@ -112,10 +87,9 @@ class B2BGemmKernel:
             grid=grid,
             block=(384, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self, mA: cute.Tensor, mB0: cute.Tensor, mB1: cute.Tensor, mD: cute.Tensor
     ):
@@ -327,14 +301,14 @@ class B2BGemmKernel:
             num_stages=mma02transform_stage,
             mma_operation_type=cute_ext.OperationTypeEnum.SM100_MMA_1SM_SS,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
 
         # tcgen05.st -> UMMA1
         transform2mma1_pipe = cute_ext.AsyncToUMMAPipeline.create(
             num_stages=transform2mma1_stage,
             producer=cute_ext.OperationTypeEnum.SM100_COPY_R2T,
-            producer_arv_count=128,
+            producer_commit_threads_per_cta=128,
             mma_operation_type=cute_ext.OperationTypeEnum.SM100_MMA_1SM_TS,
         )
 
@@ -343,7 +317,7 @@ class B2BGemmKernel:
             num_stages=mma12epi_stage,
             mma_operation_type=cute_ext.OperationTypeEnum.SM100_MMA_1SM_TS,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
 
         tma_store_warp_id = 0
@@ -392,6 +366,8 @@ class B2BGemmKernel:
 
                 load2mma0_pipe.producer_commit_and_advance()
 
+            load2mma0_pipe.producer_tail()
+
         if is_mma0_warp:
             _, mma02transform_stage_idx = (
                 mma02transform_pipe.producer_acquire_and_get_stage()
@@ -430,6 +406,8 @@ class B2BGemmKernel:
                 )
 
                 load2mma1_pipe.producer_commit_and_advance()
+
+            load2mma1_pipe.producer_tail()
 
         if is_transform_warp:
             _, mma02transform_stage_idx = (
@@ -506,6 +484,9 @@ class B2BGemmKernel:
                 tma_store_warp_id,
                 self.epilogue_op,
             )
+            # Single output tile: drain the TMA store pipeline here since the
+            # helper no longer drains it.
+            epi2tmastore_pipe.tail()
 
             mma12epi_pipe.consumer_release_and_advance()
 
@@ -637,9 +618,7 @@ def run(
         mma_dtype=(ab_dtype, acc_dtype),
     )
 
-    compiled_b2b_gemm = cute_ext.compile(
-        b2b_gemm, a_tensor, b0_tensor, b1_tensor, d_tensor
-    )
+    compiled_b2b_gemm = cute.compile(b2b_gemm, a_tensor, b0_tensor, b1_tensor, d_tensor)
     compiled_b2b_gemm.engine.initialize()
     compiled_b2b_gemm(a_tensor, b0_tensor, b1_tensor, d_tensor)
 

@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass import AddressSpace
+from cutlass import AddressSpace, const_expr
 from typing import Optional, Type
 
 from cutlass.cutlass_dsl import dsl_user_op
@@ -21,13 +21,6 @@ import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
 from ..core import struct
 from ..typing import Pointer, Int, Int32, Numeric, NumericMeta
-
-SM100_TMEM_CAPACITY_COLUMNS = (
-    512  # deprecated; use get_max_tmem_alloc_cols(arch="sm_100") instead
-)
-SM100_TMEM_MIN_ALLOC_COLUMNS = (
-    32  # deprecated; use get_min_tmem_alloc_cols(arch="sm_100") instead
-)
 
 TMEM_MAX_ALLOC_COLUMNS_MAP = {
     "sm_120": 512,
@@ -42,6 +35,9 @@ TMEM_MIN_ALLOC_COLUMNS_MAP = {
     "sm_103": 32,
     "sm_100": 32,
 }
+
+SM100_TMEM_CAPACITY_COLUMNS = TMEM_MAX_ALLOC_COLUMNS_MAP["sm_100"]
+SM100_TMEM_MIN_ALLOC_COLUMNS = TMEM_MIN_ALLOC_COLUMNS_MAP["sm_100"]
 
 
 def get_max_tmem_alloc_cols(compute_capability: str) -> int:
@@ -81,6 +77,17 @@ def get_min_tmem_alloc_cols(compute_capability: str) -> int:
 Arch = base_dsl.Arch
 
 
+def get_tmem_allocation_exclusive_threshold(
+    arch: base_dsl.Arch,
+) -> Optional[int]:
+    """Return the first column count requiring exclusive TMEM allocation."""
+    if arch in (
+        base_dsl.Arch.sm_107,
+    ):
+        return 512
+    return None
+
+
 def is_tmem_allocation_exclusive(num_columns: int, arch: base_dsl.Arch) -> bool:
     """Determines whether exclusive allocation of TMEM is required
 
@@ -97,9 +104,8 @@ def is_tmem_allocation_exclusive(num_columns: int, arch: base_dsl.Arch) -> bool:
     :rtype: bool
     """
 
-    return num_columns > 512 and arch in (
-        base_dsl.Arch.sm_107,
-    )
+    threshold = get_tmem_allocation_exclusive_threshold(arch)
+    return threshold is not None and num_columns > threshold
 
 
 @dsl_user_op
@@ -154,6 +160,11 @@ def alloc_tmem(
     """
     Allocates TMEM.
 
+    This is a warp-collective operation. Every lane of exactly one uniform
+    warp must execute it with the same operands. Do not place it under
+    :func:`elect_one`; select the allocator with a warp-ID condition instead.
+    Behavior is undefined if any participating lane has exited.
+
     :param num_columns: The number of TMEM columns to allocate
     :type num_columns:  Int
     :param smem_ptr_to_write_address: A pointer to a SMEM buffer where the TMEM address is written
@@ -165,16 +176,18 @@ def alloc_tmem(
     """
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
-    exclusive = None
+    # For special cases where there are more than 512 TMEM columns available
+    # (e.g., sm_107 with 576 columns), TMEM allocations/deallocations need to
+    # be marked as "exclusive" if more than 512 columns are requested.
+    exclusive: Optional[bool] = None
     if isinstance(num_columns, int):
-        exclusive = is_tmem_allocation_exclusive(num_columns, base_dsl.Arch.from_string(arch))
+        exclusive = is_tmem_allocation_exclusive(
+            num_columns, base_dsl.Arch.from_string(arch)
+        )
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
-            or not (
-                (num_columns & (num_columns - 1) == 0)
-                or exclusive
-            )
+            or not ((num_columns & (num_columns - 1) == 0) or exclusive)
         ):
             err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
             err_msg += "and must be pow of 2"
@@ -205,6 +218,14 @@ def relinquish_tmem_alloc_permit(
     """
     Relinquishes the right to allocate TMEM so that other CTAs potentially in a different grid can
     allocate.
+
+    This is a warp-collective operation. Every lane of an issuing warp must
+    execute it. Do not place it under :func:`elect_one` or another condition
+    that selects only part of a warp. The instruction's full-warp requirement
+    does not by itself establish how many warps should issue it; follow the
+    allocation protocol used by the kernel. Behavior is undefined if any
+    participating lane has exited.
+
     """
     _cute_nvgpu_ir.arch_sm100_relinquish_tmem_alloc_permit(
         is_two_cta=is_two_cta, loc=loc, ip=ip
@@ -218,11 +239,17 @@ def dealloc_tmem(
     is_two_cta: Optional[bool] = None,
     *,
     arch: str = "sm_100",
+    exclusive: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
     Deallocates TMEM using the provided pointer and number of columns.
+
+    This is a warp-collective operation. Every lane of exactly one uniform
+    warp must execute it with the same operands. Do not place it under
+    :func:`elect_one`; select the allocator with a warp-ID condition instead.
+    Behavior is undefined if any participating lane has exited.
 
     :param tmem_ptr:    A pointer to the TMEM allocation to de-allocate
     :type tmem_ptr:     Pointer
@@ -234,18 +261,27 @@ def dealloc_tmem(
     """
     tmem_min_alloc_cols = get_min_tmem_alloc_cols(arch)
     tmem_max_alloc_cols = get_max_tmem_alloc_cols(arch)
-    exclusive = None
+    # For special cases where there are more than 512 TMEM columns available
+    # (e.g., sm_107 with 576 columns), TMEM allocations/deallocations need to
+    # be marked as "exclusive" if more than 512 columns are requested.
+    if exclusive is not None:
+        exclusive = const_expr(exclusive)
 
     if isinstance(num_columns, int):
-        exclusive = is_tmem_allocation_exclusive(num_columns, base_dsl.Arch.from_string(arch))
+        inferred_exclusive = is_tmem_allocation_exclusive(
+            num_columns, base_dsl.Arch.from_string(arch)
+        )
+        if inferred_exclusive and exclusive is False:
+            raise ValueError(
+                f"exclusive=False cannot deallocate {num_columns} columns on {arch}"
+            )
+        if exclusive is None:
+            exclusive = inferred_exclusive
 
         if (
             num_columns < tmem_min_alloc_cols
             or num_columns > tmem_max_alloc_cols
-            or not (
-                (num_columns & (num_columns - 1) == 0)
-                or exclusive
-            )
+            or not ((num_columns & (num_columns - 1) == 0) or inferred_exclusive)
         ):
             err_msg = f"num_columns must be between {tmem_min_alloc_cols} and {tmem_max_alloc_cols}, "
             err_msg += "and must be pow of 2"

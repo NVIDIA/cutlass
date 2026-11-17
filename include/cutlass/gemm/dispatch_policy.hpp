@@ -38,6 +38,7 @@
 #include "cute/atom/copy_traits_sm100.hpp"
 #include "cutlass/detail/collective/sm103_kernel_type.hpp"
 
+#include "cutlass/gemm/dependency_roles.hpp"
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -1531,6 +1532,8 @@ template<
   class ClusterShape_ = Shape<_1,_1,_1>,
   bool WithBreuse_ = false,
   class ArchTag_ = arch::Sm107
+  , ProducerRoleType ProducerRole_ = ProducerRoleType::Default,
+  ConsumerRoleType ConsumerRole_ = ConsumerRoleType::Default
 >
 struct MainloopSm107TmaUmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
@@ -1538,6 +1541,8 @@ struct MainloopSm107TmaUmmaWarpSpecialized {
   using ClusterShape = ClusterShape_;
   using ArchTag = ArchTag_;
   using Schedule = KernelTmaWarpSpecializedSm107<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  static constexpr ProducerRoleType ProducerRole = ProducerRole_;
+  static constexpr ConsumerRoleType ConsumerRole = ConsumerRole_;
 };
 
 template<

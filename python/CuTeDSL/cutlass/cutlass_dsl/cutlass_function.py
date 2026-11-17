@@ -9,27 +9,49 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+"""Turn loaded CUTLASS functions into ordinary Python callables.
+
+``CallableFunction`` is the recommended high-level wrapper for an
+:class:`~cutlass.compiler.ExecutableFunction`.  It derives a Python signature
+from the function metadata, packs arguments for the selected ABI, invokes the
+compiled function, and decodes scalar results. Prefer TVM-FFI when it supports
+the required interface. CutlassCall support uses a private, unstable
+implementation ABI with no compatibility guarantee.
+"""
+
 from __future__ import annotations
 
 import ctypes
 import inspect
+import operator
+from collections.abc import Iterator, Sequence
 from dataclasses import fields, is_dataclass
-from typing import Any
+from typing import Any, SupportsIndex, cast
+
+from ..base_dsl.common import DSLUserCodeError
+from ..base_dsl.diagnostics import DiagId
+from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
+from ..base_dsl.typing import implements_jit_argument
 
 from cutlass.compiler import (
     Abi,
+    Binding,
     Const,
     DTypeCode,
     EnvStream,
     ExecutableFunction,
+    CustomType,
     Pointer,
     Shape,
     Stream,
+    SymbolId,
     Tensor,
     Tuple,
     Unit,
     Var,
 )
+
+__all__ = ["CallableFunction"]
 
 """
 This module contains Pythonic wrappers for functions compiled by a
@@ -80,14 +102,23 @@ def _pack_tensor_cutlass_call(value: Any) -> tuple[Any, Any]:
     therefore hand the kernel the cute.Tensor's descriptor directly -- no
     separate Python builder, no rebuild, no chance of the two drifting apart.
 
-    Returns ``(address, keepalive)``; the keepalive is the tensor, which owns the
-    descriptor buffer (freed when its capsule is collected)."""
+    Returns ``(address, keepalive)``; the keepalive is the tensor (or its
+    adapter), which owns the descriptor buffer (freed when its
+    capsule is collected).
+    """
+
+    # A raw DLPack producer (e.g. a torch.Tensor) has no __c_pointers__.
+    # Fall back to JitArgAdapterRegistry.
     if not hasattr(value, "__c_pointers__"):
-        raise TypeError(
-            "CutlassCall expects a cute.Tensor argument (exposing "
-            f"__c_pointers__); got {type(value).__name__}. Wrap it with "
-            "cutlass.cute.runtime.from_dlpack(...) first."
-        )
+        adapter = JitArgAdapterRegistry.get_registered_adapter(value)
+        if adapter is None:
+            raise TypeError(
+                "CutlassCall expects a cute.Tensor argument (exposing "
+                f"__c_pointers__); got {type(value).__name__}. Wrap it with "
+                "cutlass.cute.runtime.from_dlpack(...) first."
+            )
+        value = adapter(value)
+
     # pointers[0] is the address of that cute::abi::MemRef buffer -- exactly the
     # <sym>_param_i_t the kernel's CutlassCall slot expects.
     pointers = value.__c_pointers__()
@@ -100,20 +131,21 @@ def _pack_tensor_tvm_ffi(value: Any) -> tuple[Any, Any]:
 
     Pass ``stream=-1`` (no sync) on CUDA; DLPack requires ``stream=None`` on CPU,
     so pick it from ``__dlpack_device__()``. Fall back to a bare ``__dlpack__()``
-    for producers without a ``stream`` kwarg."""
+    for producers without a ``stream`` kwarg.
+
+    ``value`` is either a raw DLPack producer (e.g. a ``torch.Tensor``,
+    already exposing ``__dlpack__`` directly) or a ``cute.Tensor`` built via
+    ``from_dlpack(..., enable_tvm_ffi=True)``
+    """
     if hasattr(value, "_tvm_ffi_tensor"):
         value = value._tvm_ffi_tensor
-    else:
-        raise TypeError(
-            f"{type(value).__name__} was not produced by from_dlpack(..., enable_tvm_ffi=True)."
-        )
-
-    if not hasattr(value, "__dlpack__"):
+    elif not hasattr(value, "__dlpack__"):
         raise TypeError(
             "TvmFfi expects a DLPack producer (e.g. a torch.Tensor exposing "
             f"__dlpack__); got {type(value).__name__}. A cute.Tensor has no "
-            "__dlpack__ -- use the CutlassCall ABI, or pass the torch tensor it "
-            "was built from."
+            "__dlpack__; pass the original DLPack producer, such as the torch "
+            "tensor it was built from, or wrap it with "
+            "cutlass.cute.runtime.from_dlpack(..., enable_tvm_ffi=True) first."
         )
 
     # device type 1 == kDLCPU (needs stream=None); tolerate a producer lacking
@@ -141,12 +173,34 @@ def _pack_scalar(binding: Var | Const, value: Any) -> tuple[Any, Any]:
     # Const shares Var's ptr-to-scalar wire: the caller still supplies the
     # value (TvmFfi validates it equals the pinned literal, CutlassCall drops
     # it unchecked), so both pack identically from the binding's dtype.
-    #
-    # Unwrap a cutlass.Numeric scalar (e.g. cutlass.Float32(1.0)) via .value, not
-    # float()/int() -- its __index__ returns a float and would raise.
+
+    # A scalar-shaped opaque handle (DType.handle(), e.g. a CUDA event or a
+    # native_struct) has no ctypes equivalent, so it packs like a Pointer
+    # binding instead.
+    if binding.dtype.code == DTypeCode.Handle:
+        return _pack_pointer(value)
+
     from cutlass import Numeric
 
     if isinstance(value, Numeric):
+        from cutlass.base_dsl.typing import TFloat32
+
+        # For certain type combinations, there are not appropriate dtypes
+        # which can simply create a value from the given value.
+        # For those, we fall back to using __c_pointers__() to get the value.
+        #
+        # 16 bit floats: no underlying dtype exists.
+        # TF32: LLVM uses i32 to store the bits.
+
+        dtype = binding.dtype
+        requires_c_pointers = (
+            dtype.code == DTypeCode.BFloat
+            or (dtype.code == DTypeCode.Float and dtype.bits == 16)
+            or isinstance(value, TFloat32)
+        )
+        if requires_c_pointers:
+            pointers = value.__c_pointers__()
+            return pointers[0].value, pointers
         value = value.value
     buf = binding.dtype.get_ctype()(value)
     return ctypes.addressof(buf), buf
@@ -164,6 +218,98 @@ def _pack_pointer(value: Any) -> tuple[Any, Any]:
     else:
         addr = int(value)
     buf = ctypes.c_void_p(addr)
+    return ctypes.addressof(buf), buf
+
+
+_INT64_MIN = -(1 << 63)
+_INT64_MAX = (1 << 63) - 1
+
+
+def _shape_leaf_as_int64(value: object, *, path: str) -> int:
+    """Convert one logical Shape leaf without accepting lossy coercions."""
+    from cutlass import Boolean, Integer
+
+    # A CUTLASS Integer is the DSL spelling of an integer runtime value. Unwrap
+    # it before invoking the Python integer protocol: Numeric.__index__ is also
+    # present on floating-point DSL values, so accepting Numeric generically
+    # would make the type check depend on its payload rather than its dtype.
+    if isinstance(value, (bool, Boolean)):
+        raise TypeError(
+            f"shape leaf {path} expects an integer, got {type(value).__name__}"
+        )
+    if isinstance(value, Integer):
+        value = value.value
+    if not isinstance(value, SupportsIndex):
+        raise TypeError(
+            f"shape leaf {path} expects an integer, got {type(value).__name__}"
+        )
+    try:
+        result = operator.index(value)
+    except TypeError as exc:
+        raise TypeError(
+            f"shape leaf {path} expects an integer, got {type(value).__name__}"
+        ) from exc
+    if result < _INT64_MIN or result > _INT64_MAX:
+        raise OverflowError(
+            f"shape leaf {path} value {result} is outside the signed int64 range"
+        )
+    return result
+
+
+def _pointer_address(value: object) -> int:
+    """Return an address from the two forms produced by the JIT adapter."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, ctypes.c_void_p):
+        return value.value or 0
+    raise TypeError(
+        "expected a packed address as int or ctypes.c_void_p, "
+        f"got {type(value).__name__}"
+    )
+
+
+def _flatten_shape_value(binding: Shape, value: object) -> list[int]:
+    """Validate ``value`` against ``binding``'s tree and return ABI leaves."""
+
+    def visit(nodes: Sequence[object], current: object, path: str) -> list[int]:
+        if not isinstance(current, (tuple, list)):
+            raise TypeError(
+                f"shape param {binding.name!r} expects a tuple/list at {path}, "
+                f"got {type(current).__name__}"
+            )
+        if len(current) != len(nodes):
+            raise ValueError(
+                f"shape param {binding.name!r} expects {len(nodes)} element(s) "
+                f"at {path}, got {len(current)}"
+            )
+
+        leaves: list[int] = []
+        for index, (node, element) in enumerate(zip(nodes, current)):
+            element_path = f"{path}[{index}]"
+            if not isinstance(node, tuple):
+                if isinstance(element, (tuple, list)):
+                    raise TypeError(
+                        f"shape param {binding.name!r} expects an integer leaf "
+                        f"at {element_path}, got {type(element).__name__}"
+                    )
+                leaves.append(_shape_leaf_as_int64(element, path=element_path))
+            else:
+                leaves.extend(visit(node, element, element_path))
+        return leaves
+
+    return visit(binding.dims, value, binding.name)
+
+
+def _pack_shape(binding: Shape, value: object) -> tuple[Any, Any]:
+    """Pack a Shape tree as ``int64_t[leaf_count]`` in DFS leaf order.
+
+    The metadata retains the nested profile so the direct Python call can
+    reject a mismatched hierarchy. The ABI intentionally remains flat: constant
+    leaves are included, while wrappers forward dynamic leaves according to the
+    Shape's per-leaf forwarding map.
+    """
+    dims = _flatten_shape_value(binding, value)
+    buf = (ctypes.c_int64 * len(dims))(*dims)
     return ctypes.addressof(buf), buf
 
 
@@ -219,14 +365,22 @@ def _callable_params(function: ExecutableFunction) -> list[Any]:
     return [p for p in function.metadata.params if not _is_baked(p)]
 
 
-def _build_signature(params: list[Any]) -> inspect.Signature:
-    """Build a Python signature from metadata parameter names."""
-    return inspect.Signature(
-        [
-            inspect.Parameter(param.name, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-            for param in params
-        ]
-    )
+def _build_signature(params: list[Any], defaults: dict[str, Any]) -> inspect.Signature:
+    """Build a Python signature from metadata parameter names.
+
+    :param params: The parameters of the function.
+    :param defaults: The default values of the Python function.
+    :return: The signature of the function.
+    """
+    result = []
+    for param in params:
+        default = defaults.get(param.name, inspect.Parameter.empty)
+        result.append(
+            inspect.Parameter(
+                param.name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=default
+            )
+        )
+    return inspect.Signature(result)
 
 
 def _resolve_call_args(
@@ -239,8 +393,19 @@ def _resolve_call_args(
     try:
         bound = signature.bind(*args, **kwargs)
     except TypeError as exc:
+        provided = set(kwargs) | {
+            name for name, param in list(signature.parameters.items())[: len(args)]
+        }
+        missing = [
+            name
+            for name, param in signature.parameters.items()
+            if param.default is inspect.Parameter.empty and name not in provided
+        ]
+        if missing:
+            raise DSLUserCodeError(DiagId.CALL_MISSING_ARGS, missing=missing) from exc
         raise TypeError(f"{function.metadata.symbol_name}: {exc}") from exc
 
+    bound.apply_defaults()
     args_by_name = bound.arguments
     return [
         args_by_name[param.name]
@@ -250,32 +415,66 @@ def _resolve_call_args(
 
 
 class CallableFunction:
-    """ABI-agnostic callable wrapper over an ``ExecutableFunction``.
+    """Recommended Python-callable wrapper over an ``ExecutableFunction``.
 
-    Dispatches on ``metadata.abi`` to stage each parameter into the ``void**``
-    slots ``ExecutableFunction.call`` expects. Only the Tensor slot differs by
-    ABI:
+    Prefer ``Abi.TvmFfi`` when it supports the required interface.
+    ``Abi.CutlassCall`` is a private, unstable implementation ABI with no
+    compatibility guarantee.
 
-      * CutlassCall -- the tensor's own cute-flat / ``cute::abi::MemRef``
-        descriptor, reused via ``cute.Tensor.__c_pointers__()`` (one canonical
-        cute-built layout, no Python re-implementation). Pass a cute.Tensor.
-      * TvmFfi      -- a borrowed ``DLTensor*`` from ``value.__dlpack__()``.
-        Pass a DLPack producer (e.g. a torch.Tensor).
+    The wrapper derives its Python signature from the function metadata, so
+    ``inspect.signature`` and keyword arguments use the exported parameter
+    names. Metadata does not preserve the original Python parameter kinds or
+    defaults: every exported parameter is a required positional-or-keyword
+    argument. Supported bindings are ``Tensor``, ``Var``, ``Const``, ``Stream``,
+    ``Pointer``, ``Shape``, ``Tuple``, and ``Unit``; baked top-level ``Const``
+    and ``Unit`` bindings are omitted from the signature. Tensor values depend
+    on the selected ABI: ``CutlassCall`` accepts a ``cute.Tensor``, while
+    ``TvmFfi`` accepts a DLPack producer such as a ``torch.Tensor``. A Shape
+    value must be a nested tuple/list matching the metadata profile, with
+    integer leaves in signed 64-bit range. Scalar values must be convertible to
+    the binding dtype's C representation. Returns must be ``Var`` (decoded to a
+    Python scalar) or ``Unit`` (decoded to ``None``).
 
-    ``Var`` / ``Stream`` / ``Pointer`` slots are ABI-identical. Construct this
-    explicitly around the raw ``ExecutableFunction`` from
-    ``Executor.get_executable_function``.
+    Example:
+
+    .. code-block:: python
+
+       from cutlass.compiler import Abi, Executor
+       from cutlass.cutlass_dsl import CallableFunction
+
+       # object_artifact was compiled with Abi.TvmFfi.
+       executor = Executor.from_object_artifact(object_artifact)
+       kernel = CallableFunction(executor["my_kernel"])
+       result = kernel(input_tensor, scale=1.0)
+
+    :param function: Loaded executable function to wrap.
+    :raises ValueError: If the return is not ``Var`` or ``Unit``, or if the
+        function has a top-level ``EnvStream`` parameter, which has no
+        caller-suppliable value.
     """
 
-    def __init__(self, function: ExecutableFunction) -> None:
+    def __init__(
+        self, function: ExecutableFunction, python_defaults: dict[str, Any] | None = {}
+    ) -> None:
+        """
+        Create a new CallableFunction.
+
+        :param function: The ExecutableFunction to wrap.
+        :param python_defaults: A dictionary of default values in the Python function.
+        """
         self._function = function
         self._abi = function.metadata.abi
+        if not isinstance(function.metadata.ret, (Var, Unit)):
+            raise ValueError(
+                f"{function.metadata.symbol_name}: cannot wrap a function "
+                f"with a {type(function.metadata.ret).__name__} return binding "
+                "(supported: Var, Unit)"
+            )
         # Reject up front any top-level binding the caller cannot supply a value
         # for, so construction fails clearly instead of the call failing later
-        # mid-pack: an EnvStream (its stream is fetched out-of-band) or a bare
-        # Shape (it binds symbols derived from other args).
+        # mid-pack: an EnvStream (its stream is fetched out-of-band).
         for param in function.metadata.params:
-            if isinstance(param, (EnvStream, Shape)):
+            if isinstance(param, EnvStream):
                 raise ValueError(
                     f"{function.metadata.symbol_name}: cannot wrap a function "
                     f"with a top-level {type(param).__name__} parameter "
@@ -283,7 +482,9 @@ class CallableFunction:
                     "caller-suppliable value"
                 )
         self._callable_params = _callable_params(function)
-        self.__signature__ = _build_signature(self._callable_params)
+        if python_defaults is None:
+            python_defaults = {}
+        self.__signature__ = _build_signature(self._callable_params, python_defaults)
 
     def _pack_tensor(self, value: Any) -> tuple[Any, Any]:
         if self._abi == Abi.CutlassCall:
@@ -309,15 +510,49 @@ class CallableFunction:
             return _pack_scalar(binding, value)
         if isinstance(binding, (Stream, Pointer)):
             return _pack_pointer(value)
+        if isinstance(binding, Shape):
+            return _pack_shape(binding, value)
         if isinstance(binding, Tuple):
             return self._pack_tuple(binding, value)
+        if isinstance(binding, CustomType):
+            from cutlass.cute.metadata import JIT_ARGUMENT_CUSTOM_TYPE_ID
+
+            if binding.id != JIT_ARGUMENT_CUSTOM_TYPE_ID:
+                raise ValueError(
+                    f"{self._function.metadata.symbol_name}: CustomType param "
+                    f"{getattr(binding, 'name', '?')!r} has unexpected id "
+                    f"{binding.id!r} (expected {JIT_ARGUMENT_CUSTOM_TYPE_ID!r})"
+                )
+
+            # If an object does not implement the JitArgument protocol,
+            # the value used to compile it must have been adapted.
+            # Look for a suitable adapter.
+            adapted_value = None
+            if not implements_jit_argument(value):
+                adapter = JitArgAdapterRegistry.get_registered_adapter(value)
+                if adapter is not None:
+                    value = adapter(value)
+                    adapted_value = value
+                else:
+                    raise ValueError(
+                        f"{self._function.metadata.symbol_name}: CustomType param "
+                        f"{getattr(binding, 'name', '?')!r} does not implement "
+                        "the JIT argument protocol nor has a suitable adapter."
+                    )
+
+            # If the value was adapted, make sure to keep the original
+            # and adapted values alive
+            address, keep = self._pack_jit_argument(binding, value)
+            if adapted_value is not None:
+                return address, (adapted_value, keep)
+            return address, keep
         if isinstance(binding, Unit):
             return _pack_unit()
         raise ValueError(
             f"{self._function.metadata.symbol_name}: binding "
             f"{getattr(binding, 'name', '?')!r} of type "
             f"{type(binding).__name__} cannot be packed (supported: Tensor, Var, "
-            "Const, Stream, Pointer, Tuple, Unit)"
+            "Const, Stream, Pointer, Shape, Tuple, CustomType, Unit)"
         )
 
     def _pack_tuple(self, tup: Tuple, value: Any) -> tuple[Any, Any]:
@@ -355,7 +590,171 @@ class CallableFunction:
         sub_array = (ctypes.c_void_p * len(addresses))(*addresses)
         return ctypes.addressof(sub_array), (sub_array, keepalive)
 
+    def _pack_jit_argument(self, binding: CustomType, value: Any) -> tuple[Any, Any]:
+        """Pack one CustomType binding by calling ``value.__c_pointers__()``
+        to obtain one pointer per binding element. The keepalive retains both
+        the pointer array and every individual pointer buffer until after
+        ``call()``."""
+        pointers = value.__c_pointers__()
+        addresses = [p.value if hasattr(p, "value") else int(p) for p in pointers]
+        if len(addresses) != len(binding.values):
+            raise ValueError(
+                f"{self._function.metadata.symbol_name}: CustomType param "
+                f"{binding.name!r} has {len(binding.values)} elements but "
+                f"__c_pointers__() returned {len(addresses)} pointers"
+            )
+        sub_array = (ctypes.c_void_p * len(addresses))(*addresses)
+        return ctypes.addressof(sub_array), (sub_array, list(pointers))
+
+    def _repack_shape_exe_args(
+        self, binding: Shape, exe_arg_iter: Iterator[object]
+    ) -> tuple[Any, Any]:
+        """Rebuild a Shape param's flat ``int64_t[leaf_count]`` ABI slot.
+
+        ``exe_args`` from ``_generate_jit_func_args`` contributes, for one shape
+        argument, either one typed-scalar pointer per *dynamic* leaf (via
+        ``get_c_pointers``, the default) or a single ``tvm_ffi.Shape`` object
+        carrying every dim (``--enable-tvm-ffi``); constant dims contribute no
+        entry and are filled from the metadata."""
+        table = self._function.metadata.dim_symbol_table
+        leaves = binding.leaves
+        leaf_count = len(leaves)
+        sym_positions = [i for i, dim in enumerate(leaves) if dim.is_symbol]
+        # A leaf that is not a symbol carries its constant extent as an int.
+        dims: list[int] = [
+            0 if dim.is_symbol else cast(int, dim.value) for dim in leaves
+        ]
+        if sym_positions:
+            first = next(exe_arg_iter)
+            if isinstance(first, (int, ctypes.c_void_p)):
+                raws = [first] + [
+                    next(exe_arg_iter) for _ in range(len(sym_positions) - 1)
+                ]
+                for pos, raw in zip(sym_positions, raws):
+                    addr = _pointer_address(raw)
+                    # sym_positions holds symbol leaves, so value is a SymbolId.
+                    symbol = cast(SymbolId, leaves[pos].value)
+                    bits = table[symbol.value].bits
+                    ctype = ctypes.c_int32 if bits == 32 else ctypes.c_int64
+                    dims[pos] = ctypes.cast(addr, ctypes.POINTER(ctype)).contents.value
+            elif isinstance(first, Sequence):
+                # A tvm_ffi.Shape (sequence of ints) holding every DFS leaf.
+                values: list[int] = [
+                    _shape_leaf_as_int64(v, path=f"{binding.name}[leaf {i}]")
+                    for i, v in enumerate(first)
+                ]
+                if len(values) != leaf_count:
+                    raise ValueError(
+                        f"{self._function.metadata.symbol_name}: shape param "
+                        f"{binding.name!r} expects {leaf_count} leaves, "
+                        f"got a shape with {len(values)}"
+                    )
+                dims = values
+            else:
+                raise TypeError(
+                    f"{self._function.metadata.symbol_name}: shape param "
+                    f"{binding.name!r} expects pointer arguments or a sequence "
+                    f"of integer leaves, got {type(first).__name__}"
+                )
+        buf = (ctypes.c_int64 * leaf_count)(*dims)
+        return ctypes.addressof(buf), buf
+
+    def _repack_exe_binding(
+        self, binding: Binding, exe_arg_iter: Iterator[object]
+    ) -> tuple[Any, Any]:
+        """Rebuild one metadata binding from the adapter's flat arguments."""
+        if isinstance(binding, Shape):
+            return self._repack_shape_exe_args(binding, exe_arg_iter)
+        if isinstance(binding, Tuple):
+            addresses: list[int] = []
+            keepalive: list[Any] = []
+            for elem in binding.values:
+                addr, keep = self._repack_exe_binding(elem, exe_arg_iter)
+                addresses.append(addr)
+                keepalive.append(keep)
+            sub_array = (ctypes.c_void_p * len(addresses))(*addresses)
+            return ctypes.addressof(sub_array), (sub_array, keepalive)
+        if isinstance(binding, CustomType):
+            addresses = []
+            keepalive = []
+            for elem in binding.values:
+                addr, keep = self._repack_exe_binding(elem, exe_arg_iter)
+                addresses.append(addr)
+                keepalive.append(keep)
+            sub_array = (ctypes.c_void_p * len(addresses))(*addresses)
+            return ctypes.addressof(sub_array), (sub_array, keepalive)
+        if isinstance(binding, Const):
+            value: bool | int | float
+            if binding.dtype.code == DTypeCode.Bool:
+                value = binding.as_bool()
+            elif binding.dtype.code == DTypeCode.Int:
+                value = binding.as_signed()
+            elif binding.dtype.code == DTypeCode.UInt:
+                value = binding.as_unsigned()
+            else:
+                value = binding.as_float()
+            return _pack_scalar(binding, value)
+        if isinstance(binding, Unit):
+            return _pack_unit()
+        if isinstance(binding, EnvStream):
+            raise ValueError(
+                f"{self._function.metadata.symbol_name}: cannot repack an "
+                "EnvStream from execution arguments"
+            )
+
+        raw = next(exe_arg_iter)
+        # Adapter entries may be plain integer addresses or ctypes pointers.
+        addr = _pointer_address(raw)
+        return addr, raw
+
+    def call_with_exe_args(self, exe_args: list[Any]) -> Any:
+        """Dispatch to ``_function.call`` from a flat list of pre-packed addresses.
+
+        ``exe_args`` contains packed C-pointer values (``int`` or
+        ``ctypes.c_void_p``) produced by ``dsl.py`` via
+        ``_generate_jit_func_args``. The adapter flattens Tuple/dataclass fields
+        and dynamic Shape leaves, while the Executor expects one slot per
+        top-level metadata binding. Recurse through the metadata tree to rebuild
+        Tuple sub-arrays and Shape ``int64_t[leaf_count]`` slots; reconstruct
+        baked Const/Unit elements from metadata because they have no adapter
+        entry."""
+        exe_arg_iter = iter(exe_args)
+        addresses: list[int] = []
+        keepalive: list[Any] = []
+        for param in self._function.metadata.params:
+            addr, keep = self._repack_exe_binding(param, exe_arg_iter)
+            addresses.append(addr)
+            keepalive.append(keep)
+        sentinel = object()
+        if next(exe_arg_iter, sentinel) is not sentinel:
+            raise ValueError(
+                f"{self._function.metadata.symbol_name}: received more execution "
+                "arguments than required by its metadata"
+            )
+        ret_addr, ret_buf = _alloc_return(self._function.metadata.ret)
+        self._function.call(addresses, ret_addr)
+        # keepalive holds any c_void_p wrappers alive across the call.
+        return _decode_return(self._function.metadata.ret, ret_buf)
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Invoke the compiled function with its metadata-derived signature.
+
+        Arguments may be positional or keyword values and are bound in
+        metadata order. For ``CutlassCall``, Tensor parameters require a
+        ``cute.Tensor``. For ``TvmFfi``, they require a DLPack producer such as
+        ``torch.Tensor``. ``Var`` and ``Const`` scalars must be convertible to
+        their metadata dtype's C representation. Shape values must match the
+        recursive metadata profile and contain signed-64-bit integer leaves. A
+        ``Var`` return is converted to its Python scalar value; a ``Unit``
+        return becomes ``None``.
+
+        :raises TypeError: If arguments do not match the metadata-derived
+            signature or a value cannot be converted for its binding.
+        :raises ValueError: If a binding or ABI is unsupported, a Tuple value
+            is invalid, or a Shape value does not match the metadata profile.
+        :raises OverflowError: If a Shape leaf is outside signed 64-bit range.
+        :raises RuntimeError: If native function invocation fails.
+        """
         ordered_args = _resolve_call_args(
             self._function, self.__signature__, *args, **kwargs
         )
@@ -431,8 +830,8 @@ class CutlassCallJitCompiledFunction:
         self,
         *,
         ir_module: Any,
-        cutlass_call: CallableFunction,
-        executor: Any,
+        cutlass_call: CallableFunction | None,
+        executor: Any | None,
         signature: inspect.Signature,
         function_name: str,
         kernel_info: dict[str, Any] | None,
@@ -487,11 +886,15 @@ class CutlassCallJitCompiledFunction:
         return super().__getattribute__(name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self._cutlass_call is None:
+            raise ValueError("This instance was configured for device-only execution.")
         return self._cutlass_call(*args, **kwargs)
 
     def run_compiled_program(self, exe_args: list[Any]) -> int | None:
-        """Eager ``@cute.jit`` first call: launch with compile-time Python args."""
-        return self._cutlass_call(*exe_args)
+        """Run the compiled program."""
+        if self._cutlass_call is None:
+            raise ValueError("This instance was configured for device-only execution.")
+        return self._cutlass_call.call_with_exe_args(exe_args)
 
     def to(self, device: Any = None) -> Any:
         raise NotImplementedError(

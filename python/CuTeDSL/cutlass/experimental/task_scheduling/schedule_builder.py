@@ -12,9 +12,8 @@
 """Schedule function DSL for the Task Scheduling (TS) framework.
 
 The ``@schedule`` decorator traces a Python function to build the
-schedule.  The grammar is structured around optional HEAD work, one
-optional persistent work-tile loop, one optional domain loop, and
-optional TAIL work:
+schedule.  The grammar is structured around a persistent work-tile loop,
+one or more optional domain loops, and auxiliary work in between:
 
 - Optionally enter ``with work_tile_loop(wq) as wtl:`` for persistent
   per-tile execution.  The WorkQueue drives the loop; the yielded ``wtl``
@@ -26,14 +25,16 @@ optional TAIL work:
   must be inside the skippable context so skipped tiles only execute
   non-skippable HEAD/TAIL bookkeeping such as Programmatic Dependent
   Launch (PDL) and WorkQueue stages.
-- When wtl is omitted, ``with domain_loop(start, end, step):`` is
-  used directly (HEAD entries before, TAIL entries after).
+- A schedule may use ``with domain_loop(start, end, step):`` directly, with
+  HEAD entries before the loop and TAIL entries after it.
+- ``while_true_loop(init=..., advance=...)`` records a dynamic loop whose
+  body repeats until a ``loop.break_loop()`` path fires.  A schedule may
+  contain a ``domain_loop`` or a ``while_true_loop``, not both.
 
 Variable tokens and lifecycle
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ``TaskLocalVariable`` fields materialize as task-local register state in
-generated code, but schedule functions do not read those fields directly.
-Consumer work declares the variable it returns with
+generated code. Consumer work declares the variable it returns with
 ``@consumer_work(returns=...)``.  Helper variable setup uses
 ``@consumer_work(work_attrs=WorkAttr.AUXILIARY, returns=...)`` or
 ``proxy.consumer_aux_work(...)``.
@@ -93,15 +94,15 @@ downstream calls can route each one independently::
     smem_q.q_load(coord_q)                         # routes coord_q
     smem_kv.k_load(coord_k)                        # routes coord_k
 
-A method that declares a single ``returns=`` yields that one token directly
-(not a 1-tuple).
+A method that declares one ``returns=`` value yields one token; multiple
+declared values yield a tuple of tokens.
 
 Non-routable tokens
 -------------------
 Work calls that declare no ``returns=`` — pipeline ops (``acquire``,
-``commit``, ...) and untyped work — still return a single token, but one whose
-``variable`` is ``None``.  Such a token is not routable: passing it as a
-downstream input raises :class:`ScheduleError`.
+``commit``, ...) and untyped work — return a token whose ``variable`` is
+``None``. Only tokens carrying a variable may be passed as downstream inputs;
+other tokens raise :class:`ScheduleError`.
 
 Direct-to-Task routing
 ----------------------
@@ -118,17 +119,14 @@ Classes
 -------
 Schedule
     Output of ``@schedule``: the root of the traced schedule *tree*.  ``body``
-    is an ordered list of nodes — ``Step`` leaves plus ``ConditionalBlock`` /
-    ``DomainLoop`` / ``WorkTileLoop`` containers — and per-variable data flow
-    is recorded as ``Route`` edges on the producing steps.
+    is an ordered list of nodes — ``Step`` / ``LoopBreak`` leaves plus
+    ``ConditionalBlock`` / ``DomainLoop`` / ``WorkTileLoop`` /
+    ``WhileTrueLoop`` containers — and per-variable data flow
+    is recorded as named ``Step.input_bindings`` on consuming steps.
 
 Step
-    A leaf node: one pipeline op or work call on a resource.  Carries its
-    outgoing ``Route`` edges and the variables (``returns=``) it produces.
-
-Route
-    A data-flow edge stored on the producing ``Step``: one produced variable
-    feeds one named input on the consuming ``Step``.
+    A leaf node: one pipeline op or work call on a resource. Carries its named
+    input bindings and the variables (``returns=``) it produces.
 
 ConditionalBlock
     A region whose body runs only when its :class:`~.enums.BlockGuard` holds.
@@ -141,6 +139,13 @@ WorkTileLoop
     The persistent (while) loop over work tiles, driven by a ``WorkQueue``;
     an optional ``skip_if`` predicate enables skipped-tile execution.
 
+WhileTrueLoop
+    A dynamic loop whose cursor comes from init/advance consumer-work hooks
+    and whose exit formula is the dominating guards of ``break_loop()``.
+
+LoopBreak
+    Marker leaf recorded by ``loop.break_loop()``.
+
 DataFlowToken
     Opaque handle returned by a work call — one per ``TaskLocalVariable``
     declared in ``@consumer_work(returns=...)``.  Passing it to a downstream
@@ -148,17 +153,18 @@ DataFlowToken
 
 ResourceProxy
     Tracing wrapper around a ``MemoryResource``.  Method calls record
-    schedule steps instead of executing real pipeline operations.
+    schedule steps for pipeline operations.
 
-DomainLoopProxy / WorkTileLoopProxy
-    Handles yielded by ``domain_loop()`` / ``work_tile_loop()``.
+DomainLoopProxy / WorkTileLoopProxy / WhileTrueLoopProxy
+    Handles yielded by ``domain_loop()`` / ``work_tile_loop()`` /
+    ``while_true_loop()``.
     ``DomainLoopProxy`` opens per-iteration ``first_iter()`` / ``last_iter()``
-    / ``every()`` blocks; ``WorkTileLoopProxy`` opens ``skippable()`` blocks.
+    / ``every()`` blocks; ``WorkTileLoopProxy`` opens ``skippable()`` blocks;
+    ``WhileTrueLoopProxy`` records ``break_loop()``.
 
 ScheduleBuilder
     Internal state machine that accumulates the schedule tree during
-    tracing.  Not used directly — the ``@schedule`` decorator
-    manages it.
+    tracing. The ``@schedule`` decorator manages its lifetime.
 
 ScheduleError
     ``ValueError`` raised when a schedule violates the grammar or cannot run.
@@ -172,9 +178,8 @@ schedule(fn)
 
 domain_loop(*bounds, unroll=None)
     Opens the domain (for-) loop and records its bounds on the schedule
-    tree, so the caller need not repeat them on the ``Task`` constructor.
-    Bounds mirror ``range`` (``domain_loop(end)`` / ``(start, end)`` /
-    ``(start, end, step)``); any bound may instead be a ``Task`` method
+    tree. Bounds mirror ``range`` (``domain_loop(end)`` / ``(start, end)`` /
+    ``(start, end, step)``); any bound may be a ``Task`` method
     accessed on the class (``MyTask.get_domain``) to make that dimension
     dynamic.
 
@@ -183,6 +188,11 @@ work_tile_loop(wq, *, skip_if=None)
     ``skip_if=(work_queue, work_tile) -> Boolean`` predicate set, ``skippable()``
     regions are omitted for skipped tiles while the surrounding WorkQueue
     bookkeeping still runs.
+
+while_true_loop(*, init, advance, verify_num_iters=None)
+    Opens a dynamic loop.  ``init`` / ``advance`` are consumer work methods
+    that return the loop cursor.  ``loop.break_loop()`` records the exit
+    formula from the opaque guards that dominate the call.
 
 consumer_work / producer_work
     Method decorators (from ``resources``) that register a named work function
@@ -198,25 +208,30 @@ import warnings
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
-from typing import Callable, Hashable, NoReturn
+from dataclasses import dataclass, field, replace
+from types import TracebackType
+from typing import Callable, Hashable, NoReturn, TypeGuard, cast
 
 import cutlass
 from typing_extensions import assert_never
 
 from .enums import (
     BlockGuard,
+    ComplementedIterationPredicate,
     Every,
     FIRST_ITER,
+    GuardAnd,
+    GuardOr,
     IterationPredicate,
     LAST_ITER,
     OpaqueCondition,
     SKIPPABLE,
     ScheduleStage,
+    capture_user_source_loc,
+    StateRole,
 )
 from .resources import (
     MemoryResource,
-    SlotRouting,
     TaskLocalVariable,
     WorkQueue,
     get_task_local_variables,
@@ -224,34 +239,14 @@ from .resources import (
     _PRODUCER_WORK_FNS_ATTR,
     _collect_named_work_fns,
 )
+from .pipeline_group import PipelineGroup
 
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
 
-
-@dataclass(kw_only=True)
-class Route:
-    """A data-flow edge: one variable produced on a step feeds one input.
-
-    Created when a downstream work call is passed the :class:`DataFlowToken` for
-    ``source``.  The edge is stored on the *producing* step and references its
-    endpoints by object identity (``destination`` is the consuming :class:`Step`),
-    so no positional/slot key is needed.
-
-    Attributes
-    ----------
-    source : TaskLocalVariable
-        The produced variable whose value flows along this edge.
-    destination : Step
-        The step that consumes the value.
-    destination_argument : str
-        The named data-flow input on ``destination`` that receives the value.
-    """
-
-    source: TaskLocalVariable
-    destination: "Step"
-    destination_argument: str
+# Shared with resource construction-site capture; one implementation.
+_capture_source_loc = capture_user_source_loc
 
 
 @dataclass(kw_only=True, eq=False)
@@ -259,7 +254,7 @@ class Step:
     """A leaf node: one pipeline op or work call on a resource.
 
     ``eq=False`` keeps identity equality/hash: steps are referenced by identity
-    (by routes, tokens, the scope map, and ``unique_id`` keying), and two
+    (by tokens, the scope map, and ``unique_id`` keying), and two
     structurally identical steps must stay distinct.
 
     Attributes
@@ -268,37 +263,112 @@ class Step:
         The resource this step operates on.
     schedule_stage : ScheduleStage
         Which pipeline stage / work kind this step is (e.g. ``ConsumerWait``).
-    routes : list[Route]
-        Outgoing data-flow edges for variables this step produces.
+    input_bindings : dict[str, TaskLocalVariable]
+        This step's routed inputs as ``argument -> variable`` bindings: which
+        task-local variable each routed parameter reads.  A binding observes the
+        latest write to that variable in execution order, including values
+        carried across loop iterations. Each variable occupies one
+        identity-keyed task-local slot.
     constexpr_kwargs : dict
-        Compile-time literals passed at the call site for ``cutlass.Constexpr``
-        work parameters (e.g. ``is_head=True``, ``subtile=0``); auto-forwarded to
-        the work method at runtime.
+        Compile-time literals bound to ``cutlass.Constexpr`` work parameters
+        (e.g. ``is_head=True``, ``subtile=0``) and forwarded to the work method.
     returned_variables : list[TaskLocalVariable]
-        Variables this step produces (from ``@consumer_work(returns=...)``),
-        used to flag produced-but-unrouted outputs.
+        Variables this step produces, as declared by
+        ``@consumer_work(returns=...)``.
     label : str | None
         The named work-fn label (e.g. ``"get_item"``), or ``None`` for a
         standard pipeline op.
     unique_id : int
         Stable per-schedule id, used for identity references and printing.
+    source_loc : tuple[str, int] | None
+        The ``(file, line)`` of the user call that recorded this step, for
+        source-located diagnostics; ``None`` when unattributable.
     """
 
     memory_resource: MemoryResource
     schedule_stage: ScheduleStage
-    routes: list[Route] = field(default_factory=list)
+    input_bindings: "dict[str, TaskLocalVariable]" = field(default_factory=dict)
     constexpr_kwargs: dict = field(default_factory=dict)
     returned_variables: list[TaskLocalVariable] = field(default_factory=list)
     label: str | None = None
+    state_binding: "PipelineStateRef | None" = None
     unique_id: int
+    source_loc: "tuple[str, int] | None" = None
+
+
+@dataclass(frozen=True)
+class PipelineStateRef:
+    """Trace-time reference to one explicit software-pipeline cursor."""
+
+    resource: MemoryResource
+    role: StateRole
+    slot: int
+    offset: int
+    unique_id: int
+    builder_id: int = field(repr=False, compare=False)
+    stage_index: int | None = None
+
+    def __str__(self) -> str:
+        base = f"{self.resource.name}.{self.role.value}[{self.slot}]"
+        if self.stage_index is not None:
+            return f"{base}@{self.stage_index}"
+        if self.offset:
+            return f"{base}{self.offset:+d}"
+        return base
+
+    def advance(self, n: int = 1) -> None:
+        builder = _require_active_builder("PipelineStateRef.advance()")
+        builder.record_state_advance(self, n)
+
+    def previous(self) -> "PipelineStateRef":
+        return replace(self, offset=self.offset - 1)
+
+    def at(self, stage_idx: int) -> "PipelineStateRef":
+        """Select a physical ring buffer.  Valid on work, not on barrier ops.
+
+        The view carries only a stage index.  Acquire, wait, commit, and
+        release consume a ``(index, phase)`` cursor; ``at()`` does not know
+        the phase, so those ops reject it.
+        """
+        if type(stage_idx) is not int:
+            raise ScheduleError(
+                f"{self}.at() stage index must be an int, got "
+                f"{type(stage_idx).__name__}."
+            )
+        cfg = self.resource.pipeline_config
+        assert cfg is not None
+        if not 0 <= stage_idx < cfg.num_stages:
+            raise ScheduleError(
+                f"{self}.at({stage_idx}) is outside [0, {cfg.num_stages})."
+            )
+        return replace(self, stage_index=stage_idx)
+
+
+@dataclass(kw_only=True, eq=False)
+class StateAdvance:
+    """A logical advance of an explicit software-pipeline cursor."""
+
+    state: PipelineStateRef
+    count: int = 1
+    unique_id: int
+    source_loc: "tuple[str, int] | None" = None
 
 
 @dataclass(kw_only=True, eq=False)
 class ConditionalBlock:
-    """A region executed only when its guard holds."""
+    """A region executed only when its guard holds.
+
+    ``verify_num_fires`` is a verifier-only assertion available on
+    ``when_true`` / ``when_false`` blocks inside ``while_true_loop``.  It is
+    the exact number of modeled rounds on which the effective guard, including
+    enclosing guards, must hold.  It constrains opaque exit histories without
+    changing generated code.
+    """
 
     body: "list[Node]"
     condition: BlockGuard
+    verify_num_fires: int | None = None
+    source_loc: "tuple[str, int] | None" = None
 
 
 @dataclass(kw_only=True, eq=False)
@@ -315,6 +385,7 @@ class DomainLoop:
     step: object | Callable[..., object]
     unroll: int | None
     body: "list[Node]"
+    source_loc: "tuple[str, int] | None" = None
 
 
 @dataclass(kw_only=True, eq=False)
@@ -329,9 +400,79 @@ class WorkTileLoop:
     body: "list[Node]"
     work_queue: WorkQueue
     skip_if: Callable[..., cutlass.Boolean] | None = None
+    source_loc: "tuple[str, int] | None" = None
 
 
-Node = Step | ConditionalBlock | DomainLoop | WorkTileLoop
+@dataclass(frozen=True)
+class LoopHook:
+    """Work method used as a ``while_true_loop`` init or advance hook."""
+
+    resource: MemoryResource
+    schedule_stage: ScheduleStage
+    label: str
+    result_name: str
+    step: Step
+
+
+@dataclass(kw_only=True, eq=False)
+class LoopBreak:
+    """Marker leaf for ``loop.break_loop()`` inside a captured while loop.
+
+    ``conditions`` is the conjunction of guards that dominate the
+    call (nested ``when_true`` / ``when_false``).  An empty tuple is an
+    unconditional break.  When reached, the marker suppresses all later nodes
+    in the current iteration.
+    """
+
+    conditions: tuple[BlockGuard, ...]
+    source_loc: "tuple[str, int] | None" = None
+
+
+@dataclass(kw_only=True, eq=False)
+class WhileTrueLoop:
+    """Dynamic loop whose body repeats until a recorded ``LoopBreak`` fires.
+
+    ``verify_num_iters`` is the normalized tuple of modeled iteration counts
+    the verifier explores.  Each count ``N`` is checked as
+    ``retry^(N-1) + break``.
+    """
+
+    init: LoopHook
+    advance: LoopHook
+    verify_num_iters: tuple[int, ...]
+    body: "list[Node]"
+    breaks: list[LoopBreak] = field(default_factory=list)
+    source_loc: "tuple[str, int] | None" = None
+
+    @property
+    def break_conditions(self) -> tuple[tuple[BlockGuard, ...], ...]:
+        """Exit formula: the loop exits iff any captured break clause holds."""
+        return tuple(brk.conditions for brk in self.breaks)
+
+
+Node = (
+    Step
+    | StateAdvance
+    | ConditionalBlock
+    | DomainLoop
+    | WorkTileLoop
+    | WhileTrueLoop
+    | LoopBreak
+)
+
+
+def _has_public_state_cursor(resource: MemoryResource) -> bool:
+    """Return whether user-authored ``state=`` is valid for ``resource``."""
+    return (
+        resource.pipeline_config is not None
+        and not isinstance(resource, WorkQueue)
+        and not resource.is_barrier
+    )
+
+
+def _has_internal_state_cursor(resource: MemoryResource) -> bool:
+    """Return whether the automatic rewrite may synthesize a cursor."""
+    return resource.pipeline_config is not None or isinstance(resource, PipelineGroup)
 
 
 @dataclass(kw_only=True)
@@ -346,111 +487,22 @@ class Schedule:
     name: str
     body: list[Node]
     resources: list[MemoryResource]
+    manual_state: bool = False
 
     def __str__(self) -> str:
         return _format_schedule(self)
 
 
-@dataclass
-class ScheduleResult:
-    """Legacy flat schedule bundle consumed by the legacy :class:`~.task.Task`.
-
-    Attributes
-    ----------
-    schedule_list : list[tuple]
-        Flat list of schedule tuples in the legacy schedule-list format.
-    slot_routing : SlotRouting or None
-        Slot-to-slot variable-flow routing table.  ``None`` when no data-flow
-        tokens were used.
-    constexpr_work_kwargs : dict or None
-        Maps a work-call slot ``(id(resource), stage, stage_type, call_idx)`` to
-        the compile-time ``cutlass.Constexpr`` kwargs captured at its schedule
-        call site (e.g. ``{"is_head": True}``), auto-forwarded to the work method
-        at runtime.  ``None`` when no constexpr work arguments were used.
-    resources : list[MemoryResource]
-        Ordered list of resources the schedule function received, preserving
-        parameter order.
-    loop_start, loop_end, loop_step : int or DSL value or None
-        Bounds captured by ``domain_loop(start, end, step)``.  ``None`` when no
-        ``domain_loop`` was used.
-    domain_getter : callable or None
-        A ``Task`` subclass method, accessed on the class, supplied as the
-        ``end`` bound, e.g. ``domain_loop(MyTask.get_domain)``.
-    dynamic_domain : bool
-        Derived property.  ``True`` when ``domain_getter`` is present.
-    has_work_tile_loop : bool
-        ``True`` when the schedule used ``with work_tile_loop(wq):``.
-    skip_if : callable or None
-        Optional skip predicate captured from ``work_tile_loop(skip_if=...)``.
-    post_work_loop_tail_slots, pre_work_loop_head_slots : set[tuple[int, ScheduleStage, int]]
-        Tail/head schedule slots recorded after/before the ``work_tile_loop(wq)``
-        block, run once after/before the persistent loop.
-    skippable_head_slots, skippable_tail_slots : set[tuple[int, ScheduleStage, int]]
-        Head/tail slots inside ``with wtl.skippable():`` that are dropped for a
-        skipped work-tile iteration.
-    """
-
-    schedule_list: list[tuple]
-    slot_routing: SlotRouting | None = None
-    constexpr_work_kwargs: dict | None = None
-    resources: list[MemoryResource] = field(default_factory=list)
-    loop_start: object | None = None
-    loop_end: object | None = None
-    loop_step: object | None = None
-    domain_getter: Callable[..., object] | None = None
-    unroll: int | None = 1
-    skip_if: Callable[..., object] | None = None
-    has_work_tile_loop: bool = False
-    post_work_loop_tail_slots: set[tuple[int, ScheduleStage, int]] = field(
-        default_factory=set
-    )
-    pre_work_loop_head_slots: set[tuple[int, ScheduleStage, int]] = field(
-        default_factory=set
-    )
-    skippable_head_slots: set[tuple[int, ScheduleStage, int]] = field(
-        default_factory=set
-    )
-    skippable_tail_slots: set[tuple[int, ScheduleStage, int]] = field(
-        default_factory=set
-    )
-
-    @property
-    def dynamic_domain(self) -> bool:
-        """Whether this schedule resolves its domain via ``domain_getter``."""
-        return self.domain_getter is not None
-
-    def task_kwargs(self) -> dict:
-        """Return kwargs suitable for ``Task(**result.task_kwargs())``.
-
-        The legacy ``Task`` reads the captured-schedule fields off this object,
-        so the caller only adds ``src_resources`` / ``dst_resources`` /
-        ``warp_idx`` / ``num_warps``::
-
-            schedule = my_schedule(smem, tmem)         # a Schedule tree
-            result = lower_to_legacy(schedule)         # the legacy bundle
-            Task(src_resources=[smem], dst_resources=[tmem],
-                 warp_idx=0, num_warps=1, **result.task_kwargs())
-        """
-        return {"schedule": self}
-
-    def __repr__(self) -> str:
-        return (
-            f"ScheduleResult(entries={len(self.schedule_list)}, "
-            f"data_flow={self.slot_routing is not None}, "
-            f"work_tile_loop={self.has_work_tile_loop}, "
-            f"dynamic_domain={self.dynamic_domain}, unroll={self.unroll})"
-        )
-
-
 def _child_nodes(node: Node) -> list[Node]:
-    """Direct children of ``node`` (empty for a leaf :class:`Step`)."""
+    """Direct children of ``node`` (empty for a leaf :class:`Step` or :class:`LoopBreak`)."""
     match node:
-        case Step():
+        case Step() | StateAdvance() | LoopBreak():
             return []
         case (
             ConditionalBlock(body=body)
             | DomainLoop(body=body)
             | WorkTileLoop(body=body)
+            | WhileTrueLoop(body=body)
         ):
             return body
         case _:
@@ -469,27 +521,110 @@ def _iter_steps(schedule: Schedule) -> Iterator[Step]:
     return (node for node in _iter_nodes(schedule.body) if isinstance(node, Step))
 
 
+def is_queue_advance_step(step: Step) -> bool:
+    """True for a WorkQueue ``get_and_advance_work_tile`` step.
+
+    The walker treats ``WorkQueue`` + ``ConsumerWork`` as the sole per-tile
+    queue advance. Auxiliary WorkQueue work uses ``ConsumerAuxWork`` and is
+    not an advance.
+    """
+    return (
+        isinstance(step.memory_resource, WorkQueue)
+        and step.schedule_stage is ScheduleStage.ConsumerWork
+    )
+
+
+def validate_queue_advance_placement(
+    nodes: list[Node], *, parent_is_work_tile_loop: bool = False
+) -> None:
+    """Require every queue-advance step to be a direct ``WorkTileLoop`` child.
+
+    The work-tile loop carries the advance return value as its ``scf.while``
+    iter-arg, so a nested advance under ``domain_loop()`` or a conditional
+    block cannot propagate. Raises :class:`ScheduleError` when placement is
+    wrong.
+    """
+    for node in nodes:
+        if isinstance(node, Step):
+            if is_queue_advance_step(node) and not parent_is_work_tile_loop:
+                raise ScheduleError(
+                    "get_and_advance_work_tile() must be a direct child of "
+                    "work_tile_loop()."
+                )
+        elif isinstance(node, WorkTileLoop):
+            validate_queue_advance_placement(node.body, parent_is_work_tile_loop=True)
+        elif isinstance(node, (DomainLoop, ConditionalBlock, WhileTrueLoop)):
+            validate_queue_advance_placement(node.body, parent_is_work_tile_loop=False)
+        elif isinstance(node, LoopBreak):
+            continue
+
+
 def _format_schedule(schedule: Schedule, *, show_routes: bool = True) -> str:
     res_list = ", ".join(f"{r.name}: {type(r).__name__}" for r in schedule.resources)
-    lines = [f"Schedule({schedule.name!r}, resources=[{res_list}])"]
 
-    # destination step uid -> list of (destination arg, source variable, producer step uid)
-    incoming: dict[int, list[tuple[str, str | None, int]]] = {}
-    if show_routes:
-        for step in _iter_steps(schedule):
-            for route in step.routes:
-                incoming.setdefault(route.destination.unique_id, []).append(
-                    (route.destination_argument, route.source.slot_name, step.unique_id)
-                )
+    steps = list(_iter_steps(schedule))
+
+    # Execution order (pre-order) and nearest-enclosing-loop per step, for the
+    # ``(carried)`` tag: a read is loop-carried when its variable is (re)written
+    # later in the same loop, so the read observes a previous iteration's value.
+    exec_index: dict[int, int] = {}
+    enclosing_loop: dict[int, int] = {}
+
+    def _index_nodes(nodes: "list[Node]", loop_id: int) -> None:
+        for node in nodes:
+            if isinstance(node, Step):
+                exec_index[id(node)] = len(exec_index)
+                enclosing_loop[id(node)] = loop_id
+            child_loop = (
+                id(node)
+                if isinstance(node, (DomainLoop, WorkTileLoop, WhileTrueLoop))
+                else loop_id
+            )
+            _index_nodes(_child_nodes(node), child_loop)
+
+    _index_nodes(schedule.body, -1)
+
+    # Include the variable-owning resource to make data provenance visible.
+    def _feeder_resource(var: object) -> str | None:
+        return getattr(getattr(var, "owner", None), "name", None)
+
+    reads_view: dict[int, list[tuple[str, str, str | None]]] = {}
+    for step in steps:
+        if step.input_bindings:
+            reads: list[tuple[str, str, str | None]] = []
+            for arg, var in step.input_bindings.items():
+                assert var.slot_name is not None
+                reads.append((arg, var.slot_name, _feeder_resource(var)))
+            reads_view[id(step)] = reads
+
+    writers: dict[str, list[Step]] = {}
+    for step in steps:
+        for var in step.returned_variables:
+            assert var.slot_name is not None
+            writers.setdefault(var.slot_name, []).append(step)
+    routed_slots = {slot for reads in reads_view.values() for _, slot, _ in reads}
+    variables = ", ".join(sorted(routed_slots))
+    var_suffix = f", variables=[{variables}]" if variables else ""
+    lines = [f"Schedule({schedule.name!r}, resources=[{res_list}]{var_suffix})"]
+
+    def _is_carried(reader: Step, slot: str) -> bool:
+        # Carried iff the variable is (re)written later in the reader's loop.
+        reader_loop = enclosing_loop.get(id(reader), -1)
+        if reader_loop == -1:
+            return False
+        reader_idx = exec_index.get(id(reader), -1)
+        return any(
+            enclosing_loop.get(id(writer), -1) == reader_loop
+            and exec_index.get(id(writer), -1) > reader_idx
+            for writer in writers.get(slot, ())
+        )
 
     def fmt_bound(value: object) -> str:
-        # A callable bound is a runtime domain getter; show it as ``f()``.
         if callable(value):
             return f"{getattr(value, '__name__', repr(value))}()"
-        # Plain Python bounds print as their literal.
         if isinstance(value, (bool, int, float)):
             return str(value)
-        # Rendering a dynamic bound.
+        # Dynamic DSL values expose their printable payload through ``value``.
         inner = getattr(value, "value", None)
         if isinstance(inner, (bool, int, float)):
             return str(inner)
@@ -497,20 +632,31 @@ def _format_schedule(schedule: Schedule, *, show_routes: bool = True) -> str:
             return f"<dynamic {type(value).__name__}>"
         return str(value)
 
-    def fmt_out(route: Route) -> str:
-        target = route.destination.unique_id
-        return f"{route.source.slot_name} -> [#{target}].{route.destination_argument}"
-
-    def fmt_in(argument: str, source_var: str | None, producer_index: int) -> str:
-        return f"{argument} <- [#{producer_index}].{source_var}"
-
     def fmt_header(node: Node) -> str:
         match node:
             case Step(memory_resource=resource, schedule_stage=stage, label=label):
                 lbl = f", label={label!r}" if label else ""
-                return f"[#{node.unique_id}] Step({resource.name}, {stage.name}{lbl})"
+                state = (
+                    f", state={node.state_binding}"
+                    if node.state_binding is not None
+                    else ""
+                )
+                return (
+                    f"[#{node.unique_id}] Step({resource.name}, {stage.name}"
+                    f"{lbl}{state})"
+                )
+            case StateAdvance(state=state, count=count):
+                return f"[#{node.unique_id}] StateAdvance({state}, +{count})"
             case ConditionalBlock(condition=condition):
-                return f"ConditionalBlock(condition={_format_block_guard(condition)})"
+                fires = (
+                    f", verify_num_fires={node.verify_num_fires}"
+                    if node.verify_num_fires is not None
+                    else ""
+                )
+                return (
+                    f"ConditionalBlock(condition={_format_block_guard(condition)}"
+                    f"{fires})"
+                )
             case DomainLoop(start=start, end=end, step=step, unroll=unroll):
                 bounds = (
                     f"start={fmt_bound(start)}, end={fmt_bound(end)}, "
@@ -524,6 +670,20 @@ def _format_schedule(schedule: Schedule, *, show_routes: bool = True) -> str:
                         f"skip_if={getattr(skip_if, '__name__', repr(skip_if))}"
                     )
                 return f"WorkTileLoop({', '.join(parts)})"
+            case WhileTrueLoop(init=init, advance=advance, verify_num_iters=iters):
+                exit_formula = _format_exit_formula(node.breaks)
+                return (
+                    "WhileTrueLoop("
+                    f"init={init.resource.name}.{init.label}, "
+                    f"advance={advance.resource.name}.{advance.label}, "
+                    f"verify_num_iters={iters}, "
+                    f"exit={exit_formula})"
+                )
+            case LoopBreak(conditions=conditions):
+                if not conditions:
+                    return "LoopBreak()"
+                conds = ", ".join(_format_block_guard(cond) for cond in conditions)
+                return f"LoopBreak({conds})"
             case _:
                 assert_never(node)
 
@@ -531,13 +691,14 @@ def _format_schedule(schedule: Schedule, *, show_routes: bool = True) -> str:
         pad = " " * indent
         out = [f"{pad}{fmt_header(node)}"]
         if show_routes and isinstance(node, Step):
-            out.extend(
-                f"{pad}      {fmt_in(argument, source_var, producer_index)}"
-                for argument, source_var, producer_index in incoming.get(
-                    node.unique_id, []
-                )
-            )
-            out.extend(f"{pad}      {fmt_out(route)}" for route in node.routes)
+            # Arrows show produced variables, consuming parameters, provenance,
+            # and loop-carried reads.
+            for var in node.returned_variables:
+                out.append(f"{pad}      -> {var.slot_name}")
+            for argument, slot, feeder in reads_view.get(id(node), []):
+                tag = "  (loop-carried)" if _is_carried(node, slot) else ""
+                source = f"{feeder}.{slot}" if feeder else slot
+                out.append(f"{pad}      {argument} <- {source}{tag}")
         for child in _child_nodes(node):
             out.extend(fmt_node(child, indent + 2))
         return out
@@ -582,22 +743,21 @@ _AUX_STAGES: frozenset[ScheduleStage] = frozenset[ScheduleStage](
 
 
 @dataclass
-class DataFlowToken:
+class DataFlowToken(BlockGuard):
     """Handle returned by a work call; passing it downstream routes its variable.
 
     A consumer work call that declares ``returns=`` yields one token per
     produced :class:`TaskLocalVariable`; passing such a token into a downstream
-    work call materializes a :class:`Route` on the producing
-    step.  A token carries exactly one variable and is routed to the single
-    destination argument resolved from its slot position or keyword.
+    work call records the variable under the consuming step's named input. A
+    token carries exactly one variable and binds to the single destination
+    argument resolved from its slot position or keyword.
 
-    Calls that declare no outputs (pipeline ops, untyped work) return a token
-    with ``variable is None``; such a token is not routable and passing it as
-    an input is rejected.
+    Calls that declare no outputs (pipeline ops and untyped work) return a token
+    with ``variable is None``. Routable tokens carry a variable.
 
-    The builder tracks the latest token minted per variable; re-producing the
-    variable supersedes earlier handles, so an older token becomes stale and
-    cannot be routed (caught by the builder's freshness check, by identity).
+    The builder tracks the latest token minted per variable. Re-producing a
+    variable makes the new token its authoritative handle; freshness uses token
+    identity.
     """
 
     producer_step: Step
@@ -615,18 +775,51 @@ class DataFlowToken:
             "a single work-call output cannot be indexed; it carries one variable."
         )
 
+    def __invert__(self) -> BlockGuard:
+        return _NegatedDataFlowToken(self)
+
+
+@dataclass(frozen=True)
+class _NegatedDataFlowToken(BlockGuard):
+    """Capture-time negation of a token, resolved to an opaque NNF leaf."""
+
+    token: DataFlowToken
+
+    def __invert__(self) -> BlockGuard:
+        return self.token
+
 
 _opaque_capture_counter = itertools.count()
 
 
 def _format_iteration_predicate(condition: IterationPredicate) -> str:
+    if isinstance(condition, ComplementedIterationPredicate):
+        return f"~{_format_iteration_predicate(condition.predicate)}"
     if isinstance(condition, Every):
-        return f"Every(period={condition.period}, start={condition.start})"
+        return f"every(period={condition.period}, start={condition.start})"
     if condition is FIRST_ITER:
-        return "FirstIter"
+        return "first_iter"
     if condition is LAST_ITER:
-        return "LastIter"
+        return "last_iter"
     return repr(condition)
+
+
+def _format_guard_expression(condition: BlockGuard) -> str:
+    if isinstance(condition, OpaqueCondition):
+        value = f"key={condition.key!r}"
+        return f"~({value})" if condition.negated else value
+    if isinstance(condition, IterationPredicate):
+        return _format_iteration_predicate(condition)
+    if isinstance(condition, (GuardAnd, GuardOr)):
+        operator = " and " if isinstance(condition, GuardAnd) else " or "
+        return (
+            "("
+            + operator.join(
+                _format_guard_expression(operand) for operand in condition.operands
+            )
+            + ")"
+        )
+    raise TypeError(f"unsupported guard expression type: {type(condition).__name__}")
 
 
 def _format_block_guard(condition: BlockGuard) -> str:
@@ -635,9 +828,30 @@ def _format_block_guard(condition: BlockGuard) -> str:
     if isinstance(condition, OpaqueCondition):
         polarity = "when_false" if condition.negated else "when_true"
         return f"{polarity}(key={condition.key!r})"
-    if isinstance(condition, IterationPredicate):
+    if isinstance(condition, (IterationPredicate, GuardAnd, GuardOr)):
+        if isinstance(condition, (GuardAnd, GuardOr)):
+            return f"when_true({_format_guard_expression(condition)})"
         return _format_iteration_predicate(condition)
     raise TypeError(f"unsupported block guard type: {type(condition).__name__}")
+
+
+def _format_exit_formula(breaks: list[LoopBreak]) -> str:
+    """Render the while-loop exit formula from captured break clauses."""
+    if not breaks:
+        return "never"
+    clauses: list[str] = []
+    for brk in breaks:
+        if not brk.conditions:
+            clauses.append("true")
+            continue
+        parts = [_format_block_guard(cond) for cond in brk.conditions]
+        joined = " and ".join(parts)
+        clauses.append(joined)
+    if len(clauses) == 1:
+        return clauses[0]
+    return " or ".join(
+        f"({clause})" if " and " in clause else clause for clause in clauses
+    )
 
 
 def _resolve_when_guard(
@@ -647,29 +861,59 @@ def _resolve_when_guard(
     key: Hashable | None,
     negated: bool,
     api: str,
-) -> IterationPredicate | OpaqueCondition:
+    key_from_composite: bool = False,
+) -> BlockGuard:
+    # Must precede the opaque capture below: an iteration-block context is not a
+    # recognized guard, so the fallback would turn it into a resource-less
+    # OpaqueCondition, which codegen treats as unconditionally true.
+    if isinstance(cond, _IterationBlockContext):
+        cond._operand_error()
+    if isinstance(cond, (GuardAnd, GuardOr)):
+        if (
+            key is not None
+            and not key_from_composite
+            and not any(
+                not isinstance(leaf, IterationPredicate)
+                for leaf in _unresolved_guard_leaves(cond)
+            )
+        ):
+            raise ScheduleError(
+                f"{api}(): key= on a composite condition requires at least one "
+                "opaque leaf to correlate."
+            )
+        resolved = tuple(
+            _resolve_when_guard(
+                builder,
+                operand,
+                key=key,
+                negated=False,
+                api=api,
+                key_from_composite=key is not None,
+            )
+            for operand in cond.operands
+        )
+        guard: BlockGuard = type(cond)(resolved)
+        if negated:
+            guard = ~guard
+        return guard
     if isinstance(cond, IterationPredicate):
-        if key is not None:
+        if key is not None and not key_from_composite:
             warnings.warn(
                 f"{api}(): key= is ignored for iteration predicates.",
                 stacklevel=3,
             )
         if negated:
-            raise ScheduleError(
-                f"{api}() cannot negate an iteration predicate; use a different "
-                "predicate or an opaque runtime condition."
-            )
+            cond = ~cond
         if not builder._is_inside_domain_loop():
             raise ScheduleError(
                 f"{api}() with an iteration predicate is only valid inside "
                 "domain_loop()."
             )
-        if builder._in_per_iteration_condition():
-            raise ScheduleError(
-                "per-iteration condition blocks cannot be nested; express "
-                "independent cadences as sibling blocks."
-            )
         return cond
+    token_negated = False
+    if isinstance(cond, _NegatedDataFlowToken):
+        token_negated = True
+        cond = cond.token
     if isinstance(cond, DataFlowToken):
         if cond.variable is None:
             raise ScheduleError(
@@ -696,57 +940,80 @@ def _resolve_when_guard(
         builder.record_condition_use(cond)
         return OpaqueCondition(
             key=resolved_key,
-            negated=negated,
+            negated=negated != token_negated,
             resource=cond.producer_step.memory_resource,
             method_label=label,
             result_name=result_name,
         )
+    if isinstance(cond, OpaqueCondition):
+        if key is not None:
+            cond = OpaqueCondition(
+                key=key,
+                negated=cond.negated,
+                resource=cond.resource,
+                method_label=cond.method_label,
+                result_name=cond.result_name,
+            )
+        return ~cond if negated else cond
     resolved_key = (
         key if key is not None else ("__opaque__", next(_opaque_capture_counter))
     )
     return OpaqueCondition(key=resolved_key, negated=negated)
 
 
-def _validate_opaque_guard_placement(
-    builder: "ScheduleBuilder", _guard: OpaqueCondition, api: str
-) -> None:
-    if builder._in_per_iteration_condition():
-        raise ScheduleError(
-            f"{api}() with an opaque condition cannot be nested inside a "
-            "per-iteration predicate block or another opaque condition block."
-        )
+def _unresolved_guard_leaves(guard: BlockGuard) -> Iterator[BlockGuard]:
+    """Yield leaves before work-call tokens have been resolved to opaque guards."""
+    if isinstance(guard, (GuardAnd, GuardOr)):
+        for operand in guard.operands:
+            yield from _unresolved_guard_leaves(operand)
+    else:
+        yield guard
 
 
 @contextmanager
-def when_true(cond: object, *, key: Hashable | None = None) -> Iterator[None]:
+def when_true(
+    cond: object,
+    *,
+    key: Hashable | None = None,
+    verify_num_fires: int | None = None,
+) -> Iterator[None]:
     """Open a block that runs when ``cond`` is true.
 
     Iteration predicates are only valid inside ``domain_loop()``.  Opaque
     runtime conditions are work-call outputs backed by ``TaskLocalVariable``
-    slots; they may be used as sibling blocks or inside ``skippable()``, but
-    condition blocks are intentionally not nestable.
+    slots. Conditions may be combined with ``&`` / ``|`` / ``~`` and nested
+    condition blocks compose as runtime conjunctions. Keying a composite
+    correlates all of its opaque leaves; iteration-predicate leaves are unchanged.
+    Extra guards that wrap ``break_loop()`` are part of the while-loop exit
+    formula.
+
+    ``verify_num_fires=N`` asserts that this block runs on exactly ``N`` of
+    the enclosing ``while_true_loop``'s modeled rounds.  The exhaustive
+    checker uses the assertion to discard impossible opaque exit histories;
+    it has no runtime effect.
     """
     builder = _require_active_builder("when_true()")
     guard = _resolve_when_guard(builder, cond, key=key, negated=False, api="when_true")
-    if isinstance(guard, OpaqueCondition):
-        _validate_opaque_guard_placement(builder, guard, "when_true")
-    with _conditional_block(builder, guard):
+    with _conditional_block(builder, guard, verify_num_fires=verify_num_fires):
         yield
 
 
 @contextmanager
-def when_false(cond: object, *, key: Hashable | None = None) -> Iterator[None]:
+def when_false(
+    cond: object,
+    *,
+    key: Hashable | None = None,
+    verify_num_fires: int | None = None,
+) -> Iterator[None]:
     """Open a block that runs when ``cond`` is false.
 
-    ``when_false`` accepts opaque runtime conditions only; iteration predicates
-    cannot be negated because their complement may not be contiguous in the
-    lowered loop schedule.
+    This is equivalent to ``when_true(~cond)`` for any schedule guard tree.
+    Composite guards are converted to negation-normal form.
+    ``verify_num_fires`` behaves as in :func:`when_true`.
     """
     builder = _require_active_builder("when_false()")
     guard = _resolve_when_guard(builder, cond, key=key, negated=True, api="when_false")
-    if isinstance(guard, OpaqueCondition):
-        _validate_opaque_guard_placement(builder, guard, "when_false")
-    with _conditional_block(builder, guard):
+    with _conditional_block(builder, guard, verify_num_fires=verify_num_fires):
         yield
 
 
@@ -760,21 +1027,15 @@ class _WorkInfo:
 
     stage: ScheduleStage
     label: str | None
-    # Names of data-flow inputs declared positional-or-keyword (before any
-    # ``*``); bound to DataFlowTokens by slot position at the call site or by
-    # keyword.
+    # Positional-or-keyword data-flow inputs, in positional binding order.
     routed_positional_names: tuple[str, ...]
-    # Names of data-flow inputs declared keyword-only (after ``*``); bound to
-    # DataFlowTokens as ``argument=token``.
+    # Keyword-only data-flow inputs, bound as ``argument=token``.
     routed_keyword_names: tuple[str, ...]
-    # TaskLocalVariables this method produces (``returns=``).
+    # Task-local variables declared through ``returns=``.
     returned_variables: tuple[TaskLocalVariable, ...]
-    # Names of keyword-only params annotated ``cutlass.Constexpr[...]``: literals
-    # forwarded verbatim to the work method, never routed.
+    # Keyword-only ``cutlass.Constexpr[...]`` parameters forwarded as literals.
     constexpr_names: tuple[str, ...] = ()
-    # Subset of ``constexpr_names`` declared without a default; the call site
-    # must supply each (omitting one is a schedule-build error, not a late
-    # trace-time ``TypeError``).
+    # ``constexpr_names`` entries that require an explicit value.
     required_constexpr_names: tuple[str, ...] = ()
 
     @property
@@ -783,8 +1044,7 @@ class _WorkInfo:
         return self.routed_positional_names + self.routed_keyword_names
 
 
-# A frame on the builder's scope stack: anything that exposes ``body``.
-_Scope = Schedule | ConditionalBlock | DomainLoop | WorkTileLoop
+_Scope = Schedule | ConditionalBlock | DomainLoop | WorkTileLoop | WhileTrueLoop
 
 
 def _is_allowed_outside_work_tile_loop(node: Node) -> bool:
@@ -798,22 +1058,86 @@ class ScheduleBuilder:
     """Accumulates a :class:`Schedule` tree while a ``@schedule`` function runs.
 
     Recording uses a scope stack.  Every container (the root ``Schedule`` plus
-    any open ``ConditionalBlock`` / ``DomainLoop`` / ``WorkTileLoop``) exposes
-    ``body``; context managers push on enter and pop on exit.
+    any open ``ConditionalBlock`` / ``DomainLoop`` / ``WorkTileLoop`` /
+    ``WhileTrueLoop``) exposes ``body``; context managers push on enter and pop
+    on exit.
     """
 
-    def __init__(self, name: str, resources: list[MemoryResource]) -> None:
-        self._schedule = Schedule(name=name, body=[], resources=resources)
+    def __init__(
+        self,
+        name: str,
+        resources: list[MemoryResource],
+        *,
+        manual_state: bool = False,
+    ) -> None:
+        self._schedule = Schedule(
+            name=name, body=[], resources=resources, manual_state=manual_state
+        )
+        self.manual_state = manual_state
         self._stack: list[_Scope] = [self._schedule]
         self._has_work_tile_loop = False
+        self._has_while_true_loop = False
         self._after_work_tile_loop = False
-        # The latest token minted per variable (by variable identity).
+        # Freshness is tracked independently for each task-local variable.
         self._latest_token: dict[TaskLocalVariable, DataFlowToken] = {}
         # Produced values used as opaque conditions are consumed by control flow,
-        # not by a data-flow route.
+        # with their use tracked separately from routed data flow.
         self._condition_uses: set[tuple[int, int]] = set()
-        # Monotonic per-schedule counter stamping each step's stable unique_id.
+        # Step identifiers are stable and monotonic within a schedule.
         self._next_unique_id = 0
+        self._next_state_id = 0
+        self._state_slots: dict[tuple[int, StateRole], int] = {}
+
+    def mint_state(
+        self, resource: MemoryResource, role: StateRole, *, internal: bool = False
+    ) -> PipelineStateRef:
+        """Mint the next cursor slot for ``resource`` and ``role``."""
+        if not self.manual_state and not internal:
+            raise ScheduleError(
+                f"{resource.name}.{role.value}_state() is only valid in an "
+                "@schedule(manual_state=True) function."
+            )
+        if not _has_public_state_cursor(resource) and not (
+            internal and _has_internal_state_cursor(resource)
+        ):
+            raise ScheduleError(
+                f"{resource.name} has no stage cursor; state references require "
+                "a non-barrier resource with pipeline_config."
+            )
+        key = (id(resource), role)
+        slot = self._state_slots.get(key, 0)
+        if slot >= 2:
+            raise ScheduleError(
+                f"{resource.name}.{role.value}_state() supports at most two "
+                "independent cursor slots."
+            )
+        self._state_slots[key] = slot + 1
+        ref = PipelineStateRef(
+            resource=resource,
+            role=role,
+            slot=slot,
+            offset=0,
+            unique_id=self._next_state_id,
+            builder_id=id(self),
+        )
+        self._next_state_id += 1
+        return ref
+
+    def record_state_advance(self, state: PipelineStateRef, count: int = 1) -> None:
+        """Append a cursor advance after validating its local shape."""
+        if state.builder_id != id(self):
+            raise ScheduleError(
+                f"cursor {state} was not minted in schedule {self._schedule.name!r}."
+            )
+        if state.offset != 0 or state.stage_index is not None:
+            raise ScheduleError(f"cursor view {state} is read-only and cannot advance.")
+        if type(count) is not int or count <= 0:
+            raise ScheduleError(
+                f"{state}.advance() count must be a positive int, got {count!r}."
+            )
+        node = StateAdvance(state=state, count=count, unique_id=self._next_unique_id)
+        self._next_unique_id += 1
+        self._stack[-1].body.append(node)
 
     # -- token lifecycle --
 
@@ -823,7 +1147,7 @@ class ScheduleBuilder:
             self._latest_token[token.variable] = token
 
     def is_stale(self, token: DataFlowToken) -> bool:
-        """True when ``token`` is no longer the latest handle for its variable."""
+        """Return whether ``token`` differs from its variable's latest handle."""
         if token.variable is None:
             return True
         return self._latest_token.get(token.variable) is not token
@@ -836,19 +1160,21 @@ class ScheduleBuilder:
     def _warn_unconsumed(self) -> None:
         """Warn about consumer outputs that are produced but never routed.
 
-        Derived from the tree: a produced variable is consumed iff it appears as
-        a :class:`Route` source on its producing step or as a guard for an opaque
-        conditional block.  WorkQueue tile state (e.g. ``work_tile``) is
-        intentionally exempt -- it is consumed by the persistent-loop machinery
-        via ``stage_info`` rather than by a route.
+        A produced variable is consumed when it appears in a step's
+        ``input_bindings`` or guards an opaque conditional block. Persistent-loop
+        machinery consumes WorkQueue tile state through ``stage_info``.
         """
+        read_variables = {
+            variable
+            for reader in _iter_steps(self._schedule)
+            for variable in reader.input_bindings.values()
+        }
         for step in _iter_steps(self._schedule):
             if isinstance(step.memory_resource, WorkQueue):
                 continue
-            routed = {route.source for route in step.routes}
             label = step.label or step.schedule_stage.name
             for variable in step.returned_variables:
-                if variable in routed:
+                if variable in read_variables:
                     continue
                 if (id(step), id(variable)) in self._condition_uses:
                     continue
@@ -862,7 +1188,7 @@ class ScheduleBuilder:
     # -- scope management --
 
     def open_scope(
-        self, container: ConditionalBlock | DomainLoop | WorkTileLoop
+        self, container: ConditionalBlock | DomainLoop | WorkTileLoop | WhileTrueLoop
     ) -> None:
         """Validate ``container``, link it into the current scope, make it current."""
         if self._after_work_tile_loop and not isinstance(container, WorkTileLoop):
@@ -870,20 +1196,41 @@ class ScheduleBuilder:
         self._validate_open(container)
         if isinstance(container, WorkTileLoop):
             self._has_work_tile_loop = True
+        if isinstance(container, WhileTrueLoop):
+            self._has_while_true_loop = True
+        if container.source_loc is None:
+            container.source_loc = _capture_source_loc()
         self._stack[-1].body.append(container)
         self._stack.append(container)
 
     def close_scope(
-        self, container: ConditionalBlock | DomainLoop | WorkTileLoop
+        self, container: ConditionalBlock | DomainLoop | WorkTileLoop | WhileTrueLoop
     ) -> None:
         """Pop ``container``; it must be the current (innermost) scope."""
         if self._stack[-1] is not container:
             raise ScheduleError("schedule blocks closed out of order.")
+        if isinstance(container, WhileTrueLoop):
+            if not container.breaks:
+                raise ScheduleError(
+                    "while_true_loop() requires at least one loop.break_loop()."
+                )
+            if any(count > 1 for count in container.verify_num_iters) and any(
+                not brk.conditions for brk in container.breaks
+            ):
+                raise ScheduleError(
+                    "while_true_loop() with verify_num_iters > 1 requires a "
+                    "retry assignment, but a break_loop() is unconditional."
+                )
         self._stack.pop()
         if isinstance(container, WorkTileLoop):
             self._after_work_tile_loop = True
 
-    def record_step(self, resource: MemoryResource, info: "_WorkInfo") -> Step:
+    def record_step(
+        self,
+        resource: MemoryResource,
+        info: "_WorkInfo",
+        state_binding: PipelineStateRef | None = None,
+    ) -> Step:
         """Append a :class:`Step` (described by ``info``) to the current scope."""
         if isinstance(resource, WorkQueue) and self._in_skippable():
             raise ScheduleError(
@@ -891,12 +1238,26 @@ class ScheduleBuilder:
                 "skipped work tiles must still run WorkQueue "
                 "wait/advance/release bookkeeping."
             )
+        # Queue advance must be a direct WorkTileLoop child: the walker returns
+        # the next tile only from a direct Step sibling of the loop body.
+        if (
+            isinstance(resource, WorkQueue)
+            and info.stage is ScheduleStage.ConsumerWork
+            and not isinstance(self._stack[-1], WorkTileLoop)
+        ):
+            raise ScheduleError(
+                "get_and_advance_work_tile() must be a direct child of "
+                "work_tile_loop()."
+            )
         step = Step(
             memory_resource=resource,
             schedule_stage=info.stage,
             label=info.label,
+            state_binding=state_binding,
             unique_id=self._next_unique_id,
+            source_loc=_capture_source_loc(),
         )
+        self._validate_state_binding(step)
         if self._after_work_tile_loop and not _is_allowed_outside_work_tile_loop(step):
             raise ScheduleError(
                 "detected a schedule entry that is not allowed outside "
@@ -906,14 +1267,293 @@ class ScheduleBuilder:
         self._stack[-1].body.append(step)
         return step
 
+    def allocate_step(self, resource: MemoryResource, info: "_WorkInfo") -> Step:
+        """Create a ``Step`` with a unique id without appending it to the tree.
+
+        Used for ``while_true_loop`` init/advance hooks, which run outside the
+        recorded body.
+        """
+        step = Step(
+            memory_resource=resource,
+            schedule_stage=info.stage,
+            label=info.label,
+            unique_id=self._next_unique_id,
+        )
+        self._next_unique_id += 1
+        step.returned_variables = list(info.returned_variables)
+        return step
+
+    def record_loop_break(self, loop: WhileTrueLoop) -> LoopBreak:
+        """Append a ``LoopBreak`` marker dominated by the active opaque guards."""
+        if not self.is_scope_open(loop):
+            raise ScheduleError(
+                "break_loop() was called on a while_true_loop() handle whose block "
+                "has already exited."
+            )
+        conditions: list[BlockGuard] = []
+        for frame in self._stack:
+            if isinstance(frame, ConditionalBlock) and frame.condition is not SKIPPABLE:
+                conditions.append(frame.condition)
+        node = LoopBreak(conditions=tuple(conditions), source_loc=_capture_source_loc())
+        loop.breaks.append(node)
+        self._stack[-1].body.append(node)
+        return node
+
     def finalize(self) -> Schedule:
         """Return the completed schedule once every scope has been closed."""
         if len(self._stack) != 1:
             raise ScheduleError("schedule ended with an unclosed block.")
+        if not self.manual_state:
+            self._rewrite_implicit_state()
+            self._renumber_nodes()
+        self._validate_single_work_queue()
+        self._validate_queue_advance_placement()
+        self._validate_domain_and_while_exclusivity()
         self._warn_unconsumed()
         return self._schedule
 
-    # -- ancestry queries used by the grammar checks --
+    def _validate_domain_and_while_exclusivity(self) -> None:
+        """Reject a schedule that mixes ``domain_loop`` and ``while_true_loop``."""
+        has_domain = any(
+            isinstance(node, DomainLoop) for node in _iter_nodes(self._schedule.body)
+        )
+        has_while = any(
+            isinstance(node, WhileTrueLoop) for node in _iter_nodes(self._schedule.body)
+        )
+        if has_domain and has_while:
+            raise ScheduleError(
+                "domain_loop() and while_true_loop() cannot both appear in one "
+                "schedule."
+            )
+
+    def _renumber_nodes(self) -> None:
+        """Assign execution-order ids after automatic nodes are inserted."""
+        next_id = 0
+
+        def renumber(nodes: list[Node]) -> None:
+            nonlocal next_id
+            for node in nodes:
+                if isinstance(node, (Step, StateAdvance)):
+                    node.unique_id = next_id
+                    next_id += 1
+                    continue
+                if isinstance(node, WhileTrueLoop):
+                    node.init.step.unique_id = next_id
+                    next_id += 1
+                    renumber(node.body)
+                    node.advance.step.unique_id = next_id
+                    next_id += 1
+                    continue
+                renumber(_child_nodes(node))
+
+        renumber(self._schedule.body)
+        self._next_unique_id = next_id
+
+    @staticmethod
+    def _state_role_for_stage(stage: ScheduleStage) -> StateRole:
+        if stage in {
+            ScheduleStage.ProducerTryAcquire,
+            ScheduleStage.ProducerAcquire,
+            ScheduleStage.ProducerWork,
+            ScheduleStage.ProducerCommit,
+            ScheduleStage.ProducerAuxWork,
+        }:
+            return StateRole.Producer
+        return StateRole.Consumer
+
+    def _validate_state_binding(self, step: Step) -> None:
+        """Enforce the manual-state call-site rules (R1/R2)."""
+        resource = step.memory_resource
+        state = step.state_binding
+        has_cursor = _has_public_state_cursor(resource)
+        site = f"{resource.name}.{step.label or step.schedule_stage.name}()"
+        if state is not None and not has_cursor:
+            raise ScheduleError(
+                f"{site} forbids state=: {resource.name} has no cursor."
+            )
+        if self.manual_state and has_cursor and state is None:
+            raise ScheduleError(
+                f"{site} in a manual_state schedule requires state=; pass "
+                f"{resource.name}.{self._state_role_for_stage(step.schedule_stage).value}"
+                "_state() minted in this schedule."
+            )
+        if state is None:
+            return
+        expected = self._state_role_for_stage(step.schedule_stage)
+        if state.builder_id != id(self):
+            raise ScheduleError(
+                f"{site} uses stale cursor {state} from another schedule."
+            )
+        if state.resource is not resource:
+            raise ScheduleError(
+                f"{site} uses cursor owned by {state.resource.name}; expected "
+                f"{resource.name}."
+            )
+        if state.role is not expected:
+            raise ScheduleError(
+                f"{site} requires a {expected.value} cursor, got {state.role.value} "
+                f"cursor {state}."
+            )
+        if (
+            state.stage_index is not None
+            and step.schedule_stage in self._PHASE_SENSITIVE_STAGES
+        ):
+            raise ScheduleError(
+                f"{site} cannot take {state}: at() selects a physical buffer "
+                "and does not carry a wait/acquire phase. Use the live cursor "
+                "or previous()."
+            )
+
+    #: Barrier ops that wait or arrive with a ``(index, phase)`` cursor.
+    #: ``at()`` supplies only a physical index, so these stages reject it.
+    _PHASE_SENSITIVE_STAGES = frozenset(
+        {
+            ScheduleStage.ProducerTryAcquire,
+            ScheduleStage.ProducerAcquire,
+            ScheduleStage.ProducerCommit,
+            ScheduleStage.ConsumerTryWait,
+            ScheduleStage.ConsumerWait,
+            ScheduleStage.ConsumerRelease,
+        }
+    )
+
+    #: Per role, the stages that drive the split-cursor rewrite: the leading
+    #: barrier op that claims a stage, the data movement on that stage, and the
+    #: trailing barrier op that frees it.  ``advance_on_acquire`` splits the
+    #: producer triple exactly the way ``advance_on_wait`` splits the consumer
+    #: one, so both roles share one rewrite rule.
+    _SPLIT_CURSOR_STAGES = {
+        StateRole.Producer: (
+            ScheduleStage.ProducerAcquire,
+            ScheduleStage.ProducerWork,
+            ScheduleStage.ProducerCommit,
+        ),
+        StateRole.Consumer: (
+            ScheduleStage.ConsumerWait,
+            ScheduleStage.ConsumerWork,
+            ScheduleStage.ConsumerRelease,
+        ),
+    }
+
+    def _rewrite_implicit_state(self) -> None:
+        """Rewrite implicit cursor motion into explicit state managment.
+
+        A resource that advances on its leading barrier op
+        (``advance_on_acquire`` / ``advance_on_wait``) keeps two live cursors:
+        slot 0 leads and is advanced by the leading op, slot 1 lags and is
+        advanced by the trailing op.  Work in between reads the stage the
+        leading op just claimed, which is slot 0's ``previous()`` view; work
+        with no leading op ahead of it reads the lagging cursor directly.
+        Every other resource keeps the single slot-0 cursor advanced by its
+        trailing op.
+        """
+        refs: dict[tuple[int, StateRole, int], PipelineStateRef] = {}
+        # Resources whose leading barrier op has been recorded so far, in
+        # source order, so work can tell which cursor holds its stage.
+        led: set[int] = set()
+
+        def ref(
+            resource: MemoryResource, role: StateRole, slot: int
+        ) -> PipelineStateRef:
+            key = (id(resource), role, slot)
+            if key not in refs:
+                while (id(resource), role, slot) not in refs:
+                    minted = self.mint_state(resource, role, internal=True)
+                    refs[(id(resource), role, minted.slot)] = minted
+            return refs[key]
+
+        def rewrite(nodes: list[Node]) -> list[Node]:
+            out: list[Node] = []
+            for node in nodes:
+                if isinstance(
+                    node, (ConditionalBlock, DomainLoop, WorkTileLoop, WhileTrueLoop)
+                ):
+                    node.body = rewrite(node.body)
+                    out.append(node)
+                    continue
+                if not isinstance(node, Step):
+                    out.append(node)
+                    continue
+                resource = node.memory_resource
+                cfg = resource.pipeline_config
+                if not _has_internal_state_cursor(resource):
+                    out.append(node)
+                    continue
+                assert cfg is not None
+                stage = node.schedule_stage
+                role = self._state_role_for_stage(stage)
+                lead, work, trail = self._SPLIT_CURSOR_STAGES[role]
+                split = (
+                    cfg.advance_on_acquire
+                    if role is StateRole.Producer
+                    else cfg.advance_on_wait
+                )
+                slot = 0
+                view_offset = 0
+                # Without a split, one cursor serves the whole triple and the
+                # trailing op moves it.  With a split, the leading op moves
+                # slot 0 and the trailing op moves slot 1, so both advance.
+                advance_after = stage is (lead if split else trail)
+                if split:
+                    if stage is trail:
+                        slot = 1
+                        advance_after = True
+                    elif stage is work:
+                        if id(resource) in led:
+                            view_offset = -1
+                        else:
+                            slot = 1
+                if stage is lead:
+                    led.add(id(resource))
+                binding = ref(resource, role, slot)
+                if view_offset:
+                    binding = replace(binding, offset=view_offset)
+                node.state_binding = binding
+                out.append(node)
+                if advance_after:
+                    live = ref(resource, role, slot)
+                    out.append(
+                        StateAdvance(
+                            state=live,
+                            count=1,
+                            unique_id=self._next_unique_id,
+                        )
+                    )
+                    self._next_unique_id += 1
+            return out
+
+        self._schedule.body = rewrite(self._schedule.body)
+
+    def _validate_queue_advance_placement(self) -> None:
+        """Require every queue-advance step to be a direct ``WorkTileLoop`` child.
+
+        The work-tile loop carries the advance return value as its ``scf.while``
+        iter-arg, so a nested advance under ``domain_loop()`` or a conditional
+        block cannot propagate. Raises :class:`ScheduleError` when placement is
+        wrong.
+        """
+        validate_queue_advance_placement(self._schedule.body)
+
+    def _validate_single_work_queue(self) -> None:
+        """Reject a schedule that references more than one WorkQueue resource.
+
+        A schedule is driven by a single tile scheduler, so at most one distinct
+        WorkQueue may be referenced across its ``work_tile_loop()`` and steps.
+        """
+        work_queues: dict[int, WorkQueue] = {}
+        for node in _iter_nodes(self._schedule.body):
+            if isinstance(node, WorkTileLoop):
+                work_queues[id(node.work_queue)] = node.work_queue
+            elif isinstance(node, Step) and isinstance(node.memory_resource, WorkQueue):
+                work_queues[id(node.memory_resource)] = node.memory_resource
+        if len(work_queues) > 1:
+            names = ", ".join(sorted(wq.name for wq in work_queues.values()))
+            raise ScheduleError(
+                "a schedule may reference at most one WorkQueue (a single tile "
+                f"scheduler); found {len(work_queues)}: {names}."
+            )
+
+    # -- ancestry queries --
 
     def _in_skippable(self) -> bool:
         return any(
@@ -930,6 +1570,22 @@ class ScheduleBuilder:
     def _is_inside_domain_loop(self) -> bool:
         return any(isinstance(f, DomainLoop) for f in self._stack)
 
+    def _is_inside_while_true_loop(self) -> bool:
+        return any(isinstance(f, WhileTrueLoop) for f in self._stack)
+
+    def _in_iteration_predicate_condition(self) -> bool:
+        return any(
+            isinstance(frame, ConditionalBlock)
+            and isinstance(frame.condition, IterationPredicate)
+            for frame in self._stack
+        )
+
+    def _in_non_skippable_condition(self) -> bool:
+        return any(
+            isinstance(frame, ConditionalBlock) and frame.condition is not SKIPPABLE
+            for frame in self._stack
+        )
+
     def _in_per_iteration_condition(self) -> bool:
         """Return whether an iteration or opaque condition guard is open."""
         return any(
@@ -942,9 +1598,29 @@ class ScheduleBuilder:
         """True while ``node`` is still an open scope on the stack (by identity)."""
         return any(scope is node for scope in self._stack)
 
+    def _validate_verify_num_fires(self, block: ConditionalBlock) -> None:
+        """Reject a fire-count assertion the verifier could not apply."""
+        count = block.verify_num_fires
+        assert count is not None
+        if type(count) is not int or count < 0:
+            raise ScheduleError(
+                f"verify_num_fires must be a non-negative int, got {count!r}."
+            )
+        if not self._is_inside_while_true_loop():
+            raise ScheduleError(
+                "verify_num_fires= is only valid inside while_true_loop(); it "
+                "counts that loop's modeled rounds. A domain_loop() already "
+                "has a static trip count."
+            )
+
     def _validate_open(
-        self, container: ConditionalBlock | DomainLoop | WorkTileLoop
+        self, container: ConditionalBlock | DomainLoop | WorkTileLoop | WhileTrueLoop
     ) -> None:
+        if (
+            isinstance(container, ConditionalBlock)
+            and container.verify_num_fires is not None
+        ):
+            self._validate_verify_num_fires(container)
         match container:
             case WorkTileLoop():
                 if self._stack[-1] is not self._schedule:
@@ -969,7 +1645,11 @@ class ScheduleBuilder:
                     raise ScheduleError(
                         "domain_loop() cannot be nested inside another domain_loop()."
                     )
-                # With a skipping work-tile loop, the copy work must be skippable.
+                if self._is_inside_while_true_loop():
+                    raise ScheduleError(
+                        "domain_loop() cannot be nested inside while_true_loop()."
+                    )
+                # Domain-loop work must be omitted for skipped tiles.
                 wtl = self._enclosing_work_tile_loop()
                 if (
                     wtl is not None
@@ -995,26 +1675,109 @@ class ScheduleBuilder:
                         f"{condition_name} condition is only valid inside a "
                         "domain_loop()."
                     )
-                if self._in_per_iteration_condition():
+            case WhileTrueLoop():
+                if self._has_while_true_loop or self._is_inside_while_true_loop():
                     raise ScheduleError(
-                        "per-iteration condition blocks cannot be nested; "
-                        "express independent cadences as sibling blocks."
+                        "at most one while_true_loop() is allowed per schedule; "
+                        "while_true_loop() cannot be nested inside another "
+                        "while_true_loop()."
                     )
-            case ConditionalBlock(condition=OpaqueCondition() as opaque):
-                if self._in_per_iteration_condition():
+                if self._is_inside_domain_loop():
                     raise ScheduleError(
-                        "opaque when_true/when_false blocks cannot be nested "
-                        "inside a per-iteration predicate block or another "
-                        "opaque condition block."
+                        "while_true_loop() cannot be nested inside domain_loop()."
                     )
-                del opaque
+                if self._in_non_skippable_condition():
+                    raise ScheduleError(
+                        "while_true_loop() cannot be nested inside a condition block."
+                    )
+                wtl = self._enclosing_work_tile_loop()
+                if (
+                    wtl is not None
+                    and wtl.skip_if is not None
+                    and not self._in_skippable()
+                ):
+                    raise ScheduleError(
+                        "with work_tile_loop(skip_if=...), while_true_loop() must be "
+                        "inside wtl.skippable()."
+                    )
+
+
+def ensure_explicit_state_ir(schedule: Schedule, *, force: bool = False) -> None:
+    """Normalize directly constructed automatic schedules to the common IR."""
+
+    def has_implicit_cursor_step(node: Node) -> TypeGuard[Step]:
+        return isinstance(node, Step) and _has_internal_state_cursor(
+            node.memory_resource
+        )
+
+    def strip(nodes: list[Node]) -> list[Node]:
+        stripped: list[Node] = []
+        for node in nodes:
+            if isinstance(node, Step):
+                if has_implicit_cursor_step(node):
+                    node.state_binding = None
+                stripped.append(node)
+            elif isinstance(node, StateAdvance):
+                continue
+            elif isinstance(
+                node, (ConditionalBlock, DomainLoop, WorkTileLoop, WhileTrueLoop)
+            ):
+                node.body = strip(node.body)
+                stripped.append(node)
+            elif isinstance(node, LoopBreak):
+                stripped.append(node)
+            else:
+                assert_never(node)
+        return stripped
+
+    missing = [
+        node
+        for node in _iter_nodes(schedule.body)
+        if has_implicit_cursor_step(node) and node.state_binding is None
+    ]
+    if schedule.manual_state:
+        if force:
+            return
+        if not missing:
+            return
+        first = missing[0]
+        raise ScheduleError(
+            f"{first.memory_resource.name}.{first.schedule_stage.name}() in a "
+            "manual_state Schedule requires state_binding."
+        )
+    if not force and not missing:
+        return
+    if force:
+        schedule.body = strip(schedule.body)
+    resources: list[MemoryResource] = []
+    seen: set[int] = set()
+    for node in _iter_nodes(schedule.body):
+        if isinstance(node, Step) and id(node.memory_resource) not in seen:
+            seen.add(id(node.memory_resource))
+            resources.append(node.memory_resource)
+    builder = ScheduleBuilder(schedule.name, resources)
+    builder._schedule = schedule
+    builder._stack = [schedule]
+    builder._next_unique_id = (
+        max(
+            (
+                node.unique_id
+                for node in _iter_nodes(schedule.body)
+                if isinstance(node, (Step, StateAdvance))
+            ),
+            default=-1,
+        )
+        + 1
+    )
+    builder._rewrite_implicit_state()
+    builder._renumber_nodes()
 
 
 class ResourceProxy:
     """Tracing proxy for a ``MemoryResource``.
 
-    Method calls on the proxy do not execute real pipeline operations;
-    instead they record schedule entries in the ``ScheduleBuilder``.
+    Method calls on the proxy record pipeline operations as schedule entries in
+    the ``ScheduleBuilder``.
 
     Standard pipeline-stage methods are exposed as snake_case::
 
@@ -1030,23 +1793,22 @@ class ResourceProxy:
         proxy.consumer_aux_work() # ConsumerAuxWork
         proxy.producer_aux_work() # ProducerAuxWork
 
-    Named work methods registered via ``@consumer_work_fn`` /
-    ``@producer_work_fn`` on the resource class are also bound here::
+    Named work methods registered via ``@consumer_work`` /
+    ``@producer_work`` on the resource class are also bound here::
 
         proxy.k_desc()             # ConsumerWork with label="k_desc"
         proxy.k_load(token)        # ProducerWork with label="k_load"
 
-    WorkQueue does not expose the unnamed work shorthands. Use its named
-    methods ``get_and_advance_work_tile()`` and ``fetch_work_tile()``
-    so the schedule records the explicit scheduler operation.
+    WorkQueue operations use named methods such as
+    ``get_and_advance_work_tile()`` and ``fetch_work_tile()`` so each schedule
+    entry identifies its scheduler operation.
     """
 
     def __init__(self, resource: MemoryResource, builder: ScheduleBuilder) -> None:
         self._resource = resource
         self._builder = builder
         self._work_info: dict[str, _WorkInfo] = {}
-        # TaskLocalVariable metadata keyed by slot name, used to resolve the
-        # variables a consumer call produces into concrete route sources.
+        # Slot names resolve declared outputs to concrete task-local variables.
         self._vars_by_name: dict[str, TaskLocalVariable] = {
             variable.slot_name: variable
             for variable in get_task_local_variables(resource)
@@ -1070,25 +1832,28 @@ class ResourceProxy:
                     "work method. Rename the method."
                 )
             method = getattr(res_cls, method_name, None)
-            returns = getattr(method, "_consumer_return_var_names", None)
-            names = returns() if returns is not None else ()
-            self._work_info[proxy_name] = _WorkInfo(
-                stage=getattr(
-                    method, "_consumer_work_stage", ScheduleStage.ConsumerWork
-                ),
-                label=proxy_name,
-                routed_positional_names=getattr(
-                    method, "_consumer_routed_positional_names", ()
-                ),
-                routed_keyword_names=getattr(
-                    method, "_consumer_routed_keyword_names", ()
-                ),
-                returned_variables=tuple(
-                    self._resolve_return_var(proxy_name, name) for name in names
-                ),
-                constexpr_names=getattr(method, "_consumer_constexpr_names", ()),
-                required_constexpr_names=getattr(
-                    method, "_consumer_required_constexpr_names", ()
+            # The metaclass resolves return slots to a tuple at class creation.
+            names = getattr(method, "_consumer_return_var_names", None) or ()
+            self._register_work_info(
+                proxy_name,
+                _WorkInfo(
+                    stage=getattr(
+                        method, "_consumer_work_stage", ScheduleStage.ConsumerWork
+                    ),
+                    label=proxy_name,
+                    routed_positional_names=getattr(
+                        method, "_consumer_routed_positional_names", ()
+                    ),
+                    routed_keyword_names=getattr(
+                        method, "_consumer_routed_keyword_names", ()
+                    ),
+                    returned_variables=tuple(
+                        self._resolve_return_var(proxy_name, name) for name in names
+                    ),
+                    constexpr_names=getattr(method, "_consumer_constexpr_names", ()),
+                    required_constexpr_names=getattr(
+                        method, "_consumer_required_constexpr_names", ()
+                    ),
                 ),
             )
         for proxy_name, method_name in _collect_named_work_fns(
@@ -1105,30 +1870,42 @@ class ResourceProxy:
                     "work method. Rename the method."
                 )
             if proxy_name in self._work_info:
-                # Same label already registered as @consumer_work.
                 raise ScheduleError(
                     f"@producer_work {proxy_name!r} on {res_cls.__name__} collides "
                     "with a @consumer_work of the same name; a work-method label "
                     "must be unique. Rename one of them."
                 )
             method = getattr(res_cls, method_name, None)
-            self._work_info[proxy_name] = _WorkInfo(
-                stage=getattr(
-                    method, "_producer_work_stage", ScheduleStage.ProducerWork
-                ),
-                label=proxy_name,
-                routed_positional_names=getattr(
-                    method, "_producer_routed_positional_names", ()
-                ),
-                routed_keyword_names=getattr(
-                    method, "_producer_routed_keyword_names", ()
-                ),
-                returned_variables=(),
-                constexpr_names=getattr(method, "_producer_constexpr_names", ()),
-                required_constexpr_names=getattr(
-                    method, "_producer_required_constexpr_names", ()
+            self._register_work_info(
+                proxy_name,
+                _WorkInfo(
+                    stage=getattr(
+                        method, "_producer_work_stage", ScheduleStage.ProducerWork
+                    ),
+                    label=proxy_name,
+                    routed_positional_names=getattr(
+                        method, "_producer_routed_positional_names", ()
+                    ),
+                    routed_keyword_names=getattr(
+                        method, "_producer_routed_keyword_names", ()
+                    ),
+                    returned_variables=(),
+                    constexpr_names=getattr(method, "_producer_constexpr_names", ()),
+                    required_constexpr_names=getattr(
+                        method, "_producer_required_constexpr_names", ()
+                    ),
                 ),
             )
+
+    def _register_work_info(self, proxy_name: str, info: _WorkInfo) -> None:
+        """Publish ``info`` after rejecting a work argument named ``state``."""
+        if "state" in info.routed_names or "state" in info.constexpr_names:
+            raise ScheduleError(
+                f"{self._resource.name}.{proxy_name}() cannot declare a work "
+                "argument named 'state'; state= is reserved for a "
+                "PipelineStateRef cursor."
+            )
+        self._work_info[proxy_name] = info
 
     def _resolve_return_var(self, label: str, name: str) -> TaskLocalVariable:
         """Resolve a declared ``returns=`` slot name to its TaskLocalVariable."""
@@ -1144,6 +1921,10 @@ class ResourceProxy:
     def __getattr__(self, name: str) -> Callable[..., object]:
         if name.startswith("_"):
             raise AttributeError(name)
+        if name == "producer_state":
+            return lambda: self._builder.mint_state(self._resource, StateRole.Producer)
+        if name == "consumer_state":
+            return lambda: self._builder.mint_state(self._resource, StateRole.Consumer)
         info = self._work_info.get(name)
         if info is None and name in _STANDARD_STAGE_METHODS:
             if isinstance(self._resource, WorkQueue) and name in (
@@ -1177,14 +1958,26 @@ class ResourceProxy:
 
     def _recorder(self, info: _WorkInfo) -> Callable[..., object]:
         def record(*args: object, **kwargs: object) -> object:
-            step = self._builder.record_step(self._resource, info)
+            state = kwargs.get("state")
+            if state is not None and not isinstance(state, PipelineStateRef):
+                raise ScheduleError(
+                    f"{self._site(info)} state= must be a PipelineStateRef, got "
+                    f"{type(state).__name__}."
+                )
+            step = self._builder.record_step(
+                self._resource,
+                info,
+                state_binding=state if isinstance(state, PipelineStateRef) else None,
+            )
             self._bind_routes(step, info, args, kwargs)
             return self._mint_outputs(step, info)
 
+        record._ts_loop_hook_resource = self._resource  # type: ignore[attr-defined]
+        record._ts_loop_hook_info = info  # type: ignore[attr-defined]
         return record
 
     def _site(self, info: _WorkInfo) -> str:
-        """Human-readable call-site label for error messages (``res.method()``)."""
+        """Return a ``res.method()`` label for diagnostics."""
         return f"{self._resource.name}.{info.label or info.stage.name}()"
 
     def _bind_routes(
@@ -1194,35 +1987,40 @@ class ResourceProxy:
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> None:
-        """Validate the call's arguments, recording a :class:`Route` per routed
-        input and capturing each constexpr literal on ``step``.
+        """Bind routed inputs and constexpr arguments to ``step``.
 
-        The call's arguments split into two disjoint kinds, matching how ``info``
-        classifies the work method's parameters:
+        ``info`` partitions arguments into two kinds:
 
         - **Routed (data-flow) inputs** (``info.routed_names``) bind by token
           identity.  A token may be passed positionally for a parameter declared
           *positional-or-keyword* (bound by slot order against
           ``info.routed_positional_names``) or by keyword as ``argument=token``;
-          a keyword-only input must use the keyword form.  Each one records a
-          :class:`Route` from its producing step to this one.
+          a keyword-only input must use the keyword form. Each one records the
+          source variable in this step's ``input_bindings`` map.
         - **Constexpr params** (``info.constexpr_names``) are compile-time
-          literals forwarded verbatim to the work body, never routed.  Each value
-          passed at the call site is captured on ``step.constexpr_kwargs``;
-          omitting one is fine when it has a default and an error when it is
-          required (``info.required_constexpr_names``).
+          literals captured on ``step.constexpr_kwargs`` and forwarded to the
+          work body. Parameters listed in ``info.required_constexpr_names``
+          require explicit values.
 
-        Raises :class:`ScheduleError` if too many positional tokens are given, an
-        argument is bound both positionally and by keyword, a routed input is
-        left unrouted, a routed value is ``None`` / not a routable output token /
-        stale, a constexpr param is given a token instead of a literal, a
-        required constexpr param is omitted, or an argument names no declared
-        parameter.
+        ``state=`` is reserved for a :class:`PipelineStateRef` cursor and is
+        stripped before this partition; it is not a work argument.
+
+        Raises :class:`ScheduleError` for invalid binding cardinality, duplicate
+        bindings, missing routed or required constexpr arguments, unknown
+        arguments, non-routable or stale tokens, and non-literal constexpr
+        values.
         """
         site = self._site(info)
 
-        # 1. Merge positional + keyword args into one map; reject double-binds.
-        #    Each name is popped as handled, so leftovers are unknown args.
+        # ``state=`` is the scheduler cursor, not a routed/constexpr work arg.
+        work_kwargs = dict(kwargs)
+        cursor = work_kwargs.get("state")
+        if isinstance(cursor, PipelineStateRef) or (
+            "state" in work_kwargs and cursor is None
+        ):
+            del work_kwargs["state"]
+
+        # Merge positional and keyword bindings; handled entries are consumed.
         positional = info.routed_positional_names
         if len(args) > len(positional):
             allowed = ", ".join(positional) or "none"
@@ -1232,7 +2030,7 @@ class ResourceProxy:
                 "inputs as argument=token."
             )
         bound: dict[str, object] = dict(zip(positional, args))
-        for argument, value in kwargs.items():
+        for argument, value in work_kwargs.items():
             if argument in bound:
                 raise ScheduleError(
                     f"{site} got multiple values for input {argument!r} (passed "
@@ -1240,7 +2038,7 @@ class ResourceProxy:
                 )
             bound[argument] = value
 
-        # 2. Route each data-flow input (declaration order); missing is an error.
+        # Bind routed inputs in declaration order.
         for argument in info.routed_names:
             if argument not in bound:
                 raise ScheduleError(
@@ -1248,17 +2046,12 @@ class ResourceProxy:
                     "positional token or argument=token."
                 )
             token = self._validate_routed_token(info, argument, bound.pop(argument))
-            # _validate_routed_token guarantees a non-None variable.
+            # Routed-token validation guarantees a task-local variable.
             assert token.variable is not None
-            token.producer_step.routes.append(
-                Route(
-                    source=token.variable,
-                    destination=step,
-                    destination_argument=argument,
-                )
-            )
+            # Record the destination binding to the logical source variable.
+            step.input_bindings[argument] = token.variable
 
-        # 3. Capture each constexpr literal; a missing required one is an error.
+        # Capture constexpr arguments.
         for argument in info.constexpr_names:
             if argument in bound:
                 value = bound.pop(argument)
@@ -1273,7 +2066,7 @@ class ResourceProxy:
                     f"{site} is missing required constexpr argument {argument!r}."
                 )
 
-        # 4. Anything still bound names no declared parameter.
+        # Remaining bindings name no declared parameter.
         if bound:
             declared = (
                 ", ".join((*info.routed_names, *info.constexpr_names)) or "(none)"
@@ -1319,11 +2112,10 @@ class ResourceProxy:
         return value
 
     def _mint_outputs(self, step: Step, info: _WorkInfo) -> object:
-        """Return the token(s) representing the variables ``step`` produces.
+        """Return authoritative tokens for the variables ``step`` produces.
 
-        Each routable output records itself as the latest handle for its
-        variable (so stale handles can be rejected) and is recorded on the step
-        (``returned_variables``) so unrouted outputs can be flagged from the tree.
+        ``step.returned_variables`` records the produced variables for routing
+        and unconsumed-output diagnostics.
         """
         step.returned_variables = list(info.returned_variables)
         if not info.returned_variables:
@@ -1347,7 +2139,7 @@ def _require_active_builder(api: str) -> ScheduleBuilder:
 
 
 def _validate_domain_loop_bound_fn(name: str, fn: Callable[..., object]) -> None:
-    """Require a callable domain bound to be a ``(self, coord)`` method accessed on the class."""
+    """Require a callable bound to be an unbound ``(self, coord)`` Task method."""
     if inspect.ismethod(fn) and fn.__self__ is not None:
         raise ScheduleError(
             f"domain_loop() {name} callable must be a Task method accessed on "
@@ -1379,9 +2171,13 @@ def _validate_domain_loop_bound_fn(name: str, fn: Callable[..., object]) -> None
 def _conditional_block(
     builder: ScheduleBuilder,
     condition: BlockGuard,
+    *,
+    verify_num_fires: int | None = None,
 ) -> Iterator[None]:
     """Open a :class:`ConditionalBlock` with ``condition`` on enter, close it on exit."""
-    node = ConditionalBlock(body=[], condition=condition)
+    node = ConditionalBlock(
+        body=[], condition=condition, verify_num_fires=verify_num_fires
+    )
     builder.open_scope(node)
     try:
         yield
@@ -1409,13 +2205,31 @@ class WorkTileLoopProxy:
             )
 
 
+class WhileTrueLoopProxy:
+    """Yielded by while_true_loop(); records dynamic-loop break points."""
+
+    def __init__(self, builder: ScheduleBuilder, loop: WhileTrueLoop) -> None:
+        self._builder = builder
+        self._loop = loop
+
+    def break_loop(self) -> None:
+        self._check_active("break_loop")
+        self._builder.record_loop_break(self._loop)
+
+    def _check_active(self, api: str) -> None:
+        if not self._builder.is_scope_open(self._loop):
+            raise ScheduleError(
+                f"{api}() was called on a while_true_loop() handle whose block has "
+                "already exited; it is only valid inside the with-block of the "
+                "loop that produced the handle."
+            )
+
+
 class DomainLoopProxy:
     """Yielded by domain_loop(); opens per-iteration condition blocks.
 
-    Bound to the specific :class:`DomainLoop` it was produced for, so
-    ``first_iter()`` / ``last_iter()`` / ``every()`` are rejected once that
-    loop's ``with`` block has exited -- including when called from inside a
-    later sibling ``domain_loop()``.
+    Each proxy is valid while its associated :class:`DomainLoop` is open.
+    ``first_iter()`` / ``last_iter()`` / ``every()`` reject an expired proxy.
     """
 
     def __init__(self, builder: ScheduleBuilder, loop: DomainLoop) -> None:
@@ -1424,15 +2238,29 @@ class DomainLoopProxy:
 
     def first_iter(self) -> AbstractContextManager[None]:
         self._check_active("first_iter")
-        return when_true(FIRST_ITER)
+        return _IterationBlockContext(FIRST_ITER, "first_iter")
 
     def last_iter(self) -> AbstractContextManager[None]:
         self._check_active("last_iter")
-        return when_true(LAST_ITER)
+        return _IterationBlockContext(LAST_ITER, "last_iter")
 
     def every(self, period: int, *, start: int = 0) -> AbstractContextManager[None]:
         self._check_active("every")
-        return when_true(Every(period=period, start=start))
+        return _IterationBlockContext(Every(period=period, start=start), "every")
+
+    @property
+    def first(self) -> IterationPredicate:
+        self._check_active("first")
+        return FIRST_ITER
+
+    @property
+    def last(self) -> IterationPredicate:
+        self._check_active("last")
+        return LAST_ITER
+
+    def every_pred(self, period: int, *, start: int = 0) -> IterationPredicate:
+        self._check_active("every_pred")
+        return Every(period=period, start=start)
 
     def _check_active(self, api: str) -> None:
         if not self._builder.is_scope_open(self._loop):
@@ -1443,19 +2271,61 @@ class DomainLoopProxy:
             )
 
 
+class _IterationBlockContext(AbstractContextManager[None]):
+    """Context-manager spelling of a predicate, never a boolean operand."""
+
+    def __init__(self, predicate: IterationPredicate, api: str) -> None:
+        self._context = when_true(predicate)
+        self._api = api
+
+    def __enter__(self) -> None:
+        return self._context.__enter__()
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        return self._context.__exit__(exc_type, exc_value, traceback)
+
+    def _operand_error(self) -> NoReturn:
+        raise ScheduleError(
+            f"d.{self._api}() is a context manager, not a condition operand; "
+            "use d.first / d.last / d.every_pred(...), or FIRST_ITER / LAST_ITER."
+        )
+
+    def __and__(self, _other: object) -> NoReturn:
+        self._operand_error()
+
+    def __rand__(self, _other: object) -> NoReturn:
+        self._operand_error()
+
+    def __or__(self, _other: object) -> NoReturn:
+        self._operand_error()
+
+    def __ror__(self, _other: object) -> NoReturn:
+        self._operand_error()
+
+    def __invert__(self) -> NoReturn:
+        self._operand_error()
+
+    def __bool__(self) -> NoReturn:
+        self._operand_error()
+
+
 def _check_skip_predicate(skip_if: object, work_queue: WorkQueue) -> None:
-    """Reject a ``work_tile_loop(skip_if=...)`` the WorkQueue cannot run.
+    """Validate a ``work_tile_loop(skip_if=...)`` predicate.
 
     ``skip_if`` may be a plain ``(work_queue, work_tile)`` function/lambda or a
-    method of ``work_queue``'s class.  Raises :class:`ScheduleError` when it is
-    not callable, or when it is a method that belongs to a *different*
-    WorkQueue.  Argument-count checks are left to Task construction.
+    method of ``work_queue``'s class. Methods must belong to the loop's
+    WorkQueue type. Raises :class:`ScheduleError` for a non-callable predicate
+    or a method associated with another WorkQueue.
     """
     if not callable(skip_if):
         raise ScheduleError("work_tile_loop(skip_if=...) must be callable.")
 
-    # A bound method (``some_wq.skip_work_tile_if``) carries its instance in
-    # ``__self__``; it must be bound to this loop's WorkQueue.
+    # Bound methods carry the WorkQueue instance in ``__self__``.
     bound_self = getattr(skip_if, "__self__", None)
     if isinstance(bound_self, WorkQueue) and bound_self is not work_queue:
         raise ScheduleError(
@@ -1464,9 +2334,7 @@ def _check_skip_predicate(skip_if: object, work_queue: WorkQueue) -> None:
             f"{type(work_queue).__name__}."
         )
 
-    # An unbound method (``MyWorkQueue.skip_work_tile_if``) is a function whose
-    # __qualname__ is ``Class.method``; it must be defined on this WorkQueue's
-    # class.  Plain functions/lambdas (no owning class) are accepted as-is.
+    # An unbound WorkQueue method is identified by its class-qualified name.
     qualname = getattr(skip_if, "__qualname__", "")
     is_unbound_method = (
         "." in qualname
@@ -1483,6 +2351,107 @@ def _check_skip_predicate(skip_if: object, work_queue: WorkQueue) -> None:
                 f"work_tile_loop(skip_if=...) method {qualname!r} is not a "
                 f"method of WorkQueue {type(work_queue).__name__!r}."
             )
+
+
+def _normalize_verify_num_iters(
+    verify_num_iters: int | tuple[int, ...] | None,
+) -> tuple[int, ...]:
+    """Normalize ``verify_num_iters`` to a non-empty tuple of positive ints.
+
+    ``None`` defaults to ``(1, 2)``: an immediate-break iteration and one
+    retry followed by break.
+    """
+    if verify_num_iters is None:
+        return (1, 2)
+    if type(verify_num_iters) is int:
+        if verify_num_iters <= 0:
+            raise ScheduleError("while_true_loop() verify_num_iters must be positive.")
+        return (verify_num_iters,)
+    if isinstance(verify_num_iters, tuple):
+        if not verify_num_iters:
+            raise ScheduleError(
+                "while_true_loop() verify_num_iters tuple must be non-empty."
+            )
+        counts: list[int] = []
+        for count in verify_num_iters:
+            if type(count) is not int or count <= 0:
+                raise ScheduleError(
+                    "while_true_loop() verify_num_iters must contain only "
+                    "positive compile-time ints."
+                )
+            counts.append(count)
+        return tuple(counts)
+    raise ScheduleError(
+        "while_true_loop() verify_num_iters must be a compile-time int, "
+        "a tuple of ints, or None."
+    )
+
+
+def _resolve_while_true_loop_hook(
+    builder: ScheduleBuilder, api: str, hook: object
+) -> LoopHook:
+    resource = getattr(hook, "_ts_loop_hook_resource", None)
+    info = getattr(hook, "_ts_loop_hook_info", None)
+    if not isinstance(resource, MemoryResource) or not isinstance(info, _WorkInfo):
+        raise ScheduleError(
+            f"while_true_loop() {api}= must be a traced resource work method such as "
+            f"`smem.{api}_loop`; got {type(hook).__name__}."
+        )
+    if info.stage not in (ScheduleStage.ConsumerAuxWork, ScheduleStage.ConsumerWork):
+        raise ScheduleError(
+            f"while_true_loop() {api}= must name a consumer work method that returns "
+            "the loop offset/state."
+        )
+    if info.label is None:
+        raise ScheduleError(
+            f"while_true_loop() {api}= must name a registered work method."
+        )
+    if len(info.returned_variables) != 1:
+        raise ScheduleError(
+            f"while_true_loop() {api}= must return exactly one TaskLocalVariable."
+        )
+    result_name = info.returned_variables[0].slot_name
+    if result_name is None:
+        raise ScheduleError(
+            f"while_true_loop() {api}= returned variable must be named."
+        )
+    return LoopHook(
+        resource=resource,
+        schedule_stage=info.stage,
+        label=info.label,
+        result_name=result_name,
+        step=builder.allocate_step(resource, info),
+    )
+
+
+@contextmanager
+def while_true_loop(
+    *,
+    init: Callable[..., object],
+    advance: Callable[..., object],
+    verify_num_iters: int | tuple[int, ...] | None = None,
+) -> Iterator[WhileTrueLoopProxy]:
+    """Open a dynamic while loop with explicit init/advance hooks.
+
+    The loop exits as soon as any recorded ``break_loop()`` clause holds.  Each
+    clause is the conjunction of opaque guards that dominate that call; later
+    entries in the breaking iteration do not execute.
+    ``verify_num_iters`` selects the modeled iteration counts: an ``int``
+    ``N`` checks ``retry^(N-1) + break``; a tuple checks each count; ``None``
+    defaults to ``(1, 2)``.
+    """
+    builder = _require_active_builder("while_true_loop()")
+    node = WhileTrueLoop(
+        init=_resolve_while_true_loop_hook(builder, "init", init),
+        advance=_resolve_while_true_loop_hook(builder, "advance", advance),
+        verify_num_iters=_normalize_verify_num_iters(verify_num_iters),
+        body=[],
+    )
+    builder.open_scope(node)
+    try:
+        yield WhileTrueLoopProxy(builder, node)
+    finally:
+        builder.close_scope(node)
 
 
 @contextmanager
@@ -1521,16 +2490,15 @@ def domain_loop(
     Bounds mirror Python's ``range``: ``domain_loop(end)``,
     ``domain_loop(start, end)``, or ``domain_loop(start, end, step)`` — an
     omitted ``start`` defaults to ``0`` and an omitted ``step`` to ``1``.
-    **Any** bound may be a callable, which makes that dimension dynamic: pass a
-    ``Task`` subclass method accessed on the class (``MyTask.get_domain``, not
-    on an instance) so its ``self`` stays an explicit parameter; the Task
-    runtime calls it as ``(self, work_tile_coord)`` to get that bound for the
-    current work tile.
+    **Any** bound may be dynamic. Pass a ``Task`` subclass method accessed on
+    the class, such as ``MyTask.get_domain``; it must retain the explicit
+    ``(self, work_tile_coord)`` parameters used to resolve the current tile's
+    bound.
 
     Parameters
     ----------
     *bounds : int, DSL value, or callable
-        1 to 3 range-style bounds (see above).
+        One to three range-style bounds.
     unroll : int or None
         Loop unroll hint. ``None`` lets the compiler decide.
     """
@@ -1567,7 +2535,9 @@ def domain_loop(
         builder.close_scope(node)
 
 
-def schedule(fn: Callable[..., None]) -> Callable[..., Schedule]:
+def schedule(
+    fn: Callable[..., None] | None = None, *, manual_state: bool = False
+) -> Callable[..., Schedule] | Callable[[Callable[..., None]], Callable[..., Schedule]]:
     """Decorator that traces a schedule function into a ``Schedule``.
 
     Parameters
@@ -1585,12 +2555,52 @@ def schedule(fn: Callable[..., None]) -> Callable[..., Schedule]:
     Notes
     -----
     The decorated function receives ``ResourceProxy`` wrappers for each
-    ``MemoryResource``.  Method calls on the proxies record schedule
-    entries and routing edges. ``with work_tile_loop(wq):`` and
-    ``with domain_loop(start, end, step):`` mark the structural
-    boundaries.  Plain Python control flow inside the function executes at
-    trace time.
+    ``MemoryResource``. Proxy method calls record schedule entries and routing
+    edges. Schedule functions are trace-time metaprograms: Python runs once to
+    record work that executes later. ``domain_loop`` and ``work_tile_loop``
+    record runtime loops, but each ``with`` body is traced once.
+
+    Ordinary Python variables have no runtime storage in the recorded schedule,
+    so assignment cannot carry state between runtime iterations::
+
+        x = 0
+        with domain_loop(0, 4, 1):
+            x = x + 1
+
+    The assignment runs once while tracing. It records no runtime update.
+
+    The only supported way to preserve a value between runtime loop iterations
+    is to use one ``TaskLocalVariable``. The method that creates the initial
+    value and every method that updates it must name the same slot in
+    ``@consumer_work(returns=...)``. This belongs on the decorator, not the
+    method call. For example, assume ``compute_coords()`` and
+    ``advance_coords()`` both use
+    ``@consumer_work(returns=coord_slot)``::
+
+        coord = gmem.compute_coords()
+        with domain_loop(0, num_tiles, 1):
+            smem.tma_load(coord=coord)
+            coord = gmem.advance_coords(coord)
+
+    The slot identifies runtime storage: ``compute_coords()`` initializes it,
+    and ``advance_coords()`` writes the value for the next iteration. The
+    Python name ``coord`` is only a trace-time reference to that slot.
     """
+
+    if fn is None:
+
+        def decorator(decorated: Callable[..., None]) -> Callable[..., Schedule]:
+            return cast(
+                Callable[..., Schedule],
+                schedule(decorated, manual_state=manual_state),
+            )
+
+        return decorator
+    if type(manual_state) is not bool:
+        raise TypeError(
+            f"schedule(manual_state=...) must be bool, got "
+            f"{type(manual_state).__name__}."
+        )
 
     @functools.wraps(fn)
     def traced(*resources: object) -> Schedule:
@@ -1599,12 +2609,10 @@ def schedule(fn: Callable[..., None]) -> Callable[..., Schedule]:
         members: list[MemoryResource] = []
         for resource in resources:
             if isinstance(resource, _GroupMemberRef):
-                # `group.member` -- unwrap to the bare member; group membership is
-                # recovered downstream from ``member.pipeline_group``.
+                # The member retains its PipelineGroup identity after unwrapping.
                 members.append(resource.member)
             elif isinstance(resource, MemoryResource):
-                # A grouped member must be spelled `group.member` so its barrier
-                # identity is explicit; reject the bare form up front.
+                # Grouped resources require an explicit ``group.member`` identity.
                 if resource.pipeline_group is not None:
                     raise ScheduleError(
                         f"resource {resource.name!r} belongs to PipelineGroup "
@@ -1618,7 +2626,9 @@ def schedule(fn: Callable[..., None]) -> Callable[..., Schedule]:
                     "PipelineGroup member refs such as `group.member`); got "
                     f"{type(resource).__name__}."
                 )
-        builder = ScheduleBuilder(name=fn.__name__, resources=members)
+        builder = ScheduleBuilder(
+            name=fn.__name__, resources=members, manual_state=manual_state
+        )
         proxies = [ResourceProxy(member, builder) for member in members]
         token = _active_builder.set(builder)
         try:

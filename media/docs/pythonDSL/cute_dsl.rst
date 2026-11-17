@@ -13,4 +13,5 @@ DSL Programming Model
   JIT Argument: Layouts <cute_dsl_general/dsl_dynamic_layout.rst>
   Struct-like JIT Arguments <cute_dsl_general/dsl_struct_types.rst>
   JIT Caching <cute_dsl_general/dsl_jit_caching.rst>
+  Multithreading and Free-Threaded Python <cute_dsl_general/dsl_threading.rst>
   JIT Compilation Options <cute_dsl_general/dsl_jit_compilation_options.rst>

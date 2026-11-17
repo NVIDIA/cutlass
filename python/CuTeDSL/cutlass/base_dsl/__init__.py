@@ -29,4 +29,4 @@ from .utils.tree_utils import (
     DSLTreeFlattenError,
 )
 
-from .common import DSLCudaVersion, target_version
+from .common import DSLCudaVersion, DSLVersion, target_version

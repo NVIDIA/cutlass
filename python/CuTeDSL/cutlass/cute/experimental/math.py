@@ -62,6 +62,53 @@ def dot_block_scaled(
 
 
 @dsl_user_op
+def dot_block_scaled_sparse(
+    mma_atom: cute.MmaAtom,
+    a: cute.Tensor,
+    sfa: cute.Tensor,
+    e: cute.Tensor,
+    b: cute.Tensor,
+    sfb: cute.Tensor,
+    c: cute.Tensor,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Emit a block-scaled sparse MMA operation.
+
+    The operation owns fragment construction and delegates coordinated
+    per-instruction slicing of A, SFA, E, B, and SFB to ``cute.gemm``. This
+    keeps the scale-factor and sparse-metadata iteration contract encapsulated
+    by the dot operation instead of exposing atom fields to the kernel author.
+
+    :param mma_atom: Block-scaled sparse UMMA atom.
+    :param a: Sparse A operand partitioned as rank-3 ``(V, Rest, K)``.
+    :param sfa: Block scale factors for A.
+    :param e: Sparse metadata for A, partitioned as rank-3 ``(V, Rest, K)``.
+    :param b: Dense B operand partitioned as rank-3 ``(V, Rest, K)``.
+    :param sfb: Block scale factors for B.
+    :param c: Accumulator/result operand.
+    :param loc: Optional MLIR location.
+    :param ip: Optional MLIR insertion point.
+    """
+    a = _ensure_rank3(a, loc, ip)
+    sfa = _ensure_rank3(sfa, loc, ip)
+    e = _ensure_rank3(e, loc, ip)
+    b = _ensure_rank3(b, loc, ip)
+    sfb = _ensure_rank3(sfb, loc, ip)
+    cutlass_lir.DotBlockScaledSparseOp(
+        mma_atom._unpack(),
+        a.value,
+        sfa.value,
+        e.value,
+        b.value,
+        sfb.value,
+        c.value,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
 def dot(
     mma_atom: cute.MmaAtom,
     a: cute.Tensor,

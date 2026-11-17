@@ -41,6 +41,8 @@ from cutlass import testing
 import cutlass.utils as utils
 from cutlass.utils import create_cute_tensor_for_fp8
 from cutlass.cute.nvgpu import cpasync
+from cutlass.cutlass_dsl import Boolean, Int32
+from cutlass.kernels.utils import tile_scheduler
 
 if __name__ == "__main__":
     current_dir = Path(__file__).resolve().parent
@@ -74,8 +76,9 @@ using CuTe DSL.
         --use_tma_store --use_2cta_instrs
 
 Constraints:
-* Only FP8 inputs are supported (Float8E4M3FN or Float8E5M2) for now
+* Supported A/B input types: Float16, BFloat16, TFloat32, Float8E4M3FN, Float8E5M2
 * Only Breuse-Bkeep pattern is supported for now(if mma_tiler[0] is the double of mma_inst_shape[0] then enable Breuse-Bkeep pattern)
+* Bkeep-Breuse pattern is only supported for FP8 inputs
 * For K=64: M in the MMA tiler must be 128 (1 CTA) or 256 (2 CTAs)
 * For K=32: same constraints as Blackwell
 * Preferred cluster shape must be an integer multiple of fallback cluster shape
@@ -104,10 +107,9 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
     :type fallback_cluster_shape_mn: Tuple[int, int]
     :param use_tma_store: Whether to use TMA store
     :type use_tma_store: bool
-    :param swizzle_size: Swizzling size in the unit of cluster for improving L2 cache hit rate
-    :type swizzle_size: int
-    :param raster_along: Rasterization order of clusters ('m' or 'n')
-    :type raster_along: Literal["m", "n"]
+    :param precompute_scheduler_params: Host-prepare scheduler parameters
+        (static/affine/no-reduction only), defaults to False.
+    :type precompute_scheduler_params: bool
 
     :note: Constraints:
         - Preferred cluster shape must be an integer multiple of fallback cluster shape
@@ -123,24 +125,28 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         ...     preferred_cluster_shape_mn=(4, 2),
         ...     fallback_cluster_shape_mn=(2, 1),
         ...     use_tma_store=True,
-        ...     swizzle_size=1,
-        ...     raster_along="m"
         ... )
         >>> compiled_gemm = cute.compile(
         ...     gemm,
         ...     a_tensor,
         ...     b_tensor,
         ...     c_tensor,
-        ...     preferred_max_active_clusters,
-        ...     fallback_max_active_clusters,
         ...     stream,
+        ...     workspace,
+        ...     Int32(1),
+        ...     Boolean(True),
+        ...     Int32(1),
         ...     epilogue_op
         ... )
         >>> compiled_gemm(
         ...     a_tensor,
         ...     b_tensor,
         ...     c_tensor,
-        ...     stream
+        ...     stream,
+        ...     workspace,
+        ...     Int32(swizzle_size),
+        ...     Boolean(raster_along == "m"),
+        ...     Int32(fallback_max_active_clusters),
         ... )
     """
 
@@ -153,8 +159,14 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         preferred_cluster_shape_mn: Tuple[int, int],
         fallback_cluster_shape_mn: Tuple[int, int],
         use_tma_store: bool,
-        swizzle_size: int = 1,
-        raster_along: Literal["m", "n"] = "m",
+        split_k: int = 1,
+        work_strategy: Literal["grid", "static", "clc"] = "static",
+        rasterization_strategy: Literal["none", "affine"] = "affine",
+        reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"] = "none",
+        num_scheduler_stages: int = 1,
+        use_pdl: bool = False,
+        use_reduction_pdl: bool = False,
+        precompute_scheduler_params: bool = False,
     ):
         """Initialize the Rubin persistent dense GEMM kernel with mixed cluster support.
 
@@ -172,10 +184,9 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         :type fallback_cluster_shape_mn: Tuple[int, int]
         :param use_tma_store: Whether to use TMA store
         :type use_tma_store: bool
-        :param swizzle_size: Swizzle size
-        :type swizzle_size: int
-        :param raster_along: Raster along dimension ('m' or 'n')
-        :type raster_along: Literal["m", "n"]
+        :param precompute_scheduler_params: Host-prepare scheduler parameters
+            (static/affine/no-reduction only), defaults to False.
+        :type precompute_scheduler_params: bool
         """
         # Call parent with preferred cluster shape
         super().__init__(
@@ -185,13 +196,18 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
             mma_inst_shape,
             preferred_cluster_shape_mn,
             use_tma_store,
-            swizzle_size,
-            raster_along,
+            split_k=split_k,
+            work_strategy=work_strategy,
+            rasterization_strategy=rasterization_strategy,
+            reduction_strategy=reduction_strategy,
+            num_scheduler_stages=num_scheduler_stages,
+            use_pdl=use_pdl,
+            use_reduction_pdl=use_reduction_pdl,
+            fallback_cluster_shape_mn=fallback_cluster_shape_mn,
         )
 
-        # Store both cluster shapes
         self.preferred_cluster_shape_mn = preferred_cluster_shape_mn
-        self.fallback_cluster_shape_mn = fallback_cluster_shape_mn
+        self.precompute_scheduler_params = precompute_scheduler_params
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
@@ -219,6 +235,13 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
             (tiled_mma.thr_id.shape,),
         )
 
+        self.clc_fallback_cluster_layout_vmnk = cute.tiled_divide(
+            cute.make_layout(
+                self.tile_scheduler_template_params.fallback_cluster_shape
+            ),
+            (tiled_mma.thr_id.shape,),
+        )
+
         # Compute number of multicast CTAs for A/B for FALLBACK
         self.num_fallback_mcast_ctas_a = cute.size(
             self.fallback_cluster_layout_vmnk.shape[2]
@@ -231,6 +254,7 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
 
         # Rename parent's cluster_layout_vmnk to preferred_cluster_layout_vmnk
         self.preferred_cluster_layout_vmnk = self.cluster_layout_vmnk
+        self.clc_preferred_cluster_layout_vmnk = self.clc_cluster_layout_vmnk
         self.num_preferred_mcast_ctas_a = self.num_mcast_ctas_a
         self.num_preferred_mcast_ctas_b = self.num_mcast_ctas_b
         self.is_preferred_a_mcast = self.is_a_mcast
@@ -248,14 +272,19 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         tma_atom_c: Optional[cute.CopyAtom],
         mC_mnl: cute.Tensor,
         cluster_layout_vmnk: Tuple[cute.Layout, cute.Layout],
+        clc_cluster_layout_vmnk: Tuple[cute.Layout, cute.Layout],
         a_smem_layout_staged: cute.ComposedLayout,
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_gmem_workspace_ptr: cute.Pointer,
+        swizzle_size: Int32,
+        raster_along_m: Boolean,
         epilogue_op: cutlass.Constexpr,
         tiled_mma_bkeep: Optional[cute.TiledMma] = None,
         tiled_mma_breuse: Optional[cute.TiledMma] = None,
+        precomputed_sched_params: tile_scheduler.TileSchedulerPrecomputedParams
+        | None = None,
     ):
         """
         GPU device kernel performing the Persistent batched GEMM computation with preferred cluster support.
@@ -266,12 +295,20 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         """
 
         # Get cluster coordinates to determine if this is a preferred cluster
-        cbdim_x, cbdim_y, cbdim_z = cute.arch.block_in_cluster_dim()
-        is_preferred_cluster = (
-            cbdim_x == self.preferred_cluster_shape_mn[0]
-            and cbdim_y == self.preferred_cluster_shape_mn[1]
-            and cbdim_z == 1
-        )
+        if cutlass.const_expr(
+            any(
+                self.preferred_cluster_shape_mn[i] != self.fallback_cluster_shape_mn[i]
+                for i in range(2)
+            )
+        ):
+            cbdim_x, cbdim_y, cbdim_z = cute.arch.block_in_cluster_dim()
+            is_preferred_cluster = (
+                cbdim_x == self.preferred_cluster_shape_mn[0]
+                and cbdim_y == self.preferred_cluster_shape_mn[1]
+            )
+        else:
+            # Skip the block_in_cluster_dim check when mixed cluster is not needed
+            is_preferred_cluster = True
 
         # mega-kernel approach has 2 mutually exclusive code branches, only one path runs per launch,
         # specify `smem_merge_branch_allocs=True` at launch to enables shared memory reuse between two paths
@@ -285,17 +322,21 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
                 tma_atom_c,
                 mC_mnl,
                 cluster_layout_vmnk[0],
+                clc_cluster_layout_vmnk[0],
                 a_smem_layout_staged,
                 b_smem_layout_staged,
                 c_smem_layout_staged,
                 epi_tile,
-                tile_sched_params,
+                tile_sched_gmem_workspace_ptr,
+                swizzle_size,
+                raster_along_m,
                 epilogue_op,
                 tiled_mma_bkeep,
                 tiled_mma_breuse,
                 self.preferred_cluster_shape_mn,
                 self.is_preferred_a_mcast,
                 self.is_preferred_b_mcast,
+                precomputed_sched_params,
             )
         else:
             self.kernel_impl(
@@ -307,221 +348,106 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
                 tma_atom_c,
                 mC_mnl,
                 cluster_layout_vmnk[1],
+                clc_cluster_layout_vmnk[1],
                 a_smem_layout_staged,
                 b_smem_layout_staged,
                 c_smem_layout_staged,
                 epi_tile,
-                tile_sched_params,
+                tile_sched_gmem_workspace_ptr,
+                swizzle_size,
+                raster_along_m,
                 epilogue_op,
                 tiled_mma_bkeep,
                 tiled_mma_breuse,
                 self.fallback_cluster_shape_mn,
                 self.is_fallback_a_mcast,
                 self.is_fallback_b_mcast,
+                precomputed_sched_params,
             )
 
-    @staticmethod
-    def _compute_grid(
-        c: cute.Tensor,
-        cta_tile_shape_mnk: Tuple[int, int, int],
-        preferred_cluster_shape_mn: Tuple[int, int],
-        fallback_cluster_shape_mn: Tuple[int, int],
-        swizzle_size: int,
-        raster_along: Literal["m", "n"],
-        preferred_max_active_clusters: cutlass.Constexpr,
-        fallback_max_active_clusters: cutlass.Constexpr,
-    ) -> Tuple[
-        utils.PersistentTileSchedulerParams,
-        Tuple[int, int, int],
-    ]:
-        """Use persistent tile scheduler to compute the grid size for the output tensor C.
-
-        :param c: The output tensor C
-        :type c: cute.Tensor
-        :param cta_tile_shape_mnk: The shape (M, N, K) of the CTA tile
-        :type cta_tile_shape_mnk: tuple[int, int, int]
-        :param preferred_cluster_shape_mn: Preferred shape of each cluster in M, N dimensions
-        :type preferred_cluster_shape_mn: tuple[int, int]
-        :param fallback_cluster_shape_mn: Fallback shape of each cluster in M, N dimensions
-        :type fallback_cluster_shape_mn: tuple[int, int]
-        :param swizzle_size: Swizzling size in the unit of cluster for improving L2 cache hit rate
-        :type swizzle_size: int
-        :param raster_along: Rasterization order of clusters ('m' or 'n')
-        :type raster_along: Literal["m", "n"]
-        :param preferred_max_active_clusters: Maximum number of preferred active clusters
-        :type preferred_max_active_clusters: cutlass.Constexpr
-        :param fallback_max_active_clusters: Maximum number of fallback active clusters
-        :type fallback_max_active_clusters: cutlass.Constexpr
-
-        :return: A tuple containing:
-            - preferred_tile_sched_params: Parameters for the preferred persistent tile scheduler
-            - grid: Grid shape for kernel launch
-        :rtype: Tuple[
-            utils.PersistentTileSchedulerParams,
-            tuple[int, int, int]
-        ]
-        """
-        c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
-        gc = cute.zipped_divide(c, tiler=c_shape)
-        num_ctas_mnl = gc[(0, (None, None, None))].shape
-
-        # Tile scheduler and grid shape for the preferred cluster
-        preferred_cluster_shape_mnl = (*preferred_cluster_shape_mn, 1)
-
-        preferred_tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, preferred_cluster_shape_mnl
-        )
-        preferred_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            preferred_tile_sched_params, preferred_max_active_clusters
-        )
-
-        # Tile scheduler and grid shape for the fallback cluster
-        fallback_cluster_shape_mnl = (*fallback_cluster_shape_mn, 1)
-
-        fallback_tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, fallback_cluster_shape_mnl
-        )
-        fallback_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            fallback_tile_sched_params, fallback_max_active_clusters
-        )
-
-        # Align preferred grid to cluster shape
-        preferred_grid = cute.round_up(preferred_grid, preferred_cluster_shape_mnl)
-
-        # Compute max preferred clusters: total blocks <= fallback total,
-        # and is multiple of cluster size
-        preferred_cluster_size_mn = (
-            preferred_cluster_shape_mn[0] * preferred_cluster_shape_mn[1]
-        )
-        max_ctas_for_fallback_cluster = (
-            fallback_grid[0] * fallback_grid[1] * fallback_grid[2]
-        )
-
-        # Use floor division (not ceil_div) to compute max preferred cluster count.
-        # The preferred cluster total CTA count must not exceed the fallback total,
-        # otherwise when the division is not exact, the extra partial wave of
-        # preferred clusters may force the hardware to schedule one additional wave,
-        # causing significant performance regression.
-        max_preferred_cluster_count = (
-            max_ctas_for_fallback_cluster // preferred_cluster_size_mn
-        )
-        preferred_grid = (
-            preferred_grid[0],
-            preferred_grid[1],
-            max_preferred_cluster_count,
-        )
-
-        return (
-            preferred_tile_sched_params,
-            preferred_grid,
-        )
-
-    @staticmethod
-    def can_implement(
-        mnkl: Tuple[int, int, int, int],
+    def can_compile(
+        self,
         a_dtype: Type[cutlass.Numeric],
         b_dtype: Type[cutlass.Numeric],
         c_dtype: Type[cutlass.Numeric],
-        acc_dtype: Type[cutlass.Numeric],
-        a_major: Literal["m", "k"],
-        b_major: Literal["n", "k"],
-        c_major: Literal["m", "n"],
-        mma_tiler: Tuple[int, int, int],
-        mma_inst_shape: Tuple[int, int, int],
-        preferred_cluster_shape_mn: Tuple[int, int],
-        fallback_cluster_shape_mn: Tuple[int, int],
     ) -> bool:
-        """
-        Check if the gemm can be implemented with mixed clusters
+        """Determine if this mixed-cluster configuration can be compiled.
 
-        :param mnkl: The problem size as a tuple (M, N, K, L)
-        :type mnkl: Tuple[int, int, int, int]
-        :param a_dtype: The data type of the A operand
+        Adds the preferred/fallback cluster shape relationship to the base
+        class's dtype and mma tiler checks.
+
+        :param a_dtype: Data type of input tensor A.
         :type a_dtype: Type[cutlass.Numeric]
-        :param b_dtype: The data type of the B operand
+        :param b_dtype: Data type of input tensor B.
         :type b_dtype: Type[cutlass.Numeric]
-        :param c_dtype: The data type of the output tensor
+        :param c_dtype: Data type of output tensor C.
         :type c_dtype: Type[cutlass.Numeric]
-        :param acc_dtype: The data type of the accumulator
-        :type acc_dtype: Type[cutlass.Numeric]
-        :param a_major: The major axis of the A tensor
-        :type a_major: Literal["m", "k"]
-        :param b_major: The major axis of the B tensor
-        :type b_major: Literal["n", "k"]
-        :param c_major: The major axis of the C tensor
-        :type c_major: Literal["m", "n"]
-        :param mma_tiler: The (M, N, K) shape of the MMA tiler
-        :type mma_tiler: Tuple[int, int, int]
-        :param mma_inst_shape: The (M, N, K) shape of the MMA instruction
-        :type mma_inst_shape: Tuple[int, int, int]
-        :param preferred_cluster_shape_mn: The (ClusterM, ClusterN) shape of the preferred CTA cluster
-        :type preferred_cluster_shape_mn: Tuple[int, int]
-        :param fallback_cluster_shape_mn: The (ClusterM, ClusterN) shape of the fallback CTA cluster
-        :type fallback_cluster_shape_mn: Tuple[int, int]
-        :return: True if the gemm can be implemented, False otherwise
+        :return: True if the configuration can be compiled.
         :rtype: bool
+
+        :raises testing.CantImplementError: If the configuration is invalid.
         """
+        super().can_compile(a_dtype, b_dtype, c_dtype)
+        if self.precompute_scheduler_params:
+            self.tile_scheduler_template_params.check_precompute_support()
 
-        try:
-            # Create a temporary kernel object to check base implementation
-            temp_kernel = SM107PersistentDenseGemmKernel(
-                acc_dtype=acc_dtype,
-                use_2cta_instrs=(mma_inst_shape[0] > 128),
-                mma_tiler=mma_tiler,
-                mma_inst_shape=mma_inst_shape,
-                cluster_shape_mn=preferred_cluster_shape_mn,
-                use_tma_store=True,
+        # Check fallback cluster is valid for 2CTA instructions if needed
+        if (
+            self.fallback_cluster_shape_mn[0]
+            % (2 if self.mma_inst_shape[0] == 256 else 1)
+            != 0
+        ):
+            raise testing.CantImplementError(
+                f"Invalid fallback cluster shape for a 2CTA MMA, fallback_cluster_shape_m: {self.fallback_cluster_shape_mn[0]}"
             )
 
-            # Check base implementation with preferred cluster
-            if not temp_kernel.can_implement(
-                mnkl,
-                a_dtype,
-                b_dtype,
-                c_dtype,
-                a_major,
-                b_major,
-                c_major,
-            ):
-                return False
-
-            # Check fallback cluster is valid for 2CTA instructions if needed
-            if (
-                fallback_cluster_shape_mn[0] % (2 if mma_inst_shape[0] == 256 else 1)
-                != 0
-            ):
-                raise testing.CantImplementError(
-                    f"Invalid fallback cluster shape for a 2CTA MMA, fallback_cluster_shape_m: {fallback_cluster_shape_mn[0]}"
-                )
-
-            # Check preferred is multiple of fallback
-            if (
-                preferred_cluster_shape_mn[0] % fallback_cluster_shape_mn[0] != 0
-                or preferred_cluster_shape_mn[1] % fallback_cluster_shape_mn[1] != 0
-            ):
-                raise testing.CantImplementError(
-                    f"Preferred cluster shape {preferred_cluster_shape_mn} must be "
-                    f"integer multiple of fallback cluster shape {fallback_cluster_shape_mn}"
-                )
-
-            # Check problem size is at least as large as the preferred cluster tile size.
-            # The mixed clusters kernel computes max_preferred_cluster_count as:
-            #   max_ctas_for_fallback_cluster // preferred_cluster_size_mn
-            # If the problem is smaller than one preferred cluster tile, this count
-            # becomes zero, resulting in an invalid grid shape.
-            m, n, _, _ = mnkl
-            atom_thr_size = 2 if mma_inst_shape[0] == 256 else 1
-            cluster_tile_m = (
-                mma_tiler[0] // atom_thr_size * preferred_cluster_shape_mn[0]
+        # Check preferred is multiple of fallback
+        if (
+            self.preferred_cluster_shape_mn[0] % self.fallback_cluster_shape_mn[0] != 0
+            or self.preferred_cluster_shape_mn[1] % self.fallback_cluster_shape_mn[1]
+            != 0
+        ):
+            raise testing.CantImplementError(
+                f"Preferred cluster shape {self.preferred_cluster_shape_mn} must be "
+                f"integer multiple of fallback cluster shape {self.fallback_cluster_shape_mn}"
             )
-            cluster_tile_n = mma_tiler[1] * preferred_cluster_shape_mn[1]
-            if m < cluster_tile_m or n < cluster_tile_n:
-                raise testing.CantImplementError(
-                    f"Problem size ({m}, {n}) is smaller than the cluster tile size "
-                    f"({cluster_tile_m}, {cluster_tile_n})"
-                )
-        except testing.CantImplementError as e:
-            return False
+        return True
+
+    def can_implement(
+        self,
+        a: cute.Tensor,
+        b: cute.Tensor,
+        c: cute.Tensor,
+        swizzle_size: int,
+        raster_along: Literal["m", "n"],
+    ) -> bool:
+        """Determine if the compiled mixed-cluster kernel can execute this launch.
+
+        Defers to the base class's tensor alignment, epilogue store and tile
+        scheduler checks. Problems smaller than the preferred cluster tile are
+        accepted: the tile scheduler rounds the tile count up to whole preferred
+        clusters, so every work strategy launches at least one full preferred
+        cluster (the static grid is that count capped by the fallback-cluster
+        occupancy).
+
+        :param a: Input tensor A of shape (l, m, k).
+        :type a: cute.Tensor
+        :param b: Input tensor B of shape (l, k, n).
+        :type b: cute.Tensor
+        :param c: Output tensor C of shape (l, m, n).
+        :type c: cute.Tensor
+        :param swizzle_size: tiles per swizzle group for this launch
+        :type swizzle_size: int
+        :param raster_along: rasterization order for this launch, already
+            resolved to a concrete axis by
+            ``TileSchedulerTemplate.resolve_rasterization``.
+        :type raster_along: Literal["m", "n"]
+        :return: True if this launch can be executed.
+        :rtype: bool
+
+        :raises testing.CantImplementError: If the launch is invalid.
+        """
+        super().can_implement(a, b, c, swizzle_size, raster_along)
         return True
 
     @cute.jit
@@ -530,9 +456,11 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         a: cute.Tensor,
         b: cute.Tensor,
         c: cute.Tensor,
-        preferred_max_active_clusters: cutlass.Constexpr,
-        fallback_max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        workspace: cute.Pointer,
+        swizzle_size: Int32,
+        raster_along_m: Boolean,
+        max_active_clusters_fallback: Int32,
         epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         """Execute the GEMM operation with mixed cluster support in steps:
@@ -547,12 +475,16 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         :type b: cute.Tensor
         :param c: Output tensor C
         :type c: cute.Tensor
-        :param preferred_max_active_clusters: Maximum number of preferred active clusters
-        :type preferred_max_active_clusters: cutlass.Constexpr
-        :param fallback_max_active_clusters: Maximum number of fallback active clusters
-        :type fallback_max_active_clusters: cutlass.Constexpr
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
+        :param swizzle_size: Tiles per swizzle group for this launch
+        :type swizzle_size: Int32
+        :param raster_along_m: True rasterizes M-major, False N-major
+        :type raster_along_m: Boolean
+        :param max_active_clusters_fallback: occupancy cap on concurrently resident
+            fallback clusters (launch-time value; see ``query_max_active_clusters``).
+            Only the ``static`` work strategy uses it (its grid is one wave).
+        :type max_active_clusters_fallback: Int32
         :param epilogue_op: Optional elementwise lambda function to apply to the output tensor
         :type epilogue_op: cutlass.Constexpr
         :raises TypeError: If input data types are incompatible with the MMA instruction.
@@ -562,6 +494,10 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         self.a_dtype: Type[cutlass.Numeric] = a.element_type
         self.b_dtype: Type[cutlass.Numeric] = b.element_type
         self.c_dtype: Type[cutlass.Numeric] = c.element_type
+        self.out_dtype: Type[cutlass.Numeric] = self.c_dtype
+        self.c_dtype = self.tile_scheduler_template_params.gmem_output_type(
+            self.c_dtype
+        )
         self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
             a
         ).mma_major_mode()
@@ -627,7 +563,11 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         b_op = utils.sm100.cluster_shape_to_tma_atom_B(
             self.preferred_cluster_shape_mn, tiled_mma.thr_id
         )
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        b_smem_layout = cute.make_composed_layout(
+            self.b_smem_layout_staged.inner,
+            0,
+            cute.slice_(self.b_smem_layout_staged.outer, (None, None, None, 0)),
+        )
         tma_atom_b, tma_tensor_b = cute.nvgpu.make_tiled_tma_atom_B(
             b_op,
             b,
@@ -661,24 +601,27 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
         self.num_tma_load_bytes = (a_copy_size + b_copy_size) * atom_thr_size
 
         # Setup TMA store for C
-        tma_atom_c = None
-        tma_tensor_c = None
-        if cutlass.const_expr(self.use_tma_store):
-            epi_smem_layout = cute.select(self.c_smem_layout_staged, mode=[0, 1])
-            tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
-                cpasync.CopyBulkTensorTileS2GOp(), c, epi_smem_layout, self.epi_tile
-            )
+        tma_atom_c, tensor_c = self.tile_scheduler_template.get_gmem_tma(
+            self.use_tma_store, workspace, c, self.c_smem_layout_staged, self.epi_tile
+        )
 
-        # Compute grid size
-        self.tile_sched_params, grid = self._compute_grid(
-            c,
-            self.cta_tile_shape_mnk,
-            self.preferred_cluster_shape_mn,
-            self.fallback_cluster_shape_mn,
-            self.swizzle_size,
-            self.raster_along,
-            preferred_max_active_clusters,
-            fallback_max_active_clusters,
+        # Reuse host-prepared scheduler state when computing the launch grid.
+        precomputed_sched_params = None
+        if cutlass.const_expr(self.precompute_scheduler_params):
+            precomputed_sched_params = (
+                self.tile_scheduler_template.prepare_sched_params(
+                    c.shape,
+                    cute.ceil_div(a.shape[1], self.mma_tiler[2]),
+                    swizzle_size,
+                    raster_along_m,
+                )
+            )
+        grid = self.tile_scheduler_template.get_grid_shape(
+            c.shape,
+            swizzle_size,
+            raster_along_m,
+            max_active_clusters_fallback,
+            precomputed_sched_params=precomputed_sched_params,
         )
 
         # Launch the kernel synchronously with mixed cluster support
@@ -689,24 +632,45 @@ class Sm107DenseGemmUniversal(SM107PersistentDenseGemmKernel):
             (tma_atom_b, tma_atom_b_fallback),
             (tma_tensor_b, tma_tensor_b_fallback),
             tma_atom_c,
-            tma_tensor_c if self.use_tma_store else c,
+            tensor_c,
             (self.preferred_cluster_layout_vmnk, self.fallback_cluster_layout_vmnk),
+            (
+                self.clc_preferred_cluster_layout_vmnk,
+                self.clc_fallback_cluster_layout_vmnk,
+            ),
             self.a_smem_layout_staged,
             self.b_smem_layout_staged,
             self.c_smem_layout_staged,
             self.epi_tile,
-            self.tile_sched_params,
+            workspace,
+            swizzle_size,
+            raster_along_m,
             epilogue_op,
             tiled_mma_bkeep,
             tiled_mma_breuse,
+            precomputed_sched_params,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
-            cluster=(*self.preferred_cluster_shape_mn, 1),
-            fallback_cluster=(*self.fallback_cluster_shape_mn, 1),
+            cluster=(*self.tile_scheduler_template_params.cluster_shape,),
+            fallback_cluster=(
+                *self.tile_scheduler_template_params.fallback_cluster_shape,
+            ),
             stream=stream,
+            use_pdl=self.use_pdl,
             smem_merge_branch_allocs=True,
         )
+
+        if cutlass.const_expr(self.tile_scheduler_template.is_gmem_splitk):
+            self.tile_scheduler_template.splitk_reduction(
+                workspace,
+                c,
+                a.shape[1],
+                epilogue_op,
+                stream,
+                use_pdl=self.use_pdl,
+                use_reduction_pdl=self.use_reduction_pdl,
+            )
 
 
 @cute.jit
@@ -715,9 +679,11 @@ def bmm(
     a: cute.Tensor,  # (l, m, k)
     b: cute.Tensor,  # (l, k, n)
     c: cute.Tensor,  # (l, m, n)
-    preferred_max_active_clusters: cutlass.Constexpr,
-    fallback_max_active_clusters: cutlass.Constexpr,
     stream: cuda.CUstream,
+    workspace: cute.Pointer,
+    swizzle_size: Int32,
+    raster_along_m: Boolean,
+    max_active_clusters_fallback: Int32,
     epilogue_op: cutlass.Constexpr = lambda x: x,
 ):
     """
@@ -728,19 +694,33 @@ def bmm(
       - b: (n, k, l)
       - c: (m, n, l)
 
-    :param gemm_op: Kernel operation, expects (a, b, c, max_active_clusters, stream, epilogue_op)
+    :param gemm_op: Kernel operation, expects (a, b, c, stream, workspace, swizzle_size, raster_along_m,
+        max_active_clusters_fallback, epilogue_op)
     :type gemm_op: cutlass.Constexpr
-    :param a: Input tensor of shape (l, m, k)
+    :param a: Input tensor of shape (l, m, k), or (m, k) when unbatched
     :type a: cute.Tensor
-    :param b: Input tensor of shape (l, k, n)
+    :param b: Input tensor of shape (l, k, n), or (k, n) when unbatched
     :type b: cute.Tensor
-    :param c: Output tensor of shape (l, m, n)
+    :param c: Output tensor of shape (l, m, n), or (m, n) when unbatched
     :type c: cute.Tensor
-    :param max_active_clusters: Maximum number of hardware clusters to launch
-    :type max_active_clusters: cutlass.Constexpr
+    :param swizzle_size: Tiles per swizzle group for this launch
+    :type swizzle_size: Int32
+    :param raster_along_m: True rasterizes M-major, False N-major
+    :type raster_along_m: Boolean
+    :param max_active_clusters_fallback: occupancy cap on concurrently resident
+        fallback clusters (launch-time value; see ``query_max_active_clusters``).
+        Only the ``static`` work strategy uses it (its grid is one wave).
+    :type max_active_clusters_fallback: Int32
     :param epilogue_op: Optional elementwise lambda function to apply per output element, defaults to identity
     :type epilogue_op: cutlass.Constexpr, optional
     """
+    # Give an unbatched operand a unit batch mode so the one permutation below
+    # serves both ranks; without it a rank-2 layout reaches cute.select with a
+    # mode of [1, 2, 0] and raises "invalid mode element for input of rank 2".
+    a = cute.prepend_ones(a, up_to_rank=3)
+    b = cute.prepend_ones(b, up_to_rank=3)
+    c = cute.prepend_ones(c, up_to_rank=3)
+
     # (l,m,k) -> (m,k,l)
     a = cute.make_tensor(a.iterator, cute.select(a.layout, mode=[1, 2, 0]))
     # (l,k,n) -> (n,k,l)
@@ -752,9 +732,11 @@ def bmm(
         a,
         b,
         c,
-        preferred_max_active_clusters,
-        fallback_max_active_clusters,
         stream,
+        workspace,
+        swizzle_size,
+        raster_along_m,
+        max_active_clusters_fallback,
         epilogue_op,
     )
 
@@ -773,13 +755,17 @@ def compile_bmm(
     mma_inst_shape: Tuple[int, int, int] = (256, 256, 64),
     preferred_cluster_shape_mn: Tuple[int, int] = (4, 2),
     fallback_cluster_shape_mn: Tuple[int, int] = (2, 1),
-    preferred_max_active_clusters: cutlass.Constexpr = None,
-    fallback_max_active_clusters: cutlass.Constexpr = None,
     use_2cta_instrs: bool = True,
     use_tma_store: bool = True,
-    swizzle_size: int = 1,
-    raster_along: Literal["m", "n"] = "m",
+    split_k: int = 1,
+    reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"] = "none",
+    work_strategy: Literal["grid", "static", "clc"] = "static",
+    rasterization_strategy: Literal["none", "affine"] = "affine",
+    num_scheduler_stages: int = 1,
+    use_pdl: bool = False,
+    use_reduction_pdl: bool = False,
     epilogue_op: cutlass.Constexpr = lambda x: x,
+    precompute_scheduler_params: bool = False,
 ):
     """
     Compile a batched matrix multiplication kernel for Rubin with mixed cluster support.
@@ -796,15 +782,19 @@ def compile_bmm(
     :param mma_inst_shape: MMA instruction shape (M, N, K)
     :param preferred_cluster_shape_mn: Preferred cluster shape (M, N)
     :param fallback_cluster_shape_mn: Fallback cluster shape (M, N)
-    :param preferred_max_active_clusters: Maximum preferred active clusters
-    :param fallback_max_active_clusters: Maximum fallback active clusters
     :param use_2cta_instrs: Use 2CTA instructions
     :param use_tma_store: Use TMA store
-    :param swizzle_size: Swizzle size
-    :param raster_along: Raster along dimension ("m" or "n")
     :param epilogue_op: Epilogue operation
-    :return: Compiled kernel function
+    :param precompute_scheduler_params: Prepare scheduler parameters on the
+        host. Defaults to False; requires static/affine/no-reduction scheduling.
+    :type precompute_scheduler_params: bool
+    :return: Tuple of (compiled kernel function, GMEM scheduler workspace
+        pointer, the torch tensor backing that workspace or None, the kernel
+        object for per-launch parameter resolution/validation). The third element is
+        a keepalive: dropping it dangles the workspace pointer.
     """
+    import torch
+
     from cutlass.cute.runtime import make_fake_stream
 
     # Build GEMM object
@@ -816,49 +806,45 @@ def compile_bmm(
         preferred_cluster_shape_mn,
         fallback_cluster_shape_mn,
         use_tma_store,
-        swizzle_size,
-        raster_along,
+        split_k=split_k,
+        work_strategy=work_strategy,
+        rasterization_strategy=rasterization_strategy,
+        reduction_strategy=reduction_strategy,
+        num_scheduler_stages=num_scheduler_stages,
+        use_pdl=use_pdl,
+        use_reduction_pdl=use_reduction_pdl,
+        precompute_scheduler_params=precompute_scheduler_params,
     )
 
-    # Check if configuration can be implemented
-    can_implement = gemm.can_implement(
-        mnkl,
-        a.element_type,
-        b.element_type,
-        c.element_type,
-        acc_dtype,
-        a_major,
-        b_major,
-        c_major,
-        mma_tiler,
-        mma_inst_shape,
-        preferred_cluster_shape_mn,
-        fallback_cluster_shape_mn,
-    )
+    gemm.can_compile(a.element_type, b.element_type, c.element_type)
 
-    if not can_implement:
-        raise testing.CantImplementError(
-            f"The current config which is invalid/unsupported: use_2cta_instrs = {use_2cta_instrs}, "
-            f"mma_tiler = {mma_tiler}, mma_inst_shape = {mma_inst_shape}, "
-            f"preferred_cluster_shape_mn = {preferred_cluster_shape_mn}, "
-            f"fallback_cluster_shape_mn = {fallback_cluster_shape_mn}, "
-            f"use_tma_store = {use_tma_store}, "
-            f"swizzle_size = {swizzle_size}, "
-            f"raster_along = {raster_along}"
+    problem_shape_mnl = [mnkl[0], mnkl[1], mnkl[3]]
+    gmem_workspace_bytes = gemm.get_gmem_workspace_size(problem_shape_mnl)
+    _workspace_tensor = None
+    if gmem_workspace_bytes == 0:
+        workspace = cute.runtime.nullptr(cutlass.Int8)
+    else:
+        _workspace_tensor = torch.empty(
+            gmem_workspace_bytes, dtype=torch.int8, device="cuda"
         )
+        gemm.initialize_workspace(_workspace_tensor, problem_shape_mnl)
+        workspace = cute.runtime.from_dlpack(_workspace_tensor).iterator
 
     stream = make_fake_stream()
-    return cute.compile(
+    compiled_fn = cute.compile(
         bmm,
         gemm,
         a,
         b,
         c,
-        preferred_max_active_clusters,
-        fallback_max_active_clusters,
         stream,
+        workspace,
+        Int32(1),  # placeholder for swizzle_size
+        Boolean(True),  # placeholder for raster_along_m
+        Int32(1),  # placeholder for max_active_clusters_fallback
         epilogue_op,
     )
+    return compiled_fn, workspace, _workspace_tensor, gemm
 
 
 def run(
@@ -875,18 +861,26 @@ def run(
     preferred_cluster_shape_mn: Tuple[int, int] = (4, 2),
     fallback_cluster_shape_mn: Tuple[int, int] = (2, 1),
     swizzle_size: int = 1,
-    raster_along: Literal["m", "n"] = "m",
+    raster_along: Literal["m", "n", "heuristic"] = "m",
     use_2cta_instrs: bool = True,
     use_tma_store: bool = True,
     tolerance: float = 1e-01,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    skip_ref_check: bool = False,
+    ref_check_device: str = "cuda",
     use_cold_l2: bool = False,
     benchmark: bool = False,
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
+    split_k: int = 1,
+    reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"] = "none",
+    work_strategy: Literal["grid", "static", "clc"] = "static",
+    rasterization_strategy: Literal["none", "affine"] = "affine",
+    num_scheduler_stages: int = 1,
+    use_pdl: bool = False,
+    use_reduction_pdl: bool = False,
+    precompute_scheduler_params: bool = False,
     **kwargs,
 ):
     """
@@ -921,20 +915,41 @@ def run(
     :type fallback_cluster_shape_mn: Tuple[int, int], optional
     :param swizzle_size: Swizzling size in the unit of cluster for improving L2 cache hit rate, defaults to 1.
     :type swizzle_size: int, optional
-    :param raster_along: Rasterization order of clusters ('m' or 'n'), defaults to 'm'.
-    :type raster_along: Literal["m", "n"], optional
+    :param raster_along: Rasterization order of clusters ('m', 'n', or
+        'heuristic' to pick the axis from the problem shape), defaults to 'm'.
+    :type raster_along: Literal["m", "n", "heuristic"], optional
     :param use_2cta_instrs: Whether to use 2CTA MMA instructions, defaults to True.
     :type use_2cta_instrs: bool, optional
     :param use_tma_store: Whether to use TMA store, defaults to True.
     :type use_tma_store: bool, optional
+    :param split_k: Number of K partitions per output tile, defaults to 1.
+    :type split_k: int, optional
+    :param reduction_strategy: How split-K partials are reduced ("none",
+        "gmem-splitk", or "cluster-splitk"), defaults to "none".
+    :type reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"], optional
+    :param work_strategy: How output tiles are handed to CTAs, defaults to "static".
+    :type work_strategy: Literal["grid", "static", "clc"], optional
+    :param rasterization_strategy: How a work index maps to a tile coordinate,
+        defaults to "affine".
+    :type rasterization_strategy: Literal["none", "affine"], optional
+    :param num_scheduler_stages: Depth of the CLC work-fetch pipeline, defaults to 1.
+    :type num_scheduler_stages: int, optional
+    :param use_pdl: Launch with programmatic dependent launch, defaults to False.
+    :type use_pdl: bool, optional
+    :param use_reduction_pdl: Launch the GMEM split-K reduction kernel with PDL,
+        defaults to False.
+    :type use_reduction_pdl: bool, optional
+    :param precompute_scheduler_params: Host-prepare scheduler parameters
+        (static/affine/no-reduction only), defaults to False.
+    :type precompute_scheduler_params: bool, optional
     :param tolerance: Tolerance for reference validation, defaults to 1e-01.
     :type tolerance: float, optional
     :param warmup_iterations: Number of warmup iterations before benchmarking, defaults to 0.
     :type warmup_iterations: int, optional
     :param iterations: Number of benchmark iterations to run, defaults to 1.
     :type iterations: int, optional
-    :param skip_ref_check: Whether to skip reference result validation, defaults to False.
-    :type skip_ref_check: bool, optional
+    :param ref_check_device: Device the reference check runs on, one of "cuda", "cpu" or "skipped", defaults to "cuda".
+    :type ref_check_device: str, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
     :type use_cold_l2: bool, optional
     :param benchmark: Whether to only benchmark the kernel, defaults to False.
@@ -962,12 +977,10 @@ def run(
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    # Check if configuration can be implemented
-    preferred_max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-        preferred_cluster_shape_mn[0] * preferred_cluster_shape_mn[1]
-    )
-    fallback_max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-        fallback_cluster_shape_mn[0] * fallback_cluster_shape_mn[1]
+    # Query the fallback-cluster occupancy budget; the tile scheduler derives the
+    # preferred-cluster grid (and the mixed-cluster over-subscription cap) from it.
+    fallback_max_active_clusters = tile_scheduler.query_max_active_clusters(
+        fallback_cluster_shape_mn, split_k, reduction_strategy
     )
 
     # Run and verify BMM with torch
@@ -999,7 +1012,7 @@ def run(
         c_storage, c_dtype, leading_dim_c, source_f32_tensor=c_f32
     )
 
-    compiled_fn = compile_bmm(
+    compiled_fn, workspace, _ws_tensor, gemm = compile_bmm(
         mnkl,
         a_,
         b_,
@@ -1012,14 +1025,27 @@ def run(
         mma_inst_shape,
         preferred_cluster_shape_mn,
         fallback_cluster_shape_mn,
-        preferred_max_active_clusters,
-        fallback_max_active_clusters,
         use_2cta_instrs,
         use_tma_store,
-        swizzle_size,
-        raster_along,
+        split_k,
+        reduction_strategy,
+        work_strategy,
+        rasterization_strategy,
+        num_scheduler_stages,
+        use_pdl,
+        use_reduction_pdl,
         epilogue_op=lambda x: x,
+        precompute_scheduler_params=precompute_scheduler_params,
     )
+
+    raster_along, swizzle_size = gemm.tile_scheduler_template.resolve_rasterization(
+        raster_along,
+        swizzle_size,
+        mnkl,
+        a_element_bytes=a_dtype.width // 8,
+        b_element_bytes=b_dtype.width // 8,
+    )
+    gemm.can_implement(a_, b_, c_, swizzle_size, raster_along)
 
     print("Running Rubin Persistent Dense GEMM Mixed Clusters test with:")
     print(f"mnkl: {mnkl}")
@@ -1032,25 +1058,39 @@ def run(
     print(f"Tolerance: {tolerance}")
     print(f"Warmup iterations: {warmup_iterations}")
     print(f"Iterations: {iterations}")
-    print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Reference check device: {ref_check_device}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
     print(f"Swizzle Size: {swizzle_size}")
     print(f"Raster Along: {raster_along}")
+    print(f"Work Strategy: {work_strategy}")
+    print(f"Rasterization Strategy: {rasterization_strategy}")
+    print(f"Split K: {split_k}, Reduction Strategy: {reduction_strategy}")
+    print(f"Use PDL: {use_pdl}, Use Reduction PDL: {use_reduction_pdl}")
 
-    if not skip_ref_check:
+    if ref_check_device != "skipped":
         # Use small random number for deterministic result for reference check
-        compiled_fn(a_, b_, c_, current_stream)
+        compiled_fn(
+            a_,
+            b_,
+            c_,
+            current_stream,
+            workspace,
+            Int32(swizzle_size),
+            Boolean(raster_along == "m"),
+            Int32(fallback_max_active_clusters),
+        )
 
         # Manually quantize to be comparable
-        # Use float32 source data for reference calculation.
-        # The reference runs on the host.
+        # Use float32 source data for reference calculation, on whichever
+        # device the caller asked for.
+        device = ref_check_device
         ref = (
-            torch.bmm(a_f32.cpu(), b_f32.cpu())
+            torch.bmm(a_f32.to(device), b_f32.to(device))
             .to(dtype=torch_dtype(c_dtype))
             .to(dtype=torch.float32)
         )
         torch.testing.assert_close(
-            c_storage.view(torch_dtype(c_dtype)).to(dtype=torch.float32).cpu(),
+            c_storage.view(torch_dtype(c_dtype)).to(dtype=torch.float32).to(device),
             ref,
             atol=tolerance,
             rtol=1e-03,
@@ -1087,7 +1127,16 @@ def run(
         c_ = create_cute_tensor_for_fp8(
             c_st, c_dtype, leading_dim_c, source_f32_tensor=c_f32
         )
-        return testing.JitArguments(a_, b_, c_, current_stream)
+        return testing.JitArguments(
+            a_,
+            b_,
+            c_,
+            current_stream,
+            workspace,
+            Int32(swizzle_size),
+            Boolean(raster_along == "m"),
+            Int32(fallback_max_active_clusters),
+        )
 
     workspace_count = 1
     if use_cold_l2:
@@ -1130,7 +1179,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mnkl",
         type=_parse_comma_separated_ints,
-        default=(256, 256, 512, 1),
+        default=(1024, 1024, 512, 1),
         help="mnkl dimensions (comma-separated)",
     )
 
@@ -1150,7 +1199,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--skip_ref_check", action="store_true", help="Skip reference checking"
+        "--ref_check_device",
+        type=str,
+        default="cuda",
+        choices=["cuda", "cpu", "skipped"],
+        help="Device for the reference check, or 'skipped' to omit it",
     )
 
     parser.add_argument(
@@ -1250,9 +1303,61 @@ if __name__ == "__main__":
     parser.add_argument(
         "--raster_order",
         type=str,
-        choices=["m", "n"],
+        choices=["m", "n", "heuristic"],
         default="m",
         help="Rasterization order of clusters",
+    )
+
+    parser.add_argument(
+        "--split_k",
+        type=int,
+        default=1,
+        help="Number of K partitions; requires a --reduction_strategy other than 'none'",
+    )
+    parser.add_argument(
+        "--reduction_strategy",
+        type=str,
+        choices=["none", "gmem-splitk", "cluster-splitk"],
+        default="none",
+        help="How the K partitions are reduced: a second GMEM kernel, or in-kernel over DSMEM",
+    )
+    parser.add_argument(
+        "--work_strategy",
+        type=str,
+        choices=["grid", "static", "clc"],
+        default="static",
+        help="How output tiles are handed to CTAs",
+    )
+    parser.add_argument(
+        "--rasterization_strategy",
+        type=str,
+        choices=["none", "affine"],
+        default="affine",
+        help="How a work index is decoded into a tile coordinate",
+    )
+    parser.add_argument(
+        "--num_scheduler_stages",
+        type=int,
+        default=1,
+        help="Depth of the CLC work-fetch pipeline",
+    )
+    parser.add_argument(
+        "--use_pdl",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Launch the GEMM with programmatic dependent launch",
+    )
+    parser.add_argument(
+        "--use_reduction_pdl",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Launch the GMEM split-K reduction kernel with programmatic dependent launch",
+    )
+    parser.add_argument(
+        "--precompute_scheduler_params",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Prepare scheduler parameters on the host (requires static/affine/none)",
     )
 
     args = parser.parse_args()
@@ -1313,11 +1418,19 @@ if __name__ == "__main__":
         args.tolerance,
         args.warmup_iterations,
         args.iterations,
-        args.skip_ref_check,
+        args.ref_check_device,
         args.use_cold_l2,
         args.benchmark == "default",
         args.init_normal,
         args.normal_mean,
         args.normal_std,
+        split_k=args.split_k,
+        reduction_strategy=args.reduction_strategy,
+        work_strategy=args.work_strategy,
+        rasterization_strategy=args.rasterization_strategy,
+        num_scheduler_stages=args.num_scheduler_stages,
+        use_pdl=args.use_pdl,
+        use_reduction_pdl=args.use_reduction_pdl,
+        precompute_scheduler_params=args.precompute_scheduler_params,
     )
     print("PASS")

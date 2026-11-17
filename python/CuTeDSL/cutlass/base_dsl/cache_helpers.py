@@ -40,6 +40,14 @@ from .._mlir import ir
 # =============================================================================
 
 
+def get_windows_user() -> str:
+    """
+    Get the current user on Windows.
+    """
+    import getpass
+
+    return getpass.getuser()
+
 
 def get_current_user() -> str:
     """
@@ -48,13 +56,17 @@ def get_current_user() -> str:
     user = os.getenv("USER") or os.getenv("USERNAME")
     if user:
         return user
-    # Try Unix-like systems
-    try:
-        import pwd
+    # pwd only exists on Unix. Testing sys.platform (not just catching the
+    # ImportError) also stops mypy from type-checking these calls for Windows.
+    if sys.platform != "win32":
+        try:
+            import pwd
 
-        return pwd.getpwuid(os.getuid()).pw_name
-    except (ImportError, KeyError, AttributeError, OSError):
-        raise
+            return pwd.getpwuid(os.getuid()).pw_name
+        except (ImportError, KeyError, AttributeError, OSError):
+            pass
+    # Fallback for Windows or if pwd fails
+    return get_windows_user()
 
 
 def normalize_path(path: str | Path) -> Path:
@@ -72,15 +84,25 @@ def get_default_generated_ir_path(dsl_name: str = "CUTE_DSL") -> str:
         return path
     tmp_dir = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
 
+    # Preserve the legacy "cutlass_python_cache" directory name for CUTE_DSL
+    # (the historical default) so existing caches on disk stay valid. Other
+    # callers get their own cache directory derived from dsl_name so they
+    # don't collide with -- or get shadowed by -- CuTe's.
+    dir_name = (
+        "cutlass_python_cache"
+        if dsl_name == "CUTE_DSL"
+        else f"{dsl_name.lower()}_cache"
+    )
+
     def get_reusable_temp_dir(name: str) -> str:
         p = tmp_dir / f"{get_current_user()}/{name}"
         p.mkdir(parents=True, exist_ok=True)
         return str(p)
 
     try:
-        return get_reusable_temp_dir("cutlass_python_cache")
+        return get_reusable_temp_dir(dir_name)
     except Exception as e:
-        fallback = str(tmp_dir / "cutlass_python_cache")
+        fallback = str(tmp_dir / dir_name)
         log().warning(
             f"Could not determine user or create cache directory, using fallback path {fallback}. Error: {e}"
         )

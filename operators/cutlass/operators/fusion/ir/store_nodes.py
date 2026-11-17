@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -37,7 +36,11 @@ Store node and implementations
 import ctypes
 
 from cutlass.operators.fusion.library import DataType, FloatRoundStyle, FunctionalOp
-from cutlass.operators.fusion.ir.c_types import dtype2ctype, to_ctype_value, tuple_factory
+from cutlass.operators.fusion.ir.c_types import (
+    dtype2ctype,
+    to_ctype_value,
+    tuple_factory,
+)
 from cutlass.operators.fusion.ir.node import NodeBase, ImplBase, NoOpImpl
 from cutlass.operators.fusion.ir.tensor import Tensor
 
@@ -77,9 +80,16 @@ class StoreDImpl(StoreImplBase):
 
     @staticmethod
     def match(node, problem_size: tuple):
-        if node.name == "D" and node.store_tensor.shape == problem_size:
-            return True
-        return False
+        """Match ``D`` when it holds the whole epilogue result.
+
+        That is the accumulator's shape, except that a gated producer
+        halves N, so D is narrower by ``node.accum_split_factor``.
+        """
+        if node.name != "D":
+            return False
+        expected = tuple(problem_size)
+        expected = expected[:-1] + (expected[-1] // node.accum_split_factor,)
+        return node.store_tensor.shape == expected
 
 
 class AuxStoreImpl(StoreImplBase):
@@ -271,6 +281,23 @@ class StoreNode(NodeBase):
         self.element_output = input_node_metas[0].element_output
 
     def broadcast_propagation(self, input_node_metas: "list[NodeBase]"):
+        """Fit the user's output tensor to the shape the epilogue computes.
+
+        :raises ValueError: if the output tensor cannot take that shape, for
+            example a gated activation's output that has the accumulator's
+            full N instead of half of it.
+        """
         super().broadcast_propagation(input_node_metas)
         if self.is_output:
-            self._store_tensor.broadcast(self.tensor.shape)
+            try:
+                self._store_tensor.broadcast(self.tensor.shape)
+            except NotImplementedError as error:
+                gated = (
+                    f", narrowed {self.accum_split_factor}x along N by a gated activation"
+                    if self.accum_split_factor != 1
+                    else ""
+                )
+                raise ValueError(
+                    f"Epilogue output {self.name!r} has shape {self._store_tensor.shape}, "
+                    f"but the epilogue computes shape {self.tensor.shape}{gated}."
+                ) from error

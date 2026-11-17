@@ -41,4 +41,9 @@ cutlass_example_add_executable(
   test_cta_reduce.cu
 )
 
+cutlass_example_add_executable(
+  93_blackwell_low_latency_gqa_mailboxes
+  test_mailboxes.cu
+)
+
 endif()

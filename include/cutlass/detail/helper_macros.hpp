@@ -68,6 +68,26 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// The pragma enables compiler optimizations tuned for matrix multiply-accumulate operations.
+// Available with nvcc and NVRTC 13.3 and newer.
+// See https://docs.nvidia.com/cuda//cuda-programming-guide/05-appendices/cpp-language-extensions.html#mma-throughput-pragma
+#if !defined(CUTLASS_ENABLE_MMA_THROUGHPUT_PRAGMA)
+#  if (defined(__NVCC__) || defined(__CUDACC_RTC__)) && \
+      ((__CUDACC_VER_MAJOR__ > 13) || ((__CUDACC_VER_MAJOR__ == 13) && (__CUDACC_VER_MINOR__ >= 3)))
+#    define CUTLASS_ENABLE_MMA_THROUGHPUT_PRAGMA 1
+#  else
+#    define CUTLASS_ENABLE_MMA_THROUGHPUT_PRAGMA 0
+#  endif
+#endif
+
+#if CUTLASS_ENABLE_MMA_THROUGHPUT_PRAGMA
+#  define CUTLASS_PRAGMA_MMA_THROUGHPUT _Pragma("nv_mma_throughput")
+#else
+#  define CUTLASS_PRAGMA_MMA_THROUGHPUT
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template<typename T>
 CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &) 
 { }
@@ -87,6 +107,28 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
 #include <cassert>
 #endif
 
+// The libcu++ bundled with CUDA 11.x does not support <cuda/std/cmath> in
+// host compilations: it expects glibc's ::signbit, ::isfinite, INFINITY etc.
+// to be declared before it is included. Such toolkits fall back to <cmath>.
+#if !defined(CUTLASS_USE_CUDA_STD_CMATH)
+#  if defined(__CUDACC_RTC__)
+#    define CUTLASS_USE_CUDA_STD_CMATH 1
+#  else
+#    include <cuda_runtime_api.h>
+#    if defined(CUDART_VERSION) && (CUDART_VERSION >= 12000)
+#      define CUTLASS_USE_CUDA_STD_CMATH 1
+#    else
+#      define CUTLASS_USE_CUDA_STD_CMATH 0
+#    endif
+#  endif
+#endif
+
+#if CUTLASS_USE_CUDA_STD_CMATH
+#include <cuda/std/cmath>
+#else
+#include <cmath>
+#endif
+
 #if defined(__CUDA_ARCH__)
   #if defined(_MSC_VER)
     #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); asm volatile ("brkpt;\n"); }
@@ -102,17 +144,17 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
 #endif
 
 // CUTLASS_CMATH_NAMESPACE is the namespace where code can find
-// <cmath> functions like isnan and log.  Such functions are in
-// the std namespace in host code, but in the global namespace
-// in device code.
+// <cmath> functions like isnan and log: libcu++'s cuda::std, whose
+// functions are host and device functions under every host standard
+// library and under NVRTC. In a device pass, the global namespace and
+// std hold whatever the host standard library declares there, and
+// libc++ declares host-only inlines.
 //
 // The intended use case for this macro is in "using" declarations
 // for making argument-dependent lookup (ADL) work in generic code.
 // For example, if T is cutlass::half_t, the following code will
 // invoke cutlass::isnan(half_t).  If T is float, it will invoke
-// std::isnan on host and ::isnan on device.  (CUTLASS's support
-// for NVRTC prevents it from using things in the std namespace
-// in device code.)  Correct use of "using" declarations can help
+// cuda::std::isnan.  Correct use of "using" declarations can help
 // avoid unexpected implicit conversions, like from half_t to float.
 //
 // template<class T>
@@ -121,19 +163,12 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
 //   return isnan(x);
 // }
 //
-// Without this macro, one would need to write the following.
-//
-// template<class T>
-// bool foo(T x) {
-// #if defined(__CUDA_ARCH__)
-//   using ::isnan;
-// #else
-//   using std::isnan;
-// #endif
-//   return isnan(x);
-// }
+// Without CUTLASS_USE_CUDA_STD_CMATH, the functions are in the std
+// namespace in host code, but in the global namespace in device code.
 
-#if defined(__CUDA_ARCH__)
+#if CUTLASS_USE_CUDA_STD_CMATH
+#  define CUTLASS_CMATH_NAMESPACE cuda::std
+#elif defined(__CUDA_ARCH__)
 #  define CUTLASS_CMATH_NAMESPACE
 #else
 #  define CUTLASS_CMATH_NAMESPACE std

@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -36,9 +35,10 @@ Base class for Python EVT Frontend
 
 from typing import Union
 
-from cutlass.operators.fusion.library import DataType
+from cutlass.operators.fusion.library import DataType, GatedOp
 from cutlass.operators.fusion.ir import (
     ComputeNode,
+    GatedComputeNode,
     DAGIR,
     LayoutNode,
     LoadNode,
@@ -243,7 +243,10 @@ class EVTFrontendBase:
         if name is None:
             name = f"compute_{self.compute_cnt}"
             self.compute_cnt += 1
-        compute_node = ComputeNode(
+        # A gated op is not elementwise -- it halves N -- so it needs the
+        # node class that carries its own shape rules.
+        node_class = GatedComputeNode if isinstance(op, GatedOp) else ComputeNode
+        compute_node = node_class(
             name=name,
             fn=op,
             element_output=self.element_compute,
