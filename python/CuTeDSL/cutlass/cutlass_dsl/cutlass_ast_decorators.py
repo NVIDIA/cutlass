@@ -742,7 +742,7 @@ def _while_execute_dynamic(
     ) -> None:
         # Generate a condition op instead of yield op.
         cond = cond_and_results[0]
-        ir_cond = as_numeric(cond).ir_value()
+        ir_cond = Boolean(cond).ir_value()
         before_result_list = ScfGenerator._normalize_region_result_to_list(
             cond_and_results[1]
         )
