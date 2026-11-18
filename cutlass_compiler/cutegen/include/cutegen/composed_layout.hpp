@@ -652,9 +652,14 @@ auto slice_and_offset(const TCoord&                       crd,
 
     const layout_t sliced_layout = slice(crd, lay_b);
     // A layout that is a slice of a static layout is also static
-    assert(is_static(sliced_layout));
+    if(!is_static(sliced_layout) || !is_valid(sliced_layout))
+        return std::make_tuple(composed_layout_t(cg_error_t{}), offset_t(0));
+    // Composition with the swizzle Z/Y projection can fail (e.g. outer modes that
+    // do not compose with the projection). Soft-error instead of static_size assert.
+    // See NVIDIA/cutlass#3454: S<3,4,3> o 0 o (10,2):(2,1) + (_,0).
     const layout_t sliced_layout_only_zy = composition(projection_layout_only_zy, sliced_layout);
-    assert(is_static(sliced_layout_only_zy));
+    if(!is_valid(sliced_layout_only_zy) || !holds_int(size(sliced_layout_only_zy)))
+        return std::make_tuple(composed_layout_t(cg_error_t{}), offset_t(0));
 
     const auto swizzle_active_bits = sliced_layout_only_zy(static_size(sliced_layout_only_zy) - 1);
     using index_t                  = decltype(swizzle_active_bits);
@@ -667,7 +672,8 @@ auto slice_and_offset(const TCoord&                       crd,
     // sw_a. We convert that to a boolean.
     const auto intersection = scalar_bitwise_and<index_t>(swizzle_active_bits,
                                                           scalar_bitwise_not<index_t>(sw_a(swizzle_active_bits)));
-    assert(holds_int(intersection));
+    if(!holds_int(intersection))
+        return std::make_tuple(composed_layout_t(cg_error_t{}), offset_t(0));
     //const bool z_and_y_collide = swizzle_active_bits & ~sw_a(swizzle_active_bits);
     const bool z_and_y_collide = (intersection != 0);
 
@@ -675,9 +681,12 @@ auto slice_and_offset(const TCoord&                       crd,
     const TCoord   diced_crd            = dice(crd, crd);
     const layout_t diced_layout_only_zy = composition(projection_layout_only_zy, diced_layout);
     const layout_t diced_layout_anti_zy = composition(projection_layout_anti_zy, diced_layout);
+    if(!is_valid(diced_layout_only_zy) || !is_valid(diced_layout_anti_zy))
+        return std::make_tuple(composed_layout_t(cg_error_t{}), offset_t(0));
 
     const auto idx_of_diced_coord_only_zy = diced_layout_only_zy(diced_crd);
-    assert(holds_int_or_dynamic_int(idx_of_diced_coord_only_zy));
+    if(!holds_int_or_dynamic_int(idx_of_diced_coord_only_zy))
+        return std::make_tuple(composed_layout_t(cg_error_t{}), offset_t(0));
     // Assuming that idx_of_diced_coord_only_zy is not static, the following bitwise XOR creates
     // a dynamic offset. In case we can degenerate the sliced swizzled layout into an affine layout,
     // the latter is doomed to be partially dynamic. CuTe-C++ further optimizes this by tracking
