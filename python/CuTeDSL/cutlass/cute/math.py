@@ -115,7 +115,7 @@ _UNARY = (
 
 _BINARY = (
     "atan2", "pow", "fpowi", "ipowi", "copysign",
-    "add", "sub", "mul", "div", "rem",
+    "add", "sub", "mul", "div", "floordiv", "rem", "mod",
     "min", "max",
 )  # fmt: skip
 

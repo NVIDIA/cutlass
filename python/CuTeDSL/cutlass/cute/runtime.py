@@ -12,6 +12,7 @@
 
 import ctypes
 import math
+import threading
 from functools import lru_cache
 import itertools
 import operator
@@ -193,6 +194,8 @@ class _Tensor(Tensor):
         self._dtype: Any = None
         self._use_32bit_stride = use_32bit_stride
         self._c_pointers_cache: Optional[List[int]] = None
+        # Serializes the first call to ``__c_pointers__``; see there.
+        self._c_pointers_lock = threading.Lock()
 
     @property  # type: ignore[misc]
     def __class__(self) -> Type[Tensor]:  # type: ignore[override]
@@ -429,13 +432,20 @@ class _Tensor(Tensor):
         return self._dltensor_wrapper.get_dynamic_strides_mask()
 
     def __c_pointers__(self) -> List[int]:
-        if self._c_pointers_cache is None:
-            self.load_dltensor()
-            self._memref_desc = self._dltensor_wrapper.build_memref_desc(
-                self._assumed_align
-            )
-            self._c_pointers_cache = [_cute_ir.pycapsule_get_pointer(self._memref_desc)]
-        return self._c_pointers_cache
+        # Tensors may be used by several kernels at once (sensible for
+        # read-only tensors), so we need to protect the cache with a lock.
+        cache = self._c_pointers_cache
+        if cache is None:
+            with self._c_pointers_lock:
+                cache = self._c_pointers_cache
+                if cache is None:
+                    self.load_dltensor()
+                    self._memref_desc = self._dltensor_wrapper.build_memref_desc(
+                        self._assumed_align
+                    )
+                    cache = [_cute_ir.pycapsule_get_pointer(self._memref_desc)]
+                    self._c_pointers_cache = cache
+        return cache
 
     def __get_mlir_types__(self) -> List[ir.Type]:
         return [self.mlir_type]

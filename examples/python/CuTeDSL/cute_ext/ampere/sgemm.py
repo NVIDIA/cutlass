@@ -30,6 +30,10 @@
 SM80 (Ampere) SIMT GEMM using tensor core MMA.
 
 This kernel uses a single warp (32 threads) with a 16x8x8 MMA atom.
+
+This example intentionally combines ordinary ``@cute.jit`` / ``@cute.kernel``
+decorators with CuTe extension APIs and pins the extension compiler explicitly.
+Environment settings therefore use the ``CUTE_DSL_*`` prefix.
 """
 
 import torch
@@ -40,7 +44,7 @@ from cutlass.cute import experimental as cute_ext
 import cutlass.torch as cutlass_torch
 
 
-@cute.experimental.kernel
+@cute.kernel
 def sgemm_kernel(mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
     """Compute D = A @ B with a single-warp SM80 tensor-core pipeline."""
     tiler_mk = (16, 8)
@@ -216,7 +220,7 @@ def sgemm_kernel(mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
     cute_ext.partition_and_copy(copy_r2g_c.get_slice(tid_x), bufferRC, gD_tile)
 
 
-@cute.experimental.jit
+@cute.jit
 def sgemm(a: cute.Tensor, b: cute.Tensor, d: cute.Tensor):
     tile_mn = cute.core._pack_shape((16, 8))
     div = cute.tiled_divide(d, tile_mn)
@@ -224,7 +228,6 @@ def sgemm(a: cute.Tensor, b: cute.Tensor, d: cute.Tensor):
     sgemm_kernel(a, b, d).launch(
         grid=grid,
         block=(32, 1, 1),
-        smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_80")),
     )
 
 
@@ -254,7 +257,7 @@ def run_sgemm(m, n, k, l=1):
         create_tensors(m, n, k, l, cutlass.Float16, cutlass.Float32)
     )
 
-    compiled = cute_ext.compile(sgemm, a_tensor, b_tensor, c_tensor)
+    compiled = cute.compile(sgemm, a_tensor, b_tensor, c_tensor)
     compiled(a_tensor, b_tensor, c_tensor)
 
     ref_c = torch.einsum(

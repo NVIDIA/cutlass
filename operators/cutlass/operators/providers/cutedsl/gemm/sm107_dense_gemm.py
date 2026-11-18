@@ -31,6 +31,8 @@ from collections.abc import Callable, Generator
 
 import cutlass
 import cutlass.cute as cute
+from cutlass import testing
+from cutlass.cutlass_dsl import Boolean, Int32
 
 import cutlass.operators.utils.generate as generate
 from cutlass.kernels.rubin.gemm.dense_gemm_universal import (
@@ -42,6 +44,9 @@ from cutlass.kernels.rubin.gemm.dense_gemm_universal import (
 from cutlass.operators.arch import TargetSm
 from cutlass.operators.arguments import DenseTensor, EpilogueArguments, GemmArguments
 from cutlass.operators.artifact import CompiledArtifact
+from cutlass.operators.device_properties import (
+    DeviceProperties,
+)
 from cutlass.operators.metadata import (
     GemmOperandsMetadata,
     OperatorMetadata,
@@ -49,9 +54,6 @@ from cutlass.operators.metadata import (
 )
 from cutlass.operators.mma import RubinTcgen05Mma
 from cutlass.operators.providers.cutedsl import CuTeDSLProvider
-from cutlass.operators.providers.cutedsl.integration_utils.mma import (
-    get_max_active_clusters,
-)
 from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
 from cutlass.operators.status import Status
 from cutlass.operators.utils.common import tuple_to_string
@@ -102,12 +104,24 @@ class Sm107DenseGemmOperator(CuteDslOperator):
             fallback_cluster_shape_mn=fallback_cluster_shape_mn,
             use_tma_store=design.use_tma_store,
         )
+        # Dtype feasibility depends only on metadata, so check it once here
+        # rather than per supports() call.
+        self.impl.can_compile(
+            metadata.operands.A.dtype,
+            metadata.operands.B.dtype,
+            metadata.operands.out.dtype,
+        )
 
     def _supports(
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> Status:
-        """Delegate problem-dependent validation to the mixed-cluster kernel."""
-        major_strides = {(0, 1, 0): 0, (0, 0, 1): 1}
+        """Delegate problem-dependent validation to the mixed-cluster kernel.
+
+        The kernel's pre-flight checks take cute tensors, so fake compact
+        tensors carrying the arguments' shapes, dtypes, and major strides let
+        the kernel validate the problem without a GPU or real data.
+        """
+        stride_ranks = {(0, 1, 0): (2, 0, 1), (0, 0, 1): (2, 1, 0)}
         normalized_strides = (
             normalized_major_stride(
                 args.A.shape, args.A.stride, prepend_zeros_to_rank=3
@@ -119,53 +133,44 @@ class Sm107DenseGemmOperator(CuteDslOperator):
                 args.out.shape, args.out.stride, prepend_zeros_to_rank=3
             ),
         )
-        if any(stride not in major_strides for stride in normalized_strides):
+        if any(stride not in stride_ranks for stride in normalized_strides):
             return Status.fail(
                 f"Unsupported tensor major strides: {normalized_strides}"
             )
 
-        a_major = ("m", "k")[major_strides[normalized_strides[0]]]
-        b_major = ("k", "n")[major_strides[normalized_strides[1]]]
-        c_major = ("m", "n")[major_strides[normalized_strides[2]]]
-        if not Sm107DenseGemmUniversal.can_implement(
-            mnkl=tuple(args.problem_size),
-            a_dtype=args.A.dtype,
-            b_dtype=args.B.dtype,
-            c_dtype=args.out.dtype,
-            acc_dtype=args.accumulator_type,
-            a_major=a_major,
-            b_major=b_major,
-            c_major=c_major,
-            mma_tiler=self.impl.mma_tiler,
-            mma_inst_shape=self.impl.mma_inst_shape,
-            preferred_cluster_shape_mn=self.impl.cluster_shape_mn,
-            fallback_cluster_shape_mn=self.impl.fallback_cluster_shape_mn,
-        ):
-            return Status.fail(
-                f"SM107 mixed-cluster kernel cannot implement problem "
-                f"{tuple(args.problem_size)}"
+        m, n, k, batch = args.problem_size
+        dtypes = (args.A.dtype, args.B.dtype, args.out.dtype)
+        a, b, c = (
+            cute.runtime.make_fake_compact_tensor(
+                dtype, shape, stride_order=stride_ranks[stride], assumed_align=16
             )
+            for dtype, shape, stride in zip(
+                dtypes,
+                ((batch, m, k), (batch, k, n), (batch, m, n)),
+                normalized_strides,
+            )
+        )
+        try:
+            self.impl.can_implement(a, b, c, 1, "m")
+        except testing.CantImplementError as error:
+            return Status.fail(f"SM107 mixed-cluster kernel cannot implement: {error}")
         return Status.success()
 
     def _compile(
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> CompiledArtifact:
         stream = cute.runtime.make_fake_stream()
-        preferred_max_active_clusters = get_max_active_clusters(
-            self.impl.preferred_cluster_shape_mn
-        )
-        fallback_max_active_clusters = get_max_active_clusters(
-            self.impl.fallback_cluster_shape_mn
-        )
         return self.cute_compile(
             _operator_bmm,
             self.impl,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
-            preferred_max_active_clusters,
-            fallback_max_active_clusters,
             stream,
+            cute.runtime.nullptr(cutlass.Int8),
+            Int32(1),
+            Boolean(True),
+            Int32(0),  # placeholder for max_active_clusters_fallback
             lambda x: x,
             target_sm=target_sm,
         )
@@ -176,14 +181,31 @@ class Sm107DenseGemmOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        *,
+        device_properties: DeviceProperties,
     ) -> None:
         """Run a compiled Rubin mixed-cluster GEMM."""
+        # The fallback cluster is the smallest the launch can degrade to, so
+        # its occupancy bounds the grid.
+        fallback_cluster_shape_mn = self.impl.fallback_cluster_shape_mn
+        max_active_clusters = device_properties.max_active_clusters(
+            fallback_cluster_shape_mn
+        )
+        if max_active_clusters == 0:
+            raise RuntimeError(
+                f"no fallback cluster of shape {tuple(fallback_cluster_shape_mn)} "
+                f"can be resident on device {device_properties.device_id}"
+            )
         self.cute_run(
             compiled_artifact.compiled_obj,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
             to_cuda_stream(stream),
+            cute.runtime.nullptr(cutlass.Int8),
+            Int32(1),
+            Boolean(True),
+            Int32(max_active_clusters),
         )
 
     @staticmethod

@@ -134,7 +134,7 @@ sm100_sparse_compute_tile_shape_or_override() {
     constexpr bool IsBssp = (IsBsspMxf8f6f4 || IsBsspNvf4 || IsBsspMxf4);
     constexpr bool IsSp = not IsBssp;
 
-    constexpr auto compute_epi_tile_n = [&](int epi_smem_size_kb, int num_epi_stage, int element_bit_size) constexpr -> int {
+    constexpr auto compute_epi_tile_n = [=](int epi_smem_size_kb, int num_epi_stage, int element_bit_size) constexpr -> int {
       // Use Epi Smem + Num Epi Stage to compute Epi Tile N
       return cutlass::bytes_to_bits(epi_smem_size_kb * 1024) / num_epi_stage / EpiTileM / element_bit_size;
     };
@@ -144,7 +144,7 @@ sm100_sparse_compute_tile_shape_or_override() {
                                       cute::is_same_v<typename FusionOp::GmemLayoutTagScalefactor, cutlass::layout::RowMajor>;
     constexpr bool is_sfd_row_major_vs64 = is_sfd_row_major ? (FusionOp::SFVecSize == 64) : false;
 
-    constexpr auto EpiTileN = [&]() constexpr -> int {
+    constexpr auto EpiTileN = [=]() constexpr -> int {
       // VoidC Kernel
       if (DisableSource) {
         auto d_bits = cute::sizeof_bits_v<ElementD>;
@@ -404,8 +404,8 @@ sm100_sparse_compute_tile_shape_or_override() {
     }();
 
     // stride by tmem warp layout and return a by-mode tiler
-    auto tile_m = Layout<Int<EpiTileM>>{};
-    auto tile_n = Layout<Shape <Int<EpiTileN / WarpN>,Int<        WarpN>>,
+    auto tile_m = cute::Layout<Int<EpiTileM>>{};
+    auto tile_n = cute::Layout<Shape <Int<EpiTileN / WarpN>,Int<        WarpN>>,
                          Stride<Int<               1>,Int<CtaN / WarpN>>>{};
 
     return make_tile(tile_m, coalesce(tile_n));
@@ -450,7 +450,7 @@ sm100_sparse_get_tma_dispatch_policy() {
   // TMA store delay performs worse with residual loads
   constexpr bool DelayTmaStore = is_void_v<ElementC>;
 
-  constexpr auto ExpectedStagesD = [&]() constexpr -> int {
+  constexpr auto ExpectedStagesD = [=]() constexpr -> int {
     auto d_bits = cute::sizeof_bits_v<ElementD>;
     auto c_bits = cute::sizeof_bits_v<ElementC>;
     // None void_c kernel pick 2stageD here, in reality it may choose reuse smemC
@@ -502,7 +502,7 @@ sm100_sparse_get_tma_dispatch_policy() {
     }
   }();
 
-  constexpr auto ExpectedStagesC = [&]() constexpr -> int {
+  constexpr auto ExpectedStagesC = [=]() constexpr -> int {
     auto d_bits = cute::sizeof_bits_v<ElementD>;
     auto c_bits = cute::sizeof_bits_v<ElementC>;
     // Void_c kernel only use smemD. StageC doesn't matter
@@ -937,7 +937,7 @@ struct CallbacksBuilder<
   using Callbacks = fusion::FusionCallbacks<
     Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     FusionOp, CtaTileShape_MNK, EpilogueTile_MN,
-    Layout<_1,_0>, DefaultCopy // aux bit tensor doesn't use smem
+    cute::Layout<_1,_0>, DefaultCopy // aux bit tensor doesn't use smem
   >;
 };
 
@@ -960,7 +960,7 @@ struct CallbacksBuilder<
 > {
   using Callbacks = fusion::FusionCallbacks<
     Sm100NoSmemWarpSpecialized, FusionOp, TileShape_MNK, EpilogueTile_MN,
-    Layout<_1,_0>, DefaultCopy // aux tensor doesn't use tma
+    cute::Layout<_1,_0>, DefaultCopy // aux tensor doesn't use tma
   >;
 };
 
@@ -1005,7 +1005,7 @@ sm100_dense_compute_tile_shape_or_override() {
 
     constexpr int DpFull = 32; // tmem datapaths in 1 subpartition
     constexpr int M = cute::min(CtaM, DpFull * WarpM); // target 32dp tmem load
-    constexpr int N_perf = [&]() constexpr { // Known subtile sizes tested for perf
+    constexpr int N_perf = [=]() constexpr { // Known subtile sizes tested for perf
       // Epilogues w/o residual load are less sensitive to smem allocation
       // Target a fixed amount of compute per epilogue iteration
       if (DisableSource) {
@@ -1047,8 +1047,8 @@ sm100_dense_compute_tile_shape_or_override() {
     static_assert(CtaN >= N_min_C && CtaN >= N_min_D, "CTA tile too small");
 
     // stride by tmem warp layout and return a by-mode tiler
-    auto tile_m = Layout<Int<M>>{};
-    auto tile_n = Layout<Shape <Int<N / WarpN>,Int<        WarpN>>,
+    auto tile_m = cute::Layout<Int<M>>{};
+    auto tile_n = cute::Layout<Shape <Int<N / WarpN>,Int<        WarpN>>,
                         Stride<Int<         1>,Int<CtaN / WarpN>>>{};
 
     return make_tile(tile_m, coalesce(tile_n));

@@ -38,12 +38,8 @@ import torch
 import cutlass
 import cutlass.cute as cute
 import cutlass.torch as cutlass_torch
-from cutlass import (
-    cute as cute,
-    utils as utils,
-)
+from cutlass import core, testing, utils
 from cutlass.cute import experimental as cute_ext
-from cutlass import testing
 from cutlass.cute.nvgpu import tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
@@ -61,8 +57,11 @@ if __name__ == "__main__":
     _current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, os.path.join(_current_dir, "../../../"))
 
-from cutlass.utils import PersistentTileSchedulerParams, StaticPersistentTileScheduler
 from helpers import cli_helper as cli
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 
 """Dense block-scaled GEMM for Blackwell (sm100), implemented in Cutlass IR, featuring:
@@ -106,11 +105,19 @@ class BlockScaledDenseGemmKernel:
         max_active_fallback_clusters: Optional[int] = None,
         epilogue_op=lambda x: x,
         allow_accumulator_overlap: bool = True,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
     ):
         self.ab_dtype = ab_dtype
         self.acc_dtype = acc_dtype
         self.sf_dtype = sf_dtype
         self.sf_vec_size = sf_vec_size
+        if swizzle_size <= 0:
+            raise ValueError(
+                f"swizzle_size must be a positive integer, got {swizzle_size}"
+            )
+        self.swizzle_size = swizzle_size
+        self.raster_along_m = raster_along_m
         # MMA atom shape
         self.mma_inst_shape_mn = mma_inst_mn
 
@@ -123,7 +130,7 @@ class BlockScaledDenseGemmKernel:
 
         # ``cluster_shape_mn`` is the physical launch cluster, including
         # the peer pair required by a 2-CTA MMA atom.
-        self.cluster_shape_mn = cluster_shape_mn
+        self.cluster_shape = (*cluster_shape_mn, 1)
         cluster_shape_mn_selfcast = (2, 1) if self.use_2cta_instrs else (1, 1)
         self.use_tma_multicast = cluster_shape_mn != cluster_shape_mn_selfcast
 
@@ -134,16 +141,18 @@ class BlockScaledDenseGemmKernel:
         self.max_active_clusters = max_active_clusters
 
         if fallback_cluster_shape_mn is None:
-            self.fallback_cluster_shape_mn = self.cluster_shape_mn
+            self.fallback_cluster_shape = self.cluster_shape
             self.max_active_fallback_clusters = max_active_clusters
         else:
-            # The N in (64, 192) codepath uses a raw-CuTe TMA atom for
-            # SFB whose multicast factor is baked in at host time (see
-            # the ``cluster_shape_to_tma_atom_SFB`` call in ``__call__``).
-            # Mixed-cluster would need the multicast factor to vary at
-            # runtime across the preferred/fallback branches, which the
-            # static atom can't express. Reject the combination here so
-            # the kernel constructor fails fast.
+            # The N in (64, 192) SFB loads pair with
+            # ``cluster_layout_sfb_vmnk``, which is built here at host
+            # time from the primary ``cluster_shape_mn``. Mixed-cluster
+            # would need the fallback launch to use its own SFB cluster
+            # layout (derivable in-kernel from
+            # ``cute.arch.block_in_cluster_dim()``, like
+            # ``cluster_layout_vmnk``), which has not been wired up or
+            # validated. Reject the combination here so the kernel
+            # constructor fails fast.
             if fallback_cluster_shape_mn != cluster_shape_mn and mma_inst_mn[1] in (
                 64,
                 192,
@@ -153,9 +162,10 @@ class BlockScaledDenseGemmKernel:
                     f"{fallback_cluster_shape_mn} != cluster_shape_mn="
                     f"{cluster_shape_mn}) is not supported with "
                     f"mma_inst_mn[1]={mma_inst_mn[1]}; the N in (64, 192) "
-                    f"codepaths bake the SFB TMA multicast factor into "
-                    f"a host-built atom. Use mma_inst_mn[1] in (128, 256), "
-                    f"or run with a single cluster shape."
+                    f"SFB loads use a host-built SFB cluster layout that "
+                    f"cannot vary across the preferred/fallback launches. "
+                    f"Use mma_inst_mn[1] in (128, 256), or run with a "
+                    f"single cluster shape."
                 )
             # Apply the same physical cluster-shape rules as the primary
             # shape (see can_implement).
@@ -183,7 +193,7 @@ class BlockScaledDenseGemmKernel:
                     f"contains {fallback_cluster_size} CTAs, exceeding the SM100 "
                     f"maximum of 16."
                 )
-            self.fallback_cluster_shape_mn = fallback_cluster_shape_mn
+            self.fallback_cluster_shape = (*fallback_cluster_shape_mn, 1)
             self.max_active_fallback_clusters = (
                 max_active_fallback_clusters
                 if max_active_fallback_clusters is not None
@@ -413,8 +423,7 @@ class BlockScaledDenseGemmKernel:
         # is rounded up to (128, 256) respectively; (2) SFB is
         # replicated across 2-CTA peers rather than split along M, so
         # its partitioning is per-CTA even when the main atom is
-        # 2-CTA. For N in {128, 256} the round-up is a no-op; built
-        # unconditionally, but not consumed.
+        # 2-CTA. For N in {128, 256} the round-up is a no-op.
         self.mma_inst_shape_mn_sfb = (
             self.mma_inst_shape_mn[0] // self.num_mma_ctas,
             cute.round_up(self.mma_inst_shape_mn[1], 128),
@@ -435,7 +444,7 @@ class BlockScaledDenseGemmKernel:
             self.mma_inst_shape_mn_sfb,
         )
         self.cluster_layout_sfb_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.cluster_shape_mn, 1)),
+            cute.make_layout(self.cluster_shape),
             (self.tiled_mma_sfb.thr_id.shape,),
         )
 
@@ -538,7 +547,7 @@ class BlockScaledDenseGemmKernel:
         self.num_stages = counts["tma"]
         self.tma_store_stages = counts["d"]
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA: cute.Tensor,
@@ -563,8 +572,8 @@ class BlockScaledDenseGemmKernel:
         # Persistent tile scheduler. Computes the launch grid and the
         # scheduler params that ``kernel`` uses to walk per-CTA tile
         # coords, so each CTA can process multiple tiles in sequence.
-        cluster_shape = (*self.cluster_shape_mn, 1)
-        fallback_cluster_shape = (*self.fallback_cluster_shape_mn, 1)
+        cluster_shape = self.cluster_shape
+        fallback_cluster_shape = self.fallback_cluster_shape
         num_ctas_mnl = (
             cute.ceil_div(mD.layout.shape[0], self.cta_tile_shape_mnk[0]),
             cute.ceil_div(mD.layout.shape[1], self.cta_tile_shape_mnk[1]),
@@ -573,6 +582,8 @@ class BlockScaledDenseGemmKernel:
         tile_sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl,
             cluster_shape,
+            swizzle_size=self.swizzle_size,
+            raster_along_m=self.raster_along_m,
             fallback_cluster_shape_mnk=fallback_cluster_shape,
         )
 
@@ -586,99 +597,13 @@ class BlockScaledDenseGemmKernel:
             # so peer CTAs always come in complete groups (required for
             # 2-CTA selfcast).
             max_active_clusters = (
-                cute.ceil_div(num_ctas_mnl[0], self.cluster_shape_mn[0])
-                * cute.ceil_div(num_ctas_mnl[1], self.cluster_shape_mn[1])
+                cute.ceil_div(num_ctas_mnl[0], self.cluster_shape[0])
+                * cute.ceil_div(num_ctas_mnl[1], self.cluster_shape[1])
                 * num_ctas_mnl[2]
             )
         grid = StaticPersistentTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters
         )
-
-        # Build the raw-CuTe SFB TMA atom + (possibly rewritten) gmem
-        # tensor up-front so the kernel can use them in the special
-        # ``mma_inst_mn[1] in (64, 192)`` codepaths. For other N
-        # values these are well-defined but unused.
-        sfb_op = sm100_utils.cluster_shape_to_tma_atom_SFB(
-            self.cluster_shape_mn, self.tiled_mma.thr_id
-        )
-        sfb_smem_layout_one = blockscaled_utils.make_smem_layout_sfb(
-            self.tiled_mma,
-            self.mma_tiler_mnk,
-            self.sf_vec_size,
-            1,
-        )
-        tma_atom_sfb, tma_tensor_sfb = cute.nvgpu.make_tiled_tma_atom_B(
-            sfb_op,
-            sfb_tensor,
-            sfb_smem_layout_one,
-            self.mma_tiler_sfb,
-            self.tiled_mma_sfb,
-            self.cluster_layout_sfb_vmnk.shape,
-            internal_type=cutlass.Int16,
-        )
-
-        # The ``mma_inst_mn[1] == 192`` case creates a misalignment
-        # between MMA atoms and SF tiles: SF tiles are indivisible
-        # 128-wide blocks, but MMA wants to consume 192 elements
-        # (along N) at a time, as illustrated below:
-        #
-        # +-----------------+
-        # | SF0 | SF1 | SF2 |
-        # +-----------------+
-        # |  MMA0  |  MMA1  |
-        # +-----------------+
-        #
-        # - MMA0 wants to read the lower 192 elements from tiles SF0 and SF1
-        # - MMA1 wants to read the upper 192 elements from tiles SF1 and SF2
-        # - after that, the pattern repeats
-        #
-        # Since each MMA reads two consecutive SF tiles, with consecutive
-        # MMAs starting at different tile boundaries, we rewrite SFB's
-        # layout such that we can index it with 1-tile granularity but
-        # transfer 2 tiles at once via a single TMA load instruction.
-        #
-        # Shifting the MMA read window to the lower/upper 192 elements
-        # is handled later by a TMEM-pointer shift in ``kernel``.
-        #
-        # Implemented in the lower-level CuTe dialect because
-        # cute_ext.tma_load() doesn't support overlapping tiles yet.
-        #
-        # The ``mma_inst_mn[1] == 64`` case has the *opposite*
-        # misalignment: each 128-wide SF tile feeds two consecutive
-        # 64-wide MMA tiles, as illustrated below:
-        #
-        # +-------------+
-        # |     SF0     |
-        # +-------------+
-        # | MMA0 | MMA1 |
-        # +-------------+
-        #
-        # - MMA0 reads the lower 64 elements of SF0
-        # - MMA1 reads the upper 64 elements of SF0
-        # - and so on
-        #
-        # so SFB tiles can be loaded as-is (no layout rewrite needed)
-        # and the kernel slices ``cta_n // 2`` to map each MMA tile
-        # to its sharing SF tile. The same TMEM-pointer shift handles
-        # the lower/upper 64-element selection.
-        if cutlass.const_expr(self.mma_inst_shape_mn[1] == 192):
-            x = tma_tensor_sfb.stride[0][1]
-            y = cute.ceil_div(tma_tensor_sfb.shape[0][1], 4)
-            new_shape = (
-                (tma_tensor_sfb.shape[0][0], ((2, 2), y)),
-                tma_tensor_sfb.shape[1],
-                tma_tensor_sfb.shape[2],
-            )
-            x_times_3 = 3 * x
-            new_stride = (
-                (tma_tensor_sfb.stride[0][0], ((x, x), x_times_3)),
-                tma_tensor_sfb.stride[1],
-                tma_tensor_sfb.stride[2],
-            )
-            tma_tensor_sfb = cute.make_tensor(
-                tma_tensor_sfb.iterator,
-                cute.make_layout(new_shape, stride=new_stride),
-            )
 
         self.kernel(
             self.tiled_mma,
@@ -690,8 +615,6 @@ class BlockScaledDenseGemmKernel:
             mAmax,
             self.tiled_mma_sfb,
             self.cluster_layout_sfb_vmnk,
-            tma_atom_sfb,
-            tma_tensor_sfb,
             tile_sched_params,
         ).launch(
             grid=grid,
@@ -702,10 +625,9 @@ class BlockScaledDenseGemmKernel:
             block=(192, 1, 1),
             cluster=cluster_shape,
             fallback_cluster=fallback_cluster_shape,
-            smem=self.smem_capacity,
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         tiled_mma: cute.TiledMma,
@@ -716,12 +638,12 @@ class BlockScaledDenseGemmKernel:
         mD: cute.Tensor,
         # Optional FP32 single-element GMEM output tensor = max(|Acc|)
         mAmax: Optional[cute.Tensor],
-        # SFB-related arguments consumed only by the N=192 codepath;
-        # built by ``__call__`` and ignored for N in {128, 256}.
+        # SFB-side tiled MMA and cluster layout. ``tiled_mma_sfb`` rounds
+        # N up to the 128-wide SF granularity (a no-op for N in
+        # {128, 256}) and is always per-CTA (SFB is replicated, not
+        # M-split, across 2-CTA peers).
         tiled_mma_sfb: cute.TiledMma,
         cluster_layout_sfb_vmnk: cute.Layout,
-        tma_atom_sfb: cute.CopyAtom,
-        tma_tensor_sfb: cute.Tensor,
         # Persistent tile scheduler params; necessary because the
         # launch grid no longer maps 1:1 to problem tiles.
         tile_sched_params: PersistentTileSchedulerParams,
@@ -733,14 +655,11 @@ class BlockScaledDenseGemmKernel:
         # Cluster layout for 2-CTA coordination. Degenerates to a
         # trivial layout (v-mode size 1) for 1-CTA, which makes the
         # 2-CTA-specific code below correctly turn into no-ops.
-        #
-        # Reading the cluster shape via ``cute.arch.block_in_cluster_dim()``
-        # lets the same source compile for both the preferred and the
-        # fallback launch shapes under mixed-cluster: the compiler
-        # specializes the kernel to a statically-known cluster shape per
-        # launched cluster.
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout(cute.arch.block_in_cluster_dim()),
+            cute.make_layout(cluster_shape),
             (tiled_mma.thr_id.shape,),
         )
         cluster_layout_v_size = cute.size(cluster_layout_vmnk.shape[0])
@@ -773,19 +692,53 @@ class BlockScaledDenseGemmKernel:
         tCgB = thr_mma.partition_B(gB_nkl)
         tCgSFA = thr_mma.partition_A(gSFA_mkl)
 
-        # Standard SFB gmem partition for the IR codepath. The N=64
-        # and N=192 codepaths skip this and partition from
-        # ``tma_tensor_sfb`` directly inside ``is_tma_load_warp``
-        # below; see the SFB-tile-vs-MMA-tile alignment comment in
-        # ``__call__`` for why.
-        if cutlass.const_expr(self.mma_inst_shape_mn[1] not in (64, 192)):
+        # SFB gmem partition. SF tiles are indivisible 128-wide blocks
+        # along N, so ``mma_tiler_sfb`` rounds the MMA-N up to the SF
+        # granularity and the per-tile coordinate remaps inside
+        # ``is_tma_load_warp`` map each MMA tile onto its SF window:
+        #
+        # N=192: each MMA tile reads two consecutive SF tiles, with
+        # consecutive MMA tiles starting at different tile boundaries:
+        #
+        # +-----------------+
+        # | SF0 | SF1 | SF2 |
+        # +-----------------+
+        # |  MMA0  |  MMA1  |
+        # +-----------------+
+        #
+        # Each load brings in one 128-aligned 256-wide window whose
+        # start is remapped per MMA tile (0, 128, 384, 512, ...);
+        # consecutive windows overlap in gmem, which is fine because
+        # every CTA issues its own load. Shifting the MMA read window
+        # to the lower/upper 192 elements is handled by a TMEM-pointer
+        # shift below.
+        #
+        # N=64: the opposite misalignment -- one 128-wide SF tile feeds
+        # two consecutive 64-wide MMA tiles:
+        #
+        # +-------------+
+        # |     SF0     |
+        # +-------------+
+        # | MMA0 | MMA1 |
+        # +-------------+
+        #
+        # so the SF tile index is ``cta_n // 2`` and the same
+        # TMEM-pointer shift selects the lower/upper 64 elements.
+        #
+        # N in {128, 256}: SF tiles align with MMA tiles (round-up is a
+        # no-op) and the index is ``cta_n``.
+        # SFB is replicated, not N-split: use the 1-CTA tiled_mma_sfb.
+        thr_mma_sfb = tiled_mma_sfb.get_slice(mma_tile_coord_v)
+        sfb_tiler_nk = (self.mma_tiler_sfb[1], self.mma_tiler_sfb[2])
+        # N=192 windows start at 128-aligned (not 256-aligned) offsets,
+        # so that path tiles a per-tile offset view of ``mSFB`` inside
+        # the producer loop instead of this static tiling.
+        if cutlass.const_expr(self.mma_inst_shape_mn[1] != 192):
             gSFB_nkl = cute.local_tile(
                 mSFB,
                 cute.slice_(self.mma_tiler_sfb, (0, None, None)),
                 (None, None, None),
             )
-            # SFB is replicated, not N-split: use the 1-CTA tiled_mma_sfb.
-            thr_mma_sfb = tiled_mma_sfb.get_slice(mma_tile_coord_v)
             tCgSFB = thr_mma_sfb.partition_B(gSFB_nkl)
 
         # Shared memory layouts for A/B/SFA/SFB/D. A, B, SFA, and SFB
@@ -967,6 +920,20 @@ class BlockScaledDenseGemmKernel:
             else:
                 tma_operation_type = cute_ext.OperationTypeEnum.SM90_TMA_LOAD
 
+        # SFB's own operation type for the N in {64, 192} loads, paired
+        # with ``cluster_layout_sfb_vmnk``. ``tiled_mma_sfb`` is 1-CTA
+        # (SFB is replicated across 2-CTA peers rather than M-split),
+        # so the 2-CTA case uses the peer-aware multicast load to reach
+        # both peers' SMEM.
+        if cutlass.const_expr(self.use_2cta_instrs):
+            sfb_tma_operation_type = (
+                cute_ext.OperationTypeEnum.SM100_TMA_LOAD_2SM_MULTICAST
+            )
+        elif cutlass.const_expr(cute.size(cluster_layout_sfb_vmnk.shape[1]) > 1):
+            sfb_tma_operation_type = cute_ext.OperationTypeEnum.SM90_TMA_LOAD_MULTICAST
+        else:
+            sfb_tma_operation_type = cute_ext.OperationTypeEnum.SM90_TMA_LOAD
+
         # TMA multicast projection modes (cluster-axis indices in vmnk).
         # A and SFA broadcast along cluster-N (proj_A=2) because A doesn't
         # vary along N; B broadcasts along cluster-M (proj_B=1) because B
@@ -994,8 +961,7 @@ class BlockScaledDenseGemmKernel:
             num_stages=accumulator_plan.synchronization_depth,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=256 if self.use_2cta_instrs else 128,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         # warp assignment: [0]-tma_store, [0-3]-epi, [4]-mma,
@@ -1020,72 +986,10 @@ class BlockScaledDenseGemmKernel:
         if is_tma_load_warp:
             # Dedicated TMA producer warp. Issues A, B, SFA, and SFB
             # against one mbar per K-tile and feeds the MMA consumer.
-            # The N=64 and N=192 cases (see ``__call__``) dispatch to
-            # a raw-CuTe codepath for SFB via ``cutlass.const_expr``
-            # switches because the SFB load granularity (128) does
-            # not match the MMA-N (64 or 192).
-            if cutlass.const_expr(self.mma_inst_shape_mn[1] in (64, 192)):
-                # Raw-CuTe codepath for N in {64, 192}. ``cute_ext.tma_load*``
-                # updates the tma_pipe mbar's expect_tx implicitly, but
-                # ``cute.copy`` does not -- we have to register SFB's
-                # contribution ourselves at the call site below or
-                # the consumer wakes before SFB has arrived. Multiply
-                # by ``atom_thr_size`` so each 2-CTA peer accounts
-                # for its broadcast copy.
-                atom_thr_size = cute.size(tiled_mma.thr_id.shape)
-                sfb_copy_size = (
-                    cute.size_in_bytes(
-                        self.sf_dtype,
-                        cute.slice_(sfb_smem_layout_staged, (None, None, None, 0)),
-                    )
-                    * atom_thr_size
-                )
-                cta_rank_in_cluster = cute.arch.make_warp_uniform(
-                    cute.arch.block_idx_in_cluster()
-                )
-                block_in_cluster_coord_sfb_vmnk = (
-                    cluster_layout_sfb_vmnk.get_flat_coord(cta_rank_in_cluster)
-                )
-
-                # Manual gmem + TMA partition off ``tma_tensor_sfb``.
-                # For N=192 the layout was rewritten in ``__call__``
-                # to pack two consecutive 128-wide SF tiles into one
-                # overlapping 256-wide load; for N=64 the layout is
-                # unchanged so each load brings in one 128-wide SF
-                # tile that two consecutive MMA tiles share.
-                gSFB_nkl_raw = cute.local_tile(
-                    tma_tensor_sfb,
-                    cute.slice_(self.mma_tiler_sfb, (0, None, None)),
-                    (None, None, None),
-                )
-                thr_mma_sfb_raw = tiled_mma_sfb.get_slice(mma_tile_coord_v)
-                tCgSFB_64or192 = thr_mma_sfb_raw.partition_B(gSFB_nkl_raw)
-
-                sfb_cta_layout = cute.make_layout(
-                    cute.slice_(cluster_layout_sfb_vmnk, (0, None, 0, 0)).shape
-                )
-                tBsSFB, tBgSFB = cute.nvgpu.cpasync.tma_partition(
-                    tma_atom_sfb,
-                    block_in_cluster_coord_sfb_vmnk[1],
-                    sfb_cta_layout,
-                    cute.group_modes(buffer_smem_sfb, 0, 3),
-                    cute.group_modes(tCgSFB_64or192, 0, 3),
-                )
-                tBsSFB = cute.filter_zeros(tBsSFB)
-                tBgSFB = cute.filter_zeros(tBgSFB)
-
-                # SFB multicasts along cluster-M (``mcast_mode=1``):
-                # cluster-N broadcasts B but not SFB, and 2-CTA
-                # replicates SFB across peers along M.
-                if cutlass.const_expr(self.use_tma_multicast or self.use_2cta_instrs):
-                    sfb_full_mcast_mask = cute.nvgpu.cpasync.create_tma_multicast_mask(
-                        cluster_layout_sfb_vmnk,
-                        block_in_cluster_coord_sfb_vmnk,
-                        mcast_mode=1,
-                    )
-                else:
-                    sfb_full_mcast_mask = None
-
+            # The N=64 and N=192 cases remap the SFB tile coordinate
+            # per MMA tile (see the SFB alignment comment above) but
+            # load through the same ``cute_ext.tma_load`` as every
+            # other operand.
             tile_sched = StaticPersistentTileScheduler.create(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
@@ -1100,20 +1004,32 @@ class BlockScaledDenseGemmKernel:
                 tAgA_tile = tCgA[(None, None, None, mma_tile_coord_m, None, cta_l)]
                 tBgB_tile = tCgB[(None, None, None, cta_n, None, cta_l)]
                 tAgSFA_tile = tCgSFA[(None, None, None, mma_tile_coord_m, None, cta_l)]
-                if cutlass.const_expr(self.mma_inst_shape_mn[1] not in (64, 192)):
-                    tBgSFB_tile = tCgSFB[(None, None, None, cta_n, None, cta_l)]
+                if cutlass.const_expr(self.mma_inst_shape_mn[1] == 192):
+                    # Each MMA tile reads a 256-wide SF window starting
+                    # at a 128-aligned offset: cta_n 0, 1, 2, 3 -> SF
+                    # element 0, 128, 384, 512. Consecutive windows
+                    # overlap in gmem; every CTA issues its own load.
+                    sfb_block_coord = 3 * (cta_n // 2) + cta_n % 2
+                    mSFB_offset = core.domain_offset(
+                        mSFB,
+                        (
+                            cute.assume(sfb_block_coord * 128, divby=128),
+                            0,
+                            0,
+                        ),
+                    )
+                    gSFB_offset = cute.zipped_divide(mSFB_offset, sfb_tiler_nk)
+                    gSFB_tile = gSFB_offset[(None, None), (0, None, cta_l)]
+                    tBgSFB_tile = thr_mma_sfb.partition_B(gSFB_tile)
                 else:
-                    # For N=192 the rewritten ``tma_tensor_sfb`` makes
-                    # tile index = ``cta_n`` (each MMA tile owns one
-                    # overlapping 256-wide load). For N=64 the layout
-                    # is plain 128-wide and two consecutive MMA tiles
-                    # share one SF tile, so the SF tile index is
-                    # ``cta_n // 2``.
-                    if cutlass.const_expr(self.mma_inst_shape_mn[1] == 192):
-                        sfb_n_coord = cta_n
-                    else:
+                    # For N=64 two consecutive MMA tiles share one
+                    # 128-wide SF tile; for N in {128, 256} SF tiles
+                    # align with MMA tiles.
+                    if cutlass.const_expr(self.mma_inst_shape_mn[1] == 64):
                         sfb_n_coord = cta_n // 2
-                    tBgSFB_slice = tBgSFB[(None, sfb_n_coord, None, cta_l)]
+                    else:
+                        sfb_n_coord = cta_n
+                    tBgSFB_tile = tCgSFB[(None, None, None, sfb_n_coord, None, cta_l)]
 
                 # Per K-block: acquire one tma_pipe stage, issue A,
                 # B, SFA, and SFB loads against the same mbar so they
@@ -1150,6 +1066,11 @@ class BlockScaledDenseGemmKernel:
                         tma_operation_type=tma_operation_type,
                         multicast_mode=tma_mcast_proj_B,
                     )
+                    # internal_type=Int16 folds the whole 512 B
+                    # BlockScaledBasicChunk into TMA dim 0 (256 u16 elements =
+                    # the box-dim cap; as u8 the fold stops at 16 B and the box
+                    # degrades to 16 B rows, each served at the 64 B L2 quantum
+                    # = 4x delivered bytes). Same for both SFB branches below.
                     cute_ext.tma_load(
                         gSFA_k,
                         buffer_smem_sfa_sliced,
@@ -1157,12 +1078,13 @@ class BlockScaledDenseGemmKernel:
                         vmnk_layout=cluster_layout_vmnk,
                         tma_operation_type=tma_operation_type,
                         multicast_mode=tma_mcast_proj_A,
+                        internal_type=cutlass.Int16,
                     )
+                    gSFB_k = tBgSFB_tile[(None, None, None, k_tile_idx)]
+                    buffer_smem_sfb_sliced = buffer_smem_sfb[
+                        None, None, None, stage_idx
+                    ]
                     if cutlass.const_expr(self.mma_inst_shape_mn[1] not in (64, 192)):
-                        gSFB_k = tBgSFB_tile[(None, None, None, k_tile_idx)]
-                        buffer_smem_sfb_sliced = buffer_smem_sfb[
-                            None, None, None, stage_idx
-                        ]
                         cute_ext.tma_load(
                             gSFB_k,
                             buffer_smem_sfb_sliced,
@@ -1170,28 +1092,22 @@ class BlockScaledDenseGemmKernel:
                             vmnk_layout=cluster_layout_vmnk,
                             tma_operation_type=tma_operation_type,
                             multicast_mode=tma_mcast_proj_B,
+                            internal_type=cutlass.Int16,
                         )
                     else:
-                        tma_mbar_ptr = tma_mbar.result
-                        leader_cta_rank = cta_rank_in_cluster & ~(self.num_mma_ctas - 1)
-                        sfb_mbar_ptr = cute.arch.map_dsmem_ptr(
-                            tma_mbar_ptr, leader_cta_rank
-                        )
-                        # Register SFB's expect_tx contribution (see
-                        # raw-CuTe branch comment above);
-                        # ``mbarrier_expect_tx`` is per-thread, so
-                        # gate with ``elect_one``.
-                        with cute.arch.elect_one():
-                            if is_leader_cta:
-                                cute.arch.mbarrier_expect_tx(
-                                    tma_mbar_ptr, sfb_copy_size
-                                )
-                        cute.copy(
-                            tma_atom_sfb,
-                            tBgSFB_slice[(None, k_tile_idx)],
-                            tBsSFB[(None, stage_idx)],
-                            tma_bar_ptr=sfb_mbar_ptr,
-                            mcast_mask=sfb_full_mcast_mask,
+                        # The remapped SF windows partition per-CTA via
+                        # the 1-CTA ``tiled_mma_sfb``, so the load pairs
+                        # with the SFB-side cluster layout and operation
+                        # type (peer-aware multicast reaches both 2-CTA
+                        # peers' SMEM).
+                        cute_ext.tma_load(
+                            gSFB_k,
+                            buffer_smem_sfb_sliced,
+                            tma_mbar,
+                            vmnk_layout=cluster_layout_sfb_vmnk,
+                            tma_operation_type=sfb_tma_operation_type,
+                            multicast_mode=tma_mcast_proj_B,
+                            internal_type=cutlass.Int16,
                         )
                     tma_pipe.producer_commit_and_advance()
 
@@ -1397,6 +1313,10 @@ class BlockScaledDenseGemmKernel:
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
 
+            # Stage reuse across CTA tiles is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per CTA tile.
+            tma_store_pipe.tail()
+
 
 # TODO: add residual support (C)
 @dataclass
@@ -1492,11 +1412,13 @@ class BlockScaledGemmTestbed:
             ),
         )
 
+        # Keep the dense reference SF copies on the device: the torch
+        # reference multiplies them against device-resident A/B.
         self.sfa_ref, self.sfa_tensor, self.sfa_gpu = create_scale_factor_tensor(
-            M, K, L, sf_vec_size, sf_dtype
+            M, K, L, sf_vec_size, sf_dtype, device=torch.device("cuda")
         )
         self.sfb_ref, self.sfb_tensor, self.sfb_gpu = create_scale_factor_tensor(
-            N, K, L, sf_vec_size, sf_dtype
+            N, K, L, sf_vec_size, sf_dtype, device=torch.device("cuda")
         )
 
         self.amax_gpu = None
@@ -1518,12 +1440,12 @@ class BlockScaledGemmTestbed:
 
         ref_d_f32 = torch.einsum(
             "mkl, nkl->mnl",
-            decode_ab(self.a_ref.cpu()) * self.sfa_ref,
-            decode_ab(self.b_ref.cpu()) * self.sfb_ref,
+            decode_ab(self.a_ref) * self.sfa_ref,
+            decode_ab(self.b_ref) * self.sfb_ref,
         )
         ref_d = ref_d_f32.to(cutlass_torch.dtype(self.d_tensor.element_type))
 
-        gpu_d = self.d_gpu.cpu()
+        gpu_d = self.d_gpu
         torch.testing.assert_close(
             gpu_d,
             ref_d,
@@ -1532,7 +1454,7 @@ class BlockScaledGemmTestbed:
         )
 
         if self.amax_gpu is not None:
-            gpu_amax = self.amax_gpu.cpu().squeeze()
+            gpu_amax = self.amax_gpu.squeeze()
             ref_amax = ref_d_f32.abs().max()
             torch.testing.assert_close(
                 gpu_amax,
@@ -1562,6 +1484,8 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
+    swizzle_size: int = 1,
+    raster_along: str = "m",
 ) -> float:
     """End-to-end execution of ``BlockScaledDenseGemmKernel`` for one configuration.
 
@@ -1665,9 +1589,11 @@ def run(
         fallback_cluster_shape_mn=fallback_cluster_shape_mn,
         max_active_fallback_clusters=max_active_fallback_clusters,
         allow_accumulator_overlap=allow_accumulator_overlap,
+        swizzle_size=swizzle_size,
+        raster_along_m=(raster_along == "m"),
     )
 
-    compiled_kernel = cute.experimental.compile(
+    compiled_kernel = cute.compile(
         block_scaled_gemm,
         tb.a_tensor,
         tb.sfa_tensor,
@@ -1776,8 +1702,8 @@ if __name__ == "__main__":
         help="Optional physical fallback cluster shape (comma-separated). "
         "When provided and different from --cluster_shape_mn, the kernel is "
         "compiled in mixed-cluster mode. Not supported for mma_inst_mn[1] in "
-        "(64, 192) because those codepaths bake the SFB TMA multicast "
-        "factor into a host-built atom.",
+        "(64, 192) because those codepaths use a host-built SFB cluster "
+        "layout that cannot vary across the preferred/fallback launches.",
     )
     cli.add_dtype_args(
         parser,
@@ -1828,6 +1754,19 @@ if __name__ == "__main__":
     )
     # The reference check here is exact, so there is no --tolerance to take.
     cli.add_benchmark_args(parser, tolerance=None)
+    parser.add_argument(
+        "--swizzle_size",
+        type=int,
+        default=1,
+        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
+    )
+    parser.add_argument(
+        "--raster_along",
+        type=str,
+        choices=["m", "n"],
+        default="m",
+        help="Rasterization order of clusters",
+    )
 
     args = parser.parse_args()
 
@@ -1884,6 +1823,8 @@ if __name__ == "__main__":
             iterations=args.iterations,
             skip_ref_check=args.skip_ref_check,
             use_cold_l2=args.use_cold_l2,
+            swizzle_size=args.swizzle_size,
+            raster_along=args.raster_along,
         )
     except testing.CantImplementError as e:
         parser.exit(4, f"error: unsupported kernel configuration: {e}\n")

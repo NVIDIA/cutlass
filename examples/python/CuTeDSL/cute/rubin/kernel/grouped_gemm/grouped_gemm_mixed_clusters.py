@@ -30,7 +30,7 @@ import os
 import sys
 import argparse
 import functools
-from typing import Tuple, Type, Union, List, Optional
+from typing import Tuple, Type, Union, List
 
 import cuda.bindings.driver as cuda
 
@@ -40,6 +40,14 @@ from cutlass import testing
 import cutlass.utils as utils
 from cutlass.cute.nvgpu import cpasync
 import cutlass.torch as cutlass_torch
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +58,10 @@ from rubin.kernel.grouped_gemm.grouped_gemm import (
     create_tensors_for_all_groups,
     create_tensor_and_stride,
 )
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 
 """
@@ -57,7 +69,7 @@ A high-performance grouped GEMM example for the NVIDIA Rubin SM107 architecture 
 
 This example provides an implementation of the SM107 grouped GEMM kernel with mixed cluster support.
 
-The primary goal of this example, compared to the one in grouped_gemm.py,
+The primary goal of this example, compared to the one in examples/cute/rubin/kernel/grouped_gemm/grouped_gemm.py,
 is around the usage of mixed cluster launches: If there are not enough resources to schedule a cluster with
 preferred_cluster_shape_mn, then a fallback_cluster_shape_mn is used.
 
@@ -209,14 +221,12 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         group_count: cutlass.Constexpr[int],
         problem_sizes_mnkl: cute.Tensor,
         strides_abc: cute.Tensor,
         ptrs_abc: cute.Tensor,
         tensormaps: cute.Tensor,
-        tiled_mma_bkeep: Optional[cute.TiledMma] = None,
-        tiled_mma_breuse: Optional[cute.TiledMma] = None,
     ):
         """
         GPU device kernel performing the grouped GEMM computation with mixed cluster support.
@@ -256,8 +266,6 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
                 strides_abc,
                 ptrs_abc,
                 tensormaps,
-                tiled_mma_bkeep,
-                tiled_mma_breuse,
                 self.preferred_cluster_shape_mn,
                 self.is_preferred_a_mcast,
                 self.is_preferred_b_mcast,
@@ -282,8 +290,6 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
                 strides_abc,
                 ptrs_abc,
                 tensormaps,
-                tiled_mma_bkeep,
-                tiled_mma_breuse,
                 self.fallback_cluster_shape_mn,
                 self.is_fallback_a_mcast,
                 self.is_fallback_b_mcast,
@@ -349,12 +355,6 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
         self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(initial_c)
 
         tiled_mma = self._create_tiled_mma()
-        # Create Bkeep-Breuse tiled_mma variants if enabled
-        tiled_mma_bkeep = None
-        tiled_mma_breuse = None
-        if cutlass.const_expr(self.enable_breuse):
-            tiled_mma_bkeep = self._create_tiled_mma_bkeep()
-            tiled_mma_breuse = self._create_tiled_mma_breuse()
 
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
@@ -440,11 +440,15 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
             self.epi_tile,
         )
 
-        # Compute grid size using preferred cluster shape
-        self.tile_sched_params, grid = super()._compute_grid(
+        # Compute grid size, accounting for both preferred and fallback cluster
+        # capacity so the launch grid doesn't over-request preferred clusters
+        # beyond what the fallback path could also sustain.
+        self.tile_sched_params, grid = self._compute_grid(
             total_num_clusters,
             self.preferred_cluster_shape_mn,
+            self.fallback_cluster_shape_mn,
             preferred_max_active_clusters,
+            fallback_max_active_clusters,
         )
 
         self.buffer_align_bytes = 1024
@@ -514,8 +518,6 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
             strides_abc,
             tensor_address_abc,
             tensormap_cute_tensor,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -525,6 +527,100 @@ class Sm107GroupedGemmMixedClustersKernel(Sm107GroupedGemmKernel):
             min_blocks_per_mp=1,
             smem_merge_branch_allocs=True,
         )
+
+    @staticmethod
+    def _compute_grid(
+        total_num_clusters: int,
+        preferred_cluster_shape_mn: Tuple[int, int],
+        fallback_cluster_shape_mn: Tuple[int, int],
+        preferred_max_active_clusters: cutlass.Constexpr,
+        fallback_max_active_clusters: cutlass.Constexpr,
+    ) -> Tuple[
+        PersistentTileSchedulerParams,
+        Tuple[int, int, int],
+    ]:
+        """Compute tile scheduler parameters and grid shape for mixed cluster grouped GEMM.
+
+        :param total_num_clusters: Total number of clusters to process across all groups.
+        :type total_num_clusters: int
+        :param preferred_cluster_shape_mn: Preferred shape of each cluster in M, N dimensions.
+        :type preferred_cluster_shape_mn: Tuple[int, int]
+        :param fallback_cluster_shape_mn: Fallback shape of each cluster in M, N dimensions.
+        :type fallback_cluster_shape_mn: Tuple[int, int]
+        :param preferred_max_active_clusters: Maximum number of preferred active clusters.
+        :type preferred_max_active_clusters: cutlass.Constexpr
+        :param fallback_max_active_clusters: Maximum number of fallback active clusters.
+        :type fallback_max_active_clusters: cutlass.Constexpr
+
+        :return: A tuple containing:
+            - tile_sched_params: Parameters for the persistent tile scheduler.
+            - grid: Grid shape for kernel launch.
+        :rtype: Tuple[PersistentTileSchedulerParams, Tuple[int, int, int]]
+        """
+        # Preferred tile scheduler and grid
+        preferred_cluster_shape_mnl = (*preferred_cluster_shape_mn, 1)
+
+        problem_shape_ntile_mnl = (
+            preferred_cluster_shape_mn[0],
+            preferred_cluster_shape_mn[1],
+            cutlass.Int32(total_num_clusters),
+        )
+
+        preferred_tile_sched_params = PersistentTileSchedulerParams(
+            problem_shape_ntile_mnl, preferred_cluster_shape_mnl
+        )
+        preferred_grid = StaticPersistentTileScheduler.get_grid_shape(
+            preferred_tile_sched_params, preferred_max_active_clusters
+        )
+
+        # Fallback tile scheduler and grid
+        fallback_cluster_shape_mnl = (*fallback_cluster_shape_mn, 1)
+
+        fallback_problem_shape_ntile_mnl = (
+            fallback_cluster_shape_mn[0],
+            fallback_cluster_shape_mn[1],
+            cutlass.Int32(total_num_clusters),
+        )
+
+        fallback_tile_sched_params = PersistentTileSchedulerParams(
+            fallback_problem_shape_ntile_mnl, fallback_cluster_shape_mnl
+        )
+        fallback_grid = StaticPersistentTileScheduler.get_grid_shape(
+            fallback_tile_sched_params, fallback_max_active_clusters
+        )
+
+        # Align preferred grid to cluster shape
+        preferred_grid = cute.round_up(preferred_grid, preferred_cluster_shape_mnl)
+
+        # Compute max preferred clusters: total blocks <= fallback total,
+        # and is a multiple of the preferred cluster size.
+        preferred_cluster_size_mn = (
+            preferred_cluster_shape_mn[0] * preferred_cluster_shape_mn[1]
+        )
+        max_ctas_for_fallback_cluster = (
+            fallback_grid[0] * fallback_grid[1] * fallback_grid[2]
+        )
+        # Use floor division (not ceil_div) to compute max preferred cluster count.
+        # The preferred cluster total CTA count must not exceed the fallback total,
+        # otherwise when the division is not exact, the extra partial wave of
+        # preferred clusters may force the hardware to schedule one additional wave,
+        # causing significant performance regression.
+        # It is possible to end up with a small problem size where
+        # max_ctas_for_fallback_cluster < preferred_cluster_size_mn, which leads to
+        # max_preferred_cluster_count being zero; in this case, we
+        # cannot even fill a single wave, and so we are not concerned with performance
+        # implications rather we choose to still be able to execute properly instead of
+        # erroring out.
+        max_preferred_cluster_count = cutlass.max(
+            1, max_ctas_for_fallback_cluster // preferred_cluster_size_mn
+        )
+        preferred_grid = (
+            preferred_grid[0],
+            preferred_grid[1],
+            max_preferred_cluster_count,
+        )
+
+        return preferred_tile_sched_params, preferred_grid
 
     @staticmethod
     def can_implement(

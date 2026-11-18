@@ -40,6 +40,7 @@ from cutlass.base_dsl.typing import Numeric
 from cutlass import cute as cute
 from cutlass import torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
+from cutlass.utils.mixed_cluster_params import max_active_preferred_clusters
 from cutlass import testing
 from cutlass.cute.experimental.host_runtime import QueryDeviceWorkspaceFunc
 from cutlass.cute.runtime import from_dlpack
@@ -71,7 +72,9 @@ class GroupedGemmKernel:
         epilogue_op=lambda x: x,
         use_2cta_instrs: bool = False,
         cluster_shape_mn: Tuple[int, int] = (2, 1),
-        tma_update_mode: str | None = None,
+        fallback_cluster_shape_mn: Tuple[int, int] = None,
+        max_active_fallback_clusters: int = None,
+        tma_update_mode: str | None = "smem",
     ):
         self.mn_tiler = mn_tiler
         self.ab_dtype, self.acc_dtype = mma_dtype
@@ -83,7 +86,9 @@ class GroupedGemmKernel:
         self.cluster_shape = (cluster_shape_mn[0], cluster_shape_mn[1], 1)
         cluster_shape_mn_selfcast = (2, 1) if use_2cta_instrs else (1, 1)
         # The TMA pipeline uses one op kind for both operand loads, so only use
-        # multicast when A and B both have real cluster fan-out.
+        # multicast when A and B both have real cluster fan-out. Derived from
+        # the preferred shape only: the fallback divides it, so this flag
+        # already covers both body clones.
         self.use_tma_multicast = (
             cluster_shape_mn[0] > cluster_shape_mn_selfcast[0]
             and cluster_shape_mn[1] > cluster_shape_mn_selfcast[1]
@@ -93,7 +98,13 @@ class GroupedGemmKernel:
         self.d_layout_ = d_layout
         self.group_count = group_count
         self.max_active_clusters = max_active_clusters
+        self.max_active_fallback_clusters = max_active_fallback_clusters
         self.tma_update_mode = tma_update_mode
+        self.fallback_cluster_shape = cute_ext.resolve_fallback_cluster_shape(
+            cluster_shape_mn,
+            fallback_cluster_shape_mn,
+            cta_group_m=2 if use_2cta_instrs else 1,
+        )
 
     def _setup_stages(self):
         cta_group = (
@@ -212,7 +223,7 @@ class GroupedGemmKernel:
         num_tma_store_stage += remaining_smem // (occupancy * epi_bytes_per_stage)
         return num_mainloop_stage, num_tma_store_stage, num_acc_stage
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA_ptrs: cute.Tensor,
@@ -228,16 +239,26 @@ class GroupedGemmKernel:
     ):
         self._setup_stages()
 
+        # Size resident slots from the fallback wave: a grid sized from the
+        # preferred occupancy alone never falls back.
+        num_active_clusters = max_active_preferred_clusters(
+            self.cluster_shape[:2],
+            self.fallback_cluster_shape[:2],
+            self.max_active_clusters,
+            self.max_active_fallback_clusters,
+        )
         problem_shape_ntile_mnl = (
             self.cluster_shape[0],
             self.cluster_shape[1],
-            cutlass.Int32(self.max_active_clusters),
+            cutlass.Int32(num_active_clusters),
         )
         tile_sched_params = PersistentTileSchedulerParams(
-            problem_shape_ntile_mnl, (*self.cluster_shape, 1)
+            problem_shape_ntile_mnl,
+            self.cluster_shape,
+            fallback_cluster_shape_mnk=self.fallback_cluster_shape,
         )
         grid_sched = StaticPersistentGroupTileScheduler.get_grid_shape(
-            tile_sched_params, self.max_active_clusters
+            tile_sched_params, num_active_clusters
         )
         self.kernel(
             mA_ptrs,
@@ -255,7 +276,7 @@ class GroupedGemmKernel:
             grid=grid_sched,
             block=(224, 1, 1),
             cluster=self.cluster_shape,
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
+            fallback_cluster=self.fallback_cluster_shape,
             min_blocks_per_mp=1,
         )
 
@@ -265,7 +286,7 @@ class GroupedGemmKernel:
     This is used to load the pointers for A/B/D from the Ptr array.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _get_pointer(self, address_as_int, cute_type):
         cute_ptr = cute.make_ptr(
             cute_type,
@@ -285,7 +306,7 @@ class GroupedGemmKernel:
     cute.make_tensor to create the actual tensor.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _get_shape_tuple_from_cute_tensor(
         self, cute_shape_tensor: cute.Tensor, group_idx: int
     ):
@@ -302,7 +323,7 @@ class GroupedGemmKernel:
     outside the region.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _consume_work_tile_info(
         self,
         tile_info_pipe: cute_ext.GroupedGemmSchedulerPipeline,
@@ -326,7 +347,7 @@ class GroupedGemmKernel:
         )
         return tile_info_pipe, group_search_result, is_valid_tile
 
-    @cute.experimental.kernel(
+    @cute.kernel(
         attributes=lambda self, _kernel_name: (
             {"lir.tma_update_mode": self.tma_update_mode}
             if self.tma_update_mode is not None
@@ -381,23 +402,26 @@ class GroupedGemmKernel:
         # The accumulator is split along M only (each CTA holds full N columns).
         num_mma_ctas = cute.size(tiled_mma.thr_id.shape)
         cta_tile_shape_mnk = cute.shape_div(mnk_tiler, (num_mma_ctas, 1, 1))
-        # Cluster tile shape: each cluster covers cta_tile * cluster_shape along M and N.
-        # The tile scheduler operates at cluster granularity.
-        cluster_tile_shape_mnk = (
-            cta_tile_shape_mnk[0] * self.cluster_shape[0],
-            cta_tile_shape_mnk[1] * self.cluster_shape[1],
-            cta_tile_shape_mnk[2],
-        )
 
         mainloop_stage = self.mainloop_stage
         acc_stage = self.acc_stage
 
         cta_m, cta_n, cta_l = cute.arch.block_idx()
 
-        # Cluster layout for 2-CTA coordination
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout(self.cluster_shape),
+            cute.make_layout(cluster_shape),
             cute.core._pack_shape((cute.size(tiled_mma.thr_id.shape),)),
+        )
+
+        # Scheduling follows the logical grid; only TMA/multicast uses the
+        # physical cluster layout specialized above.
+        cluster_tile_shape_mnk = (
+            cta_tile_shape_mnk[0] * self.cluster_shape[0],
+            cta_tile_shape_mnk[1] * self.cluster_shape[1],
+            cta_tile_shape_mnk[2],
         )
         cluster_layout_v_size = cute.size(cluster_layout_vmnk.shape[0])
 
@@ -484,14 +508,13 @@ class GroupedGemmKernel:
         )
 
         # UMMA -> tcgen05.ld pipeline
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         warp_idx = cute.arch.warp_idx()
@@ -502,6 +525,7 @@ class GroupedGemmKernel:
         tma_load_warp_id = 5
         scheduler_warp_id = 6
         is_tma_thr = warp_idx == tma_load_warp_id
+        is_tma_store_warp = warp_idx == tma_store_warp_id
         is_mma_thr = warp_idx == mma_warp_id
         is_epi_thr = warp_idx < 4
         is_sched_thr = warp_idx == scheduler_warp_id
@@ -518,8 +542,8 @@ class GroupedGemmKernel:
         # Producer: scheduler warp (32 threads), Consumer: all other 6 warps (192 threads).
         tile_info_pipe = cute_ext.GroupedGemmSchedulerPipeline.create(
             num_stages=self.num_sched_stage,
-            producer_arv_count=32,
-            consumer_arv_count=192,
+            producer_commit_threads_per_cta=32,
+            consumer_release_threads_per_cta=192,
         )
 
         # Shared memory buffer for tile scheduling info (9 int32 values per stage)
@@ -602,6 +626,11 @@ class GroupedGemmKernel:
             mB = cute.make_tensor(
                 B_0_ptr, layout=cute.make_layout(B_shape, stride=B_stride)
             )
+            # Install the initial TMA descriptors. This region runs on the
+            # single TMA load warp, which also issues the loads, so the
+            # enclosing branch is the warp guard.
+            mA = cute_ext.tma_update(mA)
+            mB = cute_ext.tma_update(mB)
 
             # group index of last tile
             last_group_idx = cutlass.Int32(0)
@@ -619,7 +648,7 @@ class GroupedGemmKernel:
                     is_group_changed = cur_group_idx != last_group_idx
 
                     if is_group_changed:
-                        # update pointers for the new group, call make_tensor
+                        # Update pointers and TMA views for the new group.
                         # Get problem shape and stride for each group
                         # Layout of the shape and strides is Tensor<ptr_address@gmem o (group_count,3):(3,1)>
                         A_shape = self._get_shape_tuple_from_cute_tensor(
@@ -643,6 +672,10 @@ class GroupedGemmKernel:
                         mB = cute.make_tensor(
                             ptr_B, layout=cute.make_layout(B_shape, stride=B_stride)
                         )
+                        # New group: install the new descriptors before the
+                        # loads below consume them (single-warp region).
+                        mA = cute_ext.tma_update(mA)
+                        mB = cute_ext.tma_update(mB)
                         last_group_idx = cur_group_idx
 
                     gA_mkl = cute.local_tile(
@@ -709,6 +742,8 @@ class GroupedGemmKernel:
                     self._consume_work_tile_info(tile_info_pipe, sTile_info)
                 )
 
+            mainloop_pipe.producer_tail()
+
         #
         # Specialized MMA warp (warp 4)
         #
@@ -722,7 +757,7 @@ class GroupedGemmKernel:
 
                 # Only leader CTA performs actual MMA work and acc pipeline ops.
                 # Non-leader CTA's MMA warp still participates in the tile_info
-                # pipeline to satisfy consumer_arv_count.
+                # pipeline's consumer releases.
                 if is_leader_cta:
                     _, idx = acc_pipe.producer_acquire_and_get_stage()
                     accumulators_sliced = bufferAcc[None, None, None, idx]
@@ -759,6 +794,12 @@ class GroupedGemmKernel:
             mD = cute.make_tensor(
                 D_0_ptr, layout=cute.make_layout(D_shape, stride=D_stride)
             )
+            # All four epilogue warps need the view for partitioning; the
+            # descriptor update side effect belongs to the TMA store warp
+            # alone. Non-issuing warps keep the un-updated view, which only
+            # feeds pure partition math.
+            if is_tma_store_warp:
+                mD = cute_ext.tma_update(mD)
             is_valid_tile = initial_work_tile_info.is_valid_tile
             group_search_result = initial_work_tile_info.group_search_result
             # group index of last tile
@@ -782,6 +823,8 @@ class GroupedGemmKernel:
                     mD = cute.make_tensor(
                         ptr_D, layout=cute.make_layout(D_shape, stride=D_stride)
                     )
+                    if is_tma_store_warp:
+                        mD = cute_ext.tma_update(mD)
                     last_group_idx = cur_group_idx
 
                 _, idx = acc_pipe.consumer_wait_and_get_stage()
@@ -809,6 +852,10 @@ class GroupedGemmKernel:
                 tile_info_pipe, group_search_result, is_valid_tile = (
                     self._consume_work_tile_info(tile_info_pipe, sTile_info)
                 )
+
+            # Stage reuse across CTA tiles is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per CTA tile.
+            tma_store_pipe.tail()
 
 
 def create_tensors(l, m, n, k, a_major, b_major, d_major, ab_dtype, d_dtype):
@@ -1033,7 +1080,10 @@ def run(
     tolerance: float = 1e-02,
     skip_ref_check: bool = False,
     use_2cta_instrs: bool = False,
-    tma_update_mode: str | None = None,
+    tma_update_mode: str | None = "smem",
+    fallback_cluster_shape_mn: Tuple[int, int] = None,
+    *,
+    benchmark: str | bool = "default",
     **kwargs,
 ):
     """Execute a grouped GEMM operation on Blackwell architecture with performance benchmarking.
@@ -1053,6 +1103,12 @@ def run(
     :type c_dtype: Type[Numeric]
     :param use_2cta_instrs: Use 2-CTA (2SM) instructions for larger tile sizes
     :type use_2cta_instrs: bool
+    :param fallback_cluster_shape_mn: Optional. When provided and different
+        from cluster_shape_mn, the kernel runs in mixed-cluster mode.
+    :type fallback_cluster_shape_mn: Optional[Tuple[int, int]]
+    :param benchmark: Benchmark mode: "default", "cupti", or "none".
+        Boolean values are accepted for compatibility with the old perf flow.
+    :type benchmark: str | bool, optional
     """
     if tma_update_mode not in (None, "gmem", "smem"):
         raise ValueError(
@@ -1073,6 +1129,8 @@ def run(
         mma_tiler_mn=mma_tiler_mn,
         cluster_shape_mn=cluster_shape_mn,
     )
+    if fallback_cluster_shape_mn is not None:
+        print(f"Fallback Cluster Shape (M, N): {fallback_cluster_shape_mn}")
     print(f"2CTA MMA instructions: {'True' if use_2cta_instrs else 'False'}")
     cli.print_benchmark_config(
         tolerance=tolerance,
@@ -1082,7 +1140,7 @@ def run(
         use_cold_l2=use_cold_l2,
     )
     print(
-        f"TMA update mode: {tma_update_mode if tma_update_mode is not None else 'default(gmem)'}"
+        f"TMA update mode: {tma_update_mode if tma_update_mode is not None else 'default(smem)'}"
     )
 
     ab_dtype = ab_dtype
@@ -1155,6 +1213,15 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1]
     )
+    # The fallback occupancy sizes the persistent grid so the fallback clone
+    # can actually launch.
+    max_active_fallback_clusters = (
+        utils.HardwareInfo().get_max_active_clusters(
+            fallback_cluster_shape_mn[0] * fallback_cluster_shape_mn[1]
+        )
+        if fallback_cluster_shape_mn is not None
+        else None
+    )
     grouped_gemm = GroupedGemmKernel(
         mn_tiler=mma_tiler_mn,
         mma_dtype=(ab_dtype, acc_dtype),
@@ -1166,11 +1233,13 @@ def run(
         epilogue_op=lambda x: x,
         use_2cta_instrs=use_2cta_instrs,
         cluster_shape_mn=cluster_shape_mn,
+        fallback_cluster_shape_mn=fallback_cluster_shape_mn,
         max_active_clusters=max_active_clusters,
+        max_active_fallback_clusters=max_active_fallback_clusters,
         tma_update_mode=tma_update_mode,
     )
 
-    compiled_grouped_gemm = cute_ext.compile(
+    compiled_grouped_gemm = cute.compile(
         grouped_gemm,
         a_tensor,
         b_tensor,
@@ -1226,6 +1295,9 @@ def run(
                 tolerance,
             )
         print("check reference: PASS")
+
+    if benchmark is False or benchmark == "none":
+        return 0
 
     def generate_tensors():
         (
@@ -1371,6 +1443,7 @@ def run(
         workspace_count=workspace_count,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     runtime_s = exec_time / 1.0e6
@@ -1438,6 +1511,7 @@ if __name__ == "__main__":
     )
     cli.add_mma_tiler_arg(parser)
     cli.add_cluster_shape_arg(parser)
+    cli.add_fallback_cluster_shape_arg(parser)
     cli.add_dtype_args(parser, ab=cutlass.Float32, c=cutlass.Float32)
     cli.add_major_args(parser)
     cli.add_benchmark_args(parser, tolerance=1e-02)
@@ -1450,8 +1524,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tma_update_mode",
         choices=["gmem", "smem"],
-        default=None,
-        help="Per-kernel TMA descriptor update mode. If unset, falls back to env var compatibility.",
+        default="smem",
+        help="Per-kernel TMA descriptor update mode.",
+    )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["cupti", "default", "none"],
+        help="Benchmark the kernel with cupti, default (cutlass.testing.benchmark), or none",
     )
 
     args = parser.parse_args()
@@ -1493,6 +1574,8 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_2cta_instrs,
         args.tma_update_mode,
+        fallback_cluster_shape_mn=args.fallback_cluster_shape_mn,
+        benchmark=args.benchmark,
     )
 
     print(f"Execution time: {exec_time} microseconds per iteration")

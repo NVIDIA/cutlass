@@ -37,6 +37,11 @@ range(...)/cutlass.range(...)
 Use when you *always* want a loop in the generated |IR|, even if the inputs
 are Python values.
 
+``cutlass.range`` defaults to ``unroll=-1``, which leaves the unroll factor
+to the compiler without attaching an explicit unroll annotation. Use
+``unroll=1`` to disable unrolling, ``unroll=N`` with ``N > 1`` to request
+an unroll factor, or ``unroll_full=True`` to request full unrolling.
+
 cutlass.range_constexpr(...)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Runs in the Python interpreter and is fully unrolled before code generation.

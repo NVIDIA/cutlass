@@ -41,21 +41,3 @@ from .hybrid_ops import __all__ as _hybrid_ops_all
 
 __all__ = [*_descriptors_all, *_nvvm_wrapper_all, *_hybrid_ops_all]
 
-
-# ``cutlass.Array(space=smem/tmem/...)`` allocation is provided by the allocation
-# backend in ``.gpu_ops`` (``base_dsl`` only holds the ``Array`` facade plus a
-# runtime hook).  Register a bridge here so callers can allocate via
-# ``cutlass.Array`` after only importing this package.
-#
-# The bridge imports ``.gpu_ops`` lazily — at allocation time, never at import
-# time — to avoid any import-ordering cycle during package init.
-from cutlass.base_dsl.array import register_array_factory as _register_array_factory
-
-
-def _array_factory(dtype: object, shape: object, space: object, kwargs: dict) -> object:
-    from cutlass.experimental.primitives.gpu_ops import _Array_factory_dispatch
-
-    return _Array_factory_dispatch(dtype, shape, space, kwargs)
-
-
-_register_array_factory(_array_factory)

@@ -32,9 +32,10 @@ CuTe DSL-specific integration utilities for wiring operators into the cutlass.op
 Functions here should depend on the CuTe DSL framework (cutlass.cute / cutlass.utils).
 """
 
-from . import builders, mma
+from . import builders, mma, scheduling, workspace  # noqa: F401
 
 __all__ = [
     "builders",
-    "mma",
+    "scheduling",
+    "workspace",
 ]

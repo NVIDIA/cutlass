@@ -134,7 +134,7 @@ class TestProviderArgumentTypeFiltering:
         )
         assert gemm_operators == ["gemm_operator"]
 
-        # The index-pointer API dispatches independently from pointer arrays
+        # The index-pointer API dispatches independently
         index_ptr_operators = TestProvider.generate_operators(
             metadata_filter=None,
             args=args_for_type(ops.IndexPtrGroupedGemmArguments),
@@ -173,10 +173,8 @@ class TestProviderArgumentTypeFiltering:
 
         # No args filter - should get all operators
         all_operators = TestProvider.generate_operators()
-        assert set(all_operators) == {
-            "gemm_operator",
-            "index_ptr_grouped_gemm_operator",
-        }
+        expected = {"gemm_operator", "index_ptr_grouped_gemm_operator"}
+        assert set(all_operators) == expected
 
     def test_multiple_operators_same_args_type(self):
         """Multiple Operator classes with the same args_type should all be returned."""
@@ -263,7 +261,14 @@ class TestOperatorSubclassRequirements:
                 def _compile(self, args, target_sm=None):
                     raise NotImplementedError
 
-                def _run(self, args, compiled_artifact, stream, workspace=None):
+                def _run(
+                    self,
+                    args,
+                    compiled_artifact,
+                    stream,
+                    workspace=None,
+                    device_properties=None,
+                ):
                     raise NotImplementedError
 
                 @classmethod
@@ -285,7 +290,14 @@ class TestOperatorSubclassRequirements:
                 def _compile(self, args, target_sm=None):
                     raise NotImplementedError
 
-                def _run(self, args, compiled_artifact, stream, workspace=None):
+                def _run(
+                    self,
+                    args,
+                    compiled_artifact,
+                    stream,
+                    workspace=None,
+                    device_properties=None,
+                ):
                     raise NotImplementedError
 
                 @classmethod

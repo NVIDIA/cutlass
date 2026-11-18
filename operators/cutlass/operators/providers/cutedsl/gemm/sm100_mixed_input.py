@@ -56,6 +56,7 @@ import itertools
 from typing import TYPE_CHECKING
 
 import cutlass
+from cutlass.cutlass_dsl import Int32
 
 from cutlass.operators.arch import TargetSm
 from cutlass.operators.arguments import (
@@ -75,9 +76,6 @@ from cutlass.operators.metadata import (
 )
 from cutlass.operators.mma import BlackwellTcgen05Mma
 from cutlass.operators.providers.cutedsl import CuTeDSLProvider
-from cutlass.operators.providers.cutedsl.integration_utils.mma import (
-    get_max_active_clusters,
-)
 from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
 from cutlass.operators.status import Status
 from cutlass.operators.utils.common import tuple_to_string
@@ -97,6 +95,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from cutlass.operators.artifact import CompiledArtifact
+    from cutlass.operators.device_properties import (
+        DeviceProperties,
+    )
 
 
 def _get_scale_granularity(args: GemmArguments) -> tuple[int, int]:
@@ -129,7 +130,7 @@ def _get_scale_tensor(args: GemmArguments):
 
 
 @CuTeDSLProvider.register
-class MixedInputGemmOperator(CuteDslOperator):
+class Sm100MixedInputGemmOperator(CuteDslOperator):
     """Mixed-Input GEMM Operator for NVIDIA Blackwell SM100 architecture.
 
     This Operator supports GEMM operations where input tensors A and B have different
@@ -330,8 +331,6 @@ class MixedInputGemmOperator(CuteDslOperator):
         :return: Compiled artifact
         """
         stream = cutlass.cute.runtime.make_fake_stream()
-        max_active_clusters = get_max_active_clusters(self.impl.cluster_shape_mn)
-
         a_tensor = _get_a_tensor(args)
         scale_tensor = _get_scale_tensor(args)
 
@@ -341,7 +340,8 @@ class MixedInputGemmOperator(CuteDslOperator):
             scale_tensor,
             args.B.tensor,
             args.out.tensor,
-            max_active_clusters,
+            # Placeholder: querying real occupancy would need a GPU to compile.
+            Int32(0),
             stream,
             target_sm=target_sm,
         )
@@ -352,6 +352,8 @@ class MixedInputGemmOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        *,
+        device_properties: DeviceProperties,
     ) -> None:
         """Execute the compiled Operator.
 
@@ -372,6 +374,7 @@ class MixedInputGemmOperator(CuteDslOperator):
             scale_tensor,
             args.B.tensor,
             args.out.tensor,
+            device_properties.max_active_clusters(self.impl.cluster_shape_mn),
             stream,
         )
 
@@ -460,7 +463,7 @@ class MixedInputGemmOperator(CuteDslOperator):
             if not is_scaled:
                 return False
             # Apply constraints from mixed_input_helpers.is_valid_scale_granularity
-            scale_m, scale_k = MixedInputGemmOperator._extract_scale_granularity(
+            scale_m, scale_k = Sm100MixedInputGemmOperator._extract_scale_granularity(
                 operands
             )
             # Constraint: scale_granularity_m must be 1 (per-row scaling)
@@ -562,13 +565,13 @@ class MixedInputGemmOperator(CuteDslOperator):
         :param metadata: The operator metadata to validate
         :return: True if valid, False otherwise
         """
-        if not MixedInputGemmOperator._valid_operands(metadata.operands):
+        if not Sm100MixedInputGemmOperator._valid_operands(metadata.operands):
             return False
-        if not MixedInputGemmOperator._valid_design(metadata.design):
+        if not Sm100MixedInputGemmOperator._valid_design(metadata.design):
             return False
 
         # Cross-validate scale granularity against tile shape
-        scale_m, scale_k = MixedInputGemmOperator._extract_scale_granularity(
+        scale_m, scale_k = Sm100MixedInputGemmOperator._extract_scale_granularity(
             metadata.operands
         )
         tile_k = metadata.design.tile_shape[2]
@@ -588,7 +591,7 @@ class MixedInputGemmOperator(CuteDslOperator):
             if (cta_m // cluster_n // scale_m) * scale_bytes < 128:
                 return False
 
-        if not MixedInputGemmOperator._check_capacity(metadata):
+        if not Sm100MixedInputGemmOperator._check_capacity(metadata):
             return False
         return True
 
@@ -613,6 +616,8 @@ class MixedInputGemmOperator(CuteDslOperator):
         # --- A operand ---
         if isinstance(args.A, ScaledOperand):
             a_quantized = args.A.quantized
+            if not isinstance(a_quantized, DenseTensor):
+                return
             a_dtype = a_quantized.dtype
             A_stride = normalized_major_stride(
                 a_quantized.shape, a_quantized.stride, prepend_zeros_to_rank=3
@@ -682,7 +687,7 @@ class MixedInputGemmOperator(CuteDslOperator):
             A=a_attr, B=b_attr, out=out_attr, accumulator_type=args.accumulator_type
         )
 
-        if not MixedInputGemmOperator._valid_operands(operands):
+        if not Sm100MixedInputGemmOperator._valid_operands(operands):
             return
 
         yield operands
@@ -813,8 +818,8 @@ class MixedInputGemmOperator(CuteDslOperator):
         epilogue_args: EpilogueArguments = None,
         target_sm: TargetSm | None = None,
         args: GemmArguments = None,
-    ) -> list[MixedInputGemmOperator]:
-        """Generate all valid MixedInputGemmOperator configurations.
+    ) -> list[Sm100MixedInputGemmOperator]:
+        """Generate all valid Sm100MixedInputGemmOperator configurations.
 
         :param metadata_filter: Filter function for metadata
         :param epilogue_args: Epilogue arguments (unused, returns empty if provided)
@@ -885,7 +890,7 @@ class MixedInputGemmOperator(CuteDslOperator):
                 layout = strides_to_layout_string(a_stride, b_stride, out_stride)
 
                 operator_name = (
-                    f"cutedsl.MixedInputGemmOperator_sm100_{scale_mode}_{layout}_"
+                    f"cutedsl.Sm100MixedInputGemmOperator_{scale_mode}_{layout}_"
                     f"A{a_dtype}_B{b_dtype}_out{out_dtype}_"
                     f"acc{operands.accumulator_type}_"
                     f"{'2cta' if design.use_2cta_mma else '1cta'}_"

@@ -32,8 +32,8 @@ import pytest
 import torch
 
 import cutlass.operators as ops
-from cutlass.operators.providers.cutedsl.gemm.sm100_dense_blockscaled_static_persistent import (
-    PersistentDenseBlockScaledGemmOperator,
+from cutlass.operators.providers.cutedsl.gemm.sm100_blockscaled_static_persistent import (
+    Sm100BlockscaledStaticPersistentOperator,
 )
 from cutlass.operators.utils.device import device_or_env_target_sm
 
@@ -65,8 +65,9 @@ def test_blockscaled_rejects_noncontiguous_scale(fixture_enable_tvm_ffi):
         return ops.get_operators(
             args,
             target_sm=device_or_env_target_sm(),
-            metadata_filter=lambda metadata: metadata.operator_class
-            is PersistentDenseBlockScaledGemmOperator,
+            metadata_filter=lambda metadata: (
+                metadata.operator_class is Sm100BlockscaledStaticPersistentOperator
+            ),
         )
 
     good_args = arguments(good, good)

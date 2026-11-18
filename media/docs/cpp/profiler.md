@@ -222,11 +222,19 @@ Initialization:
 
   --initialization-provider=<provider>             Selects initialization provider {host, device*}. (default: '*')
 
-  --dist=<distribution>                            Data distribution of input tensors {uniform*, gaussian, identity, sequential}
+  --dist=<distribution>                            Data distribution of input tensors {uniform*, gaussian, identity, sequential, uniform_bits}
                                                     --dist=uniform,min:<double>,max:<double>,scale:<integer>
                                                     --dist=gaussian,mean:<double>,stddev:<double>,scale:<integer>
                                                     --dist=sequential,start:<double>,delta:<double>,scale:<integer>
                                                     --dist=identity
+                                                    --dist=uniform_bits
+                                                   uniform_bits draws random bits instead of random values, so every
+                                                   bit pattern of the element type is equally likely (each e2m1 code is
+                                                   1/16 of the elements).
+
+  --dist-<tensor>=<distribution>                   Data distribution of one input tensor, named as the operation names it (A, B, C, SFA, SFB, ...).
+                                                   Overrides --dist and the element type defaults for that tensor only.
+                                                    --dist-SFA=uniform,min:0.1,max:10,scale:-1
 
   --seed=<int>                                     Random number generator seed. Used to enforce deterministic
                                                    initialization.
@@ -266,11 +274,14 @@ Profiling:
 Verification:
   --verification-enabled=<bool>                    Whether to perform verification checks.
 
-  --epsilon=<error>                                Error threshold. Setting to zero (default) requires
-                                                   bit-level equivalence.
+  --epsilon=<error>                                Floating-point error threshold (default: 0.05).
+                                                   Set --epsilon=0 to require element-wise equality (==).
 
-  --nonzero-floor=<floor>                          Results whose absolute value is less than this quantity
-                                                   are treated as zero for comparisons.
+  --nonzero-floor=<floor>                          Near-zero comparison scale (default: 1/256).
+                                                   For floating-point comparisons with nonzero epsilon, a == b passes.
+                                                   Otherwise, if either value is zero or abs(a)+abs(b) < floor,
+                                                   require abs(a-b) < epsilon * floor; else require
+                                                   abs(a-b) < epsilon * (abs(a)+abs(b)).
 
   --save-workspace=<string>                        Specifies when to save the GEMM inputs and results to the filesystem.
                                                     --save-workspace=never      never save workspace (default)
@@ -322,6 +333,29 @@ Example:
   $ cutlass_profiler --operation=Conv2d --help
 
 ```
+
+## Floating-point verification
+
+In the profiler's floating-point approximate comparison path, the defaults are
+`--epsilon=0.05` and `--nonzero-floor=0.00390625` (1/256). Equal values (`a == b`)
+pass immediately. Otherwise, the comparison uses a strict inequality:
+
+- If either value is zero, or `abs(a) + abs(b) < nonzero_floor`, it requires
+  `abs(a - b) < epsilon * nonzero_floor`.
+- Otherwise, it requires `abs(a - b) < epsilon * (abs(a) + abs(b))`.
+
+The floor scales the absolute tolerance near zero; it does not replace small
+values with zero. For example, with the defaults, `a=0.001` and `b=0.002` fail
+even though both magnitudes are below the floor: their difference, 0.001, exceeds
+`epsilon * nonzero_floor = 0.0001953125`.
+
+The default epsilon is not a 5% error bound relative to the reference value,
+because the relative branch uses the sum of both magnitudes. A `Passed` result
+under these defaults does not imply exact equality. Specify `--epsilon=0` to
+select element-wise equality (`==`). This is not a bit-pattern comparison;
+for example, positive and negative zero compare equal. The approximate rules
+above apply to real floating-point values; integer and complex comparisons
+in this dispatch use element-wise equality.
 
 # GEMM
 
@@ -420,6 +454,12 @@ Profile when execution is performed on device 0 and the C tensor is located on a
 The format of tensor argument is followed by `<type>:<layout>`. The type could be `f32` as 32-bit floating point, `s8` as 8-bit signed integer, etc. The available types can be referred to the `NumericTypeID_enumerants` in [util.cu](https://github.com/NVIDIA/cutlass/tree/main/tools/library/src/util.cu). The layout could be `row` or `column`. If `--enable_sm90_mixed_dtype_shuffle_test=true` is used, the actual layout of the narrow data type matrix is a shuffled layout, neither `row` nor `column`.
 
 In addition to encoded data types, CUTLASS profiler allows non-encoded generic data types, namely `f8`, `f6`, and `f4`, with corresponding encoding specified through GEMM input argument: `--runtime_input_datatype_a` and `--runtime_input_datatype_b`. Currently, six encoding schemes are supported: `e4m3`, `e5m2`, `e3m2`, `e2m3`, and `e2m1`.
+
+`--dist=uniform` draws a value from `[min, max]` and converts it to the element type, which rounds it to the nearest representable value. For narrow types the representable values are unevenly spaced, so some codes appear far more often than others: with `--dist=uniform,min:-6,max:6,scale:-1`, the `e2m1` code for 4.0 covers [3.5, 5] and makes up 12.5% of the elements, while the code for 0.5 covers [0.25, 0.75] and makes up 4.2%. `--dist=uniform_bits` draws random bits instead of random values, so every bit pattern of the element type is equally likely and each of the 16 `e2m1` codes makes up 1/16 of the elements. `--dist-<tensor>` gives one tensor its own distribution. The following command fills the `e2m1` operands of NVFP4 and MXFP4 kernels with uniform bits and draws their scale factors from [0.1, 10]:
+
+```bash
+cutlass_profiler --operation=block_scaled_gemm --A=fe2m1 --B=fe2m1 --dist-A=uniform_bits --dist-B=uniform_bits --dist-SFA=uniform,min:0.1,max:10,scale:-1 --dist-SFB=uniform,min:0.1,max:10,scale:-1
+```
 
 Cluster shapes can be statically set to `Shape<int,int,_1>;` and specified via runtime arguments: `cluster_m`, `cluster_n` and `cluster_k` in CUTLASS profiler.  In addition to preferred cluster shapes, a user can also specify fallback cluster shapes via runtime arguments: `cluster_m_fallback`, `cluster_n_fallback` and `cluster_k_fallback` in CUTLASS profiler. Those fallback cluster shapes are smaller shapes than the preferred ones for the hardware to assign when there is no chance to issue a larger preferred cluster to the GPU. There are several rules for using a dynamic cluster: 1) Preferred cluster size should be divisible by fallback cluster size. 2) Grid dim should be divisible by preferred cluster size. 3) Preferred cluster and fallback cluster must have the same depth (cluster_dim.z must be equal). One may refer to our CUTLASS Example [73_blackwell_gemm_dynamic_cluster](https://github.com/NVIDIA/cutlass/tree/main/examples/73_blackwell_gemm_preferred_cluster/blackwell_gemm_preferred_cluster.cu) for more details of the this feature. 
 Please be noted that this feature (dynamic cluster shapes within a single grid) is only applicable to `sm100a` kernels. The hardware will rasterize into a single cluster shape for those kernels that do not support this feature even with preferred or fallback cluster shapes assigned.

@@ -353,6 +353,11 @@ def transform_leaf(f: Callable[..., XTuple], *args: XTuple) -> XTuple:
         >>> transform_leaf(lambda x: x * 2, ((1, 2), (3, 4)))
         ((2, 4), (6, 8))
     """
+    if len(args) == 1:
+        value = args[0]
+        if isinstance(value, tuple):
+            return tuple(transform_leaf(f, child) for child in value)
+        return f(value)
     if all(isinstance(t, tuple) for t in args):
         return tuple(transform_leaf(f, *_args) for _args in zip(*args))
     elif all(not isinstance(t, tuple) for t in args):

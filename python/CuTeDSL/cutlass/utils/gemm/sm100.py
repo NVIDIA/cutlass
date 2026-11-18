@@ -9,8 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from dataclasses import dataclass
 from typing import Any, Optional, Tuple, Union
+import cutlass
 import cutlass.cute as cute
+from cutlass._mlir.dialects import math as math_ir
 from cutlass.cutlass_dsl import Int32, Boolean, Constexpr, const_expr
 import cutlass.pipeline as pipeline
 from cutlass.utils.blackwell_helpers import get_tmem_load_op, get_smem_store_op
@@ -21,7 +24,139 @@ from cutlass.cute.nvgpu.common import CacheEvictionPriority
 __all__ = [
     "epilogue_tma_store",
     "epilogue",
+    "SFDOutputConfig",
+    "make_sfd_output_config",
+    "validate_sfd_output",
+    "get_dtype_abs_max_rcp",
 ]
+
+
+def get_dtype_abs_max_rcp(dtype: type[cutlass.Numeric]) -> float:
+    """Return the reciprocal of the largest finite magnitude of ``dtype``.
+
+    Used by the block-scaled D (SFD) epilogue to map the per-vector absolute
+    maximum onto the full representable range of the quantized output type.
+
+    Only quantization targets are accepted: a wider output type has no
+    meaningful quantization range, so passing one is a caller bug rather than a
+    case to fall back on. Callers that let users pick the output type must
+    reject the wider types up front (e.g. in ``can_implement``).
+
+    :raises ValueError: If ``dtype`` is not a supported quantized output type.
+    """
+    if dtype == cutlass.Float4E2M1FN:
+        return 1.0 / 6.0
+    if dtype == cutlass.Float8E4M3FN:
+        return 1.0 / 448.0
+    if dtype == cutlass.Float8E5M2:
+        return 1.0 / 57344.0
+    raise ValueError(f"Unsupported output dtype for block-scaled D: {dtype}")
+
+
+# Supported block-scaled D (SFD) output combinations. Scoped to the SF
+# formats the target workloads require; widening either set needs matching
+# reference/rounding support in the epilogue.
+SFD_SUPPORTED_SFD_DTYPES = (cutlass.Float8E8M0FNU, cutlass.Float8E4M3FN)
+SFD_SUPPORTED_C_DTYPES = (cutlass.Float8E4M3FN, cutlass.Float4E2M1FN)
+SFD_SUPPORTED_VEC_SIZES = (16, 32)
+
+
+def validate_sfd_output(
+    sfd_dtype: type[cutlass.Numeric],
+    sfd_vec_size: int,
+    c_dtype: type[cutlass.Numeric],
+    *,
+    c_is_row_major: bool,
+    is_2cta_mma: bool,
+    is_b_reuse: bool,
+) -> None:
+    """Enforce the block-scaled D (SFD) output pre-conditions.
+
+    Single source of truth for every SFD constraint that is knowable without
+    the runtime problem shape. Raises ``ValueError`` naming the first
+    violated pre-condition. Callers with skip semantics (``can_implement``)
+    translate the exception into their own error type; the kernel entry
+    points let it propagate as a hard error.
+
+    ``N % sfd_vec_size`` is deliberately NOT checked here: the problem shape
+    is dynamic at kernel-compile time, so only shape-aware callers such as
+    ``can_implement`` can enforce it.
+    """
+    if sfd_dtype not in SFD_SUPPORTED_SFD_DTYPES:
+        raise ValueError(
+            f"Unsupported SFD data type: {sfd_dtype}, expected one of "
+            f"{SFD_SUPPORTED_SFD_DTYPES}"
+        )
+    if sfd_vec_size not in SFD_SUPPORTED_VEC_SIZES:
+        raise ValueError(
+            f"Unsupported sfd_vec_size: {sfd_vec_size}, expected one of "
+            f"{SFD_SUPPORTED_VEC_SIZES}"
+        )
+    if c_dtype not in SFD_SUPPORTED_C_DTYPES:
+        raise ValueError(
+            f"Block-scaled D output requires c_dtype in "
+            f"{SFD_SUPPORTED_C_DTYPES}, got {c_dtype}"
+        )
+    if not c_is_row_major:
+        # Row-major C keeps each thread's TMEM-load fragment contiguous
+        # along N (32dp32bit atom), which the SFD reduction relies on.
+        raise ValueError("Block-scaled D output requires row-major C")
+    if is_2cta_mma:
+        raise ValueError("Block-scaled D output is not supported with 2-CTA MMA")
+    if is_b_reuse:
+        raise ValueError("Block-scaled D output is not supported with B-reuse tiling")
+
+
+@dataclass(frozen=True)
+class SFDOutputConfig:
+    """Block-scaled D (SFD) output configuration for ``epilogue_tma_store``.
+
+    Bundles everything the epilogue needs to emit block-scaled D output.
+    Build instances with ``make_sfd_output_config``, which enforces the SFD
+    pre-conditions; the epilogue trusts a constructed config.
+    """
+
+    # SFD tensor in scale-factor atom layout, built with
+    # blockscaled_layout.tile_atom_to_shape_SF(c_shape, vec_size).
+    tensor: cute.Tensor
+    # Number of contiguous N elements sharing one scale factor.
+    vec_size: int
+    # Optional 1-element f32 tensor holding the matrix-wide norm constant St;
+    # treated as 1.0 when None (MX formats).
+    norm_const_tensor: Optional[cute.Tensor] = None
+
+    @property
+    def sfd_dtype(self) -> type[cutlass.Numeric]:
+        return self.tensor.element_type
+
+
+def make_sfd_output_config(
+    tensor: cute.Tensor,
+    vec_size: int,
+    c_dtype: type[cutlass.Numeric],
+    norm_const_tensor: Optional[cute.Tensor] = None,
+    *,
+    c_is_row_major: bool,
+    is_2cta_mma: bool,
+    is_b_reuse: bool,
+) -> SFDOutputConfig:
+    """Validate the SFD pre-conditions and construct an ``SFDOutputConfig``.
+
+    The validating factory for ``SFDOutputConfig`` — kernels construct the
+    epilogue's config through this function so that every config that reaches
+    ``epilogue_tma_store`` has passed ``validate_sfd_output``.
+    """
+    validate_sfd_output(
+        tensor.element_type,
+        vec_size,
+        c_dtype,
+        c_is_row_major=c_is_row_major,
+        is_2cta_mma=is_2cta_mma,
+        is_b_reuse=is_b_reuse,
+    )
+    return SFDOutputConfig(
+        tensor=tensor, vec_size=vec_size, norm_const_tensor=norm_const_tensor
+    )
 
 
 def transform_partitioned_tensor_layout(tensor: cute.Tensor) -> cute.Tensor:
@@ -193,7 +328,30 @@ def epilogue_tma_store(
     acc_consumer_state: pipeline.PipelineState,
     acc_pipeline: pipeline.PipelineAsync,
     c_pipeline: pipeline.PipelineTmaStore,
+    pzo_convert: Constexpr = False,
+    sfd_config: Optional[SFDOutputConfig] = None,
 ) -> pipeline.PipelineState:
+    """TMA-based epilogue store.
+
+    When ``sfd_config`` is provided, the epilogue additionally generates
+    block-scaled D output (SFD): for every ``sfd_config.vec_size``
+    contiguous elements along N of a row, it computes the absolute maximum,
+    derives a per-vector scale factor
+    ``SFD = amax * norm_const / max(c_dtype)`` (round-toward-+inf for
+    ``Float8E8M0FNU`` SFD, round-to-nearest otherwise), stores SFD to global
+    memory in the scale-factor atom layout, and rescales the accumulator by
+    ``norm_const / SFD`` before quantizing to ``c_dtype``. ``epilogue_op`` is
+    applied on the f32 accumulator before SFD generation in this mode.
+
+    Requirements for SFD mode (enforced by ``make_sfd_output_config``, which
+    is how configs must be built): row-major C, narrow ``c_dtype`` so the
+    TMEM load atom is 32dp32bit (each thread owns contiguous N elements of a
+    single row), and 1-CTA MMA. Additionally the per-thread fragment size
+    must be divisible by ``sfd_config.vec_size`` (asserted below).
+
+    :param sfd_config: Block-scaled D output configuration built with
+        ``make_sfd_output_config``, or None to disable SFD generation.
+    """
     # Layout transformation for tCgC_base
     # ((MMA_ATOM_M, MMA_ATOM_N), MMA_M, MMA_N, TILE_M, TILE_N, TILE_K)
     # -> ((MMA_ATOM_M, MMA_M), (MMA_ATOM_N, MMA_N), TILE_M, TILE_N, TILE_K)
@@ -230,6 +388,36 @@ def epilogue_tma_store(
         num_threads=WARP_SIZE * len(gemm_kernel.epilogue_warp_id),
     )
 
+    generate_sfd = const_expr(sfd_config is not None)
+    if const_expr(generate_sfd):
+        sfd_dtype = sfd_config.sfd_dtype  # type: ignore[union-attr]
+        sfd_vec_size = sfd_config.vec_size  # type: ignore[union-attr]
+        assert cute.size(tTR_rAcc) % sfd_vec_size == 0, (
+            f"Per-thread fragment size {cute.size(tTR_rAcc)} must be divisible "
+            f"by sfd_vec_size {sfd_vec_size}"
+        )
+        # (EPI_TILE_M, EPI_TILE_N, RestM, RestN, RestL)
+        gSFD_epi = cute.local_tile(
+            sfd_config.tensor,  # type: ignore[union-attr]
+            epi_tile,
+            (None, None, None),
+        )
+        thr_copy_t2r = tiled_copy_t2r.get_slice(epi_tidx)
+        # (T2R, T2R_M, T2R_N, RestM, RestN, RestL) with broadcast modes removed
+        tTR_gSFD = cute.filter_zeros(thr_copy_t2r.partition_D(gSFD_epi))
+        # rmem staging holding this thread's SFDs for one epilogue subtile
+        tTR_rSFD = cute.make_rmem_tensor(
+            tTR_gSFD[(None, None, None, 0, 0, 0)].layout, sfd_dtype
+        )
+        tTR_rSFD_pvscale = cute.make_rmem_tensor_like(tTR_rSFD, cutlass.Float32)
+        norm_const = cutlass.Float32(1.0)
+        if const_expr(sfd_config.norm_const_tensor is not None):  # type: ignore[union-attr]
+            norm_const = sfd_config.norm_const_tensor[0]  # type: ignore[union-attr, index, assignment]
+        c_dtype_abs_max_rcp = get_dtype_abs_max_rcp(gemm_kernel.c_dtype)
+        # Epilogue subtile counts along M/N inside one output tile, used to map
+        # the flattened subtile index back to (epi_m, epi_n) coordinates.
+        epi_m_cnt = cute.size(tTR_tAcc_base.shape, mode=[3])  # type: ignore[union-attr]
+
     #
     # Slice to per mma tile index
     #
@@ -260,12 +448,86 @@ def epilogue_tma_store(
         tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]  # type: ignore[call-overload]
         cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
 
-        #
-        # Convert to C type
-        #
-        acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
-        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
-        tRS_rC.store(acc_vec)
+        if const_expr(generate_sfd):
+            #
+            # Block-scaled D: per-vector amax -> SFD -> store SFD -> rescale
+            #
+            # epilogue_op is applied on the f32 accumulator in SFD mode so the
+            # scale factors are computed on the final output values.
+            tTR_rAcc.store(epilogue_op(tTR_rAcc.load()))
+            # Group the fragment into SFD vectors: ((SFD_VEC), REST_V)
+            tTR_rAcc_frg = cute.logical_divide(tTR_rAcc, cute.make_layout(sfd_vec_size))
+            acc_frg = tTR_rAcc_frg.load()
+            abs_acc_frg = type(acc_frg)(
+                math_ir.absf(acc_frg.ir_value()), acc_frg.shape, acc_frg.dtype
+            )
+            for vi in cutlass.range_constexpr(
+                cute.size(abs_acc_frg.shape, mode=[1])  # type: ignore[arg-type]
+            ):
+                amax = abs_acc_frg[(None, vi)].reduce(
+                    cute.ReductionOp.MAX, cutlass.Float32(0.0), 0
+                )
+                tTR_rSFD_pvscale[vi] = amax * c_dtype_abs_max_rcp * norm_const
+            # f32 -> SFD dtype; Float8E8M0FNU converts with round-toward-+inf
+            tTR_rSFD.store(tTR_rSFD_pvscale.load().to(sfd_dtype))
+
+            # Store SFD of this subtile to global memory
+            epi_m_idx = mma_tile_coord_mnl[0] * epi_m_cnt + subtile_idx % epi_m_cnt
+            epi_n_idx = (
+                mma_tile_coord_mnl[1] * (subtile_cnt // epi_m_cnt)
+                + subtile_idx // epi_m_cnt
+            )
+            tTR_gSFD_mn = tTR_gSFD[
+                (None, None, None, epi_m_idx, epi_n_idx, mma_tile_coord_mnl[2])
+            ]
+            cute.autovec_copy(tTR_rSFD, tTR_gSFD_mn)
+
+            # Rescale the accumulator by norm_const / SFD before quantization.
+            # INF (SFD == 0) is mapped to fp32 max.
+            fp32_max = cutlass.Float32(3.40282346638528859812e38)
+            if const_expr(sfd_dtype is cutlass.Float8E8M0FNU):
+                # UE8M0 is a pure power of two, so its reciprocal is exact:
+                # flip the exponent in the 8-bit domain (bits' = 254 - bits;
+                # NaN 0xFF wraps back to 0xFF and is caught by fmin below).
+                # Taking the reciprocal before widening also avoids
+                # rcp_approx flushing the f32-subnormal 1/2^127 to zero.
+                tTR_rSFD_rcp = (
+                    (cutlass.Uint8(254) - tTR_rSFD.load().bitcast(cutlass.Uint8))
+                    .bitcast(sfd_dtype)
+                    .to(cutlass.Float32)
+                )
+            else:
+                tTR_rSFD_up = tTR_rSFD.load().to(cutlass.Float32)
+            for vi in cutlass.range_constexpr(cute.size(tTR_rSFD)):
+                if const_expr(sfd_dtype is cutlass.Float8E8M0FNU):
+                    sfd_rcp = tTR_rSFD_rcp[vi]
+                else:
+                    sfd_rcp = cute.arch.rcp_approx(tTR_rSFD_up[vi])
+                acc_scale = cute.arch.fmin(
+                    norm_const * sfd_rcp,
+                    fp32_max,
+                    nan=True,
+                )
+                acc_vec_slice = tTR_rAcc_frg[(None, vi)]
+                for ei in cutlass.range_constexpr(sfd_vec_size):
+                    acc_vec_slice[ei] = acc_vec_slice[ei] * acc_scale  # type: ignore[index]
+
+            #
+            # Convert to C type (epilogue_op already applied above)
+            #
+            acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
+            acc_vec = acc_vec.to(gemm_kernel.c_dtype, pzo=pzo_convert)
+            tRS_rC.store(acc_vec)
+        else:
+            #
+            # Convert to C type
+            #
+            acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
+            # pzo_convert applied before epilogue_op, so no -0.0 in the store only if
+            # epilogue_op itself cannot produce -0.0 (see epilogue() docstring).
+            acc_vec = acc_vec.to(gemm_kernel.c_dtype, pzo=pzo_convert)
+            acc_vec = epilogue_op(acc_vec)
+            tRS_rC.store(acc_vec)
 
         #
         # Store C to shared memory
@@ -318,6 +580,7 @@ def epilogue(
     tCcC_base: Optional[cute.Tensor] = None,
     mC_mnl: Optional[cute.Tensor] = None,
     overlapping_accum: Constexpr = False,
+    pzo_convert: Constexpr = False,
 ) -> pipeline.PipelineState:
     """
     Epilogue function that stores accumulator results directly to global memory.
@@ -347,6 +610,10 @@ def epilogue(
     :type mC_mnl: cute.Tensor
     :param overlapping_accum: Whether to use overlapping accumulator
     :type overlapping_accum: Constexpr
+    :param pzo_convert: Use the .pzo convert to force -0.0 -> +0.0 (sm_107a-only).
+        Applied before ``epilogue_op``, so the store is -0.0-free only if
+        ``epilogue_op`` cannot reintroduce -0.0.
+    :type pzo_convert: Constexpr
     """
 
     # Layout transformation for tCgC_base
@@ -490,7 +757,9 @@ def epilogue(
         # Convert to C type
         #
         acc_vec = tTR_rAcc.load()
-        acc_vec = epilogue_op(acc_vec.to(gemm_kernel.c_dtype))
+        # pzo_convert: see this function's docstring (applied before epilogue_op).
+        acc_vec = acc_vec.to(gemm_kernel.c_dtype, pzo=pzo_convert)
+        acc_vec = epilogue_op(acc_vec)
         tTR_rC.store(acc_vec)
 
         if const_expr(use_predication):

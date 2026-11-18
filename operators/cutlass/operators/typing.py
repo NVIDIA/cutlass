@@ -30,11 +30,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Generic, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 import cutlass.cute as cute
 
 from cutlass.operators.utils.tensor import TensorWrapper
+
+_ValueT = TypeVar("_ValueT")
 
 
 @runtime_checkable
@@ -71,3 +73,38 @@ class NumericLike(Protocol):
         * ``cutlass.Numeric``
         * ``torch.dtype``
     """
+
+
+class AnyValue(Generic[_ValueT]):
+    """A domain that contains every value of type ``_ValueT``."""
+
+    def __init__(self, value_type: type[_ValueT]) -> None:
+        self.value_type = value_type
+
+    def __contains__(self, value: object) -> bool:
+        """Return whether ``value`` belongs to this domain, which is always true."""
+        return True
+
+    def __repr__(self) -> str:
+        return f"AnyValue[{self.value_type.__name__}]"
+
+
+class SupportsConversionToInternalTypes(Protocol):
+    """Protocol for objects that support conversion to internal Cutlass Operator types.
+
+    Used by RuntimeArguments and Operand classes.
+    """
+
+    def _tensor_like_field_names(self) -> tuple[str, ...]:
+        """Names of fields holding a ``TensorLike`` value that must be wrapped in a ``TensorWrapper``.
+
+        e.g. torch.tensor
+        """
+        ...
+
+    def _numeric_like_field_names(self) -> tuple[str, ...]:
+        """Names of fields holding a ``NumericLike`` value that must be converted to ``cutlass.Numeric``.
+
+        e.g. torch.dtype
+        """
+        ...

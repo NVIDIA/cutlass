@@ -32,14 +32,19 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cutlass.operators.arguments.performance import (
+    GemmPerformanceControls,
+    TileSchedulerControls,
+)
 from cutlass.operators.status import Status
 
 if TYPE_CHECKING:
+    from cutlass.operators.arch import TargetSm
     from cutlass.operators.arguments import RuntimeArguments
     from cutlass.operators.mma import MmaInstruction
 
 
-@dataclass
+@dataclass(slots=True)
 class DesignMetadata(ABC):
     """Describes architectural, performance, or design characteristics of the kernel separate from its functional contribution.
 
@@ -55,7 +60,9 @@ class DesignMetadata(ABC):
     """
 
     @abstractmethod
-    def supports(self, args: RuntimeArguments) -> Status:
+    def supports(
+        self, args: RuntimeArguments, target_sm: TargetSm | None = None
+    ) -> Status:
         """Checks whether the provided ``args`` satisfy the properties described by this DesignMetadata.
 
         It validates that :class:`~cutlass.operators.PerformanceControls` within
@@ -66,13 +73,14 @@ class DesignMetadata(ABC):
 
         Args:
             args (RuntimeArguments): The arguments to check support for.
+            target_sm (TargetSm | None): The target SM to check support for. If None, skips arch-specific checks.
 
         Returns:
             Status: Status indicating whether the provided args satisfy the properties described by the design in this metadata
         """
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, slots=True)
 class BLASDesignMetadata(DesignMetadata):
     """Design metadata for a BLAS (basic-linear algebra subprogram) operation, like GEMM.
 
@@ -93,18 +101,40 @@ class BLASDesignMetadata(DesignMetadata):
     """Number of shared memory buffers used to pipeline data loading and computation.
     When None, the Operator determines this internally."""
 
-    def supports(self, args: RuntimeArguments) -> Status:
+    def supports(
+        self, args: RuntimeArguments, target_sm: TargetSm | None = None
+    ) -> Status:
         """Checks whether the provided args satisfy the properties described by the design in this metadata.
 
         Args:
             args (RuntimeArguments): The arguments to check support for
+            target_sm (TargetSm | None): The target SM to check support for. If None, skips arch-specific checks.
 
         Returns:
             Status: Status indicating whether the provided args satisfy the properties described by the design in this metadata
         """
-        if args.performance is not None:
+        performance = args.performance
+        if performance is ... or performance is None:
+            return Status.success()
+        if not isinstance(performance, GemmPerformanceControls):
             return Status.fail(
-                "BLASDesignMetadata does not yet support performance controls"
+                f"expected GemmPerformanceControls, got {type(performance).__name__}"
+            )
+
+        pdl = performance.pdl
+        if not hasattr(self, "pdl") and (
+            pdl.early_launch_dependent is not None or pdl.early_start is not None
+        ):
+            return Status.fail(
+                "this design offers no PDL support, so it cannot honor the "
+                "requested PDL controls"
+            )
+
+        controls = performance.tile_scheduler_controls
+        if isinstance(controls, TileSchedulerControls):
+            return Status.fail(
+                "this operator fixes its tile scheduling internally, so it "
+                "offers no tile scheduler controls"
             )
         return Status.success()
 

@@ -15,8 +15,8 @@ regarding to that dialect.
 """
 
 # Local module imports
-from types import GenericAlias, SimpleNamespace, UnionType
-from typing_extensions import deprecated, override
+from types import GenericAlias, UnionType
+from typing_extensions import override
 from typing import (
     Callable,
     Generator,
@@ -24,21 +24,23 @@ from typing import (
     Union,
     Annotated,
     List,
+    Literal,
     Tuple,
     Sequence,
     Iterable,
     ForwardRef,
     Any,
+    ClassVar,
     get_origin,
     get_args,
     cast as typing_cast,
 )
+import dataclasses
 import functools
 import inspect
+import enum
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import fields
-from math import ceil
 from numbers import Integral
 from itertools import chain
 import sys
@@ -48,6 +50,7 @@ import ctypes
 import hashlib
 import os
 import re
+import warnings
 
 from ..base_dsl import *
 from ..base_dsl import compiler
@@ -59,6 +62,7 @@ from ..base_dsl.dsl import (
     new_from_mlir_values,
     implements_dynamic_expression,
 )
+from ..base_dsl.enums import Arch
 from ..base_dsl.typing import *
 from ..base_dsl.typing import (
     get_mlir_types,
@@ -77,14 +81,21 @@ from ..base_dsl.typing import (
     cast,
 )
 from ..base_dsl.common import (
+    DSLCudaRuntimeError,
     DSLRuntimeError,
     DSLUserCodeError,
     DSLUserCodeRuntimeError,
+    DSLUserCodeTypeError,
     DSLNotImplemented,
+    active_compile_options,
     active_env_manager,
+    target_version,
+    _deprecated,
 )
 from ..base_dsl.diagnostics import DiagId, find_user_source_location
+from ..base_dsl.enums import Arch
 from ..base_dsl.env_manager import (
+    _prefixed_env_var_suffixes,
     env_var,
     EnvironmentVarManager,
     get_bool_env_var,
@@ -99,16 +110,21 @@ from ..base_dsl.utils.tree_utils import (
     is_constexpr_field,
 )
 from ..base_dsl.utils.leaf_utils import is_frozen_dataclass
+from ..base_dsl.utils.mlir_value_tree import _is_staged_membership_operand
 from ..base_dsl.runtime.jit_arg_adapters import (
     JitArgAdapterRegistry,
     is_arg_annotation_constexpr,
 )
 from ..base_dsl.jit_executor import ExecutionArgs, _is_pointer_annotation  # noqa: F401
 from ..base_dsl.runtime import cuda as cuda_helpers
+from ..base_dsl.version_info import CUDA_VERSION
 from .cuda_stream_adapter import CudaDriverStreamAdapter, CudaRuntimeStreamAdapter  # noqa: F401
+import cuda.bindings.driver as cuda_driver
+import cuda.bindings.runtime as cuda_runtime
 from .cuda_library_adapter import CudaDialectLibraryAdapter  # noqa: F401
 from .cuda_event_adapter import CudaDriverEventAdapter, CudaRuntimeEventAdapter  # noqa: F401
 from .cuda_jit_executor import CudaDialectJitCompiledFunction
+from .cutlass_env_manager import CutlassFamilyDSL, CuTeDSLEnvironmentManager
 
 # MLIR Imports
 from cutlass._mlir import ir, execution_engine, passmanager
@@ -134,11 +150,15 @@ from cutlass._mlir.extras import types as T
 
 # Helpers
 from .._mlir_helpers import arith as cutlass_arith
+from .._mlir_helpers import cuda as cuda_helper
 from .._mlir_helpers.op import dsl_user_op
 from .._mlir_helpers.arith import const
 
 from ..base_dsl.ast_helpers import (
+    _public_type_name,
     executor,
+    truth_of,
+    traced_attr_read,
 )
 
 from .cutlass_ast_decorators import (
@@ -162,6 +182,57 @@ from ._launch_facts_metadata import (
     int64_attr,
 )
 
+_CUTE_BRANCH_WEIGHTS_ATTR = "cute.branch_weights"
+_I32_MAX = (1 << 31) - 1
+
+
+def _normalize_branch_weights(branch_weights: Sequence[int]) -> List[int]:
+    if len(branch_weights) != 2:
+        raise ValueError("branch_weights must contain exactly two weights")
+
+    weights: List[int] = []
+    for weight in branch_weights:
+        if isinstance(weight, bool) or not isinstance(weight, Integral):
+            raise TypeError("branch_weights must contain integer weights")
+        normalized = int(weight)
+        if normalized < 0 or normalized > _I32_MAX:
+            raise ValueError("branch_weights must fit in non-negative i32 values")
+        weights.append(normalized)
+    return weights
+
+
+def _set_cute_branch_weights(
+    op: ir.Operation, branch_weights: Optional[Sequence[int]]
+) -> None:
+    if branch_weights is None:
+        return
+    op.attributes[_CUTE_BRANCH_WEIGHTS_ATTR] = ir.DenseI32ArrayAttr.get(
+        _normalize_branch_weights(branch_weights)
+    )
+
+
+class _WeightedCondition:
+    _dsl_condition: Any
+    _dsl_branch_weights: Tuple[int, int]
+
+    def __init__(self, cond: Any, branch_weights: Sequence[int]) -> None:
+        weights = _normalize_branch_weights(branch_weights)
+        self._dsl_condition = cond
+        self._dsl_branch_weights = (weights[0], weights[1])
+
+    def __bool__(self) -> bool:
+        return bool(self._dsl_condition)
+
+
+def weighted_condition(cond: Any, *, then_weight: int, else_weight: int) -> Any:
+    """Mark an ``if`` condition with branch-frequency weights.
+
+    Dynamic ``if`` lowering unwraps this marker and attaches
+    ``cute.branch_weights`` to the generated ``scf.if``.
+    """
+    return _WeightedCondition(cond, (then_weight, else_weight))
+
+
 # =============================================================================
 # Cutlass DSL Device Info
 # =============================================================================
@@ -181,6 +252,14 @@ SMEM_CAPACITY_MAP = {
     "sm_87": (164 - 1) * 1024,
     "sm_80": (164 - 1) * 1024,
 }
+
+
+def _supports_oversized_smem(arch: Arch) -> bool:
+    """Whether the compilation target supports oversized memory, with any suffix."""
+    return (arch.major, arch.minor) in (
+        (10, 7),
+    )
+
 
 # =============================================================================
 # Cutlass DSL Base Abstract Class
@@ -226,7 +305,7 @@ def get_sparse_tuple_ctype(dyn: Union[int, Sequence[object]]) -> type:
     # For zero or greater than 1 dynamic values, the tuple
     # representation will be a struct with a field for each dynamic
     # value. The representation is flattened, even for hierarchical CuTe
-    # profiles (although we are only dealing with depth 1 inputs here).
+    # profiles.
     class TupleDescriptor(ctypes.Structure):
         _fields_ = [(f"x{idx}", ctypes.c_int32) for idx in range(len(dyn_seq))]
 
@@ -259,6 +338,17 @@ def is_cute_algebra_type(arg_spec: object) -> bool:
                 ) and tuple_arg0.__forward_arg__ in (_cute_algebra_type_aliases):
                     return True
     return False
+
+
+def _flatten_cute_algebra_runtime_values(arg: object) -> List[object]:
+    """Flatten a hierarchical CuTe algebra value in ABI leaf order."""
+    if isinstance(arg, (tuple, list)):
+        return list(
+            chain.from_iterable(_flatten_cute_algebra_runtime_values(x) for x in arg)
+        )
+    if isinstance(arg, Numeric):
+        return [arg.value]
+    return [arg]
 
 
 def _normalize_cutlass_pointer_annotation(
@@ -386,6 +476,25 @@ def _build_kernel_attrs(config: BaseDSL.LaunchConfig) -> dict:
     return kernel_attrs
 
 
+def _base_cu_attrs() -> dict:
+    """The ``cu_attrs`` every kernel op carries, independent of launch config.
+
+    ``cu_attrs`` is the only channel that reaches the driver on the CUDA dialect
+    path: ``createLoadFunc`` replays it through ``cudaFuncSetAttribute`` inside
+    the generated ``cuda_load_to_device``, which every launch path executes.
+    Kept here so the kernel-op builders and the launch-config-aware path cannot
+    drift apart.
+    """
+    return {
+        str(
+            cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
+        ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
+        str(
+            cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
+        ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
+    }
+
+
 def _is_pyir_watched_meta(value: object) -> bool:
     """Return whether ``value`` may be promoted from a PyIR meta value.
 
@@ -478,14 +587,68 @@ def _build_launch_facts_attr(config: BaseDSL.LaunchConfig) -> ir.DictAttr:
     return ir.DictAttr.get(facts)
 
 
+class _CompilerPipeline(str, enum.Enum):
+    """Logical CuTe compiler stages addressable by scoped options.
+
+    The values describe stable stage boundaries rather than registered MLIR
+    pipeline names. Keeping the registered-name mapping here lets compiler
+    pipelines be renamed without changing user code.
+    """
+
+    CUTE_EXT = "cute_ext"
+    CUTE = "cute"
+
+    __str__ = str.__str__
+
+
+_MLIR_PIPELINE_NAMES = {
+    _CompilerPipeline.CUTE_EXT: "lir-to-cute-dsl",
+    _CompilerPipeline.CUTE: "cute-to-nvvm",
+}
+
+
+def _format_pipeline_section(pipeline: _CompilerPipeline, options: str) -> str:
+    """Format one registered MLIR pipeline and its scoped option body."""
+    name = _MLIR_PIPELINE_NAMES[pipeline]
+    return f"{name}{{{options}}}" if options else name
+
+
 class CutlassBaseDSL(BaseDSL):
     """This abstract class provides a DSL for Cutlass."""
 
+    dsl_kind: ClassVar[CutlassFamilyDSL]
     _jit_arg_adapter_scope = JitArgAdapterRegistry.CUDA_DIALECT_SCOPE
     _name_mangling_prefix = "cutlass"
     _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset()
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = None
     decorator_location: DSLLocation | None
+    _arch_checked: bool = False
+    envar: CuTeDSLEnvironmentManager
+    _env_class = CuTeDSLEnvironmentManager
+
+    @override
+    def _is_supported_arch(self) -> None:
+        # Avoid duplicated arch check in one compilation
+        if self._arch_checked:
+            return
+
+        arch = self.get_arch_enum()
+        target_unsupported_archs = False
+
+        if target_version(max_version="13.3"):
+            target_unsupported_archs = arch in Arch.RubinArchs()
+        if target_unsupported_archs:
+            raise DSLRuntimeError(
+                f"Unsupported GPU architecture '{arch}' with CUDA toolkit version '{CUDA_VERSION}'.",
+                suggestion="Install DSL with a higher CUDA toolkit version.",
+            )
+        self._arch_checked = True
+
+    @override
+    def _create_environment_manager(self) -> CuTeDSLEnvironmentManager:
+        """Create the CuTe manager for the concrete DSL variant."""
+        return CuTeDSLEnvironmentManager(self.dsl_kind)
+
     @staticmethod
     def _make_kernel_decorator(
         target_cls: type["CutlassBaseDSL"],
@@ -495,14 +658,13 @@ class CutlassBaseDSL(BaseDSL):
     ) -> Any:
         """Build a ``@kernel`` decorator that dispatches through ``target_cls``.
 
-        Centralises the ``attributes=...`` kwarg handling shared between
-        ``CuTeDSL.kernel`` (with ``is_experimental=True``) and
-        ``CuteExperimentalDSL.kernel``: when ``attributes`` is supplied,
-        the resulting decorator stamps the spec onto the function via
-        ``target_cls._KERNEL_ATTR_SPEC_FIELD`` before running the normal
-        jit wrapping logic. The caller is responsible for resolving the
-        user's call site, so source locations point there rather than at
-        this helper.
+        Centralises the ``attributes=...`` kwarg handling shared by
+        ``CuTeDSL.kernel`` and ``CuteExperimentalDSL.kernel``. When
+        ``attributes`` is supplied, the resulting decorator stamps the spec
+        onto the function via ``target_cls._KERNEL_ATTR_SPEC_FIELD`` before
+        running the normal jit wrapping logic. The caller is responsible for
+        resolving the user's call site, so source locations point there rather
+        than at this helper.
         """
         attr_spec = dkwargs.pop("attributes", None)
         kernel_decorator = BaseDSL.jit_runner(
@@ -523,14 +685,13 @@ class CutlassBaseDSL(BaseDSL):
 
     def __init__(
         self,
-        name: str,
         compiler_provider: compiler.Compiler,
         pass_sm_arch_name: str,
         device_compilation_only: bool = False,
         preprocess: bool = False,
-    ):
+    ) -> None:
         super().__init__(
-            name=name,
+            name=str(self.dsl_kind),
             dsl_package_name=["cutlass"],
             compiler_provider=compiler_provider,
             pass_sm_arch_name=pass_sm_arch_name,
@@ -679,37 +840,129 @@ class CutlassBaseDSL(BaseDSL):
 
     def _get_pipeline(self, pipeline: Optional[str]) -> str:
         pipeline = super()._get_pipeline(pipeline)
+        self._validate_pipeline_options(pipeline, self._active_compiler_pipelines())
         if pipeline is None:
             # cubin format is required to be cubin as we launch cuda module at python level.
-            return (
-                "builtin.module(cute-to-nvvm{check-inline-asm=false cubin-format=bin "
+            cute_options = (
+                "check-inline-asm=false cubin-format=bin "
                 + self.compile_options.to_str()
-                + "})"
+                + "use-auto-fdd-pass=true "
+                + "use-grid-invariant-code-motion-pass=true "
+            )
+            cute_options = self.compile_options.merge_pipeline_options(
+                _CompilerPipeline.CUTE, cute_options
+            )
+            if (
+                _CompilerPipeline.CUTE.value
+                in self.compile_options.configured_pipelines
+            ):
+                # The Python runtime requires a loadable cubin. Opaque user
+                # options precede this driver invariant, so the invariant wins
+                # without the DSL interpreting individual pass option names.
+                separator = (
+                    "" if not cute_options or cute_options[-1].isspace() else " "
+                )
+                cute_options += separator + "cubin-format=bin "
+            return (
+                "builtin.module("
+                + _format_pipeline_section(_CompilerPipeline.CUTE, cute_options)
+                + ")"
             )
 
         return pipeline
 
+    def _validate_pipeline_options(
+        self,
+        custom_pipeline: Optional[str],
+        active_pipelines: frozenset[_CompilerPipeline],
+    ) -> None:
+        """Reject scoped options that the selected route cannot consume."""
+        configured = self.compile_options.configured_pipelines
+        if not configured:
+            return
+        if custom_pipeline is not None:
+            raise DSLUserCodeError(
+                "Scoped pipeline options cannot be combined with a custom "
+                "pass pipeline supplied through pipeline= or "
+                "CUTE_DSL_PIPELINE because they are merged only into the "
+                "default compiler pipelines.",
+                suggestion=(
+                    "Put the options directly in the custom pipeline string, "
+                    "unset CUTE_DSL_PIPELINE if applicable, or use the default "
+                    "pipeline."
+                ),
+            )
+        active_pipeline_names = frozenset(
+            pipeline.value for pipeline in active_pipelines
+        )
+        inactive = configured - active_pipeline_names
+        if inactive:
+            names = ", ".join(sorted(inactive))
+            raise DSLUserCodeError(
+                f"Options were provided for inactive pipeline(s): {names}.",
+                suggestion=(
+                    "Select a compilation route that includes those pipelines "
+                    "or remove their scoped options."
+                ),
+            )
+
+    def _active_compiler_pipelines(self) -> frozenset[_CompilerPipeline]:
+        """Return the stages used by this DSL's default compilation route."""
+        return frozenset({_CompilerPipeline.CUTE})
+
+    def _validate_compile_pipeline_options(
+        self,
+        pipeline: Optional[str],
+        *,
+        compile_to_precompiled_mlir: bool,
+    ) -> None:
+        """Validate scoped intent at the shared compile funnel."""
+        custom_pipeline = BaseDSL._get_pipeline(self, pipeline)
+        if compile_to_precompiled_mlir or self.envar.dryrun:
+            active_pipelines: frozenset[_CompilerPipeline] = frozenset()
+        else:
+            active_pipelines = self._active_compiler_pipelines()
+        self._validate_pipeline_options(custom_pipeline, active_pipelines)
+
     def _get_extension_pipeline(self, pipeline: Optional[str]) -> str:
         """Return the compiler pipeline used by CuTe extension APIs."""
         pipeline = BaseDSL._get_pipeline(self, pipeline)
+        self._validate_pipeline_options(pipeline, self._active_compiler_pipelines())
         if pipeline is None:
-            # Build the `lir-to-cute-dsl` entry separately from
-            # ``compile_options.to_str()``, which targets ``cute-to-nvvm``.
-            # The DSL-specific lowering pipeline owns its CUDA/launch defaults.
-            lir_to_cute_pipeline = "lir-to-cute-dsl"
-            lir_to_cute_opts = []
-            # Under PyIR the kernel body is still pyir form here; the pipeline's
-            # C++ ``enable-pyir`` option lowers it before touching ``!lir.pipeline_state``.
+            # Build each logical stage independently so options cannot leak
+            # from extension lowering into the CuTe-to-NVVM pipeline.
+            lir_options = self.compile_options.merge_pipeline_options(
+                _CompilerPipeline.CUTE_EXT, ""
+            )
+            # PyIR is a frontend-state invariant, not a user pass option. Put
+            # it after the opaque group so it remains authoritative without
+            # parsing or reserving names in the DSL.
             if self.envar.enable_pyir:
-                lir_to_cute_opts.append("enable-pyir=true")
-            if lir_to_cute_opts:
-                lir_to_cute_pipeline += "{" + " ".join(lir_to_cute_opts) + "}"
+                separator = "" if not lir_options or lir_options[-1].isspace() else " "
+                lir_options += separator + "enable-pyir=true"
+            cute_options = (
+                "check-inline-asm=false cubin-format=bin enable-cuda-dialect "
+                + self.compile_options.to_str()
+                + "use-auto-fdd-pass=true "
+                + "use-grid-invariant-code-motion-pass=true "
+            )
+            cute_options = self.compile_options.merge_pipeline_options(
+                _CompilerPipeline.CUTE, cute_options
+            )
+            if (
+                _CompilerPipeline.CUTE.value
+                in self.compile_options.configured_pipelines
+            ):
+                separator = (
+                    "" if not cute_options or cute_options[-1].isspace() else " "
+                )
+                cute_options += separator + "cubin-format=bin "
             return (
                 "builtin.module("
-                + lir_to_cute_pipeline
-                + ", cute-to-nvvm{check-inline-asm=false cubin-format=bin enable-cuda-dialect "
-                + self.compile_options.to_str()
-                + "})"
+                + _format_pipeline_section(_CompilerPipeline.CUTE_EXT, lir_options)
+                + ", "
+                + _format_pipeline_section(_CompilerPipeline.CUTE, cute_options)
+                + ")"
             )
         return pipeline
 
@@ -783,11 +1036,52 @@ class CutlassBaseDSL(BaseDSL):
             )
         # Add optional maximum shared memory per multiprocessor
         # to support preferred shared memory carveout calculation
+        # Infer carveout only from a device matching the compilation target.
         if config.preferred_smem_carveout is None and config.min_blocks_per_mp > 1:
-            max_smem_per_mp = cuda_helpers.get_device_attribute(
-                cuda_helpers.cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
+            target_arch = self.get_arch_enum()
+            try:
+                major, minor = cuda_helpers.get_compute_capability_major_minor()
+            except DSLCudaRuntimeError:
+                major, minor = None, None
+            if (major, minor) == (target_arch.major, target_arch.minor):
+                max_smem_per_mp = cuda_helpers.get_device_attribute(
+                    cuda_helpers.cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
+                )
+                ret["smem.max_smem_per_mp"] = ir.Attribute.parse(
+                    f"{max_smem_per_mp} : i64"
+                )
+            else:
+                device_arch = (
+                    f"sm_{major}{minor}"
+                    if major is not None and minor is not None
+                    else "unavailable"
+                )
+                self.print_warning_once(
+                    f"Skip auto `preferred_smem_carveout` for target {target_arch}: "
+                    f"CUDA device architecture is {device_arch}. "
+                    "Automatic carveout setting requires a matching device."
+                )
+
+        # Carry the carveout preference to the driver through `cu_attrs`, which
+        # `createLoadFunc` replays inside the generated `cuda_load_to_device`.
+        # `_build_kernel_attrs` only reaches the legacy `JitModule` path, which
+        # applies `kernel_info` itself; the CUDA dialect executor stores
+        # `kernel_info` without ever reading it, so without this the setting is
+        # silently dropped there. These attributes are assigned onto the kernel
+        # op after `generate_func_op` has built it, so the entry must repeat the
+        # base attributes rather than only add to them.
+        if config.preferred_smem_carveout is not None:
+            ret["cu_attrs"] = ir.DictAttr.get(
+                {
+                    **_base_cu_attrs(),
+                    str(
+                        cuda_dialect.CUFunctionAttribute.preferred_shared_memory_carveout
+                    ): ir.IntegerAttr.get(
+                        ir.IntegerType.get_signless(32),
+                        config.preferred_smem_carveout,
+                    ),
+                }
             )
-            ret["smem.max_smem_per_mp"] = ir.Attribute.parse(f"{max_smem_per_mp} : i64")
 
         # Pass user config specified smem size to support calculation
         if config.smem is not None and isinstance(config.smem, int):
@@ -861,6 +1155,11 @@ class CutlassBaseDSL(BaseDSL):
                 and cls._cluster_dims_are_static(config.fallback_cluster)
             ):
                 return {}
+            if not (
+                cls._cluster_dims_are_static(config.cluster)
+                and cls._cluster_dims_are_static(config.fallback_cluster)
+            ):
+                return {}
             if tuple(config.cluster) == tuple(config.fallback_cluster):
                 return {
                     "cluster_shape": cls._materialize_cluster_shape_attr(
@@ -898,18 +1197,13 @@ class CutlassBaseDSL(BaseDSL):
         """
         dsl_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        # The pybind module file may be CTK-tagged (`_cutlass_ir.cu12.cpython-…so`
-        # or `_cutlass_ir.cu13.cpython-…so`) when multiple CTK flavors coexist in
-        # the same `_mlir_libs/` directory. The CTK-aware loader has already
-        # picked one and bound it as `cutlass._mlir._mlir_libs._cutlass_ir`, so
-        # the loaded module's path is authoritative.
         loaded = sys.modules.get("cutlass._mlir._mlir_libs._cutlass_ir")
         loaded_file = getattr(loaded, "__file__", None) if loaded is not None else None
         if not loaded_file:
             # Loader hasn't run (very early import path, or someone deleted
-            # the sys.modules entry). Force it to run via import_module —
-            # this is idempotent if the module is already loaded, and
-            # otherwise routes through the CTK-aware loader in
+            # the sys.modules entry). Force it to run via import_module.
+            # This is idempotent if the module is already loaded.
+            # Otherwise this routes through the CTK-aware loader in
             # _mlir_libs/__init__.py so we fingerprint exactly the binary
             # the runtime would use. Avoids a non-deterministic glob
             # fallback (which could pick the wrong flavor when both cu12
@@ -1042,6 +1336,27 @@ class CutlassBaseDSL(BaseDSL):
         except KeyError:
             return False
 
+    @staticmethod
+    def _module_requires_workspace_query_func(module: ir.Module) -> bool:
+        """Return whether extension finalization must emit a workspace query."""
+        requires_workspace_query_func = False
+
+        def check_op(op: ir.Operation) -> ir.WalkResult:
+            nonlocal requires_workspace_query_func
+            if op.name == "lir.func":
+                requires_workspace_query_func = True
+                return ir.WalkResult.INTERRUPT
+            return ir.WalkResult.ADVANCE
+
+        # A post-order walk visits the whole kernel before seeing lir.func.
+        # Its presence alone determines this requirement, independent of body.
+        module.operation.walk(
+            check_op,
+            walk_order=ir.WalkOrder.PRE_ORDER,
+            op_class=cutlass_lir.FuncOp if cutlass_lir is not None else None,
+        )
+        return requires_workspace_query_func
+
     def compile_and_cache(
         self,
         module: ir.Module,
@@ -1053,12 +1368,14 @@ class CutlassBaseDSL(BaseDSL):
         no_jit_engine: bool,
         func_type: Callable[..., Any] = CudaDialectJitCompiledFunction,
         *,
+        extra_link_libs: tuple[str, ...] = (),
         full_args: Optional[tuple] = None,
         full_kwargs: Optional[dict] = None,
         dynamic_args: Optional[list] = None,
         dynamic_kwargs: Optional[dict] = None,
         original_function_name: Optional[str] = None,
         funcBody: Optional[Callable[..., None]] = None,
+        adapted_args: list[Any] | None = None,
     ) -> CudaDialectJitCompiledFunction:
         """
         Compile the module and cache the result.
@@ -1075,8 +1392,15 @@ class CutlassBaseDSL(BaseDSL):
         :param dynamic_args: The dynamic arguments to use for compilation.
         :param dynamic_kwargs: The dynamic keyword arguments to use for compilation.
         :param original_function_name: The name of the original function without mangling.
+        :param adapted_args: Adapted version of the original Python arguments.
+          Elements are in signature order, with None values for arguments that
+          did not need to be adapted to be processed which creating
+          the MLIR arguments.
         :return: The compiled function.
         """
+        requires_workspace_query_func = self._module_requires_workspace_query_func(
+            module
+        )
         if self.compile_options.enable_tvm_ffi:
             # TVM FFI post compile logic
             # attach extra ABI function to the MLIR module
@@ -1084,6 +1408,7 @@ class CutlassBaseDSL(BaseDSL):
                 TVMFFIJitCompiledFunction,
                 TVMFFIJitCompiledFunctionWithKwargs,
                 TVMFFICuteCallProvider,
+                _create_tvm_ffi_engine,
             )
             from cutlass.base_dsl.tvm_ffi_builder import attach_ffi_func
 
@@ -1099,11 +1424,12 @@ class CutlassBaseDSL(BaseDSL):
                 kwargs_wrapper_spec,
                 map_dataclass_to_tuple,
             ) = self._tvm_ffi_args_spec_converter(
-                function_name, signature, full_args, full_kwargs
+                function_name, signature, full_args, full_kwargs, adapted_args
             )
             tvm_ffi_provider = TVMFFICuteCallProvider(
                 function_name, has_gpu_module=self.num_kernels > 0
             )
+            shared_libs = self.get_shared_libs(extra_link_libs)
 
             # ensure we run the postprocessor hook after the compiler has run its passes
             def post_compile_hook(module: ir.Module) -> None:
@@ -1126,6 +1452,7 @@ class CutlassBaseDSL(BaseDSL):
                         tvm_ffi_provider,
                         fn_display_name=original_function_name,
                     )
+                    tvm_ffi_provider.attach_module_initializer(module)
                 module.operation.verify()
 
             def _make_compiled_func(*args: Any, **kwargs: Any) -> Any:
@@ -1144,18 +1471,23 @@ class CutlassBaseDSL(BaseDSL):
                     return TVMFFIJitCompiledFunctionWithKwargs(
                         *args,
                         **kwargs,
+                        shared_libs=shared_libs,
                         kwargs_wrapper_spec=kwargs_wrapper_spec,
                         map_dataclass_to_tuple=map_dataclass_to_tuple,
                     )
                 else:
-                    return TVMFFIJitCompiledFunction(*args, **kwargs)
+                    return TVMFFIJitCompiledFunction(
+                        *args, **kwargs, shared_libs=shared_libs
+                    )
 
             # ensure the compiler can run post-compile hook after its passes
             # the context will restore the previous post-compile hook after it exits
             with compiler.PostCompileHookContext(
-                self.compiler_provider, post_compile_hook
+                self.compiler_provider,
+                post_compile_hook,
+                jit_engine_factory=_create_tvm_ffi_engine,
             ):
-                return super().compile_and_cache(  # type: ignore[return-value]
+                compiled_fn = super().compile_and_cache(
                     module,
                     module_hash,
                     function_name,
@@ -1164,14 +1496,18 @@ class CutlassBaseDSL(BaseDSL):
                     no_cache,
                     no_jit_engine,
                     _make_compiled_func,
+                    extra_link_libs=extra_link_libs,
                     full_args=full_args,
                     full_kwargs=full_kwargs,
                     dynamic_args=dynamic_args,
                     dynamic_kwargs=dynamic_kwargs,
                     funcBody=funcBody,
+                    adapted_args=adapted_args,
                 )
+            compiled_fn._requires_workspace_query_func = requires_workspace_query_func
+            return compiled_fn  # type: ignore[return-value]
 
-        return super().compile_and_cache(  # type: ignore[return-value]
+        compiled_fn = super().compile_and_cache(
             module,
             module_hash,
             function_name,
@@ -1180,18 +1516,22 @@ class CutlassBaseDSL(BaseDSL):
             no_cache,
             no_jit_engine,
             CudaDialectJitCompiledFunction,
+            extra_link_libs=extra_link_libs,
             full_args=full_args,
             full_kwargs=full_kwargs,
             dynamic_args=dynamic_args,
             dynamic_kwargs=dynamic_kwargs,
             original_function_name=original_function_name,
             funcBody=funcBody,
+            adapted_args=adapted_args,
         )
+        compiled_fn._requires_workspace_query_func = requires_workspace_query_func
+        return compiled_fn  # type: ignore[return-value]
 
     @staticmethod
     def cuda_launch_func(
         stream: Union[list, tuple],
-        kernel: ir.Value,
+        kernel: ir.SymbolRefAttr,
         grid_size_x: Union[Int32, int],
         grid_size_y: Union[Int32, int],
         grid_size_z: Union[Int32, int],
@@ -1200,6 +1540,7 @@ class CutlassBaseDSL(BaseDSL):
         block_size_z: Union[Int32, int],
         kernel_operands: List[ir.Value],
         *,
+        arch: Arch,
         cluster_size_x: Optional[Union[Int32, int]] = None,
         cluster_size_y: Optional[Union[Int32, int]] = None,
         cluster_size_z: Optional[Union[Int32, int]] = None,
@@ -1207,6 +1548,7 @@ class CutlassBaseDSL(BaseDSL):
         preferred_cluster_size_y: Optional[Union[Int32, int]] = None,
         preferred_cluster_size_z: Optional[Union[Int32, int]] = None,
         dynamic_shared_memory_size: Optional[Union[Int64, int]] = None,
+        oversized_smem: Literal["auto", "allow", "disable"] = "allow",
         use_pdl: bool = False,
         cooperative: bool = False,
         launch_completion_event: Optional[ir.Value] = None,
@@ -1217,18 +1559,29 @@ class CutlassBaseDSL(BaseDSL):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        max_num_attributes = 17
+        max_num_attributes = 16
         launch_config_type = cuda_dialect.LaunchConfigType.get(max_num_attributes)
 
-        if len(stream) == 0:
-            stream = cuda_dialect.CastOp(
-                src=Int64(0).ir_value(),
+        # `stream` is empty (legacy default stream 0) or holds a single
+        # `!cuda.stream` value or 64-bit integer handle, as validated by
+        # `_normalize_async_deps`; a handle is cast to `!cuda.stream` the same
+        # way the default stream is.  A kernel launch runs on exactly one
+        # stream: several entries are refused rather than silently dropping all
+        # but the first (gpu.launch tokens are the only multi-dep consumer).
+        if len(stream) > 1:
+            raise DSLUserCodeError(
+                DiagId.LAUNCH_INVALID_STREAM,
+                got=f"{len(stream)} entries; "
+                "a kernel launch runs on exactly one stream",
+            )
+        stream_value: Any = stream[0] if len(stream) else 0
+        if not isinstance(stream_value, ir.Value):
+            stream_value = cuda_dialect.CastOp(
+                src=Int64(stream_value).ir_value(loc=loc, ip=ip),
                 dst=cuda_dialect.StreamType.get(),
                 loc=loc,
                 ip=ip,
             )
-        else:
-            stream = stream[0]
 
         dynamic_shared_memory_size = Int64(dynamic_shared_memory_size).ir_value()
         block_size_x = Int32(block_size_x).ir_value()
@@ -1249,7 +1602,7 @@ class CutlassBaseDSL(BaseDSL):
             grid_size_x,
             grid_size_y,
             grid_size_z,
-            stream,
+            stream_value,
             loc=loc,
             ip=ip,
         )
@@ -1257,6 +1610,47 @@ class CutlassBaseDSL(BaseDSL):
         cuda_dialect.launch_cfg_programmatic_stream_serialization_allowed(
             cfg, Int32(use_pdl).ir_value(), loc=loc, ip=ip
         )
+
+        # Check whether the target supports oversized smem
+        # Unsupported targets and "disable" skip both opt-in and size queries
+        arch_supports_oversized = _supports_oversized_smem(arch)
+        if arch_supports_oversized and oversized_smem == "allow":
+            # "allow" opt-in oversized smem for supported targets
+            cuda_dialect.launch_cfg_shared_memory_mode(
+                cfg,
+                cuda_dialect.CudaSharedMemoryMode.cudaSharedMemoryModeAllowOversizedSharedMemory,
+                loc=loc,
+                ip=ip,
+            )
+        elif arch_supports_oversized and oversized_smem == "auto":
+            # "auto" codegen to opt-in when static + dynamic smem exceeds normal limit
+            device = cuda_helper.get_device(loc=loc, ip=ip)
+            normal_limit = cuda_helper.device_get_attribute(
+                cuda_dialect.CUDeviceAttr.maxSharedMemoryPerBlockOptin,
+                device,
+                loc=loc,
+                ip=ip,
+            )
+            static_smem = cuda_helper.kernel_get_attribute(
+                kernel,
+                cuda_dialect.CUFunctionAttribute.shared_size_bytes,
+                device,
+                loc=loc,
+                ip=ip,
+            )
+
+            def enable() -> None:
+                cuda_dialect.launch_cfg_shared_memory_mode(
+                    cfg,
+                    cuda_dialect.CudaSharedMemoryMode.cudaSharedMemoryModeAllowOversizedSharedMemory,
+                    loc=loc,
+                )
+
+            # Compare against the normal limit minus CUDA's reported static usage
+            needs_oversized = Int64(dynamic_shared_memory_size) > (
+                Int64(normal_limit) - Int64(static_smem)
+            )
+            if_generate(needs_oversized, enable, loc=loc, ip=ip)
 
         if launch_completion_event is not None:
             event = launch_completion_event
@@ -1522,8 +1916,10 @@ class CutlassBaseDSL(BaseDSL):
                     *cfg.grid,
                     *cfg.block,
                     kernelOperands,
+                    arch=arch,
                     **launch_kwargs,
                     dynamic_shared_memory_size=cfg.smem,
+                    oversized_smem=cfg.oversized_smem,
                     use_pdl=cfg.use_pdl,
                     cooperative=cfg.cooperative,
                     launch_completion_event=cfg.launch_completion_event,
@@ -1547,12 +1943,90 @@ class CutlassBaseDSL(BaseDSL):
         """Helper to preprocess args and kwargs for LaunchConfig"""
         if "stream" in kwargs:
             kwargs["async_deps"] = kwargs.pop("stream")
+        if "async_deps" in kwargs:
+            kwargs["async_deps"] = self._normalize_async_deps(kwargs["async_deps"])
+
+    @staticmethod
+    def _normalize_async_deps(deps: object) -> list:
+        """Validate the launch ``stream=`` / ``async_deps=`` value(s) up front.
+
+        Accepted: a ``!cuda.stream`` value (what a ``cuda.CUstream`` host
+        parameter is at trace time), a ``!gpu.async.token``, or a 64-bit
+        integer stream handle (Python int, ``Int64``/``Uint64``), which
+        ``cuda_launch_func`` casts to ``!cuda.stream`` exactly like the default
+        stream.  A ``cuda.CUstream`` / ``cudaStream_t`` object built at trace
+        time is its integer handle, baked in the way the jit-arg adapters bake
+        a host parameter's.  Anything else -- notably an ``Int32``, which is
+        what an un-annotated Python int is marshalled as and would truncate the
+        handle -- is an author mistake; reject it here instead of letting the
+        ``cuda.launch_cfg.create`` op builder fail with a raw ``ValueError``.
+        """
+        deps = list(deps) if isinstance(deps, (list, tuple)) else [deps]
+        # Both are parameterless types, so equality against the singleton is
+        # exact (``AsyncTokenType.isinstance`` is only the ``ir.Type`` shim).
+        stream_types = (cuda_dialect.StreamType.get(), gpu.AsyncTokenType.get())
+        for i, dep in enumerate(deps):
+            if isinstance(dep, (cuda_driver.CUstream, cuda_runtime.cudaStream_t)):
+                deps[i] = dep = int(dep)
+            if isinstance(dep, ir.Value):
+                if any(dep.type == ty for ty in stream_types):
+                    continue
+                got = f"an MLIR value of type `{dep.type}`"
+            elif isinstance(dep, Integer) and not isinstance(dep, Boolean):
+                if type(dep).width == 64:
+                    continue
+                got = f"`{type(dep).__name__}` ({type(dep).width}-bit)"
+            elif isinstance(dep, int) and not isinstance(dep, bool):
+                continue
+            else:
+                got = f"`{type(dep).__name__}`"
+            raise DSLUserCodeError(DiagId.LAUNCH_INVALID_STREAM, got=got)
+        return deps
+
+    @staticmethod
+    def _mangles_scalar_by_type(arg: Any, annotation: Any) -> bool:
+        """True for a bare Python scalar bound to a runtime Numeric parameter.
+
+        Such an argument is implicitly coerced to its annotated Numeric type and
+        staged into a plain function argument (``%argN``), so its value never
+        shapes the generated IR body -- only its type does. ``Constexpr`` and
+        ``Constexpr[T]`` annotations are not ``NumericMeta`` instances, so
+        template-style parameters keep mangling by value.
+        """
+        return isinstance(arg, (bool, int, float)) and isinstance(
+            annotation, NumericMeta
+        )
+
+    @staticmethod
+    def _in_active_trace() -> bool:
+        # The condition _func_impl uses to detect an in-progress trace: the
+        # host-entry mangle runs before any MLIR context exists, while the
+        # kernel-name mangle runs while ops are being inserted. Unlike
+        # Context.current, InsertionPoint.current raises when unset.
+        if ir.Context.current is None:
+            return False
+        try:
+            return ir.InsertionPoint.current is not None
+        except ValueError:
+            return False
 
     def mangle_name(
         self, function_name: str, args: tuple[Any, ...], signature: inspect.Signature
     ) -> str:
         """Mangle the name of the function to avoid conflicts with other functions"""
         function_name = f"{self._name_mangling_prefix}_{function_name}"
+        if self.envar.mangle_scalar_by_type and not self._in_active_trace():
+            # Erase the values of scalars that stage into runtime arguments, so
+            # the mangled name -- and with it the module hash -- stays the same
+            # across values and the call hits the JIT cache instead of
+            # recompiling identical IR. The replacement is "" rather than a
+            # type tag so a bare call mangles exactly like a wrapped one
+            # (str(Int32(x)) is "?", scrubbed to nothing) and both share one
+            # cache entry. Skipped mid-trace to leave kernel names untouched.
+            args = tuple(
+                "" if self._mangles_scalar_by_type(arg, param.annotation) else arg
+                for param, arg in zip(signature.parameters.values(), args)
+            )
         return super().mangle_name(function_name, args, signature)
 
     def _validate_arg(
@@ -1730,14 +2204,10 @@ class CutlassBaseDSL(BaseDSL):
                     if is_host and self.envar.enable_tvm_ffi:
                         import tvm_ffi
 
+                        shape_values = _flatten_cute_algebra_runtime_values(arg)
                         jit_exec_arg.extend(
                             [
-                                tvm_ffi.Shape(
-                                    [  # type: ignore[arg-type]
-                                        v.value if isinstance(v, Numeric) else v
-                                        for v in arg
-                                    ]
-                                )
+                                tvm_ffi.Shape(shape_values)  # type: ignore[arg-type]
                             ]
                         )
                     else:
@@ -1836,20 +2306,67 @@ class CutlassBaseDSL(BaseDSL):
 # =============================================================================
 
 
-class CuTeDSLEnvironmentManager(EnvironmentVarManager):
-    """Adds environment variables specific to CuTeDSL compilation.
+@functools.cache
+def _cute_env_prefix_replacements() -> tuple[tuple[str, str], ...]:
+    """Return old-to-new names for the shared CuTe DSL environment surface.
 
-    Routing options:
-    - CUTE_DSL_USE_EXTENSION_COMPILER: Use extension compilation by default for
-      programs without an explicit per-compile opt-out (default: False).
+    DSL-specific extensions are intentionally excluded: they have no old-prefix
+    setting whose ownership changes when a decorator is migrated.
     """
-
-    use_extension_compiler: bool = env_var(
-        "USE_EXTENSION_COMPILER", affects_compile=True, default=False
+    return tuple(
+        (
+            f"CUTE_EXPERIMENTAL_DSL_{suffix}",
+            f"CUTE_DSL_{suffix}",
+        )
+        for suffix in _prefixed_env_var_suffixes()
     )
 
-    def __init__(self, prefix: str = "CUTE_DSL") -> None:
-        super().__init__(prefix)
+
+_cute_env_prefix_warning_emitted = False
+
+
+def _warn_if_cute_env_prefix_migration_needed(module_name: str) -> None:
+    """Warn once when old-prefix settings cannot affect an ordinary ``@cute.jit``."""
+    global _cute_env_prefix_warning_emitted
+    if _cute_env_prefix_warning_emitted:
+        return
+
+    if module_name == "cutlass" or module_name.startswith("cutlass."):
+        # Importing cutlass defines its library helpers with @cute.jit. Those
+        # definitions do not indicate that user code has migrated decorators.
+        return
+
+    unmatched = tuple(
+        (old_name, new_name)
+        for old_name, new_name in _cute_env_prefix_replacements()
+        if old_name in os.environ and new_name not in os.environ
+    )
+    if not unmatched:
+        return
+
+    _cute_env_prefix_warning_emitted = True
+    replacements = "\n".join(
+        f"  {old_name} -> {new_name}" for old_name, new_name in unmatched
+    )
+    warnings.warn(
+        "The following CuteExperimentalDSL environment variables do not configure "
+        f"this @cute.jit program:\n{replacements}\n"
+        "Set the CUTE_DSL_* replacements if these settings should apply here. "
+        "The CUTE_EXPERIMENTAL_DSL_* variables continue to configure "
+        "@cute.experimental.jit programs.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+def _caller_location_and_module(frame: Any) -> tuple[DSLLocation, str]:
+    """Resolve a caller frame to its source location and defining module name.
+
+    """
+    return (
+        BaseDSL.get_location_from_frame(frame),
+        frame.f_globals.get("__name__", ""),
+    )
 
 
 class CuTeDSL(CutlassBaseDSL):
@@ -1865,47 +2382,32 @@ class CuTeDSL(CutlassBaseDSL):
         }
     )
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = "_cute_kernel_attributes"
+    dsl_kind: ClassVar[CutlassFamilyDSL] = CutlassFamilyDSL.CUTE
     envar: CuTeDSLEnvironmentManager
 
     def __init__(self) -> None:
-        name = "CUTE_DSL"
         compiler_provider = compiler.Compiler(passmanager, execution_engine)
         pass_sm_arch_name = "cubin-chip"
 
-        super().__init__(name, compiler_provider, pass_sm_arch_name, preprocess=True)
+        super().__init__(compiler_provider, pass_sm_arch_name, preprocess=True)
 
     @classmethod
     def jit(cls, *dargs: Any, **dkwargs: Any) -> Any:
         """
         Decorator to mark a function for JIT compilation for Host code.
-
-        Parameters
-        ----------
-        is_experimental : bool, optional
-            When True, route compilation through the experimental CuTe DSL
-            path (equivalent to ``cute.experimental.jit``). Defaults to
-            False.
-
-            This option exists to ease the migration of users away from
-            ``cute.experimental`` toward the unified ``cute`` decorator;
-            ``cute.experimental`` is deprecated and will be removed once
-            its functionality has been folded into ``cute``.
         """
-        # Pop before forwarding so jit_runner does not see the alias kwarg.
-        is_experimental = dkwargs.pop("is_experimental", False)
-        # CuteExperimentalDSL is defined later in this module; it is
-        # resolved lazily here at call time, so the forward reference is
-        # safe.
-        target_cls: type[BaseDSL] = CuteExperimentalDSL if is_experimental else cls
         # Capture the user's call site (mirroring BaseDSL.jit) so that
         # decorator source locations are reported relative to the caller,
-        # not this override.
+        # not this override. The warning is emitted from this frame so its
+        # stacklevel still reaches the user.
+        location, caller_module = _caller_location_and_module(
+            inspect.currentframe().f_back  # type: ignore[union-attr]
+        )
+        _warn_if_cute_env_prefix_migration_needed(caller_module)
         return BaseDSL.jit_runner(
-            target_cls,
+            cls,
             "_func",
-            BaseDSL.get_location_from_frame(
-                inspect.currentframe().f_back  # type: ignore[union-attr]
-            ),
+            location,
             *dargs,
             **dkwargs,
         )
@@ -1914,9 +2416,10 @@ class CuTeDSL(CutlassBaseDSL):
         """Return whether the current compilation uses the extension compiler."""
         if self.compile_options.options[compiler.DisableCuteExtCompile].value:
             return False
+        if self.compile_options.options[compiler.EnableCuteExtCompile].value:
+            return True
 
-        # The rollout gate only controls the otherwise-unqualified default;
-        # all explicit and architecture-wide opt-outs above win.
+        # No per-compile route was selected, so use the rollout default.
         return self.envar.use_extension_compiler
 
     @override
@@ -1932,8 +2435,18 @@ class CuTeDSL(CutlassBaseDSL):
             raise DSLUserCodeError(DiagId.CONFIG_ATTRIBUTES_UNSUPPORTED)
         return self._convert_extra_kernel_value_attrs(raw_attrs)
 
-    def _get_pipeline(self, pipeline: Optional[str]) -> str:
+    def _active_compiler_pipelines(self) -> frozenset[_CompilerPipeline]:
         if self._should_use_extension_compilation():
+            return frozenset(
+                {
+                    _CompilerPipeline.CUTE_EXT,
+                    _CompilerPipeline.CUTE,
+                }
+            )
+        return super()._active_compiler_pipelines()
+
+    def _get_pipeline(self, pipeline: Optional[str]) -> str:
+        if _CompilerPipeline.CUTE_EXT in self._active_compiler_pipelines():
             return self._get_extension_pipeline(pipeline)
         return super()._get_pipeline(pipeline)
 
@@ -1960,38 +2473,15 @@ class CuTeDSL(CutlassBaseDSL):
 
         Parameters
         ----------
-        is_experimental : bool, optional
-            When True, route compilation through the experimental CuTe DSL
-            path (equivalent to ``cute.experimental.kernel``). Defaults to
-            False.
-
-            This option exists to ease the migration of users away from
-            ``cute.experimental`` toward the unified ``cute`` decorator;
-            ``cute.experimental`` is deprecated and will be removed once
-            its functionality has been folded into ``cute``. Pair this
-            flag with ``cute.jit(is_experimental=True)`` and
-            ``cute.compile(..., is_experimental=True)`` so that the host
-            launcher, the device kernel, and the explicit compile entry
-            point all dispatch through the same DSL; mixing experimental
-            and non-experimental decorations on the same kernel triggers
-            preprocessor mismatches.
         attributes : optional
-            Kernel-level attribute spec. Ordinary ``CuTeDSL`` kernels support
-            the extension attribute allowlist when extension compilation is selected;
-            ``CuteExperimentalDSL`` kernels continue to use their existing
-            always-on extension route.
+            Kernel-level attribute spec. ``CuTeDSL`` kernels support the
+            extension attribute allowlist when extension compilation is selected.
         """
-        is_experimental = dkwargs.pop("is_experimental", False)
-        # CuteExperimentalDSL is defined later in this module; the
-        # forward reference is resolved lazily at call time.
-        target_cls: type[CutlassBaseDSL] = (
-            CuteExperimentalDSL if is_experimental else cls
-        )
         # Capture the user's call site here rather than relying on a
         # nested method, so source locations point at the caller rather
         # than this override.
         return CutlassBaseDSL._make_kernel_decorator(
-            target_cls,
+            cls,
             BaseDSL.get_location_from_frame(
                 inspect.currentframe().f_back  # type: ignore[union-attr]
             ),
@@ -2011,12 +2501,40 @@ class CuTeDSL(CutlassBaseDSL):
             return self._generate_cuda_kernel_op(arg_types, arg_attrs, kernel_name, loc)
 
         self._current_func_uses_extension_compilation = True
-        return CuteExperimentalDSL.generate_func_op(
+        return self._generate_extension_kernel_op(
             arg_types,
             arg_attrs,
             kernel_name,
             loc,
         )
+
+    @staticmethod
+    def _generate_extension_kernel_op(
+        arg_types: List[ir.Type],
+        arg_attrs: Optional[List[ir.Attribute]],
+        kernel_name: str,
+        loc: Optional[ir.Location] = None,
+    ) -> ir.Operation:
+        """Build the kernel function shared by ordinary and legacy entry points."""
+        func_op = cutlass_lir.FuncOp(
+            ir.StringAttr.get(kernel_name),
+            ir.TypeAttr.get(ir.FunctionType.get(arg_types, [])),
+            loc=loc,
+        )
+        func_op.attributes["cu_attrs"] = ir.DictAttr.get(_base_cu_attrs())
+        if arg_attrs is not None:
+            func_op.arg_attrs = ir.ArrayAttr.get(arg_attrs)
+        # Monkey patch FuncOp to add an add_entry_block method, if not already defined.
+        if not hasattr(func_op, "add_entry_block"):
+
+            def add_entry_block(arg_locs: List[ir.Location]) -> ir.Block:
+                if len(func_op.body.blocks) != 0:
+                    raise RuntimeError("The function already has an entry block.")
+                func_op.body.blocks.append(*arg_types)
+                return func_op.body.blocks[0]
+
+            func_op.add_entry_block = add_entry_block
+        return func_op
 
     @staticmethod
     def _generate_cuda_kernel_op(
@@ -2028,18 +2546,8 @@ class CuTeDSL(CutlassBaseDSL):
         func_op = cuda_dialect.KernelOp(
             kernel_name, ir.FunctionType.get(arg_types, []), loc=loc
         )
-        func_op.attributes["cu_attrs"] = ir.DictAttr.get(
-            {
-                str(
-                    cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
-                ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
-                str(
-                    cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
-                ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
-            }
-        )
+        func_op.attributes["cu_attrs"] = ir.DictAttr.get(_base_cu_attrs())
         if arg_attrs is not None:
-            log().debug(arg_attrs)
             func_op.arg_attrs = arg_attrs
         return func_op
 
@@ -2171,15 +2679,20 @@ class CuTeDSL(CutlassBaseDSL):
 
     @staticmethod
     def _reject_lir_ops_in_device_func(module: ir.Module, function_name: str) -> None:
-        """Reject any LIR-dialect op in a device-function module.
+        """Reject cute_ext operations that have no standalone device lowering.
 
-        Device functions bypass the LIR pass pipeline and compile with the
-        standard cute-to-nvvm pipeline (see ``_device_func_impl``), so a
-        ``lir.*`` op in the body has no lowering pass in front of it and would
-        otherwise fail late with an opaque partial-conversion error. Detect it
-        up front and raise a clear, actionable user error instead. Matching by
-        the ``lir.`` dialect prefix covers every LIR op; no ``lir.*`` op is
-        expected in a well-formed device-function module.
+        Device functions remain cuda.func in the unified compiler pipeline.
+        The cute_ext body lowering and finalization passes only visit kernels, so
+        diagnose unsupported operations before the CuTe backend runs.
+
+        Whole-kernel requirements are not introduced by cute_ext routing:
+        ordinary CuTe operations can also depend on kernel-owned resources.
+        More cute_ext operations require whole-kernel compilation because their
+        higher-level abstractions leave host setup, resource allocation, and
+        kernel parameter rewriting to the compiler. Supporting these in standalone
+        functions requires preserving the callable ABI and defining resource ownership.
+        This guard preserves the existing support boundary; it does not imply
+        that every cute_ext operation inherently requires whole-kernel compilation.
         """
         offending: List[str] = []
 
@@ -2228,6 +2741,10 @@ class CuTeDSL(CutlassBaseDSL):
         # Device functions have no host entry point — never create a JIT engine.
         kwargs.pop("no_jit_engine", None)
         setup = self._prepare_compilation(funcBody, *args, **kwargs)
+        self._validate_compile_pipeline_options(
+            setup.pipeline,
+            compile_to_precompiled_mlir=False,
+        )
 
         # Extract return type from Python annotation (e.g. -> Float32)
         ret_annotation = setup.sig.return_annotation
@@ -2237,7 +2754,11 @@ class CuTeDSL(CutlassBaseDSL):
         log().debug(f"Generating MLIR for device function '{setup.function_name}'")
 
         # Generate MLIR
-        with ir.Context() as ctx, self.get_ir_location(setup.location):
+        with (
+            ir.Context() as ctx,
+            self.get_ir_location(setup.location),
+            active_compile_options(self.compile_options),
+        ):
             ctx.enable_multithreading(False)
             try:
                 from cutlass._mlir.dialects import llvm as llvm_dialect
@@ -2294,7 +2815,7 @@ class CuTeDSL(CutlassBaseDSL):
                     if pointer_arg_indices:
                         typegen_sig = setup.sig.replace(parameters=typegen_params)
 
-                exe_args, func_types, adapted_args = self.generate_mlir_function_types(
+                _mlir_func_args = self.generate_mlir_function_types(
                     funcBody,
                     setup.function_name,
                     setup.canonicalized_args,
@@ -2302,6 +2823,9 @@ class CuTeDSL(CutlassBaseDSL):
                     typegen_sig,
                     compile_only=setup.compile_only,
                 )
+                exe_args = _mlir_func_args.values
+                func_types = _mlir_func_args.types
+                adapted_args = _mlir_func_args.adapted_python_args
 
                 # Device function pointers use generic address space (0).
                 generic_ptr = llvm_dialect.PointerType.get(0)
@@ -2387,30 +2911,47 @@ class CuTeDSL(CutlassBaseDSL):
                 self._run_trace_finalize_hooks(module, setup.function_name)
                 module = self.build_module(module, setup.function_name)
 
-                # Device functions skip the LIR pipeline, so reject any LIR op
-                # here with a clear error rather than failing late in
-                # cute-to-nvvm, which cannot lower LIR ops.
+                # The unified pipeline preserves cuda.func but does not lower
+                # cute_ext operations inside it. Keep the existing device-op guard.
                 self._reject_lir_ops_in_device_func(module, setup.function_name)
+
+                if setup.compile_to_precompiled_mlir:
+                    from .._mlir._mlir_libs import _cutlass_ir
+
+                    return self._emit_precompiled_artifact(
+                        module,
+                        setup.function_name,
+                        setup.sig,
+                        tuple(setup.canonicalized_args),
+                        setup.canonicalized_kwargs,
+                        funcBody,
+                        target_kind=_cutlass_ir.TargetKind.Device,
+                    )
 
                 # dryrun: generate IR and header, skip compilation
                 if self.envar.dryrun:
                     print(device_header)
                     return result
 
-                module_hash = self.get_module_hash(module, setup.function_name)
-                # Device functions have no kernel launch and need no LIR
-                # lowering, so always use the standard cute-to-nvvm pipeline.
-                # Resolving via CutlassBaseDSL bypasses the experimental LIR
-                # pipeline override while still honoring an explicit pipeline.
-                device_pipeline = CutlassBaseDSL._get_pipeline(self, setup.pipeline)
+                module_hash = self.get_module_hash(
+                    module,
+                    setup.function_name,
+                    extra_link_libs=setup.extra_link_libs,
+                )
+                # Pass the unresolved user pipeline through so the
+                # compile funnel performs the one authoritative resolution.
                 jit_function = self.compile_and_cache(
                     module,
                     module_hash,
                     setup.function_name,
-                    device_pipeline,
+                    setup.pipeline,
                     setup.sig,
                     setup.no_cache,
                     no_jit_engine=True,
+                    extra_link_libs=setup.extra_link_libs,
+                    full_args=tuple(setup.canonicalized_args),
+                    full_kwargs=setup.canonicalized_kwargs,
+                    funcBody=funcBody,
                 )
 
                 # Attach device compilation artifacts.
@@ -2437,7 +2978,6 @@ class CuTeDSL(CutlassBaseDSL):
                 )
             finally:
                 self.post_compilation_cleanup()
-
         if setup.compile_only:
             return jit_function
 
@@ -2459,23 +2999,34 @@ class _CuteExperimentalJitCompiledFunction(CudaDialectJitCompiledFunction):
 
 
 class CuteExperimentalDSL(CutlassBaseDSL):
-    _KERNEL_EXTRA_ARGS_ATTR = "lir.kernel_extra_args"
+    """Legacy entry points; new code should use ``CuTeDSL``.
+
+    Keep a distinct owner while these entry points remain supported: they read
+    ``CUTE_EXPERIMENTAL_DSL_*`` and always select extension compilation.
+    """
+
+    dsl_kind: ClassVar[CutlassFamilyDSL] = CutlassFamilyDSL.CUTE_EXPERIMENTAL
     _ALLOWED_EXTRA_KERNEL_VALUE_ATTRS: frozenset[str] = frozenset(
-        {"lir.tma_update_mode", "lir.tma_override_mode"}
+        {
+            "lir.tma_update_mode",
+            "lir.tma_override_mode",
+        }
     )
     _KERNEL_ATTR_SPEC_FIELD: Optional[str] = "_cute_experimental_kernel_attributes"
-    # Marks this class as the deprecated "experimental" CuTe DSL so
-    # ``cute.compile(..., is_experimental=True)`` can validate that the
-    # function being compiled was actually decorated through the
-    # experimental path (``@cute.jit(is_experimental=True)`` /
-    # ``@cute.kernel(is_experimental=True)``).
-    _is_experimental_dsl: bool = True
     JitCompiledFunction = _CuteExperimentalJitCompiledFunction
 
+    def _active_compiler_pipelines(self) -> frozenset[_CompilerPipeline]:
+        return frozenset(
+            {
+                _CompilerPipeline.CUTE_EXT,
+                _CompilerPipeline.CUTE,
+            }
+        )
+
     # Reuse CuTeDSL's device-function codegen (the two are siblings, so it is
-    # not inherited). Device functions compile via cute-to-nvvm, skipping LIR.
-    # The LIR-op guard is aliased too, since the aliased _device_func_impl
-    # calls it via self.
+    # not inherited). Device functions remain cuda.func in the unified pipeline,
+    # so kernel-only lowering and finalization skip them. The cute_ext-op guard
+    # is aliased too, since _device_func_impl calls it via self.
     generate_device_func_op = staticmethod(CuTeDSL.generate_device_func_op)
     _resolve_device_func_ret_types = staticmethod(
         CuTeDSL._resolve_device_func_ret_types
@@ -2488,11 +3039,10 @@ class CuteExperimentalDSL(CutlassBaseDSL):
     _device_func = CuTeDSL._device_func
 
     def __init__(self) -> None:
-        name = "CUTE_EXPERIMENTAL_DSL"
         compiler_provider = compiler.Compiler(passmanager, execution_engine)
         pass_sm_arch_name = "cubin-chip"
 
-        super().__init__(name, compiler_provider, pass_sm_arch_name, preprocess=True)
+        super().__init__(compiler_provider, pass_sm_arch_name, preprocess=True)
 
     @classmethod
     def kernel(cls, *dargs: Any, **dkwargs: Any) -> Any:
@@ -2530,43 +3080,11 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         return ret
 
     def _get_pipeline(self, pipeline: Optional[str]) -> str:
-        return self._get_extension_pipeline(pipeline)
+        if _CompilerPipeline.CUTE_EXT in self._active_compiler_pipelines():
+            return self._get_extension_pipeline(pipeline)
+        return super()._get_pipeline(pipeline)
 
-    @staticmethod
-    def generate_func_op(
-        arg_types: List[ir.Type],
-        arg_attrs: Optional[List[ir.Attribute]],
-        kernel_name: str,
-        loc: Optional[ir.Location] = None,
-    ) -> ir.Operation:
-        func_op = cutlass_lir.FuncOp(
-            ir.StringAttr.get(kernel_name),
-            ir.TypeAttr.get(ir.FunctionType.get(arg_types, [])),
-            loc=loc,
-        )
-        func_op.attributes["cu_attrs"] = ir.DictAttr.get(
-            {
-                str(
-                    cuda_dialect.CUFunctionAttribute.non_portable_cluster_size_allowed
-                ): ir.IntegerAttr.get(ir.IntegerType.get_signless(32), 1),
-                str(
-                    cuda_dialect.CUFunctionAttribute.max_dynamic_shared_size_bytes
-                ): cuda_dialect.DevMaxSharedMemoryOptinAttr.get(),
-            }
-        )
-        if arg_attrs is not None:
-            func_op.arg_attrs = ir.ArrayAttr.get(arg_attrs)
-        # Monkey patch FuncOp to add an add_entry_block method, if not already defined.
-        if not hasattr(func_op, "add_entry_block"):
-
-            def add_entry_block(arg_locs: List[ir.Location]) -> ir.Block:
-                if len(func_op.body.blocks) != 0:
-                    raise RuntimeError("The function already has an entry block.")
-                func_op.body.blocks.append(*arg_types)
-                return func_op.body.blocks[0]
-
-            func_op.add_entry_block = add_entry_block
-        return func_op
+    generate_func_op = staticmethod(CuTeDSL._generate_extension_kernel_op)
 
     @staticmethod
     def generate_func_ret_op(
@@ -2588,12 +3106,14 @@ class CuteExperimentalDSL(CutlassBaseDSL):
         no_jit_engine: bool,
         func_type: Callable[..., Any] = CudaDialectJitCompiledFunction,
         *,
+        extra_link_libs: tuple[str, ...] = (),
         full_args: Optional[tuple] = None,
         full_kwargs: Optional[dict] = None,
         dynamic_args: Optional[list] = None,
         dynamic_kwargs: Optional[dict] = None,
         original_function_name: Optional[str] = None,
         funcBody: Optional[Callable[..., None]] = None,
+        adapted_args: list[Any] | None = None,
     ) -> CudaDialectJitCompiledFunction:
         fn = super().compile_and_cache(
             module,
@@ -2604,28 +3124,31 @@ class CuteExperimentalDSL(CutlassBaseDSL):
             no_cache,
             no_jit_engine,
             func_type,
+            extra_link_libs=extra_link_libs,
             full_args=full_args,
             full_kwargs=full_kwargs,
             dynamic_args=dynamic_args,
             dynamic_kwargs=dynamic_kwargs,
             original_function_name=original_function_name,
             funcBody=funcBody,
+            adapted_args=adapted_args,
         )
-        # Extract the lir.kernel_extra_args attribute written by FuncFinalizationPass
-        # and store it on the compiled function for later retrieval.
-        # Maps kernel name → number of extra workspace pointer args added to the
-        # host entry point signature.
-        fn.kernel_extra_args = {}
-        fn.total_added_arguments = 0
-        if fn.ir_module is not None:
-            attrs = fn.ir_module.operation.attributes
-            attr_name = self._KERNEL_EXTRA_ARGS_ATTR
-            if attr_name in attrs:
-                for named in ir.DictAttr(attrs[attr_name]):
-                    fn.kernel_extra_args[named.name] = ir.IntegerAttr(named.attr).value
-                fn.total_added_arguments = fn.kernel_extra_args.pop(
-                    "total_added_arguments", 0
-                )
+        # The common CUDA executor initializes workspace metadata itself.
+        # Preserve the legacy metadata surface for alternative backend wrappers.
+        if not isinstance(fn, CudaDialectJitCompiledFunction):
+            fn.kernel_extra_args = {}
+            fn.total_added_arguments = 0
+            if fn.ir_module is not None:
+                attrs = fn.ir_module.operation.attributes
+                attr_name = CudaDialectJitCompiledFunction._KERNEL_EXTRA_ARGS_ATTR
+                if attr_name in attrs:
+                    for named in ir.DictAttr(attrs[attr_name]):
+                        fn.kernel_extra_args[named.name] = ir.IntegerAttr(
+                            named.attr
+                        ).value
+                    fn.total_added_arguments = fn.kernel_extra_args.pop(
+                        "total_added_arguments", 0
+                    )
         if type(fn) is CudaDialectJitCompiledFunction:
             fn.__class__ = CuteExperimentalDSL.JitCompiledFunction
         return fn
@@ -2701,8 +3224,9 @@ class KernelLauncher:
                 cause=e,
             )
 
-    @deprecated(
-        "`smem_usage()` is deprecated, use public API `arch.dynamic_smem_size()` instead."
+    @_deprecated(
+        "`smem_usage()` is deprecated, "
+        "use public API `arch.dynamic_smem_size()` instead."
     )
     def smem_usage(self) -> Int32:
         """
@@ -2740,6 +3264,8 @@ class KernelLauncher:
                         caller_locs=(),
                     )
                 )
+        launch_emitter = kwargs.pop("_launch_emitter", None)
+
         self.dsl._preprocess_launch_config_args(args, kwargs)
         config = self.dsl.LaunchConfig(*args, **kwargs)
         kernel_attrs = _build_kernel_attrs(config)
@@ -2764,12 +3290,14 @@ class KernelLauncher:
                 **self.func_kwargs,
                 config=config,
                 _launch_loc=launch_location,
+                _launch_emitter=launch_emitter,
             )
         else:
             ret, name = kernel_generator(
                 *self.func_args,
                 **self.func_kwargs,
                 config=config,
+                _launch_emitter=launch_emitter,
             )
         self.dsl.kernel_info[name] = kernel_attrs
         self._launch_name = name
@@ -2875,10 +3403,6 @@ def insert_read_only_frozen_dataclass(
 def unpack_to_irvalue(
     mixed_values: List[Any], body_name: str, full_write_args_count: int
 ) -> Tuple[List[ir.Value], Union[PyTreeDef, Leaf]]:
-    log().debug("===--- Values UNPack")
-    for idx, packed in enumerate(mixed_values):
-        log().debug("[%d]: will-unpacked: [type:%s] %s", idx, type(packed), packed)
-
     # DEBUG: Print input values before tree_flatten (only if enabled)
     from ..base_dsl.dsl import (
         debug_print_mlir_values,
@@ -2920,9 +3444,13 @@ def unpack_to_irvalue(
         print("=" * 80)
 
     try:
-        unpacked_values, _, treedef = tree_flatten(
-            remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
+        # Expression results must participate in selection even when frozen.
+        values_to_flatten = (
+            mixed_values
+            if body_name == "ifexp"
+            else remove_read_only_frozen_dataclass(mixed_values, full_write_args_count)
         )
+        unpacked_values, _, treedef = tree_flatten(values_to_flatten)
     except DSLTreeFlattenError as e:
         # Strip the "builtins." prefix so the author sees a plain type name.
         py_type = str(e.type_str).rsplit(".", 1)[-1]
@@ -2944,9 +3472,6 @@ def unpack_to_irvalue(
         print("=" * 80)
 
     log().debug("------------------ ")
-    for idx, unpacked in enumerate(unpacked_values):
-        log().debug("[%d]: unpacked values: %s", idx, unpacked)
-    log().debug("treedef: %s", treedef)
     log().debug("------------------ ")
 
     return unpacked_values, treedef
@@ -2957,17 +3482,20 @@ def pack_from_irvalue(
     pytree_def: PyTreeDef,
     mixed_values: List[Any],
     full_write_args_count: int,
+    body_name: str = "",
 ) -> List[Any]:
     """
     Packs MLIR values into a list of mixed values.
+
+    body_name must match unpack_to_irvalue so ifexp results are rebuilt
+    instead of being replaced by the original frozen instances.
     """
     log().debug("===--- Values Pack (%d)", len(ir_values))
-    for idx, value in enumerate(ir_values):
-        log().debug("[%d]: will-packed: %s", idx, value)
-    log().debug("treedef: %s", pytree_def)
     log().debug("------------------ ")
 
     unflattened = tree_unflatten(pytree_def, ir_values)
+    if body_name == "ifexp":
+        return unflattened
     return insert_read_only_frozen_dataclass(
         unflattened, mixed_values, full_write_args_count
     )
@@ -3218,10 +3746,68 @@ def max(
     return _minmax(max, *args, loc=loc, ip=ip)
 
 
+def _logical_op(
+    lhs: Union[Numeric, ir.Value, int, float, bool],
+    rhs: Union[Numeric, ir.Value, int, float, bool],
+    *,
+    is_and: bool,
+    constexpr: bool,
+) -> Union[Numeric, int, float, bool]:
+    """One step of :func:`and_` (``is_and``) or :func:`or_`: Python's own
+    operand selection while the truth of ``lhs`` is a trace-time fact, the
+    numeric ``__dsl_and__`` / ``__dsl_or__`` once it is a run-time value."""
+
+    def select(truth: object) -> Union[Numeric, int, float, bool]:
+        # Python's rule given the truth of lhs: ``and`` keeps a falsy lhs and
+        # ``or`` a truthy one, the rhs otherwise.
+        if is_and:
+            return rhs if truth else lhs
+        return lhs if truth else rhs
+
+    if constexpr:
+        # Payload reads witness Numeric sources; keep watched operands
+        # intact. Never truth-test an SSA handle as a Python object.
+        lhs = lhs.value if isinstance(lhs, Numeric) else lhs
+        rhs = rhs.value if isinstance(rhs, Numeric) else rhs
+        if isinstance(lhs, ir.Value) or isinstance(rhs, ir.Value):
+            raise DSLUserCodeError(
+                DiagId.PHASE_REQUIRES_CONSTANT, what="`const_expr()`"
+            )
+        return select(lhs)
+
+    numeric_types = (Numeric, cutlass_arith.ArithValue, int, float, bool)
+    if not isinstance(lhs, numeric_types):
+        # Python's own rules on the trace-time truth of lhs.  A DSL object
+        # with no truth value is refused by ``truth_of``; a raw scalar SSA
+        # value selects below.
+        truth = truth_of(lhs)
+        if not isinstance(truth, ir.Value):
+            return select(truth)
+        lhs = truth
+    if isinstance(lhs, (int, float, bool)) and isinstance(rhs, (int, float, bool)):
+        return select(lhs)
+    if not isinstance(rhs, numeric_types):
+        # Only a trace-time lhs truth can apply Python's rule to a
+        # non-numeric rhs; a run-time lhs would have to select it at
+        # run time.
+        truth = truth_of(lhs)
+        if isinstance(truth, (Numeric, ir.Value)):
+            raise DSLUserCodeTypeError(
+                DiagId.TYPE_BOOLOP_OPERAND_NOT_NUMERIC,
+                op="and" if is_and else "or",
+                got=_public_type_name(rhs),
+            )
+        return select(truth)
+    if is_and:
+        return as_numeric(lhs).__dsl_and__(as_numeric(rhs))
+    return as_numeric(lhs).__dsl_or__(as_numeric(rhs))
+
+
 def and_(
     *args: Union[Numeric, ir.Value, int, float, bool],
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
+    _constexpr: bool = False,
 ) -> Union[Numeric, int, float, bool]:
     """AND operation for value in DSL numeric types.
 
@@ -3263,26 +3849,15 @@ def and_(
     if len(args) == 1:
         return args[0]
 
-    def and_op(
-        lhs: Union[Numeric, ir.Value, int, float, bool],
-        rhs: Union[Numeric, ir.Value, int, float, bool],
-    ) -> Union[Numeric, int, float, bool]:
-        if not isinstance(lhs, (Numeric, cutlass_arith.ArithValue, int, float, bool)):
-            raise DSLNotImplemented(f"{type(lhs)} is not supported")
-        elif isinstance(lhs, (int, float, bool)) and isinstance(
-            rhs, (int, float, bool)
-        ):
-            return lhs and rhs
-        else:
-            return as_numeric(lhs).__dsl_and__(as_numeric(rhs))
-
-    return functools.reduce(and_op, args[1:], args[0])
+    step = functools.partial(_logical_op, is_and=True, constexpr=_constexpr)
+    return functools.reduce(step, args[1:], args[0])
 
 
 def or_(
     *args: Union[Numeric, ir.Value, int, float, bool],
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
+    _constexpr: bool = False,
 ) -> Union[Numeric, int, float, bool]:
     """Logical OR operation for DSL numeric types.
 
@@ -3322,20 +3897,8 @@ def or_(
     if len(args) == 1:
         return args[0]
 
-    def or_op(
-        lhs: Union[Numeric, ir.Value, int, float, bool],
-        rhs: Union[Numeric, ir.Value, int, float, bool],
-    ) -> Union[Numeric, int, float, bool]:
-        if not isinstance(lhs, (Numeric, cutlass_arith.ArithValue, int, float, bool)):
-            raise DSLNotImplemented(f"{type(lhs)} is not supported")
-        elif isinstance(lhs, (int, float, bool)) and isinstance(
-            rhs, (int, float, bool)
-        ):
-            return lhs or rhs
-        else:
-            return as_numeric(lhs).__dsl_or__(as_numeric(rhs))
-
-    return functools.reduce(or_op, args[1:], args[0])
+    step = functools.partial(_logical_op, is_and=False, constexpr=_constexpr)
+    return functools.reduce(step, args[1:], args[0])
 
 
 def all_(iterable: Iterable[Union[Numeric, ir.Value, bool]]) -> Boolean:
@@ -3417,7 +3980,15 @@ def select_(
     cond: Union[Boolean, ir.Value, bool],
     if_value: Union[Numeric, ir.Value, int, float, bool],
     else_value: Union[Numeric, ir.Value, int, float, bool],
-) -> ir.Value:
+) -> Union[Numeric, ir.Value]:
+    """Select ``if_value`` where ``cond`` holds, otherwise ``else_value``.
+
+    A scalar integer or float result is returned as a ``Numeric``: the operands'
+    type, an unsigned type when the operands differ only in signedness, or the type
+    matching the MLIR result when neither operand is a ``Numeric``. Other results,
+    such as vectors and pointers, are returned as the raw MLIR value.
+    """
+
     def _as_scalar(
         value: Union[Numeric, ir.Value, int, float, List[ir.Value]],
     ) -> Union[ir.Value, Numeric]:
@@ -3433,6 +4004,10 @@ def select_(
     if not is_dynamic_expression(cond):
         raise DSLUserCodeError(DiagId.PHASE_CONDITIONAL_NOT_DYNAMIC)
 
+    operand_types = [
+        type(value) for value in (if_value, else_value) if isinstance(value, Numeric)
+    ]
+
     # Extract MLIR values
     cond = extract_mlir_values(cond)
     if is_dynamic_expression(if_value):
@@ -3444,9 +4019,15 @@ def select_(
     else:
         else_value = const(else_value)
 
-    return arith.SelectOp(
+    result = arith.SelectOp(
         _as_scalar(cond), _as_scalar(if_value), _as_scalar(else_value)
     ).result
+    if not isinstance(result.type, (ir.IntegerType, ir.FloatType)):
+        return result
+    if not operand_types:
+        return Numeric.from_mlir_type(result.type)(result)
+    unsigned_types = [t for t in operand_types if getattr(t, "signed", True) is False]
+    return (unsigned_types or operand_types)[0](result)
 
 
 # =============================================================================
@@ -3456,6 +4037,7 @@ def select_(
 
 def yield_out(
     args: Union[List[ir.Value], List[Numeric]] = [],
+    *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
@@ -3483,6 +4065,10 @@ def for_generate(
 ) -> Generator:
     """
     scf.for with yield support
+
+    An integer induction variable is yielded as the ``Numeric`` of its type
+    (``Int32`` for ``int`` bounds), like the induction variable of a preprocessed
+    ``for`` loop.
     """
 
     if step is None:
@@ -3519,6 +4105,8 @@ def for_generate(
         for_op.attributes["cutlass.pipelining"] = _createI32Attr(prefetch_stages)
 
     iv = for_op.induction_variable
+    if isinstance(iv.type, ir.IntegerType):
+        iv = as_numeric(iv)
     new_results = new_from_mlir_values(iter_args, for_op.results)
     new_iter_args = new_from_mlir_values(iter_args, for_op.inner_iter_args)
     new_iter_args = () if new_iter_args is None else tuple(new_iter_args)
@@ -3545,6 +4133,8 @@ def not_(
 ) -> Union[Boolean, bool, ir.Value]:
     """
     Logical Not
+
+    A raw scalar i1 operand gives a ``Boolean``, like a ``Boolean`` operand does.
     """
     res = None
     # Handle Python bool first to prevent infinite recursion
@@ -3552,11 +4142,16 @@ def not_(
         res = lhs ^ True
     elif hasattr(lhs, "__dsl_not__"):
         res = lhs.__dsl_not__(loc=loc, ip=ip)
-    elif is_dynamic_expression(lhs):
-        # If lhs is MLIR value, compute not using xor
-        res = arith.XOrIOp(lhs, const(1, lhs.type)).result
     else:
-        res = bool(lhs) ^ True
+        # Only a raw SSA value is negated in IR (xor); a container's truth is
+        # its length and a DSL object with no truth value is refused.
+        truth = truth_of(lhs)
+        if isinstance(truth, ir.Value):
+            res = arith.XOrIOp(truth, const(1, truth.type)).result
+            if truth.type == Boolean.mlir_type:
+                return Boolean(res)
+        else:
+            res = not truth
 
     return res
 
@@ -3570,9 +4165,10 @@ def if_generate(
     cond: Union[Boolean, ir.Value, bool],
     then_body: Callable,
     else_body: Optional[Callable] = None,
-    input_args: Optional[List[DslType]] = None,
+    input_args: Optional[List[Numeric]] = None,
     return_types: Optional[List[DslType]] = None,
     *,
+    branch_weights: Optional[Sequence[int]] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[List[Numeric], Numeric]:
@@ -3585,6 +4181,10 @@ def if_generate(
         else_body: Optional function to execute in else branch
         input_args: Arguments to pass to branch bodies
         return_types: Expected return types for the operation
+        branch_weights: Optional true/false branch-frequency weights. When set,
+            the frontend attaches ``cute.branch_weights`` to the generated
+            ``scf.if``. The lowering pipeline converts it to ``cf.cond_br``
+            branch weights and PTX frequency pragmas.
         loc: Optional location information
         ip: Optional insertion point
 
@@ -3614,8 +4214,9 @@ def if_generate(
     if_op = scf.IfOp(
         Boolean(cond).ir_value(), mlir_return_types, has_else=has_else, loc=loc, ip=ip
     )
+    _set_cute_branch_weights(if_op, branch_weights)
 
-    def _execute_and_yield_out(body: Callable, input_args: List[DslType]) -> None:
+    def _execute_and_yield_out(body: Callable, input_args: List[Numeric]) -> None:
         yield_vals = body(*input_args)
         if return_types is not None:
             if not isinstance(yield_vals, Iterable):
@@ -3663,12 +4264,17 @@ def if_generate(
 class WhileLoopContext:
     """
     Context manager for a dynamic while loop.
+
+    Entering the context yields the loop-carried values as DSL values; after
+    the loop, ``results`` holds their final values. ``inputs`` and
+    ``condition`` are the arguments given to :func:`while_generate`. The
+    underlying MLIR op, regions, blocks and insertion point are private.
     """
 
     def __init__(
         self,
         inputs: Sequence[Union[ir.Value, Numeric]],
-        condition: Callable[[Sequence[ir.Value]], ir.Value],
+        condition: Callable[..., Union[ir.Value, Numeric]],
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -3676,35 +4282,35 @@ class WhileLoopContext:
         # Keep original inputs and allow recover original type information
         self.inputs = inputs
 
-        self.input_ir_values = extract_mlir_values(inputs)
+        self._input_ir_values = extract_mlir_values(inputs)
 
-        if not _validate_iter_args_structure(inputs, self.input_ir_values):
+        if not _validate_iter_args_structure(inputs, self._input_ir_values):
             raise DSLUserCodeError(DiagId.TYPE_WHILE_INPUTS_INVALID)
 
         self.condition = condition
-        self.input_ir_types = [i.type for i in self.input_ir_values]
-        self.while_op = scf.WhileOp(
-            self.input_ir_types, self.input_ir_values, loc=loc, ip=ip
+        self._input_ir_types = [i.type for i in self._input_ir_values]
+        self._while_op = scf.WhileOp(
+            self._input_ir_types, self._input_ir_values, loc=loc, ip=ip
         )
 
-        self.before_region = self.while_op.before
-        self.after_region = self.while_op.after
+        self._before_region = self._while_op.before
+        self._after_region = self._while_op.after
 
-        self.before_region.blocks.append(*self.input_ir_types)
-        self.before_block = self.before_region.blocks[0]
+        self._before_region.blocks.append(*self._input_ir_types)
+        self._before_block = self._before_region.blocks[0]
 
-        self.after_region.blocks.append(*self.input_ir_types)
-        self.after_block = self.after_region.blocks[0]
+        self._after_region.blocks.append(*self._input_ir_types)
+        self._after_block = self._after_region.blocks[0]
 
     def __enter__(self) -> List[Numeric]:
-        with ir.InsertionPoint(self.before_block):
-            args = new_from_mlir_values(self.inputs, self.before_block.arguments)
+        with ir.InsertionPoint(self._before_block):
+            args = new_from_mlir_values(self.inputs, self._before_block.arguments)
             cond = self.condition(*args)
             cond_ir_val = extract_mlir_values(cond)
-            scf.ConditionOp(cond_ir_val[0], [*self.before_block.arguments])
-        self.ipoint_op = ir.InsertionPoint(self.after_block)
-        self.ipoint_op.__enter__()
-        return new_from_mlir_values(self.inputs, self.after_block.arguments)
+            scf.ConditionOp(cond_ir_val[0], [*self._before_block.arguments])
+        self._ipoint_op = ir.InsertionPoint(self._after_block)
+        self._ipoint_op.__enter__()
+        return new_from_mlir_values(self.inputs, self._after_block.arguments)
 
     def __exit__(
         self,
@@ -3712,16 +4318,16 @@ class WhileLoopContext:
         exc_value: Optional[BaseException],
         traceback: object,
     ) -> None:
-        self.ipoint_op.__exit__(exc_type, exc_value, traceback)
+        self._ipoint_op.__exit__(exc_type, exc_value, traceback)
 
     @property
     def results(self) -> List[Numeric]:
-        return new_from_mlir_values(self.inputs, self.while_op.results_)
+        return new_from_mlir_values(self.inputs, self._while_op.results_)
 
 
 def while_generate(
     inputs: Sequence[Union[ir.Value, Numeric]],
-    condition: Callable[[Sequence[Union[ir.Value, Numeric]]], Union[ir.Value, Numeric]],
+    condition: Callable[..., Union[ir.Value, Numeric]],
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
@@ -3732,10 +4338,77 @@ def while_generate(
     return WhileLoopContext(inputs, condition, loc=loc, ip=ip)
 
 
+def _holds_staged_value(value: object) -> bool:
+    """``is_dynamic_expression`` that also looks through the compared fields
+    of nested dataclass instances."""
+    if is_dynamic_expression(value):
+        return True
+    if isinstance(value, (tuple, list)):
+        return any(_holds_staged_value(v) for v in value)
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return any(
+            _holds_staged_value(traced_attr_read(value, f.name))
+            for f in dataclasses.fields(value)
+            if f.compare
+        )
+    return False
+
+
+def _struct_staged_compare_fields(
+    lhs: object, rhs: object, method: str
+) -> Optional[Tuple[str, Tuple[Tuple[object, object], ...]]]:
+    """``(staged_field, ((lhs.f, rhs.f), ...))`` over the fields the
+    dataclass-GENERATED ``method`` (``__eq__``, ``__lt__``, ...) of ``lhs``'s
+    class compares, when ``rhs`` is of the same class and one of those fields
+    -- ``staged_field`` names the first -- holds a staged value.  None keeps
+    Python's own semantics: a user-written method, a class mismatch (the
+    generated method returns NotImplemented) or all-meta fields.  The
+    generated method is source-less (``co_filename == "<string>"``), enabled by
+    the decorator's ``eq`` / ``order`` parameter, and belongs to the first class
+    in the MRO defining it, whose ``compare=True`` fields it bakes in.  The
+    fields are read as the traced frame reads ``obj.field`` (a loop-carried
+    holder serves its carried leaf), once per operand."""
+    cls = type(lhs)
+    if cls is not type(rhs):
+        return None
+    for klass in cls.__mro__:
+        impl = klass.__dict__.get(method)
+        if impl is None:
+            continue
+        code = getattr(impl, "__code__", None)
+        params = klass.__dict__.get("__dataclass_params__")
+        if (
+            code is None
+            or code.co_filename != "<string>"
+            or params is None
+            or not (params.eq if method == "__eq__" else params.order)
+        ):
+            return None
+        names = [f.name for f in dataclasses.fields(klass) if f.compare]
+        pairs = tuple(
+            (traced_attr_read(lhs, name), traced_attr_read(rhs, name)) for name in names
+        )
+        for name, (lv, rv) in zip(names, pairs):
+            if _holds_staged_value(lv) or _holds_staged_value(rv):
+                return name, pairs
+        return None
+    return None
+
+
+_STRUCT_ORDER_METHODS = {"<": "__lt__", "<=": "__le__", ">": "__gt__", ">=": "__ge__"}
+
+
 def equal(
     lhs: Union[Numeric, ir.Value, int, float, bool],
     rhs: Union[Numeric, ir.Value, int, float, bool],
 ) -> Union[Boolean, bool]:
+    # The dataclass-generated __eq__ truth-tests each staged field compare
+    # through the tuple compare; one compare per field instead.
+    staged_struct = _struct_staged_compare_fields(lhs, rhs, "__eq__")
+    if staged_struct is not None:
+        _, field_pairs = staged_struct
+        return all_(equal(lv, rv) for lv, rv in field_pairs)
+
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
         return lhs == rhs
 
@@ -3752,6 +4425,14 @@ def not_equal(
     lhs: Union[Numeric, ir.Value, int, float, bool],
     rhs: Union[Numeric, ir.Value, int, float, bool],
 ) -> Union[Boolean, bool]:
+    # Python's `!=` on a dataclass without its own __ne__ negates the generated
+    # __eq__.
+    if type(lhs).__ne__ is object.__ne__:
+        staged_struct = _struct_staged_compare_fields(lhs, rhs, "__eq__")
+        if staged_struct is not None:
+            _, field_pairs = staged_struct
+            return not_(all_(equal(lv, rv) for lv, rv in field_pairs))
+
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
         return lhs != rhs
 
@@ -3770,13 +4451,43 @@ def not_equal(
         return not_(equal(lhs, rhs))
 
 
+def _set_member_order_key(member: Any) -> tuple[int, Any]:
+    """Deterministic order for the members of a set operand of ``in``: a set
+    iterates in hash order and a Staged ``Numeric`` hashes by IR-handle
+    identity, so the compares of a staged membership chain would otherwise be
+    emitted in a different order on every run (a different module, hence a
+    compile-cache miss).  A tuple or frozenset sorts by its members' keys (two
+    tuples of different Staged values share one ``repr``); a Meta ``Numeric``
+    is recognised by its payload so that the ordering never calls
+    ``ir_value()`` and bakes a constant."""
+    if isinstance(member, tuple):
+        return (2, tuple(_set_member_order_key(m) for m in member))
+    if isinstance(member, frozenset):
+        return (3, tuple(sorted(_set_member_order_key(m) for m in member)))
+    payload = member.__dict__.get("value") if isinstance(member, Numeric) else member
+    if isinstance(payload, ir.Value):
+        return (1, payload.get_name())
+    return (0, repr(member))
+
+
 def in_(lhs: object, rhs: Any) -> Union[bool, Boolean]:
-    if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
+    # ``is_dynamic_expression`` does not look inside a set: a set holding Staged
+    # values must not fall to CPython's identity-keyed lookup.
+    rhs_is_set = isinstance(rhs, (set, frozenset))
+    if rhs_is_set or isinstance(rhs, (tuple, list)):
+        rhs_dyn = any(_is_staged_membership_operand(r) for r in rhs)
+    else:
+        rhs_dyn = is_dynamic_expression(rhs)
+    if not _is_staged_membership_operand(lhs) and not rhs_dyn:
         return lhs in rhs
 
-    if not isinstance(rhs, Sequence):
+    if rhs_is_set:
+        rhs = sorted(rhs, key=_set_member_order_key)
+    elif not isinstance(rhs, Sequence):
         raise DSLUserCodeError(DiagId.UNSUP_IN_OPERATOR)
 
+    # Membership is an OR of ``==`` over the members (order-insensitive), the
+    # zero-cost Python-parity lowering for a tuple, list, set or frozenset.
     return any_(equal(lhs, r) for r in rhs)
 
 
@@ -3806,6 +4517,18 @@ def _lte_gte(
                 return not_(lhs < rhs)
         else:
             raise DSLUserCodeError(DiagId.UNSUP_COMPARISON_OPERATOR, op=op)
+
+    # The dataclass-generated ordering is lexicographic over the fields and
+    # truth-tests each staged field compare; it is not staged field-wise.
+    staged_struct = _struct_staged_compare_fields(lhs, rhs, _STRUCT_ORDER_METHODS[op])
+    if staged_struct is not None:
+        staged_field, _ = staged_struct
+        raise DSLUserCodeError(
+            DiagId.TYPE_STRUCT_ORDER_STAGED,
+            op=op,
+            cls=type(lhs).__name__,
+            field=staged_field,
+        )
 
     if not is_dynamic_expression(lhs) and not is_dynamic_expression(rhs):
         return native_lte_gte(lhs, rhs, op)
@@ -3844,11 +4567,13 @@ def _lte_gte(
             if type(has_valid_mask) == bool:
                 return result if has_valid_mask else length_result
             else:
-                return select_(has_valid_mask, result, length_result)
+                return typing_cast(
+                    Boolean, select_(has_valid_mask, result, length_result)
+                )
         else:
             if op in {"<=", ">="}:
                 # If no unequal, return True
-                return select_(unequal_found, result, True)
+                return typing_cast(Boolean, select_(unequal_found, result, True))
             else:
                 return result
     else:
@@ -3984,6 +4709,9 @@ executor.set_functions(
     compare_executor=_compare_executor,
     builtin_redirector=_builtin_redirector,
     ifexp_dynamic=_ifexp_execute_dynamic,
+    and_=and_,
+    or_=or_,
+    not_=not_,
 )
 
 

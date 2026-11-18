@@ -49,6 +49,29 @@ bool relatively_equal(T a, T b, U epsilon, U nonzero_floor);
 
 namespace detail {
 
+/// |x| for the types relatively_equal compares. float and double go through
+/// the C library's and the CUDA device builtins' fabsf and fabs, which the
+/// device compiler folds into an operand modifier; CUTLASS's numeric classes
+/// (half_t, bfloat16_t, tfloat32_t) through their cutlass::abs overloads, which
+/// clear the sign bit. Not a library abs: the abs overloads a CUDA device pass
+/// sees depend on the standard library, and a floating-point argument is
+/// ambiguous when only the integral ones are, as with libc++.
+CUTLASS_HOST_DEVICE
+float magnitude(float x) {
+  return ::fabsf(x);
+}
+
+CUTLASS_HOST_DEVICE
+double magnitude(double x) {
+  return ::fabs(x);
+}
+
+template <typename T>
+CUTLASS_HOST_DEVICE
+T magnitude(T x) {
+  return cutlass::abs(x);
+}
+
 // This floating-point comparison function implements the method described in
 //
 // https://floating-point-gui.de/errors/comparison/
@@ -56,16 +79,10 @@ namespace detail {
 template <typename T>
 CUTLASS_HOST_DEVICE
 bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
-  
-#if defined(__CUDACC_RTC__)
-  using cuda::std::abs;
-#else
-  using std::abs;
-#endif
 
-  T abs_A = abs(a);
-  T abs_B = abs(b);
-  T diff = abs(a - b);
+  T abs_A = magnitude(a);
+  T abs_B = magnitude(b);
+  T diff = magnitude(a - b);
   T zero = T(0);
 
   if (a == b) {

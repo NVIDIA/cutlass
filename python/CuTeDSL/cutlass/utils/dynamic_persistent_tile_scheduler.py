@@ -28,7 +28,7 @@ from cutlass.utils.mixed_cluster_params import MixedClusterParamsMixin
 from cutlass.utils.static_persistent_tile_scheduler import (
     WorkTileInfo,
 )
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 import cutlass.cute as cute
 
 _DEPRECATION_MSG = (
@@ -37,7 +37,7 @@ _DEPRECATION_MSG = (
 )
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class ClcDynamicPersistentTileSchedulerParams(MixedClusterParamsMixin):
     """A class to represent parameters for a dynamic persistent tile scheduler.
 
@@ -287,7 +287,7 @@ ClcDynamicPersistentTileSchedulerParams.__init__.__signature__ = inspect.Signatu
 )
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class ClcDynamicPersistentTileScheduler:
     """A scheduler for dynamic persistent tile execution in CUTLASS/CuTe kernels.
 
@@ -362,6 +362,7 @@ class ClcDynamicPersistentTileScheduler:
             new_num_tiles_executed,
             new_clc_response_ptr,
             new_block_idx,
+            self.insert_fence,
         )
 
     @dsl_user_op

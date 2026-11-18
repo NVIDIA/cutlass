@@ -115,6 +115,7 @@ class Sm80TensorOpGemmOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        device_properties=None,
     ) -> None:
         stream = to_cuda_stream(stream)
         compiled_gemm = compiled_artifact.compiled_obj
@@ -136,7 +137,7 @@ class Sm80TensorOpGemmOperator(CuteDslOperator):
             return False
 
         # Supported accumulator data types:
-        if operands.accumulator_type not in [cutlass.Float32]:
+        if operands.accumulator_type != cutlass.Float32:
             return False
 
         # Supported out data types:

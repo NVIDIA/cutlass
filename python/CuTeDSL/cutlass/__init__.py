@@ -36,7 +36,7 @@ _ensure_mlir_type_compat()
 del _ensure_mlir_type_compat
 
 __version__ = "@CUTLASS_IR_WHEEL_RELEASE_VERSION@"
-# Monkey patch CUDA version query function
+# Monkey patch CUDA/DSL version query functions
 from ._mlir._mlir_libs._cutlass_ir._base_dsl import (
     NumericCast as _NumericCast,
     get_cuda_version as _get_cuda_version,
@@ -47,9 +47,29 @@ from .base_dsl import typing as _base_dsl_typing
 _common._get_cuda_version = _get_cuda_version
 _base_dsl_typing._native_numeric_cast = _NumericCast
 
-# Import CUDA version from base_dsl
-from .base_dsl.version_info import CUDA_VERSION
+
+def _get_dsl_version() -> str:
+    # In source trees where the wheel release version has not been substituted
+    # yet (e.g. when the package is imported straight from a source checkout,
+    # as the docs build does), fall back to a dev-style version so the package
+    # stays importable; DSL-version gates like target_version(kind="dsl", ...)
+    # then evaluate to False.
+    if __version__.startswith("@"):
+        return "0.0.0"
+    return __version__
+
+
+_common._get_dsl_version = _get_dsl_version
+
+# Import CUDA/DSL versions from base_dsl
+from .base_dsl.version_info import CUDA_VERSION, DSL_VERSION
 from .base_dsl import AddressSpace, Arch
+from .base_dsl.common import (
+    DSLUserCodeIndexError,
+    DSLUserCodeRuntimeError,
+    DSLUserCodeTypeError,
+    DSLUserCodeValueError,
+)
 
 from .cutlass_dsl import (
     Constexpr,
@@ -65,6 +85,7 @@ from .cutlass_dsl import (
     select_,
     # Control-flow without AST pre-processor
     if_generate,
+    weighted_condition,
     for_generate,
     LoopUnroll,
     while_generate,
@@ -84,10 +105,12 @@ from .cutlass_dsl import (
     extract_mlir_values,
     new_from_mlir_values,
     DSLCudaVersion,
+    DSLVersion,
     target_version,
 )
 
 from .cute.typing import *
+
 from .base_dsl.typing import Pointer as Pointer  # type: ignore[assignment]
 from .base_dsl.typing import (
     TypedPointer,
@@ -117,8 +140,40 @@ from . import runtime as runtime
 from . import block as block
 from . import memory as memory
 from . import tensor_utils as tensor_utils
-from . import utils as utils
-from . import pipeline as pipeline
+
+import importlib as _importlib
+import types as _types
+import typing as _typing
+
+if _typing.TYPE_CHECKING:
+    from . import pipeline as pipeline
+    from . import utils as utils
+
+_LAZY_SUBMODULES = ("pipeline", "utils")
+
+
+if not _typing.TYPE_CHECKING:
+
+    def __getattr__(name: str) -> _types.ModuleType:
+        """Import ``cutlass.pipeline`` / ``cutlass.utils`` on first attribute access.
+
+        Neither package is needed to import ``cutlass`` or ``cutlass.cute``, and
+        together they pull in every pipeline class, tile scheduler and GEMM helper.
+        Binding them on first use keeps that cost out of ``import cutlass`` while
+        ``cutlass.pipeline.X``, ``cutlass.utils.X`` and ``from cutlass import utils``
+        keep working unchanged.
+
+        Defined only at run time: type checkers would otherwise treat every
+        unknown attribute of this package as a module, hiding real errors.
+        """
+        if name in _LAZY_SUBMODULES:
+            return _importlib.import_module(f"{__name__}.{name}")
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    def __dir__() -> list[str]:
+        return sorted({*globals(), *_LAZY_SUBMODULES})
+
+
 from . import testing as testing
 # Package-private symbol used by exported aliases below.
 from . import cutlass_dsl as _dsl

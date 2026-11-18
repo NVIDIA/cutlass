@@ -46,6 +46,22 @@ class Status:
         """
         return self.error is None
 
+    def combine(self, other: Status | list[Status]) -> Status:
+        """Combine this status with another status.
+
+        Args:
+            other (Status): The other status to combine with.
+
+        Returns:
+            Status: Success if both are successful, otherwise a failed status with combined errors.
+        """
+        other = [other] if isinstance(other, Status) else other
+        if self and all(other):
+            return Status.success()
+        errors = [str(s.error) for s in [self] + other if s.error is not None]
+        error_str = "\n".join(errors)
+        return Status.fail(error_str)
+
     @classmethod
     def success(cls) -> Status:
         """Create a successful status."""

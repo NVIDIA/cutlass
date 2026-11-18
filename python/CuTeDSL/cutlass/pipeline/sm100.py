@@ -9,9 +9,11 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional, cast
+
+from typing_extensions import Self
 
 from cutlass._mlir import ir
 
@@ -20,6 +22,8 @@ import cutlass.cute as cute
 from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cute.core import is_static
 from cutlass.cutlass_dsl import BaseDSL, Boolean, Int32, if_generate, dsl_user_op
+
+from cutlass.cute.arch import supports_report_valid
 
 from cutlass.pipeline import (
     Agent,
@@ -30,6 +34,7 @@ from cutlass.pipeline import (
     MbarrierArray,
     TmaStoreFence,
     PipelineState,
+    PerStagePipelineState,
     PipelineAsync,
     alloc_reserved_mbarrier,
     agent_sync,
@@ -65,6 +70,7 @@ class PipelineTmaUmma(PipelineAsync):
         name: str = "",
         phase: Literal["", "full", "empty"] = "",
         *,
+        defer_init: bool = False,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> SyncObject:
@@ -87,6 +93,7 @@ class PipelineTmaUmma(PipelineAsync):
                 tx_count=tx_count,
                 mbarrier_layout=mbarrier_layout,
                 name=full_name,
+                defer_init=defer_init,
                 loc=loc,
                 ip=ip,
             )
@@ -188,6 +195,9 @@ class PipelineTmaUmma(PipelineAsync):
         mcast_mode_mn: tuple[int, int] = (1, 1),
         enable_multicast_signaling: bool = False,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
         name: str = "",
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -212,10 +222,22 @@ class PipelineTmaUmma(PipelineAsync):
         :type enable_multicast_signaling: bool, optional
         :param defer_sync: Bool specifying whether or not to skip the built-in mbarrier fence and sync for performance, defaults to False
         :type defer_sync: bool, optional
+        :param defer_init: Bool specifying whether or not to skip the built-in mbarrier init
+        :type defer_init: bool, optional
+        :param storage_offset_full: Offset of the first full barrier within ``barrier_storage``
+        :type storage_offset_full: int, optional
+        :param storage_offset_empty: Offset of the first empty barrier within ``barrier_storage``
+        :type storage_offset_empty: int, optional
         :raises ValueError: If barrier_storage is not a cute.Pointer instance
         :return: A new PipelineTmaUmma instance configured with the provided parameters
         :rtype: PipelineTmaUmma
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -265,21 +287,23 @@ class PipelineTmaUmma(PipelineAsync):
         consumer = (consumer_type, thread_consumer_group)
 
         sync_object_full = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             producer,
             tx_count,
             name=name,
             phase="full",
+            defer_init=defer_init,
             loc=loc,
             ip=ip,
         )
         sync_object_empty = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             consumer,
             name=name,
             phase="empty",
+            defer_init=defer_init,
             loc=loc,
             ip=ip,
         )
@@ -475,6 +499,9 @@ class PipelineAsyncUmma(PipelineAsync):
         barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
         name: str = "",
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -491,10 +518,22 @@ class PipelineAsyncUmma(PipelineAsync):
         :type barrier_storage: cute.Pointer, optional
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout, optional
+        :param defer_init: Bool specifying whether or not to skip the built-in mbarrier init
+        :type defer_init: bool, optional
+        :param storage_offset_full: Offset of the first full barrier within ``barrier_storage``
+        :type storage_offset_full: int, optional
+        :param storage_offset_empty: Offset of the first empty barrier within ``barrier_storage``
+        :type storage_offset_empty: int, optional
         :raises ValueError: If barrier_storage is not a cute.Pointer instance
         :return: A new PipelineAsyncUmma instance configured with the provided parameters
         :rtype: PipelineAsyncUmma
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -516,20 +555,22 @@ class PipelineAsyncUmma(PipelineAsync):
         consumer = (consumer_type, consumer_group)
 
         sync_object_full = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             producer,
             name=name,
             phase="full",
+            defer_init=defer_init,
             loc=loc,
             ip=ip,
         )
         sync_object_empty = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             consumer,
             name=name,
             phase="empty",
+            defer_init=defer_init,
             loc=loc,
             ip=ip,
         )
@@ -648,6 +689,9 @@ class PipelineUmmaAsync(PipelineAsync):
         barrier_storage: Optional[cute.Pointer] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
         name: str = "",
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -664,10 +708,22 @@ class PipelineUmmaAsync(PipelineAsync):
         :type barrier_storage: cute.Pointer, optional
         :param cta_layout_vmnk: Layout of the cluster shape
         :type cta_layout_vmnk: cute.Layout, optional
+        :param defer_init: Bool specifying whether or not to skip the built-in mbarrier init
+        :type defer_init: bool, optional
+        :param storage_offset_full: Offset of the first full barrier within ``barrier_storage``
+        :type storage_offset_full: int, optional
+        :param storage_offset_empty: Offset of the first empty barrier within ``barrier_storage``
+        :type storage_offset_empty: int, optional
         :raises ValueError: If barrier_storage is not a cute.Pointer instance
         :return: New instance of ``PipelineUmmaAsync``
         :rtype: PipelineUmmaAsync
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -689,20 +745,22 @@ class PipelineUmmaAsync(PipelineAsync):
         consumer = (consumer_type, consumer_group)
 
         sync_object_full = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             producer,
             name=name,
             phase="full",
+            defer_init=defer_init,
             loc=loc,
             ip=ip,
         )
         sync_object_empty = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             consumer,
             name=name,
             phase="empty",
+            defer_init=defer_init,
             loc=loc,
             ip=ip,
         )
@@ -842,6 +900,9 @@ class PipelineClcFetchAsync(PipelineAsync):
         consumer_mask: Optional[Int32] = None,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
         name: str = "",
     ) -> "PipelineClcFetchAsync":
         """
@@ -860,7 +921,21 @@ class PipelineClcFetchAsync(PipelineAsync):
         :type producer_mask: Int32, optional
         :param consumer_mask: Mask for signaling arrives for the consumer agent, defaults to ``None``
         :type consumer_mask: Int32, optional
+        :param defer_sync: Bool specifying whether or not to skip the built-in mbarrier fence and sync for performance, defaults to False
+        :type defer_sync: bool, optional
+        :param defer_init: Bool specifying whether or not to skip the built-in mbarrier init
+        :type defer_init: bool, optional
+        :param storage_offset_full: Offset of the first full barrier within ``barrier_storage``
+        :type storage_offset_full: int, optional
+        :param storage_offset_empty: Offset of the first empty barrier within ``barrier_storage``
+        :type storage_offset_empty: int, optional
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -881,19 +956,21 @@ class PipelineClcFetchAsync(PipelineAsync):
         producer = (producer_type, producer_group)
         consumer = (consumer_type, consumer_group)
         sync_object_full = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             producer,
             tx_count,
             name=name,
             phase="full",
+            defer_init=defer_init,
         )
         sync_object_empty = PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             consumer,
             name=name,
             phase="empty",
+            defer_init=defer_init,
         )
 
         if name:
@@ -959,6 +1036,22 @@ class PipelineClcFetchAsync(PipelineAsync):
             loc=loc,
             ip=ip,
         )
+
+    @dsl_user_op
+    def producer_commit(
+        self,
+        state: PipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """No-op producer commit: the CLC full barrier is armed by the fetch.
+
+        ``fetch_work_tile``'s ``issue_clc_query`` writes the response and signals
+        the full barrier with the transaction bytes, so the stage is already
+        full; a separate ``producer_commit`` arrive would double-signal it.
+        """
+        del state, loc, ip
 
     @dsl_user_op
     def consumer_wait(
@@ -1070,6 +1163,42 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         :param force_deprecated_per_lane_signaling: **Deprecated.** Set ``False`` if your arrive count is a multiple of ``WARP_SIZE`` and you do not want the legacy fallback. Leave unset otherwise.
         :type force_deprecated_per_lane_signaling: bool | None
         """
+        return PipelineTmaMultiConsumersAsync._create(
+            num_stages=num_stages,
+            producer_group=producer_group,
+            consumer_group_umma=consumer_group_umma,
+            consumer_group_async=consumer_group_async,
+            tx_count=tx_count,
+            barrier_storage=barrier_storage,
+            cta_layout_vmnk=cta_layout_vmnk,
+            mcast_mode_mn=mcast_mode_mn,
+            tidx=tidx,
+            enable_multicast_signaling=enable_multicast_signaling,
+            defer_sync=defer_sync,
+            force_deprecated_per_lane_signaling=force_deprecated_per_lane_signaling,
+            name=name,
+            full_barrier_layout=MbarrierLayout.V0,
+        )
+
+    @classmethod
+    def _create(
+        cls,
+        *,
+        num_stages: int,
+        producer_group: CooperativeGroup,
+        consumer_group_umma: CooperativeGroup,
+        consumer_group_async: CooperativeGroup,
+        tx_count: int,
+        barrier_storage: Optional[cute.Pointer],
+        cta_layout_vmnk: Optional[cute.Layout],
+        mcast_mode_mn: tuple[int, int],
+        tidx: Optional[Int32],
+        enable_multicast_signaling: bool,
+        defer_sync: bool,
+        force_deprecated_per_lane_signaling: Optional[bool],
+        name: str,
+        full_barrier_layout: MbarrierLayout,
+    ) -> Self:
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -1158,7 +1287,7 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
                 or _looks_legacy(thread_consumer_group_async)
             )
             if force_deprecated_per_lane_signaling:
-                warnings.warn(
+                _warn_deprecated(
                     "PipelineTmaMultiConsumersAsync now expects only one lane "
                     "per warp to arrive on the empty barrier, but consumer_group "
                     "arrive count is a multiple of WARP_SIZE - this suggests you are expecting the"
@@ -1166,15 +1295,10 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
                     "the legacy path. Divide the arrive count by WARP_SIZE to "
                     "migrate, or pass force_deprecated_per_lane_signaling=False to opt out of "
                     "this auto-detection.",
-                    DeprecationWarning,
-                    stacklevel=2,
+                    user_input=True,
                 )
         elif force_deprecated_per_lane_signaling:
-            warnings.warn(
-                "force_deprecated_per_lane_signaling=True is deprecated.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            _warn_deprecated("force_deprecated_per_lane_signaling=True is deprecated.")
 
         if force_deprecated_per_lane_signaling:
             cluster_size = (
@@ -1199,6 +1323,7 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
             num_stages,
             producer,
             tx_count,
+            mbarrier_layout=full_barrier_layout,
             name=name,
             phase="full",
         )
@@ -1211,7 +1336,7 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
         )
 
         if name:
-            register_barrier(name, num_stages, "PipelineTmaMultiConsumersAsync")
+            register_barrier(name, num_stages, cls.__name__)
         sync_object_empty_umma = sync_object_empty.recast_to_new_op_type(
             consumer_type_umma
         )
@@ -1260,18 +1385,18 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
             else:
                 agent_sync(Agent.ThreadBlockCluster, is_relaxed=True)
 
-        return PipelineTmaMultiConsumersAsync(
-            sync_object_full,
-            sync_object_empty,
-            num_stages,
-            producer_mask,
-            consumer_mask,
-            is_leader_cta,
-            sync_object_empty_umma,
-            sync_object_empty_async,
-            cta_group,
-            consumer_dst_rank_async,
-            is_signaling_thread,
+        return cls(
+            sync_object_full=sync_object_full,
+            sync_object_empty=sync_object_empty,
+            num_stages=num_stages,
+            producer_mask=producer_mask,
+            consumer_mask=consumer_mask,
+            is_leader_cta=is_leader_cta,
+            sync_object_empty_umma=sync_object_empty_umma,
+            sync_object_empty_async=sync_object_empty_async,
+            cta_group=cta_group,
+            consumer_dst_rank_async=consumer_dst_rank_async,
+            is_signaling_thread=is_signaling_thread,
         )
 
     @staticmethod
@@ -1428,4 +1553,120 @@ class PipelineTmaMultiConsumersAsync(PipelineAsync):
             self.make_producer(loc=loc, ip=ip),
             self.make_consumer(loc=loc, ip=ip),
             None,
+        )
+
+
+@dataclass(frozen=True)
+class PipelineTmaUmmaRetry(PipelineTmaMultiConsumersAsync):
+    """Pipeline for TMA producers and UMMA + retry consumers, where the retry
+    consumer re-issues ``report_valid`` loads whose data was invalid.
+    """
+
+    @staticmethod
+    def create(  # type: ignore[override]
+        *,
+        num_stages: int,
+        producer_group: CooperativeGroup,
+        consumer_group_umma: CooperativeGroup,
+        consumer_group_retry: CooperativeGroup,
+        tx_count: int,
+        barrier_storage: Optional[cute.Pointer] = None,
+        cta_layout_vmnk: Optional[cute.Layout] = None,
+        mcast_mode_mn: tuple[int, int] = (1, 1),
+        tidx: Optional[Int32] = None,
+        enable_multicast_signaling: bool = False,
+        defer_sync: bool = False,
+        name: str = "",
+    ) -> "PipelineTmaUmmaRetry":
+        """Create the pipeline with v1 full barriers, which ``report_valid`` loads require.
+
+        :param consumer_group_retry: ``CooperativeGroup`` for the retry consumer agent
+        :type consumer_group_retry: CooperativeGroup
+
+        Other parameters are as in :meth:`PipelineTmaMultiConsumersAsync.create`.
+        """
+        if not supports_report_valid(BaseDSL._get_dsl().get_arch_enum()):
+            raise ValueError("PipelineTmaUmmaRetry unsupported on this architecture")
+
+        return PipelineTmaUmmaRetry._create(
+            num_stages=num_stages,
+            producer_group=producer_group,
+            consumer_group_umma=consumer_group_umma,
+            consumer_group_async=consumer_group_retry,
+            tx_count=tx_count,
+            barrier_storage=barrier_storage,
+            cta_layout_vmnk=cta_layout_vmnk,
+            mcast_mode_mn=mcast_mode_mn,
+            tidx=tidx,
+            enable_multicast_signaling=enable_multicast_signaling,
+            defer_sync=defer_sync,
+            force_deprecated_per_lane_signaling=False,
+            name=name,
+            full_barrier_layout=MbarrierLayout.V1,
+        )
+
+    @dsl_user_op
+    def consumer_test_valid(
+        self,
+        state: PerStagePipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> tuple[Boolean, Boolean]:
+        """Test without blocking whether a stage's load completed with valid data.
+
+        Returns:
+            (tma_done, valid), where valid implies tma_done.
+        """
+        tma_done, invalid = self.sync_object_full.test_wait_primary(  # type: ignore[attr-defined]
+            state.index, state.phase, loc=loc, ip=ip
+        )
+        return (tma_done, tma_done & ~invalid)
+
+    @dsl_user_op
+    def retry_expect_tx(
+        self,
+        state: PerStagePipelineState,
+        tx_count: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Make a stage's full barrier expect the bytes of a re-issued load.
+
+        Unlike producer_acquire(), does not wait on the empty barrier: the stage
+        was never released.
+
+        Args:
+            state: State whose current stage is re-issued
+            tx_count: Bytes the re-issued loads write, which may cover only
+                some of the stage's operands
+        """
+
+        def arrive_body() -> None:
+            self.sync_object_full.arrive_and_expect_tx(  # type: ignore[attr-defined]
+                state.index, tx_count, loc=loc, ip=ip
+            )
+
+        if_generate(
+            self.is_leader_cta,
+            arrive_body,
+            loc=loc,
+            ip=ip,
+        )
+
+    @dsl_user_op
+    def retry_release(
+        self,
+        state: PerStagePipelineState,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> None:
+        """Release a stage whose data the retry consumer found valid."""
+        self.consumer_release(
+            state,
+            op_type=PipelineOp.AsyncThread,
+            loc=loc,
+            ip=ip,
         )

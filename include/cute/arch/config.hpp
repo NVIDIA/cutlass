@@ -242,3 +242,10 @@
 #endif
 
 
+#if (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 4))
+#  if (defined(CUTLASS_ARCH_MMA_SM107A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM107F_ENABLED)\
+      )
+#    define CUTE_ARCH_TMA_SM107_ENABLED
+#  endif
+#endif
+

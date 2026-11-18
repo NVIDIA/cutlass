@@ -276,6 +276,9 @@ class Atom(ABC):
         fields are provided by arch-specific enumerations, for example ``tcgen05.Field``. The Atom
         instance internally validates the field as well as the value provided by the user to set
         the field to.
+
+        :return: The field value; boolean fields such as
+            ``tcgen05.Field.ACCUMULATE`` return a ``Boolean``
         """
         return self._trait.get(field, loc=loc, ip=ip)
 
@@ -383,7 +386,7 @@ class MmaAtom(Atom):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Layout:
-        return static(self._trait.value.type.layout_c_tv)
+        return static(self._trait.value.type.layout_c_tv, loc=loc, ip=ip)
 
     #
     # make_fragment

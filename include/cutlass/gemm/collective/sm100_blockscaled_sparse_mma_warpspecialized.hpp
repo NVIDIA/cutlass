@@ -143,7 +143,7 @@ struct CollectiveMma<
 
   // CtaK needs to be multiplier of SFAtomK
   using SfAtom = typename Sm1xxBlkScaledConfig::SfAtom;
-  using SfAtomK = cute::Int<cute::size<1>(SfAtom{})>;
+  using SfAtomK = decltype(cute::size<1>(SfAtom{}));
   static_assert( shape<2>(CtaShape_MNK{}) % SfAtomK{} == 0, "CtaK needs to be multiplier of SFAtomK");
 
   // Define A and B block shapes for reduced size TMA_LOADs

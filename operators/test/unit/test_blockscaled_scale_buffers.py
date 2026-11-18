@@ -32,19 +32,19 @@ import pytest
 import torch
 
 import cutlass.operators as ops
-from cutlass.operators.providers.cutedsl.gemm.sm100_dense_blockscaled_static_persistent import (
-    PersistentDenseBlockScaledGemmOperator,
+from cutlass.operators.providers.cutedsl.gemm.sm100_blockscaled_static_persistent import (
+    Sm100BlockscaledStaticPersistentOperator,
 )
-from cutlass.operators.providers.cutedsl.gemm.sm107_dense_blockscaled_gemm import (
-    Sm107DenseBlockScaledGemmOperator,
+from cutlass.operators.providers.cutedsl.gemm.sm107_blockscaled_gemm_universal import (
+    Sm107BlockScaledGemmUniversalOperator,
 )
 
 
 @pytest.mark.parametrize(
     ("target", "operator_class"),
     [
-        ("103a", PersistentDenseBlockScaledGemmOperator),
-        ("107a", Sm107DenseBlockScaledGemmOperator),
+        ("103a", Sm100BlockscaledStaticPersistentOperator),
+        ("107a", Sm107BlockScaledGemmUniversalOperator),
     ],
 )
 def test_blockscaled_scale_buffer_validation(
