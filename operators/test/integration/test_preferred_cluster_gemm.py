@@ -35,11 +35,6 @@ cluster shape with a fallback (smaller) cluster to let the driver fill the grid
 with the preferred shape where SMs are available and fall back where they are
 not.
 
-Exhaustive correctness testing across all Operator variants, tile shapes, and
-cluster configurations is handled by the implementation tests in
-``test/implementation/test_gemm_kernel.py``, which includes
-``PersistentDenseGemmPreferredClusterOperator``.
-
 These integration tests focus on:
 - Per-scheduler (CLC dynamic and static persistent) correctness
 - 2D tensor support
@@ -62,9 +57,9 @@ import torch
 import cutlass.operators as ops
 from cutlass.operators.metadata.design.sm100 import Sm100DesignMetadata
 from cutlass.operators.metadata.design.tile_scheduler import (
-    CLCDynamicPersistentTileSchedulerMetadata,
-    StaticPersistentTileSchedulerMetadata,
-    TileSchedulerMetadata,
+    CLCDynamicPersistentMetadata,
+    PersistenceMetadata,
+    StaticPersistentMetadata,
 )
 from cutlass.operators.utils.device import (
     device_or_env_supports,
@@ -84,14 +79,15 @@ logger = logging.getLogger(__name__)
 
 def _preferred_cluster_filter(
     metadata: ops.OperatorMetadata,
-    scheduler_type: type[TileSchedulerMetadata] | None = None,
+    persistence: type[PersistenceMetadata] | None = None,
 ) -> bool:
     """Select a preferred-cluster Operator variant.
 
     Args:
         metadata: Operator metadata to test.
-        scheduler_type: If given, only match this scheduler variant; otherwise
-            match any preferred-cluster variant (scheduler-agnostic).
+        persistence: If given, only match operators whose tile scheduler
+            uses this persistence strategy; otherwise match any preferred-cluster
+            variant (scheduler-agnostic).
 
     Returns:
         bool: Whether the operator is a matching preferred-cluster variant.
@@ -101,9 +97,10 @@ def _preferred_cluster_filter(
         return False
     if not design.use_fallback_cluster():
         return False
-    if scheduler_type is None:
+    if persistence is None:
         return True
-    return isinstance(getattr(design, "tile_scheduler", None), scheduler_type)
+    scheduler = getattr(design, "tile_scheduler", None)
+    return scheduler is not None and isinstance(scheduler.persistence, persistence)
 
 
 # =============================================================================
@@ -127,7 +124,9 @@ def test_preferred_cluster_gemm_2d(fixture_toggle_tvm_ffi):
     out = torch.empty((M, N), device="cuda", dtype=torch.float16)
 
     args = ops.GemmArguments(A=A, B=B, out=out, accumulator_type=torch.float32)
-    operators = ops.get_operators(args, metadata_filter=_preferred_cluster_filter)
+    operators = ops.get_operators(
+        args, metadata_filter=_preferred_cluster_filter, target_sm="100f"
+    )
 
     assert len(operators) > 0, "No preferred-cluster Operator matched the filter"
     operator = operators[0]
@@ -180,7 +179,7 @@ def test_preferred_cluster_gemm_clc_scheduler(
     operators = ops.get_operators(
         args,
         metadata_filter=lambda m: _preferred_cluster_filter(
-            m, CLCDynamicPersistentTileSchedulerMetadata
+            m, CLCDynamicPersistentMetadata
         ),
         target_sm=device_or_env_target_sm(),
     )
@@ -232,7 +231,7 @@ def test_preferred_cluster_gemm_static_scheduler(
     operators = ops.get_operators(
         args,
         metadata_filter=lambda m: _preferred_cluster_filter(
-            m, StaticPersistentTileSchedulerMetadata
+            m, StaticPersistentMetadata
         ),
         target_sm=device_or_env_target_sm(),
     )
@@ -274,7 +273,11 @@ def test_preferred_cluster_gemm_discovery():
 
     args = ops.GemmArguments(A=A, B=B, out=out, accumulator_type=torch.float32)
 
-    operators = ops.get_operators(args, metadata_filter=_preferred_cluster_filter)
+    operators = ops.get_operators(
+        args,
+        metadata_filter=_preferred_cluster_filter,
+        target_sm=device_or_env_target_sm(),
+    )
     assert len(operators) > 0, (
         "Expected at least one preferred-cluster Operator variant to be registered"
     )
@@ -285,13 +288,7 @@ def test_preferred_cluster_gemm_discovery():
         assert design.use_fallback_cluster()
         assert design.fallback_cluster_shape is not None
         assert design.fallback_cluster_shape != design.cluster_shape
-        assert isinstance(
-            design.tile_scheduler,
-            (
-                CLCDynamicPersistentTileSchedulerMetadata,
-                StaticPersistentTileSchedulerMetadata,
-            ),
-        )
+        assert design.tile_scheduler is not None
 
 
 @pytest.mark.skipif(
@@ -310,14 +307,14 @@ def test_preferred_cluster_both_schedulers_discoverable():
     clc_ops = ops.get_operators(
         args,
         metadata_filter=lambda m: _preferred_cluster_filter(
-            m, CLCDynamicPersistentTileSchedulerMetadata
+            m, CLCDynamicPersistentMetadata
         ),
         target_sm=device_or_env_target_sm(),
     )
     static_ops = ops.get_operators(
         args,
         metadata_filter=lambda m: _preferred_cluster_filter(
-            m, StaticPersistentTileSchedulerMetadata
+            m, StaticPersistentMetadata
         ),
         target_sm=device_or_env_target_sm(),
     )
@@ -331,14 +328,14 @@ def test_preferred_cluster_both_schedulers_discoverable():
 
     for operator in clc_ops:
         assert isinstance(
-            operator.metadata.design.tile_scheduler,
-            CLCDynamicPersistentTileSchedulerMetadata,
+            operator.metadata.design.tile_scheduler.persistence,
+            CLCDynamicPersistentMetadata,
         )
 
     for operator in static_ops:
         assert isinstance(
-            operator.metadata.design.tile_scheduler,
-            StaticPersistentTileSchedulerMetadata,
+            operator.metadata.design.tile_scheduler.persistence,
+            StaticPersistentMetadata,
         )
 
 
@@ -383,7 +380,9 @@ def test_preferred_cluster_gemm_compile_and_reuse(fixture_toggle_tvm_ffi):
     out1 = torch.empty((L, M, N), device="cuda", dtype=torch.float16)
 
     args1 = ops.GemmArguments(A=A1, B=B1, out=out1, accumulator_type=torch.float32)
-    operators = ops.get_operators(args1, metadata_filter=_preferred_cluster_filter)
+    operators = ops.get_operators(
+        args1, metadata_filter=_preferred_cluster_filter, target_sm="100f"
+    )
     assert len(operators) > 0
     operator = operators[0]
 

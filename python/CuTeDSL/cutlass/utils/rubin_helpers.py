@@ -46,6 +46,8 @@ from cutlass.cute.nvgpu.tcgen05 import (
     MmaF16BF16Op,
     MmaTF32Op,
     SM107MmaFP8Op,
+    SM107MmaF16BF16SparseOp,
+    SM107MmaFP8SparseOp,
     SM107MmaMXF4NVF4Op,
     SM107BlockScaledMmaMXF8F6F4Op,
     Tcgen05MmaOp,
@@ -116,9 +118,9 @@ def compute_epilogue_tile_shape(
     :rtype: cute.Tile
     """
 
-    # The following special cases can be found in sm107_blockscaled_compute_tile_shape_or_override
-    # TODO: Add other variants of blockscaled operations once they are defined
-    if isinstance(mma_op, SM107MmaMXF4NVF4Op):
+    if isinstance(mma_op, SM107MmaMXF4NVF4Op) or isinstance(
+        mma_op, SM107BlockScaledMmaMXF8F6F4Op
+    ):
 
         class Sm107TileEntry(NamedTuple):
             a_bits: int
@@ -133,6 +135,10 @@ def compute_epilogue_tile_shape(
             Sm107TileEntry(4, 4, 32, 256, 256, True): (128, 64),
             Sm107TileEntry(4, 4, 16, 128, 256, True): (128, 32),
             Sm107TileEntry(4, 4, 16, 256, 256, True): (128, 64),
+            Sm107TileEntry(8, 8, 32, 128, 256, True): (128, 32),
+            Sm107TileEntry(8, 8, 32, 256, 256, True): (128, 32),
+            Sm107TileEntry(6, 6, 32, 128, 256, True): (128, 32),
+            Sm107TileEntry(6, 6, 32, 256, 256, True): (128, 32),
         }
 
         key = Sm107TileEntry(
@@ -145,7 +151,13 @@ def compute_epilogue_tile_shape(
         )
 
         if key in SM107_TILES:
-            return SM107_TILES[key]
+            epi_tile_m, epi_tile_n = SM107_TILES[key]
+            # F32 requires significantly larger SMEM for epilogue, so halving the N
+            # dimension reduces epilogue SMEM, leaving more room for mainloop load stages,
+            # which heuristically has shown to be better for performance.
+            if elem_ty_d.width == 32:
+                epi_tile_n = epi_tile_n // 2
+            return (epi_tile_m, epi_tile_n)
 
     return sm100_utils.compute_epilogue_tile_shape(
         cta_tile_shape,
@@ -176,7 +188,7 @@ def make_trivial_tiled_mma(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> cute.TiledMma:
+) -> "TiledMmaWrapper":
     """Make a tiled MMA atom with given data type, leading dimension, cta group and mma tile shape.
     By default, the MMA atom is created with SMEM operand source for A.
 
@@ -203,8 +215,8 @@ def make_trivial_tiled_mma(
     :param b_collector_op: Collector operation for operand B (DISCARD by default).
     :type b_collector_op: cutlass.cute.nvgpu.tcgen05.CollectorOp | str
 
-    :return: A tiled MMA atom.
-    :rtype: cute.TiledMma
+    :return: A tiled MMA atom with with_bkeep()/with_breuse() factory methods.
+    :rtype: TiledMmaWrapper
 
     :raises TypeError: If the data type is not supported.
     """
@@ -274,13 +286,14 @@ def make_trivial_tiled_mma(
     else:
         raise TypeError(f"unsupported a_dtype and b_dtype, got {a_dtype} and {b_dtype}")
 
-    return cute.make_tiled_mma(
+    raw = cute.make_tiled_mma(
         cute.make_mma_atom(mma_op),
         atom_layout_mnk=atom_layout_mnk,
         permutation_mnk=permutation_mnk,
         loc=loc,
         ip=ip,
     )
+    return TiledMmaWrapper(raw._op, raw._trait)
 
 
 def _copy_mma_op_with_b_collector(
@@ -451,6 +464,156 @@ def make_blockscaled_trivial_tiled_mma(
     )
     return TiledMmaWrapper(raw._op, raw._trait)
 
+
+@dsl_user_op
+def make_sparse_trivial_tiled_mma(
+    ab_dtype: Type[Numeric],
+    a_leading_mode: OperandMajorMode,
+    b_leading_mode: OperandMajorMode,
+    acc_dtype: Type[Numeric],
+    cta_group: CtaGroup,
+    mma_tiler: Union[Tuple[int, int], Tuple[int, int, int]],
+    sparse_metadata_format: SparseMetadataFormat = SparseMetadataFormat.TID,
+    a_source: OperandSource = OperandSource.SMEM,
+    a_collector_op: Union[CollectorOp, str] = CollectorOp.DISCARD,
+    b_collector_op: Union[CollectorOp, str] = CollectorOp.DISCARD,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.TiledMma:
+    """Make a sparse tiled MMA atom with given data type, leading dimension, cta group and mma tile shape.
+    By default, the MMA atom is created with SMEM operand source for A and TID sparse metadata format.
+
+    This SM107 (Rubin) version supports sparse operations for Float16/BFloat16/Float8E4M3FN/Float8E5M2.
+
+    Supported data types:
+    - Float16/BFloat16 (instruction K=32)
+    - Float8E4M3FN/Float8E5M2 (instruction K=64)
+
+    :param ab_dtype: Data type of operands A and B.
+    :type ab_dtype: Type[Numeric]
+    :param a_leading_mode: Leading dimension of operand A (1 for K, 0 for M/N).
+    :type a_leading_mode: cutlass.cute.nvgpu.OperandMajorMode
+    :param b_leading_mode: Leading dimension of operand B (1 for K, 0 for M/N).
+    :type b_leading_mode: cutlass.cute.nvgpu.OperandMajorMode
+    :param acc_dtype: Data type of the accumulator.
+    :type acc_dtype: Type[Numeric]
+    :param cta_group: The CTA group to use.
+    :type cta_group: tcgen05.CtaGroup
+    :param mma_tiler: The shape (M, N) or (M, N, K) of the MMA tiler.
+    :type mma_tiler: Tuple[int, int] | Tuple[int, int, int]
+    :param sparse_metadata_format: Format for sparse metadata.
+    :type sparse_metadata_format: SparseMetadataFormat
+    :param a_source: The source of operand A (SMEM by default or TMEM).
+    :type a_source: cutlass.cute.nvgpu.tcgen05.OperandSource
+
+    :return: A tiled sparse MMA atom.
+    :rtype: cute.TiledMma
+
+    :raises TypeError: If the data type is not supported for sparse operations.
+    """
+
+    mma_op: Any
+    if ab_dtype in {Float16, BFloat16}:
+        if len(mma_tiler) != 2:
+            raise ValueError(f"mma_tiler must be (M, N), got {mma_tiler}")
+        mma_op = SM107MmaF16BF16SparseOp(
+            ab_dtype=ab_dtype,
+            acc_dtype=acc_dtype,
+            instruction_shape=(*mma_tiler, 32),
+            cta_group=cta_group,
+            a_src=a_source,
+            a_major_mode=a_leading_mode,
+            b_major_mode=b_leading_mode,
+            sparse_metadata_format=sparse_metadata_format,
+            a_collector_op=a_collector_op,
+            b_collector_op=b_collector_op,
+        )
+    elif ab_dtype in {Float8E4M3FN, Float8E5M2}:
+        if len(mma_tiler) != 2:
+            raise ValueError(f"mma_tiler must be (M, N), got {mma_tiler}")
+        mma_op = SM107MmaFP8SparseOp(
+            ab_dtype=ab_dtype,
+            acc_dtype=acc_dtype,
+            instruction_shape=(*mma_tiler, 64),
+            cta_group=cta_group,
+            a_src=a_source,
+            a_major_mode=a_leading_mode,
+            b_major_mode=b_leading_mode,
+            sparse_metadata_format=sparse_metadata_format,
+            a_collector_op=a_collector_op,
+            b_collector_op=b_collector_op,
+        )
+    else:
+        raise TypeError(
+            f"Sparse MMA not yet supported for ab_dtype={ab_dtype}. "
+            f"Currently only Float16/BFloat16/Float8E4M3FN/Float8E5M2 are supported."
+        )
+
+    return cute.make_tiled_mma(
+        cute.make_mma_atom(mma_op, loc=loc, ip=ip), loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def make_sparse_a_dtype(
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Type[Numeric]:
+    """Create sparse A data type based on raw A data type.
+
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: Sparse A data type
+    :rtype: Type[Numeric]
+    """
+    return cute.get_sparse_elem_type(
+        num_logical=2,
+        num_phys=1,
+        elem_type=a_raw_dtype,
+    )
+
+
+@dsl_user_op
+def make_sparse_e_dtype(
+    a_raw_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Type[Numeric]:
+    """Create sparse E data type based on raw A data type.
+
+    :param a_raw_dtype: Element type for A tensor
+    :type a_raw_dtype: Type[Numeric]
+
+    :return: Sparse E data type
+    :rtype: Type[Numeric]
+    """
+    if a_raw_dtype in {
+        Float4E2M1FN,
+        Float16,
+        BFloat16,
+        Int8,
+        Uint8,
+        Float8E4M3FN,
+        Float8E5M2,
+    }:
+        return cute.get_sparse_elem_type(
+            num_logical=8,
+            num_phys=1,
+            elem_type=Uint8,
+        )
+    elif a_raw_dtype in {TFloat32, Float32}:
+        return cute.get_sparse_elem_type(
+            num_logical=4,
+            num_phys=1,
+            elem_type=Uint8,
+        )
+    else:
+        raise ValueError(f"Unsupported a_raw_dtype for sparse E tensor: {a_raw_dtype}")
 
 
 @dsl_user_op
@@ -732,6 +895,7 @@ def make_sparse_tmem_layout_e(
 
 __all__ = [
     "canonicalize_rubin_resource_arch",
+    "TiledMmaWrapper",
     "make_trivial_tiled_mma",
     "make_sparse_trivial_tiled_mma",
     "make_blockscaled_trivial_tiled_mma",

@@ -45,6 +45,7 @@ from ..base_dsl.runtime import *
 from ..base_dsl.runtime import cuda as cuda_helpers
 from ..base_dsl.compiler import (
     CompileCallable,
+    DivmodSemantics,
     OptLevel,
     PtxasOptions,
     EnableAssertions,
@@ -57,6 +58,7 @@ from ..base_dsl.compiler import (
     LinkLibraries,
     EnableTVMFFI,
     DeviceTarget,
+    EnableCuteExtCompile,
     DisableCuteExtCompile,
     FrontendNext,
     RDC,
@@ -66,8 +68,11 @@ from ..base_dsl.compiler import (
 from ..base_dsl.runtime.jit_arg_adapters import *
 from ..base_dsl.native_struct import make_native_struct, native_struct
 
+from .cutlass_function import CallableFunction as CallableFunction
 
 from ..base_dsl.utils.logger import _init_logger_with_client_name
+
+from . import cutlass_env_manager as cutlass_env_manager
 
 # Initialize logger
 _init_logger_with_client_name("CUTE_DSL")

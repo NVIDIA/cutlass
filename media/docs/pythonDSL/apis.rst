@@ -12,7 +12,6 @@ API Reference
   Primitives (experimental) <primitives.rst>
 
 
-  CUDA (Jittable) <cuda.rst>
   CuTe <cute_dsl_api.rst>
   Pipeline <cute_dsl_api/pipeline.rst>
 

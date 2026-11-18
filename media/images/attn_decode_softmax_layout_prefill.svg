@@ -1,0 +1,106 @@
+<svg width="1024" height="570" viewBox="0 45 1024 570" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="background" cx="52%" cy="52%" r="78%">
+      <stop offset="0%" stop-color="#f2f2f2"/>
+      <stop offset="72%" stop-color="#fbfbfb"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </radialGradient>
+    <filter id="softShadow" x="-12%" y="-12%" width="130%" height="140%">
+      <feDropShadow dx="4" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <linearGradient id="qFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6b6b" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#ff6b6b" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="kFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8fd0ff" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#8fd0ff" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="sFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a7f2d3" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#a7f2d3" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="mFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f5f7e" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#1c6d90" stop-opacity="0.34"/>
+    </linearGradient>
+    <linearGradient id="lFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7b4dff" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#c7a7ff" stop-opacity="0.28"/>
+    </linearGradient>
+    <pattern id="qGrid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0V44" fill="none" stroke="#ff3755" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="kGrid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#0b78ff" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="sGrid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#10a66b" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <clipPath id="kClip"><rect x="430" y="110" width="300" height="120" rx="8"/></clipPath>
+    <clipPath id="qClip"><rect x="250" y="240" width="140" height="280" rx="8"/></clipPath>
+    <clipPath id="sClip"><rect x="430" y="240" width="300" height="280" rx="8"/></clipPath>
+    <style>
+      svg { font-family: "DejaVu Sans", Arial, sans-serif; }
+      .label { font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .tile-sub { font-size: 24px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .thread-row { fill: #0f5f7e; fill-opacity: 0.28; stroke: #0f5f7e; stroke-width: 1.2; stroke-opacity: 0.55; }
+      .thread-label { font-size: 20px; font-weight: 800; fill: #0b4c66; text-anchor: middle; dominant-baseline: middle; }
+      .dim-label { fill: #465364; font-size: 22px; font-style: italic; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .note { fill: #465364; font-size: 21px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .note-sub { font-style: normal; font-size: 18px; font-weight: 700; fill: #8a94a3; }
+      .guide { stroke: #68717a; stroke-width: 1.4; stroke-linecap: square; fill: none; }
+    </style>
+  </defs>
+
+  <rect y="45" width="1024" height="570" fill="url(#background)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="430" y="110" width="300" height="120" rx="8" fill="url(#kFill)" stroke="#0b78ff" stroke-width="2"/>
+    <rect x="250" y="240" width="140" height="280" rx="8" fill="url(#qFill)" stroke="#ff3755" stroke-width="2"/>
+    <rect x="430" y="240" width="300" height="280" rx="8" fill="url(#sFill)" stroke="#10a66b" stroke-width="2"/>
+  </g>
+
+  <g clip-path="url(#kClip)"><rect x="430" y="110" width="300" height="120" fill="url(#kGrid)"/></g>
+  <g clip-path="url(#qClip)"><rect x="250" y="240" width="140" height="280" fill="url(#qGrid)"/></g>
+  <g clip-path="url(#sClip)"><rect x="430" y="240" width="300" height="280" fill="url(#sGrid)"/></g>
+
+  <g>
+    <rect class="thread-row" x="430" y="250" width="300" height="28"/>
+    <rect class="thread-row" x="430" y="282" width="300" height="28"/>
+    <rect class="thread-row" x="430" y="450" width="300" height="28"/>
+    <rect class="thread-row" x="430" y="482" width="300" height="28"/>
+    <text class="thread-label" x="580" y="264">T0</text>
+    <text class="thread-label" x="580" y="296">T1</text>
+    <text class="thread-label" x="580" y="464">T126</text>
+    <text class="thread-label" x="580" y="496">T127</text>
+  </g>
+
+  <text class="label" x="580" y="152" font-size="36" fill="#062f87">K<tspan font-size="18" baseline-shift="super">T</tspan></text>
+  <text class="tile-sub" x="580" y="190" fill="#062f87">Tile</text>
+  <text class="label" x="320" y="362" font-size="36" fill="#8f1424">Q</text>
+  <text class="tile-sub" x="320" y="400" fill="#8f1424">Tile</text>
+  <text class="label" x="580" y="362" font-size="36" fill="#075f3d">S</text>
+  <text class="tile-sub" x="580" y="400" fill="#075f3d">Tile</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="752" y="240" width="34" height="280" rx="8" fill="url(#mFill)" stroke="#0f5f7e" stroke-width="2"/>
+    <rect x="796" y="240" width="34" height="280" rx="8" fill="url(#lFill)" stroke="#25126d" stroke-width="2"/>
+  </g>
+  <text class="thread-label" x="769" y="380">M</text>
+  <text class="thread-label" x="813" y="380" fill="#25126d">L</text>
+
+  <path class="guide" d="M430 92H730M430 88V96M730 88V96"/>
+  <text class="dim-label" x="580" y="74">128</text>
+  <path class="guide" d="M414 110V230M410 110H418M410 230H418"/>
+  <text class="dim-label" x="394" y="170">D</text>
+  <path class="guide" d="M250 222H390M250 218V226M390 218V226"/>
+  <text class="dim-label" x="320" y="204">D</text>
+  <path class="guide" d="M234 240V520M230 240H238M230 520H238"/>
+  <text class="dim-label" x="212" y="380">128</text>
+
+  <path class="guide" d="M441 553H719"/>
+  <path d="M430 553L443 546V560Z" fill="#68717a"/>
+  <path d="M730 553L717 546V560Z" fill="#68717a"/>
+  <text class="note" x="580" y="585">Reduction <tspan class="note-sub">— within one thread</tspan></text>
+</svg>

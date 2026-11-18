@@ -31,7 +31,6 @@ from typing import Optional, Tuple, Type, Union, Literal
 from functools import lru_cache
 import cuda.bindings.driver as cuda
 import sys
-import os
 
 import torch
 import torch.nn.functional as F
@@ -42,7 +41,12 @@ from cutlass import testing
 from cutlass.cute.runtime import from_dlpack
 from cutlass.torch import dtype as torch_dtype
 import cutlass.utils as utils
-from cutlass.utils import is_fp8_dtype
+from cutlass.memory import (
+    SmemAllocator,
+    TmemAllocator,
+    get_smem_capacity_in_bytes,
+)
+from cutlass.tensor_utils import LayoutEnum
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.pipeline as pipeline
@@ -56,40 +60,67 @@ if __name__ == "__main__":
     if cutedsl_dir not in sys.path:
         sys.path.insert(0, cutedsl_dir)
 
-from cutlass.utils import (
+from helpers.dynamic_persistent_tile_scheduler import (
     ClcDynamicPersistentTileScheduler,
     ClcDynamicPersistentTileSchedulerParams,
 )
-
-if __name__ == "__main__":
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, os.path.join(current_dir, "../../../"))
-
-from blackwell.kernel.dense_gemm.dense_gemm_persistent_dynamic import (
-    PersistentDenseGemmKernel,
-    _compute_stages,
+from helpers.conv_helpers import (
+    EPILOGUE_ACTIVATIONS,
+    SMEM_BUFFER_ALIGN_BYTES,
+    SMEM_VECTOR_ALIGN_BYTES,
+    add_dummy_batch_dimension,
+    bias_dtype_for_output,
+    check_conv_geometry,
+    check_im2col_descriptor_limits,
+    check_cluster_shape,
+    check_preferred_cluster_problem_size,
+    check_swizzle_size,
+    check_tensor_alignment,
+    compute_grid,
+    compute_zpq,
+    create_cute_tensor,
+    frontend_cache_token,
+    make_fake_conv_tensor,
+    parse_comma_separated_ints,
+    prepare_fprop_tensors,
+    rt_conv_scalars,
+    solve_max_smem_stages,
+    trace_conv_scalars,
 )
 
 """
-A high-performance 3D implicit-GEMM based fprop convolution example for the NVIDIA Blackwell SM100 architecture using CUTE DSL.
+A high-performance 3D implicit-GEMM based fprop convolution example for the NVIDIA
+Blackwell SM100 architecture using CUTE DSL.
 - Input tensor A is NxDxHxWxC, must be C major.
 - Filter tensor B is KxTxRxSxC, must be C major.
 - Output tensor D is NxZxPxQxK, must be K major.
 
 This kernel supports the following features:
-    - Utilizes Tensor Memory Access (TMA) for efficient memory operations and for the im2col transformation of the input tensor A.
-    - Utilizes Blackwell's tcgen05 MMA for matrix multiply-accumulate (MMA) operations (including 2cta mma instructions)
+    - Operand loads: the input tensor A by Tensor Memory Access (TMA) im2col, which
+      performs the
+      im2col transformation on the fly, and the filter tensor B by TMA tiled
+    - Utilizes Blackwell's tcgen05 MMA for matrix multiply-accumulate (MMA) operations
+      (including 2cta mma instructions)
     - Implements TMA multicast with cluster to reduce L2 memory traffic
-    - Utilizes a CLC dynamic persistent dense GEMM kernel for the implicit GEMM.
+    - CLC-based dynamic persistent tile scheduling
+    - Fused epilogue computing in FP32, D = activation(alpha * acc + bias + beta *
+      residual),
+      with an optional per-output-channel bias and a compile-time activation; this
+      kernel
+      currently supports only alpha = 1 and beta = 0
 
-This implicit-GEMM based convolution works by converting the convolution into a GEMM problem with the following mapping:
+This implicit-GEMM based convolution works by converting the convolution into a GEMM
+problem with the following mapping:
 - GEMM M dimension maps to NxZxPxQ
 - GEMM N dimension maps to K
 - GEMM K dimension maps to TxRxSxC
-During the load of input tensor to SMEM, the TMA operation performs the im2col transformation on the input tensor A.
-This transforms the A matrix into the required shape for the GEMM operation (NxZxPxQ by TxRxSxC), and may involve replication of the input elements.
+During the load of input tensor to SMEM, the TMA operation performs the im2col
+transformation on the input tensor A.
+This transforms the A matrix into the required shape for the GEMM operation (NxZxPxQ by
+TxRxSxC), and may involve replication of the input elements.
 Filter tensor can be loaded to SMEM without any transformation.
-The output tensor D is then stored to GMEM via the im2col TMA store (no transformation necessary).
+The output tensor D is then stored to GMEM via the im2col TMA store (no transformation
+necessary).
 
 To run this example:
 
@@ -119,7 +150,7 @@ To collect performance with NCU profiler:
 Constraints:
 * Supported input data types: fp16, bf16, tf32, int8, uint8, fp8 (e4m3fn, e5m2),
   see detailed valid dtype combinations in below
-  Sm100PersistentDenseImplicitGemmFpropKernel class documentation
+  Sm100DenseImplicitGemmFpropKernel class documentation
 * A/B tensor must have the same data type
 * Mma tiler M must be 64/128 (use_2cta_instrs=False) or 128/256 (use_2cta_instrs=True)
 * Mma tiler N must be 32-256, step 32
@@ -134,164 +165,18 @@ Constraints:
 """
 
 
-def _check_tensor_alignment(
-    c: int,
-    k: int,
-    ab_dtype: Type[cutlass.Numeric],
-    d_dtype: Type[cutlass.Numeric],
-):
-    """Check if the tensor alignment is valid for convolution.
-
-    :param c: The number of input channels
-    :type c: int
-    :param k: The number of output channels
-    :type k: int
-    :param ab_dtype: The data type of the A and B operands
-    :type ab_dtype: Type[cutlass.Numeric]
-    :param d_dtype: The data type of the output tensor
-    :type d_dtype: Type[cutlass.Numeric]
-    """
-
-    def check_contiguous_16B_alignment(dtype, num_major_elements):
-        num_contiguous_elements = 16 * 8 // dtype.width
-        return num_major_elements % num_contiguous_elements == 0
-
-    if not check_contiguous_16B_alignment(
-        d_dtype, k
-    ) or not check_contiguous_16B_alignment(ab_dtype, c):
-        raise testing.CantImplementError(
-            f"Invalid tensor alignment: C = {c}, K = {k}, ab_dtype = {ab_dtype}, d_dtype = {d_dtype}"
-        )
-
-
-def _check_im2col_descriptor_limits(
-    filter_trs: Tuple[int, int, int],
-    upper_padding_dhw: Tuple[int, int, int],
-    lower_padding_dhw: Tuple[int, int, int],
-    stride_dhw: Tuple[int, int, int],
-    dilation_dhw: Tuple[int, int, int],
-):
-    """Check that the convolution geometry fits the im2col tensor map's fields.
-
-    Three fields of the 5D im2col tensor map are narrower than the convolution
-    parameters feeding them, and a 3D convolution always builds a 5D descriptor. The
-    widths come from the encodings: a 5-bit signed corner per spatial dimension
-    ([-16, 15]), an unsigned 5-bit coordinate offset per dimension ([0, 31]), and a
-    3-bit traversal stride holding the stride minus one ([1, 8]). A corner is not the
-    padding itself -- the leading one is -lower_padding, the trailing one
-    upper_padding - (filter - 1) * dilation -- so padding and dilation only bind in
-    combination. Overflowing one truncates it and moves the pixel box, surfacing as an
-    illegal instruction when the shifted box leaves mapped memory and as a wrong answer
-    when it does not, so computing correctly past a bound is luck, not contract.
-
-    :param filter_trs: Filter extents (T, R, S)
-    :param upper_padding_dhw: Padding before the data per spatial dimension
-    :param lower_padding_dhw: Padding after the data per spatial dimension
-    :param stride_dhw: Convolution stride per spatial dimension
-    :param dilation_dhw: Filter dilation per spatial dimension
-    """
-    corner_lo = -16
-    corner_hi = 15
-    max_filter_offset = 31
-    max_element_stride = 8
-    for dim, flt, dil, pad_up, pad_lo, stride in zip(
-        ("D", "H", "W"),
-        filter_trs,
-        dilation_dhw,
-        upper_padding_dhw,
-        lower_padding_dhw,
-        stride_dhw,
-        strict=True,
-    ):
-        leading_corner = -pad_lo
-        trailing_corner = pad_up - (flt - 1) * dil
-        if not corner_lo <= leading_corner <= corner_hi:
-            raise testing.CantImplementError(
-                f"{dim} leading im2col corner is -lower_padding = "
-                f"{leading_corner}, outside the [{corner_lo}, {corner_hi}] the "
-                f"descriptor's signed 5-bit corner encodes; lower_padding_"
-                f"{dim.lower()} must be at most {-corner_lo}"
-            )
-        if not corner_lo <= trailing_corner <= corner_hi:
-            raise testing.CantImplementError(
-                f"{dim} trailing im2col corner is upper_padding - (filter - 1) "
-                f"* dilation = {pad_up} - ({flt} - 1) * {dil} = "
-                f"{trailing_corner}, outside the [{corner_lo}, {corner_hi}] the "
-                f"descriptor's signed 5-bit corner encodes"
-            )
-        if stride > max_element_stride:
-            raise testing.CantImplementError(
-                f"stride_{dim.lower()}={stride} exceeds the {max_element_stride}"
-                f" a traversal stride encodes, holding the stride minus one in "
-                f"3 bits"
-            )
-        # A filter offset is dilation * tap index, so the largest one a dimension
-        # reaches is (filter - 1) * dilation. Overflowing the unsigned field shifts
-        # the filter taps and silently changes the result, so it is bounded even when
-        # both corners are in range.
-        filter_offset = (flt - 1) * dil
-        if filter_offset > max_filter_offset:
-            raise testing.CantImplementError(
-                f"{dim} filter offset is (filter - 1) * dilation = ({flt} - 1) "
-                f"* {dil} = {filter_offset}, past the {max_filter_offset} an "
-                f"unsigned 5-bit im2col coordinate offset encodes"
-            )
-
-
-def _check_swizzle_size(
-    m: int,
-    n: int,
-    mma_tiler_mn: Tuple[int, int],
-    use_2cta_instrs: bool,
-    preferred_cluster_shape_mn: Tuple[int, int],
-    fallback_cluster_shape_mn: Tuple[int, int],
-    swizzle_size: int,
-    raster_along: str,
-):
-    """Check that swizzle_size does not exceed the cluster count in the swizzled dimension.
-
-    :param m: GEMM M dimension (N*Z*P*Q for convolution)
-    :param n: GEMM N dimension (K for convolution)
-    :param mma_tiler_mn: MMA tiler shape (M, N)
-    :param use_2cta_instrs: Whether 2-CTA instructions are used
-    :param preferred_cluster_shape_mn: Preferred cluster shape (M, N)
-    :param fallback_cluster_shape_mn: Fallback cluster shape (M, N)
-    :param swizzle_size: Swizzle size to validate
-    :param raster_along: Rasterization order ("m" or "n")
-    """
-    if swizzle_size <= 1:
-        return
-
-    cta_v = 2 if use_2cta_instrs else 1
-    cta_tile_m = mma_tiler_mn[0] // cta_v
-    cta_tile_n = mma_tiler_mn[1]
-    m_tiles = -(-m // cta_tile_m)
-    n_tiles = -(-n // cta_tile_n)
-
-    for cs in [preferred_cluster_shape_mn, fallback_cluster_shape_mn]:
-        if raster_along == "m":
-            nclusters = -(-n_tiles // cs[1])
-        else:
-            nclusters = -(-m_tiles // cs[0])
-        if nclusters < swizzle_size:
-            dim_name = "N" if raster_along == "m" else "M"
-            raise testing.CantImplementError(
-                f"swizzle_size ({swizzle_size}) exceeds the number of "
-                f"{dim_name} clusters ({nclusters}) for cluster shape "
-                f"{cs}. Use a smaller swizzle_size or increase the "
-                f"{dim_name} dimension."
-            )
-
-
-class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
+class Sm100DenseImplicitGemmFpropKernel:
     """
     Persistent 3D convolution kernel.
-    The input (A) is expected to be in 5D tensor (NDHWC) format and is loaded via the im2col TMA load atom.
-    The filter (B) is expected to be in 5D tensor (KTRSC) format and is loaded via the TMA load atom.
-    The output (D) is expected to be in 5D tensor (NZPQK) format and is stored via the im2col TMA store.
-    The implicit GEMM runs as a megakernel that dispatches on the cluster shape the
-    launch actually formed, so a single launch serves both the preferred and the
-    fallback cluster.
+    The input (A) is expected to be in 5D tensor (NDHWC) format and is loaded via the
+    TMA im2col load atom.
+    The filter (B) is expected to be in 5D tensor (KTRSC) format and is loaded via the
+    TMA tiled load atom.
+    The output (D) is expected to be in 5D tensor (NZPQK) format and is stored via the
+    im2col TMA store.
+    One kernel carries a code path per cluster shape and runs the one matching the
+    cluster the launch actually formed, so a single launch serves both the preferred
+    and the fallback cluster.
 
     :param acc_dtype: Data type for accumulation during computation
     :type acc_dtype: type[cutlass.Numeric]
@@ -299,24 +184,22 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
     :type use_2cta_instrs: bool
     :param mma_tiler_mn: Shape of the Matrix Multiply-Accumulate (MMA) tiler (M,N)
     :type mma_tiler_mn: Tuple[int, int]
-    :param preferred_cluster_shape_mn: Preferred cluster dimensions (M,N) for optimal performance
+    :param preferred_cluster_shape_mn: Preferred cluster dimensions (M,N) for optimal
+        performance
     :type preferred_cluster_shape_mn: Tuple[int, int]
-    :param fallback_cluster_shape_mn: Fallback cluster dimensions (M,N) for parallel processing
+    :param fallback_cluster_shape_mn: Fallback cluster dimensions (M,N) for parallel
+        processing
     :type fallback_cluster_shape_mn: Tuple[int, int]
-    :param filter_trs: Filter dimensions (T, R, S)
-    :type filter_trs: Tuple[int, int, int]
-    :param upper_padding_dhw: Upper padding (PadD, PadH, PadW)
-    :type upper_padding_dhw: Tuple[int, int, int]
-    :param lower_padding_dhw: Lower padding (PadD, PadH, PadW)
-    :type lower_padding_dhw: Tuple[int, int, int]
-    :param stride_dhw: Stride (Sd, Sh, Sw)
-    :type stride_dhw: Tuple[int, int, int]
-    :param dilation_dhw: Dilation (DilD, DilH, DilW)
-    :type dilation_dhw: Tuple[int, int, int]
     :param swizzle_size: Swizzling size in the unit of cluster. 1 means no swizzle
     :type swizzle_size: int
-    :param raster_along: Rasterization order of clusters. Only used when swizzle_size > 1.
+    :param raster_along: Rasterization order of clusters. Only used when swizzle_size >
+        1.
     :type raster_along: Literal["m", "n"]
+
+    :note: The convolution geometry (filter T/R/S, padding, stride, dilation) is not a
+        constructor parameter: T/R/S come from the filter tensor extents and
+        pad/stride/dilation arrive as runtime Int32 operands to __call__, so a single
+        compiled cubin serves any geometry.
 
     :note: In current version, A and B tensor must be C major. D tensor must be K major.
 
@@ -331,29 +214,34 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
 
     :note: Supported accumulator data types:
         - Float32 (for all floating point A/B data types)
-        - Float16 (only for fp16 and fp8 A/B data types)
         - Int32 (only for uint8/int8 A/B data types)
 
     :note: Supported D data types:
-        - Float32 (for float32 and int32 accumulator data types)
-        - Int32 (for float32 and int32 accumulator data types)
-        - Float16/BFloat16 (for fp16 and fp8 accumulator data types)
-        - Int8/Uint8 (for uint8/int8 accumulator data types)
+        - Float32, Float16/BFloat16, Int32, Int8/Uint8 (for float32 and int32
+          accumulator data types)
         - Float8E4M3FN/Float8E5M2 (for float32 accumulator data types)
 
+    :note: The epilogue arithmetic runs in FP32 for every accumulator type, so an
+        Int32 output is the FP32 result converted back to Int32.
+
     :note: Constraints:
-        - MMA tiler M must be 64/128 (use_2cta_instrs=False) or 128/256 (use_2cta_instrs=True)
+        - MMA tiler M must be 64/128 (use_2cta_instrs=False) or 128/256
+          (use_2cta_instrs=True)
         - MMA tiler N must be 32-256, step 32
         - Cluster shape M must be multiple of 2 if use_2cta_instrs=True
         - Cluster shape M/N must be positive and power of 2, total cluster size <= 16
         - Preferred cluster shape M must be multiple of 2 if use_2cta_instrs=True
-        - Preferred cluster shape M/N must be positive and power of 2, total cluster size <= 16
+        - Preferred cluster shape M/N must be positive and power of 2, total cluster
+          size <= 16
         - Preferred cluster shape M/N must be multiple of fallback cluster shape M/N
+        - The contiguous dimension of A/B/D tensors must be at least 16 bytes aligned,
+          i.e, number of elements is a multiple of 4, 8, and 16 for TFloat32,
+          Float16/BFloat16, and Int8/Uint8/Float8, respectively
 
     **Example:**
 
     .. code-block:: python
-        conv = Sm100PersistentDenseImplicitGemmFpropKernel(
+        conv = Sm100DenseImplicitGemmFpropKernel(
             acc_dtype=cutlass.Float32,
             use_2cta_instrs=True,
             mma_tiler_mn=(128, 128),
@@ -362,15 +250,19 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         )
         conv(
             a, b, d,
+            bias,  # optional length-K bias tensor, or None
             upper_pad_d, upper_pad_h, upper_pad_w,
             lower_pad_d, lower_pad_h, lower_pad_w,
             stride_d, stride_h, stride_w,
-            dilation_d, dilation_h, dilation_w,
+            dil_d, dil_h, dil_w,
             stream,
-            bias,  # optional length-K bias tensor, or None
             epilogue_op,
         )
     """
+
+    # The epilogue warps are fixed for every configuration, so they live on the
+    # class, where static checks can read them.
+    epilogue_warp_id = (0, 1, 2, 3)
 
     def __init__(
         self,
@@ -382,27 +274,53 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         swizzle_size: int = 1,
         raster_along: Literal["m", "n"] = "m",
     ):
-        # The GEMM base carries one cluster shape, and the fallback is the shape it
-        # must be sized against: every launch is guaranteed to be able to form the
-        # fallback cluster, so the cluster layout and multicast counts derived from
-        # it stay valid on both dispatch paths.
-        super().__init__(
-            acc_dtype=acc_dtype,
-            use_2cta_instrs=use_2cta_instrs,
-            mma_tiler_mn=mma_tiler_mn,
-            cluster_shape_mn=fallback_cluster_shape_mn,
-            use_tma_store=True,  # Conv always uses im2col TMA store
-            swizzle_size=swizzle_size,
-            raster_along=raster_along,
-        )
+        self.acc_dtype: Type[cutlass.Numeric] = acc_dtype
+        self.use_2cta_instrs = use_2cta_instrs
+        # cluster_shape_mn is the fallback cluster shape, which every launch is
+        # guaranteed to be able to form; the fallback cluster layout and its
+        # multicast counts are sized against it.
+        self.cluster_shape_mn = fallback_cluster_shape_mn
+        self.swizzle_size = swizzle_size
+        self.raster_along = raster_along
+        # K dimension is deferred in _setup_attributes
+        self.mma_tiler_mn = mma_tiler_mn
+        self.mma_tiler = (*mma_tiler_mn, 1)
+        self.arch = "sm_100"
+        # Shared memory capacity of the compile target.
+        self.smem_capacity = get_smem_capacity_in_bytes()
 
-        # Both shapes are kept: the megakernel dispatches on which one the launch
+        self.num_clc_stage = 1
+        # Response size is 4B * 4 elements
+        self.num_clc_response_bytes = 16
+
+        self.cta_group = (
+            tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
+        )
+        self.tiled_mma = None
+
+        # Set specialized warp ids
+        self.mma_warp_id = 4
+        self.tma_warp_id = 5
+        self.sched_warp_id = 6
+        self.threads_per_cta = 32 * len(
+            (
+                self.mma_warp_id,
+                self.tma_warp_id,
+                self.sched_warp_id,
+                *self.epilogue_warp_id,
+            )
+        )
+        # Set barrier ids for the epilogue sync and the tmem ptr sync
+        self.epilog_sync_bar_id = 1
+        self.tmem_alloc_sync_bar_id = 2
+
+        # Both shapes are kept: the kernel dispatches on which one the launch
         # actually formed.
         self.preferred_cluster_shape_mn = preferred_cluster_shape_mn
         self.fallback_cluster_shape_mn = fallback_cluster_shape_mn
 
-    def _setup_conv_input_attrs(self, a, b, d):
-        """Validate and set input-dependent attributes.
+    def _setup_conv_input_attrs(self, a, b, d) -> None:
+        """Set input-dependent attributes.
 
         Sets a_dtype, b_dtype, d_dtype, a_major_mode, b_major_mode, d_layout.
 
@@ -413,57 +331,257 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         self.a_dtype: Type[cutlass.Numeric] = a.element_type
         self.b_dtype: Type[cutlass.Numeric] = b.element_type
         self.d_dtype: Type[cutlass.Numeric] = d.element_type
-        # Only C major accepted
-        if cutlass.const_expr(a.leading_dim != 4):
-            raise RuntimeError("The layout of a is not supported")
-        if cutlass.const_expr(b.leading_dim != 4):
-            raise RuntimeError("The layout of b is not supported")
-        if cutlass.const_expr(d.leading_dim != 4):
-            raise RuntimeError("The layout of d is not supported")
         self.a_major_mode = cute.nvgpu.OperandMajorMode.K
         self.b_major_mode = cute.nvgpu.OperandMajorMode.K
-        self.d_layout = (
-            cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
-        )  # K dimension contiguous
+        self.d_layout = LayoutEnum.ROW_MAJOR  # K dimension contiguous
 
-        # Check if input data types are compatible with MMA instruction
-        if cutlass.const_expr(self.a_dtype != self.b_dtype):
-            raise TypeError(f"Type must match: {self.a_dtype} != {self.b_dtype}")
+    def _setup_attributes(self) -> None:
+        """Set up configurations that are dependent on convolution inputs."""
+        # --- MMA and tile shapes ---
+        self.tiled_mma = sm100_utils.make_trivial_tiled_mma(
+            self.a_dtype,
+            self.b_dtype,
+            self.a_major_mode,
+            self.b_major_mode,
+            self.acc_dtype,
+            self.cta_group,
+            self.mma_tiler[:2],
+        )
+        mma_inst_shape_k = cute.size(self.tiled_mma.shape_mnk, mode=[2])
+        mma_inst_tile_k = 4
+        self.mma_tiler = (
+            self.mma_tiler[0],
+            self.mma_tiler[1],
+            (mma_inst_shape_k * mma_inst_tile_k,),
+        )
+        self.cta_tile_shape_mnk = (
+            self.mma_tiler[0] // cute.size(self.tiled_mma.thr_id.shape),
+            self.mma_tiler[1],
+            self.mma_tiler[2],
+        )
+
+        # --- Epilogue tile ---
+        self.epi_tile = sm100_utils.compute_epilogue_tile_shape(
+            self.cta_tile_shape_mnk,
+            self.use_2cta_instrs,
+            self.d_layout,
+            self.d_dtype,
+        )
+
+        # --- Pipeline stages and smem layouts ---
+        # ACC double-buffers in TMEM.
+        self.num_acc_stage = 2
+        self._solve_smem_stages(Sm100DenseImplicitGemmFpropKernel._make_shared_storage)
+        (
+            self.a_smem_layout_staged,
+            self.b_smem_layout_staged,
+            self.d_smem_layout_staged,
+        ) = self._make_smem_layouts(
+            self.tiled_mma,
+            self.mma_tiler,
+            self.a_dtype,
+            self.b_dtype,
+            self.d_dtype,
+            self.d_layout,
+            self.epi_tile,
+            self.num_ab_stage,
+            self.num_d_stage,
+        )
+
+        # --- TMA transaction bytes and TMEM columns ---
+        # Compute the TMA transaction bytes of one A/B stage across the MMA atom's CTAs
+        atom_thr_size = cute.size(self.tiled_mma.thr_id.shape)
+        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
+        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
+        b_copy_size = cute.size_in_bytes(self.b_dtype, b_smem_layout)
+        self.num_tma_load_bytes = (a_copy_size + b_copy_size) * atom_thr_size
+
+        # Compute the number of tensor memory allocation columns
+        self.num_tmem_alloc_cols = self._compute_num_tmem_alloc_cols(
+            self.tiled_mma, self.mma_tiler, self.num_acc_stage, self.arch
+        )
+
+        # --- Cluster layouts ---
+        self._setup_cluster_attrs()
+
+    def _solve_smem_stages(self, make_shared_storage) -> None:
+        """Solve the A/B and D pipeline stage counts that fit in shared memory.
+
+        :param make_shared_storage: Unbound _make_shared_storage of the kernel
+            class, called with self for every candidate stage assignment
+        """
+        # The D-store ring starts at two and deepens with whatever smem the A/B
+        # pipeline leaves over -- A/B depth is filled first. Both are solved
+        # against the exact SharedStorage footprint so the stage-scaled
+        # mbarriers, the optional bias row and every alignment pad are accounted
+        # for.
+        counts = solve_max_smem_stages(
+            lambda **kw: make_shared_storage(self, **kw),
+            self.smem_capacity,
+            primary="num_ab_stage",
+            start={"num_ab_stage": 1, "num_d_stage": 2},
+            deepen=("num_d_stage",),
+        )
+        self.num_ab_stage = counts["num_ab_stage"]
+        self.num_d_stage = counts["num_d_stage"]
+
+    def _setup_cluster_attrs(self) -> None:
+        """Set up the preferred and fallback cluster layouts and their A/B multicast."""
+        self.preferred_cluster_layout_vmnk = cute.tiled_divide(
+            cute.make_layout((*self.preferred_cluster_shape_mn, 1)),
+            (self.tiled_mma.thr_id.shape,),
+        )
+        self.num_preferred_mcast_ctas_a = cute.size(
+            self.preferred_cluster_layout_vmnk.shape[2]
+        )
+        self.num_preferred_mcast_ctas_b = cute.size(
+            self.preferred_cluster_layout_vmnk.shape[1]
+        )
+        self.is_preferred_a_mcast = self.num_preferred_mcast_ctas_a > 1
+        self.is_preferred_b_mcast = self.num_preferred_mcast_ctas_b > 1
+
+        self.fallback_cluster_layout_vmnk = cute.tiled_divide(
+            cute.make_layout((*self.cluster_shape_mn, 1)),
+            (self.tiled_mma.thr_id.shape,),
+        )
+        self.num_fallback_mcast_ctas_a = cute.size(
+            self.fallback_cluster_layout_vmnk.shape[2]
+        )
+        self.num_fallback_mcast_ctas_b = cute.size(
+            self.fallback_cluster_layout_vmnk.shape[1]
+        )
+        self.is_fallback_a_mcast = self.num_fallback_mcast_ctas_a > 1
+        self.is_fallback_b_mcast = self.num_fallback_mcast_ctas_b > 1
+
+    def _setup_conv_tma(
+        self,
+        a,
+        b,
+        d,
+        tiled_mma,
+        rt_upper_pad_dhw,
+        rt_lower_pad_dhw,
+        rt_stride_dhw,
+        rt_dil_dhw,
+    ):
+        """Set up TMA atoms and tensors for im2col convolution with dual cluster shapes.
+
+        Creates preferred and fallback TMA atoms for A and B tensors, and a single
+        TMA atom for D (im2col store is cluster-independent).
+
+        The pad / stride / dilation operands feed the im2col A descriptor corners.
+        They arrive as runtime cutlass.Int32, which the rt_ prefix marks, so one
+        compiled cubin serves any geometry.
+
+        :param a: Input tensor A - (N, D, H, W, C) layout
+        :param b: Filter tensor B - (K, T, R, S, C) layout
+        :param d: Output tensor D - (N, Z, P, Q, K) layout
+        :param tiled_mma: Tiled MMA configuration
+        :param rt_upper_pad_dhw: Upper padding (D, H, W)
+        :param rt_lower_pad_dhw: Lower padding (D, H, W)
+        :param rt_stride_dhw: Convolution stride (D, H, W)
+        :param rt_dil_dhw: Dilation (D, H, W)
+        :returns: (tma_atom_a_preferred, tma_tensor_a_preferred,
+                tma_atom_a_fallback, tma_tensor_a_fallback,
+                tma_atom_b_preferred, tma_tensor_b_preferred,
+                tma_atom_b_fallback, tma_tensor_b_fallback,
+                tma_atom_d, tma_tensor_d)
+        """
+        (
+            tma_atom_a_preferred,
+            tma_tensor_a_preferred,
+            tma_atom_a_fallback,
+            tma_tensor_a_fallback,
+        ) = self._make_a_im2col_tma_atoms(
+            a,
+            b,
+            tiled_mma,
+            rt_upper_pad_dhw,
+            rt_lower_pad_dhw,
+            rt_stride_dhw,
+            rt_dil_dhw,
+        )
+
+        (
+            tma_atom_b_preferred,
+            tma_tensor_b_preferred,
+            tma_atom_b_fallback,
+            tma_tensor_b_fallback,
+        ) = self._make_b_tiled_tma_atoms(b, tiled_mma)
+
+        # --- D: im2col TMA store (cluster-independent) ---
+        # Change view of output tensor from (N, Z, P, Q, K) to ((Q, P, Z, N), K)
+        mD = cute.make_tensor(d.iterator, cute.select(d.layout, mode=[3, 2, 1, 0, 4]))
+        mD = cute.group_modes(mD, begin=0, end=4)
+
+        epi_smem_layout = cute.slice_(
+            self.d_smem_layout_staged, (None, None, (None, 0))
+        )
+
+        tma_atom_d, tma_tensor_d = cpasync.make_im2col_tma_atom(
+            cpasync.CopyBulkTensorIm2ColS2GOp(),
+            mD,
+            epi_smem_layout,
+            self.epi_tile,
+        )
+        tma_tensor_d = cute.coalesce(tma_tensor_d, target_profile=(1, 1))
+
+        # Add dummy batch dimension to all tensors (GEMM expects batch dimension)
+        tma_tensor_a_preferred = add_dummy_batch_dimension(tma_tensor_a_preferred)
+        tma_tensor_a_fallback = add_dummy_batch_dimension(tma_tensor_a_fallback)
+        tma_tensor_b_preferred = add_dummy_batch_dimension(tma_tensor_b_preferred)
+        tma_tensor_b_fallback = add_dummy_batch_dimension(tma_tensor_b_fallback)
+        tma_tensor_d = add_dummy_batch_dimension(tma_tensor_d)
+
+        return (
+            tma_atom_a_preferred,
+            tma_tensor_a_preferred,
+            tma_atom_a_fallback,
+            tma_tensor_a_fallback,
+            tma_atom_b_preferred,
+            tma_tensor_b_preferred,
+            tma_atom_b_fallback,
+            tma_tensor_b_fallback,
+            tma_atom_d,
+            tma_tensor_d,
+        )
 
     def _make_a_im2col_tma_atoms(
         self,
-        a_tensor: cute.Tensor,
-        b_tensor: cute.Tensor,
+        a: cute.Tensor,
+        b: cute.Tensor,
         tiled_mma: cute.TiledMma,
-        upper_pad_op: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
-        lower_pad_op: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
-        stride_op: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
-        dil_op: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+        rt_upper_pad_dhw: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+        rt_lower_pad_dhw: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+        rt_stride_dhw: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
+        rt_dil_dhw: Tuple[cutlass.Int32, cutlass.Int32, cutlass.Int32],
     ) -> Tuple[cute.CopyAtom, cute.Tensor, cute.CopyAtom, cute.Tensor]:
         """Make A's preferred and fallback im2col TMA load atoms.
 
         A is the operand the im2col descriptor walks: it is viewed as
         ((W, H, D, N), C) so the descriptor's box slides over the spatial modes,
         and its corners come from the runtime pad/stride/dilation operands and the
-        filter tensor's own extents, which is what lets one cubin serve any
-        geometry. The two atoms differ only in the cluster shape they multicast
-        over, and each drops the multicast op when its cluster does not multicast A.
+        filter tensor's own extents. The two atoms differ only in the cluster shape
+        they multicast over, and each drops the multicast op when its cluster does
+        not multicast A.
 
-        :param a_tensor: Input tensor A - (N, D, H, W, C) layout
-        :param b_tensor: Filter tensor B - (K, T, R, S, C) layout
+        Pad / stride / dilation arrive as runtime cutlass.Int32, which the rt_ prefix
+        marks, so one compiled cubin serves any geometry.
+
+        :param a: Input tensor A - (N, D, H, W, C) layout
+        :param b: Filter tensor B - (K, T, R, S, C) layout
         :param tiled_mma: Tiled MMA configuration
-        :param upper_pad_op: Upper padding (D, H, W) as runtime cutlass.Int32 tuple
-        :param lower_pad_op: Lower padding (D, H, W) as runtime cutlass.Int32 tuple
-        :param stride_op: Convolution stride (D, H, W) as runtime cutlass.Int32 tuple
-        :param dil_op: Dilation (D, H, W) as runtime cutlass.Int32 tuple
+        :param rt_upper_pad_dhw: Upper padding (D, H, W)
+        :param rt_lower_pad_dhw: Lower padding (D, H, W)
+        :param rt_stride_dhw: Convolution stride (D, H, W)
+        :param rt_dil_dhw: Dilation (D, H, W)
 
         :return: (tma_atom_a_preferred, tma_tensor_a_preferred,
                 tma_atom_a_fallback, tma_tensor_a_fallback)
         """
         # Create 2-mode hierarchical tensor layout: (N, D, H, W, C) -> ((W, H, D, N), C)
-        mA = cute.make_tensor(
-            a_tensor.iterator, cute.select(a_tensor.layout, mode=[3, 2, 1, 0, 4])
-        )
+        mA = cute.make_tensor(a.iterator, cute.select(a.layout, mode=[3, 2, 1, 0, 4]))
         mA = cute.group_modes(mA, begin=0, end=4)
 
         a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
@@ -473,7 +591,7 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
 
         # Filter T/R/S come from the filter tensor (K, T, R, S, C), whose dynamic
         # layout makes the extents runtime Int32, so one cubin serves any T/R/S.
-        rt_filter_trs = (b_tensor.shape[1], b_tensor.shape[2], b_tensor.shape[3])
+        rt_filter_trs = (b.shape[1], b.shape[2], b.shape[3])
 
         # --- A preferred ---
         a_copy_atom_preferred = (
@@ -489,10 +607,10 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                 self.mma_tiler,
                 tiled_mma,
                 rt_filter_trs,
-                upper_pad_op,
-                lower_pad_op,
-                stride_op,
-                dil_op,
+                rt_upper_pad_dhw,
+                rt_lower_pad_dhw,
+                rt_stride_dhw,
+                rt_dil_dhw,
                 self.preferred_cluster_layout_vmnk.shape,
                 internal_type=a_internal_type,
             )
@@ -511,10 +629,10 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             self.mma_tiler,
             tiled_mma,
             rt_filter_trs,
-            upper_pad_op,
-            lower_pad_op,
-            stride_op,
-            dil_op,
+            rt_upper_pad_dhw,
+            rt_lower_pad_dhw,
+            rt_stride_dhw,
+            rt_dil_dhw,
             self.fallback_cluster_layout_vmnk.shape,
             internal_type=a_internal_type,
         )
@@ -525,44 +643,24 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             tma_tensor_a_fallback,
         )
 
-    def _setup_conv_tma(
-        self, a, b, d, tiled_mma, upper_pad_op, lower_pad_op, stride_op, dil_op
-    ):
-        """Set up TMA atoms and tensors for im2col convolution with dual cluster shapes.
+    def _make_b_tiled_tma_atoms(
+        self,
+        b: cute.Tensor,
+        tiled_mma: cute.TiledMma,
+    ) -> Tuple[cute.CopyAtom, cute.Tensor, cute.CopyAtom, cute.Tensor]:
+        """Make B's preferred and fallback tiled TMA load atoms.
 
-        Creates preferred and fallback TMA atoms for A and B tensors, and a single
-        TMA atom for D (im2col store is cluster-independent).
+        B is the filter, which reaches shared memory without any transformation: it
+        is viewed as (K, (C, S, R, T)) so its GEMM-K mode groups the channel and
+        filter-spatial modes. The two atoms differ only in the cluster shape they
+        multicast over.
 
-        The pad/stride/dilation operands feed the im2col A descriptor corners.
-        Threading them as runtime cutlass.Int32 lets one compiled cubin serve
-        any pad/stride/dilation config.
-
-        :param a: Input tensor A - (N, D, H, W, C) layout
         :param b: Filter tensor B - (K, T, R, S, C) layout
-        :param d: Output tensor D - (N, Z, P, Q, K) layout
         :param tiled_mma: Tiled MMA configuration
-        :param upper_pad_op: Upper padding (D, H, W) as runtime cutlass.Int32 tuple
-        :param lower_pad_op: Lower padding (D, H, W) as runtime cutlass.Int32 tuple
-        :param stride_op: Convolution stride (D, H, W) as runtime cutlass.Int32 tuple
-        :param dil_op: Dilation (D, H, W) as runtime cutlass.Int32 tuple
-        :returns: (tma_atom_a_preferred, tma_tensor_a_preferred,
-                tma_atom_a_fallback, tma_tensor_a_fallback,
-                tma_atom_b_preferred, tma_tensor_b_preferred,
-                tma_atom_b_fallback, tma_tensor_b_fallback,
-                tma_atom_d, tma_tensor_d)
+
+        :return: (tma_atom_b_preferred, tma_tensor_b_preferred,
+                tma_atom_b_fallback, tma_tensor_b_fallback)
         """
-        atom_thr_size = cute.size(tiled_mma.thr_id.shape)
-
-        (
-            tma_atom_a_preferred,
-            tma_tensor_a_preferred,
-            tma_atom_a_fallback,
-            tma_tensor_a_fallback,
-        ) = self._make_a_im2col_tma_atoms(
-            a, b, tiled_mma, upper_pad_op, lower_pad_op, stride_op, dil_op
-        )
-
-        # --- B: tiled TMA load ---
         b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
         # Change view of filter tensor from (K, T, R, S, C) to (K, (C, S, R, T))
         mB = cute.make_tensor(b.iterator, cute.select(b.layout, mode=[0, 4, 3, 2, 1]))
@@ -598,511 +696,12 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             self.fallback_cluster_layout_vmnk.shape,
             internal_type=b_internal_type,
         )
-
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
-        a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
-        b_copy_size = cute.size_in_bytes(self.b_dtype, b_smem_layout)
-        self.num_tma_load_bytes = (a_copy_size + b_copy_size) * atom_thr_size
-        # Response size is 4B * 4 elements
-        self.num_clc_response_bytes = 16
-
-        # --- D: im2col TMA store (cluster-independent) ---
-        # Change view of output tensor from (N, Z, P, Q, K) to ((Q, P, Z, N), K)
-        mD = cute.make_tensor(d.iterator, cute.select(d.layout, mode=[3, 2, 1, 0, 4]))
-        mD = cute.group_modes(mD, begin=0, end=4)
-
-        epi_smem_layout = cute.slice_(
-            self.d_smem_layout_staged, (None, None, (None, 0))
-        )
-
-        tma_atom_d, tma_tensor_d = cpasync.make_im2col_tma_atom(
-            cpasync.CopyBulkTensorIm2ColS2GOp(),
-            mD,
-            epi_smem_layout,
-            self.epi_tile,
-        )
-        tma_tensor_d = cute.coalesce(tma_tensor_d, target_profile=(1, 1))
-
-        # Add dummy batch dimension to all tensors (GEMM expects batch dimension)
-        def add_dummy_batch_dimension(tensor):
-            new_layout = cute.append(tensor.layout, cute.make_layout(1))
-            tensor = cute.make_tensor(tensor.iterator, new_layout)
-            return tensor
-
-        tma_tensor_a_preferred = add_dummy_batch_dimension(tma_tensor_a_preferred)
-        tma_tensor_a_fallback = add_dummy_batch_dimension(tma_tensor_a_fallback)
-        tma_tensor_b_preferred = add_dummy_batch_dimension(tma_tensor_b_preferred)
-        tma_tensor_b_fallback = add_dummy_batch_dimension(tma_tensor_b_fallback)
-        tma_tensor_d = add_dummy_batch_dimension(tma_tensor_d)
-
         return (
-            tma_atom_a_preferred,
-            tma_tensor_a_preferred,
-            tma_atom_a_fallback,
-            tma_tensor_a_fallback,
             tma_atom_b_preferred,
             tma_tensor_b_preferred,
             tma_atom_b_fallback,
             tma_tensor_b_fallback,
-            tma_atom_d,
-            tma_tensor_d,
         )
-
-    def _setup_attributes(self):
-        """Set up configurations that are dependent on convolution inputs."""
-        # Configure tiled mma
-        tiled_mma = self._create_tiled_mma()
-
-        # Compute mma/cluster/tile shapes
-        mma_inst_shape_k = cute.size(tiled_mma.shape_mnk, mode=[2])
-        mma_inst_tile_k = 4
-        self.mma_tiler = (
-            self.mma_tiler[0],
-            self.mma_tiler[1],
-            (mma_inst_shape_k * mma_inst_tile_k,),
-        )
-        self.cta_tile_shape_mnk = (
-            self.mma_tiler[0] // cute.size(tiled_mma.thr_id.shape),
-            self.mma_tiler[1],
-            self.mma_tiler[2],
-        )
-
-        # Compute cluster layout
-        self.cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.cluster_shape_mn, 1)),
-            (tiled_mma.thr_id.shape,),
-        )
-
-        # Compute number of multicast CTAs for A/B
-        self.num_mcast_ctas_a = cute.size(self.cluster_layout_vmnk.shape[2])
-        self.num_mcast_ctas_b = cute.size(self.cluster_layout_vmnk.shape[1])
-        self.is_a_mcast = self.num_mcast_ctas_a > 1
-        self.is_b_mcast = self.num_mcast_ctas_b > 1
-
-        # Compute epilogue subtile
-        self.epi_tile = utils.sm100.compute_epilogue_tile_shape(
-            self.cta_tile_shape_mnk,
-            self.use_2cta_instrs,
-            self.d_layout,
-            self.d_dtype,
-        )
-
-        d_smem_layout = utils.sm100.make_smem_layout_epi(
-            self.d_dtype, self.d_layout, self.epi_tile, 1
-        )
-
-        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes()
-
-        # Setup A/B/C stage count in shared memory and ACC stage count in tensor memory
-        self.num_acc_stage, self.num_ab_stage, self.num_d_stage = _compute_stages(
-            tiled_mma,
-            self.mma_tiler,
-            self.a_dtype,
-            self.b_dtype,
-            self.d_dtype,
-            self.smem_capacity,
-            self.occupancy,
-            self.use_tma_store,
-            d_smem_layout,
-        )
-
-        # Setup clc stage by default
-        self.num_clc_stage = 1
-        assert self.num_clc_stage == 1, "Only single-stage CLC pipeline is supported"
-
-        # Compute A/B/D shared memory layout
-        (
-            self.a_smem_layout_staged,
-            self.b_smem_layout_staged,
-            self.d_smem_layout_staged,
-        ) = self._make_smem_layouts(
-            tiled_mma,
-            self.mma_tiler,
-            self.a_dtype,
-            self.b_dtype,
-            self.d_dtype,
-            self.d_layout,
-            self.epi_tile,
-            self.num_ab_stage,
-            self.num_d_stage,
-        )
-
-        # Compute the number of tensor memory allocation columns
-        self.num_tmem_alloc_cols = self._compute_num_tmem_alloc_cols(
-            tiled_mma, self.mma_tiler, self.num_acc_stage, self.arch
-        )
-
-        # Compute preferred cluster layout alongside the fallback one set above.
-        self.preferred_cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.preferred_cluster_shape_mn, 1)),
-            (tiled_mma.thr_id.shape,),
-        )
-        # Calculate multicast CTA counts for preferred cluster
-        self.num_preferred_mcast_ctas_a = cute.size(
-            self.preferred_cluster_layout_vmnk.shape[2]
-        )
-        self.num_preferred_mcast_ctas_b = cute.size(
-            self.preferred_cluster_layout_vmnk.shape[1]
-        )
-        self.is_preferred_a_mcast = self.num_preferred_mcast_ctas_a > 1
-        self.is_preferred_b_mcast = self.num_preferred_mcast_ctas_b > 1
-
-        self.fallback_cluster_layout_vmnk = self.cluster_layout_vmnk
-        self.is_fallback_a_mcast = self.is_a_mcast
-        self.is_fallback_b_mcast = self.is_b_mcast
-
-    @cute.jit
-    def __call__(
-        self,
-        a: cute.Tensor,
-        b: cute.Tensor,
-        d: cute.Tensor,
-        rt_upper_pad_d: cutlass.Int32,
-        rt_upper_pad_h: cutlass.Int32,
-        rt_upper_pad_w: cutlass.Int32,
-        rt_lower_pad_d: cutlass.Int32,
-        rt_lower_pad_h: cutlass.Int32,
-        rt_lower_pad_w: cutlass.Int32,
-        rt_stride_d: cutlass.Int32,
-        rt_stride_h: cutlass.Int32,
-        rt_stride_w: cutlass.Int32,
-        rt_dil_d: cutlass.Int32,
-        rt_dil_h: cutlass.Int32,
-        rt_dil_w: cutlass.Int32,
-        stream: cuda.CUstream,
-        bias_tensor: Optional[cute.Tensor] = None,
-        epilogue_op: cutlass.Constexpr = lambda x: x,
-    ):
-        """Execute the persistent convolution operation with dynamic preferred cluster scheduling.
-
-        :param a: Input tensor A - (N, D, H, W, C) layout
-        :param b: Filter tensor B - (K, T, R, S, C) layout
-        :param d: Output tensor D - (N, Z, P, Q, K) layout
-        :param rt_upper_pad_d/h/w: Runtime upper padding (D, H, W) as Int32, so one
-            compiled cubin serves any padding config without recompilation
-        :param rt_lower_pad_d/h/w: Runtime lower padding (D, H, W) as Int32
-        :param rt_stride_d/h/w: Runtime convolution stride (D, H, W) as Int32
-        :param rt_dil_d/h/w: Runtime dilation (D, H, W) as Int32
-        :param stream: CUDA stream for asynchronous execution
-        :param bias_tensor: Optional length-K device tensor holding a
-            per-output-channel bias added in FP32 as D = epilogue_op(acc + bias).
-            Pass None for a cubin without the bias path.
-        :param epilogue_op: Optional elementwise lambda function to apply to the output tensor
-        """
-        self._setup_conv_input_attrs(a, b, d)
-        # The staged bias row is sized from the bias tensor's dtype while the
-        # epilogue reads it as the output type, so a mismatch would overrun the
-        # smem buffer.
-        self.has_bias: bool = bias_tensor is not None
-        if cutlass.const_expr(
-            self.has_bias and bias_tensor.element_type is not self.d_dtype
-        ):
-            raise TypeError(
-                f"bias dtype ({bias_tensor.element_type}) must match output "
-                f"dtype ({self.d_dtype})"
-            )
-        self._setup_attributes()
-
-        # Pack the runtime pad/stride/dilation scalars into (D, H, W) tuples that
-        # feed the im2col A descriptor corners. Keeping them as runtime Int32 lets
-        # a single compiled cubin run any pad/stride/dilation configuration.
-        upper_pad_op = (rt_upper_pad_d, rt_upper_pad_h, rt_upper_pad_w)
-        lower_pad_op = (rt_lower_pad_d, rt_lower_pad_h, rt_lower_pad_w)
-        stride_op = (rt_stride_d, rt_stride_h, rt_stride_w)
-        dil_op = (rt_dil_d, rt_dil_h, rt_dil_w)
-
-        tiled_mma = self._create_tiled_mma()
-
-        (
-            tma_atom_a_preferred,
-            tma_tensor_a_preferred,
-            tma_atom_a_fallback,
-            tma_tensor_a_fallback,
-            tma_atom_b_preferred,
-            tma_tensor_b_preferred,
-            tma_atom_b_fallback,
-            tma_tensor_b_fallback,
-            tma_atom_d,
-            tma_tensor_d,
-        ) = self._setup_conv_tma(
-            a, b, d, tiled_mma, upper_pad_op, lower_pad_op, stride_op, dil_op
-        )
-
-        # Compute grid size and scheduler params for both cluster shapes
-        self.fallback_tile_sched_params, _ = self._compute_grid(
-            tma_tensor_d,
-            self.cta_tile_shape_mnk,
-            self.fallback_cluster_shape_mn,
-            self.swizzle_size,
-            self.raster_along,
-        )
-        self.preferred_tile_sched_params, preferred_grid = self._compute_grid(
-            tma_tensor_d,
-            self.cta_tile_shape_mnk,
-            self.preferred_cluster_shape_mn,
-            self.swizzle_size,
-            self.raster_along,
-        )
-
-        # Build mBias: the per-output-channel bias broadcast to mD's
-        # ((Q,P,Z,N), K, 1) = (M, N, L) profile. It varies along the output channel
-        # K (GEMM-N, stride 1) and repeats across every spatial position (GEMM-M
-        # modes carry stride 0). The epilogue stages one CTA tile's channels into
-        # shared memory and reads them back from there, so the M extent only has
-        # to span a CTA tile of output rows; the real output-M size arrives at the
-        # store site through the tile coordinate.
-        if cutlass.const_expr(self.has_bias):
-            mBias_layout = cute.make_layout(
-                (
-                    (self.cta_tile_shape_mnk[0], 1, 1, 1),
-                    cute.size(d, mode=[4]),
-                    1,
-                ),
-                stride=((0, 0, 0, 0), 1, 0),
-            )
-            mBias_mnl = cute.make_tensor(bias_tensor.iterator, mBias_layout)
-        else:
-            mBias_mnl = None
-
-        # Launch the megakernel synchronously
-        self.kernel(
-            tiled_mma,
-            tma_atom_a_preferred,
-            tma_tensor_a_preferred,
-            tma_atom_a_fallback,
-            tma_tensor_a_fallback,
-            tma_atom_b_preferred,
-            tma_tensor_b_preferred,
-            tma_atom_b_fallback,
-            tma_tensor_b_fallback,
-            tma_atom_d,
-            tma_tensor_d,
-            self.preferred_cluster_layout_vmnk,
-            self.fallback_cluster_layout_vmnk,
-            self.a_smem_layout_staged,
-            self.b_smem_layout_staged,
-            self.d_smem_layout_staged,
-            self.epi_tile,
-            self.preferred_tile_sched_params,
-            self.fallback_tile_sched_params,
-            mBias_mnl,
-            epilogue_op,
-        ).launch(
-            grid=preferred_grid,
-            block=[self.threads_per_cta, 1, 1],
-            cluster=(*self.preferred_cluster_shape_mn, 1),
-            fallback_cluster=(*self.fallback_cluster_shape_mn, 1),
-            stream=stream,
-            smem_merge_branch_allocs=True,
-        )
-        return
-
-    def check_mma_tiler_and_cluster_shape(self):
-        """Check if mma tiler, fallback and preferred cluster shapes are valid."""
-        # Call parent validation
-        super().check_mma_tiler_and_cluster_shape()
-
-        # Validate preferred cluster shape
-        if self.preferred_cluster_shape_mn[0] % (2 if self.use_2cta_instrs else 1) != 0:
-            raise testing.CantImplementError(
-                f"Invalid preferred cluster shape M: {self.preferred_cluster_shape_mn[0]}"
-            )
-
-        is_power_of_2 = lambda x: x > 0 and (x & (x - 1)) == 0
-        if (
-            self.preferred_cluster_shape_mn[0] * self.preferred_cluster_shape_mn[1] > 16
-            or self.preferred_cluster_shape_mn[0] <= 0
-            or self.preferred_cluster_shape_mn[1] <= 0
-            or not is_power_of_2(self.preferred_cluster_shape_mn[0])
-            or not is_power_of_2(self.preferred_cluster_shape_mn[1])
-        ):
-            raise testing.CantImplementError(
-                f"Invalid preferred cluster shape: {self.preferred_cluster_shape_mn}"
-            )
-
-        # Check preferred is multiple of fallback
-        if (
-            self.preferred_cluster_shape_mn[0] % self.fallback_cluster_shape_mn[0] != 0
-            or self.preferred_cluster_shape_mn[1] % self.fallback_cluster_shape_mn[1]
-            != 0
-        ):
-            raise testing.CantImplementError(
-                f"Preferred cluster shape {self.preferred_cluster_shape_mn} must be "
-                f"integer multiple of fallback cluster shape {self.fallback_cluster_shape_mn}"
-            )
-
-    def check_preferred_cluster_problem_size(self, m: int, n: int) -> None:
-        """Require enough CTA tiles along each dimension to form one preferred cluster.
-
-        The persistent scheduler tiles the problem into CTA tiles and then groups
-        them into clusters. A preferred cluster of (pref_m, pref_n) CTAs needs at
-        least that many tiles along the matching dimension, so below that the
-        preferred cluster shape is unusable and the config is rejected early. The
-        check is per dimension: a total tile count large enough for the whole
-        cluster still fails if one dimension alone is short.
-
-        A trailing partial tile still occupies a full CTA in the grid, so tiles are
-        counted with a round-up rather than by measuring the problem extent against
-        the cluster's whole tile footprint.
-
-        :param m: Implicit-GEMM M dimension (N*Z*P*Q)
-        :param n: Implicit-GEMM N dimension (K)
-
-        :raises testing.CantImplementError: If either dimension has too few tiles
-        """
-        # This runs before any input-dependent setup, so the CTA tile is derived
-        # from the MMA tiler here rather than read off the instance.
-        cta_tile_m = self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1)
-        cta_tile_n = self.mma_tiler_mn[1]
-        m_tiles = -(-m // cta_tile_m)
-        n_tiles = -(-n // cta_tile_n)
-        pref_m, pref_n = self.preferred_cluster_shape_mn
-        if m_tiles < pref_m or n_tiles < pref_n:
-            raise testing.CantImplementError(
-                f"CTA tile count ({m_tiles}, {n_tiles}) from problem ({m}, {n}) with "
-                f"cta_tile=({cta_tile_m}, {cta_tile_n}) cannot form one preferred "
-                f"cluster preferred_cluster_shape_mn={self.preferred_cluster_shape_mn}"
-            )
-
-    def can_implement(
-        self,
-        ncdhw: Tuple[int, int, int, int, int],
-        k: int,
-        ab_dtype: Type[cutlass.Numeric],
-        d_dtype: Type[cutlass.Numeric],
-        filter_trs: Tuple[int, int, int],
-        upper_padding_dhw: Tuple[int, int, int],
-        lower_padding_dhw: Tuple[int, int, int],
-        stride_dhw: Tuple[int, int, int],
-        dilation_dhw: Tuple[int, int, int],
-    ) -> bool:
-        """Determine if the given tensor configuration can be implemented by this kernel.
-
-        The convolution geometry is passed in rather than held on the instance:
-        the kernel takes it as runtime Int32 operands and reads the filter extents
-        off the filter tensor, so one cubin serves any geometry and there is no
-        static copy to read here.
-        """
-        try:
-            sm100_utils.check_int8_mma_arch(ab_dtype)
-            self.check_supported_dtypes(ab_dtype, ab_dtype, d_dtype)
-            # Validate fallback (held by the base as cluster_shape_mn), preferred
-            # shape, and their multiple relation
-            self.check_mma_tiler_and_cluster_shape()
-            _check_tensor_alignment(ncdhw[1], k, ab_dtype, d_dtype)
-            # Compute implicit GEMM M
-            z, p, q = compute_zpq(
-                ncdhw[2:],
-                filter_trs,
-                stride_dhw,
-                upper_padding_dhw,
-                lower_padding_dhw,
-                dilation_dhw,
-            )
-            self.check_preferred_cluster_problem_size(ncdhw[0] * z * p * q, k)
-            _check_im2col_descriptor_limits(
-                filter_trs,
-                upper_padding_dhw,
-                lower_padding_dhw,
-                stride_dhw,
-                dilation_dhw,
-            )
-            _check_swizzle_size(
-                ncdhw[0] * z * p * q,
-                k,
-                self.mma_tiler_mn,
-                self.use_2cta_instrs,
-                self.preferred_cluster_shape_mn,
-                self.fallback_cluster_shape_mn,
-                self.swizzle_size,
-                self.raster_along,
-            )
-        except testing.CantImplementError as e:
-            print(e)
-            return False
-        return True
-
-    # GPU device kernel - megakernel dispatcher for preferred/fallback cluster
-    @cute.kernel
-    def kernel(
-        self,
-        tiled_mma: cute.TiledMma,
-        tma_atom_a_preferred: cute.CopyAtom,
-        mA_mkl_preferred: cute.Tensor,
-        tma_atom_a_fallback: cute.CopyAtom,
-        mA_mkl_fallback: cute.Tensor,
-        tma_atom_b_preferred: cute.CopyAtom,
-        mB_nkl_preferred: cute.Tensor,
-        tma_atom_b_fallback: cute.CopyAtom,
-        mB_nkl_fallback: cute.Tensor,
-        tma_atom_d: Optional[cute.CopyAtom],
-        mD_mnl: cute.Tensor,
-        preferred_cluster_layout_vmnk: cute.Layout,
-        fallback_cluster_layout_vmnk: cute.Layout,
-        a_smem_layout_staged: cute.ComposedLayout,
-        b_smem_layout_staged: cute.ComposedLayout,
-        d_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
-        epi_tile: cute.Tile,
-        preferred_tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
-        fallback_tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
-        mBias_mnl: Optional[cute.Tensor],
-        epilogue_op: cutlass.Constexpr,
-    ):
-        """
-        GPU device kernel entry point for kernel with preferred cluster shape.
-        """
-        # Get cluster coordinates to determine if this is a preferred cluster
-        cbdim_x, cbdim_y, cbdim_z = cute.arch.block_in_cluster_dim()
-        is_preferred_cluster = (
-            cbdim_x == self.preferred_cluster_shape_mn[0]
-            and cbdim_y == self.preferred_cluster_shape_mn[1]
-            and cbdim_z == 1
-        )
-
-        # Megakernel approach: two mutually exclusive code branches, only one path runs per launch.
-        # smem_merge_branch_allocs=True at launch enables shared memory reuse between two paths.
-        if is_preferred_cluster:
-            self.cluster_specific_kernel(
-                tiled_mma,
-                tma_atom_a_preferred,
-                mA_mkl_preferred,
-                tma_atom_b_preferred,
-                mB_nkl_preferred,
-                tma_atom_d,
-                mD_mnl,
-                preferred_cluster_layout_vmnk,
-                a_smem_layout_staged,
-                b_smem_layout_staged,
-                d_smem_layout_staged,
-                epi_tile,
-                preferred_tile_sched_params,
-                mBias_mnl,
-                epilogue_op,
-                self.is_preferred_a_mcast,
-                self.is_preferred_b_mcast,
-                self.preferred_cluster_shape_mn,
-            )
-        else:
-            self.cluster_specific_kernel(
-                tiled_mma,
-                tma_atom_a_fallback,
-                mA_mkl_fallback,
-                tma_atom_b_fallback,
-                mB_nkl_fallback,
-                tma_atom_d,
-                mD_mnl,
-                fallback_cluster_layout_vmnk,
-                a_smem_layout_staged,
-                b_smem_layout_staged,
-                d_smem_layout_staged,
-                epi_tile,
-                fallback_tile_sched_params,
-                mBias_mnl,
-                epilogue_op,
-                self.is_fallback_a_mcast,
-                self.is_fallback_b_mcast,
-                self.fallback_cluster_shape_mn,
-            )
 
     @staticmethod
     def _make_smem_layouts(
@@ -1111,10 +710,10 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         a_dtype: Type[cutlass.Numeric],
         b_dtype: Type[cutlass.Numeric],
         d_dtype: Type[cutlass.Numeric],
-        d_layout: cutlass.tensor_utils.LayoutEnum,
+        d_layout: LayoutEnum,
         epi_tile: cute.Tile,
-        ab_stage: int,
-        d_stage: int,
+        num_ab_stage: int,
+        num_d_stage: int,
     ) -> Tuple[cute.ComposedLayout, cute.ComposedLayout, cute.ComposedLayout]:
         """Build the staged shared memory layouts for A, B and the epilogue.
 
@@ -1125,23 +724,120 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         :param d_dtype: Element type of D
         :param d_layout: Layout enum of D
         :param epi_tile: The epilogue tiler
-        :param ab_stage: Number of A/B pipeline stages
-        :param d_stage: Number of epilogue pipeline stages
+        :param num_ab_stage: Number of A/B pipeline stages
+        :param num_d_stage: Number of epilogue pipeline stages
 
         :return: The A, B and epilogue layouts, each staged
         """
-        a_smem_layout_staged = utils.sm100.make_smem_layout_a(
-            tiled_mma, mma_tiler, a_dtype, ab_stage
+        a_smem_layout_staged = sm100_utils.make_smem_layout_a(
+            tiled_mma, mma_tiler, a_dtype, num_ab_stage
         )
-        b_smem_layout_staged = utils.sm100.make_smem_layout_b(
-            tiled_mma, mma_tiler, b_dtype, ab_stage
+        b_smem_layout_staged = sm100_utils.make_smem_layout_b(
+            tiled_mma, mma_tiler, b_dtype, num_ab_stage
         )
-        d_smem_layout_staged = utils.sm100.make_smem_layout_epi(
-            d_dtype, d_layout, epi_tile, d_stage
+        d_smem_layout_staged = sm100_utils.make_smem_layout_epi(
+            d_dtype, d_layout, epi_tile, num_d_stage
         )
         return a_smem_layout_staged, b_smem_layout_staged, d_smem_layout_staged
 
-    def _epilogue_tmem_copy_and_partition(
+    def _make_shared_storage(self, *, num_ab_stage: int, num_d_stage: int):
+        """Complete shared-memory layout for one candidate stage assignment.
+
+        Stage selection sizes candidates through it and the device entry allocates
+        through it. Every shared-memory consumer of this kernel is a field here, in
+        three runs: pipeline barriers, small odds and ends, then the tensor buffers.
+        """
+        a_smem, b_smem, d_smem = self._make_smem_layouts(
+            self.tiled_mma,
+            self.mma_tiler,
+            self.a_dtype,
+            self.b_dtype,
+            self.d_dtype,
+            self.d_layout,
+            self.epi_tile,
+            num_ab_stage,
+            num_d_stage,
+        )
+        num_acc_stage = self.num_acc_stage
+        num_clc_stage = self.num_clc_stage
+        num_clc_response_bytes = self.num_clc_response_bytes
+        has_bias = self.has_bias
+        cta_tile_n = self.cta_tile_shape_mnk[1]
+        a_dtype, b_dtype, d_dtype = self.a_dtype, self.b_dtype, self.d_dtype
+        bias_dtype = self.bias_dtype if has_bias else d_dtype
+        align = SMEM_BUFFER_ALIGN_BYTES
+
+        @cute.struct
+        class SharedStorage:
+            # Pipeline barriers, in construction order.
+            ab_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, num_ab_stage * 2]
+            acc_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, num_acc_stage * 2]
+            tmem_dealloc_mbar: cutlass.Int64
+            clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, num_clc_stage * 2]
+            # Small odds and ends.
+            tmem_holding_buf: cutlass.Int32
+            clc_response: cute.struct.Align[
+                cute.struct.MemRange[
+                    cutlass.Int32, num_clc_response_bytes // 4 * num_clc_stage
+                ],
+                16,  # Align bytes
+            ]
+            # Tensor buffers, last: epilogue staging first, then the mainloop
+            # operand buffers at the very end of the storage, which keeps every
+            # other field's offset fixed when an operand buffer grows.
+            # (EPI_TILE_M, EPI_TILE_N, STAGE)
+            sD: cute.struct.Align[
+                cute.struct.MemRange[d_dtype, cute.cosize(d_smem.outer)], align
+            ]
+            # (cta_tile_n,) staged bias row: one value per output channel of the
+            # CTA tile, fetched once and read back by every epilogue thread. It
+            # carries the bias element type, which has a 16-bit floor and so can be
+            # wider than the output. Sized to zero when no bias is supplied so it
+            # costs no smem.
+            sBias: cute.struct.Align[
+                cute.struct.MemRange[bias_dtype, cta_tile_n if has_bias else 0],
+                SMEM_VECTOR_ALIGN_BYTES,
+            ]
+            # (MMA, MMA_M, MMA_K, STAGE)
+            sA: cute.struct.Align[
+                cute.struct.MemRange[a_dtype, cute.cosize(a_smem.outer)], align
+            ]
+            # (MMA, MMA_N, MMA_K, STAGE)
+            sB: cute.struct.Align[
+                cute.struct.MemRange[b_dtype, cute.cosize(b_smem.outer)], align
+            ]
+
+        return SharedStorage
+
+    @staticmethod
+    def _compute_num_tmem_alloc_cols(
+        tiled_mma: cute.TiledMma,
+        mma_tiler: Tuple[int, int, int],
+        num_acc_stage: int,
+        arch: str,
+    ) -> int:
+        """
+        Compute the number of tensor memory allocation columns.
+
+        :param tiled_mma: The tiled MMA object defining the core computation.
+        :type tiled_mma: cute.TiledMma
+        :param mma_tiler: The shape (M, N, K) of the MMA tile.
+        :type mma_tiler: tuple[int, int, int]
+        :param num_acc_stage: The stage of the accumulator tensor.
+        :type num_acc_stage: int
+
+        :return: The number of tensor memory allocation columns.
+        :rtype: int
+        """
+        acc_shape = tiled_mma.partition_shape_C(mma_tiler[:2])
+        tCtAcc_fake = tiled_mma.make_fragment_C(cute.append(acc_shape, num_acc_stage))
+        num_tmem_alloc_cols = cutlass.memory.get_num_tmem_alloc_cols(
+            tCtAcc_fake, arch=arch
+        )
+
+        return num_tmem_alloc_cols
+
+    def epilog_tmem_copy_and_partition(
         self,
         tidx: cutlass.Int32,
         tAcc: cute.Tensor,
@@ -1192,7 +888,7 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         )
         return tiled_copy_t2r, tTR_tAcc, tTR_rAcc
 
-    def _epilogue_smem_copy_and_partition(
+    def epilog_smem_store_copy_and_partition(
         self,
         tiled_copy_t2r: cute.TiledCopy,
         tTR_rD: cute.Tensor,
@@ -1223,7 +919,41 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         tRS_rD = tiled_copy_r2s.retile(tTR_rD)
         return tiled_copy_r2s, tRS_rD, tRS_sD
 
-    def _epilogue_bias_smem_partition(
+    def epilog_gmem_copy_and_partition(
+        self,
+        atom: Union[cute.CopyAtom, cute.TiledCopy],
+        gD: cute.Tensor,
+        epi_tile: cute.Tile,
+        sD: cute.Tensor,
+    ) -> Tuple[cute.Tensor, cute.Tensor]:
+        """Partition the TMA store's shared-memory source and global-memory destination.
+
+        :param atom: The TMA copy atom for D
+        :type atom: cute.CopyAtom or cute.TiledCopy
+        :param gD: The global tensor D, already in the epilogue's partitioned layout
+        :type gD: cute.Tensor
+        :param epi_tile: The epilogue tiler
+        :type epi_tile: cute.Tile
+        :param sD: The shared memory tensor to be partitioned
+        :type sD: cute.Tensor
+
+        :return: A tuple containing (bSG_sD, bSG_gD) where:
+            - bSG_sD: The partitioned shared memory tensor D
+            - bSG_gD: The partitioned global tensor D
+        :rtype: Tuple[cute.Tensor, cute.Tensor]
+        """
+        # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, RestM, RestN, RestL)
+        gD_epi = cute.flat_divide(gD, epi_tile)
+        # ((ATOM_V, REST_V), EPI_M, EPI_N[, RestM, RestN, RestL])
+        return cpasync.tma_partition(
+            atom,
+            0,
+            cute.make_layout(1),
+            cute.group_modes(sD, 0, 2),
+            cute.group_modes(gD_epi, 0, 2),
+        )
+
+    def epilog_bias_smem_partition(
         self,
         tiled_copy_t2r: cute.TiledCopy,
         tidx: cutlass.Int32,
@@ -1263,28 +993,258 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         tTR_sBias = tiled_copy_t2r.get_slice(tidx).partition_D(sBias_epi)
         return cute.group_modes(tTR_sBias, 3, 5)
 
+    @cute.jit
+    def __call__(
+        self,
+        a: cute.Tensor,
+        b: cute.Tensor,
+        d: cute.Tensor,
+        bias: Optional[cute.Tensor],
+        rt_upper_pad_d: cutlass.Int32,
+        rt_upper_pad_h: cutlass.Int32,
+        rt_upper_pad_w: cutlass.Int32,
+        rt_lower_pad_d: cutlass.Int32,
+        rt_lower_pad_h: cutlass.Int32,
+        rt_lower_pad_w: cutlass.Int32,
+        rt_stride_d: cutlass.Int32,
+        rt_stride_h: cutlass.Int32,
+        rt_stride_w: cutlass.Int32,
+        rt_dil_d: cutlass.Int32,
+        rt_dil_h: cutlass.Int32,
+        rt_dil_w: cutlass.Int32,
+        stream: cuda.CUstream,
+        epilogue_op: cutlass.Constexpr = lambda x: x,
+    ) -> None:
+        """Execute the persistent convolution with dynamic preferred-cluster scheduling.
+
+        Pad / stride / dilation arrive as runtime cutlass.Int32, which the rt_ prefix
+        marks, so one compiled cubin serves any geometry.
+
+        :param a: Input tensor A - (N, D, H, W, C) layout
+        :param b: Filter tensor B - (K, T, R, S, C) layout
+        :param d: Output tensor D - (N, Z, P, Q, K) layout
+        :param bias: Optional length-K device tensor holding a
+            per-output-channel bias added in FP32 as D = epilogue_op(acc + bias).
+            Pass None for a cubin without the bias path.
+        :param rt_upper_pad_d/h/w: Upper padding (D, H, W)
+        :param rt_lower_pad_d/h/w: Lower padding (D, H, W)
+        :param rt_stride_d/h/w: Convolution stride (D, H, W)
+        :param rt_dil_d/h/w: Dilation (D, H, W)
+        :param stream: CUDA stream for asynchronous execution
+        :param epilogue_op: Optional elementwise lambda function to apply to the output
+            tensor
+        """
+        self._setup_conv_input_attrs(a, b, d)
+        self.has_bias: bool = bias is not None
+        self.bias_dtype: Optional[Type[cutlass.Numeric]] = (
+            bias.element_type if bias is not None else None
+        )
+        self._setup_attributes()
+
+        # Pack the runtime pad/stride/dilation scalars into (D, H, W) tuples that
+        # feed the im2col A descriptor corners.
+        rt_upper_pad_dhw = (rt_upper_pad_d, rt_upper_pad_h, rt_upper_pad_w)
+        rt_lower_pad_dhw = (rt_lower_pad_d, rt_lower_pad_h, rt_lower_pad_w)
+        rt_stride_dhw = (rt_stride_d, rt_stride_h, rt_stride_w)
+        rt_dil_dhw = (rt_dil_d, rt_dil_h, rt_dil_w)
+
+        (
+            tma_atom_a_preferred,
+            tma_tensor_a_preferred,
+            tma_atom_a_fallback,
+            tma_tensor_a_fallback,
+            tma_atom_b_preferred,
+            tma_tensor_b_preferred,
+            tma_atom_b_fallback,
+            tma_tensor_b_fallback,
+            tma_atom_d,
+            tma_tensor_d,
+        ) = self._setup_conv_tma(
+            a,
+            b,
+            d,
+            self.tiled_mma,
+            rt_upper_pad_dhw,
+            rt_lower_pad_dhw,
+            rt_stride_dhw,
+            rt_dil_dhw,
+        )
+
+        # Compute grid size and scheduler params for both cluster shapes
+        self.fallback_tile_sched_params, _ = compute_grid(
+            tma_tensor_d,
+            self.cta_tile_shape_mnk,
+            self.fallback_cluster_shape_mn,
+            self.swizzle_size,
+            self.raster_along,
+        )
+        self.preferred_tile_sched_params, preferred_grid = compute_grid(
+            tma_tensor_d,
+            self.cta_tile_shape_mnk,
+            self.preferred_cluster_shape_mn,
+            self.swizzle_size,
+            self.raster_along,
+        )
+
+        # Build mBias: the per-output-channel bias viewed with mD's (M, N, L)
+        # profile. The M extent spans only a CTA tile because the epilogue stages one
+        # tile's channels into shared memory; the real output-M size arrives at the
+        # store site through the tile coordinate.
+        if cutlass.const_expr(self.has_bias):
+            mBias_layout = cute.make_layout(
+                (
+                    (self.cta_tile_shape_mnk[0], 1, 1, 1),
+                    cute.size(d, mode=[4]),
+                    1,
+                ),
+                stride=((0, 0, 0, 0), 1, 0),
+            )
+            mBias_mnl = cute.make_tensor(bias.iterator, mBias_layout)
+        else:
+            mBias_mnl = None
+
+        self.shared_storage = Sm100DenseImplicitGemmFpropKernel._make_shared_storage(
+            self, num_ab_stage=self.num_ab_stage, num_d_stage=self.num_d_stage
+        )
+
+        # Launch the kernel synchronously
+        self.kernel(
+            tma_atom_a_preferred,
+            tma_tensor_a_preferred,
+            tma_atom_a_fallback,
+            tma_tensor_a_fallback,
+            tma_atom_b_preferred,
+            tma_tensor_b_preferred,
+            tma_atom_b_fallback,
+            tma_tensor_b_fallback,
+            tma_atom_d,
+            tma_tensor_d,
+            mBias_mnl,
+            self.tiled_mma,
+            self.preferred_cluster_layout_vmnk,
+            self.fallback_cluster_layout_vmnk,
+            self.a_smem_layout_staged,
+            self.b_smem_layout_staged,
+            self.d_smem_layout_staged,
+            self.epi_tile,
+            self.preferred_tile_sched_params,
+            self.fallback_tile_sched_params,
+            epilogue_op,
+        ).launch(
+            grid=preferred_grid,
+            block=[self.threads_per_cta, 1, 1],
+            cluster=(*self.preferred_cluster_shape_mn, 1),
+            fallback_cluster=(*self.fallback_cluster_shape_mn, 1),
+            stream=stream,
+            smem_merge_branch_allocs=True,
+        )
+        return
+
+    # GPU device kernel - dispatches to the preferred or the fallback cluster path
+    @cute.kernel
+    def kernel(
+        self,
+        tma_atom_a_preferred: cute.CopyAtom,
+        mA_mkl_preferred: cute.Tensor,
+        tma_atom_a_fallback: cute.CopyAtom,
+        mA_mkl_fallback: cute.Tensor,
+        tma_atom_b_preferred: cute.CopyAtom,
+        mB_nkl_preferred: cute.Tensor,
+        tma_atom_b_fallback: cute.CopyAtom,
+        mB_nkl_fallback: cute.Tensor,
+        tma_atom_d: Optional[cute.CopyAtom],
+        mD_mnl: cute.Tensor,
+        mBias_mnl: Optional[cute.Tensor],
+        tiled_mma: cute.TiledMma,
+        preferred_cluster_layout_vmnk: cute.Layout,
+        fallback_cluster_layout_vmnk: cute.Layout,
+        a_smem_layout_staged: cute.ComposedLayout,
+        b_smem_layout_staged: cute.ComposedLayout,
+        d_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
+        epi_tile: cute.Tile,
+        preferred_tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
+        fallback_tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
+        epilogue_op: cutlass.Constexpr,
+    ) -> None:
+        """
+        GPU device kernel entry point for kernel with preferred cluster shape.
+        """
+        # Get cluster coordinates to determine if this is a preferred cluster
+        cbdim_x, cbdim_y, cbdim_z = cute.arch.block_in_cluster_dim()
+        is_preferred_cluster = (
+            cbdim_x == self.preferred_cluster_shape_mn[0]
+            and cbdim_y == self.preferred_cluster_shape_mn[1]
+            and cbdim_z == 1
+        )
+
+        # Two mutually exclusive code branches, one per cluster shape; only one runs
+        # per launch. smem_merge_branch_allocs=True at launch enables shared memory
+        # reuse between the two paths.
+        if is_preferred_cluster:
+            self.cluster_specific_kernel(
+                tma_atom_a_preferred,
+                mA_mkl_preferred,
+                tma_atom_b_preferred,
+                mB_nkl_preferred,
+                tma_atom_d,
+                mD_mnl,
+                mBias_mnl,
+                tiled_mma,
+                preferred_cluster_layout_vmnk,
+                a_smem_layout_staged,
+                b_smem_layout_staged,
+                d_smem_layout_staged,
+                epi_tile,
+                preferred_tile_sched_params,
+                self.is_preferred_a_mcast,
+                self.is_preferred_b_mcast,
+                self.preferred_cluster_shape_mn,
+                epilogue_op,
+            )
+        else:
+            self.cluster_specific_kernel(
+                tma_atom_a_fallback,
+                mA_mkl_fallback,
+                tma_atom_b_fallback,
+                mB_nkl_fallback,
+                tma_atom_d,
+                mD_mnl,
+                mBias_mnl,
+                tiled_mma,
+                fallback_cluster_layout_vmnk,
+                a_smem_layout_staged,
+                b_smem_layout_staged,
+                d_smem_layout_staged,
+                epi_tile,
+                fallback_tile_sched_params,
+                self.is_fallback_a_mcast,
+                self.is_fallback_b_mcast,
+                self.fallback_cluster_shape_mn,
+                epilogue_op,
+            )
+
     @cute.jit()
     def cluster_specific_kernel(
         self,
-        tiled_mma: cute.TiledMma,
         tma_atom_a: cute.CopyAtom,
         mA_mkl: cute.Tensor,
         tma_atom_b: cute.CopyAtom,
         mB_nkl: cute.Tensor,
         tma_atom_d: Optional[cute.CopyAtom],
         mD_mnl: cute.Tensor,
+        mBias_mnl: Optional[cute.Tensor],
+        tiled_mma: cute.TiledMma,
         cluster_layout_vmnk: cute.Layout,
         a_smem_layout_staged: cute.ComposedLayout,
         b_smem_layout_staged: cute.ComposedLayout,
         d_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
         tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
-        mBias_mnl: Optional[cute.Tensor],
-        epilogue_op: cutlass.Constexpr,
         effective_is_a_mcast: bool,
         effective_is_b_mcast: bool,
         cluster_shape: Tuple[int, int],
-    ):
+        epilogue_op: cutlass.Constexpr,
+    ) -> None:
         """
         GPU device kernel performing the CLC dynamic persistent convolution computation.
         """
@@ -1319,25 +1279,12 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         tidx, _, _ = cute.arch.thread_idx()
 
         #
-        # Alloc and init: a+b full/empty, accumulator full/empty, CLC, tensor memory dealloc barrier
+        # Alloc and init: a+b/acc full/empty, CLC, tensor memory dealloc barrier
         #
-        # Define shared storage for kernel
-        @cute.struct
-        class SharedStorage:
-            ab_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage * 2]
-            acc_full_mbar_ptr: cute.struct.MemRange[
-                cutlass.Int64, self.num_acc_stage * 2
-            ]
-            tmem_dealloc_mbar: cutlass.Int64
-            tmem_holding_buf: cutlass.Int32
-            clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
-            clc_response: cute.struct.Align[
-                cute.struct.MemRange[cutlass.Int32, 4],
-                16,  # Align bytes
-            ]
-
-        smem = cutlass.memory.SmemAllocator()
-        storage = smem.allocate(SharedStorage)
+        # One allocation of the factory-built shared-storage layout; stage
+        # selection sized its candidates through the same definition.
+        smem = SmemAllocator()
+        storage = smem.allocate(self.shared_storage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
@@ -1394,7 +1341,7 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             num_threads=32 * len((self.mma_warp_id, *self.epilogue_warp_id)),
         )
         # Tensor memory dealloc barrier init
-        tmem = cutlass.memory.TmemAllocator(
+        tmem = TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
@@ -1416,18 +1363,12 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
         # Setup smem tensor A/B/C
         #
         # (MMA, MMA_M, MMA_K, STAGE)
-        sA = smem.allocate_tensor(
-            element_type=self.a_dtype,
-            layout=a_smem_layout_staged.outer,
-            byte_alignment=128,
-            swizzle=a_smem_layout_staged.inner,
+        sA = storage.sA.get_tensor(
+            a_smem_layout_staged.outer, swizzle=a_smem_layout_staged.inner
         )
         # (MMA, MMA_N, MMA_K, STAGE)
-        sB = smem.allocate_tensor(
-            element_type=self.b_dtype,
-            layout=b_smem_layout_staged.outer,
-            byte_alignment=128,
-            swizzle=b_smem_layout_staged.inner,
+        sB = storage.sB.get_tensor(
+            b_smem_layout_staged.outer, swizzle=b_smem_layout_staged.inner
         )
 
         #
@@ -1611,7 +1552,8 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                         mcast_mask=b_full_mcast_mask,
                     )
 
-                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
+                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt +
+                    # k_tile + 1
                     peek_ab_empty_status = cutlass.Boolean(1)
                     if handle.count + 1 < k_tile_cnt:
                         peek_ab_empty_status = ab_producer.try_acquire()
@@ -1743,21 +1685,16 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             acc_pipeline.producer_tail(acc_producer_state)
 
         # (EPI_TILE_M, EPI_TILE_N, STAGE)
-        sD = smem.allocate_tensor(
-            element_type=self.d_dtype,
-            layout=d_smem_layout_staged.outer,
-            byte_alignment=128,
-            swizzle=d_smem_layout_staged.inner,
+        sD = storage.sD.get_tensor(
+            d_smem_layout_staged.outer, swizzle=d_smem_layout_staged.inner
         )
 
         # (cta_tile_n,) staged bias row: one value per output channel in this
         # CTA's N-tile, fetched once and read back by every epilogue thread. Only
         # allocated on the bias path, so a no-bias cubin spends no smem on it.
         if cutlass.const_expr(mBias_mnl is not None):
-            sBias = smem.allocate_tensor(
-                element_type=mBias_mnl.element_type,
-                layout=cute.make_layout(self.cta_tile_shape_mnk[1]),
-                byte_alignment=128,
+            sBias = storage.sBias.get_tensor(
+                cute.make_layout(self.cta_tile_shape_mnk[1])
             )
         else:
             sBias = None
@@ -1810,7 +1747,7 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                 tiled_copy_t2r,
                 tTR_tAcc_base,
                 tTR_rAcc,
-            ) = self._epilogue_tmem_copy_and_partition(
+            ) = self.epilog_tmem_copy_and_partition(
                 tidx, tCtAcc_t, tCgD_t, epi_tile, self.use_2cta_instrs
             )
             tTR_rD = cute.make_rmem_tensor(tTR_rAcc.shape, self.d_dtype)
@@ -1818,16 +1755,11 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                 tiled_copy_r2s,
                 tRS_rD,
                 tRS_sD,
-            ) = self._epilogue_smem_copy_and_partition(tiled_copy_t2r, tTR_rD, tidx, sD)
-            # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, RestM, RestN, RestL)
-            tCgD_epi = cute.flat_divide(tCgD_t, epi_tile)
-            # ((ATOM_V, REST_V), EPI_M, EPI_N[, RestM, RestN, RestL])
-            bSG_sD, bSG_gD_partitioned = cpasync.tma_partition(
-                tma_atom_d,
-                0,
-                cute.make_layout(1),
-                cute.group_modes(sD, 0, 2),
-                cute.group_modes(tCgD_epi, 0, 2),
+            ) = self.epilog_smem_store_copy_and_partition(
+                tiled_copy_t2r, tTR_rD, tidx, sD
+            )
+            bSG_sD, bSG_gD_partitioned = self.epilog_gmem_copy_and_partition(
+                tma_atom_d, tCgD_t, epi_tile, sD
             )
 
             # Bias read view: the staged row carries the same epi-tile and T2R
@@ -1836,11 +1768,12 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             # restages the row in place.
             if cutlass.const_expr(mBias_mnl is not None):
                 # (T2R, T2R_M, T2R_N, SUBTILE)
-                tTR_sBias = self._epilogue_bias_smem_partition(
+                tTR_sBias = self.epilog_bias_smem_partition(
                     tiled_copy_t2r, tidx, sBias, epi_tile
                 )
                 # cp.async moves at least 32 bits, so each lane carries a
-                # 32-bit-wide vector of bias elements (2 bf16/fp16, 4 fp8).
+                # 32-bit-wide vector of bias elements: one at a 32-bit bias
+                # width, two at 16 bits.
                 bias_elems_per_copy = 32 // mBias_mnl.element_type.width
                 bias_g2s_atom = cute.make_copy_atom(
                     cute.nvgpu.cpasync.CopyG2SOp(),
@@ -1890,18 +1823,11 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                     sBias_tiled = cute.make_tensor(
                         sBias.iterator.align(min_align=4), row_layout
                     )
-                    # A CTA N-tile rounds up to cta_tile_n, but the channel count
-                    # need not divide it, so tail lanes address columns with no
-                    # backing storage. Predicate per lane: cp.async writes zero
-                    # when the predicate is false, and 16-byte channel alignment
-                    # keeps every 32-bit vector wholly in or out of bounds. The
-                    # zero tail is only read back for overhang the TMA store
-                    # clamps away.
-                    # One pass covers as many columns as there are epilogue
-                    # threads. A 32-bit vector holds a single FP32 element, so a
-                    # cta_tile_n past that thread count needs more than one pass
-                    # -- without them the columns past the first pass would be
-                    # read back out of shared memory that nothing wrote.
+                    # Tail lanes of a rounded-up N-tile address columns with no
+                    # backing storage, so each lane is predicated; a false
+                    # predicate writes zero and 16-byte channel alignment keeps
+                    # every vector wholly in or out of bounds. One pass covers as
+                    # many columns as the epilogue has threads, hence the loop.
                     num_bias_threads = 32 * len(self.epilogue_warp_id)
                     for lane_base in cutlass.range_constexpr(
                         0, n_active, num_bias_threads
@@ -1941,8 +1867,10 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                     tTR_tAcc_mn = tTR_tAcc[(None, None, None, subtile_idx)]
                     cute.copy(tiled_copy_t2r, tTR_tAcc_mn, tTR_rAcc)
 
-                    # Add the bias on the FP32 accumulator, then narrow and
-                    # activate: D = epilogue_op(acc + bias).
+                    # The epilogue arithmetic runs in FP32: widen the accumulator,
+                    # add the bias there, apply the activation, and narrow once to
+                    # the output type: D = epilogue_op(acc + bias).
+                    acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load().to(cutlass.Float32)
                     if cutlass.const_expr(mBias_mnl is not None):
                         tTR_rBias = cute.make_rmem_tensor(
                             tTR_rAcc.shape, mBias_mnl.element_type
@@ -1950,12 +1878,10 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                         cute.autovec_copy(
                             tTR_sBias[(None, None, None, subtile_idx)], tTR_rBias
                         )
-                        tTR_rAcc.store(
-                            tTR_rAcc.load() + tTR_rBias.load().to(self.acc_dtype)
-                        )
-                    acc_vec = tiled_copy_r2s.retile(tTR_rAcc).load()
-                    acc_vec = acc_vec.to(self.d_dtype)
+                        bias_vec = tiled_copy_r2s.retile(tTR_rBias).load()
+                        acc_vec = acc_vec + bias_vec.to(cutlass.Float32)
                     acc_vec = epilogue_op(acc_vec)
+                    acc_vec = acc_vec.to(self.d_dtype)
                     tRS_rD.store(acc_vec)
 
                     # Store the subtile to shared memory
@@ -1990,7 +1916,7 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
                 clc_pipeline.consumer_release(clc_consumer_state)
                 clc_consumer_state.advance()
 
-            # Wait for C store complete
+            # Wait for D store complete
             d_pipeline.producer_tail()
 
             #
@@ -1999,47 +1925,220 @@ class Sm100PersistentDenseImplicitGemmFpropKernel(PersistentDenseGemmKernel):
             tmem.relinquish_alloc_permit()
             tmem.free(tmem_ptr)
 
+    @staticmethod
+    def can_implement(
+        ncdhw: Tuple[int, int, int, int, int],
+        k: int,
+        filter_trs: Tuple[int, int, int],
+        upper_pad_dhw: Tuple[int, int, int],
+        lower_pad_dhw: Tuple[int, int, int],
+        stride_dhw: Tuple[int, int, int],
+        dil_dhw: Tuple[int, int, int],
+        ab_dtype: Type[cutlass.Numeric],
+        d_dtype: Type[cutlass.Numeric],
+        acc_dtype: Type[cutlass.Numeric],
+        use_2cta_instrs: bool,
+        mma_tiler_mn: Tuple[int, int],
+        preferred_cluster_shape_mn: Tuple[int, int],
+        fallback_cluster_shape_mn: Tuple[int, int],
+        swizzle_size: int,
+        raster_along: Literal["m", "n"],
+        bias_dtype: Optional[Type[cutlass.Numeric]] = None,
+        activation: str = "identity",
+    ) -> bool:
+        """Run every host-side check and tell whether the configuration is supported.
 
-def _rt_conv_scalars(
-    *,
-    upper_pad: Tuple[int, int, int],
-    lower_pad: Tuple[int, int, int],
-    stride: Tuple[int, int, int],
-    dil: Tuple[int, int, int],
-) -> list:
-    """Box the runtime conv geometry as cutlass.Int32 in the kernel's argument order.
+        The checks go from the structural ones to the geometry-derived ones: element
+        types, epilogue activation, mma tiler and cluster shapes, convolution
+        geometry, tensor alignment, cluster problem size and swizzle, im2col
+        descriptor limits.
 
-    The order (upper pad, lower pad, stride, dilation, each D/H/W) must match the
-    kernel __call__ signature; keyword-only parameters keep the four groups from
-    being swapped at a call site.
-    """
-    return [
-        cutlass.Int32(v) for group in (upper_pad, lower_pad, stride, dil) for v in group
-    ]
+        :param ncdhw: Input extents (N, C, D, H, W)
+        :type ncdhw: Tuple[int, int, int, int, int]
+        :param k: Output channel count, which is the implicit-GEMM N extent
+        :type k: int
+        :param filter_trs: Filter extents (T, R, S)
+        :type filter_trs: Tuple[int, int, int]
+        :param upper_pad_dhw: Trailing padding per spatial dimension
+        :type upper_pad_dhw: Tuple[int, int, int]
+        :param lower_pad_dhw: Leading padding per spatial dimension
+        :type lower_pad_dhw: Tuple[int, int, int]
+        :param stride_dhw: Convolution stride per spatial dimension
+        :type stride_dhw: Tuple[int, int, int]
+        :param dil_dhw: Dilation per spatial dimension
+        :type dil_dhw: Tuple[int, int, int]
+        :param ab_dtype: A/B element type
+        :type ab_dtype: Type[cutlass.Numeric]
+        :param d_dtype: Output element type
+        :type d_dtype: Type[cutlass.Numeric]
+        :param acc_dtype: Accumulator element type
+        :type acc_dtype: Type[cutlass.Numeric]
+        :param use_2cta_instrs: Whether the MMA runs on a 2-CTA instruction
+        :type use_2cta_instrs: bool
+        :param mma_tiler_mn: MMA tiler shape (M, N)
+        :type mma_tiler_mn: Tuple[int, int]
+        :param preferred_cluster_shape_mn: Preferred cluster shape (M, N)
+        :type preferred_cluster_shape_mn: Tuple[int, int]
+        :param fallback_cluster_shape_mn: Fallback cluster shape (M, N), which every
+            launch can form
+        :type fallback_cluster_shape_mn: Tuple[int, int]
+        :param swizzle_size: Tile-scheduler swizzle size
+        :type swizzle_size: int
+        :param raster_along: Tile-scheduler rasterization order
+        :type raster_along: Literal["m", "n"]
+        :param bias_dtype: Bias element type, or None when no bias is supplied
+        :type bias_dtype: Optional[Type[cutlass.Numeric]]
+        :param activation: Name of the compile-time epilogue activation, one of
+            EPILOGUE_ACTIVATIONS
+        :type activation: str
+
+        :return: True if the configuration can be implemented, False otherwise
+        :rtype: bool
+        """
+        try:
+            # FP32 accumulates every float input and Int32 every integer one.
+            allowed_acc_dtype = (cutlass.Float32, cutlass.Int32)
+            if acc_dtype not in allowed_acc_dtype:
+                raise testing.CantImplementError(
+                    f"acc_dtype must be one of {allowed_acc_dtype}, got {acc_dtype}"
+                )
+            sm100_utils.check_int8_mma_arch(ab_dtype)
+            # Define compatibility mapping between accumulator type and AB type
+            acc_ab_compatibility = {
+                cutlass.Float32: {
+                    cutlass.Float16,
+                    cutlass.BFloat16,
+                    cutlass.TFloat32,
+                    cutlass.Float8E4M3FN,
+                    cutlass.Float8E5M2,
+                },  # Float32 accumulator supports floating point AB types only
+                cutlass.Int32: {cutlass.Uint8, cutlass.Int8},
+            }
+            # Check compatibility between accumulator type and AB type
+            if ab_dtype not in acc_ab_compatibility[acc_dtype]:
+                raise testing.CantImplementError(
+                    f"Unsupported AB dtype: {ab_dtype} for accumulator dtype: "
+                    f"{acc_dtype}"
+                )
+            # Define compatibility mapping between accumulator type and D type
+            acc_d_compatibility = {
+                cutlass.Float32: {
+                    cutlass.Float32,
+                    cutlass.Float16,
+                    cutlass.BFloat16,
+                    cutlass.Float8E4M3FN,
+                    cutlass.Float8E5M2,
+                    cutlass.Int32,
+                    cutlass.Int8,
+                    cutlass.Uint8,
+                },
+                cutlass.Int32: {
+                    cutlass.BFloat16,
+                    cutlass.Float16,
+                    cutlass.Float32,
+                    cutlass.Int32,
+                    cutlass.Int8,
+                    cutlass.Uint8,
+                },
+            }
+            # Check compatibility between accumulator type and D type
+            if d_dtype not in acc_d_compatibility[acc_dtype]:
+                raise testing.CantImplementError(
+                    f"Unsupported D dtype: {d_dtype} for accumulator dtype: {acc_dtype}"
+                )
+            # The staged bias row is filled with 32-bit vectors and the epilogue's bias
+            # floor is 16 bits, so the bias is one of these 16- or 32-bit types.
+            allowed_bias_dtype = (
+                cutlass.Float16,
+                cutlass.BFloat16,
+                cutlass.Float32,
+                cutlass.Int32,
+            )
+            if bias_dtype is not None and bias_dtype not in allowed_bias_dtype:
+                raise testing.CantImplementError(
+                    f"bias_dtype must be one of {allowed_bias_dtype}, got {bias_dtype}"
+                )
+            # The activation's device op is folded into the cubin, so only a name the
+            # table carries can be served.
+            if activation not in EPILOGUE_ACTIVATIONS:
+                raise testing.CantImplementError(
+                    f"Unsupported activation {activation!r}; "
+                    f"choose from {sorted(EPILOGUE_ACTIVATIONS)}"
+                )
+            # tcgen05.mma admits these M per CTA group, and fills N in 32-wide
+            # steps up to 256.
+            if not (
+                (not use_2cta_instrs and mma_tiler_mn[0] in [64, 128])
+                or (use_2cta_instrs and mma_tiler_mn[0] in [128, 256])
+            ):
+                raise testing.CantImplementError(
+                    f"Invalid mma tiler & use_2cta_instrs: {mma_tiler_mn}, {use_2cta_instrs}"
+                )
+            if mma_tiler_mn[1] not in range(32, 257, 32):
+                raise testing.CantImplementError(
+                    f"Invalid mma tiler N: {mma_tiler_mn[1]}"
+                )
+            check_cluster_shape(
+                use_2cta_instrs,
+                preferred_cluster_shape_mn,
+                fallback_cluster_shape_mn,
+                swizzle_size,
+                raster_along,
+            )
+            check_conv_geometry(
+                ncdhw,
+                (k, *filter_trs),
+                stride_dhw,
+                upper_pad_dhw,
+                lower_pad_dhw,
+                dil_dhw,
+            )
+            check_tensor_alignment(ncdhw[1], k, ab_dtype, d_dtype)
+            # Implicit-GEMM M is N*Z*P*Q.
+            z, p, q = compute_zpq(
+                ncdhw[2:],
+                filter_trs,
+                stride_dhw,
+                upper_pad_dhw,
+                lower_pad_dhw,
+                dil_dhw,
+            )
+            gemm_m = ncdhw[0] * z * p * q
+            check_preferred_cluster_problem_size(
+                gemm_m,
+                k,
+                use_2cta_instrs,
+                mma_tiler_mn,
+                preferred_cluster_shape_mn,
+            )
+            # Require enough clusters along the swizzled dimension
+            check_swizzle_size(
+                gemm_m,
+                k,
+                mma_tiler_mn,
+                use_2cta_instrs,
+                preferred_cluster_shape_mn,
+                fallback_cluster_shape_mn,
+                swizzle_size,
+                raster_along,
+            )
+            check_im2col_descriptor_limits(
+                filter_trs,
+                upper_pad_dhw,
+                lower_pad_dhw,
+                stride_dhw,
+                dil_dhw,
+            )
+        except (testing.CantImplementError, ValueError) as e:
+            print(e)
+            return False
+        return True
 
 
-# Compile-time epilogue activations, folded into the cubin as a Constexpr op
-# (one activation per cubin). Each entry pairs the device-side op applied to the
-# output fragment with the torch op used to build the reference.
-EPILOGUE_ACTIVATIONS = {
-    "identity": {
-        "device": lambda x: x,
-        "ref": lambda x: x,
-    },
-    "relu": {
-        "device": lambda x: cute.where(x > 0, x, cute.full_like(x, 0)),
-        "ref": torch.nn.functional.relu,
-    },
-}
-
-
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=None)
 def compile_conv(
-    ncdhw: Tuple[int, int, int, int, int],
-    ktrs: Tuple[int, int, int, int],
-    input: cute.Tensor,
-    filter: cute.Tensor,
-    output: cute.Tensor,
+    ab_dtype: Type[cutlass.Numeric],
+    d_dtype: Type[cutlass.Numeric],
     acc_dtype: Type[cutlass.Numeric],
     mma_tiler: Tuple[int, int] = (256, 256),
     preferred_cluster_shape_mn: Tuple[int, int] = (2, 1),
@@ -2047,41 +2146,50 @@ def compile_conv(
     swizzle_size: int = 1,
     raster_along: Literal["m", "n"] = "m",
     use_2cta_instrs: bool = True,
-    upper_padding_dhw: Tuple[int, int, int] = (0, 0, 0),
-    lower_padding_dhw: Tuple[int, int, int] = (0, 0, 0),
-    stride_dhw: Tuple[int, int, int] = (1, 1, 1),
-    dilation_dhw: Tuple[int, int, int] = (1, 1, 1),
-    bias: Optional[cute.Tensor] = None,
-    epilogue_op: cutlass.Constexpr = lambda x: x,
+    bias_dtype: Optional[Type[cutlass.Numeric]] = None,
+    activation: str = "identity",
+    frontendnext: bool = False,
 ):
     """
     Compile a 3D convolution kernel with CLC dynamic preferred cluster scheduling.
 
-    :param ncdhw: Problem shape (N, C, D, H, W)
-    :param ktrs: Problem shape (K, T, R, S)
-    :param input: Input tensor (N, D, H, W, C) with C contiguous
-    :param filter: Filter tensor in KTRSC format (K, T, R, S, C) with C contiguous
-    :param output: Output tensor (N, Z, P, Q, K) with K contiguous
+    Every parameter is a hashable scalar that selects a cubin, so the result is
+    cached unbounded: a repeat configuration skips both the trace and the compile.
+    The tensors are stood in for by fakes built from the element types, because the
+    compiled module reads nothing else from them.
+
+    :param ab_dtype: Element type of the input and filter tensors
+    :param d_dtype: Element type of the output tensor
     :param acc_dtype: Accumulator data type
     :param mma_tiler: MMA tile shape (M, N)
     :param preferred_cluster_shape_mn: Preferred cluster shape (M, N)
     :param fallback_cluster_shape_mn: Fallback cluster shape (M, N)
     :param swizzle_size: Swizzling size in the unit of cluster. 1 means no swizzle
-    :param raster_along: Rasterization order of clusters. Only used when swizzle_size > 1
+    :param raster_along: Rasterization order of clusters. Only used when swizzle_size >
+        1
     :param use_2cta_instrs: Whether to use 2CTA instructions
-    :param upper_padding_dhw: Upper padding (PadD, PadH, PadW)
-    :param lower_padding_dhw: Lower padding (PadD, PadH, PadW)
-    :param stride_dhw: Stride (Sd, Sh, Sw)
-    :param dilation_dhw: Dilation (DilD, DilH, DilW)
-    :param bias: Optional length-K per-output-channel bias tensor, or None for a
+    :param bias_dtype: Element type of the per-output-channel bias, or None for a
         cubin without the bias path
-    :param epilogue_op: Epilogue operation
+    :param activation: Name of the compile-time epilogue activation, one of
+        EPILOGUE_ACTIVATIONS. One activation per cubin
+    :param frontendnext: Whether the caller is running under the pyir frontend. A
+        key-only parameter: the two frontends emit different cubins for the same
+        inputs, so an artifact compiled under one must not be served to the other
     :return: Compiled kernel function
     """
     from cutlass.cute.runtime import make_fake_stream
 
+    input = make_fake_conv_tensor(ab_dtype, 5, 4)
+    filter = make_fake_conv_tensor(ab_dtype, 5, 4)
+    output = make_fake_conv_tensor(d_dtype, 5, 4)
+    bias = None if bias_dtype is None else make_fake_conv_tensor(bias_dtype, 1, 0)
+
+    # The activation's device op is folded into the cubin, so a different activation
+    # is a different kernel.
+    epilogue_op = EPILOGUE_ACTIVATIONS[activation]["device"]
+
     # Create convolution kernel object
-    conv_op = Sm100PersistentDenseImplicitGemmFpropKernel(
+    conv_op = Sm100DenseImplicitGemmFpropKernel(
         acc_dtype,
         use_2cta_instrs,
         mma_tiler,
@@ -2091,143 +2199,17 @@ def compile_conv(
         raster_along,
     )
 
-    # Check if configuration can be implemented
-    can_implement = conv_op.can_implement(
-        ncdhw,
-        ktrs[0],
-        input.element_type,
-        output.element_type,
-        ktrs[1:],
-        upper_padding_dhw,
-        lower_padding_dhw,
-        stride_dhw,
-        dilation_dhw,
-    )
-    if not can_implement:
-        raise testing.CantImplementError("The current config is invalid/unsupported.")
-
     stream = make_fake_stream()
-    # Box pad/stride/dilation as runtime Int32 so cute.compile lowers them to
-    # SSA values and keeps them out of the mangled kernel name; one cubin then
-    # serves any pad/stride/dilation without recompilation.
     return cute.compile(
         conv_op,
         input,
         filter,
         output,
-        *_rt_conv_scalars(
-            upper_pad=upper_padding_dhw,
-            lower_pad=lower_padding_dhw,
-            stride=stride_dhw,
-            dil=dilation_dhw,
-        ),
-        stream,
         bias,
+        *trace_conv_scalars(),
+        stream,
         epilogue_op,
     )
-
-
-def compute_zpq(
-    dhw: Tuple[int, int, int],
-    trs: Tuple[int, int, int],
-    stride_dhw: Tuple[int, int, int],
-    upper_padding_dhw: Tuple[int, int, int],
-    lower_padding_dhw: Tuple[int, int, int],
-    dilation_dhw: Tuple[int, int, int],
-) -> Tuple[int, int, int]:
-    """Compute output spatial dimensions Z, P, and Q with asymmetric padding."""
-    D, H, W = dhw
-    T, R, S = trs
-    Sd, Sh, Sw = stride_dhw
-    UpperPadD, UpperPadH, UpperPadW = upper_padding_dhw
-    LowerPadD, LowerPadH, LowerPadW = lower_padding_dhw
-    DilD, DilH, DilW = dilation_dhw
-    Z = ((D + UpperPadD + LowerPadD - DilD * (T - 1) - 1) // Sd) + 1
-    P = ((H + UpperPadH + LowerPadH - DilH * (R - 1) - 1) // Sh) + 1
-    Q = ((W + UpperPadW + LowerPadW - DilW * (S - 1) - 1) // Sw) + 1
-    return Z, P, Q
-
-
-def create_cute_tensor(
-    source_f32_tensor: torch.Tensor,
-    dtype: Type[cutlass.Numeric],
-    leading_dim: int = None,
-) -> Tuple[cute.Tensor, torch.Tensor]:
-    """Create a cute tensor with dynamic layout from a source f32 tensor.
-
-    :param source_f32_tensor: Source f32 tensor
-    :type source_f32_tensor: torch.Tensor
-    :param dtype: Data type
-    :type dtype: Type[cutlass.Numeric]
-    :param leading_dim: Leading dimension for dynamic layout
-    :type leading_dim: int
-    :return: Tuple of cute tensor and storage tensor
-    :rtype: Tuple[cute.Tensor, torch.Tensor]
-    """
-    import cutlass.torch as cutlass_torch
-
-    storage_type = torch.int8 if is_fp8_dtype(dtype) else torch_dtype(dtype)
-    storage_tensor = source_f32_tensor.to(dtype=storage_type)
-
-    cute_tensor = from_dlpack(
-        storage_tensor, assumed_align=16, force_tf32=dtype == cutlass.TFloat32
-    )
-    cute_tensor = cute_tensor.mark_layout_dynamic(leading_dim=leading_dim)
-    if is_fp8_dtype(dtype):
-        cute_tensor.element_type = dtype
-        cute_tensor = cutlass_torch.convert_cute_tensor(
-            source_f32_tensor, cute_tensor, dtype, is_dynamic_layout=True
-        )
-        # Cast the underlying storage tensor to the correct dtype
-        storage_tensor = storage_tensor.view(dtype=torch_dtype(dtype))
-    return cute_tensor, storage_tensor
-
-
-def prepare_tensors(
-    ncdhw: Tuple[int, int, int, int, int],
-    ktrs: Tuple[int, int, int, int],
-    zpq: Tuple[int, int, int],
-    ab_dtype: Type[cutlass.Numeric],
-):
-    """Prepare f32 tensors for 3D convolution.
-
-    :param ncdhw: Input tensor shape (N, C, D, H, W)
-    :type ncdhw: Tuple[int, int, int, int, int]
-    :param ktrs: Filter tensor shape components (K, T, R, S)
-    :type ktrs: Tuple[int, int, int, int]
-    :param zpq: Output spatial dimensions (Z, P, Q)
-    :type zpq: Tuple[int, int, int]
-    :param ab_dtype: Data type for A/B input tensors
-    :type ab_dtype: Type[cutlass.Numeric]
-    :return: Tuple of input, filter, and output tensors
-    :rtype: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-    """
-    N, C, D, H, W = ncdhw
-    K, T, R, S = ktrs
-    Z, P, Q = zpq
-
-    # Initialize with small random values for numerical stability
-    if ab_dtype == cutlass.Uint8:
-        input_range = (0, 2)
-    else:
-        input_range = (-1, 2)
-    input_tensor = torch.randint(
-        input_range[0],
-        input_range[1],
-        (N, D, H, W, C),
-        dtype=torch.float32,
-        device="cuda",
-    )
-    filter_tensor = torch.randint(
-        input_range[0],
-        input_range[1],
-        (K, T, R, S, C),
-        dtype=torch.float32,
-        device="cuda",
-    )
-    output_tensor = torch.empty((N, Z, P, Q, K), dtype=torch.float32, device="cuda")
-
-    return input_tensor, filter_tensor, output_tensor
 
 
 def run(
@@ -2246,12 +2228,13 @@ def run(
     swizzle_size: int = 1,
     raster_along: Literal["m", "n"] = "m",
     use_2cta_instrs: bool = False,
-    tolerance: float = 1e-02,
+    tolerance: float = 1e-01,
     warmup_iterations: int = 0,
-    iterations: int = 1,
+    iterations: int = 0,
     use_cold_l2: bool = False,
     skip_ref_check: bool = False,
     use_bias: bool = False,
+    bias_dtype: Optional[Type[cutlass.Numeric]] = None,
     activation: str = "identity",
     **kwargs,
 ):
@@ -2272,16 +2255,19 @@ def run(
     :param preferred_cluster_shape_mn: Preferred cluster shape (M, N)
     :param fallback_cluster_shape_mn: Fallback cluster shape (M, N)
     :param swizzle_size: Swizzling size in the unit of cluster. 1 means no swizzle
-    :param raster_along: Rasterization order of clusters. Only used when swizzle_size > 1
+    :param raster_along: Rasterization order of clusters. Only used when swizzle_size >
+        1
     :param use_2cta_instrs: Whether to use 2CTA instructions
     :param tolerance: Tolerance for result comparison
     :param warmup_iterations: Number of warmup iterations
     :param iterations: Number of benchmark iterations
     :param use_cold_l2: Whether to flush L2 cache between iterations
     :param skip_ref_check: Whether to skip reference checking
-    :param use_bias: Add a per-output-channel bias in the output dtype as
-        D = activation(acc + bias); bias and no-bias are separate cubins
+    :param use_bias: Add a per-output-channel bias as D = activation(acc + bias);
+        bias and no-bias are separate cubins
+    :param bias_dtype: Bias element type; None derives it from the output type
     :param activation: Compile-time epilogue activation, one per cubin
+    :param kwargs: Extra keyword arguments, accepted and ignored
     """
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")
@@ -2289,13 +2275,44 @@ def run(
     N, C, D, H, W = ncdhw
     K, T, R, S = ktrs
 
-    Z, P, Q = compute_zpq(
-        (D, H, W),
-        (T, R, S),
-        stride_dhw,
+    # Settle the bias element type before the configuration is checked, so the check
+    # sees the type the bias tensor will actually carry.
+    if use_bias and bias_dtype is None:
+        bias_dtype = bias_dtype_for_output(d_dtype)
+    # Every host-side check runs here, before any tensor or compile work.
+    if not Sm100DenseImplicitGemmFpropKernel.can_implement(
+        ncdhw,
+        ktrs[0],
+        ktrs[1:],
         upper_pad_dhw,
         lower_pad_dhw,
+        stride_dhw,
         dil_dhw,
+        ab_dtype,
+        d_dtype,
+        acc_dtype,
+        use_2cta_instrs,
+        mma_tiler_mn,
+        preferred_cluster_shape_mn,
+        fallback_cluster_shape_mn,
+        swizzle_size,
+        raster_along,
+        bias_dtype if use_bias else None,
+        activation,
+    ):
+        raise testing.CantImplementError(
+            f"Config not implementable: ncdhw={ncdhw}, ktrs={ktrs}, "
+            f"stride={stride_dhw}, pad=({upper_pad_dhw}, {lower_pad_dhw}), "
+            f"dilation={dil_dhw}, mma_tiler={mma_tiler_mn}, "
+            f"use_2cta_instrs={use_2cta_instrs}, "
+            f"cluster=({preferred_cluster_shape_mn}, {fallback_cluster_shape_mn}), "
+            f"swizzle=({swizzle_size}, {raster_along}), "
+            f"dtypes=({ab_dtype}, {d_dtype}, {acc_dtype}), "
+            f"bias_dtype={bias_dtype if use_bias else None}, "
+            f"activation={activation}"
+        )
+    Z, P, Q = compute_zpq(
+        ncdhw[2:], ktrs[1:], stride_dhw, upper_pad_dhw, lower_pad_dhw, dil_dhw
     )
 
     print("Running Blackwell 3D Convolution test with:")
@@ -2317,7 +2334,7 @@ def run(
     print(f"  Use 2CTA instructions: {use_2cta_instrs}\n")
 
     # Create input and filter tensors
-    input_tensor, filter_tensor, output_tensor = prepare_tensors(
+    input_tensor, filter_tensor, output_tensor = prepare_fprop_tensors(
         ncdhw, ktrs, (Z, P, Q), ab_dtype
     )
 
@@ -2325,34 +2342,25 @@ def run(
     input_, input_storage = create_cute_tensor(input_tensor, ab_dtype, leading_dim=4)
     filter_, filter_storage = create_cute_tensor(filter_tensor, ab_dtype, leading_dim=4)
     output_, output_storage = create_cute_tensor(output_tensor, d_dtype, leading_dim=4)
+    # Free staging buffers once consumed to bound peak memory and avoid OOM.
+    del output_tensor
 
-    # One bias value per output channel, in the output dtype the epilogue reads
-    # it as. Small integers keep the fp8 case exact so the reference matches.
+    # One bias value per output channel, in the bias element type: the epilogue's
+    # 16-bit floor keeps it wider than a narrow output.
     if use_bias:
-        bias_tensor = torch.randint(
-            -2, 3, (ktrs[0],), dtype=torch.float32, device="cuda"
+        bias_f32_src = torch.randn(ktrs[0], dtype=torch.float32, device="cuda")
+        bias_, bias_storage = create_cute_tensor(
+            bias_f32_src, bias_dtype, leading_dim=0
         )
-        bias_, bias_storage = create_cute_tensor(bias_tensor, d_dtype, leading_dim=0)
     else:
-        bias_tensor = None
+        bias_storage = None
         bias_ = None
-
-    # Resolve the compile-time activation; the device op is folded into the cubin.
-    if activation not in EPILOGUE_ACTIVATIONS:
-        raise ValueError(
-            f"Unsupported activation {activation!r}; "
-            f"expected one of {sorted(EPILOGUE_ACTIVATIONS)}"
-        )
-    epilogue_op = EPILOGUE_ACTIVATIONS[activation]["device"]
 
     # Compile convolution kernel
     print("Compiling kernel with cute.compile ...")
     compiled_fn = compile_conv(
-        ncdhw,
-        ktrs,
-        input_,
-        filter_,
-        output_,
+        ab_dtype,
+        d_dtype,
         acc_dtype,
         mma_tiler=mma_tiler_mn,
         preferred_cluster_shape_mn=preferred_cluster_shape_mn,
@@ -2360,20 +2368,19 @@ def run(
         swizzle_size=swizzle_size,
         raster_along=raster_along,
         use_2cta_instrs=use_2cta_instrs,
-        upper_padding_dhw=upper_pad_dhw,
-        lower_padding_dhw=lower_pad_dhw,
-        stride_dhw=stride_dhw,
-        dilation_dhw=dil_dhw,
-        bias=bias_,
-        epilogue_op=epilogue_op,
+        bias_dtype=bias_dtype if use_bias else None,
+        activation=activation,
+        frontendnext=frontend_cache_token(),
     )
 
-    # Get current CUDA stream
+    # A fresh non-default stream carries the kernel: CUDA graph capture, which the
+    # benchmark below uses, requires one.
     torch_stream = torch.cuda.Stream()
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
 
-    # Run convolution. Pad/stride/dilation are passed as runtime Int32 so one
-    # cubin runs any pad/stride/dilation config.
+    # Run convolution. Pad / stride / dilation are passed as runtime
+    # cutlass.Int32, which the rt_ prefix marks, so one compiled cubin serves any
+    # geometry.
     print("Running Blackwell 3D convolution...")
     # The inputs initialize on other streams; drain them so the kernel's
     # stream never reads a tensor mid-initialization.
@@ -2382,26 +2389,31 @@ def run(
         input_,
         filter_,
         output_,
-        *_rt_conv_scalars(
+        bias_,
+        *rt_conv_scalars(
             upper_pad=upper_pad_dhw,
             lower_pad=lower_pad_dhw,
             stride=stride_dhw,
             dil=dil_dhw,
         ),
         current_stream,
-        bias_,
     )
     torch_stream.synchronize()
 
-    with torch.backends.cudnn.flags(enabled=False):
+    # TF32 off: the cuDNN reference convolution runs in full FP32.
+    with torch.backends.cudnn.flags(enabled=True, allow_tf32=False):
         if not skip_ref_check:
             # Run PyTorch reference convolution
             print("Running PyTorch reference 3D convolution...")
             # Pytorch expects tensors to be in NCDHW format
             input_ncdhw = input_tensor.permute(0, 4, 1, 2, 3)
+            # Free staging buffers once consumed to bound peak memory and avoid OOM;
+            # the view holds the input from here on.
+            del input_tensor
             if upper_pad_dhw != lower_pad_dhw:
                 # F.conv3d only supports symmetric padding, so manually pad the input
-                # F.pad takes padding in reverse dimension order: (W_before, W_after, H_before, H_after, D_before, D_after)
+                # F.pad takes padding in reverse dimension order: (W_before, W_after,
+                # H_before, H_after, D_before, D_after)
                 pad_arg = (
                     lower_pad_dhw[2],
                     upper_pad_dhw[2],
@@ -2421,13 +2433,39 @@ def run(
                 padding=conv_padding,
                 dilation=dil_dhw,
             ).to(dtype=torch.float32)
+            # Free staging buffers once consumed to bound peak memory and avoid OOM.
+            del input_ncdhw
+            # bias_storage holds the exact bias-dtype values the kernel loads, so
+            # float() reproduces them bit for bit.
             if use_bias:
-                output_ref = output_ref + bias_tensor.view(1, -1, 1, 1, 1)
-            # The kernel narrows the FP32 sum once and then activates.
-            output_ref = output_ref.to(dtype=torch_dtype(d_dtype)).to(
-                dtype=torch.float32
-            )
+                output_ref = output_ref + bias_storage.float().view(1, -1, 1, 1, 1)
             output_ref = EPILOGUE_ACTIVATIONS[activation]["ref"](output_ref)
+            # The kernel applies the activation on the FP32 sum and narrows once, on
+            # the device, so magnitudes past d_dtype's range saturate to its largest
+            # finite value. The round trip needs the K-major layout the kernel writes,
+            # whose leading extent carries the vectorized copy.
+            ref_narrow_byte_storage = (d_dtype.is_float and d_dtype.width <= 8) or (
+                d_dtype.is_integer and d_dtype.width == 4
+            )
+            ref_narrow_storage_dtype = (
+                torch.uint8 if ref_narrow_byte_storage else torch_dtype(d_dtype)
+            )
+            ref_device = output_ref.permute(0, 2, 3, 4, 1).contiguous().cuda()
+            ref_narrow_storage = torch.empty(
+                ref_device.shape, dtype=ref_narrow_storage_dtype, device="cuda"
+            )
+            ref_narrow = from_dlpack(
+                ref_narrow_storage, assumed_align=16
+            ).mark_layout_dynamic(leading_dim=4)
+            ref_narrow.element_type = d_dtype
+            ref_tensor = from_dlpack(ref_device, assumed_align=16).mark_layout_dynamic(
+                leading_dim=4
+            )
+            cute.testing.convert(ref_tensor, ref_narrow)
+            cute.testing.convert(ref_narrow, ref_tensor)
+            # Free staging buffers once consumed to bound peak memory and avoid OOM.
+            del ref_narrow, ref_narrow_storage
+            output_ref = ref_device.permute(0, 4, 1, 2, 3)
             # Compare results
             print("Comparing results...")
 
@@ -2452,7 +2490,7 @@ def run(
         )
 
         def generate_tensors():
-            input_tensor, filter_tensor, output_tensor = prepare_tensors(
+            input_tensor, filter_tensor, output_tensor = prepare_fprop_tensors(
                 ncdhw, ktrs, (Z, P, Q), ab_dtype
             )
             input_, input_storage = create_cute_tensor(
@@ -2470,6 +2508,16 @@ def run(
                 d_dtype,
                 leading_dim=4,
             )
+            # The bias is one of the tensors the kernel reads every iteration, so it
+            # rotates with the rest of the workspace and counts toward its bytes.
+            if use_bias:
+                ws_bias_, _ = create_cute_tensor(
+                    torch.randn(ktrs[0], dtype=torch.float32, device="cuda"),
+                    bias_dtype,
+                    leading_dim=0,
+                )
+            else:
+                ws_bias_ = None
             # The workspace initializes on other streams; drain them so the
             # benchmark stream never reads a tensor mid-initialization.
             torch.cuda.synchronize()
@@ -2477,14 +2525,14 @@ def run(
                 input_,
                 filter_,
                 output_,
-                *_rt_conv_scalars(
+                ws_bias_,
+                *rt_conv_scalars(
                     upper_pad=upper_pad_dhw,
                     lower_pad=lower_pad_dhw,
                     stride=stride_dhw,
                     dil=dil_dhw,
                 ),
                 current_stream,
-                bias_,
             )
 
         workspace_count = 1
@@ -2494,6 +2542,10 @@ def run(
                 + filter_storage.numel() * filter_storage.element_size()
                 + output_storage.numel() * output_storage.element_size()
             )
+            if bias_storage is not None:
+                one_workspace_bytes += (
+                    bias_storage.numel() * bias_storage.element_size()
+                )
             workspace_count = testing.get_workspace_count(
                 one_workspace_bytes, warmup_iterations, iterations
             )
@@ -2520,52 +2572,43 @@ def run(
         return exec_time
 
 
-def _parse_comma_separated_ints(s: str) -> Tuple[int, ...]:
-    try:
-        return tuple(int(x.strip()) for x in s.split(","))
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            "Invalid format. Expected comma-separated integers."
-        )
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Blackwell 3D convolution")
 
     # Convolution parameters
     parser.add_argument(
         "--ncdhw",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(1, 128, 32, 32, 32),
         help="Input tensor shape (N,C,D,H,W)",
     )
     parser.add_argument(
         "--ktrs",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(256, 3, 3, 3),
         help="Filter tensor shape components (K,T,R,S)",
     )
     parser.add_argument(
         "--stride_dhw",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(1, 1, 1),
         help="Stride (Sd,Sh,Sw)",
     )
     parser.add_argument(
         "--upper_pad_dhw",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(1, 1, 1),
         help="Upper padding (PadD,PadH,PadW)",
     )
     parser.add_argument(
         "--lower_pad_dhw",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(1, 1, 1),
         help="Lower padding (PadD,PadH,PadW)",
     )
     parser.add_argument(
         "--dil_dhw",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(1, 1, 1),
         help="Dilation (DilD,DilH,DilW)",
     )
@@ -2605,27 +2648,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--acc_dtype",
         type=cutlass.dtype,
-        choices=[cutlass.Float32, cutlass.Float16, cutlass.Int32],
+        choices=[cutlass.Float32, cutlass.Int32],
         default=cutlass.Float32,
-        help="Accumulator data type",
+        help="Accumulator data type. FP32 carries the float inputs and Int32 the "
+        "integer ones.",
     )
 
     # Kernel parameters
     parser.add_argument(
         "--mma_tiler_mn",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(128, 128),
         help="MMA tiler shape (M,N)",
     )
     parser.add_argument(
         "--preferred_cluster_shape_mn",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(2, 1),
         help="Preferred cluster shape (M,N)",
     )
     parser.add_argument(
         "--fallback_cluster_shape_mn",
-        type=_parse_comma_separated_ints,
+        type=parse_comma_separated_ints,
         default=(2, 1),
         help="Fallback cluster shape (M,N)",
     )
@@ -2651,7 +2695,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tolerance",
         type=float,
-        default=1e-02,
+        default=1e-01,
         help="Tolerance for result comparison",
     )
     parser.add_argument(
@@ -2680,8 +2724,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_bias",
         action="store_true",
-        help="Add a per-output-channel bias, in the output dtype, as "
-        "D = activation(acc + bias). Bias and no-bias are separate cubins.",
+        help="Add a per-output-channel bias as D = activation(acc + bias). Bias and "
+        "no-bias are separate cubins.",
+    )
+    parser.add_argument(
+        "--bias_dtype",
+        type=cutlass.dtype,
+        choices=[
+            cutlass.Float32,
+            cutlass.Int32,
+            cutlass.Float16,
+            cutlass.BFloat16,
+        ],
+        default=None,
+        help="Bias element type. Left unset it is derived from the output type, "
+        "which has a 16-bit floor.",
     )
     parser.add_argument(
         "--activation",
@@ -2693,6 +2750,13 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    if len(args.ncdhw) != 5:
+        parser.error("--ncdhw must contain exactly 5 values (N,C,D,H,W)")
+    if len(args.ktrs) != 4:
+        parser.error("--ktrs must contain exactly 4 values (K,T,R,S)")
+    if len(args.mma_tiler_mn) != 2:
+        parser.error("--mma_tiler_mn must contain exactly 2 values (M,N)")
 
     run(
         args.ncdhw,
@@ -2716,6 +2780,7 @@ if __name__ == "__main__":
         args.use_cold_l2,
         args.skip_ref_check,
         args.use_bias,
+        args.bias_dtype,
         args.activation,
     )
     print("PASS")

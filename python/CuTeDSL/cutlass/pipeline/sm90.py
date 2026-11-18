@@ -137,6 +137,7 @@ class PipelineAsync:
         tx_count: int = 0,
         name: str = "",
         phase: Literal["", "full", "empty"] = "",
+        defer_init: bool = False,
     ) -> SyncObject:
         """
         Returns a SyncObject corresponding to an agent's PipelineOp.
@@ -154,6 +155,7 @@ class PipelineAsync:
                 agent=agent,
                 tx_count=tx_count,
                 name=full_name,
+                defer_init=defer_init,
             )
         elif agent[0] is PipelineOp.TmaStore:
             # Path taken for AsyncTmaStore
@@ -171,6 +173,9 @@ class PipelineAsync:
         producer_mask: Optional[Int32] = None,
         consumer_mask: Optional[Int32] = None,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
         name: str = "",
     ) -> "PipelineAsync":
         """Creates and initializes a new PipelineAsync instance.
@@ -190,10 +195,22 @@ class PipelineAsync:
         :type producer_mask: Int32, optional
         :param consumer_mask: Mask for signaling arrives for the consumer agent
         :type consumer_mask: Int32, optional
+        :param defer_init: Bool specifying whether or not to skip the built-in mbarrier init
+        :type defer_init: bool, optional
+        :param storage_offset_full: Offset of the first full barrier within ``barrier_storage``
+        :type storage_offset_full: int, optional
+        :param storage_offset_empty: Offset of the first empty barrier within ``barrier_storage``
+        :type storage_offset_empty: int, optional
         :raises ValueError: If barrier_storage is not a cute.Pointer instance
         :return: A new ``PipelineAsync`` instance
         :rtype: PipelineAsync
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -209,18 +226,20 @@ class PipelineAsync:
         consumer = (consumer_type, consumer_group)
 
         sync_object_full = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             producer,
             name=name,
             phase="full",
+            defer_init=defer_init,
         )
         sync_object_empty = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             consumer,
             name=name,
             phase="empty",
+            defer_init=defer_init,
         )
 
         if name:
@@ -502,9 +521,9 @@ class PipelineTmaAsync(PipelineAsync):
             cute.arch.block_idx_in_cluster()
         )
 
-        tidx = tidx % WARP_SIZE
+        tidx = cute.math.rem(tidx, WARP_SIZE)  # type: ignore[attr-defined]
         is_signaling_thread = tidx < cute.size(cluster_shape_vmnk)
-        dst_rank = tidx % cute.size(cluster_shape_vmnk)
+        dst_rank = cute.math.rem(tidx, cute.size(cluster_shape_vmnk))  # type: ignore[attr-defined]
 
         dst_cta_coord = cta_layout_vmnk.get_hier_coord(dst_rank)
         cur_cta_coord = cta_layout_vmnk.get_hier_coord(cta_rank_in_cluster)
@@ -546,6 +565,9 @@ class PipelineTmaAsync(PipelineAsync):
         mcast_mode_mn: tuple[int, int] = (1, 1),
         enable_multicast_signaling: bool = False,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
         name: str = "",
     ) -> "PipelineTmaAsync":
         """Create a new ``PipelineTmaAsync`` instance.
@@ -575,10 +597,22 @@ class PipelineTmaAsync(PipelineAsync):
         :type enable_multicast_signaling: bool, optional
         :param defer_sync: Bool specifying whether or not to skip the built-in mbarrier fence and sync for performance, defaults to False
         :type defer_sync: bool, optional
+        :param defer_init: Bool specifying whether or not to skip the built-in mbarrier init
+        :type defer_init: bool, optional
+        :param storage_offset_full: Offset of the first full barrier within ``barrier_storage``
+        :type storage_offset_full: int, optional
+        :param storage_offset_empty: Offset of the first empty barrier within ``barrier_storage``
+        :type storage_offset_empty: int, optional
         :raises ValueError: If barrier_storage is not a cute.Pointer instance
         :return: New ``PipelineTmaAsync`` instance
         :rtype: PipelineTmaAsync
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         # Create barrier storage at reserved low address of smem
         if barrier_storage is None:
             barrier_storage = alloc_reserved_mbarrier(num_stages)
@@ -642,19 +676,21 @@ class PipelineTmaAsync(PipelineAsync):
         consumer = (consumer_type, thread_consumer_group)
 
         sync_object_full = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             producer,
             tx_count,
             name=name,
             phase="full",
+            defer_init=defer_init,
         )
         sync_object_empty = PipelineAsync._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             consumer,
             name=name,
             phase="empty",
+            defer_init=defer_init,
         )
 
         if name:
@@ -923,6 +959,7 @@ class PipelineOrder:
     def arrive(
         self,
         state: Optional[PipelineState] = None,
+        *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Optional[PipelineState]:
@@ -943,6 +980,7 @@ class PipelineOrder:
     def wait(
         self,
         state: Optional[PipelineState] = None,
+        *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
@@ -1112,7 +1150,9 @@ class PipelineProducer:
 
     def current_handle(self) -> ImmutableResourceHandle:
         """Get the current immutable handle for the producer."""
-        return PipelineProducer.ImmutableResourceHandle(self.__pipeline, self.__state.clone())
+        return PipelineProducer.ImmutableResourceHandle(
+            self.__pipeline, self.__state.clone()
+        )
 
     @dsl_user_op
     def acquire(
@@ -1358,7 +1398,9 @@ class PipelineConsumer:
 
     def current_handle(self) -> ImmutableResourceHandle:
         """Get the current immutable handle for the consumer."""
-        return PipelineConsumer.ImmutableResourceHandle(self.__pipeline, self.__state.clone())
+        return PipelineConsumer.ImmutableResourceHandle(
+            self.__pipeline, self.__state.clone()
+        )
 
     @dsl_user_op
     def wait(

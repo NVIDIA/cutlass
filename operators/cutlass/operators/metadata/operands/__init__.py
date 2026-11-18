@@ -26,6 +26,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from cutlass.operators.config import GlobalOptions
+
 from .base import OperandsMetadata
 from .gemm import GemmOperandsMetadata
 from .grouped_gemm import (
@@ -39,3 +41,4 @@ __all__ = [
     "GroupedGemmOperandsMetadata",
     "IndexPtrGroupedGemmOperandsMetadata",
 ]
+

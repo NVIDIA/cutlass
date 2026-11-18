@@ -27,14 +27,23 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+from cutlass.operators.config import GlobalOptions
+
 from .base import (
     Operand,
     PerformanceControls,
     RuntimeArguments,
 )
+from .data_driven_sync import (
+    DataDrivenSyncConsumer,
+    DataDrivenSyncControls,
+    DataDrivenSyncProducer,
+)
 from .epilogue import (
     EpilogueArguments,
+    EpilogueArgumentsBase,
     Load,
+    PerGroupScaleEpilogueArguments,
     Store,
     Transport,
 )
@@ -50,12 +59,31 @@ from .operand import (
     ScaleMode,
     ScaleSwizzleMode,
 )
+from .pdl import (
+    EarlyLaunchDependent,
+    EarlyStart,
+    PDLProgrammaticEvent,
+    ProgrammaticDependentLaunchControl,
+)
+from .performance import GemmPerformanceControls, TileSchedulerControls
+from .tile_scheduler_settings import (
+    RasterizationStrategy,
+    RasterOrder,
+    ReductionStrategy,
+)
 
 __all__ = [
     # Top-level arguments & constituents
     "RuntimeArguments",
     "PerformanceControls",
+    "GemmPerformanceControls",
+    "TileSchedulerControls",
+    "ReductionStrategy",
+    "RasterizationStrategy",
+    "RasterOrder",
+    "EpilogueArgumentsBase",
     "EpilogueArguments",
+    "PerGroupScaleEpilogueArguments",
     # Various RuntimeArguments subtypes
     "GemmArguments",
     "GemmProblemSize",
@@ -71,4 +99,14 @@ __all__ = [
     "Load",
     "Store",
     "Transport",
+    # PDL
+    "ProgrammaticDependentLaunchControl",
+    "EarlyLaunchDependent",
+    "EarlyStart",
+    "PDLProgrammaticEvent",
+    # Data-driven synchronization
+    "DataDrivenSyncControls",
+    "DataDrivenSyncProducer",
+    "DataDrivenSyncConsumer",
 ]
+

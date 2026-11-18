@@ -35,6 +35,7 @@ from cutlass.operators.arguments import (
     IndexPtrGroupedGemmArguments,
     RuntimeArguments,
 )
+from cutlass.operators.config import GlobalOptions
 from cutlass.operators.metadata.operands.base import OperandsMetadata
 from cutlass.operators.status import Status
 
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from cutlass.cute.typing import Numeric
 
     from cutlass.operators.metadata.operand_constraints import OperandConstraints
+
 
 
 
@@ -66,6 +68,17 @@ class IndexPtrGroupedGemmOperandsMetadata(OperandsMetadata):
 
     accumulator_type: Numeric
     """Required accumulator data type."""
+
+    offsets_value_divisibility: int = 1
+    """Minimum divisibility of every ``offsets`` value required by this Operator.
+
+    A block-scaled Operator that reuses the data boundaries as its scale-factor
+    boundaries records the scale-factor padding here, so a caller whose promise is
+    weaker than that simply does not match it.
+    """
+
+    accumulate_on_output: bool = False
+    """Whether the Operator adds each GEMM result to the existing output."""
 
     def supports(
         self,
@@ -101,7 +114,17 @@ class IndexPtrGroupedGemmOperandsMetadata(OperandsMetadata):
                 f"Expected accumulator type {self.accumulator_type}, "
                 f"got {other.accumulator_type}"
             )
-
+        if other.offsets_value_divisibility % self.offsets_value_divisibility != 0:
+            return Status.fail(
+                "Expected offsets-value divisibility to be a multiple of "
+                f"{self.offsets_value_divisibility}, got "
+                f"{other.offsets_value_divisibility}"
+            )
+        if self.accumulate_on_output != other.accumulate_on_output:
+            return Status.fail(
+                f"Expected accumulate_on_output={self.accumulate_on_output}, "
+                f"got {other.accumulate_on_output}"
+            )
         return Status.success()
 
 

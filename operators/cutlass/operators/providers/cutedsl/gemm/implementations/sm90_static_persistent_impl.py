@@ -53,6 +53,7 @@ import cutlass.cute as cute
 import cutlass.pipeline as pipeline
 import cutlass.utils as utils
 import cutlass.utils.hopper_helpers as sm90_utils
+from cutlass.cutlass_dsl import Int32
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 
 
@@ -211,7 +212,7 @@ class Sm90StaticPersistentGemmKernel:
         a: cute.Tensor,
         b: cute.Tensor,
         c: cute.Tensor,
-        max_active_clusters: cutlass.Constexpr,
+        max_active_clusters: Int32,
         stream,
     ):
         """Execute the GEMM operation in steps:
@@ -228,7 +229,7 @@ class Sm90StaticPersistentGemmKernel:
         :param c: Output tensor C
         :type c: cute.Tensor
         :param max_active_clusters: Maximum number of active clusters
-        :type max_active_clusters: cutlass.Constexpr
+        :type max_active_clusters: Int32
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
         """
@@ -980,7 +981,7 @@ class Sm90StaticPersistentGemmKernel:
         cluster_shape_mn: tuple[int, int],
         swizzle_size: int,
         raster_along_m: bool,
-        max_active_clusters: cutlass.Constexpr,
+        max_active_clusters: Int32,
     ) -> tuple[int, int, int]:
         """Compute grid shape for the output tensor C.
 
@@ -991,7 +992,7 @@ class Sm90StaticPersistentGemmKernel:
         :param cluster_shape_mn: Shape of each cluster in M, N dimensions.
         :type cluster_shape_mn: tuple[int, int]
         :param max_active_clusters: Maximum number of active clusters.
-        :type max_active_clusters: cutlass.Constexpr
+        :type max_active_clusters: Int32
 
         :return: Grid shape for kernel launch.
         :rtype: tuple[int, int, int]

@@ -73,9 +73,9 @@ struct AmpereUnpredicatedFprop {
   using TilerAct = Shape<TileN, TileK>;
   using TilerOut = Shape<TileM, TileN>;
 
-  using TileSizeM = Int<size(TileM{})>;
-  using TileSizeN = Int<size(TileN{})>;
-  using TileSizeK = Int<size(TileK{})>;
+  using TileSizeM = decltype(size(TileM{}));
+  using TileSizeN = decltype(size(TileN{}));
+  using TileSizeK = decltype(size(TileK{}));
   static constexpr int Stages = PIPE::value;
 
   using ElementFlt = tfloat32_t;

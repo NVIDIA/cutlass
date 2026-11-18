@@ -214,7 +214,16 @@ class DynamicParamPackCallProvider(CallProvider, TVMFFIBuilder):
                 packed_params.append(
                     self.pack_param_shape(current_block, context, param)
                 )
-            elif isinstance(param, (spec.Stream, spec.EnvStream)):
+            elif isinstance(
+                param,
+                (
+                    spec.Stream,
+                    spec.EnvStream,
+                    spec.CudaEvent,
+                    spec.CudaGraph,
+                    spec.CudaGraphNode,
+                ),
+            ):
                 packed_params.append(
                     self.pack_param_var(current_block, context, param.var)
                 )

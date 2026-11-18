@@ -27,23 +27,30 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from __future__ import annotations
 
+import functools
 import inspect
+import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, ClassVar, final
 
 import cuda.bindings.driver as cuda
 
 from cutlass.operators.arch import TargetSm
+from cutlass.operators.device_properties import (
+    DeviceProperties,
+    get_default_device_properties,
+)
 from cutlass.operators.status import Status
-from cutlass.operators.workspace import AllocationRequirement
+from cutlass.operators.utils.device import device_or_env_target_sm
+from cutlass.operators.workspace import AllocationRequirement, Workspace
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
-    from cutlass.operators.arguments import EpilogueArguments, RuntimeArguments
+    from cutlass.operators.arguments import EpilogueArgumentsBase, RuntimeArguments
     from cutlass.operators.artifact import CompiledArtifact
     from cutlass.operators.metadata import OperatorMetadata
-    from cutlass.operators.workspace import Workspace
+    from cutlass.operators.typing import TensorLike
 
 
 class Operator(ABC):
@@ -99,6 +106,14 @@ class Operator(ABC):
                 ``designed_for_min_cc``.
         """
         super().__init_subclass__(**kwargs)
+        if not _run_accepts_device_properties(cls):
+            warnings.warn(
+                f"{cls.__qualname__}._run uses the deprecated signature without a "
+                "'device_properties' parameter. This signature will stop working "
+                "in a future release; add the parameter.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if inspect.isabstract(cls):
             return
 
@@ -167,8 +182,9 @@ class Operator(ABC):
         args: RuntimeArguments,
         compiled_artifact: CompiledArtifact | None = None,
         stream=None,
-        workspace: Workspace | None = None,
+        workspace: Workspace | TensorLike | None = None,
         assume_supported_args: bool = False,
+        device_properties: DeviceProperties | None = None,
     ) -> None:
         """Execute the operator end-to-end with provided arguments.
 
@@ -179,18 +195,51 @@ class Operator(ABC):
             args (RuntimeArguments): Arguments with which to run the operator.
             compiled_artifact (CompiledArtifact | None): Compiled artifact returned from the :meth:`compile()`. If ``None``, the operator will first be compiled.
             stream (cuda.CUstream, torch.cuda.Stream, or other stream-like object, or None): Stream to execute the operator on. If ``None``, the default/null stream ``cuda.CUstream(0)`` is used.
-            workspace (Workspace | None): Allocation of workspace at least as large as the workspace size returned from the :meth:`get_workspace_size()`. If the operator does not require workspace, this can be ``None``. If a workspace of inappropriate size is provided, the behavior is undefined and the operator may crash.
+            workspace (Workspace | TensorLike | None): Allocation of workspace at least as large as the workspace size returned from the :meth:`get_workspace_size()`. A tensor is wrapped as ``Workspace(tensor)``. If the operator does not require workspace, this can be ``None``. If a workspace of inappropriate size is provided, the behavior is undefined and the operator may crash.
             assume_supported_args (bool): By default, ``operator.supports(args)`` is called to check if the arguments are supported. If ``True``, this check is skipped.
+            device_properties (DeviceProperties | None): Properties of the device to launch with. If ``None``, it uses the cached :func:`get_default_device_properties`.
+
+        Raises:
+            ValueError: If ``args`` are unsupported and ``assume_supported_args`` is ``False``.
+            TypeError: If ``device_properties`` is given to an operator whose ``_run``
+                uses the deprecated signature without it.
         """
-        if not assume_supported_args and not (supports := self.supports(args)):
+        legacy_run = not _run_accepts_device_properties(type(self))
+        if legacy_run and device_properties is not None:
+            raise TypeError(
+                f"{type(self).__qualname__}._run uses the deprecated signature "
+                "without a 'device_properties' parameter, so run() cannot pass "
+                "device_properties to it. Add the parameter to _run."
+            )
+        target_sm = (
+            compiled_artifact.compiled_for
+            if compiled_artifact is not None
+            else device_or_env_target_sm()
+        )
+        if not assume_supported_args and not (
+            supports := self.supports(args, target_sm=target_sm)
+        ):
             raise ValueError(
                 f"Operator does not support the provided arguments: {supports.error}"
             )
-
-        compiled_artifact = compiled_artifact or self.compile(args)
+        compiled_artifact = compiled_artifact or self.compile(args, target_sm)
         if not stream:
             stream = cuda.CUstream(0)
-        return self._run(args, compiled_artifact, stream, workspace)
+        if legacy_run:
+            # The deprecated signature also predates ``Workspace`` wrapping, so
+            # its implementations get the workspace exactly as given.
+            return self._run(args, compiled_artifact, stream, workspace)
+        if workspace is not None and not isinstance(workspace, Workspace):
+            workspace = Workspace(workspace)
+        if device_properties is None:
+            device_properties = get_default_device_properties()
+        return self._run(
+            args,
+            compiled_artifact,
+            stream,
+            workspace,
+            device_properties=device_properties,
+        )
 
     @final
     def get_workspace_size(self, args: RuntimeArguments) -> AllocationRequirement:
@@ -221,10 +270,10 @@ class Operator(ABC):
     def generate_operators(
         cls,
         metadata_filter: Callable[[OperatorMetadata], bool],
-        epilogue_args: EpilogueArguments | None = None,
+        epilogue_args: EpilogueArgumentsBase | None = None,
         target_sm: TargetSm | str | None = None,
         args: RuntimeArguments | None = None,
-    ) -> list[Operator]:
+    ) -> Sequence[Operator]:
         """Return a list of all supported operator configurations, optionally constrained to given parameters.
 
         Args:
@@ -233,7 +282,7 @@ class Operator(ABC):
                 indicating if it should be considered for inclusion in results.
                 The result is an intersection of operators filtered by the
                 callable and by other parameters passed to this method.
-            epilogue_args (EpilogueArguments | None): Optional arguments to
+            epilogue_args (EpilogueArgumentsBase | None): Optional arguments to
                 pass to the operator's epilogue.
             target_sm (TargetSm | str | None): Optionally restrict generation
                 to operators compatible with a given TargetSm.
@@ -241,7 +290,7 @@ class Operator(ABC):
                 operators by. If None, all operators are considered.
 
         Returns:
-            list[Operator]: List of all supported operator configurations.
+            Sequence[Operator]: All supported operator configurations.
         """
         target_sm = TargetSm.ensure(target_sm)
         return cls._generate_operators(metadata_filter, epilogue_args, target_sm, args)
@@ -283,6 +332,8 @@ class Operator(ABC):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace: Workspace | None = None,
+        *,
+        device_properties: DeviceProperties,
     ) -> None:
         """Launch the underlying kernel for an already-compiled, validated invocation.
 
@@ -290,11 +341,15 @@ class Operator(ABC):
         valid ``compiled_artifact`` and ``stream`` are provided. Intended to be overridden
         by subclasses as a minimal wrapper around the underlying kernel launch.
 
+        Implementations with device-dependent operands should read them from
+        ``device_properties`` rather than querying; the rest ignore it.
+
         Args:
             args (RuntimeArguments): Arguments to run the operator with. It is assumed that ``operator.supports(args)`` is True.
             compiled_artifact (CompiledArtifact): Compiled artifact returned from the ``compile()`` method.
             stream (cuda.CUstream, torch.cuda.Stream, or other stream-like object): Stream to execute the operator on.
             workspace (Workspace | None): Optional allocation of workspace at least as large as the workspace size returned from the ``get_workspace_size()`` method. If the operator does not require workspace, this can be ``None``. If a workspace of inappropriate size is provided, the behavior is undefined and the operator may crash.
+            device_properties (DeviceProperties): Properties of the device to launch with.
         """
         raise NotImplementedError
 
@@ -303,7 +358,7 @@ class Operator(ABC):
     def _generate_operators(
         cls,
         metadata_filter: Callable[[OperatorMetadata], bool],
-        epilogue_args: EpilogueArguments | None = None,
+        epilogue_args: EpilogueArgumentsBase | None = None,
         target_sm: TargetSm | None = None,
         args: RuntimeArguments | None = None,
     ) -> list[Operator]:
@@ -316,3 +371,17 @@ class Operator(ABC):
         self, args: RuntimeArguments, workspace: Workspace
     ) -> None:
         raise NotImplementedError
+
+
+@functools.cache
+def _run_accepts_device_properties(cls: type[Operator]) -> bool:
+    """Return whether ``cls._run`` declares ``device_properties``.
+
+    ``_run(args, compiled_artifact, stream, workspace=None)`` is the deprecated
+    signature from before ``device_properties`` existed. ``run()`` calls such
+    overrides without it, because passing it in any form raises ``TypeError``.
+    """
+    params = inspect.signature(cls._run).parameters
+    return "device_properties" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )

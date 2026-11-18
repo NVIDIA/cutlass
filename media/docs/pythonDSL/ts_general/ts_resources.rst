@@ -80,14 +80,11 @@ method, which uses it to produce its own data.  The canonical pattern:
         source_tensor: cute.Tensor
         num_entries: cutlass.Int32
         num_warps: int
-        item: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.uninitialized()
-
-        def __post_init__(self) -> None:
-            self.item = TaskLocalVariable(
-                dtype=cutlass.Int16,
-                default=cutlass.Int16(0),
-                docs="Input element loaded for the current grid-stride iteration.",
-            )
+        item: cutlass.Constexpr[TaskLocalVariable] = TaskLocalVariable.declare(
+            dtype=cutlass.Int16,
+            default=cutlass.Int16(0),
+            docs="Input element loaded for the current grid-stride iteration.",
+        )
 
         @consumer_work(returns=item)
         @cute.jit
@@ -123,13 +120,16 @@ The schedule wires the token returned by the consumer into the producer:
             res = input_gmem.get_item()
             output_gmem.set_item(data=res)
 
-The declaration has five parts:
+The declaration has four parts:
 
-- Declare a class attribute initialized with ``TaskLocalVariable.uninitialized()``.
-- Bind it in ``__post_init__`` or ``__init__`` with a dtype, default, and docs.
+- Declare a class attribute with ``TaskLocalVariable.declare(...)``.
 - Mark the consumer with ``@consumer_work(returns=item)`` and return the value.
 - Pass the returned token through the schedule body.
 - Give the producer a matching parameter, such as ``data`` above.
+
+``declare(...)`` creates independent metadata for every resource instance. Use
+``TaskLocalVariable.uninitialized()`` followed by assignment in ``__post_init__``
+only when the dtype or default depends on constructor arguments.
 
 Auxiliary Work
 --------------

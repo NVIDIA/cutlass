@@ -199,6 +199,11 @@ void initialize_block_scaled_gemm_reference_operations_mixed8bitsa(Manifest &man
     half_t /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, float_e3m2_t /*D*/, 32 /*SFVecSize*/
   >(manifest);
 
+  make_block_scaled_gemm_tn<
+    float_e4m3_t /*A*/, float_ue8m0_t /*SFA*/, float_e4m3_t /*B*/, float_ue8m0_t /*SFB*/,
+    half_t /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, half_t /*D*/, 32 /*SFVecSize*/
+  >(manifest);
+
   
   make_block_scaled_gemm<
     float_e4m3_t /*A*/, float_ue8m0_t /*SFA*/, float_e4m3_t /*B*/, float_ue8m0_t /*SFB*/,

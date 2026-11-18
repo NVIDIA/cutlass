@@ -22,6 +22,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Iterable,
     Literal as _Literal,
     NamedTuple as _NamedTuple,
     Optional,
@@ -49,6 +50,7 @@ from .common import (
     DSLUserCodeError,
     is_auto_m2s_enabled,
     is_pyir_enabled,
+    is_pyir_verify_scans_enabled,
 )
 from .diagnostics import DiagId
 from .._mlir import ir
@@ -147,6 +149,41 @@ _PYIR_GATE_ONCE_INIT_SLOTS: "set[Any]" = set()
 # Depth of plain-callee executions observed by a call boundary: first-defs there
 # have unprovable multiplicity, so keep-meta must not apply.
 _PYIR_BOUNDARY_CALLEE_DEPTH: "list[int]" = [0]
+# Hooks run when a jit function is entered FROM a plain callee under
+# observation: the call boundary publishes the callee's pending raw writes
+# first, so the re-entered instrumented reads see them (registered by the
+# boundary layer; a lower layer never imports upward).
+_PYIR_BOUNDARY_REENTRY_HOOKS: "list[Callable[[], None]]" = []
+# The thread that opened the current trace: a plain callee's rewritten hooks
+# observe on this thread only (set at the outermost user-function entry).
+_PYIR_TRACE_THREAD: "list[int | None]" = [None]
+# Hooks run when the outermost user-function scope closes (the plain-callee
+# rewrite restores the swapped code objects; registered by the layer above).
+_PYIR_TRACE_CLOSE_HOOKS: "list[Callable[[], None]]" = []
+# Sighting of a user-class instance at a read choke: the plain-callee rewrite
+# instruments the instance's class so its implicit protocol code observes
+# (registered by the layer above; None until then).
+_PYIR_SIGHT_HOOK: "list[Any]" = [None]
+# The first terminal diagnostic of this trace.  A staged-effect refusal is a
+# compilation failure even when author Python catches it: the outermost user
+# function exit re-raises it (see ``_pyir_fatal_trace_error``).
+_PYIR_PENDING_USER_DIAGNOSTIC: "list[BaseException | None]" = [None]
+# id(object) -> (verifying handle, the open loop-body block the object was
+# born in): a plain constructor returning into a staged loop body.  A cell
+# for one of its places must live in that block, re-seeded per iteration,
+# never at function entry where it would outlive the object.
+_PYIR_BOUNDARY_BIRTH_BLOCK: "dict[int, tuple[Any, Any]]" = {}
+
+
+def _pyir_fatal_trace_error(exc: BaseException) -> BaseException:
+    """Mark *exc* terminal for the open trace and return it (``raise
+    _pyir_fatal_trace_error(DSLUserCodeError(...))``).  A refusal caught by an
+    author's ``except`` must not turn into a kernel that replays the
+    refused effect; only the first cause is kept."""
+    if _PYIR_SCOPE_STACK and _PYIR_PENDING_USER_DIAGNOSTIC[0] is None:
+        _PYIR_PENDING_USER_DIAGNOSTIC[0] = exc
+    return exc
+
 
 # True when the slot's first assignment ran inside staged CF.
 _slot_first_def_inside_cf: "dict[Any, bool]" = {}
@@ -154,6 +191,25 @@ _slot_first_def_inside_cf: "dict[Any, bool]" = {}
 # when the first-def choke ran. A region-born cell seeds itself with a real
 # store at this block instead of a fabricated dominating init.
 _slot_first_def_block: "dict[Any, ir.Block]" = {}
+# Birth block of a meta place whose first binding ran inside a staged region --
+# written by the fresh-object leaf recorder, the first-def choke and the
+# attribute first-def note; read through ``_pyir_place_is_region_born`` (the
+# off-mode write audit and the promotion seed position).  A place is
+# region-born exactly while this block is nested in a currently OPEN loop
+# body: a fact left by an earlier, already closed region must not exempt a
+# write in a later one.
+_slot_region_birth_block: "dict[Any, ir.Block]" = {}
+# Binding position open at that birth: ``(region-arm path, folded-if path)``.
+# A promotion may seed at the birth block only when both are prefixes of the
+# promoting write's paths, i.e. the binding dominates the write and re-runs on
+# every execution of the write.  A birth under a folded constant-if arm the
+# write is not under (a membership-gated once-per-key init) does not.
+_slot_region_birth_path: "dict[Any, tuple]" = {}
+# Live folded constant-if arms, innermost last (one fresh token per traced arm;
+# see ``_maybe_fold_constant_if``).  A folded arm is traced in-line and pushes
+# no region frame, so the arm path alone cannot tell "under the gate" apart
+# from "beside it".
+_PYIR_FOLDED_IF_PATH: "list[object]" = []
 # Birth block recorded for EVERY local first-def (F-BIRTHPOS, meta bindings
 # too): a rebind in the SAME block is provably trace-local -- no back-edge or
 # branch merge separates birth from rebind.
@@ -167,11 +223,70 @@ _slot_first_def_depth_any: "dict[Any, int]" = {}
 # Staged-CF depth at which the slot's CURRENT binding was last written; the
 # type-stability gate distinguishes a same-depth shadow from a shallower loop-carry.
 _slot_binding_depth: "dict[Any, int]" = {}
+# Insertion block open when the slot's CURRENT binding was last written (staged
+# CF only): a loop-carry cell for a bare local re-established inside an open
+# loop body anchors in that body, so every iteration re-seeds it; a binding
+# written at function scope keeps the furthest-out anchor.
+_slot_binding_block: "dict[Any, ir.Block]" = {}
 
 # Innermost-open staged-loop body blocks (F-BIRTHPOS declaration): a first-def
 # choke running while a body block is open records that block as the binding's
 # birth position.
 _pyir_open_loop_body_blocks: "list[ir.Block]" = []
+# Trace-time facts of each open staged-loop body, parallel to
+# ``_pyir_open_loop_body_blocks`` (pushed and popped together).  Each entry:
+# ``kind`` ('for' | 'while'), ``guaranteed_trip`` (the body provably runs at
+# least once), ``dead_on_entry`` (path text -> 0 when the body's first
+# occurrence of the path is an unconditional top-level store, or the line of
+# the nested store that is that first occurrence; see the preprocessor's
+# ``_collect_dead_on_entry_paths``) and ``entry`` (the region-entry token of
+# the body, an element of ``_PYIR_REGION_ENTRY_STACK``).  Consumed by the
+# identity re-point classification at the assign choke.
+_pyir_open_loop_body_facts: "list[dict[str, Any]]" = []
+# Open region-entry tokens (``_PYIR_REGION_ENTRY_STACK`` snapshot) at the last
+# binding that set the OBJECT a compound place names in the trace (a first
+# definition, a binding outside staged CF, an admitted identity re-point; a
+# body-born rebind copies into the place's object and keeps it): the regions
+# entered AFTER it are the ones a re-point of the place must prove static.
+# When a region closes, a binding made directly in it moves to the parent
+# region if the region provably ran, else in front of the parent (it may not
+# have happened there), see :func:`_pyir_region_entry_pop`.
+_PYIR_SLOT_BIND_REGIONS: "dict[Any, tuple[int, ...]]" = {}
+# Index of ``_PYIR_SLOT_BIND_REGIONS`` by each record's innermost token, so a
+# region close visits only the records made directly in it.
+_PYIR_SLOT_BIND_BY_TOKEN: "dict[int, set[Any]]" = {}
+
+
+def _pyir_record_slot_bind_regions(slot: object, tokens: "tuple[int, ...]") -> None:
+    """Set the place *slot*'s binding position to the open-region *tokens*,
+    keeping the per-token index in step."""
+    old = _PYIR_SLOT_BIND_REGIONS.get(slot)
+    if old:
+        bucket = _PYIR_SLOT_BIND_BY_TOKEN.get(old[-1])
+        if bucket is not None:
+            bucket.discard(slot)
+    _PYIR_SLOT_BIND_REGIONS[slot] = tokens
+    if tokens:
+        _PYIR_SLOT_BIND_BY_TOKEN.setdefault(tokens[-1], set()).add(slot)
+
+
+# The pre-existing object an admitted identity re-point bound at each place:
+# a later body-born rebind of the place would copy into that (observable)
+# object, so it is refused.
+_PYIR_SLOT_REPOINTED: "dict[Any, Any]" = {}
+# Open region-entry tokens when each instrumented function scope started: the
+# fallback binding position of a local the choke never saw bound (a
+# parameter), since no region opened before its scope can separate it.
+_PYIR_SCOPE_REGION_BASE: "dict[int, tuple[int, ...]]" = {}
+# Staged-selection products by candidate: ``id(candidate) -> {id(product)}``.
+# A write to a candidate makes its products stale.  Id-keyed only: the
+# objects stay alive in ``_PYIR_SELECTION_KEEPALIVE`` (a trace keepalive, so
+# the selection-sighting referrer audit does not count it as a holder).
+_PYIR_SELECTION_CANDIDATE_PRODUCTS: "dict[int, set[int]]" = {}
+# Products a candidate write made stale: ``id(product) -> write site``; a later
+# field read through one refuses (Python's product IS the candidate).
+_PYIR_SELECTION_STALE_PRODUCTS: "dict[int, Any]" = {}
+_PYIR_SELECTION_KEEPALIVE: "list[Any]" = []
 
 # Trace-global region-epoch clock: bumped at every staged-region entry AND exit
 # (depth cannot serve: an enter+exit round trip returns to the same depth), so
@@ -197,15 +312,167 @@ def _pyir_current_region_epoch() -> int:
 
 
 def _pyir_region_entry_push() -> None:
-    """Record a staged-region ENTRY on the entry clock and the open stack."""
+    """Record a staged-region ENTRY on the entry clock and the open stack.
+
+    Also opens the region's pre-existence frame: the candidate-holder
+    registry watermark (a holder row minted BEFORE it names an object that
+    already existed when the region started) plus a pin list for
+    entry-reachable holders that have no row yet (see
+    :func:`_pyir_region_entry_pin_holders`)."""
     _PYIR_REGION_ENTRY_CLOCK[0] += 1
     _PYIR_REGION_ENTRY_STACK.append(_PYIR_REGION_ENTRY_CLOCK[0])
+    _PYIR_REGION_ENTRY_HOLDER_SEQ.append(len(_PYIR_REGISTRATION_LOG))
+    _PYIR_REGION_ENTRY_PINNED_HOLDERS.append({})
+    _PYIR_REGION_RECARRIED_IDS.append(set())
 
 
-def _pyir_region_entry_pop() -> None:
-    """Close the innermost recorded staged-region entry (no-op when empty)."""
+def _pyir_region_entry_pop(guaranteed: bool = False) -> None:
+    """Close the innermost recorded staged-region entry (no-op when empty).
+
+    *guaranteed* says the region provably ran (a loop body with a trip count
+    of at least one): a compound binding made directly in it then holds in
+    the parent region; otherwise the binding may not have happened there and
+    moves in front of the parent (``_PYIR_SLOT_BIND_REGIONS``)."""
     if _PYIR_REGION_ENTRY_STACK:
+        closing = _PYIR_REGION_ENTRY_STACK[-1]
+        keep = -1 if guaranteed else -2
+        for slot in _PYIR_SLOT_BIND_BY_TOKEN.pop(closing, ()):
+            toks = _PYIR_SLOT_BIND_REGIONS.get(slot)
+            if toks and toks[-1] == closing:
+                _pyir_record_slot_bind_regions(slot, toks[:keep])
         _PYIR_REGION_ENTRY_STACK.pop()
+    if _PYIR_REGION_ENTRY_HOLDER_SEQ:
+        _PYIR_REGION_ENTRY_HOLDER_SEQ.pop()
+    if _PYIR_REGION_ENTRY_PINNED_HOLDERS:
+        _PYIR_REGION_ENTRY_PINNED_HOLDERS.pop()
+    if _PYIR_REGION_RECARRIED_IDS:
+        # A carrier re-carried anywhere inside a nested region (an ``if`` arm
+        # of the loop body) stands in for a body-born object for the rest of
+        # the enclosing body too: merge the closed frame into its parent.
+        closed = _PYIR_REGION_RECARRIED_IDS.pop()
+        if _PYIR_REGION_RECARRIED_IDS:
+            _PYIR_REGION_RECARRIED_IDS[-1].update(closed)
+
+
+# Identity-rebind frames of the OPEN staged regions, parallel to
+# ``_PYIR_REGION_ENTRY_STACK``: the registry-order watermark at entry
+# (``len(_PYIR_REGISTRATION_LOG)``; compare against ``_PYIR_HOLDER_SEQ``) and
+# the entry-reachable leaf holders that had no registry row at entry, pinned
+# STRONGLY (id -> object) so a pinned id can never be recycled by a
+# body-born object while the region is open.
+_PYIR_REGION_ENTRY_HOLDER_SEQ: "list[int]" = []
+_PYIR_REGION_ENTRY_PINNED_HOLDERS: "list[dict[int, Any]]" = []
+# Per open region: ids of the OLD objects a whole-object compound rebind kept
+# as its carrier inside the region (the m2m "old object carries" polarity).
+# Such a carrier now stands in for a BODY-BORN object -- the dict-slot advance
+# pattern ``wq.vars["tile"] = WorkTile(...); tile = wq.vars["tile"]`` -- so a
+# re-point to it is not an identity select of two pre-existing objects.
+_PYIR_REGION_RECARRIED_IDS: "list[set[int]]" = []
+
+
+def _pyir_region_entry_pin_holders(holders: "Iterable[Any]") -> None:
+    """Pin *holders* as pre-existing for the innermost open staged region;
+    holders that already have a registry row are covered by the watermark
+    and skipped."""
+    if not _PYIR_REGION_ENTRY_PINNED_HOLDERS:
+        return
+    pinned = _PYIR_REGION_ENTRY_PINNED_HOLDERS[-1]
+    for h in holders:
+        if h is None:
+            continue
+        oid = id(h)
+        if oid in _PYIR_HOLDER_SEQ or oid in pinned:
+            continue
+        pinned[oid] = h
+
+
+def _pyir_region_note_recarried(obj: Any) -> None:
+    """Record *obj* as the carrier of a whole-object compound rebind performed
+    inside the innermost open staged region (see ``_PYIR_REGION_RECARRIED_IDS``)."""
+    if _PYIR_REGION_RECARRIED_IDS and obj is not None:
+        _PYIR_REGION_RECARRIED_IDS[-1].add(id(obj))
+
+
+def _pyir_holder_preexists_open_region(obj: Any) -> bool:
+    """True when *obj* already existed when the innermost open staged region
+    was entered: its registry row predates the region's watermark, or it was
+    pinned at the entry of any open region as an entry-reachable holder
+    without a row.  False outside any staged region, for an object first
+    sighted inside it, and for a carrier re-carried inside it (it stands in
+    for a body-born object)."""
+    if not _PYIR_REGION_ENTRY_HOLDER_SEQ:
+        return False
+    oid = id(obj)
+    for recarried in _PYIR_REGION_RECARRIED_IDS:
+        if oid in recarried:
+            return False
+    seq = _PYIR_HOLDER_SEQ.get(oid)
+    if seq is not None and seq < _PYIR_REGION_ENTRY_HOLDER_SEQ[-1]:
+        return True
+    # Pinned at ANY open region's entry: an object reachable when an
+    # enclosing region started existed before every region nested in it.
+    for pinned in _PYIR_REGION_ENTRY_PINNED_HOLDERS:
+        if oid in pinned:
+            return True
+    return False
+
+
+def _pyir_region_recarried(obj: Any) -> bool:
+    """True when *obj* was kept as the carrier of a body-born whole-object
+    rebind inside any open staged region (``_PYIR_REGION_RECARRIED_IDS``)."""
+    oid = id(obj)
+    return any(oid in recarried for recarried in _PYIR_REGION_RECARRIED_IDS)
+
+
+def _pyir_holder_preexists_region(obj: Any, token: int) -> bool:
+    """:func:`_pyir_holder_preexists_open_region` judged against the open
+    region whose entry token is *token* (an enclosing one, not only the
+    innermost): *obj* already existed when that region was entered."""
+    try:
+        index = _PYIR_REGION_ENTRY_STACK.index(token)
+    except ValueError:
+        return False
+    oid = id(obj)
+    if _pyir_region_recarried(obj):
+        return False
+    seq = _PYIR_HOLDER_SEQ.get(oid)
+    if seq is not None and seq < _PYIR_REGION_ENTRY_HOLDER_SEQ[index]:
+        return True
+    return any(
+        oid in pinned for pinned in _PYIR_REGION_ENTRY_PINNED_HOLDERS[: index + 1]
+    )
+
+
+# The compound re-points ONE unpack statement performed inside an open staged
+# loop body: ``[stmt_id, {id(old_obj): old_obj}]``.  ``a, b = b, a`` lowers to
+# one ``pyir_assign`` per target, each carrying the statement's ``stmt_id``
+# (minted by the preprocessor; single-target assigns carry none and never
+# pair up); the second target's replacement is the object whose fields the
+# first target's copy already replaced -- the swap the assign choke refuses.
+_PYIR_STMT_COMPOUND_REBINDS: "list[Any]" = [None, {}]
+
+
+def _pyir_stmt_rebind_note(old_obj: Any, stmt_id: Any) -> None:
+    """Record that the unpack statement *stmt_id* re-pointed a binding away
+    from *old_obj*, whose fields the per-field copy replaces."""
+    rec = _PYIR_STMT_COMPOUND_REBINDS
+    if rec[0] != stmt_id:
+        rec[0], rec[1] = stmt_id, {}
+    rec[1][id(old_obj)] = old_obj
+
+
+def _pyir_stmt_rebind_overwrote(obj: Any, stmt_id: Any) -> bool:
+    """True when the unpack statement *stmt_id* already re-pointed a binding
+    away from *obj*: its fields no longer hold what the statement's right-hand
+    side read."""
+    rec = _PYIR_STMT_COMPOUND_REBINDS
+    return rec[0] == stmt_id and rec[1].get(id(obj)) is obj
+
+
+def _pyir_stmt_rebind_reset() -> None:
+    """Forget the statement record (trace start, loop-body entry and exit)."""
+    _PYIR_STMT_COMPOUND_REBINDS[0] = None
+    _PYIR_STMT_COMPOUND_REBINDS[1] = {}
 
 
 def _pyir_region_entry_clock() -> int:
@@ -216,6 +483,11 @@ def _pyir_region_entry_clock() -> int:
 def _pyir_region_entry_watermark() -> int:
     """Entry index of the innermost open staged region (0 when none)."""
     return _PYIR_REGION_ENTRY_STACK[-1] if _PYIR_REGION_ENTRY_STACK else 0
+
+
+def _pyir_open_region_tokens() -> "tuple[int, ...]":
+    """Entry tokens of every open staged region, outermost first."""
+    return tuple(_PYIR_REGION_ENTRY_STACK)
 
 
 # Unified slot registry keyed by the structural triple ``_SlotId(kind, id(owner), key)``:
@@ -294,6 +566,41 @@ _PYIR_TRACE_KEEPALIVES: "list[Any]" = [
     _WATCHED_CONTAINER_HELD_KEEPALIVE,
 ]
 
+# Predicates ``(referrer, value) -> bool`` naming further trace-owned holds of
+# a value: the pin objects a layer keeps around values that cannot be weakly
+# referenced.  Referrer audits consult them next to the keepalive lists.
+_PYIR_TRACE_BOOKKEEPING_HOOKS: "list[Any]" = []
+
+# ``(filename, lineno) -> qualified name`` of the def spanning a source
+# position; set by the plain-callee rewrite (its file-AST cache).
+_PYIR_WRITER_AT_HOOK: "list[Any]" = [None]
+
+# Code objects of the tracer-layer frames that invoke a NATIVE callee on the
+# traced program's behalf: a C-level consumer is frame-transparent, so a
+# payload dunder it triggers sees one of these frames as its caller, and that
+# consumption is the program's, not tracer bookkeeping.
+_PYIR_NATIVE_INVOKE_CODES: "set[Any]" = set()
+
+# Code objects compiled from the body preprocessor's output, keyed by id: the
+# jit body and every def / lambda / comprehension nested in it.  Their
+# accesses already run through the chokes, so the call boundary traces them
+# as they are.
+_PYIR_PREPROCESSED_CODES: "dict[int, Any]" = {}
+
+
+def _pyir_note_preprocessed_code(code: Any) -> None:
+    stack = [code]
+    while stack:
+        current = stack.pop()
+        _PYIR_PREPROCESSED_CODES[id(current)] = current
+        stack.extend(
+            const for const in current.co_consts if isinstance(const, types.CodeType)
+        )
+
+
+def _pyir_code_is_preprocessed(code: Any) -> bool:
+    return code is not None and _PYIR_PREPROCESSED_CODES.get(id(code)) is code
+
 
 # Track refs by storage SLOT, not value: ``__dict__``-backed owners store under
 # ``__pyir_slots__`` (tier-1); other owners route through ``_SLOT_REGISTRY``.
@@ -329,6 +636,64 @@ _PYIR_WRITE_CLOCK: "list[int]" = [0]
 # never outlives (or predates) the object it describes.
 _PYIR_HOLDER_WRITE_STAMPS: "dict[int, int]" = {}
 
+# Write log: the holder id stamped at each clock tick (``log[t - 1]`` is tick
+# ``t``), so ``log[c:]`` is every holder written after clock ``c``. Append-only
+# between trace exits; consumers keep a cursor and never scan the registry.
+_PYIR_WRITE_LOG: "list[int]" = []
+
+# Registration log: candidate ids in registry insertion order (one entry per
+# minted row; a reused id appears again). ``_PYIR_HOLDER_SEQ`` maps a live
+# candidate id to its position in the log, which is its registry order.
+_PYIR_REGISTRATION_LOG: "list[int]" = []
+_PYIR_HOLDER_SEQ: "dict[int, int]" = {}
+
+# Open off-mode meta-leaf audits, innermost last: ``(rows, seen, blocks)``
+# per staged region whose close the audit judges.  ``rows`` are ``(holder,
+# attr, entry_value)``; ``seen`` holds ``(id(holder), attr)``; ``blocks`` are
+# the region's body blocks (a place born in one of them re-executes its
+# writes with the region and is exempt).  A holder first sighted INSIDE the
+# region (a module global the body only reads, a jit callee's receiver) was
+# unreachable to the region-entry walk, so its sighting-time leaves join
+# every open audit once, standing in for the entry values; a leaf already in
+# a ledger keeps its earlier value.
+_PYIR_OPEN_META_LEAF_AUDITS: "list[tuple[list, set, list]]" = []
+
+# Audit rows reference holders weakly; a holder that supports no weak
+# reference (a ``__slots__`` instance) is kept here and referenced by index.
+# Registered as a trace keepalive so the ctor-privacy referrer scan treats
+# the hold as bookkeeping, not as a user alias of a fresh sub-object.
+_PYIR_META_LEAF_STRONG_HOLDERS: "list[Any]" = []
+_PYIR_TRACE_KEEPALIVES.append(_PYIR_META_LEAF_STRONG_HOLDERS)
+
+
+class _PyirPairIndex:
+    """Place-cell recovery index over the funneled candidates (those with a
+    stamp row). ``index``: ``id(value) -> [(holder id, attr), ...]`` for every
+    non-scalar storage value, in storage order. ``rows``: per indexed root,
+    the stamp the row was built at and its ``(attr, id(value))`` entries (for
+    invalidation and removal). ``eager``: the other candidates in registry
+    order; they are probed live at every lookup. The two cursors say how far
+    into the registration log and the write log the index is synced. Trace
+    scoped: cleared with the registry."""
+
+    __slots__ = ("index", "rows", "eager", "reg_cursor", "write_cursor")
+
+    def __init__(self) -> None:
+        self.index: "dict[int, list[tuple[int, str]]]" = {}
+        self.rows: "dict[int, tuple[int, tuple]]" = {}
+        self.eager: "dict[int, None]" = {}
+        self.reg_cursor = 0
+        self.write_cursor = 0
+
+    def clear(self) -> None:
+        self.index.clear()
+        self.rows.clear()
+        self.eager.clear()
+        self.reg_cursor = self.write_cursor = 0
+
+
+_PYIR_PAIR_INDEX = _PyirPairIndex()
+
 # ``id(holder) -> (stamp_at_build, records tuple, guards tuple)`` gather-walk
 # segments for funneled flat roots (builtin scalars, bare ``ir.Value``,
 # SSA-backed Numeric leaves, walk-inert values); root stamp AND per-record
@@ -336,12 +701,66 @@ _PYIR_HOLDER_WRITE_STAMPS: "dict[int, int]" = {}
 # registry entry (trace-scoped).
 _PYIR_GATHER_SEGMENTS: "dict[int, tuple]" = {}
 
-# The declared wrapper write funnel: ``(base class, payload property,
-# __setattr__, __delattr__)`` registered by the class that owns the funnel.
-_PYIR_WRITE_FUNNEL_DECL: "list[Any]" = [None]
 
-# Per-class memo of the write-funnel fact (class shape is definition-stable).
-_PYIR_WRITE_FUNNEL_CLASS_FACTS: "dict[type, bool]" = {}
+class _PyirGatherCache:
+    """The sweep's persistent split of the classified roots, kept current from
+    the registration log and the write log (the two cursors) instead of
+    re-validated root by root at every sweep. ``view``: the cacheable roots
+    with at least one record, ``id -> (registry weakref, records)``; a
+    snapshot takes a shallow copy. ``view_ids``: the same keys as a set, the
+    seed a sweep copies into its visited set (a set copy reuses the stored
+    hashes; ``set(dict)`` rehashes every key). ``live``: the roots walked live
+    at every sweep (negative rows, roots without a stamp row). ``guards``:
+    ``id(leaf wrapper) -> {root ids guarding on it}``. ``nested``:
+    ``id(child holder) -> {view root ids holding it in a field}``; a view
+    root's row leaves a nested registered holder's records to that holder's
+    own row, so a sweep that excludes the child still has to walk it when the
+    full walk would have entered it through the parent. Trace scoped: cleared
+    with the registry."""
+
+    __slots__ = (
+        "view",
+        "view_ids",
+        "live",
+        "guards",
+        "nested",
+        "reg_cursor",
+        "write_cursor",
+    )
+
+    def __init__(self) -> None:
+        self.view: "dict[int, tuple[Any, tuple]]" = {}
+        self.view_ids: "set[int]" = set()
+        self.live: "dict[int, None]" = {}
+        self.guards: "dict[int, set[int]]" = {}
+        self.nested: "dict[int, set[int]]" = {}
+        self.reg_cursor = 0
+        self.write_cursor = 0
+
+    def clear(self) -> None:
+        self.view.clear()
+        self.view_ids.clear()
+        self.live.clear()
+        self.guards.clear()
+        self.nested.clear()
+        self.reg_cursor = self.write_cursor = 0
+
+
+_PYIR_GATHER_CACHE = _PyirGatherCache()
+
+# The declared wrapper write funnels, keyed by the funnel ``__setattr__``:
+# ``__setattr__ -> (owner, payload property or None, __setattr__,
+# __delattr__)``. A class is funneled when its resolved ``__setattr__`` IS one
+# of these keys (the MRO then carries that funnel). Numeric declares its own
+# pair with the payload property; the holder classes ``_pyir_install_write_funnel``
+# binds at trace time all share one module-level pair, so the table stays two
+# entries long however many classes are installed.
+_PYIR_WRITE_FUNNEL_DECL: "dict[Any, tuple[Any, Any, Any, Any]]" = {}
+
+# Per-class memo of the write-funnel fact: the matched declaration, or
+# ``False`` for "checked, no funnel" (class shape is definition-stable; an
+# install clears the memo).
+_PYIR_WRITE_FUNNEL_CLASS_FACTS: "dict[type, Any]" = {}
 
 # Per-class ``{attr: bool}`` memo: ``getattr(instance, attr)`` resolves to the
 # instance-storage cell (no foreign MRO data descriptor shadows *attr*).
@@ -355,6 +774,7 @@ def _pyir_note_holder_write(obj: Any) -> None:
     if oid in _PYIR_HOLDER_WRITE_STAMPS:
         _PYIR_WRITE_CLOCK[0] += 1
         _PYIR_HOLDER_WRITE_STAMPS[oid] = _PYIR_WRITE_CLOCK[0]
+        _PYIR_WRITE_LOG.append(oid)
 
 
 def _pyir_setattr_raw(obj: Any, name: str, value: Any) -> None:
@@ -365,6 +785,7 @@ def _pyir_setattr_raw(obj: Any, name: str, value: Any) -> None:
     if oid in _PYIR_HOLDER_WRITE_STAMPS:
         _PYIR_WRITE_CLOCK[0] += 1
         _PYIR_HOLDER_WRITE_STAMPS[oid] = _PYIR_WRITE_CLOCK[0]
+        _PYIR_WRITE_LOG.append(oid)
 
 
 def _pyir_delattr_raw(obj: Any, name: str) -> None:
@@ -374,52 +795,102 @@ def _pyir_delattr_raw(obj: Any, name: str) -> None:
     if oid in _PYIR_HOLDER_WRITE_STAMPS:
         _PYIR_WRITE_CLOCK[0] += 1
         _PYIR_HOLDER_WRITE_STAMPS[oid] = _PYIR_WRITE_CLOCK[0]
+        _PYIR_WRITE_LOG.append(oid)
+
+
+def _pyir_note_holder_registered(oid: int) -> None:
+    """Append a freshly minted registry row to the registration log and give
+    it its registry-order sequence number."""
+    _PYIR_HOLDER_SEQ[oid] = len(_PYIR_REGISTRATION_LOG)
+    _PYIR_REGISTRATION_LOG.append(oid)
+
+
+def _pyir_verify_scans() -> bool:
+    """True when the incremental registry scans must double-run against their
+    full scans (``CUTE_DSL_PYIR_VERIFY_SCANS``)."""
+    return is_pyir_verify_scans_enabled()
+
+
+def _pyir_check_write_log() -> None:
+    """Verify-mode invariant: the write log has exactly one entry per clock tick."""
+    if len(_PYIR_WRITE_LOG) != _PYIR_WRITE_CLOCK[0]:
+        raise DSLRuntimeError(
+            "PyIR write log out of step with the write clock: "
+            f"{len(_PYIR_WRITE_LOG)} entries for clock {_PYIR_WRITE_CLOCK[0]}"
+        )
 
 
 def _pyir_declare_write_funnel(base_cls: type) -> None:
-    """Declare *base_cls* as the wrapper write-funnel owner: its verbatim
-    ``value`` property, ``__setattr__`` and ``__delattr__`` become the identity
-    anchors of the per-class funnel fact."""
-    _PYIR_WRITE_FUNNEL_DECL[0] = (
+    """Declare *base_cls* as a wrapper write-funnel owner: its verbatim
+    ``__setattr__``/``__delattr__`` (and ``value`` property, when it has one)
+    become the identity anchors of the per-class funnel fact."""
+    decl = (
         base_cls,
-        base_cls.__dict__["value"],
+        base_cls.__dict__.get("value"),
         base_cls.__dict__["__setattr__"],
         base_cls.__dict__["__delattr__"],
     )
+    _PYIR_WRITE_FUNNEL_DECL[decl[2]] = decl
     _PYIR_WRITE_FUNNEL_CLASS_FACTS.clear()
     _PYIR_GETATTR_STORAGE_FACTS.clear()
+
+
+def _pyir_slot_member_names(cls: type) -> "list[str]":
+    """The ``__slots__`` member names declared anywhere in *cls*'s MRO; the
+    ``__dict__``/``__weakref__`` pseudo-slots do not count (an empty
+    ``__slots__ = ()`` on a base such as ``ABC`` leaves the instance a plain
+    ``__dict__`` object)."""
+    names: "list[str]" = []
+    for k in cls.__mro__:
+        raw = k.__dict__.get("__slots__")
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            raw = (raw,)
+        try:
+            names.extend(
+                n for n in raw if isinstance(n, str) and not n.startswith("__")
+            )
+        except TypeError:
+            names.append("<unreadable>")
+    return names
+
+
+def _pyir_write_funnel_decl_for(cls: type) -> "tuple | None":
+    """The declared funnel *cls* resolves to (see
+    :func:`_pyir_wrapper_write_funneled`), or ``None``.  Memoized per class."""
+    fact = _PYIR_WRITE_FUNNEL_CLASS_FACTS.get(cls)
+    if fact is not None:
+        return fact or None
+    match = None
+    if _PYIR_WRITE_FUNNEL_DECL and isinstance(cls, type):
+        try:
+            decl = _PYIR_WRITE_FUNNEL_DECL.get(cls.__setattr__)
+            if decl is not None and (
+                cls.__delattr__ is decl[3]
+                and cls.__getattribute__ is object.__getattribute__
+                and not _pyir_slot_member_names(cls)
+                and next(
+                    (k.__dict__["value"] for k in cls.__mro__ if "value" in k.__dict__),
+                    None,
+                )
+                is decl[1]
+            ):
+                match = decl
+        except Exception:
+            match = None
+    _PYIR_WRITE_FUNNEL_CLASS_FACTS[cls] = match if match is not None else False
+    return match
 
 
 def _pyir_wrapper_write_funneled(cls: type) -> bool:
     """DECLARED write-funnel fact: every language-level attribute write or
     delete on a *cls* instance lands in plain ``__dict__`` storage AND stamps
-    the holder write clock.  Requires the declared funnel base in the MRO with
-    its verbatim ``__setattr__``/``__delattr__``/``value`` property resolved
-    (no override), no custom ``__getattribute__``, and no ``__slots__``."""
-    fact = _PYIR_WRITE_FUNNEL_CLASS_FACTS.get(cls)
-    if fact is not None:
-        return fact
-    decl = _PYIR_WRITE_FUNNEL_DECL[0]
-    ok = False
-    if decl is not None and isinstance(cls, type):
-        base, value_prop, setattr_fn, delattr_fn = decl
-        try:
-            ok = (
-                issubclass(cls, base)
-                and cls.__setattr__ is setattr_fn
-                and cls.__delattr__ is delattr_fn
-                and cls.__getattribute__ is object.__getattribute__
-                and all("__slots__" not in k.__dict__ for k in cls.__mro__)
-                and next(
-                    (k.__dict__["value"] for k in cls.__mro__ if "value" in k.__dict__),
-                    None,
-                )
-                is value_prop
-            )
-        except Exception:
-            ok = False
-    _PYIR_WRITE_FUNNEL_CLASS_FACTS[cls] = ok
-    return ok
+    the holder write clock.  Requires *cls* to resolve ``__setattr__`` to a
+    declared funnel with its paired ``__delattr__`` (no override), no custom
+    ``__getattribute__``, no ``__slots__`` members, and the MRO's ``value``
+    entry absent or the declaration's own payload property."""
+    return _pyir_write_funnel_decl_for(cls) is not None
 
 
 def _pyir_getattr_reads_storage(cls: type, attr: str) -> bool:
@@ -433,9 +904,9 @@ def _pyir_getattr_reads_storage(cls: type, attr: str) -> bool:
     fact = per_cls.get(attr)
     if fact is not None:
         return fact
-    ok = _pyir_wrapper_write_funneled(cls)
-    if ok:
-        decl = _PYIR_WRITE_FUNNEL_DECL[0]
+    decl = _pyir_write_funnel_decl_for(cls)
+    ok = decl is not None
+    if decl is not None:
         for k in cls.__mro__:
             entry = k.__dict__.get(attr)
             if entry is None:
@@ -452,13 +923,98 @@ def _pyir_getattr_reads_storage(cls: type, attr: str) -> bool:
 
 def _pyir_plain_storage_setattr(cls: type) -> bool:
     """True when *cls* writes attributes through plain object storage: no
-    override at all, or the declared wrapper funnel (a verbatim delegate whose
+    override at all, or a declared wrapper funnel (a verbatim delegate whose
     only addition is the write stamp)."""
     setattr_fn = cls.__setattr__
     if setattr_fn is object.__setattr__:
         return True
-    decl = _PYIR_WRITE_FUNNEL_DECL[0]
-    return decl is not None and setattr_fn is decl[2]
+    try:
+        return setattr_fn in _PYIR_WRITE_FUNNEL_DECL
+    except TypeError:
+        return False
+
+
+# Per-class memo of the trace-time installer's verdict (installed or refused),
+# so a registration pays one dict probe once the class has been judged.
+_PYIR_WRITE_FUNNEL_INSTALL_FACTS: "dict[type, bool]" = {}
+
+
+# The shared write funnel bound onto holder classes at trace time: the
+# verbatim delegate plus the write stamp, the same shape as Numeric's own pair.
+def _pyir_funnel_setattr(self: object, name: str, value: object) -> None:
+    object.__setattr__(self, name, value)
+    _pyir_note_holder_write(self)
+
+
+def _pyir_funnel_delattr(self: object, name: str) -> None:
+    object.__delattr__(self, name)
+    _pyir_note_holder_write(self)
+
+
+def _pyir_write_funnel_installable(cls: type) -> bool:
+    """Class-shape half of the trace-time installer's verdict: a class of the
+    cutlass package whose attribute writes are plain object storage today (no
+    ``__setattr__``/``__delattr__`` anywhere in the MRO, so a frozen dataclass
+    or a hand-written guard is out), default attribute lookup (no
+    ``__getattribute__``/``__getattr__`` hook), no ``__slots__`` members, and
+    no ``value`` class attribute (the funnel fact reserves that name for the
+    payload property).  User and third-party classes are never touched."""
+    mod = getattr(cls, "__module__", None)
+    if not isinstance(mod, str) or not (mod == "cutlass" or mod.startswith("cutlass.")):
+        return False
+    try:
+        return (
+            cls.__setattr__ is object.__setattr__
+            and cls.__delattr__ is object.__delattr__
+            and cls.__getattribute__ is object.__getattribute__
+            and getattr(cls, "__getattr__", None) is None
+            and not _pyir_slot_member_names(cls)
+            and not any("value" in k.__dict__ for k in cls.__mro__)
+        )
+    except Exception:
+        return False
+
+
+def _pyir_install_write_funnel(cls: type) -> bool:
+    """Bind the shared write funnel onto *cls* and declare it; ``True`` when
+    *cls* is funneled afterwards.  Idempotent.  Only reached from the PyIR
+    candidate registry (a trace-time path), so a legacy-mode process never
+    changes a class."""
+    if _PYIR_WRITE_FUNNEL_DECL.get(_pyir_funnel_setattr) is not None and (
+        cls.__dict__.get("__setattr__") is _pyir_funnel_setattr
+    ):
+        return _pyir_wrapper_write_funneled(cls)
+    if not _pyir_write_funnel_installable(cls):
+        return False
+    try:
+        cls.__setattr__ = _pyir_funnel_setattr  # type: ignore[assignment]
+        cls.__delattr__ = _pyir_funnel_delattr  # type: ignore[assignment]
+        bound = (
+            cls.__setattr__ is _pyir_funnel_setattr
+            and cls.__delattr__ is _pyir_funnel_delattr
+        )
+    except Exception:
+        bound = False
+    if not bound:
+        # A metaclass that rewrote the binding: leave no half-installed pair.
+        for name in ("__setattr__", "__delattr__"):
+            if name in cls.__dict__:
+                try:
+                    delattr(cls, name)
+                except Exception:
+                    pass
+        return False
+    if _pyir_funnel_setattr not in _PYIR_WRITE_FUNNEL_DECL:
+        _PYIR_WRITE_FUNNEL_DECL[_pyir_funnel_setattr] = (
+            None,
+            None,
+            _pyir_funnel_setattr,
+            _pyir_funnel_delattr,
+        )
+    # Subclasses inherit the pair: drop every memoized "no funnel" verdict.
+    _PYIR_WRITE_FUNNEL_CLASS_FACTS.clear()
+    _PYIR_GETATTR_STORAGE_FACTS.clear()
+    return _pyir_wrapper_write_funneled(cls)
 
 
 # Inert attr placeholder for a SELF-LEAF snapshot record (the leaf IS the loop-carried
@@ -537,6 +1093,17 @@ _PYIR_DEQUE_MUTATORS = frozenset(
         "clear",
         "remove",
         "insert",
+        "reverse",
+    }
+)
+_PYIR_BYTEARRAY_MUTATORS = frozenset(
+    {
+        "append",
+        "extend",
+        "insert",
+        "pop",
+        "remove",
+        "clear",
         "reverse",
     }
 )
@@ -635,6 +1202,10 @@ def _place_seg_child(parent: Any, key: Any) -> _PlaceSeg:
     return _PlaceSeg(parent, (key,))
 
 
+# Every ``IdentityKeyedWeakTable`` row store (see its ``__init__``).
+_IDENTITY_TABLE_ROWS: "list[dict[int, tuple[Any, Any]]]" = []
+
+
 class IdentityKeyedWeakTable:
     """Object->value map keyed by referent IDENTITY (the standard identity-map
     algorithm): bookkeeping never invokes user ``__hash__``/``__eq__``, so a
@@ -648,6 +1219,9 @@ class IdentityKeyedWeakTable:
     def __init__(self) -> None:
         # id(key) -> (anchor, value); anchor is a weakref or the pinned key.
         self._rows: "dict[int, tuple[Any, Any]]" = {}
+        # A pinned (non-weakrefable) key is strongly held by its row: the
+        # ctor-privacy probe must recognise that row as trace bookkeeping.
+        _IDENTITY_TABLE_ROWS.append(self._rows)
 
     def get(self, obj: Any, default: Any = None) -> Any:
         row = self._rows.get(id(obj))
@@ -698,9 +1272,53 @@ _OWNER_TOKENS: "IdentityKeyedWeakTable" = IdentityKeyedWeakTable()
 # adoption asserts it (V-6) -- a constructor call births a fresh token.
 _PYIR_REBUILD_PROTOCOL_DEPTH: "list[int]" = [0]
 
+# Staged-selection frame bit: non-zero while the runtime-predicate ternary
+# executor (``x if cond else y`` with a staged ``cond``) packs its result.  A
+# rebuilt object born in this frame is a MERGE of two candidates' values, not
+# a reconstruction of one carried object, so it must NOT adopt the then-arm
+# object's owner token (its slots would alias that object's cells: a field
+# read would serve the then-arm value and a field write would land on the
+# then-arm object).  It is a fresh identity, recorded in
+# ``_PYIR_STAGED_SELECTIONS`` so a later field write through it refuses.
+_PYIR_STAGED_SELECTION_DEPTH: "list[int]" = [0]
+
+# Staged-selection products whose field WRITES refuse: merged object ->
+# (filename, lineno) of the ternary that produced it.  Only a merge with a
+# SIGHTED candidate (one that pre-exists the open region, or that storage
+# outliving the expression holds) is entered; a merge of two unsighted
+# temporaries is a fresh object nobody else can observe, so a write through
+# it lands correctly.  Identity-keyed, cleared per trace.
+_PYIR_STAGED_SELECTIONS: "IdentityKeyedWeakTable" = IdentityKeyedWeakTable()
+
+# Every staged-selection product's candidates: merged object -> (then_obj,
+# else_obj).  Consulted by the identity re-point classification (a re-point
+# to the merge of candidates that pre-exist the body) and by the write choke,
+# which marks
+# the candidates of an UNSIGHTED merge as selection-written on a write
+# through the merge (``_PYIR_SELECTION_WRITTEN_CANDIDATES``).  Identity-keyed,
+# cleared per trace.
+_PYIR_STAGED_SELECTION_ARMS: "IdentityKeyedWeakTable" = IdentityKeyedWeakTable()
+
+# Candidates of an unsighted staged selection that a field write went through:
+# candidate object -> (filename, lineno) of the ternary.  Python would have
+# mutated whichever candidate the condition picked; the write landed on the
+# merged copy instead, so a later field READ of a candidate is refused.
+_PYIR_SELECTION_WRITTEN_CANDIDATES: "IdentityKeyedWeakTable" = IdentityKeyedWeakTable()
+# Value-tree protocol frame: non-zero while the tracer itself runs an object's
+# ``__extract_mlir_values__`` (the non-PyIR pytree flattening).  That body is
+# the object's own storage plumbing, so the callee access hooks are native
+# inside it -- the same rule as the attribute-protocol dunders.
+_PYIR_VALUE_PROTOCOL_DEPTH: "list[int]" = [0]
+
 # Owner-token birth class (F-CLASS): token -> type(owner) at mint; carried
 # uses validate the live class against it (V-7).
 _PYIR_TOKEN_BORN_CLASS: "dict[int, type]" = {}
+
+# Tokens minted by the call-boundary birth event (a returned object not
+# reachable from the tracked roots before the call).  The bind choke's
+# call-born witness accepts such a token as "born by this statement" rather
+# than "sighted earlier" (F-BIRTHPOS for a call-RHS binding).
+_PYIR_BOUNDARY_BORN_TOKENS: "set[int]" = set()
 
 # The place-keyed cell store; holds MLIR-context-bound MutableValues, cleared per trace.
 _PLACE_REGISTRY: "dict[Any, MutableValue]" = {}
@@ -735,6 +1353,15 @@ _PYIR_CELL_HOME_BINDING: "dict[int, tuple[int, str]]" = {}
 # at instrumented-function entry (rewrite-time syntactic fact); a bare-name
 # choke consults the innermost scope's set to recognize closure-cell bindings.
 _PYIR_SCOPE_NONLOCAL_NAMES: "dict[int, frozenset]" = {}
+
+# ``scope_id -> the closure CELL objects registered at the scope's
+# instrumented-function entry`` (``pyir_register_scope_cells``).  A frame's
+# cellvars are exactly the locals a staged-region body of that function can
+# reach, so their live contents root the region-entry reachability pin of the
+# identity re-point classification (``_pyir_snapshot_region_entry_compounds``): a
+# pre-loop local container's elements are pinned as pre-existing even when
+# no choke ever sighted them.  Dropped when the ``'fn'`` scope closes.
+_PYIR_SCOPE_CELLS: "dict[int, list[Any]]" = {}
 
 # F-CEPLACE binding-birth ownership: ``(scope_id, name) -> serial of the
 # constexpr instance that was innermost-open at the binding's BIRTH`` (or
@@ -791,6 +1418,10 @@ _PYIR_SPEC_ENTRY_SIG: "list[Any]" = [None]
 # root for verifying receiver-rooted rows at re-entry, where the launch
 # binding never names the receiver.
 _PYIR_SPEC_ENTRY_RECEIVER: "list[Any]" = [None]
+# id -> weakref of each plain function dispatched inside staged CF this trace:
+# a def held only in one of their closure cells or defaults (a delegating
+# wrapper's target) roots through the holder's own root path.
+_PYIR_SPEC_DISPATCHED_FUNCS: "dict[int, Any]" = {}
 
 
 class _SpecReceiverDead:
@@ -914,26 +1545,40 @@ def _reset_spec_state() -> None:
     _PYIR_SPEC_ENTRY_FUNC[0] = None
     _PYIR_SPEC_ENTRY_SIG[0] = None
     _PYIR_SPEC_ENTRY_RECEIVER[0] = None
+    _PYIR_SPEC_DISPATCHED_FUNCS.clear()
 
 
 def _reset_scope_state() -> None:
     """Clear per-trace place-layer state; monotonic counters intentionally
     survive trace exit."""
     _PYIR_SCOPE_STACK.clear()
+    _PYIR_PENDING_USER_DIAGNOSTIC[0] = None
+    _PYIR_BOUNDARY_BIRTH_BLOCK.clear()
     _PYIR_REBUILD_PROTOCOL_DEPTH[0] = 0
+    _PYIR_VALUE_PROTOCOL_DEPTH[0] = 0
     _PYIR_TOKEN_BORN_CLASS.clear()
+    _PYIR_BOUNDARY_BORN_TOKENS.clear()
     _PLACE_REGISTRY.clear()
     _PYIR_SUPERSEDED_PLACE_ROWS.clear()
     _ROOT_NAME_TOKENS.clear()
     _PYIR_SCOPE_CELL_TOKENS.clear()
     _PYIR_CELL_HOME_BINDING.clear()
     _PYIR_SCOPE_NONLOCAL_NAMES.clear()
+    _PYIR_SCOPE_CELLS.clear()
     _CE_BINDING_OWNER.clear()
     _PYIR_REGION_EPOCH[0] = 0
     _PYIR_REGION_ENTRY_CLOCK[0] = 0
     _PYIR_REGION_ENTRY_STACK.clear()
+    _PYIR_REGION_ENTRY_HOLDER_SEQ.clear()
+    _PYIR_REGION_ENTRY_PINNED_HOLDERS.clear()
+    _PYIR_REGION_RECARRIED_IDS.clear()
+    _pyir_stmt_rebind_reset()
     _OWNER_TOKENS.clear()
     _OWNER_PLACE_PREFIX.clear()
+    _PYIR_STAGED_SELECTION_DEPTH[0] = 0
+    _PYIR_STAGED_SELECTIONS.clear()
+    _PYIR_STAGED_SELECTION_ARMS.clear()
+    _PYIR_SELECTION_WRITTEN_CANDIDATES.clear()
     _PYIR_GATE_ONCE_INIT_SLOTS.clear()
 
 
@@ -948,9 +1593,21 @@ _pyir_fn_id_stack: "list[Any]" = []
 def pyir_enter_fn(fn_id: Any) -> None:
     """Push *fn_id* as the current user-function scope and open the place-ledger
     'fn' frame: one scope_id per instrumented user-function activation."""
+    if _PYIR_BOUNDARY_CALLEE_DEPTH[0] > 0:
+        # Plain code re-entering jit code: its raw writes so far must reach
+        # the cells this body's instrumented reads load from.
+        for hook in _PYIR_BOUNDARY_REENTRY_HOOKS:
+            hook()
+    if not _pyir_fn_id_stack:
+        import threading as _threading_mod
+
+        _PYIR_TRACE_THREAD[0] = _threading_mod.get_ident()
     _pyir_fn_id_stack.append(fn_id)
     scope_id = next(_SCOPE_ID_COUNTER)
     _PYIR_SCOPE_STACK.append(_ScopeFrame(scope_id, "fn"))
+    # The regions open when this activation started (a parameter's binding
+    # position for the identity re-point classification).
+    _PYIR_SCOPE_REGION_BASE[scope_id] = _pyir_open_region_tokens()
     # F-SPEC: the first 'fn' scope after trace intake is the entry body; its
     # parameter locals adopt the staged argument roots.
     if _PYIR_SPEC_PENDING_PARAM_ROOTS:
@@ -964,7 +1621,16 @@ def pyir_exit_fn() -> None:
     if _pyir_fn_id_stack:
         _pyir_fn_id_stack.pop()
     if _PYIR_SCOPE_STACK:
-        _PYIR_SCOPE_STACK.pop()
+        _PYIR_SCOPE_CELLS.pop(_PYIR_SCOPE_STACK.pop().scope_id, None)
+    if not _pyir_fn_id_stack:
+        _PYIR_TRACE_THREAD[0] = None
+        for hook in _PYIR_TRACE_CLOSE_HOOKS:
+            hook()
+    pending = _PYIR_PENDING_USER_DIAGNOSTIC[0]
+    if pending is not None:
+        if not _pyir_fn_id_stack:
+            _PYIR_PENDING_USER_DIAGNOSTIC[0] = None  # the next trace starts clean
+        raise pending
 
 
 class _Skip:
@@ -1001,6 +1667,7 @@ _SUPERSEDED_LEAF_WRAPPERS: "dict[int, tuple]" = {}
 # strong ref for non-weakrefable objects so the id cannot be recycled.
 _GEN_OBJ_KEEPALIVE: "dict[int, Any]" = {}
 _PYIR_TRACE_KEEPALIVES.append(_GEN_OBJ_KEEPALIVE)
+_PYIR_TRACE_KEEPALIVES.append(_PYIR_SELECTION_KEEPALIVE)
 # Binding-place slot key -> rebind-generation counter, bumped at every
 # whole-object rebind of that place (m2m and Python-phase polarity alike).
 _BINDING_GEN: "dict[Any, int]" = {}
@@ -1020,9 +1687,27 @@ _COMPOUND_BINDING_SLOTS: "dict[int, Any]" = {}
 # with generation events and checks suppressed.
 _PYIR_GEN_EVENT_SUPPRESS: "list[int]" = [0]
 
-# Region-conditional attr first-defs: (id(owner), slot_name) -> {"arms", "site"};
+# Region-conditional attr first-defs: (id(owner), slot_name) -> {"paths", "site"};
 # a read whose arm path does not extend the first-def's raises. Cleared at exit.
 _PYIR_CF_ATTR_FIRST_DEFS: "dict[tuple, dict]" = {}
+# Presence probes answered ABSENT inside an open staged loop body (``hasattr``
+# False, a default-taken ``getattr``/``dict.get`` miss that was not seeded):
+# (id(owner), slot) -> {"arms", "site", "probe"}.  A first-def of the same
+# place while the probe's arm path is still open refuses: the answer is fixed
+# to the first iteration's while Python flips it.  Cleared at exit.
+_PYIR_CF_ABSENT_PROBES: "dict[tuple, dict]" = {}
+# Places a default-taken miss SEEDED as the loop's entry value (the leaf is a
+# carried accumulator born by its own first update): (id(owner), slot) ->
+# {"arms", "site"}.  A presence probe of a seeded place inside the region is
+# iteration-dependent and refuses.  Cleared at exit.
+_PYIR_CF_SEEDED_ATTRS: "dict[tuple, dict]" = {}
+# Whole-object branch-selects of a value-tree inside a loop-free ``scf.if``
+# chain, one record per binding: the entry prototype, the ids of every object
+# that has stood for the binding, the prototype's canonical leaves at the
+# anchor, the ``pyir.ref`` cell per carried leaf index, and the ``if`` chain
+# (innermost first) the record is rebuilt at.  Retired at its outermost
+# ``if``; cleared at exit.
+_PYIR_SELECT_JOINS: "list[dict]" = []
 
 
 # Static export surface (regenerate with scripts/gen_pyir_all.py): the
@@ -1036,6 +1721,7 @@ __all__ = [
     "TYPE_CHECKING",
     "Any",
     "Callable",
+    "Iterable",
     "_Literal",
     "_NamedTuple",
     "Optional",
@@ -1050,6 +1736,7 @@ __all__ = [
     "DSLUserCodeError",
     "is_auto_m2s_enabled",
     "is_pyir_enabled",
+    "is_pyir_verify_scans_enabled",
     "DiagId",
     "ir",
     "log",
@@ -1070,19 +1757,52 @@ __all__ = [
     "CF_ATTR_FIRST_DEF",
     "_PYIR_GATE_ONCE_INIT_SLOTS",
     "_PYIR_BOUNDARY_CALLEE_DEPTH",
+    "_PYIR_BOUNDARY_REENTRY_HOOKS",
+    "_PYIR_TRACE_THREAD",
+    "_PYIR_TRACE_CLOSE_HOOKS",
+    "_PYIR_SIGHT_HOOK",
+    "_PYIR_PENDING_USER_DIAGNOSTIC",
+    "_PYIR_BOUNDARY_BIRTH_BLOCK",
+    "_pyir_fatal_trace_error",
     "_slot_first_def_inside_cf",
     "_slot_first_def_block",
+    "_slot_region_birth_block",
+    "_slot_region_birth_path",
+    "_PYIR_FOLDED_IF_PATH",
     "_slot_first_def_block_any",
     "_slot_first_def_depth",
     "_slot_first_def_depth_any",
     "_slot_binding_depth",
+    "_slot_binding_block",
     "_pyir_open_loop_body_blocks",
+    "_pyir_open_loop_body_facts",
+    "_PYIR_SLOT_BIND_REGIONS",
+    "_PYIR_SLOT_BIND_BY_TOKEN",
+    "_pyir_record_slot_bind_regions",
+    "_PYIR_SLOT_REPOINTED",
+    "_PYIR_SCOPE_REGION_BASE",
+    "_PYIR_SELECTION_CANDIDATE_PRODUCTS",
+    "_PYIR_SELECTION_STALE_PRODUCTS",
+    "_PYIR_SELECTION_KEEPALIVE",
     "_pyir_bump_region_epoch",
     "_pyir_current_region_epoch",
     "_pyir_region_entry_push",
     "_pyir_region_entry_pop",
+    "_PYIR_REGION_ENTRY_HOLDER_SEQ",
+    "_PYIR_REGION_ENTRY_PINNED_HOLDERS",
+    "_PYIR_REGION_RECARRIED_IDS",
+    "_pyir_region_entry_pin_holders",
+    "_pyir_region_note_recarried",
+    "_pyir_holder_preexists_open_region",
+    "_pyir_region_recarried",
+    "_pyir_holder_preexists_region",
+    "_PYIR_STMT_COMPOUND_REBINDS",
+    "_pyir_stmt_rebind_note",
+    "_pyir_stmt_rebind_overwrote",
+    "_pyir_stmt_rebind_reset",
     "_pyir_region_entry_clock",
     "_pyir_region_entry_watermark",
+    "_pyir_open_region_tokens",
     "_SLOT_REGISTRY",
     "_OWNER_KEEPALIVE",
     "_PYIR_PROMOTED_PLACE_LEAVES",
@@ -1105,6 +1825,12 @@ __all__ = [
     "_WATCHED_CONTAINER_HELD_OBJECTS",
     "_WATCHED_CONTAINER_HELD_KEEPALIVE",
     "_PYIR_TRACE_KEEPALIVES",
+    "_PYIR_TRACE_BOOKKEEPING_HOOKS",
+    "_PYIR_WRITER_AT_HOOK",
+    "_PYIR_NATIVE_INVOKE_CODES",
+    "_PYIR_PREPROCESSED_CODES",
+    "_pyir_note_preprocessed_code",
+    "_pyir_code_is_preprocessed",
     "_SLOT_STORE_ATTR",
     "_PYIR_SLOT_HOLDERS",
     "_PYIR_CANDIDATE_HOLDERS",
@@ -1112,14 +1838,33 @@ __all__ = [
     "_PYIR_CANDIDATE_REGISTRY_ACTIVE",
     "_PYIR_WRITE_CLOCK",
     "_PYIR_HOLDER_WRITE_STAMPS",
+    "_PYIR_WRITE_LOG",
+    "_PYIR_REGISTRATION_LOG",
+    "_PYIR_HOLDER_SEQ",
+    "_PYIR_OPEN_META_LEAF_AUDITS",
+    "_PYIR_META_LEAF_STRONG_HOLDERS",
+    "_PyirPairIndex",
+    "_PYIR_PAIR_INDEX",
     "_PYIR_GATHER_SEGMENTS",
+    "_PyirGatherCache",
+    "_PYIR_GATHER_CACHE",
     "_pyir_note_holder_write",
     "_pyir_setattr_raw",
     "_pyir_delattr_raw",
+    "_pyir_note_holder_registered",
+    "_pyir_verify_scans",
+    "_pyir_check_write_log",
     "_pyir_declare_write_funnel",
+    "_pyir_slot_member_names",
+    "_pyir_write_funnel_decl_for",
     "_pyir_wrapper_write_funneled",
     "_pyir_getattr_reads_storage",
     "_pyir_plain_storage_setattr",
+    "_PYIR_WRITE_FUNNEL_INSTALL_FACTS",
+    "_pyir_funnel_setattr",
+    "_pyir_funnel_delattr",
+    "_pyir_write_funnel_installable",
+    "_pyir_install_write_funnel",
     "_PYIR_SELF_LEAF_ATTR",
     "_NUMERIC_LEAF_NONE",
     "_NUMERIC_LEAF_SSA",
@@ -1130,6 +1875,7 @@ __all__ = [
     "_PYIR_DICT_MUTATORS",
     "_PYIR_SET_MUTATORS",
     "_PYIR_DEQUE_MUTATORS",
+    "_PYIR_BYTEARRAY_MUTATORS",
     "_PYIR_LIST_INSERT_MUTATORS",
     "_PYIR_DICT_INSERT_MUTATORS",
     "_SCOPE_ID_COUNTER",
@@ -1138,10 +1884,17 @@ __all__ = [
     "_PYIR_SCOPE_STACK",
     "_PlaceSeg",
     "_place_seg_child",
+    "_IDENTITY_TABLE_ROWS",
     "IdentityKeyedWeakTable",
     "_OWNER_TOKENS",
     "_PYIR_REBUILD_PROTOCOL_DEPTH",
+    "_PYIR_STAGED_SELECTION_DEPTH",
+    "_PYIR_STAGED_SELECTIONS",
+    "_PYIR_STAGED_SELECTION_ARMS",
+    "_PYIR_SELECTION_WRITTEN_CANDIDATES",
+    "_PYIR_VALUE_PROTOCOL_DEPTH",
     "_PYIR_TOKEN_BORN_CLASS",
+    "_PYIR_BOUNDARY_BORN_TOKENS",
     "_PLACE_REGISTRY",
     "_PYIR_SUPERSEDED_PLACE_ROWS",
     "_OWNER_PLACE_PREFIX",
@@ -1149,6 +1902,7 @@ __all__ = [
     "_PYIR_SCOPE_CELL_TOKENS",
     "_PYIR_CELL_HOME_BINDING",
     "_PYIR_SCOPE_NONLOCAL_NAMES",
+    "_PYIR_SCOPE_CELLS",
     "_CE_BINDING_OWNER",
     "_EMISSION_SELF_CHECK_LOG",
     "_EMISSION_SELF_CHECK_LOG_CAP",
@@ -1163,6 +1917,7 @@ __all__ = [
     "_PYIR_SPEC_ENTRY_FUNC",
     "_PYIR_SPEC_ENTRY_SIG",
     "_PYIR_SPEC_ENTRY_RECEIVER",
+    "_PYIR_SPEC_DISPATCHED_FUNCS",
     "_SPEC_RECEIVER_DEAD",
     "_SpecTraceExitObject",
     "_SpecContainerSnapshot",
@@ -1187,4 +1942,7 @@ __all__ = [
     "_COMPOUND_BINDING_SLOTS",
     "_PYIR_GEN_EVENT_SUPPRESS",
     "_PYIR_CF_ATTR_FIRST_DEFS",
+    "_PYIR_CF_ABSENT_PROBES",
+    "_PYIR_CF_SEEDED_ATTRS",
+    "_PYIR_SELECT_JOINS",
 ]

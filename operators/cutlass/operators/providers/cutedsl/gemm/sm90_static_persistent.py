@@ -32,6 +32,7 @@ import itertools
 from typing import TYPE_CHECKING
 
 import cutlass
+from cutlass.cutlass_dsl import Int32
 
 import cutlass.operators.utils.generate as generate
 from cutlass.operators.arch import TargetSm
@@ -47,9 +48,6 @@ from cutlass.operators.metadata import (
 )
 from cutlass.operators.mma import HopperWgmma
 from cutlass.operators.providers.cutedsl import CuTeDSLProvider
-from cutlass.operators.providers.cutedsl.integration_utils.mma import (
-    get_max_active_clusters,
-)
 from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
 from cutlass.operators.utils.common import tuple_to_string
 from cutlass.operators.utils.device import to_cuda_stream
@@ -64,6 +62,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from cutlass.operators.artifact import CompiledArtifact
+    from cutlass.operators.device_properties import (
+        DeviceProperties,
+    )
 
 
 @CuTeDSLProvider.register
@@ -122,14 +123,13 @@ class Sm90StaticPersistentGemmOperator(CuteDslOperator):
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> CompiledArtifact:
         stream = cutlass.cute.runtime.make_fake_stream()
-        max_active_clusters = get_max_active_clusters(self.impl.cluster_shape_mn)
-
         return self.cute_compile(
             self.impl,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
-            max_active_clusters,
+            # Placeholder: querying real occupancy would need a GPU to compile.
+            Int32(0),
             stream,
             target_sm=target_sm,
         )
@@ -140,11 +140,18 @@ class Sm90StaticPersistentGemmOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        *,
+        device_properties: DeviceProperties,
     ) -> None:
         stream = to_cuda_stream(stream)
         compiled_gemm = compiled_artifact.compiled_obj
         self.cute_run(
-            compiled_gemm, args.A.tensor, args.B.tensor, args.out.tensor, stream
+            compiled_gemm,
+            args.A.tensor,
+            args.B.tensor,
+            args.out.tensor,
+            device_properties.max_active_clusters(self.impl.cluster_shape_mn),
+            stream,
         )
 
     @staticmethod
@@ -201,13 +208,13 @@ class Sm90StaticPersistentGemmOperator(CuteDslOperator):
             ]:
                 return False
         elif operands.out.dtype == cutlass.Int8 or operands.out.dtype == cutlass.Uint8:
-            if operands.accumulator_type not in [cutlass.Int32]:
+            if operands.accumulator_type != cutlass.Int32:
                 return False
         elif (
             operands.out.dtype == cutlass.Float8E4M3FN
             or operands.out.dtype == cutlass.Float8E5M2
         ):
-            if operands.accumulator_type not in [cutlass.Float32]:
+            if operands.accumulator_type != cutlass.Float32:
                 return False
         else:
             return False

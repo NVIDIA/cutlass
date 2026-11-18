@@ -10,10 +10,12 @@
 # is strictly prohibited.
 
 
-from typing import Optional, Union
+from typing import Optional, Type, Union, cast
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import core as _core_ir
+from cutlass.base_dsl.common import DSLRuntimeError
+from cutlass.base_dsl.typing import Numeric
 from cutlass.cute.core import _pack_coord
 from cutlass.cute.tensor import _Tensor
 from cutlass.cute.typing import Coord, Tensor as CuteTensor
@@ -45,7 +47,7 @@ def domain_offset(
     result = _core_ir.DomainOffsetOp(tensor.value, coord_value, loc=loc, ip=ip).result
     # core.Tensor
     if isinstance(tensor, Tensor):
-        return Tensor(result)
+        return Tensor(result, tensor.element_type)
     # Rewrap preserving the element type for the cute tensor case.
     return _Tensor(result, dtype=tensor.element_type, loc=loc, ip=ip)
 

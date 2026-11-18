@@ -35,8 +35,9 @@ from functools import cached_property
 from typing import Any
 
 from cutlass.operators.arguments.base import Operand
-from cutlass.operators.typing import TensorLike
+from cutlass.operators.typing import NumericLike, TensorLike
 from cutlass.operators.utils.common import ceil_div, round_up
+from cutlass.operators.utils.dtype import to_cutlass_type
 
 
 @dataclass
@@ -44,6 +45,10 @@ class DenseTensor(Operand):
     """An operand encapsulating a simple, single dense tensor."""
 
     tensor: TensorLike
+
+    @classmethod
+    def _tensor_like_field_names(cls) -> tuple[str, ...]:
+        return ("tensor",)
 
     def __copy__(self) -> DenseTensor:
         return DenseTensor(self.tensor)
@@ -55,6 +60,16 @@ class DenseTensor(Operand):
             raise AttributeError(
                 f"'{self.__class__.__name__}' object has no attribute '{attr}'"
             )
+
+    # Without these, passing a DenseTensor in place of an unwrapped tensor
+    # raised TypeError on Python 3.12+: the TensorLike check ignores __getattr__.
+    def __dlpack__(self, *, stream: Any = None) -> Any:
+        """Return a DLPack capsule for the wrapped tensor."""
+        return self.tensor.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self) -> tuple[int, int]:
+        """Return the DLPack device type and id of the wrapped tensor."""
+        return self.tensor.__dlpack_device__()
 
 
 @dataclass
@@ -115,12 +130,16 @@ class ScaledOperand(Operand):
     """Tensor of scale factors.
 
     Each entry of this tensor broadcasts over a block of :attr:`quantized` and scales it.
-    Its shape and layout are determined together by :attr:`mode` and :attr:`swizzle`.
+    :attr:`mode` defines that broadcast, while :attr:`swizzle` names the required
+    physical element order. Together they determine the required element count,
+    but they do not define one canonical host tensor shape.
 
-    This tensor must be contiguous and have exactly
-    :py:meth:`ScaledOperand.numel_scale` ``(quantized_shape, mode, swizzle)``
-    elements. It must already be arranged in the layout named by :attr:`swizzle`.
-    Its shape is otherwise unconstrained and not validated.
+    This tensor must be contiguous and already arranged in the layout named by
+    :attr:`swizzle`. :py:meth:`ScaledOperand.numel_scale` returns the required
+    element count for one logical quantized shape. A consuming Operator may
+    validate capacity and may require a carrier shape that communicates padded
+    extents. Neither check validates the physical element order; callers must
+    ensure that the values satisfy the swizzle contract.
     """
 
     mode: ScaleMode | tuple[int, ...]
@@ -157,9 +176,12 @@ class ScaledOperand(Operand):
         self.swizzle = swizzle
 
     def __copy__(self) -> ScaledOperand:
-        # quantized and scale must be recursively copied because they are Operands
+        # Tensor operands must be recursively copied because they are Operands.
         return ScaledOperand(
-            self.quantized.copy(), self.scale.copy(), self.mode, self.swizzle
+            self.quantized.copy(),
+            self.scale.copy(),
+            self.mode,
+            self.swizzle,
         )
 
     def __getattr__(self, attr: str) -> Any:
@@ -176,15 +198,12 @@ class ScaledOperand(Operand):
         mode: ScaleMode | tuple[int, ...],
         swizzle: ScaleSwizzleMode,
     ) -> int:
-        """Return the number of elements expected in :attr:`scale` for an operand of ``quantized_shape``.
+        """Return the canonical scale element count for ``quantized_shape``.
 
         ``quantized_shape`` is ``(L, outer, K)`` for a 3D operand, where ``outer``
         is ``M`` for an A-side scale and ``N`` for a B-side scale. One scale factor
         covers ``V`` elements along ``K``, so the scale tensor has logical shape
         ``(L, outer, ceil_div(K, V))``.
-
-        `scale.numel()` must equal the value returned by this method.
-        The shape of the scale tensor is otherwise unconstrained.
 
         Returned value depends on ``swizzle``:
 
@@ -195,6 +214,12 @@ class ScaledOperand(Operand):
 
         where ``V = ScaleMode.numel(mode)`` is the number of quantized-tensor
         elements covered by one scale factor.
+
+        This is the count corresponding to one logical ``quantized_shape``. When
+        grouped scale storage is assembled by padding and concatenating per-group
+        blocks, call ``numel_scale`` for each group's logical shape and sum the
+        results. This generally differs from calling ``numel_scale`` once with the
+        concatenated shape. See :attr:`IndexPtrGroupedGemmArguments.A` for details.
 
         Args:
             quantized_shape (tuple[int, ...]): Logical shape of the operand the
@@ -254,6 +279,32 @@ class ScaleMode(enum.Enum):
     Blockwise1x32 = (1, 1, 32)
     """Scale over ``(1, 1, 32)`` block. Used by OCP MXFP8 / MXFP4 (E8M0 scale dtype)."""
 
+    @classmethod
+    def from_string(cls, value: str) -> ScaleMode:
+        """Return the scale mode matching a profiler CLI spelling.
+
+        Accepted values (case-insensitive):
+            - ``"1x16"`` maps to :attr:`Blockwise1x16`.
+            - ``"1x32"`` maps to :attr:`Blockwise1x32`.
+
+        Args:
+            value (str): Scale-mode spelling to parse.
+
+        Returns:
+            ScaleMode: Matching scale mode.
+
+        Raises:
+            ValueError: If ``value`` does not name a supported scale mode.
+        """
+        normalized = value.casefold()
+        by_label = {str(mode).casefold(): mode for mode in cls}
+        try:
+            return by_label[normalized]
+        except KeyError as e:
+            raise ValueError(
+                f"Invalid scale mode: {value!r}. Supported: {', '.join(by_label)}"
+            ) from e
+
     @staticmethod
     def compare(
         mode1: ScaleMode | tuple[int, ...], mode2: ScaleMode | tuple[int, ...]
@@ -303,6 +354,22 @@ class ScaleMode(enum.Enum):
         return len(self.value)
 
     @staticmethod
+    def _format_block_shape(block: tuple[int, ...]) -> str:
+        """Return a compact ``AxBxC`` label, collapsing leading ``1`` s.
+
+        Matches member naming and :meth:`compare` padding, e.g.
+        ``(1, 1, 16)`` → ``"1x16"``.
+        """
+        dims = list(block)
+        while len(dims) > 2 and dims[0] == 1:
+            dims.pop(0)
+        return "x".join(str(d) for d in dims)
+
+    def __str__(self) -> str:
+        """Return the compact row-by-column block shape used by the profiler CLI."""
+        return self._format_block_shape(self.value)
+
+    @staticmethod
     def numel(scale: ScaleMode | tuple[int, ...]) -> int:
         """Return the number of quantized-tensor elements scaled by one scale factor.
 
@@ -333,10 +400,10 @@ class ScaleSwizzleMode(enum.Enum):
     ``ScaleSwizzleMode`` indicates that scale factors inside a :class:`ScaledOperand`
     are already stored in one of those specific layouts.
 
-    Operator API validates that the scale tensor is contiguous and has the
-    element count required by ``(mode, swizzle)``, but it does not inspect
-    or rearrange the values. The producer of the scale tensor (typically a
-    quantizer) is responsible for writing values in the named layout.
+    Each Operator validates the contiguity and capacity required by its
+    addressing scheme, but does not inspect or rearrange scale values. The
+    producer of the scale tensor, typically a quantizer, is responsible for
+    writing values in the named layout.
 
     See Also:
         - :class:`ScaledOperand`: the operand that consumes this enum.
@@ -367,6 +434,36 @@ class ScaleSwizzleMode(enum.Enum):
         - `NVIDIA cuBLAS: 1D Block Scaling Factors Layout <https://docs.nvidia.com/cuda/cublas/#d-block-scaling-factors-layout>`_
     """
 
+    def __str__(self) -> str:
+        """Return the compact swizzle-layout spelling used by the profiler CLI."""
+        return self.name.removeprefix("Swizzle").lower()
+
+    @classmethod
+    def from_string(cls, value: str) -> ScaleSwizzleMode:
+        """Return the scale swizzle matching a profiler CLI spelling.
+
+        Accepted values (case-insensitive):
+            - ``"none"`` maps to :attr:`SwizzleNone`.
+            - ``"32x4x4"`` maps to :attr:`Swizzle32x4x4`.
+
+        Args:
+            value (str): Scale-swizzle spelling to parse.
+
+        Returns:
+            ScaleSwizzleMode: Matching scale swizzle.
+
+        Raises:
+            ValueError: If ``value`` does not name a supported scale swizzle.
+        """
+        normalized = value.casefold()
+        by_label = {str(mode).casefold(): mode for mode in cls}
+        try:
+            return by_label[normalized]
+        except KeyError as e:
+            raise ValueError(
+                f"Unsupported scale swizzle: {value!r}. Supported: {', '.join(by_label)}"
+            ) from e
+
 
 def _operand_or_dense(
     operand: TensorLike | Operand,
@@ -383,16 +480,15 @@ def _operand_or_dense(
         Operand: The operand wrapped in a ``DenseTensor`` if it is a ``TensorLike``, otherwise the operand itself
 
     Raises:
-        ValueError: If the operand is not a ``Operand`` or ``TensorLike``
+        TypeError: If the operand is not a ``Operand`` or ``TensorLike``
     """
     if isinstance(operand, Operand):
         return operand
-    elif isinstance(operand, TensorLike):
+    if isinstance(operand, TensorLike):
         return DenseTensor(operand)
-    else:
-        raise ValueError(
-            f"Expected operand to be a Operand or TensorLike, got {type(operand)}"
-        )
+    raise TypeError(
+        f"Expected operand to be a Operand or TensorLike, got {type(operand)}"
+    )
 
 
 
@@ -406,5 +502,6 @@ def _dense_tensor(
             f"{name} must be a TensorLike or DenseTensor, got {type(tensor)}"
         )
     return operand
+
 
 

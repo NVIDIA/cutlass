@@ -1,4 +1,4 @@
-# Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Redistribution and use in source and binary forms, with or without
@@ -26,24 +26,37 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+"""Deprecated location of ``get_max_active_clusters``.
 
-from __future__ import annotations
+.. deprecated::
+    Use :meth:`cutlass.operators.DeviceProperties.max_active_clusters`.
+    ``get_max_active_clusters`` here is
+    :func:`cutlass.operators.device_properties.query_max_active_clusters` and
+    warns on access.
+"""
 
 from typing import TYPE_CHECKING
 
-import cutlass.utils as utils
+from cutlass.operators.utils.deprecation import deprecated_module_attributes
+
+__getattr__ = deprecated_module_attributes(
+    __name__,
+    {
+        "get_max_active_clusters": (
+            "cutlass.operators.device_properties.query_max_active_clusters"
+        ),
+    },
+)
 
 if TYPE_CHECKING:
-    from cutlass.operators.utils.layout import TupleRank2Or3
+    # Type-checker view of the moved name above (PEP 702), so pyrefly, mypy and
+    # pyright can flag its use.  Runtime access goes through ``__getattr__``.
+    from typing_extensions import deprecated
 
+    from cutlass.operators.device_properties import query_max_active_clusters
 
-def get_max_active_clusters(cluster_shape: TupleRank2Or3) -> int:
-    """:param cluster_shape: The shape of the cluster.
-    :type cluster_shape: tuple[int, int]
-
-    :returns: The maximum number clusters of the provided shape that can fit on the current GPU
-    :rtype: int
-    """
-    return utils.HardwareInfo().get_max_active_clusters(
-        cluster_shape[0] * cluster_shape[1]
-    )
+    get_max_active_clusters = deprecated(
+        "Use cutlass.operators.device_properties.query_max_active_clusters, or "
+        "cutlass.operators.DeviceProperties().max_active_clusters(cluster_shape), "
+        "instead."
+    )(query_max_active_clusters)

@@ -42,6 +42,7 @@ _CUDA_LAUNCH_PREFLIGHT_VIOLATIONS = (
 )
 
 
+# Keep these indices in sync with the compiler's launch config lowering interface.
 _CUDA_LAUNCH_CONFIG_GRID_DIM = 0
 _CUDA_LAUNCH_CONFIG_BLOCK_DIM = 1
 _CUDA_LAUNCH_CONFIG_DYNAMIC_SMEM_BYTES = 2
@@ -60,6 +61,8 @@ _CUDA_DEV_ATTR_MAX_GRID_DIM_Y = 6
 _CUDA_DEV_ATTR_MAX_GRID_DIM_Z = 7
 _CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK = 8
 _CUDA_DEV_ATTR_MAX_SHARED_MEM_PER_BLOCK_OPTIN = 97
+# Added in CUDA 13.4; older drivers may reject this optional query.
+_CUDA_DEV_ATTR_MAX_OVERSIZED_SHARED_MEM_PER_BLOCK = 150
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,7 @@ class _CudaDeviceLaunchLimits:
     max_grid: tuple[ir.Value, ir.Value, ir.Value]
     max_shared_mem_per_block: ir.Value
     max_shared_mem_per_block_optin: ir.Value
+    max_shared_mem_per_block_oversized: ir.Value
 
 
 @dataclass
@@ -690,6 +694,28 @@ class TVMFFIBuilder(MLIRBuilder):
         for status in attr_statuses:
             query_failed = self.or_(query_failed, self.not_equal(status, self.i32(0)))
 
+        # Oversized support is optional on older drivers. A failed query must
+        # not disable the other launch checks or reject a normal-sized launch.
+        oversized_alloca = alloca_i32()
+        llvm.store(value=self.i32(0), addr=oversized_alloca)
+        oversized_status = llvm.call(
+            result=self.i32_type,
+            callee="_cudaDeviceGetAttribute",
+            callee_operands=[
+                oversized_alloca,
+                self.i32(_CUDA_DEV_ATTR_MAX_OVERSIZED_SHARED_MEM_PER_BLOCK),
+                device,
+            ],
+            op_bundle_sizes=[],
+            op_bundle_operands=[],
+        )
+        oversized_value = llvm.load(self.i32_type, oversized_alloca)
+        oversized_limit = llvm.select(
+            llvm.icmp(llvm.ICmpPredicate.eq, oversized_status, self.i32(0)),
+            oversized_value,
+            self.i32(0),
+        )
+
         return _CudaDeviceLaunchLimits(
             query_failed=query_failed,
             device=device,
@@ -708,6 +734,7 @@ class TVMFFIBuilder(MLIRBuilder):
             max_shared_mem_per_block_optin=llvm.load(
                 self.i32_type, max_smem_optin_alloca
             ),
+            max_shared_mem_per_block_oversized=oversized_limit,
         )
 
     def _cuda_launch_error_runtime_param_types(self) -> list[ir.Type]:
@@ -855,8 +882,16 @@ class TVMFFIBuilder(MLIRBuilder):
                 grid_x_exceeds = positive_and_gt(grid_x, limits.max_grid[0])
                 grid_y_exceeds = positive_and_gt(grid_y, limits.max_grid[1])
                 grid_z_exceeds = positive_and_gt(grid_z, limits.max_grid[2])
+                max_smem = llvm.select(
+                    gt(
+                        limits.max_shared_mem_per_block_oversized,
+                        limits.max_shared_mem_per_block_optin,
+                    ),
+                    limits.max_shared_mem_per_block_oversized,
+                    limits.max_shared_mem_per_block_optin,
+                )
                 dynamic_smem_exceeds = positive_i64_and_gt_i32_limit(
-                    dynamic_smem, limits.max_shared_mem_per_block_optin
+                    dynamic_smem, max_smem
                 )
 
             error_block = checks_block.create_after()
@@ -2247,6 +2282,44 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             allow_int_as_ptr=True,
         )
 
+    def decode_param_cuda_event(
+        self,
+        current_block: ir.Block,
+        param: spec.CudaEvent,
+        args: ir.Value,
+        arg_index: int,
+        arg_context: ArgContext,
+    ) -> ir.Block:
+        """Decode the CUDA event parameter at the given index."""
+        # event is decoded as opaque handle
+        return self.decode_param_opaque_handle(
+            current_block,
+            param.var,
+            args,
+            arg_index,
+            arg_context,
+            allow_int_as_ptr=True,
+        )
+
+    def decode_param_cuda_graph_generic_handle(
+        self,
+        current_block: ir.Block,
+        param: spec.CudaGraph | spec.CudaGraphNode,
+        args: ir.Value,
+        arg_index: int,
+        arg_context: ArgContext,
+    ) -> ir.Block:
+        """Decode the CUDA graph / graph node parameter at the given index."""
+        # graph and graph node are decoded as opaque handles
+        return self.decode_param_opaque_handle(
+            current_block,
+            param.var,
+            args,
+            arg_index,
+            arg_context,
+            allow_int_as_ptr=True,
+        )
+
     def decode_param_data_pointer(
         self,
         current_block: ir.Block,
@@ -2428,6 +2501,14 @@ class TVMFFIFunctionBuilder(TVMFFIBuilder):
             )
         elif isinstance(param, spec.Stream):
             return self.decode_param_stream(
+                current_block, param, args, arg_index, arg_context
+            )
+        elif isinstance(param, spec.CudaEvent):
+            return self.decode_param_cuda_event(
+                current_block, param, args, arg_index, arg_context
+            )
+        elif isinstance(param, (spec.CudaGraph, spec.CudaGraphNode)):
+            return self.decode_param_cuda_graph_generic_handle(
                 current_block, param, args, arg_index, arg_context
             )
         elif isinstance(param, spec.EnvStream):

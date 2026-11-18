@@ -149,6 +149,12 @@ protected:
     return Status::kSuccess;
   }
 
+  // SM107 TMA-override kernels have no tile scheduler arguments.
+  template <class Args, class = void> struct HasSchedulerArgs : cute::false_type {};
+
+  template <class Args>
+  struct HasSchedulerArgs<Args, cute::void_t<decltype(Args{}.scheduler)>> : cute::true_type {};
+
   /// Constructs the arguments structure given the configuration and arguments
   Status update_arguments_base(
     OperatorArguments& operator_args,
@@ -235,21 +241,23 @@ protected:
     if constexpr (Operator::ArchTag::kMinComputeCapability >= 90) {
       operator_args.hw_info.max_active_clusters = arguments.max_active_clusters;
     }
-    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
-      operator_args.scheduler.max_swizzle_size = arguments.swizzle_size;
-    }
+    if constexpr (HasSchedulerArgs<OperatorArguments>::value) {
+      if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
+        operator_args.scheduler.max_swizzle_size = arguments.swizzle_size;
+      }
 
-    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
-      using Enum_t = decltype(operator_args.scheduler.raster_order);
-      switch (arguments.raster_order) {
-        case RasterOrder::kAlongN:
-          operator_args.scheduler.raster_order = Enum_t::AlongN;
-          break;
-        case RasterOrder::kAlongM:
-          operator_args.scheduler.raster_order = Enum_t::AlongM;
-          break;
-        default:
-          operator_args.scheduler.raster_order = Enum_t::Heuristic;
+      if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
+        using Enum_t = decltype(operator_args.scheduler.raster_order);
+        switch (arguments.raster_order) {
+          case RasterOrder::kAlongN:
+            operator_args.scheduler.raster_order = Enum_t::AlongN;
+            break;
+          case RasterOrder::kAlongM:
+            operator_args.scheduler.raster_order = Enum_t::AlongM;
+            break;
+          default:
+            operator_args.scheduler.raster_order = Enum_t::Heuristic;
+        }
       }
     }
 

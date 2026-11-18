@@ -43,6 +43,8 @@ from cutlass.operators.metadata import (
     IndexPtrGroupedGemmOperandsMetadata,
     OperandConstraints,
     OperandsMetadata,
+    PerGroupScaleEpilogueMetadata,
+    ScaledOperandConstraints,
 )
 from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
 from cutlass.operators.status import Status
@@ -109,6 +111,7 @@ class NoopOperatorForTesting(CuteDslOperator):
         compiled_artifact,
         stream,
         workspace=None,
+        device_properties=None,
     ):
         self.cute_run(
             compiled_artifact.compiled_obj,
@@ -216,8 +219,33 @@ def _dense_constraints(dtype, stride=None):
     )
 
 
+
+class TestScaledOperandConstraints:
+    def _operand(self):
+        operand = ops.ScaledOperand(
+            quantized=torch.empty((8, 32), dtype=torch.float16),
+            scale=torch.empty((8, 1), dtype=torch.float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        operand._convert_to_internal_types()
+        return operand
+
+    def _constraints(self):
+        return ScaledOperandConstraints(
+            quantized=_dense_constraints(cutlass.Float16),
+            scale=_dense_constraints(cutlass.Float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+
+    def test_supports_matching_scaled_operand(self, fixture_enable_tvm_ffi):
+        assert self._constraints().supports(self._operand())
+
+
+
 class TestIndexPtrGroupedGemmOperandsMetadata:
-    def _metadata(self):
+    def _metadata(self, **kwargs):
         # Operator that partitions along M; A and B are plain dense fp16 matrices.
         return IndexPtrGroupedGemmOperandsMetadata(
             A=_dense_constraints(cutlass.Float16),
@@ -226,9 +254,10 @@ class TestIndexPtrGroupedGemmOperandsMetadata:
             offsets=_dense_constraints(cutlass.Int32, stride=(1,)),
             offsets_along="m",
             accumulator_type=cutlass.Float32,
+            **kwargs,
         )
 
-    def _args(self, offsets_along):
+    def _args(self, offsets_along, **kwargs):
         # The packed (varying) axis operand is 2D; the per-group operand is 3D
         # group-first (group_count=2 from offsets). Shapes are axis-specific.
         A_shape, B_shape, out_shape = {
@@ -243,6 +272,7 @@ class TestIndexPtrGroupedGemmOperandsMetadata:
             accumulator_type=torch.float32,
             offsets=torch.tensor([4, 8], dtype=torch.int32),
             offsets_along=offsets_along,
+            **kwargs,
         )
 
     def test_supports_matching_axis(self, fixture_enable_tvm_ffi):
@@ -254,6 +284,104 @@ class TestIndexPtrGroupedGemmOperandsMetadata:
         status = self._metadata().supports(self._args("n"))
         assert not status
         assert "offsets_along" in str(status.error)
+
+    def test_accepts_stronger_offsets_value_divisibility(self, fixture_enable_tvm_ffi):
+        metadata = self._metadata(offsets_value_divisibility=8)
+        assert metadata.supports(self._args("m", offsets_value_divisibility=16))
+
+    def test_rejects_weaker_offsets_value_divisibility(self, fixture_enable_tvm_ffi):
+        metadata = self._metadata(offsets_value_divisibility=8)
+        status = metadata.supports(self._args("m", offsets_value_divisibility=4))
+        assert not status
+        assert "offsets-value divisibility" in str(status.error)
+
+    def test_rejects_mismatched_accumulation(self, fixture_enable_tvm_ffi):
+        metadata = IndexPtrGroupedGemmOperandsMetadata(
+            A=_dense_constraints(cutlass.Float16),
+            B=_dense_constraints(cutlass.Float16),
+            out=_dense_constraints(cutlass.Float16),
+            offsets=_dense_constraints(cutlass.Int32, stride=(1,)),
+            offsets_along="k",
+            accumulator_type=cutlass.Float32,
+            accumulate_on_output=True,
+        )
+        status = metadata.supports(self._args("k"))
+        assert not status
+        assert "accumulate_on_output" in str(status.error)
+
+    @pytest.mark.parametrize("required_scales", ["a", "b", "ab"])
+    @pytest.mark.parametrize("provided_scales", ["a", "b", "ab"])
+    def test_supports_per_group_scale_epilogue(
+        self, required_scales, provided_scales, fixture_enable_tvm_ffi
+    ):
+        metadata = PerGroupScaleEpilogueMetadata(
+            global_scale_a=(
+                _dense_constraints(cutlass.Float32, stride=(1,))
+                if "a" in required_scales
+                else None
+            ),
+            global_scale_b=(
+                _dense_constraints(cutlass.Float32, stride=(1,))
+                if "b" in required_scales
+                else None
+            ),
+        )
+        args = self._args(
+            "m",
+            epilogue=ops.PerGroupScaleEpilogueArguments(
+                global_scale_a=(
+                    torch.ones(2, dtype=torch.float32)
+                    if "a" in provided_scales
+                    else None
+                ),
+                global_scale_b=(
+                    torch.ones(2, dtype=torch.float32)
+                    if "b" in provided_scales
+                    else None
+                ),
+            ),
+        )
+        status = metadata.supports(args)
+        assert bool(status) == (required_scales == provided_scales)
+        if not status:
+            mismatched_scale = next(
+                name
+                for name in "ab"
+                if (name in required_scales) != (name in provided_scales)
+            )
+            assert f"global_scale_{mismatched_scale}" in str(status.error)
+
+    @pytest.mark.parametrize("scale_name", ["global_scale_a", "global_scale_b"])
+    def test_rejects_per_group_scale_epilogue_dtype(
+        self, scale_name, fixture_enable_tvm_ffi
+    ):
+        metadata = PerGroupScaleEpilogueMetadata(
+            global_scale_a=_dense_constraints(cutlass.Float32, stride=(1,)),
+            global_scale_b=_dense_constraints(cutlass.Float32, stride=(1,)),
+        )
+        scales = {
+            "global_scale_a": torch.ones(2, dtype=torch.float32),
+            "global_scale_b": torch.ones(2, dtype=torch.float32),
+        }
+        scales[scale_name] = scales[scale_name].to(torch.float16)
+        args = self._args(
+            "m",
+            epilogue=ops.PerGroupScaleEpilogueArguments(**scales),
+        )
+        status = metadata.supports(args)
+        assert not status
+        assert scale_name in str(status.error)
+
+    def test_per_group_scale_epilogue_metadata_has_value_equality(self):
+        first = PerGroupScaleEpilogueMetadata(
+            global_scale_a=_dense_constraints(cutlass.Float32, stride=(1,)),
+            global_scale_b=_dense_constraints(cutlass.Float32, stride=(1,)),
+        )
+        second = PerGroupScaleEpilogueMetadata(
+            global_scale_a=_dense_constraints(cutlass.Float32, stride=(1,)),
+            global_scale_b=_dense_constraints(cutlass.Float32, stride=(1,)),
+        )
+        assert first == second
 
     def test_legacy_metadata_and_arguments_delegate_to_m_axis(
         self, fixture_enable_tvm_ffi

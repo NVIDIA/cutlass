@@ -40,13 +40,14 @@ import cuda.bindings.driver as cuda
 import cutlass
 import cutlass.cute as cute
 from cutlass.cute.nvgpu import tcgen05, OperandMajorMode
-import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 import cutlass.torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
-import cutlass.cute.testing as testing
+from cutlass import testing
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cute.typing import *
+
+
 
 # Kernel invariants
 mma_modes = (0, 1, 2)
@@ -268,7 +269,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
             mma_tile_m * mma_tile_n * self.sp_stages * mma_dtype.width
         )  # P
 
-        smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
         kv_smem_dtype = cutlass.Int8 if k_iter.dtype.width < 8 else k_iter.dtype
         self.kv_stages = (smem_capacity * 8 - smem_alloc_bits) // (
             mma_tile_m * mma_tile_k * kv_smem_dtype.width
@@ -581,7 +582,7 @@ class MixedInputFusedMultiHeadAttentionDecode:
         # Smem alloc helper
         svector_align = 16
         stensor_align = 128
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
 
         ##############################
         # Prefetch TMA descriptor
@@ -1633,6 +1634,7 @@ def run(
     iterations: int = 0,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
+    benchmark: str = "default",
     **kwargs,
 ):
     print("Running Blackwell SM100 Mixed Input FMHA Decode test with:")
@@ -1652,6 +1654,7 @@ def run(
     print(f"\titerations: {iterations}")
     print(f"\tskip_ref_check: {skip_ref_check}")
     print(f"\tuse_cold_l2: {use_cold_l2}")
+    print(f"\tbenchmark: {benchmark}")
 
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")
@@ -1895,10 +1898,14 @@ def run(
                 l_partial_cute,
             ]
         )
+        return args
 
     #
     # Profile
     #
+    if benchmark == "none":
+        return 0
+
     workspace_count = 1
     if use_cold_l2:
         q_torch_effective = q_torch.values() if q_torch.is_nested else q_torch
@@ -1951,6 +1958,7 @@ def run(
             stream=current_stream,
             warmup_iterations=warmup_iterations,
             iterations=iterations,
+            use_cupti=benchmark == "cupti",
         )
         print(exec_time)
 
@@ -2088,6 +2096,13 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
+    )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["cupti", "default", "none"],
+        help="Benchmark the kernel with cupti or default (cutlass.testing.benchmark) or none",
     )
 
     kwargs = vars(parser.parse_args())

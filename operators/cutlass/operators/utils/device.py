@@ -89,11 +89,11 @@ def check_cuda_errors(result: list) -> Any:
         return result[1:]
 
 
-def device_cc(device: int = 0) -> int:
-    """Query the device with ID ``device`` and return its compute capability.
+def device_cc(device_id: int = 0) -> int:
+    """Query the device with ID ``device_id`` and return its compute capability.
 
     Args:
-        device (int): ID of the device to query.
+        device_id (int): ID of the device to query.
 
     Returns:
         int: Compute capability of the queried device (e.g., ``80`` for SM80).
@@ -101,7 +101,7 @@ def device_cc(device: int = 0) -> int:
     _lazy_import("cuda.cuda")
     cuda_bindings_runtime = _lazy_import("cuda.bindings.runtime")
     deviceProp = check_cuda_errors(
-        cuda_bindings_runtime.cudaGetDeviceProperties(device)
+        cuda_bindings_runtime.cudaGetDeviceProperties(device_id)
     )
     major = str(deviceProp.major)
     minor = str(deviceProp.minor)
@@ -109,14 +109,14 @@ def device_cc(device: int = 0) -> int:
 
 
 def device_or_env_target_sm(
-    device: int = 0, env_var: str = "CUTE_DSL_ARCH"
+    device_id: int = 0, env_var: str = "CUTE_DSL_ARCH"
 ) -> TargetSm:
-    """Return the target SM from environment variable ``env_var`` or device ``device``.
+    """Return the target SM from environment variable ``env_var`` or device ``device_id``.
 
     The environment variable takes precedence over device detection.
 
     Args:
-        device (int): CUDA device ID to query when the environment variable is not set.
+        device_id (int): CUDA device ID to query when the environment variable is not set.
         env_var (str): Name of the environment variable that overrides device detection.
             Expected format is ``"sm_<cc>"`` (e.g. ``"sm_100a"``).
 
@@ -132,8 +132,14 @@ def device_or_env_target_sm(
             return TargetSm(cute_dsl_arch.removeprefix("sm_"))
         except ValueError as e:
             raise ValueError(f"Invalid CUTE_DSL_ARCH: {cute_dsl_arch}. {e}") from e
-    cc = device_cc(device)
+    cc = device_cc(device_id)
     return TargetSm(cc=cc)
+
+
+def reference_device() -> str:
+    """Return the device reference computation and comparison should run on."""
+    return "cuda"
+
 
 
 def device_or_env_supports(
@@ -166,20 +172,20 @@ def device_or_env_supports(
         return Status.fail(f"Failed to get device or CUTE_DSL_ARCH: {e}")
 
 
-def device_l2_cache_size(device: int | None = None) -> int:
+def device_l2_cache_size(device_id: int | None = None) -> int:
     """Return L2 cache size in bytes for the requested device.
 
     Args:
-        device (int | None): CUDA device ID to query. If ``None``, uses the current device.
+        device_id (int | None): CUDA device ID to query. If ``None``, uses the current device.
 
     Returns:
         int: L2 cache size in bytes.
     """
     cuda_bindings_runtime = _lazy_import("cuda.bindings.runtime")
-    if device is None:
-        device = check_cuda_errors(cuda_bindings_runtime.cudaGetDevice())
+    if device_id is None:
+        device_id = check_cuda_errors(cuda_bindings_runtime.cudaGetDevice())
     device_prop = check_cuda_errors(
-        cuda_bindings_runtime.cudaGetDeviceProperties(device)
+        cuda_bindings_runtime.cudaGetDeviceProperties(device_id)
     )
     return device_prop.l2CacheSize
 

@@ -24,7 +24,7 @@ from typing import (
 )
 from typing_extensions import TypeIs
 
-from cutlass.cutlass_dsl import T
+from cutlass.cutlass_dsl import T, cutlass_arith
 from cutlass.base_dsl import typing as _base_typing
 from cutlass.base_dsl.typing import (
     Numeric,
@@ -78,6 +78,27 @@ else:
 
 
 Int = Union[int, Integer]
+
+Location = ir.Location
+"""Public spelling of the source-location type accepted by every IR-building API.
+
+Every CuTe DSL API that emits IR accepts two keyword-only parameters,
+``loc: Optional[Location] = None`` and ``ip: Optional[InsertionPoint] = None``,
+and never takes them positionally. ``loc`` is the source location attached to
+every operation the call emits; when omitted, :func:`cutlass.dsl_user_op`
+derives it from the caller's frame if line info or diagnostics are enabled,
+and otherwise the location is unknown. Annotate forwarding wrappers with this
+name instead of importing the MLIR binding type directly.
+"""
+
+InsertionPoint = ir.InsertionPoint
+"""Public spelling of the insertion-point type accepted by every IR-building API.
+
+``ip`` is the insertion point for every operation the call emits, including
+the operations of any nested DSL call it makes; when omitted, operations are
+inserted at the current insertion point. See :data:`Location` for the shared
+``loc``/``ip`` keyword-only protocol.
+"""
 
 
 def _as_address_space(memspace: AddressSpace | int) -> AddressSpace:
@@ -525,6 +546,7 @@ class ComposedLayout(ABC):
     def __call__(
         self,
         coord: Coord,
+        *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> IntTuple: ...
@@ -967,8 +989,89 @@ def is_int_tuple_type(t: object) -> TypeIs[Type[IntTuple]]:
     return t is IntTuple
 
 
+class SymBool:
+    r"""A symbolic boolean for runtime-bound predicates of an AOT-compiled
+    ``@cute.jit`` function.
+
+    A ``SymBool`` stands in for a Python ``bool`` at compile-tracing time —
+    its concrete value is bound only at kernel launch.
+
+    The preferred way to construct a ``SymBool`` is via the :func:`sym_bool`
+    convenience constructor:
+
+    .. code-block:: python
+
+        # In compile():
+        sym_p = cute.sym_bool()
+
+        # In the @cute.jit signature, declare the matching arg type:
+        @cute.jit
+        def _host(..., launch_with_pdl: Boolean):
+            ...
+
+    :param symbol: Human-readable name for the variable, e.g. ``"P"``.
+        Appears in IR dumps and compile-time error messages.
+
+    .. seealso::
+
+        :func:`sym_bool` — convenience constructor.
+
+    """
+
+    def __init__(
+        self,
+        *,
+        symbol: str | None = None,
+    ) -> None:
+        self._symbol = symbol
+
+    def __hash__(self) -> int:
+        return hash(self._symbol)
+
+    @property
+    def symbol(self) -> str | None:
+        return self._symbol
+
+    def __str__(self) -> str:
+        symbol = "" if self._symbol is None else self._symbol
+        return f"SymBool({symbol})"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SymBool):
+            return False
+
+        return self._symbol == other._symbol
+
+    def __c_pointers__(self) -> List[int | None]:
+        return [ctypes.c_void_p(0).value]
+
+    def __get_mlir_types__(self) -> List[ir.Type]:
+        return [T.bool()]
+
+    def __new_from_mlir_values__(self, values: List[ir.Value]) -> "SymBool":
+        return Boolean(cutlass_arith.ArithValue(values[0]))  # type: ignore[return-value]
+
+
+def sym_bool(*, symbol: str | None = None) -> SymBool:
+    r"""Construct a :class:`SymBool`.
+
+    :param symbol: Optional human-readable name for IR dumps.
+    :returns: A :class:`SymBool` instance.
+
+    .. seealso::
+
+        :class:`SymBool`.
+    """
+    return SymBool(symbol=symbol)
+
+
 __all__ = [
+    "SymBool",
     "SymInt",
+    "sym_bool",
     "sym_int",
     "sym_int32",
     "sym_int64",
@@ -1017,6 +1120,8 @@ __all__ = [
     "Tile",
     "Tiler",
     "XTuple",
+    "Location",
+    "InsertionPoint",
     "as_numeric",
     "is_integer",
     "is_int_tuple",

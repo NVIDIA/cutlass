@@ -44,7 +44,12 @@ Complete Check List
 - **Exhaustive interleaving** - A separate checker simulates every legal
   ordering of the tasks' steps to catch problems no single task's schedule
   reveals, including deadlocks, physical SMEM/TMEM aliasing races, and PDL
-  launches that can run before a PDL wait.
+  launches that can run before a PDL wait.  Opaque ``when_true`` /
+  ``when_false`` guards are grouped into observationally equivalent
+  control-flow classes.  A
+  ``while_true_loop`` is expanded as ``retry^(N-1) + break`` sequences for
+  each modeled ``N`` in ``verify_num_iters`` (see `While-Loop Iteration
+  Modeling`_).
 - **Pipeline thread counts and bytes** - The developer still specifies the
   barrier arrival counts (cooperative-group sizes) and TMA transaction bytes on
   each pipeline; TS recomputes the expected values from the pipeline type, task
@@ -557,6 +562,66 @@ can run **concurrently** in any of them -- the ordering chain does not serialize
 those particular windows -- it still flags the race.  Safety requires that no
 valid interleaving lets the aliased stages overlap, not merely that a dependency
 path exists.
+
+While-Loop Iteration Modeling
+-----------------------------
+
+A ``while_true_loop`` has no compile-time trip count, so the verifier does not
+unroll it like a ``domain_loop``.  Instead it classifies every boolean
+assignment of the schedule's opaque correlation keys:
+
+- A **break assignment** satisfies at least one captured ``break_loop()``
+  clause (the dominating ``when_true`` / ``when_false`` guards of that call).
+- A **retry assignment** satisfies none of them.
+
+For each modeled count ``N`` in ``verify_num_iters``, the checker explores
+sequences of the form ``retry^(N-1) + break``.  ``N = 1`` is break-only.
+``verify_num_iters=(1, 2)`` (the default) runs both families.  Other opaque
+keys stay inside those assignments, so they are fully enumerated in each
+class.
+
+Partner tasks without a while loop observe the last (break) assignment of the
+first while-loop task, so they see exit-iteration effects during the joint
+interleaving.
+
+Tightened checks:
+
+- An empty break-assignment set is a hard error (for example a break nested
+  under contradictory guards).  The loop is not silently skipped.
+- Every retry iteration must contain a blocking or state-changing pipeline op
+  (``try_acquire`` / ``acquire`` / ``commit`` / producer work, or ``try_wait``
+  / ``wait`` / ``release`` / consumer work).  Auxiliary work such as a
+  ``should_exit`` probe does not count as progress.
+- The last modeled iteration must actually reach a ``LoopBreak``; retry
+  iterations must not.
+- After the last (break) iteration, pipeline credits must match loop entry so
+  the tail drains what the loop left.
+
+Init and advance hooks are **not** emitted into the expanded schedule.  They
+seed the runtime cursor but do not participate in credit accounting.
+
+When a while-loop consumer is paired with a ``domain_loop`` producer, choose
+``verify_num_iters`` so the number of modeled retry iterations matches the
+producer's representative trip count.  A typical TMA load with an unfoldable
+``num_rows`` bound expands to one iteration, so the matching store loop uses
+``verify_num_iters=2`` (one retry consume, then break).
+
+Boolean Guard Equivalence
+-------------------------
+
+The checker validates every distinct control-flow outcome of opaque runtime
+conditions, rather than blindly validating all ``2**K`` assignments to ``K``
+leaf values. Two assignments are equivalent when every guard expression in
+every task has the same value at the same domain-loop iterations. The checker
+keeps one representative of each such class.
+
+For example, a schedule that observes only ``a & b`` has two classes:
+both-true and not-both-true. A schedule that also observes ``a`` independently
+keeps additional classes because those assignments can now execute different
+blocks. Iteration predicates such as ``FIRST_ITER`` are evaluated at their
+actual loop iterations while classes are formed; they are not opaque keys.
+Warnings use the collapsed class count, not the raw number of leaf
+assignments.
 
 Verification Gaps
 -----------------
