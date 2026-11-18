@@ -58,6 +58,11 @@ This GEMM works as follows:
 2. Perform matrix multiply-accumulate (MMA) operations using WGMMA instruction.
 3. Store results from registers (RMEM) to shared memory (SMEM), then to global memory (GMEM) with TMA operations.
 
+Exact short-K accumulation checks for this kernel are in
+``test/examples/CuTeDSL/hopper/test_dense_gemm_accumulation.py``. They cover
+one, two, and three K tiles, including a zero final tile that must preserve
+the contribution from the preceding tile.
+
 Hopper WGMMA instructions operate as follows:
 - Read matrix A from SMEM
 - Read matrix B from SMEM
