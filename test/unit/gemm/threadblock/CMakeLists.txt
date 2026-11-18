@@ -40,6 +40,7 @@ cutlass_test_unit_add_executable(
   mma_pipelined_sm70.cu
   mma_pipelined_sm75.cu
   mma_pipelined_simt.cu
+  simt_transpose_padding_sm80.cu
   mma_planar_complex_sm80.cu
 
 )

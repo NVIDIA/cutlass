@@ -16,22 +16,24 @@ These helpers register pipeline barriers in the shared symbol registry
 for downstream profiling tools. They are deliberately kept in their own
 module — the pipeline helper file holds MLIR-emitting primitives, not
 profiling bookkeeping.
+
+The registry is imported inside each helper rather than at module scope:
+importing ``cutlass.utils.profiling`` runs the whole ``cutlass.utils``
+package, whose GEMM helpers import ``cutlass.pipeline`` back. Keeping that
+edge out of import time lets ``import cutlass.pipeline`` and
+``import cutlass.utils`` each succeed first, in either order.
 """
 
 import json
 import os
 from typing import Optional
 
-from cutlass.utils.profiling import (
-    dump_kernel_symbols,
-    register_symbol,
-    reset_symbol_registry,
-)
-
 
 def register_barrier(name: str, num_stages: int, pipeline_type: str) -> None:
     """Register a named barrier in the global symbol registry."""
     if name:
+        from cutlass.utils.profiling import register_symbol
+
         register_symbol(
             name, kind="barrier", num_stages=num_stages, pipeline_type=pipeline_type
         )
@@ -39,11 +41,15 @@ def register_barrier(name: str, num_stages: int, pipeline_type: str) -> None:
 
 def dump_barrier_registry() -> dict:
     """Return barrier data from the symbol registry (backward compat)."""
+    from cutlass.utils.profiling import dump_kernel_symbols
+
     return dump_kernel_symbols()
 
 
 def reset_barrier_registry() -> None:
     """Clear the symbol registry."""
+    from cutlass.utils.profiling import reset_symbol_registry
+
     reset_symbol_registry()
 
 
@@ -59,6 +65,8 @@ def dump_profiling_metadata(dump_dir: str, extra: Optional[dict] = None) -> None
     :type extra: dict, optional
     :raises RuntimeError: If the output file cannot be written.
     """
+    from cutlass.utils.profiling import dump_kernel_symbols
+
     data = dump_kernel_symbols()
     if not data.get("bar_alloc") and not data.get("warps"):
         return

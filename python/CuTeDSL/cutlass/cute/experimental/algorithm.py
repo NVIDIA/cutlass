@@ -17,6 +17,7 @@ from cutlass.cutlass_dsl import dsl_user_op
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir
 from cutlass._mlir.dialects.core import OperationTypeEnum
+from cutlass._mlir.dialects.core import ReductionKind as CoreReductionKind
 
 from .memory import copy
 
@@ -46,21 +47,37 @@ def partition(
     agent_id: cute.Int32,
     *,
     layout_tv: cute.Layout,
-    tiler: cute.Layout,
+    tiler: Optional[cute.Tiler] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> cute.Tensor:
     """
-    Partition a buffer into a given layout and tiler.
+    Partition a buffer with a thread-value layout and an optional tiler.
+
+    ``tiler`` accepts the same public tiling forms as other CuTe operations,
+    including tuples such as ``(128, 64)``. When omitted, ``layout_tv`` fully
+    describes the partition.
+
+    :raises AssertionError: If ``agent_id`` is not a ``cute.Int32`` value.
+    :raises ValueError: If a non-``None`` public ``tiler`` form contains leaves
+        other than integers, layouts, or ``None``.
     """
     assert isinstance(agent_id, cute.Int32), (
         f"Expected agent_id to be cute.Int32, got {type(agent_id)}"
     )
+    tiler_attr = None
+    if tiler is not None:
+        if isinstance(tiler, ir.Value):
+            # Preserve compatibility with callers that pre-packed the tiler.
+            tiler_attr = tiler.type.attribute
+        else:
+            tiler_attr = cute.core._pack_tile(tiler, loc=loc, ip=ip).type.attribute
+
     partition_op = cutlass_lir.PartitionOp(
         buffer.value,
         agent_id.ir_value(),
         layout_tv=layout_tv.type.attribute,
-        tiler=tiler.type.attribute,
+        tiler=tiler_attr,
         loc=loc,
         ip=ip,
     )
@@ -249,3 +266,73 @@ def elementwise(
         args = entry.arguments
         output = body(args)
         yield_op = cutlass_lir.YieldOp([output], loc=loc, ip=ip)
+
+
+@dsl_user_op
+def accumulate(
+    src: cute.Tensor,
+    dst: cute.Tensor,
+    *,
+    reduction_kind: Optional[CoreReductionKind] = None,
+    body: Optional[Callable] = None,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Reduces `src` element-wise into `dst`, both `!cute.memref` buffers.
+
+    `src` and `dst` must have the same element type and the same total size.
+    Their shapes need not be congruent: the op walks a single linear coordinate
+    over each view's domain, so only the sizes have to agree.
+
+    The reduction combiner is specified in exactly one of two mutually
+    exclusive ways -- passing both or neither raises.
+
+    :param src: The tensor to reduce from
+    :type src: cute.Tensor
+
+    :param dst: The tensor to reduce into
+    :type dst: cute.Tensor
+
+    :param reduction_kind: Built-in shorthand for a common element-wise
+    reduction (`ADD`, `MIN`, `MAX`, `INC`, `DEC`, `AND`, `OR`, `XOR`). Use
+    `ReductionKind.<X>` from `cutlass._mlir.dialects.core` -- note this is the
+    Core dialect enum, not the TMA-specific `cute.ReductionKind`. Mutually
+    exclusive with `body`.
+    :type reduction_kind: Optional[CoreReductionKind]
+
+    :param body: The binary combiner to apply, called as
+    `body(in_elem, out_elem)` where `in_elem` is the current `src` element and
+    `out_elem` the current `dst` element, returning the updated value.
+    Mutually exclusive with `reduction_kind`.
+    :type body: Optional[Callable]
+
+    :raises ValueError: If both or neither of `reduction_kind` and `body` are
+    provided
+
+    Note that the predication operands (`coordTensor`/`predBounds`) are not
+    exposed here: they are injected by the `lir-predication-rewrite` pass when
+    the destination tile is partially out of bounds.
+    """
+    if (reduction_kind is None) == (body is None):
+        raise ValueError(
+            "accumulate expects exactly one of `reduction_kind` or `body`, but got "
+            f"reduction_kind={reduction_kind!r} and body={body!r}"
+        )
+
+    if reduction_kind is not None:
+        cutlass_lir.AccumulateOp(
+            src.value, dst.value, reduction_kind=reduction_kind, loc=loc, ip=ip
+        )
+        return
+
+    assert body is not None
+    accumulate_op = cutlass_lir.AccumulateOp(src.value, dst.value, loc=loc, ip=ip)
+
+    # Both combiner arguments must carry the src element type, so derive the
+    # dst-side argument from `src` too rather than from `dst`.
+    elem_type = src.type.value_type  # type: ignore[attr-defined]
+    entry = ir.Block.create_at_start(accumulate_op.regions[0], [elem_type, elem_type])
+    with ir.InsertionPoint(entry):
+        args = entry.arguments
+        cutlass_lir.YieldOp([body(args[0], args[1])], loc=loc)

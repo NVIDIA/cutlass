@@ -43,7 +43,7 @@ namespace cutlass {
 /// Distribution type
 struct Distribution {
   /// Variant types
-  enum Kind { Invalid, Uniform, Gaussian, Identity, Sequential, AllZeros, AllOnes };
+  enum Kind { Invalid, Uniform, Gaussian, Identity, Sequential, AllZeros, AllOnes, UniformBits };
 
   /// Distribution state
   union {
@@ -121,6 +121,12 @@ struct Distribution {
     int_scale = _int_scale;
     return *this;
   }
+
+  /// Sets uniform random bits: every bit pattern of the element type is equally likely
+  Distribution &set_uniform_bits() {
+    kind = UniformBits;
+    return *this;
+  }
 };
 
 }  // namespace cutlass
@@ -144,6 +150,9 @@ inline std::ostream &operator<<(std::ostream &out, cutlass::Distribution const &
       break;
     case cutlass::Distribution::Sequential:
       out << "sequential";
+      break;
+    case cutlass::Distribution::UniformBits:
+      out << "uniform_bits";
       break;
     default:
       out << "unknown";

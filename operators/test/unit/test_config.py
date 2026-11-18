@@ -42,6 +42,7 @@ from cutlass.operators import config
 from cutlass.operators.config import _ENV_USE_TVM_FFI, _parse_bool_env
 
 
+
 @pytest.fixture
 def reset_singleton(monkeypatch):
     """Reset the ``GlobalOptions`` singleton so ``__new__`` re-runs init logic.

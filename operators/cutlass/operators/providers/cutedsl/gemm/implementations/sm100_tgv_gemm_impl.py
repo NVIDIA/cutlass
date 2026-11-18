@@ -52,9 +52,10 @@ Default config: CTA_M=64, CTA_N=8, CTA_K=128, DMA_Stage=8
   Float16/BFloat16, and Int8/Uint8/Float8, respectively.
 """
 
-from typing import NamedTuple
+from typing import NamedTuple, Union
 
 import cuda.bindings.driver as cuda
+import cuda.bindings.runtime as cuda_runtime
 
 import cutlass
 import cutlass.cute as cute
@@ -89,7 +90,8 @@ class TgvGemmKernel:
         cta_k: int = 128,
         num_ab_stage: int = 8,
         use_pdl: bool = False,
-        pdl_count: int = -1,
+        pdl_wait_on_tgv_a_load: bool = False,
+        pdl_wait_on_tgv_b_load: bool = False,
     ):
         self.acc_dtype = acc_dtype
         self.cta_m = cta_m
@@ -97,7 +99,8 @@ class TgvGemmKernel:
         self.cta_k = cta_k
         self.num_ab_stage = num_ab_stage
         self.use_pdl = use_pdl
-        self.pdl_count = pdl_count
+        self.pdl_wait_on_tgv_a_load = pdl_wait_on_tgv_a_load
+        self.pdl_wait_on_tgv_b_load = pdl_wait_on_tgv_b_load
 
         # Fixed configuration matching C++ kernel
         self.threads_per_cta = 256  # 8 warps
@@ -177,6 +180,11 @@ class TgvGemmKernel:
         b: cute.Tensor,  # (Gemm_N, Gemm_K, Gemm_L), K or N contiguous
         c: cute.Tensor,  # (Gemm_M, Gemm_N, Gemm_L), M contiguous
         stream: cuda.CUstream,
+        pdl_count: cutlass.Int32,
+        pdl_stream_serialization: cutlass.Constexpr[bool] = False,
+        programmatic_event: Union[cuda_runtime.cudaEvent_t, cuda.CUevent, None] = None,  # noqa: UP007
+        programmatic_event_flags: cutlass.Constexpr[int] = 0,
+        programmatic_event_trigger_at_block_start: cutlass.Constexpr[bool] = False,
     ):
         """Host-side setup and kernel launch. Corresponds to C++ gemm_host()."""
         self.a_dtype = a.element_type
@@ -263,12 +271,16 @@ class TgvGemmKernel:
             self.cluster_layout_vmnk,
             self.a_smem_layout_staged,  # ((Mma_M, Mma_K), NumMma_M, NumMma_K, DMA_Stage)
             self.b_smem_layout_staged,  # ((Mma_N, Mma_K), NumMma_N, NumMma_K, DMA_Stage)
+            pdl_count,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],  # 256 threads = 8 warps
             cluster=(*self.cluster_shape_mn, 1),  # 1x1 cluster, no multicast
             stream=stream,
-            use_pdl=self.use_pdl,
+            use_pdl=pdl_stream_serialization,
+            programmatic_event=programmatic_event,
+            programmatic_event_flags=programmatic_event_flags,
+            programmatic_event_trigger_at_block_start=programmatic_event_trigger_at_block_start,
         )
         return
 
@@ -284,6 +296,7 @@ class TgvGemmKernel:
         cluster_layout_vmnk: cute.Layout,
         a_smem_layout_staged: cute.ComposedLayout,  # ((Mma_M, Mma_K), NumMma_M, NumMma_K, DMA_Stage)
         b_smem_layout_staged: cute.ComposedLayout,  # ((Mma_N, Mma_K), NumMma_N, NumMma_K, DMA_Stage)
+        pdl_count: cutlass.Int32,
     ):
         """GPU device kernel. 1:1 translation of C++ gemm_device().
 
@@ -443,6 +456,7 @@ class TgvGemmKernel:
                 mma_tile_coord_v,
                 work_tile_info,
                 k_tile_count,
+                pdl_count,
             )
         elif warp_idx == 1:
             self.dma_b_warp(
@@ -506,6 +520,7 @@ class TgvGemmKernel:
         mma_tile_coord_v: cutlass.Int32,
         work_tile_info: tuple,  # WorkTileInfo: (M_idx, N_idx, L_idx, K_idx_start, K_idx_end)
         k_tile_count: cutlass.Int32,
+        pdl_count: cutlass.Int32,
     ):
         """DMA_A warp: loads A tiles via TMA. C++ DMA_A_warp() lines 204-318."""
         DMA_Stage = self.num_ab_stage
@@ -569,6 +584,9 @@ class TgvGemmKernel:
         # tAgA after slice: ((TMA, NumTma_K), Tiles_K)
         tAgA = tAgA[(None, work_tile_info.M_idx, None, work_tile_info.L_idx)]
 
+        if self.use_pdl and self.pdl_wait_on_tgv_a_load:
+            cute.arch.griddepcontrol_wait()
+
         # ---- K-loop ----
         # Initial phase bit for tma_mma_empty_barrier is 0 (set by mbarrier_init), denoting SMEM slot is empty.
         # We wait on the "old" phase bit of 1: when it flips to 0 (the initial value), the slot is empty.
@@ -579,7 +597,6 @@ class TgvGemmKernel:
         #   kblock 3: old phase=0, wait for b to flip to 1 (flipped once), slot b empty
         #   ...
         tma_mma_empty_phase = cutlass.Int32(1)
-        pdl_count = self.pdl_count
 
         # Iterate over k-blocks
         for k_tile in cutlass.range(k_tile_count, unroll=1):
@@ -618,9 +635,8 @@ class TgvGemmKernel:
 
             # PDL: do launch dependents at a specific k_tile count
             # C++: if (k_tile == pdl_count) cutlass::arch::launch_dependent_grids()
-            if self.use_pdl:
-                if k_tile == pdl_count:
-                    cute.arch.griddepcontrol_launch_dependents()
+            if self.use_pdl and k_tile == pdl_count:
+                cute.arch.griddepcontrol_launch_dependents()
 
         # PDL: if pdl_count is -1, do launch dependents at the end
         # C++: cutlass::arch::launch_dependent_grids() (unconditional at end)
@@ -684,7 +700,7 @@ class TgvGemmKernel:
 
         # PDL: only do GDC wait on B loading, B is activation
         # C++: cutlass::arch::wait_on_dependent_grids()
-        if self.use_pdl:
+        if self.use_pdl and self.pdl_wait_on_tgv_b_load:
             cute.arch.griddepcontrol_wait()
 
         # ---- K-loop (same phase tracking as DMA_A_warp) ----

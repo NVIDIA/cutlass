@@ -81,7 +81,7 @@ class MixedInputGemmKernel:
         self.input_a_dtype = input_a_dtype
         self.epilogue_op = epilogue_op
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA: cute.Tensor,
@@ -97,10 +97,9 @@ class MixedInputGemmKernel:
             grid=grid,
             block=(384, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA: cute.Tensor,
@@ -343,7 +342,7 @@ class MixedInputGemmKernel:
         loadA2transform_pipe = cute_ext.TMAToAsyncPipeline.create(
             num_stages=loadA2transform_stage,
             consumer=cute_ext.OperationTypeEnum.LD_SHARED,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
         loadB2mma_pipe = cute_ext.TMAToUMMAPipeline.create(
             num_stages=loadB2mma_stage,
@@ -352,14 +351,14 @@ class MixedInputGemmKernel:
         transformA2mma_pipe = cute_ext.AsyncToUMMAPipeline.create(
             num_stages=transformA2mma_stage,
             producer=cute_ext.OperationTypeEnum.ST_SHARED,
-            producer_arv_count=128,
+            producer_commit_threads_per_cta=128,
             mma_operation_type=mma_op,
         )
         mma2accum_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=mma2accum_stage,
             mma_operation_type=mma_op,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
 
         tma_store_warp_id = 0
@@ -407,6 +406,7 @@ class MixedInputGemmKernel:
                     mbar,
                 )
                 loadA2transform_pipe.producer_commit_and_advance()
+            loadA2transform_pipe.producer_tail()
 
         # === TMA Load B warp ===
         if is_loadB_warp:
@@ -422,6 +422,7 @@ class MixedInputGemmKernel:
                     mbar,
                 )
                 loadB2mma_pipe.producer_commit_and_advance()
+            loadB2mma_pipe.producer_tail()
 
         # === Transform warps: dequantize A ===
         if is_transform_warp:
@@ -638,13 +639,15 @@ class MixedInputGemmTestbed:
         )
 
     def reference_check(self, epilogue_fn=torch.nn.Identity(), tolerance=1e-01):
+        a_dequant = (
+            self.A_host.to(torch.float16) - self.Zeros_host.to(torch.float16)
+        ) * self.Scale_host.to(torch.float16)
         ref = epilogue_fn(
             torch.einsum(
                 "mkl,nkl->mnl",
-                (self.A_host.to(torch.float16) - self.Zeros_host.to(torch.float16))
-                * self.Scale_host.to(torch.float16),
-                self.B_host,
-            )
+                a_dequant.to(torch.float32),
+                self.B_host.to(torch.float32),
+            ).to(self.d_gpu.dtype)
         )
         torch.testing.assert_close(self.d_gpu.cpu(), ref, atol=tolerance, rtol=1e-05)
 
@@ -744,7 +747,7 @@ def run(
         input_a_dtype=a_dtype,
     )
 
-    compiled_mixed_input_gemm = cute_ext.compile(
+    compiled_mixed_input_gemm = cute.compile(
         mixed_input_gemm,
         testbed.a_tensor,
         testbed.b_tensor,

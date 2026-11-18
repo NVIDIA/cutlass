@@ -29,7 +29,7 @@
 import argparse
 import os
 import sys
-from typing import Tuple, Type, Union, Literal, Optional
+from typing import Tuple, Type, Union, Literal
 
 import cuda.bindings.driver as cuda
 import torch
@@ -45,13 +45,32 @@ import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.rubin_helpers as sm107_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
+from helpers.dynamic_persistent_tile_scheduler import (
+    ClcDynamicPersistentTileScheduler,
+    ClcDynamicPersistentTileSchedulerParams,
+)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, os.path.join(current_dir, "../../.."))
+    sys.path.insert(0, os.path.join(current_dir, "../../../.."))
 
 from rubin.kernel.blockscaled_gemm.dense_blockscaled_gemm_persistent import (
     Sm107BlockScaledPersistentDenseGemmKernel,
+    ceil_div,
     create_and_init_tensors_emulated,
     create_scale_factor_tensor,
     construct_abc_cute_pointers_emulated,
@@ -61,7 +80,7 @@ from rubin.kernel.blockscaled_gemm.dense_blockscaled_gemm_persistent import (
 """
 This example provides an implementation of the SM107 batched dense blockscaled GEMM kernel, please note that the APIs and implementation details related to this kernel may change in future releases.
 
-The primary goal of this example, compared to the one in dense_blockscaled_gemm_persistent.py,
+The primary goal of this example, compared to the one in examples/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_gemm_persistent.py,
 is around the usage of mixed cluster launches: If there are not enough resources to schedule a cluster with 
 preferred_cluster_shape_mn, then a fallback_cluster_shape_mn is used.
 
@@ -78,7 +97,10 @@ This GEMM kernel supports the following features:
     - Utilizes Rubin's tcgen05.mma for matrix multiply-accumulate (MMA) operations (including 2cta mma instructions)
     - Implements the B-keep/B-reuse feature, if applicable
     - Implements TMA multicast with cluster to reduce L2 memory traffic
-    - Support persistent tile scheduling to better overlap memory load/store with mma between tiles
+    - Support persistent tile scheduling to better overlap memory load/store with mma between tiles,
+      with either a static schedule or CLC (Cluster Launch Control) dynamic scheduling
+      (--scheduler clc_dynamic_persistent), where running clusters steal unlaunched work
+      via CLC queries for near-perfect load balancing
     - Support warp specialization to avoid explicit pipelining between mainloop load and mma
 
 This GEMM works as follows:
@@ -143,6 +165,13 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
     :type mma_tiler: Tuple[int, int, int]
     :param cluster_shape_mn: Cluster dimensions (M,N) for parallel processing
     :type cluster_shape_mn: Tuple[int, int]
+    :param swizzle_size: Swizzling size in the unit of cluster for improving L2 cache hit rate, defaults to 1
+    :type swizzle_size: int
+    :param raster_order: Rasterization order of clusters ('m' or 'n'), defaults to 'm'
+    :type raster_order: Literal["m", "n"]
+    :param scheduler_type: Tile scheduler class; StaticPersistentTileScheduler (default)
+        or ClcDynamicPersistentTileScheduler for CLC dynamic scheduling
+    :type scheduler_type: Type
 
     :note: Supported combinations of A/B data types, SF data typs and SF vector size:
         - MXF8: A/B: Float8E5M2/Float8E4M3FN + SF: Float8E8M0FNU + sf_vec_size: 32
@@ -203,7 +232,10 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         mma_tiler: Tuple[int, int, int],
         preferred_cluster_shape_mn: Tuple[int, int],
         fallback_cluster_shape_mn: Tuple[int, int],
-        prefetch_dist: Union[int, None] = None,
+        prefetch_dist: Union[int, Literal["auto"]] = 0,
+        swizzle_size: int = 1,
+        raster_order: Literal["m", "n"] = "m",
+        scheduler_type: Type = None,
     ):
         super().__init__(
             sf_vec_size,
@@ -211,6 +243,9 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
             mma_tiler,
             preferred_cluster_shape_mn,
             prefetch_dist,
+            swizzle_size,
+            raster_order,
+            scheduler_type=scheduler_type,
         )
 
         # Providing explicit cluster shapes for preferred and fallback
@@ -423,8 +458,8 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         )
 
         # Set prefetch distance for both initial and rolling prefetch (unified control)
-        # None = use num_ab_stage (default), 0 = disable prefetch, >0 = explicit distance
-        if self.prefetch_dist_param is None:
+        # "auto" = use num_ab_stage, 0 = disable prefetch (default), >0 = explicit distance
+        if self.prefetch_dist_param == "auto":
             self.prefetch_dist = self.num_ab_stage
         else:
             self.prefetch_dist = self.prefetch_dist_param
@@ -491,23 +526,21 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
 
-        a_layout = cute.make_ordered_layout((m, cute.assume(k, 32), l), order=(0, 1, 2))
+        cute.assume(m, 32)
+        cute.assume(n, 32)
+        cute.assume(k, 32)
+
+        a_layout = cute.make_ordered_layout((m, k, l), order=(0, 1, 2))
         if cutlass.const_expr(self.a_major_mode == OperandMajorMode.K):
-            a_layout = cute.make_ordered_layout(
-                (cute.assume(m, 32), k, l), order=(1, 0, 2)
-            )
-        b_layout = cute.make_ordered_layout((n, cute.assume(k, 32), l), order=(0, 1, 2))
+            a_layout = cute.make_ordered_layout((m, k, l), order=(1, 0, 2))
+        b_layout = cute.make_ordered_layout((n, k, l), order=(0, 1, 2))
         if cutlass.const_expr(self.b_major_mode == OperandMajorMode.K):
-            b_layout = cute.make_ordered_layout(
-                (cute.assume(n, 32), k, l), order=(1, 0, 2)
-            )
-        c_layout = cute.make_ordered_layout((cute.assume(m, 32), n, l), order=(0, 1, 2))
+            b_layout = cute.make_ordered_layout((n, k, l), order=(1, 0, 2))
+        c_layout = cute.make_ordered_layout((m, n, l), order=(0, 1, 2))
         if cutlass.const_expr(
             self.c_layout == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
         ):
-            c_layout = cute.make_ordered_layout(
-                (m, cute.assume(n, 32), l), order=(1, 0, 2)
-            )
+            c_layout = cute.make_ordered_layout((m, n, l), order=(1, 0, 2))
         a_tensor = cute.make_tensor(a_ptr, a_layout)
         b_tensor = cute.make_tensor(b_ptr, b_layout)
         c_tensor = cute.make_tensor(c_ptr, c_layout)
@@ -561,48 +594,6 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
 
         tiled_mma_sfb.set(tcgen05.Field.NEGATE_A, False)
         tiled_mma_sfb.set(tcgen05.Field.NEGATE_B, False)
-
-        tiled_mma_bkeep = None
-        tiled_mma_breuse = None
-        if cutlass.const_expr(self.enable_breuse):
-            # The 'FILL' collector operation indicates that B data should be kept
-            # for reuse in subsequent operations.
-            tiled_mma_bkeep = sm107_utils.make_blockscaled_trivial_tiled_mma(
-                self.a_dtype,
-                self.b_dtype,
-                self.a_major_mode,
-                self.b_major_mode,
-                self.sf_dtype,
-                self.sf_vec_size,
-                self.cta_group,
-                self.mma_inst_shape,
-                a_collector_op=CollectorOp.DISCARD,
-                b_collector_op=CollectorOp.FILL,
-                atom_layout_mnk=atom_layout_mnk,
-                permutation_mnk=permutation_mnk,
-            )
-            tiled_mma_bkeep.set(tcgen05.Field.NEGATE_A, False)
-            tiled_mma_bkeep.set(tcgen05.Field.NEGATE_B, False)
-
-            # The 'LASTUSE' collector operation indicates that this is the last use
-            # of the B data that was kept from the previous operation.
-            tiled_mma_breuse = sm107_utils.make_blockscaled_trivial_tiled_mma(
-                self.a_dtype,
-                self.b_dtype,
-                self.a_major_mode,
-                self.b_major_mode,
-                self.sf_dtype,
-                self.sf_vec_size,
-                self.cta_group,
-                self.mma_inst_shape,
-                a_collector_op=CollectorOp.DISCARD,
-                b_collector_op=CollectorOp.LASTUSE,
-                atom_layout_mnk=atom_layout_mnk,
-                permutation_mnk=permutation_mnk,
-            )
-
-            tiled_mma_breuse.set(tcgen05.Field.NEGATE_A, False)
-            tiled_mma_breuse.set(tcgen05.Field.NEGATE_B, False)
 
         atom_thr_size = cute.size(tiled_mma.thr_id.shape)
 
@@ -761,13 +752,15 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         )
 
         # Compute grid size
-        self.tile_sched_params, grid = self._compute_grid(
-            c_tensor,
-            self.cta_tile_shape_mnk,
-            self.preferred_cluster_shape_mn,
-            self.fallback_cluster_shape_mn,
-            preferred_max_active_clusters,
-            fallback_max_active_clusters,
+        self.tile_sched_params, self.fallback_tile_sched_params, grid = (
+            self._compute_grid(
+                c_tensor,
+                self.cta_tile_shape_mnk,
+                self.preferred_cluster_shape_mn,
+                self.fallback_cluster_shape_mn,
+                preferred_max_active_clusters,
+                fallback_max_active_clusters,
+            )
         )
 
         self.buffer_align_bytes = 1024
@@ -781,6 +774,12 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
             acc_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
             tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
+            # CLC dynamic scheduler barriers and response buffer.
+            # CLC hardware writes a 128-bit (16-byte) opaque response.
+            clc_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_clc_stage * 2]
+            clc_response: cute.struct.MemRange[
+                cutlass.Int32, self.num_clc_response_bytes // 4
+            ]
             # (EPI_TILE_M, EPI_TILE_N, STAGE)
             sC: cute.struct.Align[
                 cute.struct.MemRange[
@@ -823,8 +822,6 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         # Launch the kernel synchronously
         self.mixed_cluster_kernel(
             tiled_mma,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
             tiled_mma_sfb,
             (tma_atom_a, tma_atom_a_fallback),
             (tma_tensor_a, tma_tensor_a_fallback),
@@ -850,6 +847,7 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
             self.c_smem_layout_staged,
             self.epi_tile,
             self.tile_sched_params,
+            self.fallback_tile_sched_params,
             epilogue_op,
         ).launch(
             grid=grid,
@@ -867,8 +865,6 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
     def mixed_cluster_kernel(
         self,
         tiled_mma: cute.TiledMma,
-        tiled_mma_bkeep: Optional[cute.TiledMma],
-        tiled_mma_breuse: Optional[cute.TiledMma],
         tiled_mma_sfb: cute.TiledMma,
         tma_atom_a: Tuple[cute.CopyAtom, cute.CopyAtom],
         mA_mkl: Tuple[cute.Tensor, cute.Tensor],
@@ -890,7 +886,8 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         tCtSFB_layout: cute.Layout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params,
+        fallback_tile_sched_params,
         epilogue_op: cutlass.Constexpr,
     ):
         """
@@ -914,8 +911,6 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         if is_preferred_cluster:
             self.kernel_impl(
                 tiled_mma,
-                tiled_mma_bkeep,
-                tiled_mma_breuse,
                 tiled_mma_sfb,
                 tma_atom_a[0],
                 mA_mkl[0],
@@ -946,8 +941,6 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         else:
             self.kernel_impl(
                 tiled_mma,
-                tiled_mma_bkeep,
-                tiled_mma_breuse,
                 tiled_mma_sfb,
                 tma_atom_a[1],
                 mA_mkl[1],
@@ -969,15 +962,15 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
                 tCtSFB_layout,
                 c_smem_layout_staged,
                 epi_tile,
-                tile_sched_params,
+                fallback_tile_sched_params,
                 epilogue_op,
                 self.fallback_cluster_shape_mn,
                 self.is_fallback_a_mcast,
                 self.is_fallback_b_mcast,
             )
 
-    @staticmethod
     def _compute_grid(
+        self,
         c: cute.Tensor,
         cta_tile_shape_mnk: Tuple[int, int, int],
         preferred_cluster_shape_mn: Tuple[int, int],
@@ -985,7 +978,7 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         preferred_max_active_clusters: cutlass.Constexpr,
         fallback_max_active_clusters: cutlass.Constexpr,
     ) -> Tuple[
-        utils.PersistentTileSchedulerParams,
+        PersistentTileSchedulerParams,
         Tuple[int, int, int],
     ]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C.
@@ -1007,7 +1000,7 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
             - preferred_tile_sched_params: Parameters for the preferred persistent tile scheduler.
             - grid: Grid shape for kernel launch.
         :rtype: Tuple[
-            utils.PersistentTileSchedulerParams,
+            PersistentTileSchedulerParams,
             tuple[int, int, int]
         ]
         """
@@ -1015,26 +1008,54 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         gc = cute.zipped_divide(c, tiler=c_shape)
         num_ctas_mnl = gc[(0, (None, None, None))].shape
 
+        # CLC dynamic scheduling: launch the full tile grid (one CTA per output
+        # tile, rounded up to the preferred cluster shape); running clusters
+        # steal unlaunched work via CLC queries. Each cluster-shape branch gets
+        # scheduler params built with its own cluster shape so that
+        # cta_id_in_cluster and rasterization match the runtime cluster.
+        raster_along_m = self.raster_order == "m"
+        if self.use_clc_dynamic_scheduler:
+            preferred_tile_sched_params = ClcDynamicPersistentTileSchedulerParams(
+                num_ctas_mnl,
+                (*preferred_cluster_shape_mn, 1),
+                self.swizzle_size,
+                raster_along_m,
+            )
+            fallback_tile_sched_params = ClcDynamicPersistentTileSchedulerParams(
+                num_ctas_mnl,
+                (*fallback_cluster_shape_mn, 1),
+                self.swizzle_size,
+                raster_along_m,
+            )
+            grid = ClcDynamicPersistentTileScheduler.get_grid_shape(
+                preferred_tile_sched_params
+            )
+            return (
+                preferred_tile_sched_params,
+                fallback_tile_sched_params,
+                grid,
+            )
+
         # Note that the grid calculation here is only valid for a static persistent
         # tile scheduler.
 
         # Tile scheduler and grid shape for the preferred cluster
         preferred_cluster_shape_mnl = (*preferred_cluster_shape_mn, 1)
 
-        preferred_tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, preferred_cluster_shape_mnl
+        preferred_tile_sched_params = PersistentTileSchedulerParams(
+            num_ctas_mnl, preferred_cluster_shape_mnl, self.swizzle_size, raster_along_m
         )
-        preferred_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        preferred_grid = StaticPersistentTileScheduler.get_grid_shape(
             preferred_tile_sched_params, preferred_max_active_clusters
         )
 
         # Tile scheduler and grid shape for the fallback cluster
         fallback_cluster_shape_mnl = (*fallback_cluster_shape_mn, 1)
 
-        fallback_tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, fallback_cluster_shape_mnl
+        fallback_tile_sched_params = PersistentTileSchedulerParams(
+            num_ctas_mnl, fallback_cluster_shape_mnl, self.swizzle_size, raster_along_m
         )
-        fallback_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        fallback_grid = StaticPersistentTileScheduler.get_grid_shape(
             fallback_tile_sched_params, fallback_max_active_clusters
         )
 
@@ -1054,8 +1075,15 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         # otherwise when the division is not exact, the extra partial wave of
         # preferred clusters may force the hardware to schedule one additional wave,
         # causing significant performance regression.
-        max_preferred_cluster_count = (
-            max_ctas_for_fallback_cluster // preferred_cluster_size_mn
+
+        # It is possible to end up with a small problem size where
+        # max_ctas_for_fallback_cluster < preferred_cluster_size_mn, which leads to
+        # max_preferred_cluster_count being zero; in this case, we
+        # cannot even fill a single wave, and so we are not concerned with performance
+        # implications rather we choose to still be able to execute properly instead of
+        # erroring out.
+        max_preferred_cluster_count = cutlass.max(
+            1, max_ctas_for_fallback_cluster // preferred_cluster_size_mn
         )
         preferred_grid = (
             preferred_grid[0],
@@ -1063,7 +1091,10 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
             max_preferred_cluster_count,
         )
 
+        # The static scheduler uses the preferred params in both branches
+        # (tile assignment is CTA-linear over the same launch grid).
         return (
+            preferred_tile_sched_params,
             preferred_tile_sched_params,
             preferred_grid,
         )
@@ -1154,19 +1185,6 @@ class Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
                     f"integer multiple of fallback cluster shape {fallback_cluster_shape_mn}"
                 )
 
-            # Check that the problem is at least as large as the preferred cluster tile.
-            # The mixed clusters kernel computes max_preferred_cluster_count as:
-            #   max_ctas_for_fallback_cluster // preferred_cluster_size_mn
-            # If the problem is smaller than one preferred cluster tile, this count
-            # becomes zero, resulting in an invalid grid shape.
-            m, n, k, l = mnkl
-            preferred_tile_m = mma_tiler[0] * preferred_cluster_shape_mn[0]
-            preferred_tile_n = mma_tiler[1] * preferred_cluster_shape_mn[1]
-            if m < preferred_tile_m or n < preferred_tile_n:
-                raise testing.CantImplementError(
-                    f"Problem size ({m}, {n}) is smaller than the preferred cluster tile "
-                    f"({preferred_tile_m}, {preferred_tile_n})"
-                )
         except testing.CantImplementError as e:
             print(f"[DSL ERROR] CantImplementError: {e}")
             return False
@@ -1195,7 +1213,9 @@ def run_scaled_mm_with_emulated_dtype(
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
-    prefetch_dist: Union[int, None] = None,
+    prefetch_dist: Union[int, Literal["auto"]] = 0,
+    *,
+    benchmark: str = "default",
     **kwargs,
 ):
     """Execute a persistent batched dense blockscaled GEMM operation on Rubin architecture with performance benchmarking (emulated dtypes).
@@ -1233,13 +1253,18 @@ def run_scaled_mm_with_emulated_dtype(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
     :type use_cold_l2: bool, optional
-    :param prefetch_dist: Prefetch distance for TMA operations (None=auto uses num_ab_stage, 0=disable, >0=explicit).
-    :type prefetch_dist: Union[int, None], optional
+    :param benchmark: Benchmark mode: "default", "cupti", or "none"
+    :type benchmark: str, optional
+    :param prefetch_dist: Prefetch distance for TMA operations (default is 0=disable, "auto"=use num_ab_stage, >0=explicit).
+    :type prefetch_dist: Union[int, Literal["auto"]], optional
     :raises RuntimeError: If CUDA GPU is not available
     :raises ValueError: If the configuration is invalid or unsupported by the kernel
     :return: Execution time of the GEMM kernel
     :rtype: float
     """
+    if benchmark not in ("default", "cupti", "none"):
+        raise ValueError(f"Unsupported benchmark mode: {benchmark}")
+
     print(f"Running {gemm_obj.__class__.__name__} test (Emulated) with:")
     print(f"mnkl: {mnkl}")
     print(
@@ -1255,7 +1280,7 @@ def run_scaled_mm_with_emulated_dtype(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-    if prefetch_dist is None:
+    if prefetch_dist == "auto":
         print("Prefetch distance: auto (num_ab_stage)")
     elif prefetch_dist == 0:
         print("Prefetch: Disabled")
@@ -1333,8 +1358,7 @@ def run_scaled_mm_with_emulated_dtype(
         l, n, k, sf_vec_size, sf_dtype, sfb_f32
     )
     # Construct CuTe Pointers
-
-    a_ptr, b_ptr, c_ptr, _, _ = construct_abc_cute_pointers_emulated(
+    a_ptr, b_ptr, c_ptr, *_ = construct_abc_cute_pointers_emulated(
         a_f32_ref,
         b_f32_ref,
         c,
@@ -1362,6 +1386,9 @@ def run_scaled_mm_with_emulated_dtype(
         c_ref = ref.to(dtype=cutlass_torch.dtype(c_dtype))
 
         torch.testing.assert_close(c, c_ref, atol=tolerance, rtol=tolerance)
+
+    if benchmark == "none":
+        return 0
 
     def generate_inputs():
         # Create Torch Tensors for A, scale factor A, B, scale factor B, C
@@ -1429,6 +1456,7 @@ def run_scaled_mm_with_emulated_dtype(
         stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     return exec_time  # Return execution time in microseconds
@@ -1456,12 +1484,24 @@ def run(
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
-    prefetch_dist: Union[int, None] = None,
+    prefetch_dist: Union[int, Literal["auto"]] = 0,
+    scheduler: str = "static_persistent",
+    swizzle_size: int = 1,
+    raster_order: Literal["m", "n"] = "m",
+    *,
+    benchmark: str = "default",
     **kwargs,
 ):
     """
     Execute the appropriate GEMM function based on dtype.
     """
+    scheduler_map = {
+        "static_persistent": StaticPersistentTileScheduler,
+        "clc_dynamic_persistent": ClcDynamicPersistentTileScheduler,
+    }
+    scheduler_type = scheduler_map.get(scheduler, StaticPersistentTileScheduler)
+
+    m, n, k, l = mnkl
     # Configure gemm kernel
     gemm = Sm107BlockScaledPersistentDenseGemmMixedClustersKernel(
         sf_vec_size,
@@ -1470,6 +1510,9 @@ def run(
         preferred_cluster_shape_mn,
         fallback_cluster_shape_mn,
         prefetch_dist,
+        swizzle_size,
+        raster_order,
+        scheduler_type,
     )
 
     # Skip unsupported testcase
@@ -1524,6 +1567,7 @@ def run(
         normal_mean,
         normal_std,
         prefetch_dist,
+        benchmark=benchmark,
     )
 
     print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
@@ -1621,9 +1665,35 @@ def prepare_parser():
     )
     parser.add_argument(
         "--prefetch_dist",
+        type=lambda v: "auto" if v == "auto" else int(v),
+        default=0,
+        help="Prefetch distance for TMA operations (default: 0=disable, 'auto'=use num_ab_stage, >0=explicit distance)",
+    )
+    parser.add_argument(
+        "--benchmark",
+        choices=["default", "cupti", "none"],
+        default="default",
+        help="Benchmark mode",
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        choices=["static_persistent", "clc_dynamic_persistent"],
+        default="static_persistent",
+        help="Tile scheduler type: static_persistent (default) or clc_dynamic_persistent (CLC-based)",
+    )
+    parser.add_argument(
+        "--swizzle_size",
         type=int,
-        default=None,
-        help="Prefetch distance for TMA operations (default: None=auto uses num_ab_stage, 0=disable, >0=explicit distance)",
+        default=1,
+        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
+    )
+    parser.add_argument(
+        "--raster_order",
+        type=str,
+        choices=["m", "n"],
+        default="m",
+        help="Rasterization order of clusters",
     )
     return parser
 
@@ -1666,6 +1736,10 @@ if __name__ == "__main__":
         f"[DSL INFO] Preferred cluster Shape (M, N): {args.preferred_cluster_shape_mn}"
     )
     print(f"[DSL INFO] Fallback cluster Shape (M, N): {args.fallback_cluster_shape_mn}")
+    print(f"[DSL INFO] Scheduler: {args.scheduler}")
+    print(
+        f"[DSL INFO] Swizzle size: {args.swizzle_size}, Raster order: {args.raster_order}"
+    )
 
     # Execute GEMM with appropriate function based on dtype
     run(
@@ -1691,5 +1765,9 @@ if __name__ == "__main__":
         args.normal_mean,
         args.normal_std,
         args.prefetch_dist,
+        args.scheduler,
+        args.swizzle_size,
+        args.raster_order,
+        benchmark=args.benchmark,
     )
     print("PASS")

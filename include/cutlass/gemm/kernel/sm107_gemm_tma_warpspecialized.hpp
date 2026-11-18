@@ -57,6 +57,21 @@
 namespace cutlass::gemm::kernel {
 
 ///////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+template <class T, class = void>
+struct get_pipeline_retry_state {
+  using type = void;
+};
+
+template <class T>
+struct get_pipeline_retry_state<T, cute::void_t<typename T::MainloopPipelineRetryState>> {
+  using type = typename T::MainloopPipelineRetryState;
+};
+
+} // namespace detail
+
 template <
   class ProblemShape_,
   class CollectiveMainloop_,
@@ -101,6 +116,16 @@ public:
   using MainloopParams = typename CollectiveMainloop::Params;
   static_assert(ArchTag::kMinComputeCapability >= 107);
 
+  static constexpr auto ProducerRole = ProducerRoleOrDefault<CollectiveMainloop>::value;
+  static constexpr auto ConsumerRole = ConsumerRoleOrDefault<CollectiveMainloop>::value;
+
+  static constexpr bool RequiresRetryWarp =
+    ConsumerRole == cutlass::gemm::ConsumerRoleType::ReportValidA ||
+    ConsumerRole == cutlass::gemm::ConsumerRoleType::ReportValidB;
+
+  static constexpr bool RequiresPdlDependencyCheck =
+    ConsumerRole == cutlass::gemm::ConsumerRoleType::Pdl;
+
   // Epilogue derived types
   using CollectiveEpilogue = CollectiveEpilogue_;
   using EpilogueTile = typename CollectiveEpilogue::EpilogueTile;
@@ -139,7 +164,9 @@ public:
   static constexpr uint32_t NumEpilogueThreads     = CollectiveEpilogue::ThreadCount;
   static constexpr uint32_t NumEpilogueWarps       = NumEpilogueThreads / NumThreadsPerWarp;
 
+  static constexpr uint32_t NumRetryThreads = RequiresRetryWarp ? NumThreadsPerWarp : 0;
   static constexpr uint32_t MaxThreadsPerBlock = NumSchedThreads +
+                                                 NumRetryThreads +
                                                  NumMainloopLoadThreads + NumMMAThreads +
                                                  NumEpilogueLoadThreads + NumEpilogueThreads;
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
@@ -155,6 +182,10 @@ public:
   // Pipeline and pipeline state types
   using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
   using MainloopPipelineState = typename CollectiveMainloop::MainloopPipelineState;
+  using MainloopPipelineRetryState = typename detail::get_pipeline_retry_state<CollectiveMainloop>::type;
+  static_assert(not cute::is_same_v<MainloopPipelineRetryState, void> || not RequiresRetryWarp,
+      "Kernel requires a retry warp, but collective mainloop does not define a retry warp pipeline state.");
+
   using EpiLoadPipeline = typename CollectiveEpilogue::LoadPipeline;
   using EpiLoadPipelineState = typename CollectiveEpilogue::LoadPipelineState;
 
@@ -234,6 +265,7 @@ public:
     MainloopLoad = 2,
     EpilogueLoad = 3,
     Epilogue     = 4
+    , Retry      = 5
   };
 
   struct IsParticipant {
@@ -242,6 +274,7 @@ public:
     uint32_t main_load = false;
     uint32_t epi_load  = false;
     uint32_t epilogue  = false;
+    uint32_t retry  = false;
   };
 
   //
@@ -401,6 +434,10 @@ public:
   void
   operator() (Params const& params, char* smem_buf) {
 
+    if constexpr (ProducerRole == cutlass::gemm::ProducerRoleType::EarlyPdl) {
+      cutlass::arch::launch_dependent_grids();
+    }
+
     using namespace cute;
     using X = Underscore;
 
@@ -415,6 +452,12 @@ public:
     int warp_idx = canonical_warp_idx_sync();
     WarpCategory warp_category = warp_idx < static_cast<int>(WarpCategory::Epilogue) ? WarpCategory(warp_idx)
                                                                                      : WarpCategory::Epilogue;
+    if constexpr (RequiresRetryWarp) {
+      if (warp_idx >= static_cast<int>(WarpCategory::Epilogue) + NumEpilogueWarps) {
+          warp_category = WarpCategory::Retry;
+      }
+    }
+
     uint32_t lane_predicate = cute::elect_one_sync();
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{});
     int cluster_size = size(cluster_shape);
@@ -447,6 +490,7 @@ public:
       (warp_category == WarpCategory::MainloopLoad),                        // main_load
       (warp_category == WarpCategory::EpilogueLoad) && is_epi_load_needed,  // epi_load
       (warp_category == WarpCategory::Epilogue)                             // epilogue
+      , (warp_category == WarpCategory::Retry)                              // retry
     };
 
     // Mainloop Load pipeline
@@ -504,7 +548,14 @@ public:
     clc_pipeline_params.producer_blockid = 0;
     clc_pipeline_params.producer_arv_count = 1;
     clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
-                                                 (NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads);
+                                                 (NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads) +
+                                                 // In 2SM, only leader CTA retry warp is actively
+                                                 // checking validity of data loaded by TMA; follower
+                                                 // retry warp issues retries only when leader does,
+                                                 // and leader communicates coordinate info via remote
+                                                 // smem messaging. Therefore follower retry warp
+                                                 // never interacts with scheduler.
+                                                 (cluster_size / cute::size(AtomThrShapeMNK{})) * NumRetryThreads;
     if (is_epi_load_needed) {
       clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
     }
@@ -602,7 +653,11 @@ public:
     if (is_participant.main_load) {
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
-      cutlass::arch::wait_on_dependent_grids();
+      // Data-driven sync consumers use TMA report valid and therefore don't need this barrier.
+      if constexpr (RequiresPdlDependencyCheck) {
+        cutlass::arch::wait_on_dependent_grids();
+      }
+
       bool do_load_order_arrive = is_epi_load_needed;
       bool requires_clc_query = true;
 
@@ -663,6 +718,55 @@ public:
 
     }
 
+    else if (is_participant.retry) {
+      if constexpr (RequiresRetryWarp) {
+        // In 2CTA, only leader CTAs have their mbarriers updated, therefore only those CTAs get to
+        // inspect the validity of TMA-loaded data. However, the follower CTA still needs to issue
+        // the load again when invalid. This is handled by leader sending messages to follower CTA
+        // when it is about to issue retries.
+        MainloopPipelineRetryState mainloop_pipe_retry_state(is_mma_leader_cta);
+        if (is_mma_leader_cta) {
+          bool requires_clc_query = true;
+          // A new work tile may start in a middle stage buffer, so track which
+          // stage k_tile 0 of the current work tile maps to
+          int stage_offset = 0;
+
+          do {
+            auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
+            mainloop_pipe_retry_state.reset_count();
+
+            // Start mainloop prologue loads, arrive on the epilogue residual load barrier, resume mainloop loads
+            stage_offset = collective_mainloop.retry(
+              mainloop_pipeline,
+              mainloop_pipe_retry_state,
+              load_inputs,
+              cta_coord_mnkl,
+              k_tile_count,
+              stage_offset
+            );
+
+            auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+              work_tile_info,
+              clc_pipeline,
+              clc_pipe_consumer_state
+            );
+            work_tile_info = next_work_tile_info;
+            cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
+            requires_clc_query = increment_pipe;
+            if (increment_pipe) {
+              ++clc_pipe_consumer_state;
+            }
+          } while (work_tile_info.is_valid());
+
+          // Release follower CTA retry warp (if 2SM)
+          collective_mainloop.retry_tail(mainloop_pipeline, mainloop_pipe_retry_state);
+        }
+        else {
+          collective_mainloop.retry_follower(mainloop_pipeline, mainloop_pipe_retry_state, load_inputs);
+        }
+
+      }
+    }
     else if (is_participant.sched) {
       if constexpr (IsSchedDynamicPersistent) {
         // Whether a new CLC query must be performed.
@@ -670,7 +774,11 @@ public:
         // why this variable is needed.
         bool requires_clc_query = true;
 
-        cutlass::arch::wait_on_dependent_grids();
+        // Data-driven sync consumers use TMA report valid and therefore don't need this barrier.
+        if constexpr (RequiresPdlDependencyCheck) {
+          cutlass::arch::wait_on_dependent_grids();
+        }
+
         do {
           if (requires_clc_query) {
             // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.
@@ -756,7 +864,10 @@ public:
       // Hint on an early release of global memory resources.
       // The timing of calling this function only influences performance,
       // not functional correctness.
-      cutlass::arch::launch_dependent_grids();
+      if constexpr (ProducerRole == cutlass::gemm::ProducerRoleType::Pdl) {
+        cutlass::arch::launch_dependent_grids();
+      }
+
       // Release the right to allocate before deallocations so that the next CTA can rasterize
       tmem_allocator.release_allocation_lock();
 
@@ -779,7 +890,11 @@ public:
     else if (is_participant.epi_load) {
       // Ensure that the prefetched kernel does not touch
       // unflushed global memory prior to this instruction
-      cutlass::arch::wait_on_dependent_grids();
+      // Data-driven sync consumers use TMA report valid and therefore don't need this barrier.
+      if constexpr (RequiresPdlDependencyCheck) {
+        cutlass::arch::wait_on_dependent_grids();
+      }
+
       bool do_load_order_wait = true;
       bool do_tail_load = false;
       int current_wave = 0;

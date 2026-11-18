@@ -124,7 +124,15 @@ using CUTE_STL_NAMESPACE::decay_t;
 using CUTE_STL_NAMESPACE::is_lvalue_reference;
 using CUTE_STL_NAMESPACE::is_lvalue_reference_v;
 
-using CUTE_STL_NAMESPACE::is_reference;
+// cute::is_reference is CuTe's own trait rather than a re-export so that it
+// can be specialized for proxy references such as subbyte_reference (see
+// array_subbyte.hpp). Specializing the STL trait is undefined behavior
+// ([meta.rqmts]) and libc++ rejects it.
+template <class T>
+struct is_reference : CUTE_STL_NAMESPACE::is_reference<T> {};
+template <class T>
+inline constexpr bool is_reference_v = is_reference<T>::value;
+
 using CUTE_STL_NAMESPACE::is_trivially_copyable;
 
 using CUTE_STL_NAMESPACE::is_convertible;

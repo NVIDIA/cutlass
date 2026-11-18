@@ -176,6 +176,7 @@ foreach(EXAMPLE
   111_hopper_ssd
   112_blackwell_ssd
   113_hopper_gemm_activation_fusion
+  121_rubin_data_driven_sync_gemm
   )
 
   add_subdirectory(${EXAMPLE})

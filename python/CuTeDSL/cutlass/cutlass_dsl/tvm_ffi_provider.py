@@ -11,17 +11,20 @@
 
 import importlib.util
 import linecache
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, List, Optional, cast
+from typing import Any, Callable, List, Optional, Sequence, cast
 
 from cutlass.base_dsl.tvm_ffi_builder import (
-    DynamicParamPackCallProvider,
     CallContext,
+    DynamicParamPackCallProvider,
     rename_tvm_ffi_function,
     spec,
+)
+from cutlass.base_dsl.tvm_ffi_builder.tvm_ffi_builder import (
+    TVMFFIFunctionBuilder,
+    TVMFFITypeIndex,
 )
 from cutlass.base_dsl.export import get_export_module
 from cutlass._mlir import ir
@@ -41,6 +44,9 @@ import tvm_ffi
 
 
 _CudaLaunchFields = dict[str, str]
+_TVM_FFI_MODULE_INIT_NAME = "module_init"
+_TVM_FFI_MODULE_INIT_SYMBOL = f"__tvm_ffi_{_TVM_FFI_MODULE_INIT_NAME}"
+
 
 
 @dataclass(frozen=True)
@@ -560,24 +566,24 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             )
         return current_block
 
-    def insert_lazy_init_cuda(
-        self, current_block: ir.Block, context: CallContext
-    ) -> ir.Block:
-        """Insert the lazy init cuda function."""
+    def declare_cuda_module_state(self, context: CallContext) -> None:
+        """Declare the CUDA library handle shared by all TVM-FFI entries."""
         assert context.builder is not None
-        # create global private static that is initialized to nullptr
         with ir.InsertionPoint(context.module.body):
             parsed_op = ir.Operation.parse(
                 f"llvm.mlir.global private @{self.cuda_global_state_symbol}(0 : i64) : i64"
             )
             context.module.body.append(parsed_op)
 
+    def call_cuda_module_initializer(
+        self, current_block: ir.Block, context: CallContext
+    ) -> ir.Block:
+        """Initialize the shared CUDA library state, returning the success block."""
+        assert context.builder is not None
         with ir.InsertionPoint(current_block):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
-
-        with ir.InsertionPoint(current_block):
             cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
             cuda_load_to_device_ptr = self.address_of(
                 "cuda_load_to_device", self.ptr_type
@@ -585,11 +591,8 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             set_error_ptr = self.address_of(
                 "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
             )
-
-        with ir.InsertionPoint(current_block):
-            # Call the callback function with the loaded ptr value
             init_result = llvm.call(
-                result=self.i32_type,  # function returns i32
+                result=self.i32_type,
                 callee="cuda_dialect_init_library_once",
                 callee_operands=[
                     cuda_global_state_ptr,
@@ -600,10 +603,8 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                 op_bundle_sizes=[],
                 op_bundle_operands=[],
             )
-            # Create blocks for conditional branching
             error_block = current_block.create_after()
             success_block = error_block.create_after()
-            # Check if initialization failed (non-zero return code)
             llvm.cond_br(
                 self.equal(init_result, self.i32(0)),
                 true_dest_operands=[],
@@ -611,13 +612,81 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
                 true_dest=success_block,
                 false_dest=error_block,
             )
-        # Error block: return the error code
-        # error is already set by cuda_dialect_init_library_once
+
         with ir.InsertionPoint(error_block):
+            # cuda_dialect_init_library_once has already populated the TVM error.
             llvm.return_(arg=self.i32(-1))
 
-        # Continue with success block
         return success_block
+
+    def insert_lazy_init_cuda(
+        self, current_block: ir.Block, context: CallContext
+    ) -> ir.Block:
+        """Declare and lazily initialize the shared CUDA library state."""
+        self.declare_cuda_module_state(context)
+        return self.call_cuda_module_initializer(current_block, context)
+
+    def attach_module_initializer(self, module: ir.Module) -> None:
+        """Expose controlled eager initialization through a TVM-FFI safe call."""
+        if not self.has_gpu_module:
+            return
+
+        builder = TVMFFIFunctionBuilder(module)
+        if builder._module_symbol_exists(module, _TVM_FFI_MODULE_INIT_SYMBOL):
+            raise ValueError(
+                "TVM-FFI module-owned CUDA lifecycle reserves symbol "
+                f"'{_TVM_FFI_MODULE_INIT_SYMBOL}', but it already exists"
+            )
+
+        with ir.InsertionPoint(module.body):
+            (_, _, num_args, result), entry_block = builder.function(
+                name=_TVM_FFI_MODULE_INIT_SYMBOL,
+                params_type=[
+                    builder.ptr_type,
+                    builder.ptr_type,
+                    builder.i32_type,
+                    builder.ptr_type,
+                ],
+                ret_type=builder.i32_type,
+            )
+
+        context = CallContext(
+            fn_name=_TVM_FFI_MODULE_INIT_NAME,
+            module=module,
+            entry_block=entry_block,
+            params=[],
+            env_stream=None,
+            matched_var_binding={},
+            raw_args=entry_block.arguments[1],
+            raw_num_args=num_args,
+            raw_result=result,
+            builder=builder,
+        )
+        current_block = self.declare_extern_funcs(entry_block, context)
+        current_block = builder.check_condition(
+            current_block,
+            lambda: builder.equal(num_args, builder.i32(0)),
+            "TypeError",
+            ["Expects 0 parameters when calling: `module_init()`"],
+        )
+        current_block = self.call_cuda_module_initializer(current_block, context)
+
+        with ir.InsertionPoint(current_block):
+            fields = (
+                (0, builder.i32(TVMFFITypeIndex.kTVMFFINone)),
+                (1, builder.i32(0)),
+                (2, builder.i64(0)),
+            )
+            for field_index, value in fields:
+                llvm.store(
+                    value=value,
+                    addr=builder.getelementptr(
+                        result,
+                        [0, field_index],
+                        builder.tvm_ffi_any_type,
+                    ),
+                )
+            builder.return_(builder.i32(0))
 
     def append_unload_to_global_dtors(
         self, current_block: ir.Block, context: CallContext
@@ -910,12 +979,26 @@ def _get_format_from_object_file_path(object_file_path: str) -> str:
     return format
 
 
+def _create_tvm_ffi_engine(module: ir.Module, shared_libs: Sequence[str]) -> Any:  # noqa: ANN401
+    """Create the final TVM-FFI host engine with its existing O3/PIC policy."""
+    from cutlass._mlir._mlir_libs._cutlass_ir._execution_engine import (
+        BinaryExecutionEngine,
+    )
+
+    obj = _aot_support.export_module_to_bytes(
+        module, format="o", opt_level=3, enable_pic=True
+    )
+    # JITLink handles duplicate ELF text sections.
+    return BinaryExecutionEngine(obj, shared_libs, True)
+
+
 class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     """Base class for TVM FFI compiled function."""
 
     engine: Any
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, shared_libs: Sequence[str], **kwargs: Any) -> None:
+        self._shared_libs = tuple(shared_libs)
         super().__init__(*args, **kwargs)
 
     # use direct call to the tvm_ffi.Function.__call__
@@ -929,6 +1012,59 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     def run_compiled_program(self, exe_args: list[Any]) -> int | None:
         """Run the compiled program. This override is needed for implicit compile and execution."""
         return cast(int | None, self.__call__(*exe_args))  # type: ignore[misc]
+
+    def _export_to_bytes(
+        self,
+        function_name: str,
+        *,
+        object_format: str,
+        enable_pic: bool,
+        export_only_tvm_ffi_symbols: bool,
+        preserve_module_initializer: bool,
+    ) -> bytes:
+        if self.host_target.value:
+            raise DSLUserCodeError(DiagId.CONFIG_INCOMPATIBLE_FLAGS)
+        if not function_name:
+            raise ValueError("TVM-FFI export name must not be empty")
+        if self.has_gpu_module and function_name == _TVM_FFI_MODULE_INIT_NAME:
+            raise ValueError(
+                "TVM-FFI module-owned CUDA lifecycle reserves export name "
+                f"'{_TVM_FFI_MODULE_INIT_NAME}'"
+            )
+
+        preserve_symbols = {f"__tvm_ffi_{self.function_name}"}
+        if preserve_module_initializer and self.has_gpu_module:
+            preserve_symbols.add(_TVM_FFI_MODULE_INIT_SYMBOL)
+        mod = get_export_module(
+            self.ir_module,
+            "__cute_internal_" + function_name,
+            preserve_symbols=preserve_symbols,
+        )
+        rename_tvm_ffi_function(mod, self.function_name, function_name)
+        if export_only_tvm_ffi_symbols:
+            _inplace_hide_symbols(mod, lambda x: not x.startswith("__tvm_ffi"))
+
+        return _aot_support.export_module_to_bytes(
+            mod, format=object_format, opt_level=3, enable_pic=enable_pic
+        )
+
+    def dump_to_object(self, function_prefix: str) -> bytes:
+        """Serialize this TVM-FFI function as a loadable native object.
+
+        The object exports ``__tvm_ffi_<function_prefix>``. GPU objects also
+        export the fixed ``__tvm_ffi_module_init`` lifecycle entry, so each
+        must be loaded into a separate symbol namespace.
+
+        :param function_prefix: Logical name for the exported TVM-FFI function.
+        :return: Position-independent native object bytes.
+        """
+        return self._export_to_bytes(
+            function_prefix,
+            object_format="o",
+            enable_pic=True,
+            export_only_tvm_ffi_symbols=False,
+            preserve_module_initializer=True,
+        )
 
     def export_to_c(  # type: ignore[override]
         self,
@@ -945,24 +1081,13 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
         :param enable_pic: Whether to enable PIC relocation needed for shared library loading.
         :param export_only_tvm_ffi_symbols: Only export TVM FFI symbols (hide all others).
         """
-        if self.host_target.value:
-            raise DSLUserCodeError(DiagId.CONFIG_INCOMPATIBLE_FLAGS)
         assert function_name is not None
-        internal_symbol_prefix = "__cute_internal_" + function_name
-        mod = self.ir_module
-        mod = get_export_module(
-            self.ir_module,
-            internal_symbol_prefix,
-            preserve_symbols={f"__tvm_ffi_{self.function_name}"},
-        )
-
-        rename_tvm_ffi_function(mod, self.function_name, function_name)
-        if export_only_tvm_ffi_symbols:
-            _inplace_hide_symbols(mod, lambda x: not x.startswith("__tvm_ffi"))
-
-        format = _get_format_from_object_file_path(object_file_path)
-        out_bytes = _aot_support.export_module_to_bytes(
-            mod, format=format, opt_level=3, enable_pic=enable_pic
+        out_bytes = self._export_to_bytes(
+            function_name,
+            object_format=_get_format_from_object_file_path(object_file_path),
+            enable_pic=enable_pic,
+            export_only_tvm_ffi_symbols=export_only_tvm_ffi_symbols,
+            preserve_module_initializer=False,
         )
 
         with open(object_file_path, "wb") as f:
@@ -971,28 +1096,17 @@ class TVMFFIJitCompiledFunctionBase(CudaDialectJitCompiledFunction):
     def _create_tvm_ffi_function(self) -> Optional["tvm_ffi.Function"]:
         """Create the tvm_ffi.Function from the current execution engine.
 
-        When the base class hands us an MlirExecutionEngine (MCJIT), we
-        replace it with a BinaryExecutionEngine (JITLink) to avoid
-        non-deterministic SIGSEGV with duplicate .text ELF sections in
-        multi-process torchrun workloads.
+        The compiler's scoped factory creates the final JITLink engine directly.
+        Retain the conversion for providers that still supply an MLIR engine:
+        JITLink avoids duplicate ELF text-section crashes.
         """
         if self.engine is not None:
             from cutlass._mlir._mlir_libs._cutlass_ir._execution_engine import (
                 BinaryExecutionEngine,
             )
-            from cutlass.base_dsl.env_manager import get_prefix_dsl_libs
 
-            obj = _aot_support.export_module_to_bytes(
-                self.ir_module, format="o", opt_level=3, enable_pic=True
-            )
-            libs_str = get_prefix_dsl_libs("CUTE_DSL")
-            # os.pathsep, not ":" -- on Windows ":" tears "C:\\..." apart.
-            shared_libs = libs_str.split(os.pathsep) if libs_str else []
-            self.engine = BinaryExecutionEngine(
-                obj,
-                shared_libs,
-                True,  # useJitLink
-            )
+            if not isinstance(self.engine, BinaryExecutionEngine):
+                self.engine = _create_tvm_ffi_engine(self.ir_module, self._shared_libs)
 
             tvm_ffi_function_ptr = self.engine.lookup("__tvm_ffi_" + self.function_name)
             tvm_ffi_function = tvm_ffi.Function.__from_extern_c__(
@@ -1021,7 +1135,7 @@ class TVMFFIJitCompiledFunction(tvm_ffi.Function, TVMFFIJitCompiledFunctionBase)
                 "TVM FFI function is not initialized."
                 " Was this function compiled for a different architecture?"
             )
-        if self.execution_args.has_pointer_address_arg_specs:
+        if self.execution_args.args_require_tvm_ffi_conversion:
             args, _ = self.execution_args.convert_python_pointer_args_for_tvm_ffi(
                 args, {}
             )
@@ -1077,7 +1191,7 @@ class TVMFFIJitCompiledFunctionWithKwargs(TVMFFIJitCompiledFunctionBase):
                 " Was this function compiled for a different architecture?"
             )
 
-        if self.execution_args.has_pointer_address_arg_specs:
+        if self.execution_args.args_require_tvm_ffi_conversion:
             args, kwargs = self.execution_args.convert_python_pointer_args_for_tvm_ffi(
                 args, kwargs
             )

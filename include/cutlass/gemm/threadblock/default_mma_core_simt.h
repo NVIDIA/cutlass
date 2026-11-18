@@ -77,6 +77,15 @@ constexpr int simt_transpose_padding(int threads, int crosswise, int size_in_bit
   );
 }
 
+/// Computes the transpose padding rounded up to a nonzero multiple of the warp-level shared
+/// memory load vector width (lane, in elements), so that vectorized loads from the padded tile
+/// stay aligned.
+constexpr int simt_transpose_padding_aligned(
+    int threads, int crosswise, int size_in_bits, int lane) {
+  return cutlass::const_max(
+      lane, (simt_transpose_padding(threads, crosswise, size_in_bits) + lane - 1) / lane * lane);
+}
+
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

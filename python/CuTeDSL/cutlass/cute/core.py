@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from functools import partial, reduce
 import inspect
 from inspect import isclass
-import warnings
+from math import lcm
 from typing import (
     Any,
     Callable,
@@ -28,10 +28,11 @@ from typing import (
     overload,
 )
 
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import builtin, llvm, vector, arith
+
 from cutlass._mlir.dialects import cute as _cute_ir, cute_nvgpu as _cute_nvgpu_ir
 from cutlass._mlir.dialects.cute import (
     ReductionOp as ReductionOp,
@@ -53,6 +54,11 @@ from cutlass.cutlass_dsl import (
     is_dynamic_expression,
     lru_cache_ir,
     not_,
+)
+from cutlass.base_dsl.ast_helpers import (
+    PreparedFormat as _PreparedFormat,
+    check_printf_placeholder_count as _check_printf_placeholder_count,
+    translate_printf_format as _translate_printf_format,
 )
 from cutlass.base_dsl.typing import Int8 as _BaseInt8
 from cutlass.base_dsl.typing import Pointer as _BasePointer
@@ -224,14 +230,19 @@ def _pack_stride(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
     _check_stride(stride)
-    dyn_elems = map(_get_typed_value, extract_mlir_values(stride))
-    # Convert basis elements to the base class before _pack_x
     stride = transform_leaf(
         lambda x: (
-            x.to(_cute_ir.ScaledBasis)
+            x
             if isinstance(x, ScaledBasis)
-            else _get_typed_value(x)
+            else _get_typed_value(_materialize_inferred_integer_fact(x, loc=loc, ip=ip))
         ),
+        stride,
+    )
+    # Extract operands while ScaledBasis still exposes its dynamic value through
+    # the Python wrapper's MLIR extraction protocol.
+    dyn_elems = map(_get_typed_value, extract_mlir_values(stride))
+    stride = transform_leaf(
+        lambda x: x.to(_cute_ir.ScaledBasis) if isinstance(x, ScaledBasis) else x,
         stride,
     )
     res_ty, _ = _cute_ir.pack_stride(stride)
@@ -828,14 +839,16 @@ class ScaledBasis:
         return f"{self.to(_ScaledBasis).__str__()}"
 
     def __hash__(self) -> int:
-        return hash((self.value, tuple(self.mode)))
+        return hash((self._value, tuple(self.mode)))
 
     @property
-    def value(self) -> Any:
+    def value(self) -> Union[int, Numeric, Ratio]:
         """Get the scale value.
 
-        :return: The scale value
+        :return: The scale value; a dynamic scale is an ``Integer``
         """
+        if isinstance(self._value, cutlass_arith.ArithValue):
+            return as_numeric(self._value)
         return self._value
 
     @property
@@ -881,7 +894,7 @@ class ScaledBasis:
                 f"scale must be an integer or a ratio, but got {type(scale)}"
             )
 
-        value = self.value
+        value = self._value
 
         if isinstance(value, Ratio):
             raise NotImplementedError(
@@ -928,11 +941,11 @@ class ScaledBasis:
         return self.__rmul__(scale, loc=loc, ip=ip)  # type: ignore[call-arg]
 
     def __extract_mlir_values__(self) -> List[ir.Value]:
-        if isinstance(self.value, Ratio):
+        if isinstance(self._value, Ratio):
             # Ratio is always static
             return []
         else:
-            return extract_mlir_values(self.value)
+            return extract_mlir_values(self._value)
 
 
 def E(mode: Union[int, List[int]]) -> Union[ScaledBasis, int]:
@@ -985,7 +998,7 @@ def get_divisibility(x: Int) -> int:
         return 1
 
 
-def basis_value(e: Union[ScaledBasis, Any]) -> Union[Int, ir.Value, Ratio]:
+def basis_value(e: Union[ScaledBasis, Any]) -> Union[int, Numeric, Ratio]:
     """Extract the value from a ScaledBasis or return the input as-is.
 
     If the input is a ScaledBasis, returns its value component.
@@ -1314,9 +1327,24 @@ class _Layout(Layout):
     def __call__(
         self,
         coord: Coord,
+        *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> IntTuple:
+        """Evaluate the layout at ``coord``, or slice it with underscores.
+
+        For a complete coordinate, returns the linear index ``crd2idx(coord,
+        self)``. If ``coord`` contains underscores (``None``), returns the
+        sliced sublayout over the underscored modes without the offset
+        contributed by the fixed modes.
+
+        .. code-block:: python
+
+            # L((i, j)) == sl(i) + off, where
+            sl, off = cute.slice_and_offset((_, j), L)
+
+        Use :func:`slice_and_offset` whenever the offset matters and you are slicing a layout.
+        """
         if has_underscore(coord):
             crd_val = _pack_coord(coord, loc=loc, ip=ip)
             return _cute_ir.slice(self, crd_val, loc=loc, ip=ip)
@@ -1491,6 +1519,7 @@ class _ComposedLayout(ComposedLayout):
     def __call__(
         self,
         coord: Coord,
+        *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> IntTuple:
@@ -1724,12 +1753,14 @@ class _Pointer(Pointer):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> _BasePointer:
+        """Return this CuTe pointer as the base-DSL ``Pointer`` bridge type."""
         dtype = (
             cast(Type[Numeric], self.dtype)
             if isinstance(self.dtype, NumericMeta)
             else _BaseInt8
         )
         return _BasePointer(self.to_llvm_ptr(loc=loc, ip=ip), dtype=dtype)
+
     @dsl_user_op
     @lru_cache_ir()
     def _to_builtin_memref(
@@ -1788,6 +1819,13 @@ class _Pointer(Pointer):
         :return: A new pointer offset by the specified amount
         :rtype: ir.Value
         """
+        if self.alignment is not None and self.alignment > 1:
+            offset = _materialize_inferred_integer_fact(
+                offset,
+                zero_divisibility=self.alignment,
+                loc=loc,
+                ip=ip,
+            )
         offset = _pack_int_tuple(offset, loc=loc, ip=ip)
         return _cute_ir.add_offset(self.value, offset=offset, loc=loc, ip=ip)
 
@@ -1906,6 +1944,9 @@ def _op_wrapper(
     ):
         # support types with ViewTypeInterface defined outside of cute_ir
         res = op_fn(input.value, loc=loc, ip=ip)
+        # Let a wrapper rebuild itself if it carries state `res` does not.
+        if hasattr(input, "__rewrap__"):
+            return input.__rewrap__(res)
         return type(input)(res)
     else:
         return op_fn(input, loc=loc, ip=ip)
@@ -2137,10 +2178,18 @@ def printf(
         # Using format string with C-style format specifiers
         cute.printf("a={}, b=%.2f", a, b)
 
+        # Using Python-style format specs on numeric values (translated to the
+        # matching C conversion for the value's type, e.g. Int64 -> %lld)
+        cute.printf("n={:04d}, x={:.2f}, u={:#x}", n, x, u)
+
+    A format string must have exactly one placeholder (``{}``, ``{:spec}`` or a
+    ``%`` conversion) per value; a literal percent sign is written ``%%``.
     A ``%`` conversion must match its value's type: ``%d`` for a 32-bit integer,
     ``%lld`` for a 64-bit one, ``%f`` for a float. A mismatch such as ``%f`` on an
     integer is undefined behavior: printf reads a register or buffer slot the
     value was not passed in and silently prints a wrong value.
+    Positional/named fields (``{0}``, ``{name}``), brace escapes (``{{``, ``}}``)
+    and specs printf can't honor (alignment, grouping) are rejected at trace time.
     """
     from .tensor import _Tensor
 
@@ -2148,10 +2197,14 @@ def printf(
         raise ValueError("expects at least one argument to print")
 
     if isinstance(args[0], str):
-        fmt = args[0] + end
+        fmt = args[0]
         args = args[1:]
+        if not isinstance(fmt, _PreparedFormat):
+            fmt = _translate_printf_format(fmt, args)
+        fmt = str(fmt) + end
     else:
         fmt = "{}" + ", {}" * (len(args) - 1) + end
+    _check_printf_placeholder_count(fmt, len(args))
 
     def process_arg(arg: Any) -> Any:
         if isinstance(arg, Numeric):
@@ -2212,6 +2265,7 @@ def printf(
         )
 
 
+
 @dsl_user_op
 def front(
     input: Any,
@@ -2261,6 +2315,73 @@ def is_major(
     return True if first_stride == 1 else False
 
 
+def _current_insertion_block(
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Optional[ir.Block]:
+    try:
+        insertion_point = ir.InsertionPoint.current if ip is None else ip
+        return insertion_point.block
+    except Exception:
+        return None
+
+
+def _materialize_inferred_integer_fact(
+    x: Any,
+    *,
+    zero_divisibility: int = 1,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    """Attach a locally proven divisibility fact at an eager type boundary."""
+    if isinstance(x, Integer):
+        x = x.ir_value(loc=loc, ip=ip)
+
+    value = x
+    if not isinstance(value, ir.Value) or not isinstance(value.type, ir.IntegerType):
+        return x
+
+    owner = value.owner
+    if not isinstance(owner, ir.Block) and owner.operation.name == "arith.constant":
+        return x
+
+    divisor = 1
+    if divisor == 0:
+        divisor = zero_divisibility
+    if divisor <= 1:
+        return x
+    known_divisibility = get_divisibility(x)
+    if known_divisibility % divisor == 0:
+        return x
+
+    result_type = _cute_ir.ConstrainedIntType.get(divisor, value.type.width, False)
+    return _cute_ir.assume(result_type, value, loc=loc, ip=ip)
+
+
+def _is_function_entry_insertion(
+    ip: Optional[ir.InsertionPoint] = None,
+) -> bool:
+    """Return whether the current insertion point is in a function entry block."""
+    block = _current_insertion_block(ip)
+    return block is not None and _cute_ir.is_function_entry_block(block)
+
+
+def _refine_dominating_integer(
+    src: Any,
+    constrained: Any,
+    divisibility: int,
+    power_of_two: bool,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    """Preserve ignored-return compatibility for entry-block wrappers."""
+    if not isinstance(src, Integer) or not _is_function_entry_insertion(ip):
+        return constrained
+
+    src.value = constrained.value
+    setattr(src, "_cute_assumption_divisibility", divisibility)
+    setattr(src, "_cute_assumption_power_of_two", power_of_two)
+    return constrained
+
+
 @dsl_user_op
 def assume(
     src: Any,
@@ -2302,6 +2423,59 @@ def assume(
                 raise ValueError(f"Expected {src} to be a power of two")
         return src
 
+    # Preserve ignored-return and same-SSA-alias compatibility at function
+    # entry without keeping a trace-local Python registry. MLIR remains the
+    # source of truth for dominance and scope; this lookup only reuses the
+    # scalar wrapper that tracing already emitted for a dominating assumption.
+    if isinstance(src, Integer) and isinstance(src.value, ir.Value) and ip is None:
+        block = _current_insertion_block()
+        if block is not None:
+            tracked = _cute_ir.find_entry_block_integer_assumption(src.value, block)
+            if tracked is not None:
+                tracked_value, tracked_divisibility, tracked_power_of_two = tracked
+                src.value = IntValue(tracked_value, loc=loc, ip=ip)
+                setattr(
+                    src,
+                    "_cute_assumption_divisibility",
+                    tracked_divisibility,
+                )
+                setattr(src, "_cute_assumption_power_of_two", tracked_power_of_two)
+
+    assumed_divisibility = getattr(src, "_cute_assumption_divisibility", None)
+    assumed_power_of_two = getattr(src, "_cute_assumption_power_of_two", False)
+    known_divisibility = get_divisibility(src)
+    # Keep a first no-op fact on an entry argument as a distinct result before
+    # mutating ``src``. Later refinements must not retroactively strengthen an
+    # earlier result alias.
+    materialize_entry_integer = (
+        isinstance(src, Integer)
+        and isinstance(src.value, ir.Value)
+        and isinstance(src.value.owner, ir.Block)
+        and _is_function_entry_insertion(ip)
+    )
+    if (
+        known_divisibility % divby == 0
+        and (not pow2 or assumed_power_of_two)
+        and not materialize_entry_integer
+    ):
+        return src
+
+    if assumed_divisibility is not None:
+        effective_divisibility = lcm(assumed_divisibility, divby)
+        effective_power_of_two = assumed_power_of_two or pow2
+    else:
+        effective_divisibility = divby
+        effective_power_of_two = pow2
+    if (
+        effective_power_of_two
+        and effective_divisibility > 1
+        and (effective_divisibility & (effective_divisibility - 1)) != 0
+    ):
+        raise ValueError(
+            "Cannot combine pow2=True with a non-power-of-two divisibility fact: "
+            f"{effective_divisibility}"
+        )
+
     if isinstance(src, Integer):
         width = type(src).width
         src_val = src.ir_value(loc=loc, ip=ip)
@@ -2309,9 +2483,25 @@ def assume(
         width = src.type.width
         src_val = src
 
-    res_ty = _cute_ir.ConstrainedIntType.get(divby, width, pow2)
+    res_ty = _cute_ir.ConstrainedIntType.get(
+        effective_divisibility, width, effective_power_of_two
+    )
     assumed_val = _cute_ir.assume(res_ty, src_val, loc=loc, ip=ip)
-    return type(src)(IntValue(_pack_int_tuple(assumed_val, loc=loc, ip=ip)))
+    packed = IntValue(_pack_int_tuple(assumed_val, loc=loc, ip=ip), loc=loc, ip=ip)
+    constrained: Any
+    if isinstance(src, IntValue):
+        constrained = packed
+    elif isinstance(src, Integer):
+        constrained = type(src)(packed, loc=loc, ip=ip)
+    else:
+        return assumed_val
+    return _refine_dominating_integer(
+        src,
+        constrained,
+        effective_divisibility,
+        effective_power_of_two,
+        ip,
+    )
 
 
 @dsl_user_op
@@ -3759,12 +3949,7 @@ def make_layout(
             # all() above guarantees every element is a Layout; mypy can't infer
             # that from a runtime predicate, so narrow explicitly.
             layouts = cast("List[Layout]", seq)
-            return make_layout(
-                tuple(layout.shape for layout in layouts),
-                stride=tuple(layout.stride for layout in layouts),
-                loc=loc,
-                ip=ip,
-            )
+            return _cute_ir.make_layout_from_layouts(layouts=layouts, loc=loc, ip=ip)
         # Not layouts: keep the materialized form so generators still work below.
         shape = cast("Shape", seq)
 
@@ -4455,6 +4640,7 @@ def recast_ptr(
     ptr: Pointer,
     swizzle_: Optional[Swizzle] = None,
     dtype: Optional[Type[Numeric]] = None,
+    *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Pointer:
@@ -5191,7 +5377,10 @@ def local_partition(
     if isinstance(index, cutlass_arith.ArithValue):
         index_val = index
     elif isinstance(index, int):
-        index_val = const(index, Int32, loc=loc, ip=ip)
+        two_power_31 = 2**31
+        if index < -two_power_31 or index > two_power_31 - 1:
+            raise ValueError(f"Index value {index} is out of range for 32-bit integer")
+        index_val = Int32(index).ir_value(loc=loc, ip=ip)
     else:
         index_val = index.ir_value(loc=loc, ip=ip)  # type: ignore[union-attr]
     if index_val.type.width > 32:
@@ -5260,9 +5449,11 @@ def local_tile(
             tiler = (2, 4)
             coord = (1, 1)
 
-            # output: (2, 4)
-            # - zipped_divide(tensor, tiler)     -> ((2, 4), (8, 6))
-            # - local_tile(tensor, tiler, coord) -> (2, 4)
+            # zipped_divide(tensor, tiler) -> ((2, 4), (8, 6)):
+            #   the first mode is the (2, 4) tile shape, the second is the
+            #   (8, 6) grid of tiles (the "rest" modes).
+            # local_tile slices out the tile at grid coordinate (1, 1):
+            # output: the (2, 4) tile view
             result = cute.local_tile(tensor, tiler=tiler, coord=coord)
 
     2. Using a stride projection for specialized tiling:
@@ -5275,11 +5466,11 @@ def local_tile(
             coord = (0, 1, 1)
             proj = (1, None, 1)
 
-            # output: (2, 4)
             # projected_tiler: (2, 4)
             # projected_coord: (0, 1)
-            # - zipped_divide(tensor, projected_tiler)               -> ((2, 4), (8, 6))
-            # - local_tile(tensor, projected_tiler, projected_coord) -> (2, 4)
+            # zipped_divide(tensor, projected_tiler) -> ((2, 4), (8, 6)):
+            #   (2, 4) tile shape, (8, 6) grid of tiles.
+            # output: the (2, 4) tile view at grid coordinate (0, 1)
             result = cute.local_tile(tensor, tiler=tiler, coord=coord, proj=proj)
     """
 
@@ -5906,10 +6097,10 @@ class struct:
             return f"{object.__repr__(self)} <{self.dtype}> <ptr = {self._ptr}>"
 
         def __get_mlir_types__(self) -> List[ir.Type]:
-            return [self.value.type]
+            return [self._ptr.value.type]
 
         def __extract_mlir_values__(self) -> List[ir.Value]:
-            return [self.value]
+            return [self._ptr.value]
 
         def __new_from_mlir_values__(self, values: List[ir.Value]) -> Pointer:  # type: ignore[override]
             ptr = _Pointer(
@@ -5930,7 +6121,7 @@ class struct:
                 else 0
             )
             return builtin.unrealized_conversion_cast(
-                [llvm_ptr_ty], [self.value], loc=loc, ip=ip
+                [llvm_ptr_ty], [self._ptr.value], loc=loc, ip=ip
             )
 
         @property
@@ -5954,7 +6145,7 @@ class struct:
             return self._ptr.dtype
 
         @property
-        @deprecated("Using `struct.scalar` as pointer is deprecated.")
+        @_deprecated("Using `struct.scalar` as pointer is deprecated.")
         def value(self) -> ir.Value:
             """
             Get the raw MLIR value of the underlying pointer.
@@ -6365,12 +6556,10 @@ class FastDivmodDivisor:
 
     This class wraps a FastDivmod divisor and enables natural Python operator syntax.
 
-    .. deprecated::
-        Use :class:`FastDivmodDivisorV2` instead. V2 additionally carries the
-        scalar divisor across kernel boundaries (2 MLIR values per object
-        instead of 1), so ``.divisor`` is readable inside kernels;
-        arithmetic is unchanged. This class keeps the legacy 1-value
-        serialization contract for existing integrations.
+    Exactly one MLIR value, the encoded divisor, is serialized across region
+    boundaries; containers with hand-written serialization rely on that count.
+    After a kernel boundary ``.divisor`` is recovered from the encoded value,
+    so it stays readable inside kernels.
 
     :ivar divisor: The original divisor value (publicly accessible)
     :ivar _divisor_mlir: The FastDivmod divisor MLIR value (internal)
@@ -6400,20 +6589,6 @@ class FastDivmodDivisor:
         :param is_power_of_2: Whether divisor is known to be a power of 2.
                               Defaults to False.
         """
-        # Subclasses (FastDivmodDivisorV2) share this __init__; only direct
-        # use of the legacy class is deprecated.
-        if type(self) is FastDivmodDivisor:
-            warnings.warn(
-                "FastDivmodDivisor is deprecated in favor of "
-                "cute.FastDivmodDivisorV2 / cute.fast_divmod_create_divisor_v2. "
-                "V2 additionally carries the scalar divisor across kernel "
-                "boundaries (2 MLIR values per object instead of 1), so "
-                "'.divisor' is readable inside kernels; "
-                "arithmetic (divmod, //, %) is unchanged.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         # Store the original divisor value for public access
         self._original_divisor = divisor
 
@@ -6449,7 +6624,8 @@ class FastDivmodDivisor:
         :param dividend: The dividend value
         :param loc: Source location for MLIR
         :param ip: Insertion point for MLIR
-        :return: Tuple of (quotient, remainder)
+        :return: Tuple of (quotient, remainder), typed as the dividend when it is a
+            32-bit ``Integer`` (so ``Uint32`` stays unsigned), otherwise ``Int32``
         """
         # Convert dividend to ir.Value for MLIR operation
         if isinstance(dividend, ir.Value):
@@ -6468,7 +6644,15 @@ class FastDivmodDivisor:
             loc=loc,
             ip=ip,
         )
-        return (IntValue(results[0]), IntValue(results[1]))
+        result_type: Type[Integer]
+        if isinstance(dividend, Integer) and dividend.width == 32:
+            result_type = type(dividend)
+        else:
+            result_type = cast(Type[Integer], Numeric.from_mlir_type(quotient_type))
+        return (
+            result_type(IntValue(results[0])),
+            result_type(IntValue(results[1])),
+        )
 
     @dsl_user_op
     def __rfloordiv__(
@@ -6534,10 +6718,9 @@ class FastDivmodDivisor:
 
         .. note::
             After this object crosses a kernel boundary (e.g. stored in a
-            params structure passed to a ``@cute.kernel``), the returned value
-            still references host-side SSA and fails MLIR region isolation if
-            used inside the kernel (OSS issue #3243). Use
-            :class:`FastDivmodDivisorV2` to read the divisor inside a kernel.
+            params structure passed to a ``@cute.kernel``), a compile-time
+            constant divisor is returned unchanged and a dynamic divisor is
+            recovered from the encoded value as kernel-region SSA.
         """
         return self._original_divisor
 
@@ -6556,32 +6739,25 @@ class FastDivmodDivisor:
 
     def __extract_mlir_values__(self) -> List[ir.Value]:
         """Extract MLIR values for Host->Device transfer."""
-        # CRITICAL: Extract the FastDivmodDivisor MLIR value directly.
-        #
-        # This allows GridInvariantCodeMotionPass to:
-        # 1. Recognize FastDivmodCreateDivisorOp in the IR
-        # 2. Hoist it to the host side before kernel launch
-        # 3. Pass the pre-computed divisor as a kernel argument
-        #
-        # We only extract the _divisor_mlir to maintain compatibility with
-        # other code that assumes each FastDivmodDivisor has exactly 1 MLIR value.
-        # The _original_divisor is preserved in the object structure.
         return [self._divisor_mlir]
 
     def __new_from_mlir_values__(self, values: List[ir.Value]) -> "FastDivmodDivisor":
         """Reconstruct FastDivmodDivisor from MLIR values."""
-        # Directly use the passed FastDivmodDivisor value without recreating it.
-        # This is critical to avoid generating new create_divisor ops on device side,
-        # which would bypass GridInvariantCodeMotionPass optimization.
+        if len(values) != 1:
+            raise ValueError(
+                "FastDivmodDivisor expects exactly 1 MLIR value (encoded divisor), "
+                f"got {len(values)}. If this object is held by a params class with "
+                "a hand-written __new_from_mlir_values__, make sure it slices 1 "
+                "value per FastDivmodDivisor field."
+            )
         new_obj = object.__new__(FastDivmodDivisor)
         new_obj._divisor_mlir = values[0]
-
-        # Preserve the original divisor to support the public divisor property.
-        # Note: After host-device transfer, _original_divisor will reference
-        # the same value as before transfer for constants, or the reconstructed
-        # value for dynamic expressions.
-        new_obj._original_divisor = self._original_divisor
-
+        if isinstance(self._original_divisor, int):
+            new_obj._original_divisor = self._original_divisor
+        else:
+            new_obj._original_divisor = Int32(
+                IntValue(_cute_ir.fast_divmod_get_divisor(values[0]))
+            )
         return new_obj
 
     def __repr__(self) -> str:
@@ -6638,12 +6814,12 @@ def fast_divmod_create_divisor(
 
 class FastDivmodDivisorV2(FastDivmodDivisor):
     """
-    FastDivmod divisor whose ``.divisor`` property is readable inside kernels.
+    FastDivmod divisor that serializes the scalar divisor as a second MLIR value.
 
     Same arithmetic behavior as :class:`FastDivmodDivisor` (``divmod``, ``//``,
     ``%``), but serializes **two** MLIR values across region boundaries — the
     encoded FastDivmod plus the scalar divisor — so ``.divisor`` resolves to
-    in-region SSA after the object crosses a kernel boundary (OSS issue #3243):
+    in-region SSA after the object crosses a kernel boundary:
 
     .. code-block:: python
 
@@ -6655,9 +6831,9 @@ class FastDivmodDivisorV2(FastDivmodDivisor):
         def kernel(out: cute.Tensor, params: Params):
             out[0] = params.fdd.divisor  # OK: region-local SSA
 
-    :class:`FastDivmodDivisor` keeps the legacy 1-value serialization contract
-    for backward compatibility; its ``.divisor`` is not readable inside a
-    kernel.
+    :class:`FastDivmodDivisor` reaches the same result with a single MLIR value
+    by recovering the scalar from the encoded divisor; this class is kept for
+    integrations that rely on its explicit 2-value contract.
     """
 
     def __extract_mlir_values__(self) -> List[ir.Value]:
@@ -6694,11 +6870,11 @@ class FastDivmodDivisorV2(FastDivmodDivisor):
         new_obj._divisor_mlir = values[0]
         # values[1] may arrive as a raw ir.Value or as a typed integer wrapper
         # (the framework value caster reconstructs typed wrappers across the
-        # kernel boundary). Normalize to IntValue so '.divisor' supports
-        # arithmetic and repr inside the kernel.
+        # kernel boundary). Normalize to Int32 so '.divisor' is a DSL scalar
+        # inside the kernel.
         scalar_divisor = values[1]
         if isinstance(scalar_divisor, ir.Value):
-            scalar_divisor = IntValue(scalar_divisor)
+            scalar_divisor = Int32(IntValue(scalar_divisor))
         new_obj._original_divisor = scalar_divisor
         return new_obj
 
@@ -6710,12 +6886,11 @@ def fast_divmod_create_divisor_v2(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> FastDivmodDivisorV2:
-    """Create a FastDivmod divisor whose ``.divisor`` is readable inside kernels.
+    """Create a FastDivmod divisor that transports its scalar as a second MLIR value.
 
     Behaves like :func:`fast_divmod_create_divisor`, but the returned
     :class:`FastDivmodDivisorV2` serializes both the encoded FastDivmod and the
-    scalar divisor across kernel boundaries, so ``.divisor`` resolves to
-    region-local SSA inside a kernel (OSS issue #3243).
+    scalar divisor across kernel boundaries (2 MLIR values instead of 1).
 
     :param divisor: The divisor value (should be runtime-dynamic value)
     :type divisor: Integer

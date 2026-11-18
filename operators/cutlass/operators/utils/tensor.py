@@ -111,7 +111,7 @@ def pre_shuffle_int4_a(tensor: TensorLike) -> TensorLike:
     .. note::
         The operator API does not currently consume a pre-shuffled payload -- the
         ``ScaledOperand`` opt-in for the shuffle fast path was deferred, so
-        ``MixedInputGemmOperator`` always runs the natural-order path. This helper
+        ``Sm100MixedInputGemmOperator`` always runs the natural-order path. This helper
         is retained for when that opt-in is re-introduced.
 
     Args:
@@ -339,10 +339,13 @@ class TensorWrapper:
 
     _alignment_bytes: int
     _runtime_tensor: TensorLike
-    compile_time_tensor: TensorLike
     _shape: tuple[int, ...]
     _stride: tuple[int, ...]
+    _dtype: type[Numeric]
     _data_ptr: int
+    _compile_time_tensor_source: TensorWrapper | None
+    """Only used if TensorWrapper is constructed from a TensorWrapper so we cache previous compile-time tensor."""
+    _static_layout: bool
 
     def __init__(
         self, tensor: Any, alignment_bytes: int = 16, static_layout: bool = False
@@ -356,26 +359,19 @@ class TensorWrapper:
         # the default dynamic layout so one compiled kernel serves many problem
         # sizes (e.g. a variable-length ``offset_mapping`` that happens to be
         # length 1 at compile time must stay dynamic).
+        self._static_layout = static_layout
         self._alignment_bytes = alignment_bytes
-        if isinstance(tensor, TensorWrapper):
-            # Instead of double-nested TensorWrapper, we grab runtime tensor and flatten
-            self._alignment_bytes = tensor._alignment_bytes
-            self._runtime_tensor = tensor._runtime_tensor
-            self._shape = tensor._shape
-            self._stride = tensor._stride
-            self._data_ptr = tensor._data_ptr
-        elif isinstance(tensor, cute.Tensor):
-            # Regardless of whether TVM-FFI is enabled, if the tensor passed in is a cute.Tensor,
-            # it can be used as the runtime tensor and compile time tensor.
-            self._runtime_tensor = tensor
-            self.compile_time_tensor = tensor
-            self._shape = tensor.shape
-            self._stride = tensor.stride
-            self._data_ptr = tensor.iterator._pointer
-        elif is_torch_fake_tensor(tensor) or (
+        self._compile_time_tensor_source: TensorWrapper | None = None
+        # Checked first: a real (or fake) torch tensor under TVM-FFI is the
+        # overwhelmingly common case, so this avoids two wasted isinstance()
+        # checks (TensorWrapper, cute.Tensor) on the hot path. Safe to reorder --
+        # these branches test mutually exclusive runtime types (a TensorWrapper or
+        # cute.Tensor instance never satisfies is_torch_fake_tensor/is_torch_tensor).
+        torch_fake_tensor = is_torch_fake_tensor(tensor)
+        if torch_fake_tensor or (
             is_torch_tensor(tensor) and GlobalOptions().use_tvm_ffi
         ):
-            if is_torch_fake_tensor(tensor):
+            if torch_fake_tensor:
                 self._data_ptr = 0
                 self._runtime_tensor = None
             else:
@@ -383,12 +379,13 @@ class TensorWrapper:
                 self._data_ptr = tensor.data_ptr()
 
             dtype = dtype_utils.cutlass_type_from_torch_type(tensor.dtype)
+            self._dtype = dtype
 
             # For packed sub-byte torch dtypes (e.g. float4_e2m1fn_x2 which
             # stores 2 FP4 values per byte), convert from physical (packed)
             # shape/stride to logical (unpacked) shape/stride so that
             # TensorWrapper reports the same logical layout as from_dlpack.
-            packing = tensor.element_size() * 8 // dtype.width
+            packing = tensor.element_size() * 8 // self._dtype.width
             if packing > 1:
                 phys_shape = tuple(tensor.shape)
                 phys_stride = tensor.stride()
@@ -404,49 +401,40 @@ class TensorWrapper:
             else:
                 self._shape = tuple(tensor.shape)
                 self._stride = tensor.stride()
-            stride_order = get_stride_rank(tensor.stride())
-            if static_layout:
-                # Keep the concrete shape so the fake tensor's size is static
-                # (e.g. 1 for a scalar reduction destination).  A dynamic
-                # ``SymInt(div=...)`` extent would be rejected by the FFI
-                # run-time shape check for a single-element tensor.
-                shape = list(self._shape)
-            else:
-                major_mode_idx = stride_order.index(0)
-                shape = [cute.SymInt() for _ in range(tensor.dim())]
-                shape[major_mode_idx] = cute.SymInt(
-                    divisibility=alignment_bytes * 8 // dtype.width
-                )
-
-            self.compile_time_tensor = cute.runtime.make_fake_compact_tensor(
-                dtype,
-                shape,
-                stride_order=stride_order,
-                assumed_align=alignment_bytes,
-            )
-
+        elif isinstance(tensor, TensorWrapper):
+            # Instead of double-nested TensorWrapper, we grab runtime tensor and flatten
+            self._alignment_bytes = tensor._alignment_bytes
+            self._runtime_tensor = tensor._runtime_tensor
+            self._shape = tensor._shape
+            self._stride = tensor._stride
+            self._dtype = tensor._dtype
+            self._data_ptr = tensor._data_ptr
+            # Delegate compile_time_tensor to the source (lazily -- see the
+            # compile_time_tensor property below).
+            self._compile_time_tensor_source = tensor
+        elif isinstance(tensor, cute.Tensor):
+            # Regardless of whether TVM-FFI is enabled, if the tensor passed in is a cute.Tensor,
+            # it can be used as the runtime tensor and compile time tensor.
+            self._runtime_tensor = tensor
+            self.compile_time_tensor = tensor
+            self._shape = tensor.shape
+            self._stride = tensor.stride
+            self._dtype = tensor.element_type
+            self._data_ptr = tensor.iterator._pointer
         elif is_jax_array(tensor) and GlobalOptions().use_tvm_ffi:
             _validate_jax_array(tensor)
             self._shape = tuple(int(s) for s in tensor.shape)
             self._stride = _compute_row_major_contiguous_stride(self._shape)
             self._runtime_tensor = tensor
             self._data_ptr = tensor.unsafe_buffer_pointer()
+            self._dtype = dtype_utils.cutlass_type_from_jax_type(tensor.dtype)
 
-            dtype = dtype_utils.cutlass_type_from_jax_type(tensor.dtype)
             stride_order = get_stride_rank(self._stride)
             major_mode_idx = stride_order.index(0)
             shape = [cute.SymInt() for _ in range(len(self._shape))]
             shape[major_mode_idx] = cute.SymInt(
-                divisibility=alignment_bytes * 8 // dtype.width
+                divisibility=alignment_bytes * 8 // self._dtype.width
             )
-
-            self.compile_time_tensor = cute.runtime.make_fake_compact_tensor(
-                dtype,
-                shape,
-                stride_order=stride_order,
-                assumed_align=alignment_bytes,
-            )
-
         elif GlobalOptions().use_tvm_ffi:
             raise ValueError(
                 "TVM-FFI is currently only supported for torch tensors and JAX arrays."
@@ -454,13 +442,12 @@ class TensorWrapper:
         else:
             # TVM-FFI is disabled and the tensor passed in is not a cute.Tensor or torch fake tensor,
             # We must convert it to a cute.Tensor
+            self._dtype = dtype_utils.to_cutlass_type(tensor.dtype)
             if is_torch_tensor(tensor):
-                dtype = dtype_utils.to_cutlass_type(tensor.dtype)
                 shape = tuple(tensor.shape)
                 stride = tensor.stride()
             elif is_jax_array(tensor):
                 _validate_jax_array(tensor)
-                dtype = dtype_utils.to_cutlass_type(tensor.dtype)
                 shape = tuple(int(s) for s in tensor.shape)
                 stride = _compute_row_major_contiguous_stride(shape)
             else:
@@ -470,7 +457,7 @@ class TensorWrapper:
                 tensor,
                 assumed_align=alignment_bytes,
             )
-            if not static_layout:
+            if not self._static_layout:
                 # Default path: mark the major (contiguous) mode dynamic so one
                 # compiled kernel serves many problem sizes.  Skipped for a
                 # scalar reduction destination, which must stay static and
@@ -484,7 +471,7 @@ class TensorWrapper:
                     major_mode_idx
                 ).mark_compact_shape_dynamic(
                     mode=major_mode_idx,
-                    divisibility=alignment_bytes * 8 // dtype.width,
+                    divisibility=alignment_bytes * 8 // self._dtype.width,
                     stride_order=stride_order,
                 )
 
@@ -495,6 +482,41 @@ class TensorWrapper:
             # Since the runtime tensor is now a cute.Tensor, we can use it at
             # compile time as well
             self.compile_time_tensor = self._runtime_tensor
+
+    @functools.cached_property
+    def compile_time_tensor(self) -> TensorLike:
+        """Compile-time (possibly symbolic/fake) tensor representation.
+
+        Built lazily on first access. Only kernel *compilation* reads this (see
+        ``cutedsl/operator.py``'s ``_compile``) --
+        a ``TensorWrapper`` constructed purely to ``.run()`` an already-compiled
+        kernel never touches it, so deferring the ``make_fake_compact_tensor()``
+        call (which constructs ``SymInt``s and a fake tensor descriptor) avoids
+        paying that cost on every kernel launch.
+        """
+        if self._compile_time_tensor_source is not None:
+            return self._compile_time_tensor_source.compile_time_tensor
+
+        stride_order = get_stride_rank(self._stride)
+        if self._static_layout:
+            # Keep the concrete shape so the fake tensor's size is static
+            # (e.g. 1 for a scalar reduction destination).  A dynamic
+            # ``SymInt(div=...)`` extent would be rejected by the FFI
+            # run-time shape check for a single-element tensor.
+            shape = list(self._shape)
+        else:
+            major_mode_idx = stride_order.index(0)
+            shape = [cute.SymInt() for _ in range(len(self._shape))]
+            shape[major_mode_idx] = cute.SymInt(
+                divisibility=self._alignment_bytes * 8 // self._dtype.width
+            )
+
+        return cute.runtime.make_fake_compact_tensor(
+            self._dtype,
+            shape,
+            stride_order=stride_order,
+            assumed_align=self._alignment_bytes,
+        )
 
     @property
     def runtime_tensor(self):
@@ -508,7 +530,7 @@ class TensorWrapper:
     @property
     def dtype(self) -> type[Numeric]:
         """Return the Cute element type of the tensor."""
-        return self.compile_time_tensor.element_type
+        return self._dtype
 
     @property
     def shape(self) -> tuple[int, ...]:

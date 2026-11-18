@@ -30,6 +30,7 @@ import logging
 import traceback
 from collections.abc import Callable
 
+from cutlass.operators.config import GlobalOptions
 from cutlass.operators.providers.provider import Provider
 
 _logger = logging.getLogger(__name__)
@@ -108,3 +109,4 @@ __all__ = [
     "Provider",
     "CuTeDSLProvider",
 ]
+
