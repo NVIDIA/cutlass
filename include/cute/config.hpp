@@ -162,6 +162,30 @@
 #  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x)
 #endif
 
+// Whether C++ exceptions are enabled on the host. Define CUTE_DISALLOW_EXCEPTIONS to disable them in CuTe.
+#if ! defined(CUTE_EXCEPTIONS_ENABLED)
+#  if defined(CUTE_DISALLOW_EXCEPTIONS) || defined(CCCL_DISABLE_EXCEPTIONS) || defined(__CUDACC_RTC__)
+#    define CUTE_EXCEPTIONS_ENABLED 0
+#  elif defined(_MSC_VER) && defined(_CPPUNWIND) && (!defined(_HAS_EXCEPTIONS) || _HAS_EXCEPTIONS)
+#    define CUTE_EXCEPTIONS_ENABLED 1
+#  elif !defined(_MSC_VER) && (defined(__cpp_exceptions) || defined(__EXCEPTIONS))
+#    define CUTE_EXCEPTIONS_ENABLED 1
+#  else
+#    define CUTE_EXCEPTIONS_ENABLED 0
+#  endif
+#endif
+
+// Fail on the host: throw if exceptions are enabled, otherwise print and terminate.
+#if ! defined(CUTE_HOST_ERROR)
+#  if CUTE_EXCEPTIONS_ENABLED
+#    include <stdexcept>
+#    define CUTE_HOST_ERROR(x) throw std::runtime_error(x)
+#  elif !defined(__CUDACC_RTC__)
+#    include <exception>
+#    define CUTE_HOST_ERROR(x) do { std::fprintf(stderr, "<%s:%d> %s\n", __FILE__, __LINE__, x); std::terminate(); } while (0)
+#  endif
+#endif
+
 //
 // IO
 //
