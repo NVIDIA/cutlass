@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import enum
+import functools
 from dataclasses import dataclass
 from enum import auto as enum_auto
 from typing import TYPE_CHECKING
@@ -125,16 +126,16 @@ class TargetSm:
             design, operands
         )
 
-        metadata_to_check.append(mma_supported_targets)
+        metadata_to_check.append(tuple(mma_supported_targets))
 
         # check against tile scheduler supported targets
         if hasattr(design, "tile_scheduler") and design.tile_scheduler:
             tile_scheduler_supported_targets = design.tile_scheduler.supported_targets(
                 design, operands
             )
-            metadata_to_check.append(tile_scheduler_supported_targets)
+            metadata_to_check.append(tuple(tile_scheduler_supported_targets))
 
-        return TargetSm.intersect_supported_targets(metadata_to_check)
+        return list(_intersect_supported_targets_cached(tuple(metadata_to_check)))
 
     @staticmethod
     def intersect_supported_targets(
@@ -152,12 +153,11 @@ class TargetSm:
         Returns:
             list[TargetSm]: Targets supported by all groups, in first-seen order.
         """
-        candidates = list(dict.fromkeys(t for group in target_groups for t in group))
-        return [
-            c
-            for c in candidates
-            if all(any(t.is_portable_to(c) for t in group) for group in target_groups)
-        ]
+        return list(
+            _intersect_supported_targets_cached(
+                tuple(tuple(group) for group in target_groups)
+            )
+        )
 
     def is_portable_to(self, other: TargetSm | str) -> bool:
         """Check if this target can compile/run on architecture described by `other` TargetSm."""
@@ -218,6 +218,28 @@ class TargetSm:
 
     def __hash__(self) -> int:
         return hash((self.cc, self.portability))
+
+
+@functools.cache
+def _intersect_supported_targets_cached(
+    target_groups: tuple[tuple[TargetSm, ...], ...],
+) -> tuple[TargetSm, ...]:
+    """Cache supported targets.
+
+    Args:
+        target_groups (tuple[tuple[TargetSm, ...], ...]): One target group per
+            component.
+
+    Returns:
+        tuple[TargetSm, ...]: Targets supported by all groups, in first-seen
+            order.
+    """
+    candidates = dict.fromkeys(t for group in target_groups for t in group)
+    return tuple(
+        c
+        for c in candidates
+        if all(any(t.is_portable_to(c) for t in group) for group in target_groups)
+    )
 
 
 class ArchPortability(enum.Enum):

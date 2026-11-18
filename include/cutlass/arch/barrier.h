@@ -1006,5 +1006,236 @@ CUTE_DEVICE static void fence_view_async_tmem_store() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// ClusterTransactionBarrier with V1 mbarrier layout, and primary/conditional wait phases.
+// These barriers are introduced in sm107f.
+
+// {,try_,test_}wait() check the CONDITIONAL phase
+// {,try_,test_}wait_primary() check PRIMARY phase, and return reportPredicate (invalid) --> used
+// to predicate TMA load retry issues.
+
+struct ClusterTransactionBarrierWithConditionalPhase : public ClusterTransactionBarrier {
+  using ValueType = uint64_t;
+  static_assert(cute::is_same_v<ClusterTransactionBarrier::ValueType, ValueType>);
+
+  CUTLASS_DEVICE
+  ClusterTransactionBarrierWithConditionalPhase() = delete;
+
+  CUTLASS_DEVICE
+  void init(uint32_t arrive_count) const {
+    ClusterTransactionBarrierWithConditionalPhase::init_v1(&this->barrier_, arrive_count);
+  }
+
+  CUTLASS_DEVICE
+  bool test_wait(uint32_t phase, uint32_t pred=true) const {
+    return ClusterTransactionBarrierWithConditionalPhase::test_wait_conditional(&this->barrier_, phase, pred);
+  }
+
+  CUTLASS_DEVICE
+  bool test_wait_primary(uint32_t phase, uint32_t pred, bool& invalid) const {
+    return ClusterTransactionBarrierWithConditionalPhase::test_wait_primary(&this->barrier_, phase, pred, invalid);
+  }
+
+  CUTLASS_DEVICE
+  bool try_wait(uint32_t phase) const {
+    return ClusterTransactionBarrierWithConditionalPhase::try_wait_conditional(&this->barrier_, phase);
+  }
+
+  CUTLASS_DEVICE
+  bool try_wait_primary(uint32_t phase, bool& invalid) const {
+    return ClusterTransactionBarrierWithConditionalPhase::try_wait_primary(&this->barrier_, phase, invalid);
+  }
+
+  CUTLASS_DEVICE
+  void wait(uint32_t phase) const {
+    ClusterTransactionBarrierWithConditionalPhase::wait_conditional(&this->barrier_, phase);
+  }
+
+  CUTLASS_DEVICE
+  bool wait_primary(uint32_t phase) const {
+    return ClusterTransactionBarrierWithConditionalPhase::wait_primary(&this->barrier_, phase);
+  }
+
+  //
+  //  Static Versions
+  //
+  CUTLASS_HOST_DEVICE
+  static void init_v1(ValueType const* smem_ptr, uint32_t arrive_count) {
+    CUTLASS_ASSERT(arrive_count != 0 && "Arrive count must be non-zero");
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    asm volatile ("mbarrier.init.layout::v1.shared.b64 [%0], %1;\n"
+      :: "r"(smem_addr),
+         "r"(arrive_count));
+    cutlass::arch::synclog_emit_cluster_barrier_init(__LINE__, smem_addr, arrive_count);
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  static bool wait_primary(ValueType const* smem_ptr, uint32_t phase) {
+  uint16_t invalid = true;
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_wait(__LINE__, smem_addr, phase);
+    // Arbitrarily large timer value after which try-wait expires and re-tries.
+    uint32_t ticks = 0x989680;
+    asm volatile(
+        "{\n\t"
+        ".reg .pred             P1; \n\t"
+        ".reg .pred             P2; \n\t"
+        "LAB_WAIT: \n\t"
+        "mbarrier.try_wait.parity.phase_type::primary.shared::cta.b64 P1|P2, [%1], %2, %3;\n\t"
+        "@P1 bra DONE; \n\t"
+        "bra     LAB_WAIT; \n\t"
+        "DONE: \n\t"
+        "selp.b16 %0, -1, 0, P2;\n"
+        "}"
+        : "=h"(invalid)
+        : "r"(smem_addr), "r"(phase), "r"(ticks)
+        : "memory");
+
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+    return static_cast<bool>(invalid);
+  }
+
+  CUTLASS_HOST_DEVICE
+  static void wait_conditional(ValueType const* smem_ptr, uint32_t phase) {
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_wait(__LINE__, smem_addr, phase);
+    // Arbitrarily large timer value after which try-wait expires and re-tries.
+    uint32_t ticks = 0x989680;
+    asm volatile(
+        "{\n\t"
+        ".reg .pred       P1; \n\t"
+        "LAB_WAIT: \n\t"
+        "mbarrier.try_wait.parity.phase_type::conditional.shared::cta.b64 P1, [%0], %1, %2; \n\t"
+        "@P1 bra DONE; \n\t"
+        "bra     LAB_WAIT; \n\t"
+        "DONE: \n\t"
+        "}"
+        :
+        : "r"(smem_addr), "r"(phase), "r"(ticks)
+        : "memory");
+
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  static bool test_wait_primary(ValueType const* smem_ptr, uint32_t phase, uint32_t pred, bool& invalid) {
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_test_wait(__LINE__, smem_addr, phase, pred);
+    uint16_t waitComplete;
+    uint16_t reportPredicate;
+
+    asm volatile(
+        "{\n\t"
+        ".reg .pred P1; \n\t"
+        ".reg .pred P2; \n\t"
+        ".reg .pred P3; \n\t"
+        "setp.eq.u32 P2, %4, 1;\n\t"
+        "@P2 mbarrier.test_wait.parity.phase_type::primary.shared::cta.b64 P1|P3, [%2], %3; \n\t"
+        "selp.b16 %0, 1, 0, P1; \n\t"
+        "selp.b16 %1, 1, 0, P3; \n\t"
+        "}"
+        : "=h"(waitComplete), "=h"(reportPredicate)
+        : "r"(smem_addr), "r"(phase), "r"(pred)
+        : "memory");
+
+    invalid = static_cast<bool>(reportPredicate);
+    return static_cast<bool>(waitComplete);
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+    return 0;
+  }
+
+  CUTLASS_HOST_DEVICE
+  static bool test_wait_conditional(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_test_wait(__LINE__, smem_addr, phase, pred);
+    uint32_t waitComplete;
+
+    asm volatile(
+        "{\n\t"
+        ".reg .pred P1; \n\t"
+        ".reg .pred P2; \n\t"
+        "setp.eq.u32 P2, %3, 1;\n\t"
+        "@P2 mbarrier.test_wait.parity.phase_type::conditional.shared::cta.b64 P1, [%1], %2; \n\t"
+        "selp.b32 %0, 1, 0, P1; \n\t"
+        "}"
+        : "=r"(waitComplete)
+        : "r"(smem_addr), "r"(phase), "r"(pred)
+        : "memory");
+
+    return static_cast<bool>(waitComplete);
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+    return 0;
+  }
+
+  CUTLASS_HOST_DEVICE
+  static bool try_wait_primary(ValueType const* smem_ptr, uint32_t phase, bool& invalid) {
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_try_wait(__LINE__, smem_addr, phase);
+    uint16_t waitComplete, reportPredicate;
+
+    asm volatile(
+        "{\n\t"
+        ".reg .pred P1; \n\t"
+        ".reg .pred P2; \n\t"
+        "mbarrier.try_wait.parity.phase_type::primary.shared::cta.b64 P1|P2, [%2], %3; \n\t"
+        "selp.b16 %0, 1, 0, P1; \n\t"
+        "selp.b16 %1, 1, 0, P2; \n\t"
+        "}"
+        : "=h"(waitComplete), "=h"(reportPredicate)
+        : "r"(smem_addr), "r"(phase)
+        : "memory");
+
+    invalid = static_cast<bool>(reportPredicate);
+    return static_cast<bool>(waitComplete);
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+    return 0;
+  }
+
+  CUTLASS_HOST_DEVICE
+  static bool try_wait_conditional(ValueType const* smem_ptr, uint32_t phase) {
+#if (CUDA_BARRIER_ENABLED) && defined(CUTE_ARCH_TMA_SM107_ENABLED)
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_try_wait(__LINE__, smem_addr, phase);
+    uint32_t waitComplete;
+
+    asm volatile(
+        "{\n\t"
+        ".reg .pred P1; \n\t"
+        "mbarrier.try_wait.parity.phase_type::conditional.shared::cta.b64 P1, [%1], %2; \n\t"
+        "selp.b32 %0, 1, 0, P1; \n\t"
+        "}"
+        : "=r"(waitComplete)
+        : "r"(smem_addr), "r"(phase)
+        : "memory");
+
+    return static_cast<bool>(waitComplete);
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+    return 0;
+  }
+
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 }  // end namespace arch
 }  // end namespace cutlass

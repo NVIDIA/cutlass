@@ -50,6 +50,7 @@
 #include "cutlass/gemm/warp/default_mma_complex_tensor_op.h"
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm80.h"
 
+#include "cutlass/gemm/threadblock/default_mma_core_simt.h"
 #include "cutlass/gemm/threadblock/default_multistage_mma_complex_core.h"
 
 #include "cutlass/matrix_shape.h"
@@ -1280,11 +1281,18 @@ struct DefaultMultistageMmaComplexCore<
     kTransformB   /// Transform for B
     >;            /// Used for partial specialization
 
+  /// Skew the transposed B tile so a warp's cp.async stores spread across shared memory banks
+  static_assert(sizeof_bits<ElementB>::value >= 32,
+                "SM80 multistage SIMT mainloops store one element per cp.async, "
+                "which requires elements of at least 32 bits.");
+  static int const kPaddingN = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementB>::value, LaneN);
+
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
     MatrixShape<0, 0>,
-    MatrixShape<0, Shape::kK / 32>,
+    MatrixShape<0, kPaddingN>,
     WarpCount::kK>;
 };
 
@@ -1451,7 +1459,7 @@ struct DefaultMultistageMmaComplexCore<
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
     MatrixShape<0, 0>,
-    MatrixShape<0, 0>,    // or Shape::kK / 32
+    MatrixShape<0, 0>,
     WarpCount::kK>;
 };
 
@@ -1620,11 +1628,21 @@ struct DefaultMultistageMmaComplexCore<
     kTransformB   /// Transform for B
     >;            /// Used for partial specialization
 
+  /// Skew the transposed A and B tiles so a warp's cp.async stores spread across shared
+  /// memory banks
+  static_assert(sizeof_bits<ElementA>::value >= 32 && sizeof_bits<ElementB>::value >= 32,
+                "SM80 multistage SIMT mainloops store one element per cp.async, "
+                "which requires elements of at least 32 bits.");
+  static int const kPaddingM = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementA>::value, LaneM);
+  static int const kPaddingN = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementB>::value, LaneN);
+
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
-    MatrixShape<Shape::kK / 32, 0>,
-    MatrixShape<0, Shape::kK / 32>,
+    MatrixShape<kPaddingM, 0>,
+    MatrixShape<0, kPaddingN>,
     WarpCount::kK>;
 };
 
@@ -1790,11 +1808,18 @@ struct DefaultMultistageMmaComplexCore<
     kTransformB   /// Transform for B
     >;            /// Used for partial specialization
 
+  /// Skew the transposed A tile so a warp's cp.async stores spread across shared memory banks
+  static_assert(sizeof_bits<ElementA>::value >= 32,
+                "SM80 multistage SIMT mainloops store one element per cp.async, "
+                "which requires elements of at least 32 bits.");
+  static int const kPaddingM = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementA>::value, LaneM);
+
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
-    MatrixShape<Shape::kK / 32, 0>,
-    MatrixShape<0, 0>,    // or Shape::kK / 32
+    MatrixShape<kPaddingM, 0>,
+    MatrixShape<0, 0>,
     WarpCount::kK>;
 };
 

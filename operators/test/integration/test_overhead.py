@@ -28,6 +28,7 @@
 
 
 import time
+from typing import Any
 
 import pytest
 import torch
@@ -44,8 +45,15 @@ from cutlass.operators.utils.tensor import TensorWrapper
 from test_utils import assert_close_with_reference_conversion
 
 
-def _benchmark_cpu(label, code, n_iterations):
-    """Measure CPU-side wall time per call for `code`"""
+def _benchmark_cpu(label, code, n_iterations) -> tuple[float, Any]:
+    """Measure CPU-side wall time per call for `code`.
+
+    Runs warmup for n_iterations then measures for another n_iterations.
+
+    Returns:
+        float: average time per call in microseconds
+        Any: return result of the `code` execution
+    """
 
     # Warmup
     for _ in range(n_iterations):
@@ -54,8 +62,9 @@ def _benchmark_cpu(label, code, n_iterations):
     torch.cuda.synchronize()
 
     start = time.perf_counter()
+    result = None
     for _ in range(n_iterations):
-        code()
+        result = code()
     # Skip synchronization here: we only measure host time
     # independent of device code perf
     end = time.perf_counter()
@@ -63,12 +72,16 @@ def _benchmark_cpu(label, code, n_iterations):
 
     avg_us = elapsed / n_iterations * 1e6
     print(f"[{label:40}] avg of {n_iterations} iterations: {avg_us:8.1f} us")
-    return avg_us
+    return avg_us, result
 
 
 def _extract_runtime_args(*fn_args):
     """Extract runtime tensors from TensorWrappers, passing other args through."""
     return [x.runtime_tensor if isinstance(x, TensorWrapper) else x for x in fn_args]
+
+
+N_ITERATIONS = 100
+"""Runs warmup n times and measures n times."""
 
 
 def test_overhead(fixture_toggle_tvm_ffi):
@@ -79,7 +92,14 @@ def test_overhead(fixture_toggle_tvm_ffi):
     B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
     D = torch.empty((M, N), device="cuda", dtype=torch.float16)
 
-    args = ops.GemmArguments(A=A, B=B, out=D, accumulator_type=torch.float32)
+    n_iterations = N_ITERATIONS
+
+    args_creation_time, args = _benchmark_cpu(
+        "GemmArguments creation",
+        lambda: ops.GemmArguments(A=A, B=B, out=D, accumulator_type=torch.float32),
+        n_iterations,
+    )
+
     operators = ops.get_operators(
         args, target_sm="80", providers=[ops.CuTeDSLProvider()]
     )
@@ -90,10 +110,8 @@ def test_overhead(fixture_toggle_tvm_ffi):
     compiled_artifact = operator.compile(args)
     stream = current_stream()
 
-    n_iterations = 100
-
-    api_time = _benchmark_cpu(
-        "With CUTLASS Operator API (operator.run())",
+    api_time, _ = _benchmark_cpu(
+        "With CUTLASS Operator API (operator.run(assume_supported_args=True))",
         lambda: operator.run(
             args,
             compiled_artifact=compiled_artifact,
@@ -104,14 +122,8 @@ def test_overhead(fixture_toggle_tvm_ffi):
     )
 
     compiled_obj = compiled_artifact.compiled_obj
-    direct_args = _extract_runtime_args(
-        args.A.tensor,
-        args.B.tensor,
-        args.out.tensor,
-        to_cuda_stream(stream),
-    )
 
-    _benchmark_cpu(
+    _args_extraction_time, direct_args = _benchmark_cpu(
         "Argument extraction",
         lambda: _extract_runtime_args(
             args.A.tensor,
@@ -121,14 +133,16 @@ def test_overhead(fixture_toggle_tvm_ffi):
         ),
         n_iterations,
     )
-    direct_time = _benchmark_cpu(
+    direct_time, _ = _benchmark_cpu(
         "Direct CuTe DSL (compiled_obj())",
         lambda: compiled_obj(*direct_args),
         n_iterations,
     )
 
-    overhead_us = api_time - direct_time
-    print(f"  Overhead: {overhead_us:.1f} us over direct CuTe DSL")
+    overhead_us = (args_creation_time + api_time) - direct_time
+    print(
+        f"  Overhead tvm_ffi={ops.GlobalOptions().use_tvm_ffi}: {overhead_us:.1f} us over direct CuTe DSL"
+    )
 
     torch.cuda.synchronize()
     reference = A @ B
@@ -141,7 +155,6 @@ def test_overhead(fixture_toggle_tvm_ffi):
 )
 def test_overhead_big_epilogue(fixture_toggle_tvm_ffi):
     """Compare CPU overhead with a large epilogue (8 aux inputs, 8 aux outputs)."""
-    print()
 
     M, N, K, L = 256, 512, 128, 2
     ab_dtype = torch.float16
@@ -234,9 +247,16 @@ def test_overhead_big_epilogue(fixture_toggle_tvm_ffi):
         sc7=sc7,
         sc8=sc8,
     )
-    args = ops.GemmArguments(
-        A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
+    n_iterations = N_ITERATIONS
+
+    args_creation_time, args = _benchmark_cpu(
+        "GemmArguments creation",
+        lambda: ops.GemmArguments(
+            A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
+        ),
+        n_iterations,
     )
+
     operators = ops.get_operators(
         args, target_sm=device_or_env_target_sm(), providers=[ops.CuTeDSLProvider()]
     )
@@ -246,47 +266,47 @@ def test_overhead_big_epilogue(fixture_toggle_tvm_ffi):
     assert operator.supports(args)
     compiled_artifact = operator.compile(args)
     stream = current_stream()
+    device_properties = ops.DeviceProperties()
+    max_active_clusters = device_properties.max_active_clusters(
+        operator.metadata.design.cluster_shape
+    )
 
-    n_iterations = 100
-
-    api_time = _benchmark_cpu(
-        "With CUTLASS Operator API (operator.run())",
+    api_time, _ = _benchmark_cpu(
+        "With CUTLASS Operator API (operator.run(assume_supported_args=True))",
         lambda: operator.run(
             args,
             compiled_artifact=compiled_artifact,
             stream=stream,
             assume_supported_args=True,
+            device_properties=device_properties,
         ),
         n_iterations,
     )
 
     compiled_obj = compiled_artifact.compiled_obj
-    direct_args = _extract_runtime_args(
-        args.A.tensor,
-        args.B.tensor,
-        to_cuda_stream(stream),
-        *args.epilogue.parameters,
-    )
 
-    _benchmark_cpu(
+    _args_extraction_time, direct_args = _benchmark_cpu(
         "Argument extraction",
         lambda: _extract_runtime_args(
             args.A.tensor,
             args.B.tensor,
+            max_active_clusters,
             to_cuda_stream(stream),
             *args.epilogue.parameters,
         ),
         n_iterations,
     )
 
-    direct_time = _benchmark_cpu(
+    direct_time, _ = _benchmark_cpu(
         "Direct CuTe DSL",
         lambda: compiled_obj(*direct_args),
         n_iterations,
     )
 
-    overhead_us = api_time - direct_time
-    print(f"  Overhead: {overhead_us:.1f} us over direct CuTe DSL")
+    overhead_us = (args_creation_time + api_time) - direct_time
+    print(
+        f"  EFC Overhead tvm_ffi={ops.GlobalOptions().use_tvm_ffi}: {overhead_us:.1f} us over direct CuTe DSL"
+    )
 
     torch.cuda.synchronize()
     reference = epi(

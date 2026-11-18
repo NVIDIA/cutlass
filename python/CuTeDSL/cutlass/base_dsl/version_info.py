@@ -10,13 +10,28 @@
 # is strictly prohibited.
 
 
-from .common import DSLCudaVersion, DSLRuntimeError, _get_cuda_version
+from .common import (
+    DSLCudaVersion,
+    DSLVersion,
+    DSLRuntimeError,
+    _get_cuda_version,
+    _get_dsl_version,
+)
 
 try:
     CUDA_VERSION = DSLCudaVersion(_get_cuda_version())
 except Exception as e:
     raise DSLRuntimeError(
         "💥💥💥 Failed to get CUDA version 💥💥💥",
+        cause=e,
+        suggestion="Consider re-installing the package.",
+    ) from e
+
+try:
+    DSL_VERSION = DSLVersion(_get_dsl_version())
+except Exception as e:
+    raise DSLRuntimeError(
+        "💥💥💥 Failed to get DSL version 💥💥💥",
         cause=e,
         suggestion="Consider re-installing the package.",
     ) from e

@@ -36,6 +36,7 @@ from .arith import (
 if TYPE_CHECKING:
     from ..base_dsl.typing import Int32, Numeric
 
+
 # =============================================================================
 # Vector Type - Immutable on registers
 # =============================================================================
@@ -809,8 +810,8 @@ class Vector(ArithValue):
         op: Literal["add", "mul", "min", "max"] = "add",
         *,
         dim: Optional[Union[int, list[int]]] = None,
-        fastmath: Optional[arith.FastMathFlags] = None,
         acc: Any = None,
+        fastmath: bool = False,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Any:
@@ -822,21 +823,28 @@ class Vector(ArithValue):
         returning a lower-rank :class:`Vector`.
 
         :param op: Reduction operation — one of ``"add"``, ``"mul"``,
-            ``"min"``, ``"max"``.  For ``"min"``/``"max"`` the combining
-            kind adapts automatically to the element type (float vs signed
-            vs unsigned integer).
-        :param dim: Dimension(s) to reduce.  ``None`` reduces all dims to a
-            scalar.  An int or list of ints reduces only those dims.
-        :param fastmath: Optional fast-math flags for the reduction. Pass
-            ``arith.FastMathFlags.reassoc`` to allow the compiler to lower
-            the reduction as a tree instead of a strict left-to-right chain.
-            Defaults to ``None``. Only supported for a full reduction of a
-            1-D vector to a scalar (``dim is None``), raises ValueError
-            for multi-dimensional reductions.
-        :param acc: Optional accumulator.  For scalar reduction a scalar value;
-            for multi-dim reduction a vector matching the result shape.
-        :return: Scalar (when ``dim is None``) or :class:`Vector` (when
-            ``dim`` is specified).
+            ``"min"``, ``"max"``, defaults to ``"add"``.  For
+            ``"min"``/``"max"`` the combining kind adapts automatically to the
+            element type (float vs signed vs unsigned integer).
+        :type op: str, optional
+        :param dim: Dimension(s) to reduce, defaults to None (all dims to a
+            scalar).  An int or list of ints reduces only those dims.
+        :type dim: int or list[int], optional
+        :param acc: Accumulator, defaults to None.  For scalar reduction a
+            scalar value; for multi-dim reduction a vector matching the result
+            shape.
+        :type acc: Vector or Numeric, optional
+        :param fastmath: Allow the reduction to be reassociated, defaults to
+            False.  ``True`` emits ``arith.fastmath<reassoc,nsz>`` on float
+            element types and is ignored on integer ones.  It is worth
+            understanding before use — see `Reduction order` below.
+        :type fastmath: bool, optional
+        :raises ValueError: If ``op`` is not one of the four supported
+            operations, or if ``dim`` is empty, contains duplicates, or names
+            a dimension outside the vector's rank.
+        :return: Scalar (when ``dim is None``) or reduced vector (when ``dim``
+            is specified).
+        :rtype: Numeric or Vector
 
         Examples:
 
@@ -848,6 +856,70 @@ class Vector(ArithValue):
                 m = cute.full((4, 8), 1.0, dtype=cutlass.Float32).to_vector()
                 m.reduce("add", dim=1)   # vector<4xf32>, each element = 8.0
                 m.reduce("add", dim=0)   # vector<8xf32>, each element = 4.0
+
+                # Opt in to a reassociated (packed, log2-depth) float sum.
+                v.reduce("add", fastmath=True)
+
+        .. rubric:: Reduction order
+
+        **The default is not free.** Without flags a float ``add``/``mul``
+        reduction lowers to ``llvm.vector.reduce.f{add,mul}(start, %v)``, which
+        LLVM defines as a STRICTLY SEQUENTIAL reduction: the backend may not
+        reassociate, so an N-lane f16 sum stays an N-long dependent chain of
+        scalar-slot adds instead of a log2 tree of packed ``f16x2`` adds.  Both
+        flags are needed to recover the tree and neither alone suffices —
+        ``reassoc`` lets LLVM expand the reduction as a shuffle/halving tree
+        (which is what makes the adds packed) but leaves one trailing op
+        because the intrinsic's start value must be added last, and ``nsz`` is
+        what lets that trailing ``+ 0.0`` fold away (it is not removable
+        otherwise, since ``x + 0.0 != x`` for ``x == -0.0``).
+
+        Measured on sm_100a, ``Vector[f16].reduce("add")``, half-add ops:
+
+        ===========  ===  ===  ====
+        flags        N=4  N=8  N=16
+        ===========  ===  ===  ====
+        none           4    8    16
+        nsz            3    7    15
+        reassoc        3    5     9
+        reassoc|nsz    2    4     8
+        ===========  ===  ===  ====
+
+        ``reassoc|nsz`` is the log2 lower bound (N/2 packed ops).
+        ``min``/``max`` see no change either way:
+        ``llvm.vector.reduce.f{min,max}`` take no start value and are already
+        unordered, and the backend is in fact already below the N/2 a binary
+        tree would give — measured byte-identical output with and without
+        the flags, 42/42 over {f16,bf16,f32} x {min,max} x N in
+        {2,3,4,6,8,16,32}.  They are still forwarded there: an opt-in is a
+        promise about your data, not a request for one specific optimization.
+
+        .. warning::
+
+            ``fastmath=True`` makes float ``add``/``mul`` reductions
+            order-independent, so results are no longer bit-identical to a
+            left-to-right sum.  The tree is typically CLOSER to the f32
+            reference than the sequential chain, since it halves the number of
+            rounding steps on the running accumulator.
+
+        .. note::
+
+            ``True`` is deliberately NOT ``arith.FastMathFlags.fast``.
+            ``fast`` is all seven flags, and the other five are either inert on
+            a reduction (``arcp`` needs a division, ``afn`` a transcendental,
+            ``contract`` a multiply-add — a fold contains none of them) or
+            actively wrong for one: ``nnan`` makes NaN operands undefined,
+            which defeats the point of the NaN-ignoring ``minnumf``/``maxnumf``
+            this very method selects, and ``ninf`` makes +/-Inf operands
+            undefined, which collides head-on with the ``-inf`` masking every
+            attention kernel relies on.  A reduction is an algebraic fold, so
+            the flags defined for it are the ones about the fold's algebra:
+            evaluation order and the identity element.
+
+            On integer element types the attribute is dropped entirely:
+            ``arith.FastMathFlags`` has no meaning for the integer combining
+            kinds (ADD/MUL/MINSI/MAXUI/...) or for the ``i1`` AND/OR
+            reductions behind :func:`all_of` / :func:`any_of`.
 
         .. note::
 
@@ -878,21 +950,51 @@ class Vector(ArithValue):
                 f"Expected one of: {', '.join(sorted(self._REDUCE_KINDS))}"
             )
         kind = kind_fn(self)
+        # `fastmath` is a user opt-in, never inferred -- deciding on the user's
+        # behalf that a reduction may be reassociated is a decision about their
+        # data, not about their target.
+        #
+        # It expands to `reassoc|nsz` and NOT to `FastMathFlags.fast`. That is
+        # not a weaker reduction-private dialect of the same word; it is the
+        # subset that is DEFINED for this op. A reduction is an algebraic fold,
+        # so the flags that mean anything on it are the ones about the fold's
+        # algebra -- evaluation order (`reassoc`) and the identity element
+        # (`nsz`). Of the five `fast` adds on top, three are inert here because
+        # the op contains no such operation (`arcp` needs a division, `afn` a
+        # transcendental, `contract` a multiply-add) and two are actively
+        # wrong: `nnan` makes NaN operands undefined, which defeats the
+        # NaN-ignoring `minnumf`/`maxnumf` that `_REDUCE_KINDS` selects just
+        # above, and `ninf` makes +/-Inf operands undefined, which collides
+        # with the `-inf` masking that softmax row-max reductions are built on.
+        #
+        # The element-type guard is a legality test rather than a performance
+        # judgement: `arith`'s fast-math flags are defined for floats only,
+        # while ADD/MUL are shared with the integer combining kinds.
+        resolved_fastmath = (
+            arith.FastMathFlags.reassoc | arith.FastMathFlags.nsz
+            if (fastmath and self._is_float_type())
+            else None
+        )
+
         vec_ty = ir.VectorType(self.type)
         elem_ty = vec_ty.element_type
-        fmf_kwargs = {"fastmath": fastmath} if fastmath is not None else {}
 
         ndim = len(vec_ty.shape)
 
         if dim is None and ndim == 1:
             # 1-D full reduction to scalar — wrap in _dtype so type info is preserved
-            raw = vector.reduction(elem_ty, kind, self, acc=acc, **fmf_kwargs, loc=loc, ip=ip)
+            raw = vector.reduction(
+                elem_ty,
+                kind,
+                self,
+                acc=acc,
+                fastmath=resolved_fastmath,
+                loc=loc,
+                ip=ip,
+            )
             return self._dtype(raw)
 
         # Multi-dimension reduction
-        if fastmath is not None:
-            raise ValueError("Fastmath flags are only supported for 1-D full reductions.")
-
         if dim is None:
             # Reduce all dims for N-D vector
             reduction_dims = list(range(ndim))
@@ -939,7 +1041,15 @@ class Vector(ArithValue):
             vec_1d = vector.multi_reduction(
                 kind, self, acc=p_acc, reduction_dims=partial_dims, loc=loc, ip=ip
             )
-            raw = vector.reduction(elem_ty, kind, vec_1d, acc=acc, loc=loc, ip=ip)
+            raw = vector.reduction(
+                elem_ty,
+                kind,
+                vec_1d,
+                acc=acc,
+                fastmath=resolved_fastmath,
+                loc=loc,
+                ip=ip,
+            )
             return self._dtype(raw)
 
         if acc is None:
@@ -1344,8 +1454,7 @@ def print_nd_vector(
     :type src: Vector
 
     """
-    from .. import cute
-    from ..cute import tensor
+    from ..cute import tensor, print_tensor
 
     size = 1
     for dim in src.shape:
@@ -1357,4 +1466,4 @@ def print_nd_vector(
     tmp = tensor._row2col(tmp, shape=tuple(src.shape), loc=loc, ip=ip)
     tmp = tensor.TensorSSA(tmp, tuple(src.shape), src.dtype, loc=loc, ip=ip)
 
-    cute.print_tensor(tmp, loc=loc, ip=ip)
+    print_tensor(tmp, loc=loc, ip=ip)

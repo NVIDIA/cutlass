@@ -25,6 +25,19 @@ Notable unsupported features
 - Task Scheduling support for existing CuTe DSL and extension (``cute_ext``) kernels
 
 
+Free Threading Support
+----------------------
+Free threading is supported, but with limited parallelism and restrictions.
+Current support is experimental.
+
+The following capabilities are supported:
+
+- Compilation from multiple Python threads.
+- Launching kernels from multiple Python threads.
+
+See :ref:`dsl_threading` for more details.
+
+
 Programming Model
 ---------------------
 

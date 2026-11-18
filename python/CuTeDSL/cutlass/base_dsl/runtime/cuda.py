@@ -467,6 +467,28 @@ def initialize_cuda_context(device_id: int = 0, flags: int = 0) -> Any:
     return _create_cuda_context(device_id, flags)
 
 
+def initialize_cuda_primary_context(device_id: int = 0) -> Any:
+    """Retain the device's primary context and make it current.
+
+    Unlike initialize_cuda_context, which creates its own context when none is
+    current, this always uses the primary one. That is the context the CUDA
+    runtime API uses, so anything built on the runtime -- PyTorch above all --
+    allocates there; a cuCtxCreate context cannot see those allocations and the
+    next runtime call fails with
+
+        CUDA error: invalid argument
+        Operand not accessibile from specified context
+
+    Callers that share a process with such a framework and cannot rely on it
+    having made a context current first should use this. On Windows nothing has:
+    torch.cuda.init() leaves no current context.
+    """
+    context = device_primary_context_retain(get_device(device_id))
+    # Retaining alone does not make it current.
+    checkCudaErrors(cuda.cuCtxSetCurrent(context))
+    return context
+
+
 def device_primary_context_retain(device: Any) -> Any:
     """
     Retains the primary context on the device.

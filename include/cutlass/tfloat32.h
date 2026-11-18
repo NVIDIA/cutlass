@@ -34,9 +34,9 @@
 */
 #pragma once
 
-#if defined(__CUDACC_RTC__)
-#include "cutlass/floating_point_nvrtc.h"
-#else
+#include "cutlass/detail/fp_category.h"
+
+#if !defined(__CUDACC_RTC__)
 #include <cmath>
 #include <limits>
 #include <cstdint>
@@ -44,6 +44,9 @@
 #endif
 
 #include "cutlass/cutlass.h"
+#if CUTLASS_USE_CUDA_STD_CMATH
+#include CUDA_STD_HEADER(cmath)
+#endif
 
 namespace cutlass {
 
@@ -88,15 +91,11 @@ struct alignas(4) tfloat32_t {
   static tfloat32_t round_half_ulp_truncate(float const &s) {
     uint32_t x = float_to_storage(s);
 
-    #if defined(__CUDA_ARCH__)
-    if (::isfinite(s)) {
+    // cuda::std::isfinite is a device function under every host standard
+    // library; libc++ declares ::isfinite and std::isfinite as host inlines.
+    if (CUTLASS_CMATH_NAMESPACE::isfinite(s)) {
       x += 0x1000u;
     }
-    #else
-    if (std::isfinite(s)) {
-      x += 0x1000u;
-    }
-    #endif
 
     return tfloat32_t::bitcast(x);
   }
@@ -227,26 +226,26 @@ bool isnormal(cutlass::tfloat32_t const& h) {
 }
 
 CUTLASS_HOST_DEVICE
-int fpclassify(cutlass::tfloat32_t const& h) {
+fp_category fpclassify(cutlass::tfloat32_t const& h) {
   int exp = h.exponent_biased();
   int mantissa = h.mantissa();
   if (exp == 0x0ff) {
     if (mantissa) {
-      return FP_NAN;
+      return fp_category::nan;
     }
     else {
-      return FP_INFINITE;
+      return fp_category::infinite;
     }
   }
   else if (!exp) {
     if (mantissa) {
-      return FP_SUBNORMAL;
+      return fp_category::subnormal;
     }
     else {
-      return FP_ZERO;
+      return fp_category::zero;
     }
   }
-  return FP_NORMAL;
+  return fp_category::normal;
 }
 
 CUTLASS_HOST_DEVICE

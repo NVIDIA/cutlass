@@ -17,7 +17,7 @@ from cutlass.cutlass_dsl import dsl_user_op
 from cutlass._mlir.dialects import lir as cutlass_lir_ir, nvvm as _nvvm
 from cutlass._mlir import ir
 from cutlass.cutlass_dsl import lru_cache_ir
-from cutlass._mlir.dialects.core import OperationTypeEnum
+from cutlass._mlir.dialects.core import OperationTypeEnum, is_sm10x_mma_operation
 from cutlass import cute
 from cutlass.cute.typing import Boolean
 
@@ -33,11 +33,138 @@ class _SupportsIrValue(Protocol):
 
 SkipWaitToken: TypeAlias = Union[bool, ir.Value, _SupportsIrValue]
 
-# A producer/consumer role may be a single operation type or a non-empty
-# sequence of them, for pipelines where a single stage is written (or read)
-# by multiple operation kinds. Order within a sequence is not significant
-# and duplicates are rejected.
-OperationTypeSpec: TypeAlias = Union[OperationTypeEnum, Sequence[OperationTypeEnum]]
+
+class MmaOperand(Enum):
+    """An Enum describing the MMA operand held by a pipeline's stage buffers."""
+
+    A = "A"
+    B = "B"
+    C = "C"
+    D = "D"
+    METADATA = "Metadata"
+
+
+# A member (``MmaOperand.A``), its name (``"A"``) or the IR keyword
+# (``"Metadata"``) are all accepted where an MMA operand is expected.
+MmaOperandSpec: TypeAlias = Union[MmaOperand, str]
+
+
+def normalize_mma_operand(spec: MmaOperandSpec) -> MmaOperand:
+    """Resolve an MMA operand argument to :class:`MmaOperand`."""
+    if isinstance(spec, MmaOperand):
+        return spec
+    if isinstance(spec, str):
+        try:
+            return MmaOperand[spec]
+        except KeyError:
+            pass
+        try:
+            return MmaOperand(spec)
+        except ValueError:
+            names = ", ".join(f"{m.name} ({m.value})" for m in MmaOperand)
+            raise ValueError(
+                f"unknown MMA operand {spec!r}; expected one of {names}"
+            ) from None
+    raise TypeError(
+        "MMA operand must be a MmaOperand, its name or its IR keyword, "
+        f"got {type(spec)}"
+    )
+
+
+@dataclass(frozen=True)
+class MmaOperation:
+    """Describes an MMA operation type refined by the operand its pipeline stage
+    buffers hold - described as ``KIND<OPERAND>`` in the pipeline type
+    (``SM100_MMA_1SM_SS<A>``). Only an MMA kind can carry an operand, so an
+    operand cannot be attached to a pipeline that has no MMA side. The
+    operand is accepted as a :class:`MmaOperand`, its name or its IR keyword.
+    """
+
+    kind: OperationTypeEnum
+    operand: MmaOperand
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, OperationTypeEnum):
+            raise TypeError(
+                f"MmaOperation kind must be an OperationTypeEnum, got {type(self.kind)}"
+            )
+        if not is_sm10x_mma_operation(self.kind):
+            raise ValueError(
+                f"MmaOperation requires an MMA operation type, got {self.kind}"
+            )
+        object.__setattr__(self, "operand", normalize_mma_operand(self.operand))
+
+    def __str__(self) -> str:
+        return f"{self.kind}<{self.operand.value}>"
+
+
+# One endpoint of a pipeline side: a bare operation type, or an MMA
+# refined by the operand it accesses in the stage buffers.
+OperationDescriptor: TypeAlias = Union[OperationTypeEnum, MmaOperation]
+
+# One descriptor, or an unordered non-empty set of them when several
+# operation kinds share a stage.
+OperationTypeSpec: TypeAlias = Union[OperationDescriptor, Sequence[OperationDescriptor]]
+
+
+def _operation_descriptors(spec: OperationTypeSpec) -> list[OperationDescriptor]:
+    """The descriptors of one pipeline side, checked against the constraints
+    the pipeline type enforces: non-empty, no duplicates, and no kind both
+    bare and refined."""
+    if isinstance(spec, (OperationTypeEnum, MmaOperation)):
+        items = [spec]
+    elif isinstance(spec, Sequence) and not isinstance(spec, str):
+        items = list(spec)
+    else:
+        raise TypeError(
+            "operation type must be an OperationTypeEnum, an MmaOperation or a "
+            f"sequence of them, got {type(spec)}"
+        )
+    if not items:
+        raise ValueError("operation type set must be non-empty")
+    for item in items:
+        if not isinstance(item, (OperationTypeEnum, MmaOperation)):
+            raise TypeError(
+                "operation type must be an OperationTypeEnum or an MmaOperation, "
+                f"got {type(item)}"
+            )
+    if len(set(items)) != len(items):
+        texts = ", ".join(str(item) for item in items)
+        raise ValueError(f"duplicate operation descriptor in [{texts}]")
+    bare = {item for item in items if isinstance(item, OperationTypeEnum)}
+    refined = {item.kind for item in items if isinstance(item, MmaOperation)}
+    for kind in sorted(bare & refined, key=str):
+        raise ValueError(
+            f"{kind} appears both with and without an operand; name the operand "
+            "on every occurrence or on none"
+        )
+    return items
+
+
+def _operation_kind(descriptor: OperationDescriptor) -> OperationTypeEnum:
+    """The operation kind of a descriptor, with any MMA operand dropped."""
+    return descriptor.kind if isinstance(descriptor, MmaOperation) else descriptor
+
+
+def _mma_operand_of(descriptor: OperationDescriptor) -> Optional[MmaOperand]:
+    """The operand a descriptor refines its MMA with, if any."""
+    return descriptor.operand if isinstance(descriptor, MmaOperation) else None
+
+
+def _validate_descriptor_side(descriptor: OperationDescriptor, side: str) -> None:
+    """An MMA reads A, B, C and Metadata from the stage buffers as a consumer
+    and writes D into them as a producer; a refined descriptor on the other
+    side can never be satisfied."""
+    operand = _mma_operand_of(descriptor)
+    if operand is None:
+        return
+    expected = "producer" if operand is MmaOperand.D else "consumer"
+    if side != expected:
+        role = "the MMA's output" if operand is MmaOperand.D else "read by the MMA"
+        raise ValueError(
+            f"{descriptor} is {role}, so it belongs on the {expected} side, "
+            f"not the {side} side"
+        )
 
 
 class MbarrierOwner(Enum):
@@ -108,16 +235,34 @@ class PipelineLocale:
         return f"cluster<{full_text}, {empty_text}>"
 
 
-def _format_operation_types(spec: OperationTypeSpec) -> str:
-    """Render a single op type or a set of them for a pipeline type string."""
-    if isinstance(spec, OperationTypeEnum):
-        return str(spec)
-    items = list(spec)
-    if not items:
-        raise ValueError("operation type set must be non-empty")
-    if len(items) == 1:
-        return str(items[0])
-    return "[" + ", ".join(str(t) for t in items) + "]"
+def _format_operation_types(spec: OperationTypeSpec, side: str) -> str:
+    """Render one side of a pipeline type: a single descriptor or a bracketed
+    set, each refined MMA spelled ``KIND<OPERAND>``."""
+    descriptors = _operation_descriptors(spec)
+    for descriptor in descriptors:
+        _validate_descriptor_side(descriptor, side)
+    texts = [str(descriptor) for descriptor in descriptors]
+    if len(texts) == 1:
+        return texts[0]
+    return "[" + ", ".join(texts) + "]"
+
+
+def _descriptor_attr(descriptor: OperationDescriptor) -> ir.Attribute:
+    """A descriptor as the attribute the pipeline type stores for it."""
+    if isinstance(descriptor, MmaOperation):
+        return ir.Attribute.parse(
+            f"#lir.mma_operation<{descriptor.kind}, {descriptor.operand.value}>"
+        )
+    return ir.Attribute.parse(f"#core.operation_type<value = {descriptor}>")
+
+
+def _operation_type_array_attr(spec: OperationTypeSpec, side: str) -> ir.ArrayAttr:
+    """Render one side's descriptors for the arrival-count query exactly as
+    the pipeline type spells them, so the query names the pipeline's edges."""
+    descriptors = _operation_descriptors(spec)
+    for descriptor in descriptors:
+        _validate_descriptor_side(descriptor, side)
+    return ir.ArrayAttr.get([_descriptor_attr(d) for d in descriptors])
 
 
 @dsl_user_op
@@ -125,6 +270,7 @@ def elect_sync(
     loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> ir.Value:
     return _nvvm.elect_sync(loc=loc, ip=ip)
+
 
 
 @dsl_user_op
@@ -207,20 +353,24 @@ def _pipeline_type_str(
     producer: OperationTypeSpec,
     consumer: OperationTypeSpec,
     locale: Optional[PipelineLocale] = None,
+    producer_report_valid: bool = False,
 ) -> str:
     """The ``!lir.pipeline<...>`` type string, shared by pipeline creation and
     the arrival-count query so a query for a pipeline carries exactly the type
-    ``create_pipeline`` builds. Every type-affecting input (the locale and any
-    pipeline mode flags) must be threaded through here so both symbols agree."""
+    ``create_pipeline`` builds. Every type-affecting input (the descriptors,
+    the locale and any pipeline mode flags) must be threaded through here so
+    both symbols agree."""
     if locale is not None and not isinstance(locale, PipelineLocale):
         raise TypeError(
             f"Expected `locale` to be a PipelineLocale or None, got {type(locale)}"
         )
-    producer_str = _format_operation_types(producer)
-    consumer_str = _format_operation_types(consumer)
+    producer_str = _format_operation_types(producer, "producer")
+    consumer_str = _format_operation_types(consumer, "consumer")
     pipeline_type_str = f"!lir.pipeline<{stage}, {producer_str} -> {consumer_str}"
     if locale is not None:
         pipeline_type_str += f", {locale._to_ir_text()}"
+    if producer_report_valid:
+        pipeline_type_str += ", producer_report_valid"
     return pipeline_type_str + ">"
 
 
@@ -232,6 +382,7 @@ def _build_pipeline(
     consumer_arv_count: cute.Int32,
     arrival_mask: Optional[cute.Int16],
     locale: Optional[PipelineLocale],
+    producer_report_valid: bool,
     loc: Optional[ir.Location],
     ip: Optional[ir.InsertionPoint],
 ) -> tuple[PipelineState, PipelineState, PipelineState]:
@@ -245,6 +396,7 @@ def _build_pipeline(
         producer,
         consumer,
         locale,
+        producer_report_valid,
     )
 
     if arrival_mask is not None:
@@ -291,6 +443,7 @@ def create_pipeline(
     arrival_mask: Optional[cute.Int16] = None,
     *,
     locale: Optional[PipelineLocale] = None,
+    producer_report_valid: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
     **compat_kwargs: object,
@@ -304,7 +457,9 @@ def create_pipeline(
         producer: Producer operation type, or a non-empty sequence of them
             for a multi-producer pipeline (e.g. ``[store to smem, SM100_COPY_R2T]``).
         consumer: Consumer operation type, or a non-empty sequence of them
-            for a multi-consumer pipeline.
+            for a multi-consumer pipeline. An MMA that reads the stage
+            buffers may name the operand it reads,
+            ``MmaOperation(kind, MmaOperand.A)`` (``SM100_MMA_1SM_SS<A>``) - enables optimized releases.
         producer_arv_count: Number of producer arrivals.
         consumer_arv_count: Number of consumer arrivals.
         arrival_mask: Optional arrival mask for multi-CTA synchronization
@@ -312,6 +467,8 @@ def create_pipeline(
             explicit mask-based barrier configuration.
         locale: Optional explicit pipeline synchronization locale. Use
             :class:`PipelineLocale` helpers instead of passing raw type grammar.
+        producer_report_valid: Enable producer validity-check mode. This currently
+            requires a TMA load producer.
     """
     arrival_mask = _normalize_create_pipeline_arrival_mask(arrival_mask, compat_kwargs)
     return _build_pipeline(
@@ -322,6 +479,7 @@ def create_pipeline(
         consumer_arv_count,
         arrival_mask,
         locale,
+        producer_report_valid,
         loc,
         ip,
     )
@@ -337,6 +495,7 @@ def create_pipeline_with_mask(
     arrival_mask: cute.Int16,
     *,
     locale: Optional[PipelineLocale] = None,
+    producer_report_valid: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> tuple[PipelineState, PipelineState, PipelineState]:
@@ -349,14 +508,15 @@ def create_pipeline_with_mask(
         consumer_arv_count,
         arrival_mask,
         locale,
+        producer_report_valid,
         loc,
         ip,
     )
 
 
+
 @dsl_user_op
 def get_arrival_count(
-    stage: int,
     producer: OperationTypeSpec,
     consumer: OperationTypeSpec,
     *,
@@ -364,7 +524,7 @@ def get_arrival_count(
     # The `int` default is coerced to Int32 in the body (as elsewhere in this
     # file); the ignore is only for the literal-vs-Int32 default-value check.
     num_threads_per_cta: cute.Int32 = 1,  # type: ignore[assignment]
-    op_subset: Optional[Sequence[OperationTypeEnum]] = None,
+    op_subset: Optional[Sequence[OperationDescriptor]] = None,
     elect_one_sync: bool = False,
     elect_leader_cta: bool = False,
     fan_in: Optional[cute.Int32] = None,
@@ -374,18 +534,19 @@ def get_arrival_count(
 ) -> cute.Int32:
     """
     Computes the mbarrier arrival-count contribution of one logical release
-    for one side of a pipeline: ``dedup_arrives * arrives_per_cta * fan_in``
-    (see the ``lir.get_arrival_count`` op documentation for the full
-    semantics). The result feeds ``create_pipeline`` as the producer or
-    consumer arrival count, so clients no longer re-derive the count formula.
+    for one side of a pipeline (see the ``lir.get_arrival_count`` op
+    documentation for the full semantics). The result feeds
+    ``create_pipeline`` as the producer or consumer arrival count, so
+    clients no longer re-derive the count formula.
 
-    The pipeline is identified by the same ``(stage, producer, consumer)``
-    triple passed to ``create_pipeline``; both build the identical
-    ``!lir.pipeline`` type, which is how the query and the pipeline's own
-    synchronization are guaranteed to agree.
+    The query names the pipeline only by the fields the count depends on: the
+    producer/consumer operation types and the optional locale (both passed the
+    same as to ``create_pipeline``). The stage count and any pipeline mode
+    flags do not affect the count and are not query inputs. A refined
+    ``MmaOperation`` is passed through as the pipeline type spells it; the
+    operand does not change the count.
 
     Args:
-        stage: Number of pipeline stages (as passed to ``create_pipeline``).
         producer: Producer operation type(s) (as passed to ``create_pipeline``).
         consumer: Consumer operation type(s) (as passed to ``create_pipeline``).
         side: ``"producer"`` or ``"consumer"`` -- whose release is queried.
@@ -406,7 +567,10 @@ def get_arrival_count(
         locale: Must match the value passed to ``create_pipeline`` for this
             pipeline. The locale changes the inferred signaling topology, so
             unlike a type-only pipeline mode flag it does affect the count;
-            pass the same locale used to build the pipeline.
+            pass the same locale used to build the pipeline. When absent, the
+            locale is inferred from the operation types, exactly as
+            ``create_pipeline`` infers it.
+
     Returns the contribution of ONE logical arrival. Multiplicity belongs to
     the caller: invoke once per logical arrival that lands in one phase and
     sum the results.
@@ -417,31 +581,38 @@ def get_arrival_count(
         num_threads_per_cta = cute.Int32(num_threads_per_cta)
     if isinstance(fan_in, int):
         fan_in = cute.Int32(fan_in)
-
-    pipeline_type = ir.TypeAttr.get(
-        ir.Type.parse(
-            _pipeline_type_str(
-                stage,
-                producer,
-                consumer,
-                locale,
-            )
+    if locale is not None and not isinstance(locale, PipelineLocale):
+        raise TypeError(
+            f"Expected `locale` to be a PipelineLocale or None, got {type(locale)}"
         )
-    )
+
+    producers_attr = _operation_type_array_attr(producer, "producer")
+    consumers_attr = _operation_type_array_attr(consumer, "consumer")
+    locale_attr = None
+    if locale is not None:
+        # The standalone locale attribute states per-edge signaling
+        # topologies, while this API's PipelineLocale names barrier owners;
+        # the owner-to-topology translation depends on the operation types
+        # and lives in the pipeline TYPE parser. Route through it: parse the
+        # exact pipeline type this query names (the stage count does not
+        # affect the locale) and extract the stored locale. This also
+        # guarantees the query's locale is the one ``create_pipeline`` would
+        # build for the same arguments.
+        pipeline_type = ir.Type.parse(_pipeline_type_str(1, producer, consumer, locale))
+        locale_attr = cutlass_lir_ir.mbarrier_pipeline_get_locale(pipeline_type)
     side_attr = ir.Attribute.parse(f"#lir.pipeline_side<{side}>")
     subset_attr = None
     if op_subset is not None:
         subset_attr = ir.ArrayAttr.get(
-            [
-                ir.Attribute.parse(f"#core.operation_type<value = {t}>")
-                for t in op_subset
-            ]
+            [_descriptor_attr(t) for t in _operation_descriptors(list(op_subset))]
         )
 
     op = cutlass_lir_ir.GetArrivalCountOp(
-        pipeline_type,
+        producers_attr,
+        consumers_attr,
         side_attr,
         num_threads_per_cta.ir_value(),
+        locale=locale_attr,
         op_subset=subset_attr,
         elect_one_sync=elect_one_sync,
         elect_leader_cta=elect_leader_cta,
@@ -623,6 +794,27 @@ def consumer_release_elect_one_sync(
     )
     return op.result
 
+
+@dsl_user_op
+def consumer_test_valid(
+    pipe: ir.Value,
+    state: ir.Value,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> tuple[Boolean, Boolean]:
+    """
+    Non-blockingly probes whether a consumer stage is ready and data-valid.
+
+    For a normal pipeline this probes full-barrier readiness and returns
+    ``(ready, true)``; there is no validity-report channel. For a
+    ``producer_report_valid`` pipeline, ``valid`` reflects the v1 mbarrier report
+    bit.
+    """
+    bool_ty = ir.IntegerType.get_signless(1)
+    op = cutlass_lir_ir.ConsumerTestValidOp(
+        pipe, state, results=[bool_ty, bool_ty], loc=loc, ip=ip
+    )
+    return Boolean(op.ready, loc=loc, ip=ip), Boolean(op.valid, loc=loc, ip=ip)
 
 
 @dsl_user_op

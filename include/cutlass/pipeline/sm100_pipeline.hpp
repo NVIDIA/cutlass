@@ -532,14 +532,15 @@ private:
 template <
   int Stages_,
   class ClusterShape = Shape<int,int,_1>,
-  class AtomThrShape_MNK_ = Shape<_1,_1,_1>
+  class AtomThrShape_MNK_ = Shape<_1,_1,_1>,
+  class FullBarrier_ = cutlass::arch::ClusterTransactionBarrier
 >
 class PipelineTmaUmmaAsync {
 public:
   static constexpr uint32_t Stages = Stages_;
   using AtomThrShape_MNK = AtomThrShape_MNK_;
 protected:
-  using Impl = PipelineTmaAsync<Stages>;
+  using Impl = PipelineTmaAsync<Stages, FullBarrier_>;
 public:
   using FullBarrier  = typename Impl::FullBarrier;
   using EmptyBarrier = typename Impl::EmptyBarrier;
@@ -726,7 +727,8 @@ public:
     consumer_release(state.index(), false);
   }
 
-private:
+// Data members are protected, not private, so that future pipelines can extend this class.
+protected:
   Impl impl_;
   Params params_;
   EmptyBarrier *empty_barrier_ptr_;

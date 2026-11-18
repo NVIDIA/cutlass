@@ -70,6 +70,23 @@ namespace cutlass {
 namespace reference {
 namespace device {
 
+/// Rounds @p x to the nearest integer, halfway cases away from zero, through
+/// the C library's and the CUDA device builtins' ::llroundf and ::llround, in
+/// the argument's own precision. std::llround is a
+/// device function only where the CUDA headers put one into namespace std,
+/// which they do for libstdc++ (`using ::llround`); libc++ declares its own
+/// std::llround, a host inline over __builtin_llround, so a device caller
+/// under libc++ has no device overload to reach.
+CUTLASS_HOST_DEVICE
+long long round_to_nearest_integer(float x) {
+  return ::llroundf(x);
+}
+
+CUTLASS_HOST_DEVICE
+long long round_to_nearest_integer(double x) {
+  return ::llround(x);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -175,7 +192,7 @@ struct RandomGaussianFunc {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd = FloatType(std::llround(rnd * params.float_scale_up));
+      rnd = FloatType(round_to_nearest_integer(rnd * params.float_scale_up));
       result = Element(rnd * params.float_scale_down);
     }
     else {
@@ -275,8 +292,8 @@ struct RandomGaussianFunc<complex<Real>> {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(std::llround(rnd_r * params.float_scale_up));
-      rnd_i = FloatType(std::llround(rnd_i * params.float_scale_up));
+      rnd_r = FloatType(round_to_nearest_integer(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(round_to_nearest_integer(rnd_i * params.float_scale_up));
 
       result = {
         Real(rnd_r * params.float_scale_down),
@@ -534,7 +551,7 @@ struct RandomUniformFunc {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd = FloatType(std::llround(rnd * params.float_scale_up));
+      rnd = FloatType(round_to_nearest_integer(rnd * params.float_scale_up));
       result = Element(rnd * params.float_scale_down);
     }
     else {
@@ -772,8 +789,8 @@ struct RandomUniformFunc<complex<Real>> {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(std::llround(rnd_r * params.float_scale_up));
-      rnd_i = FloatType(std::llround(rnd_i * params.float_scale_up));
+      rnd_r = FloatType(round_to_nearest_integer(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(round_to_nearest_integer(rnd_i * params.float_scale_up));
 
       result = {
         Real(rnd_r * params.float_scale_down),
@@ -936,6 +953,61 @@ void BlockFillRandomUniform(
   typename RandomFunc::Params params(seed, max, min, bits, pnan);
 
   BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+/// Computes uniform random bytes. Written over a tensor's storage, they make every bit pattern of the
+/// element type equally likely: each float_e2m1_t code is 1/16 of the elements.
+struct RandomUniformBitsFunc {
+
+  /// Parameters structure
+  struct Params {
+
+    uint64_t seed;
+
+    Params(uint64_t seed_ = 0): seed(seed_) { }
+  };
+
+  /// Parameters object
+  Params params;
+
+  /// RNG state object
+  curandState_t rng_state;
+
+  /// Device-side initialization of RNG
+  CUTLASS_DEVICE
+  RandomUniformBitsFunc(Params const &params): params(params) {
+
+    uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    curand_init(params.seed, gtid, 0, &rng_state);
+  }
+
+  /// Compute random value and update RNG state
+  CUTLASS_DEVICE
+  uint8_t operator()() {
+    return uint8_t(curand(&rng_state));
+  }
+};
+
+} // namespace detail
+
+/// Fills a block of memory with uniform random bits.
+inline void BlockFillRandomUniformBits(
+  void *ptr,
+  size_t bytes,
+  uint64_t seed,                          ///< seed for RNG
+  cudaStream_t stream = nullptr) {
+
+  using RandomFunc = detail::RandomUniformBitsFunc;
+
+  RandomFunc::Params params(seed);
+
+  BlockForEach<uint8_t, RandomFunc>(
+    reinterpret_cast<uint8_t *>(ptr), bytes, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1979,6 +2051,13 @@ void BlockFillRandom(
       capacity,
       static_cast<Real>(dist.sequential.delta),
       static_cast<Real>(dist.sequential.start),
+      stream);
+  }
+  else if (dist.kind == Distribution::UniformBits) {
+    BlockFillRandomUniformBits(
+      ptr,
+      (sizeof_bits<Element>::value * capacity + 7) / 8,
+      seed,
       stream);
   }
 }

@@ -70,6 +70,11 @@ template <typename  T>                                                          
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Generic CUTLASS kernel template.
+//
+// Every CUTLASS kernel is launched through Kernel, Kernel2 or device_kernel,
+// so the MMA-throughput pragma is applied here, once for all kernels.
+// See CUTLASS_PRAGMA_MMA_THROUGHPUT in cutlass/detail/helper_macros.hpp.
+CUTLASS_PRAGMA_MMA_THROUGHPUT
 template <typename Operator>
 CUTLASS_GLOBAL
 void Kernel(typename Operator::Params params) {
@@ -87,6 +92,7 @@ void Kernel(typename Operator::Params params) {
 
 
 /// Generic CUTLASS kernel template.
+CUTLASS_PRAGMA_MMA_THROUGHPUT
 template <typename Operator>
 CUTLASS_GLOBAL
 void Kernel2(typename Operator::Params params) {
@@ -109,6 +115,7 @@ void Kernel2(typename Operator::Params params) {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Generic CUTLASS kernel template.
+CUTLASS_PRAGMA_MMA_THROUGHPUT
 template <typename Operator>
 CUTLASS_GLOBAL
 #ifdef __CUDACC__

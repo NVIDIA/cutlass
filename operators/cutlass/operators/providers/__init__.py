@@ -29,6 +29,7 @@
 import logging
 from collections.abc import Callable
 
+from cutlass.operators.config import GlobalOptions
 from cutlass.operators.providers.provider import Provider
 
 _logger = logging.getLogger(__name__)
@@ -98,9 +99,7 @@ def __getattr__(name: str) -> object:
         raise ImportError(
             f"{name} is unavailable: {PROVIDER_INSTALL_HINTS[name]}."
         ) from exc
-    raise ImportError(
-        f"{name} failed to import."
-    ) from exc
+    raise ImportError(f"{name} failed to import.") from exc
 
 
 __all__ = [
@@ -109,3 +108,4 @@ __all__ = [
     "Provider",
     "CuTeDSLProvider",
 ]
+

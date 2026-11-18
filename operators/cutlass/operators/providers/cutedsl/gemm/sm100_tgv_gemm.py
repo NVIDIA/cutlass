@@ -28,9 +28,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import cuda.bindings.driver as cuda
+import cuda.bindings.runtime as cuda_runtime
 
 import cutlass
 import cutlass.cute as cute
@@ -41,10 +42,15 @@ from cutlass.operators.arguments import (
     DenseTensor,
     EpilogueArguments,
     GemmArguments,
+    GemmPerformanceControls,
+    PerformanceControls,
+    ProgrammaticDependentLaunchControl,
 )
 from cutlass.operators.metadata import (
+    EarlyStartMetadata,
     GemmOperandsMetadata,
     OperatorMetadata,
+    ProgrammaticDependentLaunchMetadata,
     Sm100DesignMetadata,
 )
 from cutlass.operators.mma import BlackwellTcgen05Mma
@@ -72,6 +78,11 @@ def _tgv_bmm(
     b_api: cute.Tensor,
     c_api: cute.Tensor,
     stream: cuda.CUstream,
+    pdl_count: cutlass.Int32,
+    pdl_stream_serialization: cutlass.Constexpr[bool] = False,
+    programmatic_event: Union[cuda_runtime.cudaEvent_t, cuda.CUevent, None] = None,  # noqa: UP007
+    programmatic_event_flags: cutlass.Constexpr[int] = 0,
+    programmatic_event_trigger_at_block_start: cutlass.Constexpr[bool] = False,
 ):
     """Swap API operands to TGV convention and reorder batch-first to batch-last.
 
@@ -114,11 +125,21 @@ def _tgv_bmm(
         c_api.iterator, cute.select(c_api.layout, [2, 1, 0])
     )  # (L,M,N) -> (N,M,L) = TGV c
 
-    gemm_op(a_tgv, b_tgv, c_tgv, stream)
+    gemm_op(
+        a_tgv,
+        b_tgv,
+        c_tgv,
+        stream,
+        pdl_count,
+        pdl_stream_serialization,
+        programmatic_event,
+        programmatic_event_flags,
+        programmatic_event_trigger_at_block_start,
+    )
 
 
 @CuTeDSLProvider.register
-class TgvGemmOperator(CuteDslOperator):
+class Sm100TgvGemmOperator(CuteDslOperator):
     """Low-latency Blackwell GEMM kernel (TGV) for narrow-batch inference.
 
     Computes C = A @ B where A=activation, B=weight through the standard
@@ -156,33 +177,149 @@ class TgvGemmOperator(CuteDslOperator):
 
     supported_args_type = GemmArguments
     designed_for_min_cc = 100
+    # PDL dependency placement controls only the two input-load paths.
+    _PDL_EARLY_START_OPERAND_NAMES = frozenset(("A", "B"))
 
     def __init__(self, metadata: OperatorMetadata):
         super().__init__(metadata)
 
+        pdl = metadata.design.pdl
+        use_pdl = pdl.early_launch_dependent
+        pdl_wait_on_tgv_a_load, pdl_wait_on_tgv_b_load = (
+            Sm100TgvGemmOperator._pdl_wait_on_tgv_loads_from_metadata(pdl)
+        )
         self.impl = TgvGemmKernel(
             acc_dtype=metadata.operands.accumulator_type,
             cta_m=metadata.design.tile_shape[0],
             cta_n=metadata.design.tile_shape[1],
             cta_k=metadata.design.tile_shape[2],
             num_ab_stage=metadata.design.num_smem_stages,
+            use_pdl=use_pdl,
+            pdl_wait_on_tgv_a_load=pdl_wait_on_tgv_a_load,
+            pdl_wait_on_tgv_b_load=pdl_wait_on_tgv_b_load,
         )
+
+    @staticmethod
+    def _pdl_name_suffix(
+        pdl: ProgrammaticDependentLaunchMetadata,
+    ) -> str:
+        if not pdl.early_launch_dependent and pdl.early_start is None:
+            return ""
+
+        # Format: _pdl[_<independent operand>...]. Conservative or empty
+        # independent operands add no operand suffix.
+        suffix_parts = ["pdl"]
+        if pdl.early_start and pdl.early_start.independent_operands:
+            suffix_parts.extend(pdl.early_start.independent_operands)
+        return "_" + "_".join(suffix_parts)
+
+    @staticmethod
+    def _pdl_wait_on_tgv_loads_from_metadata(
+        pdl: ProgrammaticDependentLaunchMetadata,
+    ) -> tuple[bool, bool]:
+        if pdl.early_start is None:
+            return False, False
+
+        independent_operands = set(pdl.early_start.independent_operands)
+        dependent_operands = {"A", "B"} - independent_operands
+        return (
+            "B" in dependent_operands,
+            "A" in dependent_operands,
+        )
+
+    @staticmethod
+    def _pdl_control_or_none(
+        performance: PerformanceControls | None,
+    ) -> ProgrammaticDependentLaunchControl | None:
+        """Extract the composed PDL control from ``performance``, if any."""
+        if isinstance(performance, GemmPerformanceControls):
+            return performance.pdl
+        return None
+
+    @classmethod
+    def _pdl_metadata_for_args(
+        cls,
+        args: GemmArguments | None,
+    ) -> list[ProgrammaticDependentLaunchMetadata]:
+        """Return the PDL variant matching the runtime dependency declaration.
+
+        TGV is always compiled with PDL support. Without an explicit early-start
+        declaration, select the conservative variant where every operand waits
+        for the dependency. With one, require an exact match so discovery does
+        not return kernels compiled with a different dependency placement.
+        """
+        independent_operands: tuple[str, ...] = ()
+        pdl_control = (
+            cls._pdl_control_or_none(args.performance) if args is not None else None
+        )
+        if pdl_control is not None:
+            early_start = pdl_control.early_start
+            if early_start is not None:
+                independent_operands = tuple(early_start.independent_operands)
+
+        if not set(independent_operands) <= cls._PDL_EARLY_START_OPERAND_NAMES:
+            return []
+
+        return [
+            ProgrammaticDependentLaunchMetadata(
+                early_launch_dependent=True,
+                early_start=EarlyStartMetadata(
+                    independent_operands=independent_operands
+                ),
+            )
+        ]
+
+    def _pdl_count_from_args(self, args: GemmArguments) -> int:
+        pdl_control = self._pdl_control_or_none(args.performance)
+        if pdl_control is None:
+            return -1
+        if pdl_control.early_launch_dependent is None:
+            return -1
+
+        return -1
+
+    @classmethod
+    def _compile_pdl_args(cls, args: GemmArguments) -> list:
+        """Build CuTeDSL compile placeholders for the runtime PDL signature."""
+        compile_args: list[object] = [cutlass.Int32(0)]
+        pdl_control = cls._pdl_control_or_none(args.performance)
+        if pdl_control is None:
+            return [*compile_args, False]
+
+        early_start = pdl_control.early_start
+        compile_args.append(
+            early_start.pdl_stream_serialization if early_start is not None else False
+        )
+
+        early_launch_dependent = pdl_control.early_launch_dependent
+        if (
+            early_launch_dependent is not None
+            and early_launch_dependent.pdl_programmatic_event is not None
+        ):
+            programmatic_event = early_launch_dependent.pdl_programmatic_event
+            compile_args.extend(
+                [
+                    programmatic_event.programmatic_event,
+                    programmatic_event.programmatic_event_flags,
+                    programmatic_event.programmatic_event_trigger_at_block_start,
+                ]
+            )
+
+        return compile_args
 
     def _compile(
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> CompiledArtifact:
-        stream = cutlass.cute.runtime.make_fake_stream()
-
-        compiled_kernel = self.cute_compile(
+        return self.cute_compile(
             _tgv_bmm,
             self.impl,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
-            stream,
+            cutlass.cute.runtime.make_fake_stream(),
+            *self._compile_pdl_args(args),
             target_sm=target_sm,
         )
-        return compiled_kernel
 
     def _run(
         self,
@@ -190,16 +327,30 @@ class TgvGemmOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        device_properties=None,
     ) -> None:
         stream = to_cuda_stream(stream)
         compiled_gemm = compiled_artifact.compiled_obj
-        self.cute_run(
+
+        run_args = [
             compiled_gemm,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
             stream,
-        )
+            self._pdl_count_from_args(args),
+        ]
+        pdl_control = self._pdl_control_or_none(args.performance)
+        if (
+            pdl_control is not None
+            and pdl_control.early_launch_dependent is not None
+            and pdl_control.early_launch_dependent.pdl_programmatic_event is not None
+        ):
+            run_args.append(
+                pdl_control.early_launch_dependent.pdl_programmatic_event.programmatic_event,
+            )
+
+        self.cute_run(*run_args)
 
     @staticmethod
     def _valid_operands(operands: GemmOperandsMetadata) -> bool:
@@ -323,7 +474,7 @@ class TgvGemmOperator(CuteDslOperator):
 
     @staticmethod
     def _valid_metadata(metadata: OperatorMetadata) -> bool:
-        if not TgvGemmOperator._valid_operands(metadata.operands):
+        if not Sm100TgvGemmOperator._valid_operands(metadata.operands):
             return False
 
         design = metadata.design
@@ -341,7 +492,7 @@ class TgvGemmOperator(CuteDslOperator):
         tile = design.tile_shape
         if tile is not None:
             # CTA_M (tiles API's N / out_features): 64 only for now
-            if tile[0] not in [64]:
+            if tile[0] != 64:
                 return False
             # CTA_N (tiles API's M / batch): small values
             if tile[1] not in [8, 16, 32]:
@@ -362,7 +513,7 @@ class TgvGemmOperator(CuteDslOperator):
         epilogue_args: EpilogueArguments = None,
         target_sm: TargetSm | None = None,
         args: GemmArguments = None,
-    ) -> list[TgvGemmOperator]:
+    ) -> list[Sm100TgvGemmOperator]:
         if epilogue_args is not None:
             return []
 
@@ -373,6 +524,7 @@ class TgvGemmOperator(CuteDslOperator):
             "cluster_shape": [(1, 1, 1)],
             "use_tma_store": [False],
             "num_smem_stages": [8],
+            "pdl": cls._pdl_metadata_for_args(args),
         }
 
         from itertools import product
@@ -391,7 +543,7 @@ class TgvGemmOperator(CuteDslOperator):
             for values in product(*param_values):
                 design = Sm100DesignMetadata(**dict(zip(param_names, values)))
                 operator_name = (
-                    "cutedsl.TgvGemmOperator_sm100_{layout}_A{A}_B{B}_out{out}_acc{acc}_tile{tile}"
+                    "cutedsl.Sm100TgvGemmOperator_{layout}_A{A}_B{B}_out{out}_acc{acc}_tile{tile}{pdl}"
                 ).format(
                     layout=strides_to_layout_string(
                         operands.A.stride, operands.B.stride, operands.out.stride
@@ -401,6 +553,7 @@ class TgvGemmOperator(CuteDslOperator):
                     out=operands.out.dtype,
                     acc=operands.accumulator_type,
                     tile=tuple_to_string(design.tile_shape),
+                    pdl=cls._pdl_name_suffix(design.pdl),
                 )
 
                 metadata = OperatorMetadata(
@@ -412,7 +565,7 @@ class TgvGemmOperator(CuteDslOperator):
                     epilogue=None,
                 )
 
-                if TgvGemmOperator._valid_metadata(metadata) and metadata_filter(
+                if Sm100TgvGemmOperator._valid_metadata(metadata) and metadata_filter(
                     metadata
                 ):
                     operator_list.append(cls(metadata))

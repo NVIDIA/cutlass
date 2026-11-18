@@ -64,6 +64,7 @@ import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.mixed_input_helpers as mixed_input_utils
 from cutlass.cute.nvgpu import OperandMajorMode, cpasync, tcgen05
+from cutlass.cutlass_dsl import Int32
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.utils.mixed_input_helpers import TransformMode
 
@@ -743,7 +744,7 @@ class MixedInputGemmKernel:
         a_scale: cute.Tensor | None,
         b: cute.Tensor,
         c: cute.Tensor,
-        max_active_clusters: cutlass.Constexpr,
+        max_active_clusters: Int32,
         stream: cuda.CUstream,
     ):
         """Executes the Mixed Input GEMM operation.
@@ -1032,7 +1033,7 @@ class MixedInputGemmKernel:
         c: cute.Tensor,
         cta_tile_shape_mnk: tuple[int, int, int],
         cluster_shape_mn: tuple[int, int],
-        max_active_clusters: cutlass.Constexpr,
+        max_active_clusters: Int32,
     ):
         """Use persistent tile scheduler to compute the grid size for the output tensor C."""
         c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))

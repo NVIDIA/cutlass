@@ -37,6 +37,7 @@ cutlass_test_unit_add_executable(
   complement.cpp
   composition.cpp
   constants.cpp
+  coord_iterator.cpp
   core_unit.cpp
   domain_distribute.cpp
   int_tuple.cpp

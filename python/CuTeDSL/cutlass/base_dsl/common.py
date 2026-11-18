@@ -16,9 +16,25 @@ import os
 import subprocess
 import sys
 import types
-from typing import Any, Dict, Generator, Optional, Union
+import warnings
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    Generator,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
+import functools
 from functools import total_ordering
 from dataclasses import dataclass
+from packaging.version import InvalidVersion, Version
+
+if TYPE_CHECKING:
+    from .compiler import CompileOptions
 
 from .diagnostics import (
     Colors,
@@ -37,6 +53,34 @@ _original_excepthook = sys.excepthook
 _active_env_manager: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "active_env_manager", default=None
 )
+
+_active_compile_options: contextvars.ContextVar["CompileOptions | None"] = (
+    contextvars.ContextVar("active_compile_options", default=None)
+)
+
+
+def get_current_compile_options() -> "CompileOptions":
+    """Return the CompileOptions being traced.
+
+    Outside a compilation, return default options.
+    """
+    options = _active_compile_options.get()
+    if options is None:
+        from .compiler import CompileOptions
+
+        options = CompileOptions()
+    return options
+
+
+@contextlib.contextmanager
+def active_compile_options(options: "CompileOptions") -> Generator[None, None, None]:
+    """Expose ``options`` to trace-time code for this compilation."""
+    token = _active_compile_options.set(options)
+    try:
+        yield
+    finally:
+        _active_compile_options.reset(token)
+
 
 _CUDA_ERROR_NAME_ALIASES = {
     "cudaErrorNoKernelImageForDevice": "CUDA_ERROR_NO_BINARY_FOR_GPU",
@@ -122,6 +166,15 @@ def is_auto_m2s_enabled() -> bool:
     return False
 
 
+def is_pyir_verify_scans_enabled() -> bool:
+    """Return True when ``CUTE_DSL_PYIR_VERIFY_SCANS=True``: every incremental
+    PyIR registry scan also runs its full scan and the two must agree."""
+    env_manager = get_current_env_manager()
+    if env_manager is not None:
+        return getattr(env_manager, "pyir_verify_scans", False)
+    return False
+
+
 def _dsl_excepthook(
     exc_type: type,
     exc_value: BaseException,
@@ -140,15 +193,17 @@ def _dsl_excepthook(
     if env_manager is not None:
         show_stacktrace = getattr(env_manager, "show_stacktrace", False)
 
-    # Check if it's a DSL operation error (by name to avoid circular import issues)
-    if exc_type.__name__ in (
+    # Check the MRO by name to avoid circular imports while allowing specialized
+    # DSL exception subclasses to inherit the clean rendering behavior.
+    clean_error_bases = {
         "DSLOperationError",
         "DSLOperationBuildError",
         "DSLUserCodeError",
         "CompilerDiagnosticError",
         "DSLRuntimeError",
         "DSLCudaRuntimeError",
-    ):
+    }
+    if any(base.__name__ in clean_error_bases for base in exc_type.__mro__):
         if show_stacktrace:
             # Show full traceback in verbose mode
             _original_excepthook(exc_type, exc_value, exc_traceback)
@@ -550,6 +605,209 @@ class DSLWarning(UserWarning):
         return _format_cause(self.cause)
 
 
+class DSLFutureWarning(FutureWarning):
+    """A DSL warning about behavior that will change in a future release."""
+
+
+class DSLDeprecationWarning(DeprecationWarning):
+    """A deprecated DSL API was used.
+
+    Python's default filters show ``DeprecationWarning`` only when the call
+    site is in ``__main__``, so a deprecation reached from kernels that live in
+    a package would be silent for its whole removal window. Importing this
+    module therefore installs a ``default`` filter for this category, giving
+    one warning per call site, unless the interpreter was started with ``-W``
+    or ``PYTHONWARNINGS``. Filters installed later take precedence, including
+    the ones ``[DSL]_WARNINGS_IGNORE`` and ``[DSL]_WARNINGS_AS_ERRORS`` add,
+    and any filter on ``DeprecationWarning`` also matches this subclass.
+
+    DSL code switches to the replacement as soon as an API is deprecated, so
+    a warning attributed to a DSL module is a DSL bug; the DSL's own tests turn
+    those into errors.
+    """
+
+
+if not sys.warnoptions:
+    warnings.filterwarnings("default", category=DSLDeprecationWarning)
+
+
+_DSL_PACKAGE = __name__.partition(".")[0]
+_DSL_PLUMBING_PACKAGES = (f"{_DSL_PACKAGE}.base_dsl", f"{_DSL_PACKAGE}._mlir_helpers")
+
+
+def _in_package(module: str, package: str) -> bool:
+    return module == package or module.startswith(package + ".")
+
+
+def _runs_on_deprecated_object(frame: types.FrameType) -> bool:
+    """Whether ``frame`` runs a method whose ``self`` is a deprecated class's instance.
+
+    The class dictionaries are read directly because a metaclass
+    ``__getattr__`` can fabricate any attribute, ``__deprecated__`` included.
+    """
+    code = frame.f_code
+    if not code.co_argcount or code.co_varnames[0] != "self":
+        return False
+    receiver_class = type(frame.f_locals.get("self"))
+    return any("__deprecated__" in vars(klass) for klass in receiver_class.__mro__)
+
+
+def _warn_deprecated(
+    message: str,
+    *,
+    every_call: bool = False,
+    user_input: bool = False,
+    api_module: Optional[str] = None,
+) -> None:
+    """Emit a :class:`DSLDeprecationWarning` at the code that used the API.
+
+    A deprecated path is reached through a varying number of frames that only
+    deliver the call: the deprecated API's own module (``__post_init__``
+    chains, module ``__getattr__``), DSL infrastructure (``base_dsl``, such as
+    the PyIR call proxies, and ``_mlir_helpers``, such as ``dsl_user_op``), the
+    ``@deprecated`` wrapper and the standard library. No fixed ``stacklevel``
+    names the caller for every path, so the warning is attributed to the
+    nearest frame outside those: the author's line, or the line of DSL code
+    that still uses the API. ``api_module`` names the deprecated API's module
+    and defaults to the caller's; a use from inside that module is attributed
+    past it. A DSL method running on a deprecated object, such as a mixin or
+    base-class method in another module, is part of that deprecated API too.
+    A warning raised while such an object rebuilds itself from MLIR values
+    (``__new_from_mlir_values__``, when the DSL launches a kernel or carries
+    the object through a loop) is dropped: the author was warned when they
+    built the object, and the rebuild is not a new use.
+
+    ``user_input=True`` is for a deprecated value, option or setting that the
+    author supplied and DSL code may pass along, such as an enum member handed
+    to a helper that builds the op: the warning then also passes every DSL
+    frame and names the author.
+
+    By default the warning is recorded in that frame's module registry, so the
+    ``default`` filter shows it once per call site. ``every_call=True`` skips
+    the registry, for deprecations in their final stage: the warning then
+    shows on every call, while ``ignore``, ``error`` and ``once`` filters,
+    including ``[DSL]_WARNINGS_IGNORE``, still apply.
+    """
+    stdlib = sys.stdlib_module_names
+    frame = sys._getframe(1)
+    if api_module is None:
+        api_module = frame.f_globals.get("__name__")
+    try:
+        while frame.f_back is not None:
+            module = frame.f_globals.get("__name__") or ""
+            in_dsl = _in_package(module, _DSL_PACKAGE)
+            on_deprecated_object = in_dsl and _runs_on_deprecated_object(frame)
+            if (
+                on_deprecated_object
+                and frame.f_code.co_name == "__new_from_mlir_values__"
+            ):
+                return
+            if not (
+                module == api_module
+                or on_deprecated_object
+                or module == "typing_extensions"
+                or module.split(".", 1)[0] in stdlib
+                or any(_in_package(module, pkg) for pkg in _DSL_PLUMBING_PACKAGES)
+                or (user_input and in_dsl)
+            ):
+                break
+            frame = frame.f_back
+        warnings.warn_explicit(
+            message,
+            DSLDeprecationWarning,
+            frame.f_code.co_filename,
+            frame.f_lineno,
+            module=frame.f_globals.get("__name__"),
+            registry=(
+                None
+                if every_call
+                else frame.f_globals.setdefault("__warningregistry__", {})
+            ),
+        )
+    finally:
+        del frame
+
+
+if TYPE_CHECKING:
+    from typing_extensions import deprecated as _deprecated
+else:
+
+    class _deprecated:
+        """Mark a DSL function, method or class as deprecated.
+
+        Type checkers see ``typing_extensions.deprecated``, so they report
+        uses statically. At runtime the call, instantiation or subclassing
+        emits a :class:`DSLDeprecationWarning` through
+        :func:`_warn_deprecated`, which attributes it to the code that used
+        the API whatever wrappers sit in between (``dsl_user_op``, the PyIR
+        call proxies), instead of to a fixed ``stacklevel``. The wrapping
+        otherwise matches ``typing_extensions.deprecated``, except that only
+        the wrapper is marked ``__deprecated__``: wrapping a replacement API
+        under its old name does not mark the replacement.
+        """
+
+        def __init__(self, message: str, /) -> None:
+            if not isinstance(message, str):
+                raise TypeError(
+                    f"Expected an object of type str for 'message', not {message!r}"
+                )
+            self.message = message
+
+        def __call__(self, arg: object, /) -> object:
+            message = self.message
+            api_module = arg.__module__
+            if isinstance(arg, type):
+                original_new = arg.__new__
+
+                @functools.wraps(original_new)
+                def __new__(cls: type, /, *args: object, **kwargs: object) -> object:
+                    if cls is arg:
+                        _warn_deprecated(message, api_module=api_module)
+                    if original_new is not object.__new__:
+                        return original_new(cls, *args, **kwargs)
+                    elif cls.__init__ is object.__init__ and (args or kwargs):
+                        raise TypeError(f"{cls.__name__}() takes no arguments")
+                    else:
+                        return original_new(cls)
+
+                arg.__new__ = staticmethod(__new__)
+
+                if "__init_subclass__" in arg.__dict__:
+                    original_init_subclass = arg.__init_subclass__
+                    if isinstance(original_init_subclass, types.MethodType):
+                        original_init_subclass = original_init_subclass.__func__
+
+                    @functools.wraps(original_init_subclass)
+                    def __init_subclass__(*args: object, **kwargs: object) -> object:
+                        _warn_deprecated(message, api_module=api_module)
+                        return original_init_subclass(*args, **kwargs)
+
+                else:
+
+                    def __init_subclass__(
+                        cls: type, *args: object, **kwargs: object
+                    ) -> object:
+                        _warn_deprecated(message, api_module=api_module)
+                        return super(arg, cls).__init_subclass__(*args, **kwargs)
+
+                arg.__init_subclass__ = classmethod(__init_subclass__)
+                arg.__deprecated__ = __new__.__deprecated__ = message
+                __init_subclass__.__deprecated__ = message
+                return arg
+            if callable(arg):
+
+                @functools.wraps(arg)
+                def wrapper(*args: object, **kwargs: object) -> object:
+                    _warn_deprecated(message, api_module=api_module)
+                    return arg(*args, **kwargs)
+
+                wrapper.__deprecated__ = message
+                return wrapper
+            raise TypeError(
+                f"@deprecated must be applied to a class or callable, not {arg!r}"
+            )
+
+
 class DSLNotImplemented(DSLBaseError):
     """
     Raised when a feature of the DSL is not implemented yet.
@@ -708,7 +966,24 @@ class DSLUserCodeTypeError(DSLUserCodeError, TypeError):
 
     Raise this when replacing a raw ``TypeError`` that user code may already
     catch — e.g. nanobind overload-resolution failures caused by a missing
-    default MLIR context.
+    default MLIR context — and for an argument of the wrong kind.
+    """
+
+
+class DSLUserCodeValueError(DSLUserCodeError, ValueError):
+    """``DSLUserCodeError`` that is also catchable as ``ValueError``.
+
+    Raise this for an argument of the right kind but an unacceptable value or
+    range, and when replacing a raw ``ValueError`` that user code may already
+    catch, so ``except ValueError`` and ``except DSLUserCodeError`` both work.
+    """
+
+
+class DSLUserCodeIndexError(DSLUserCodeError, IndexError):
+    """``DSLUserCodeError`` that is also catchable as ``IndexError``.
+
+    Raise this for an out-of-range mode or index argument, and when replacing
+    a raw ``IndexError`` that user code may already catch.
     """
 
 
@@ -859,84 +1134,236 @@ def _get_cuda_version() -> str:
     raise NotImplementedError("_get_cuda_version is not implemented")
 
 
+def _get_dsl_version() -> str:
+    # Client of this module should implement this function
+    """
+    Placeholder for DSL package version query.
+
+    This function should be implemented by the client of this module.
+    When implemented, it must return the DSL package version as a string,
+    e.g. "4.6.0" or "4.6.0.dev0".
+
+    Raises:
+        NotImplementedError: Always, unless overridden by the package initializer or client.
+    """
+    raise NotImplementedError("_get_dsl_version is not implemented")
+
+
+def _is_pep440_compliant(version_str: str) -> bool:
+    """Return True if ``version_str`` is a PEP 440 version."""
+    try:
+        Version(version_str)
+        return True
+    except InvalidVersion:
+        return False
+
+
+# packaging.version.Version names the third release field ``micro``.
+_PEP440_COMPONENT_ATTRS: Tuple[str, ...] = ("major", "minor", "micro")
+
+
 @total_ordering
-@dataclass(frozen=True)
-class DSLCudaVersion:
+class _VersionBase:
+    """
+    Shared parsing and comparison logic for the version classes below.
+
+    Validates the input with :class:`packaging.version.Version` (PEP 440), then
+    copies the release fields named by ``_component_names``. Missing components
+    default to 0 (e.g. ``"4"`` parses as 4.0 / 4.0.0). Prerelease and local
+    suffixes are ignored for comparison, so ``"4.9.0a0.dev0"`` parses as 4.9.0.
+    Comparisons are component-wise and only defined between instances of the
+    same class; cross-type comparison is intentionally unsupported.
+    """
+
+    _component_names: ClassVar[Tuple[str, ...]] = ()
+
+    def __init__(self, version: str) -> None:
+        if not _is_pep440_compliant(version):
+            from .diagnostics import DiagId  # lazy: avoid an import cycle
+
+            raise DSLUserCodeError(
+                DiagId.CONFIG_VERSION_MALFORMED,
+                version_string=version,
+                class_name=type(self).__name__,
+            )
+        parsed = Version(version)
+        for i, name in enumerate(self._component_names):
+            object.__setattr__(self, name, getattr(parsed, _PEP440_COMPONENT_ATTRS[i]))
+
+    def _components(self) -> Tuple[int, ...]:
+        return tuple(getattr(self, name) for name in self._component_names)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, _VersionBase) or type(other) is not type(self):
+            return NotImplemented
+        return self._components() == other._components()
+
+    def __lt__(self, other: "_VersionBase") -> bool:
+        if type(other) is not type(self):
+            return NotImplemented
+        return self._components() < other._components()
+
+    def __hash__(self) -> int:
+        return hash(self._components())
+
+
+@dataclass(frozen=True, init=False, eq=False)
+class DSLCudaVersion(_VersionBase):
     """
     Class to represent the CUDA version used to build the DSL.
+
+    Comparisons use (major, minor); "12" parses as 12.0.
     """
 
     major: int
     minor: int
 
-    def __init__(self, version: str):
-        parts = version.split(".")
-        object.__setattr__(self, "major", int(parts[0]))
-        object.__setattr__(self, "minor", int(parts[1]))
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, DSLCudaVersion):
-            return NotImplemented
-        return self.major == other.major and self.minor == other.minor
-
-    def __lt__(self, other: "DSLCudaVersion") -> bool:
-        return [self.major, self.minor] < [other.major, other.minor]
+    _component_names: ClassVar[Tuple[str, ...]] = ("major", "minor")
 
 
-def _coerce_to_cuda_version(
-    value: Optional[Union[DSLCudaVersion, str]], param_name: str
-) -> Optional[DSLCudaVersion]:
+@dataclass(frozen=True, init=False, eq=False)
+class DSLVersion(_VersionBase):
     """
-    Coerce a value to DSLCudaVersion.
+    Class to represent the version of the DSL Python package itself
+    (e.g. ``cutlass.__version__``).
 
-    :param value: The value to coerce (DSLCudaVersion, str, or None).
+    Parses PEP 440 version strings; comparisons use (major, minor, patch).
+    Missing components default to 0 and any prerelease or local suffix is
+    ignored, so "4.6" parses as 4.6.0, "4.6.1.dev0" as 4.6.1, and
+    "4.9.0a0.dev0" as 4.9.0.
+    """
+
+    major: int
+    minor: int
+    patch: int
+
+    _component_names: ClassVar[Tuple[str, ...]] = ("major", "minor", "patch")
+
+
+# Bound rather than constrained to the concrete classes: the version class is
+# selected from _VERSION_KINDS at runtime, so a static checker cannot know
+# which one a given call uses. "One call, one class" is enforced at runtime by
+# _coerce_to_version (CONFIG_VERSION_TYPE); the classes intentionally do not
+# support cross-type comparison.
+_VersionT = TypeVar("_VersionT", bound=_VersionBase)
+
+
+# Maps each target_version(kind=...) value to the version class its parameters
+# coerce to and the name of the current-version global in version_info.
+# Adding a new version kind only requires a new entry here (plus the global).
+_VERSION_KINDS: Dict[str, Tuple[type[_VersionBase], str]] = {
+    "ctk": (DSLCudaVersion, "CUDA_VERSION"),
+    "dsl": (DSLVersion, "DSL_VERSION"),
+}
+
+
+def _coerce_to_version(
+    value: Optional[Union[_VersionT, str]],
+    param_name: str,
+    version_cls: type[_VersionT],
+) -> Optional[_VersionT]:
+    """
+    Coerce a value to the given version class.
+
+    :param value: The value to coerce (an instance of version_cls, str, or None).
     :param param_name: The parameter name for error messages.
-    :returns: DSLCudaVersion or None if value is None.
-    :raises DSLRuntimeError: If value is not a supported type.
+    :param version_cls: The version class to coerce to (DSLCudaVersion or DSLVersion).
+    :returns: An instance of version_cls, or None if value is None.
+    :raises DSLUserCodeError: If value is not a supported type.
     """
     if value is None:
         return None
-    if isinstance(value, DSLCudaVersion):
+    if isinstance(value, version_cls):
         return value
     if isinstance(value, str):
-        return DSLCudaVersion(value)
+        return version_cls(value)
     from .diagnostics import DiagId  # lazy: avoid an import cycle
 
     raise DSLUserCodeError(
         DiagId.CONFIG_VERSION_TYPE,
         param_name=param_name,
+        expected_type=version_cls.__name__,
         got_type=type(value).__name__,
     )
 
 
-def target_version(
-    exact_version: Optional[Union[DSLCudaVersion, str]] = None,
-    *,
-    min_version: Optional[Union[DSLCudaVersion, str]] = None,
-    max_version: Optional[Union[DSLCudaVersion, str]] = None,
+def _check_version_requirement(
+    current: _VersionT,
+    exact_v: Optional[_VersionT],
+    min_v: Optional[_VersionT],
+    max_v: Optional[_VersionT],
 ) -> bool:
     """
-    Check if the current CUDA version used to build the DSL matches an exact version
-    or falls within specified bounds at compile-time.
+    Evaluate an exact-or-range version requirement against ``current``.
 
-    Only one of ``exact_version`` *or* ``min_version``/``max_version`` may be specified.
-    At least one must be provided.
+    Callers must ensure at least one requirement parameter is not None.
+    """
+    from .diagnostics import DiagId
 
-    :param exact_version: The required CUDA version (e.g., "12.3").
-    :type exact_version: Optional[Union[DSLCudaVersion, str]]
-    :param min_version: The minimum CUDA version required (inclusive, e.g., "12.0").
-    :type min_version: Optional[Union[DSLCudaVersion, str]]
-    :param max_version: The maximum CUDA version allowed (inclusive, e.g., "13.2").
-    :type max_version: Optional[Union[DSLCudaVersion, str]]
+    is_range_check = min_v is not None or max_v is not None
+    is_exact_version_check = exact_v is not None
+    if is_range_check and is_exact_version_check:
+        raise DSLUserCodeError(DiagId.CONFIG_VERSION_CONFLICT)
 
-    :returns: ``True`` if the CUDA version matches the requirement(s) specified.
+    if is_range_check:
+        if min_v is not None and max_v is not None:
+            if min_v > max_v:
+                raise DSLUserCodeError(DiagId.CONFIG_VERSION_RANGE_INVALID)
+
+        result = True
+        if min_v is not None:
+            result = result and current >= min_v
+        if max_v is not None:
+            result = result and current <= max_v
+        return result
+    return current == exact_v
+
+
+def target_version(
+    exact_version: Optional[Union[DSLCudaVersion, DSLVersion, str]] = None,
+    *,
+    min_version: Optional[Union[DSLCudaVersion, DSLVersion, str]] = None,
+    max_version: Optional[Union[DSLCudaVersion, DSLVersion, str]] = None,
+    kind: str = "ctk",
+) -> bool:
+    """
+    Check at compile-time that a target version matches an exact version or
+    falls within specified bounds.
+
+    ``kind`` selects which version is checked: ``"ctk"`` (the default) checks
+    the CUDA toolkit version used to build the DSL, ``"dsl"`` checks the DSL
+    package version (``cutlass.__version__``). One call checks one kind;
+    combine two calls with ``and`` when both are needed. Only one of the exact
+    version *or* the min/max range may be specified, and at least one version
+    parameter must be provided.
+
+    CUDA toolkit version comparisons use (major, minor). DSL version
+    comparisons use (major, minor, patch); missing components default to 0 and
+    dev suffixes are ignored, so ``exact_version="4.6"`` means exactly 4.6.0 —
+    use a ``min_version``/``max_version`` range to match a whole release
+    series.
+
+    :param exact_version: The required version (e.g., "12.3").
+    :type exact_version: Optional[Union[DSLCudaVersion, DSLVersion, str]]
+    :param min_version: The minimum version required (inclusive, e.g., "12.0").
+    :type min_version: Optional[Union[DSLCudaVersion, DSLVersion, str]]
+    :param max_version: The maximum version allowed (inclusive, e.g., "13.2").
+    :type max_version: Optional[Union[DSLCudaVersion, DSLVersion, str]]
+    :param kind: Which version to check: "ctk" (CUDA toolkit, default) or "dsl"
+        (DSL package).
+    :type kind: str
+
+    :returns: ``True`` if the selected version matches the requirement(s) specified.
     :rtype: bool
 
-    :raises DSLRuntimeError:
-        - If neither an ``exact_version`` nor version range is given.
+    :raises DSLUserCodeError:
+        - If ``kind`` is not a supported version kind.
+        - If no version parameter is given.
         - If both an exact version and a range are provided.
-        - If ``min_version`` > ``max_version``.
-        - If any version parameter is not a DSLCudaVersion or str.
+        - If the minimum version > the maximum version.
+        - If any version parameter is not a str or the version class matching
+          ``kind`` (DSLCudaVersion for "ctk", DSLVersion for "dsl").
+        - If a version string has non-numeric components (e.g. "4.x").
 
     **Examples**
 
@@ -953,36 +1380,32 @@ def target_version(
 
         target_version(min_version="12.0", max_version="13.2")
         # True if 12.0 <= CUDA_VERSION <= 13.2
+
+        target_version(kind="dsl", min_version="4.6")
+        # True if DSL_VERSION >= 4.6
+
+        target_version(min_version="13.1") and target_version(kind="dsl", min_version="4.6")
+        # Combine a CUDA toolkit check and a DSL check with two calls
     """
     # Avoid circular dependency
-    from .version_info import CUDA_VERSION
+    from . import version_info
     from .diagnostics import DiagId
 
-    # Coerce all version parameters to DSLCudaVersion at the start
-    exact_v = _coerce_to_cuda_version(exact_version, "exact_version")
-    min_v = _coerce_to_cuda_version(min_version, "min_version")
-    max_v = _coerce_to_cuda_version(max_version, "max_version")
+    if kind not in _VERSION_KINDS:
+        raise DSLUserCodeError(
+            DiagId.CONFIG_VERSION_KIND_INVALID,
+            kind=kind,
+            valid_kinds=", ".join(f'"{k}"' for k in _VERSION_KINDS),
+        )
+    version_cls, current_version_name = _VERSION_KINDS[kind]
+    current_version = getattr(version_info, current_version_name)
 
-    # Sanity check
-    is_range_check = min_v is not None or max_v is not None
-    is_exact_version_check = exact_v is not None
-    if is_range_check and is_exact_version_check:
-        raise DSLUserCodeError(DiagId.CONFIG_VERSION_CONFLICT)
+    # Coerce all version parameters to the kind's version class at the start
+    exact_v = _coerce_to_version(exact_version, "exact_version", version_cls)
+    min_v = _coerce_to_version(min_version, "min_version", version_cls)
+    max_v = _coerce_to_version(max_version, "max_version", version_cls)
 
-    if is_range_check:
-        if min_v is None and max_v is None:
-            raise DSLUserCodeError(DiagId.CONFIG_VERSION_MISSING)
-        if min_v is not None and max_v is not None:
-            if min_v > max_v:
-                raise DSLUserCodeError(DiagId.CONFIG_VERSION_RANGE_INVALID)
-
-        result = True
-        if min_v is not None:
-            result = result and CUDA_VERSION >= min_v
-        if max_v is not None:
-            result = result and CUDA_VERSION <= max_v
-        return result
-    elif is_exact_version_check:
-        return CUDA_VERSION == exact_v
-    else:
+    if exact_v is None and min_v is None and max_v is None:
         raise DSLUserCodeError(DiagId.CONFIG_VERSION_REQUIRED)
+
+    return _check_version_requirement(current_version, exact_v, min_v, max_v)

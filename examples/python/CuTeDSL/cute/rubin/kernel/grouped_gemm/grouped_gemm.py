@@ -30,7 +30,7 @@ import os
 import sys
 import argparse
 import functools
-from typing import Tuple, Type, Union, List, Optional
+from typing import Tuple, Type, Union, List
 
 import cuda.bindings.driver as cuda
 
@@ -40,9 +40,22 @@ from cutlass import testing
 import cutlass.utils as utils
 import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
-from cutlass.cute.nvgpu.tcgen05 import CollectorOp
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.torch as cutlass_torch
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import PersistentTileSchedulerParams
+from helpers.grouped_gemm_persistent_tile_scheduler import (
+    StaticPersistentGroupTileScheduler,
+    create_initial_search_state,
+)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -139,32 +152,6 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
             self.cta_group,
             self.mma_inst_shape,
             permutation_mnk=self._get_mma_permutation_mnk(),
-        )
-
-    def _create_tiled_mma_bkeep(self):
-        return utils.sm107.make_trivial_tiled_mma(
-            self.a_dtype,
-            self.b_dtype,
-            self.a_major_mode,
-            self.b_major_mode,
-            self.acc_dtype,
-            self.cta_group,
-            self.mma_inst_shape,
-            permutation_mnk=self._get_mma_permutation_mnk(),
-            b_collector_op=CollectorOp.FILL,
-        )
-
-    def _create_tiled_mma_breuse(self):
-        return utils.sm107.make_trivial_tiled_mma(
-            self.a_dtype,
-            self.b_dtype,
-            self.a_major_mode,
-            self.b_major_mode,
-            self.acc_dtype,
-            self.cta_group,
-            self.mma_inst_shape,
-            permutation_mnk=self._get_mma_permutation_mnk(),
-            b_collector_op=CollectorOp.LASTUSE,
         )
 
     def _setup_attributes(self):
@@ -297,12 +284,6 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
         self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(initial_c)
 
         tiled_mma = self._create_tiled_mma()
-        # Create Bkeep-Breuse tiled_mma variants if enabled
-        tiled_mma_bkeep = None
-        tiled_mma_breuse = None
-        if cutlass.const_expr(self.enable_breuse):
-            tiled_mma_bkeep = self._create_tiled_mma_bkeep()
-            tiled_mma_breuse = self._create_tiled_mma_breuse()
 
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
@@ -433,8 +414,6 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
             strides_abc,
             tensor_address_abc,
             tensormap_cute_tensor,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -459,14 +438,12 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         group_count: cutlass.Constexpr[int],
         problem_sizes_mnkl: cute.Tensor,
         strides_abc: cute.Tensor,
         ptrs_abc: cute.Tensor,
         tensormaps: cute.Tensor,
-        tiled_mma_bkeep: Optional[cute.TiledMma],
-        tiled_mma_breuse: Optional[cute.TiledMma],
         cluster_shape_mn: Tuple[int, int],
         is_a_mcast: bool,
         is_b_mcast: bool,
@@ -726,12 +703,12 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
         #
         # When the problem shapes are on device, we launch one CTA per SM.
         # The if condition later prevents the warps from extra CTAs from doing any work.
-        tile_sched = utils.StaticPersistentGroupTileScheduler.create(
+        tile_sched = StaticPersistentGroupTileScheduler.create(
             tile_sched_params,
             (bidx, bidy, bidz),
             grid_dim,
             self.cluster_tile_shape_mnk,
-            utils.create_initial_search_state(),
+            create_initial_search_state(),
             group_count,
             problem_sizes_mnkl,
             use_cached_problem_shapes=self.use_cached_problem_shapes,
@@ -978,12 +955,10 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
                             for k_phase in range(self.mma_inst_tile_k):
                                 tCrB_slice = tCrB_stage[(None, 0, k_phase)]
                                 tCrA_keep = tCrA_stage[(None, 0, k_phase)]
-                                tiled_mma_bkeep.set(
-                                    tcgen05.Field.ACCUMULATE,
-                                    k_tile != 0 or k_phase != 0,
-                                )
                                 cute.gemm(
-                                    tiled_mma_bkeep,
+                                    tiled_mma.with_bkeep(
+                                        accumulate=k_tile != 0 or k_phase != 0
+                                    ),
                                     tCtAcc_keep,
                                     tCrA_keep,
                                     tCrB_slice,
@@ -991,12 +966,10 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
                                 )
 
                                 tCrA_reuse = tCrA_stage[(None, 1, k_phase)]
-                                tiled_mma_breuse.set(
-                                    tcgen05.Field.ACCUMULATE,
-                                    k_tile != 0 or k_phase != 0,
-                                )
                                 cute.gemm(
-                                    tiled_mma_breuse,
+                                    tiled_mma.with_breuse(
+                                        accumulate=k_tile != 0 or k_phase != 0
+                                    ),
                                     tCtAcc_reuse,
                                     tCrA_reuse,
                                     tCrB_slice,
@@ -1284,14 +1257,12 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         group_count: cutlass.Constexpr[int],
         problem_sizes_mnkl: cute.Tensor,
         strides_abc: cute.Tensor,
         ptrs_abc: cute.Tensor,
         tensormaps: cute.Tensor,
-        tiled_mma_bkeep: Optional[cute.TiledMma] = None,
-        tiled_mma_breuse: Optional[cute.TiledMma] = None,
     ):
         """
         GPU device kernel performing the grouped GEMM computation.
@@ -1315,8 +1286,6 @@ class Sm107GroupedGemmKernel(BlackwellGroupedGemmKernel):
             strides_abc,
             ptrs_abc,
             tensormaps,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
             self.cluster_shape_mn,
             self.is_a_mcast,
             self.is_b_mcast,
@@ -1847,7 +1816,7 @@ def run(
         )
 
         tensormap_workspace, _ = cutlass_torch.cute_tensor_like(
-            torch.empty(total_num_clusters, dtype=torch.int64),
+            torch.empty(tensormap_shape, dtype=torch.int64),
             cutlass.Int64,
             is_dynamic_layout=False,
         )

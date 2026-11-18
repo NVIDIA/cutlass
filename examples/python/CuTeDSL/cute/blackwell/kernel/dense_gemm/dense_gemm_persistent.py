@@ -40,6 +40,21 @@ import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
 import cutlass.utils.blackwell_helpers as sm100_utils
+from pathlib import Path
+
+import sys
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 
 """
@@ -570,7 +585,7 @@ class PersistentDenseGemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
         """
@@ -793,7 +808,7 @@ class PersistentDenseGemmKernel:
         #
         # Construct the scheduler
         #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
+        tile_sched = StaticPersistentTileScheduler.create(
             tile_sched_params,
             cute.arch.block_idx(),
             cute.arch.grid_dim(),
@@ -1067,7 +1082,7 @@ class PersistentDenseGemmKernel:
         swizzle_size: int,
         raster_along: Literal["m", "n"],
         max_active_clusters: cutlass.Constexpr,
-    ) -> Tuple[utils.PersistentTileSchedulerParams, Tuple[int, int, int]]:
+    ) -> Tuple[PersistentTileSchedulerParams, Tuple[int, int, int]]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C.
 
         :param c: The output tensor C
@@ -1082,17 +1097,17 @@ class PersistentDenseGemmKernel:
         :return: A tuple containing:
             - tile_sched_params: Parameters for the persistent tile scheduler.
             - grid: Grid shape for kernel launch.
-        :rtype: Tuple[utils.PersistentTileSchedulerParams, tuple[int, int, int]]
+        :rtype: Tuple[PersistentTileSchedulerParams, tuple[int, int, int]]
         """
         c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
         gc = cute.zipped_divide(c, tiler=c_shape)
         num_ctas_mnl = gc[(0, (None, None, None))].shape
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
-        tile_sched_params = utils.PersistentTileSchedulerParams(
+        tile_sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_along == "m"
         )
-        grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        grid = StaticPersistentTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters
         )
 
@@ -1434,7 +1449,6 @@ def bmm(
     gemm_op(a, b, c, max_active_clusters, stream, epilogue_op)
 
 
-@lru_cache(maxsize=1)
 def prepare_tensors(
     mnkl: Tuple[int, int, int, int],
     a_dtype: Type[cutlass.Numeric],
@@ -1575,10 +1589,11 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
-    benchmark: str = "default",
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
+    *,
+    benchmark: str = "default",
     **kwargs,
 ):
     """
@@ -1945,9 +1960,9 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
-        args.benchmark,
         args.init_normal,
         args.normal_mean,
         args.normal_std,
+        benchmark=args.benchmark,
     )
     print("PASS")

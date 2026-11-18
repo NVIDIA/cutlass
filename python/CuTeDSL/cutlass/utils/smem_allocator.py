@@ -10,10 +10,9 @@
 # is strictly prohibited.
 
 import functools
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 from typing import Any
 
-from typing_extensions import deprecated
 
 from cutlass.memory import SmemAllocator as _SmemAllocator
 from cutlass.memory import get_kernel_smem_size as _get_kernel_smem_size
@@ -22,7 +21,7 @@ from cutlass.memory import (
 )
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.smem_allocator.SmemAllocator is deprecated; use "
     "cutlass.memory.SmemAllocator instead. It will be removed in a future release."
 )
@@ -32,17 +31,15 @@ class SmemAllocator(_SmemAllocator):
     @staticmethod
     @functools.wraps(_SmemAllocator.capacity_in_bytes)
     def capacity_in_bytes(*args: Any, **kwargs: Any) -> Any:
-        warnings.warn(
+        _warn_deprecated(
             "cutlass.utils.smem_allocator.SmemAllocator.capacity_in_bytes is "
             "deprecated; use cutlass.memory.SmemAllocator.capacity_in_bytes "
-            "instead. It will be removed in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "instead. It will be removed in a future release."
         )
         return _SmemAllocator.capacity_in_bytes(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.smem_allocator.get_kernel_smem_size is deprecated; use "
     "cutlass.memory.get_kernel_smem_size instead. It will be removed in a future "
     "release."
@@ -52,7 +49,7 @@ def get_kernel_smem_size(*args: Any, **kwargs: Any) -> Any:
     return _get_kernel_smem_size(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use "
     "cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a "
     "future release."
@@ -67,23 +64,19 @@ def get_smem_capacity_in_bytes(*args: Any, **kwargs: Any) -> Any:
 # module-level __getattr__ (PEP 562) adds the deprecation warning instead.
 def __getattr__(name: str) -> Any:
     if name == "SmemPartition":
-        warnings.warn(
+        _warn_deprecated(
             "cutlass.utils.smem_allocator.SmemPartition is deprecated; use "
             "cutlass.memory.SmemPartition instead. It will be removed in a future "
-            "release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "release."
         )
         from cutlass.memory import SmemPartition
 
         return SmemPartition
     if name == "SMEM_CAPACITY_MAP":
-        warnings.warn(
+        _warn_deprecated(
             "cutlass.utils.smem_allocator.SMEM_CAPACITY_MAP is deprecated; use "
             "cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed "
-            "in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "in a future release."
         )
         from cutlass.cutlass_dsl import SMEM_CAPACITY_MAP
 

@@ -35,6 +35,7 @@ detection is wired up; the full taxonomy lives in
 ``pyirdocs/DSL_DIAGNOSTICS_ARCHITECTURE.md``.
 """
 
+import ast
 import enum
 import linecache
 import re
@@ -107,10 +108,20 @@ _PTX_DOC_BASE = "https://docs.nvidia.com/cuda/parallel-thread-execution/index.ht
 _COMPILER_DIAG_TEXT_WIDTH = 100
 _COMPILER_CONTEXT_LINES = 2
 _DEVICE_BINARY_SERIALIZATION_DIAGNOSTIC = "DeviceBinarySerializationFailed"
+_SYNC_SUMMARY_REMARKS = {
+    "RemarkSyncViolation",
+    "RemarkSyncWarning",
+    "RemarkSyncClean",
+}
 _PTXAS_LOG_REMARK = "RemarkPTXAS"
 _PTXAS_LOG_PREFIX = "ptxas output:"
-_PTXAS_PERF_REMARKS = {
-    "RemarkPerfRegisterSpill",
+_PTXAS_REGISTER_SPILL_WARNING = "PtxasPerfRegisterSpill"
+_WARNINGS_PROMOTED_TO_ERRORS = {
+    _PTXAS_REGISTER_SPILL_WARNING,
+    "DivmodMigration",
+}
+_PTXAS_PERF_FINDINGS = {
+    _PTXAS_REGISTER_SPILL_WARNING,
     "RemarkPerfLocalMemoryUsage",
 }
 _PTXAS_KERNEL_RE = re.compile(r"kernel `([^`]+)`")
@@ -182,12 +193,26 @@ _COMPILER_DIAGNOSTICS: dict[str, _CompilerDiagnosticInfo] = {
         "#parallel-synchronization-and-communication-instructions-"
         "mbarrier-test-wait-try-wait",
     ),
+    "NvvmDiagPerSlotPhaseParityMismatch": _nvvm_info(
+        "C8",
+        "mbarrier phase-parity protocol",
+        "#parallel-synchronization-and-communication-instructions-"
+        "mbarrier-test-wait-try-wait",
+    ),
     "NvvmDiagPartialWarpElectSync": _nvvm_info(
         "C13",
         "elect.sync",
         "#parallel-synchronization-and-communication-instructions-elect-sync",
     ),
+    "NvvmDiagInlineAsmMissingMemoryClobber": _CompilerDiagnosticInfo(
+        code="C18",
+        namespace="nvvm-diag",
+    ),
     _DEVICE_BINARY_SERIALIZATION_DIAGNOSTIC: _CompilerDiagnosticInfo(""),
+    _PTXAS_REGISTER_SPILL_WARNING: _CompilerDiagnosticInfo(
+        code="spill",
+        namespace="ptxas",
+    ),
 }
 
 _GENERIC_MLIR_DIAGNOSTIC = "MLIRDiagnostic"
@@ -246,6 +271,7 @@ class CompilerDiagnosticSession:
         warnings_filter: str = "",
         remark_output: str = "",
         collect_diagnostics: bool = False,
+        warnings_as_errors: bool = False,
     ) -> None:
         self.context = context
         self.remark_filter = remark_filter
@@ -255,6 +281,9 @@ class CompilerDiagnosticSession:
         self.warnings_filter = warnings_filter
         self.remark_output = remark_output
         self.collect_diagnostics = bool(collect_diagnostics and not remark_output)
+        # Promote supported compiler warnings to errors when requested.
+        self.warnings_as_errors = warnings_as_errors
+        self._success_is_error = False
         self.enabled = bool(remark_output) or self.collect_diagnostics
         self._collector = CompilerDiagnosticCollector(
             self.context, self.collect_diagnostics
@@ -275,8 +304,21 @@ class CompilerDiagnosticSession:
 
     def format_success(self) -> str:
         if not self.collect_diagnostics:
+            self._success_is_error = False
             return ""
-        return format_compiler_diagnostics(self._collected_diagnostics())
+        diagnostics = self._collected_diagnostics()
+        if self.warnings_as_errors:
+            diagnostics, self._success_is_error = _promote_warnings_to_errors(
+                diagnostics
+            )
+        else:
+            self._success_is_error = False
+        return format_compiler_diagnostics(diagnostics)
+
+    @property
+    def warnings_promoted_to_errors(self) -> bool:
+        """True when format_success promoted a compiler warning under Werror."""
+        return self._success_is_error
 
     def format_failure(self, raw_error: str) -> str:
         if not self.collect_diagnostics:
@@ -334,12 +376,38 @@ class CompilerDiagnosticSession:
         return _filter_remark_visibility(diagnostics, self.remark_filter)
 
 
+def _diagnostic_selectors() -> "tuple[str, ...]":
+    """The warnings{}/remarks{} selector names, longest first.
+
+    Single source of truth is compiler.py's ``_DOMAIN_TO_REMARK_CATEGORY``;
+    imported lazily because compiler.py imports this module. Longest-first so
+    a selector that is a prefix of another cannot shadow it."""
+    from .compiler import _DOMAIN_TO_REMARK_CATEGORY
+
+    return tuple(sorted(_DOMAIN_TO_REMARK_CATEGORY, key=len, reverse=True))
+
+
 def _warning_domain(name: str) -> str:
-    """Map a warning's name to its checker domain, for warnings{} gating."""
-    if name.startswith("NvvmDiag"):
-        return "nvvm"
-    if name.startswith("Ptxas"):
-        return "ptx"
+    """Map a warning's name to its checker domain, for warnings{} gating.
+
+    A diagnostic belongs to the domain whose selector its catalog name starts
+    with, case-insensitively: ``NvvmDiagProxyFenceMissing`` -> ``nvvm``,
+    ``PtxasRegisterCap`` -> ``ptx``. This reproduces exactly the hard-coded
+    ``NvvmDiag`` / ``Ptxas`` prefixes it replaces, and extends to every
+    selector without naming any diagnostic family here.
+
+    Not derived from the diagnostic's category: ``CutlassIRError`` and
+    ``CutlassIRWarning`` in RemarkUtils.td bake CategoryError / CategoryWarning
+    into the packed id, so EVERY warning reports the category "Warning"
+    regardless of which checker raised it. Only remarks carry a domain
+    category, and those are already filtered by the engine at collection.
+
+    Returns "" when no selector matches, which keeps an untagged warning
+    visible whenever any ``warnings{}`` was passed."""
+    lowered = name.lower()
+    for selector in _diagnostic_selectors():
+        if lowered.startswith(selector):
+            return selector
     return ""
 
 
@@ -366,6 +434,25 @@ def _filter_warning_visibility(
     return out
 
 
+def _promote_warnings_to_errors(
+    diagnostics: Sequence[CompilerDiagnostic],
+) -> tuple[list[CompilerDiagnostic], bool]:
+    """Promote visible ptxas spill and divmod migration warnings to errors.
+
+    Other warnings and remarks are left unchanged. Returns the rewritten list
+    and whether any warning was promoted.
+    """
+    out: list[CompilerDiagnostic] = []
+    promoted = False
+    for diag in diagnostics:
+        if diag.name in _WARNINGS_PROMOTED_TO_ERRORS and diag.severity == "warning":
+            out.append(replace(diag, severity="error"))
+            promoted = True
+        else:
+            out.append(diag)
+    return out, promoted
+
+
 def _filter_remark_visibility(
     diagnostics: Sequence[CompilerDiagnostic], remark_filter: str
 ) -> list[CompilerDiagnostic]:
@@ -382,6 +469,19 @@ def _filter_remark_visibility(
     if requested and requested not in (".*", "all"):
         return list(diagnostics)
     return [diag for diag in diagnostics if diag.severity != "remark"]
+
+
+def _widen_legacy_ptxas_filter(remark_filter: str) -> str:
+    """Widen the legacy literal ``ptxas`` so it matches the category name.
+
+    NOT dead code after the category unification: users passing the literal
+    ``ptxas`` (documented usage — ``--remark-filter=ptxas`` /
+    ``CUTE_DSL_REMARKS=ptxas``) predate the ``ptxas info`` category name, and
+    the MLIR remark engine anchors the filter regex to the whole string, so
+    the bare literal would match nothing without this widening."""
+    if remark_filter == "ptxas":
+        return "ptxas.*"
+    return remark_filter
 
 
 def _load_diagnostic_bindings() -> Any | None:
@@ -425,9 +525,7 @@ def enable_compiler_diagnostics(
         )
         return
 
-    filter_str = remark_filter or ".*"
-    if filter_str == "ptxas":
-        filter_str = "ptxas.*"
+    filter_str = _widen_legacy_ptxas_filter(remark_filter or ".*")
     if collect_diagnostics:
         # Collecting path (a checker is enabled via warnings{}/remarks{}):
         # errors/warnings are always-on and collected regardless of any filter
@@ -436,9 +534,7 @@ def enable_compiler_diagnostics(
         # an empty filter is read as match-all by the engine. So opt-in remarks
         # are gated at display instead (see _filter_remark_visibility): they are
         # shown only when remarks{} was passed.
-        opt_filter = remark_filter or ""
-        if opt_filter == "ptxas":
-            opt_filter = "ptxas.*"
+        opt_filter = _widen_legacy_ptxas_filter(remark_filter or "")
         bindings.enable_remark_collection(
             context,
             policy="all",
@@ -519,7 +615,7 @@ def _normalize_ptxas_perf_remark(
     diag: CompilerDiagnostic, ptxas_logs: Sequence[str]
 ) -> CompilerDiagnostic:
     log = _select_ptxas_log(diag, ptxas_logs)
-    if diag.name == "RemarkPerfRegisterSpill":
+    if diag.name == _PTXAS_REGISTER_SPILL_WARNING:
         return replace(
             diag,
             reason=_append_ptxas_output(
@@ -555,17 +651,14 @@ def _normalize_ptxas_diagnostics(
     ptxas_logs = [
         log for diag in diagnostics if (log := _ptxas_log_from_diagnostic(diag))
     ]
-    has_structured_ptxas_remark = any(
-        diag.name in _PTXAS_PERF_REMARKS for diag in diagnostics
-    )
-    if not has_structured_ptxas_remark:
-        return list(diagnostics)
-
     normalized: list[CompilerDiagnostic] = []
     for diag in diagnostics:
+        # RemarkPTXAS transports the raw verbose log needed to explain a
+        # structured ptxas finding. It is supporting data, not a standalone
+        # optimization remark, so a clean compilation must not print it.
         if diag.name == _PTXAS_LOG_REMARK:
             continue
-        if diag.name in _PTXAS_PERF_REMARKS:
+        if diag.name in _PTXAS_PERF_FINDINGS:
             normalized.append(_normalize_ptxas_perf_remark(diag, ptxas_logs))
         else:
             normalized.append(diag)
@@ -585,6 +678,13 @@ def collect_compiler_diagnostics(
             if diagnostic is not None:
                 diagnostics.append(diagnostic)
     diagnostics.extend(extra_diagnostics)
+    # The pass-level synchronization summaries are useful in raw/YAML analysis
+    # output, but are not standalone findings. In particular, rendering the
+    # warning summary as a remark would bypass warnings{} visibility. Keep the
+    # exact errors, warnings, and uncertainty remarks in the user-facing stream.
+    diagnostics = [
+        diag for diag in diagnostics if diag.name not in _SYNC_SUMMARY_REMARKS
+    ]
     return _normalize_ptxas_diagnostics(_dedupe_compiler_diagnostics(diagnostics))
 
 
@@ -929,6 +1029,30 @@ def _format_internal_cause(cause_text: str) -> list[str]:
 
 
 def _nearest_function_name(lines: list[str], line_no: int) -> str | None:
+    # Function locations commonly point at the first decorator rather than the
+    # ``def`` line. Resolve the containing AST node first so a decorated kernel
+    # is not mislabeled as the preceding function in the file.
+    try:
+        tree = ast.parse("\n".join(lines))
+    except (SyntaxError, ValueError):
+        tree = None
+    if tree is not None:
+        candidates: list[tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            start_line = min(
+                (decorator.lineno for decorator in node.decorator_list),
+                default=node.lineno,
+            )
+            end_line = node.end_lineno or node.lineno
+            if start_line <= line_no <= end_line:
+                candidates.append((end_line - start_line, node.name))
+        if candidates:
+            return min(candidates)[1]
+
+    # Retain the old best-effort behavior for incomplete or generated sources
+    # that cannot be parsed as a complete Python module.
     for idx in range(min(line_no - 1, len(lines) - 1), -1, -1):
         match = re.match(
             r"\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\(",
@@ -1353,6 +1477,28 @@ def format_compiler_backend_failure(
     return "\n".join(lines)
 
 
+# Argument-key prefix the compiler reserves for located notes. Kept in sync
+# with kNotePrefix in the compiler's Remark.h.
+_REMARK_NOTE_PREFIX = "note "
+
+
+def _remark_notes(item: Mapping[str, Any]) -> tuple[str, ...]:
+    """Recover attached notes from a collected remark's argument channel.
+
+    The engine has no dedicated note field, so ``reportError`` and friends
+    emit each note as a generic key/value argument under the reserved
+    ``note NNN`` key namespace; the keys are zero-padded so sorting them
+    restores emission order."""
+    metrics = item.get("metrics") or {}
+    if not isinstance(metrics, Mapping):
+        return ()
+    return tuple(
+        str(value)
+        for key, value in sorted(metrics.items())
+        if str(key).startswith(_REMARK_NOTE_PREFIX) and value
+    )
+
+
 def compiler_diagnostic_from_remark(
     item: Mapping[str, Any],
 ) -> CompilerDiagnostic | None:
@@ -1371,16 +1517,22 @@ def compiler_diagnostic_from_remark(
     else:
         return None
 
+    ptx_ref = ""
+    ptx_url = ""
+    namespace = ""
     if severity == "remark":
         # Remarks are keyed by their category (e.g. "ptxas"), not the
         # error/warning code table.
         code = str(item.get("category", "")) or name
-        namespace = ""
-        ptx_ref = ""
-        ptx_url = ""
     else:
+        # The table supplies a curated code (and its PTX cross-reference) for
+        # the diagnostics that have one. Otherwise the catalog NAME is the
+        # code: it is what the user quotes in a bug report, and unlike the
+        # packed id it does not depend on a table maintained here — which is
+        # what lets a catalog owned by another tree grow without a DSL edit.
+        # The packed id remains the last resort, for an unnamed diagnostic.
         info = _COMPILER_DIAGNOSTICS.get(name)
-        code = info.code if info else str(item.get("remark_id", ""))
+        code = info.code if info else (name or str(item.get("remark_id", "")))
         namespace = info.namespace if info else ""
         ptx_ref = info.ptx_ref if info else ""
         ptx_url = info.ptx_url if info else ""
@@ -1395,6 +1547,7 @@ def compiler_diagnostic_from_remark(
         suggestion=str(item.get("suggestion", "")),
         ptx_ref=ptx_ref,
         ptx_url=ptx_url,
+        notes=_remark_notes(item),
     )
 
 
@@ -1594,6 +1747,9 @@ class DiagId(_DiagMixin, enum.Enum):
             "Make `{var}` a {staged} before the for/while/if, e.g. "
             "`{var} = {type}(...)`, so the update is tracked explicitly.",
             "Or opt in to automatic promotion with `CUTE_DSL_AUTO_M2S=True`.",
+            "If the for/while/if only depends on Python values, make it "
+            "trace-time with `while cutlass.const_expr(...)` / "
+            "`for ... in cutlass.range_constexpr(...)` so `{var}` stays a {meta}.",
         ),
     )
     PHASE_PYTHON_THEN_TRACKED = (
@@ -1639,6 +1795,15 @@ class DiagId(_DiagMixin, enum.Enum):
             "branch selected off at trace time does not bind it).",
         ),
     )
+    SCOPE_WALRUS_IN_WHILE_CONDITION = (
+        "`{name}` is bound by `:=` inside this `while` condition and has no "
+        "value before the loop, so the compiled loop cannot carry it into the "
+        "body or past the loop.",
+        (
+            "Give `{name}` an initial value of the same type before the `while`; "
+            "the `({name} := ...)` condition then rebinds it every round.",
+        ),
+    )
     SCOPE_LOCALS_SYNTH_MISS = (
         "`locals()` inside a rewritten if/ifexp/while arm sees only the names "
         "the arm rebinds, and `{name}` is not one of them -- the source "
@@ -1680,6 +1845,18 @@ class DiagId(_DiagMixin, enum.Enum):
             "once outside the dynamic region and write `{name}` in place.",
         ),
     )
+    BOUNDARY_HOST_STATE_IN_STAGED_CF = (
+        "`{name}` is {kind} that advanced inside this for/while/if body "
+        "(through `{callee}`). The body is traced once, so the compiled "
+        "program would replay the first trace-time transition on every "
+        "runtime execution instead of advancing it.",
+        (
+            "Compute the value outside the for/while/if, or carry it as a "
+            "Runtime value (e.g. an `Int32` counter or index into staged data).",
+            "If it is trace-time configuration that never feeds computed "
+            "values, move its use out of runtime control flow.",
+        ),
+    )
     BOUNDARY_META_LOOP_CARRY = (
         "`{name}` is a Python value changed inside this for/while body by "
         "code the compiler cannot see (a plain, non-jit method or function). "
@@ -1690,6 +1867,18 @@ class DiagId(_DiagMixin, enum.Enum):
             "Decorate the function that updates `{name}` with the DSL's jit "
             "decorator so the update is tracked, or make `{name}` a Runtime "
             "value (Staged value) before the loop, e.g. `Int32(...)`.",
+        ),
+    )
+    BOUNDARY_REPLACED_OBJECT_ALIASED = (
+        "`{name}` was rebound inside this for/while/if body (through "
+        "`{callee}`) to {what}. The compiler keeps one storage cell per field "
+        "path, so the two objects would share cells and observe each other's "
+        "writes.",
+        (
+            "Update the existing object's fields in place instead of rebinding "
+            "the field to another object.",
+            "Drop every other reference to the previous object before "
+            "rebinding, or rebuild the object outside runtime control flow.",
         ),
     )
     BOUNDARY_FLIP_GUARD_STAGED = (
@@ -1736,6 +1925,38 @@ class DiagId(_DiagMixin, enum.Enum):
             "value (Staged value) before the plain function reads it.",
         ),
     )
+    PHASE_OPAQUE_READ_THEN_PROMOTED = (
+        "`{var}` is changed inside a for/while whose trip count is decided at "
+        "run time, so it must become a Runtime value (Staged value) that is "
+        "carried from one iteration to the next -- but its previous value was "
+        "read as a plain Python number by {reader}, through an operation the "
+        "compiler cannot see (for example a float or bool on the LEFT of the "
+        "operator, `abs()`, `-x`, or a C-level builtin). That read is fixed "
+        "at its trace-time value, so every iteration would compute from the "
+        "first iteration's value and the update would never accumulate.",
+        (
+            "Make `{var}` a Runtime value (Staged value) before the for/while, "
+            "e.g. `{var} = Int32({var})`, so every read of it is a runtime load.",
+            "Or put the Python value on the RIGHT of the operator (`x + 2.5` "
+            "instead of `2.5 + x`) and avoid `int()`/`abs()` on it inside the "
+            "loop, so the read stays visible to the compiler.",
+        ),
+    )
+    SCOPE_ABSENT_PROBE_THEN_BOUND = (
+        "`{var}` is probed as absent ({probe} at {probe_file}:{probe_line}) "
+        "and then bound for the first time inside the same for/while whose "
+        "trip count is decided at run time. The body ran once at compile "
+        "time, so the probe's answer is fixed to the first iteration's "
+        "(absent) while Python would find `{var}` present on every later "
+        "iteration -- the kernel would repeat the first iteration's "
+        "branch or default value.",
+        (
+            "Bind `{var}` before the for/while (e.g. `{var} = 0`) so every "
+            "iteration reads a tracked value instead of probing for presence.",
+            "If the for/while is compile-time, use `range_constexpr(...)` so "
+            "each iteration is traced separately.",
+        ),
+    )
     BOUNDARY_SHORT_CIRCUIT_EFFECT = (
         "`{name}` is changed by a call inside a short-circuited `and`/`or` "
         "operand. The trace evaluates that operand exactly once, so the "
@@ -1744,6 +1965,25 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Move the call out of the `and`/`or` expression to its own "
             "statement, or guard it with an explicit `if`.",
+        ),
+    )
+    BOUNDARY_CALLEE_SOURCE_UNAVAILABLE = (
+        "`{name}` is called inside staged (runtime) control flow, but its "
+        "Python source is not available to the compiler (generated code, a "
+        "REPL/exec definition, or several definitions sharing one line), so "
+        "the state it updates cannot be observed at this position.",
+        (
+            "Define `{name}` in a .py file on its own line, or hoist the call "
+            "out of the staged for/while/if.",
+        ),
+    )
+    STATE_FROM_PREVIOUS_COMPILATION = (
+        "`{name}` holds a value computed by a previous compilation of a kernel: "
+        "its backing IR belongs to that finished compilation, so this "
+        "compilation can neither read it nor carry it.",
+        (
+            "Reset the object's fields before compiling again, or pass the value "
+            "in as a kernel argument.",
         ),
     )
     BOUNDARY_MEMOIZED_IN_STAGED_CF = (
@@ -1756,6 +1996,50 @@ class DiagId(_DiagMixin, enum.Enum):
             "Hoist the `{name}` call out of the staged for/while/if, or call "
             "the undecorated function (`{name}.__wrapped__`) inside the "
             "kernel.",
+        ),
+    )
+    BOUNDARY_BUILTIN_SUBCLASS_ATTR_CHANGED = (
+        "`{name}` is an attribute stored on a `{type}` instance (a `{base}` "
+        "subclass) and it {what} inside this for/while/if body (through "
+        "`{callee}`). Per-instance attributes of a builtin-container subclass "
+        "are not storage cells the compiler carries: the body is traced once, "
+        "so the write would run at trace time only and every runtime pass "
+        "would observe that one value.",
+        (
+            "Keep per-pass state in the container's items or on a plain class "
+            "instance instead of as an attribute of the `{base}` subclass "
+            "instance.",
+            "If `{name}` is trace-time configuration, set it before the "
+            "for/while/if and do not change it inside.",
+        ),
+    )
+    BOUNDARY_EXACT_CONTAINER_TYPE_PROBED = (
+        "`{callee}` is a plain (non-jit) function that tests the exact type of "
+        "a value against `dict`/`list` (`type(...) is dict`), and it can reach "
+        "`{name}`, a tracked {kind}. The compiler tracks a dict/list through a "
+        "subclass of the builtin type, so at trace time the exact-type test "
+        "takes the branch plain Python would not take and the compiled program "
+        "diverges from it.",
+        (
+            "Test with `isinstance(value, dict)` / `isinstance(value, list)`: a "
+            "tracked container is still an instance of its builtin type.",
+            "Or move the exact-type test out of the jit-compiled function.",
+        ),
+    )
+    BOUNDARY_NATIVE_REJECTED_STAGED = (
+        "native code raised `{exc}` while the compiler ran `{callee}` with "
+        "{vars} as a {staged}. A C-level API that needs a plain Python value "
+        "(an iterator `__setstate__`, a member or slot setter, a struct pack) "
+        "rejects a runtime value; Python runs the same call on plain values, "
+        "so the result the untraced code would compute cannot be reproduced.",
+        (
+            "Keep the value the native call receives a {meta}: update it "
+            "outside the runtime for/while/if, or move the native call out of "
+            "the compiled body.",
+            "If the value must change per iteration, replace the native call "
+            "with DSL arithmetic on `Int32`/`Boolean` values, or decorate "
+            "`{callee}` with the DSL's jit decorator so each operation inside "
+            "it is diagnosed individually.",
         ),
     )
     PHASE_META_FIELD_CHANGED_IN_CF = (
@@ -1820,6 +2104,20 @@ class DiagId(_DiagMixin, enum.Enum):
             "handle.",
         ),
     )
+    SCOPE_REBIND_IDENTITY_RUNTIME_DEPENDENT = (
+        "`{var}` is rebound inside staged control flow to a `{cls}` object in a "
+        "way the compiler cannot follow as a trace-time object identity: "
+        "{detail}. Assigning an object that already existed when the region "
+        "started makes `{var}` name that very object, exactly as in Python, only "
+        "when the choice is the same on every run-time path; following a "
+        "run-time identity would need a selector at every later use, so it is "
+        "refused.",
+        (
+            "{hint}",
+            "Or copy the fields explicitly (`{var}.field = other.field`), or bind a "
+            "copy (`{var} = other.clone()`), which is carried per field.",
+        ),
+    )
     CONTAINER_TUPLE_LENGTH_CHANGED = (
         "`{var}` is a tuple with {old} item(s) on one pass and {new} on another. A "
         "tuple must keep the same number of items every pass so its parts can be "
@@ -1856,12 +2154,39 @@ class DiagId(_DiagMixin, enum.Enum):
             "object, or make the new object carry exactly the same fields.",
         ),
     )
+    CONTAINER_OBJECT_PROTOTYPE_MISMATCH = (
+        "`{var}` is replaced inside an `if` decided at run time by a `{type}` "
+        "whose compile-time fields differ from the one it held ({detail}), and "
+        "whose runtime fields cannot be joined through the `if` ({leaf_detail}). "
+        "The `if` carries the runtime fields of the two objects one-to-one and "
+        "keeps the compile-time fields of the object `{var}` held before the "
+        "`if`; a runtime field must have the same type on both paths.",
+        (
+            "Build both objects so their runtime fields line up with the same "
+            "types, or update those fields in place in each branch "
+            "(`{var}.field = other.field`).",
+            "Or choose the object with a compile-time condition (`const_expr`) "
+            "before the `if`.",
+        ),
+    )
     CONTAINER_OBJECT_REPLACED = (
         "`{var}` is replaced as a whole object inside a for/while/if, but it holds "
         "runtime values that cannot be followed through a whole-object replacement.",
         (
             "Update the individual fields of `{var}` instead, e.g. "
             "`{var}.field = new_value`.",
+        ),
+    )
+    CONTAINER_REBOUND_TO_RUNTIME_VALUE = (
+        "`{var}` holds a Python {old_type} ({old_value}) and is re-bound to a "
+        "runtime {new_type} inside a for/while/if whose path is decided at run "
+        "time. A container has no runtime counterpart, so the two shapes "
+        "cannot be joined at the end of the region.",
+        (
+            "Bind the runtime value to a NEW name instead of re-using `{var}`, "
+            "e.g. `first, second = {var}`.",
+            "Or give `{var}` the same shape on every path: build it before the "
+            "for/while/if and update its parts inside.",
         ),
     )
     CONTAINER_DICT_META_WRITE_UNPROMOTED = (
@@ -1885,6 +2210,17 @@ class DiagId(_DiagMixin, enum.Enum):
             "Create every key before the for/while/if and update the VALUES inside it.",
             "If the loop is a compile-time unroll, use `range_constexpr` so the "
             "mutation is realized at trace time.",
+        ),
+    )
+    CONTAINER_DICT_VIEW_ALIAS_IN_STAGED_CF = (
+        "`{var}` is a {kind} taken over tracked dict `{target}` and is reachable "
+        "inside a for/while/if whose path is decided at run time. The view reads "
+        "the dict's raw compile-time storage, so an entry written or a key "
+        "created inside the body would not be observed through it -- the kernel "
+        "would read the contents the view held when it was taken.",
+        (
+            "Read the dict itself (`{target}[key]`, `len({target})`) instead of "
+            "the view, or take the view after the for/while/if.",
         ),
     )
     CONTAINER_DICT_KEY_STAGED = (
@@ -1938,6 +2274,9 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Use a compile-time index (a Python int), or restructure so the "
             "runtime value is the ELEMENT, not the index.",
+            "If the loop is a compile-time unroll over the list, iterate it "
+            "directly (`for x in {var}`) or use "
+            "`cutlass.range_constexpr(len({var}))` so the index stays a Python int.",
         ),
     )
     CONTAINER_SUBSCRIPT_WRITE_UNTRACKED = (
@@ -2021,10 +2360,8 @@ class DiagId(_DiagMixin, enum.Enum):
     )
     UNSUP_CUTE_EXT_OP_IN_DEVICE_FUNC = (
         "The device function `{function_name}` uses a cute_ext "
-        "(`cute.experimental`) operation. cute_ext operations are only supported "
-        "in kernels, not in device functions compiled via "
-        "`cute.compile[DeviceTarget]`, which use the standard compilation pipeline "
-        "and cannot lower cute_ext operations.",
+        "(`cute.experimental`) operation. Lowering cute_ext operations inside "
+        "standalone device functions is not supported yet.",
         (
             "Remove the `cute.experimental` (cute_ext) API call from the device "
             "function body, or compile the code as a kernel instead of a device "
@@ -2039,6 +2376,16 @@ class DiagId(_DiagMixin, enum.Enum):
             "If the condition is decided at compile time, write `if const_expr(...)` "
             "or `for ... in range_constexpr(...)` -- then the early exit runs in "
             "Python and is allowed.",
+        ),
+    )
+    UNSUP_EARLY_EXIT_RUNTIME_CONDITION = (
+        "`{kind}` here is guarded by a {staged}. This loop is unrolled in Python "
+        "at compile time, so an exit from it must be decided at compile time.",
+        (
+            "Make the condition compile-time: `if const_expr(...)`.",
+            "For a runtime stop condition write a staged `while cond:` loop.",
+            "Or carry a runtime `done` flag and guard the body with a staged "
+            "`if not done:`.",
         ),
     )
     UNSUP_RANGE_ARGS = (
@@ -2100,6 +2447,20 @@ class DiagId(_DiagMixin, enum.Enum):
             "of deleting it.",
         ),
     )
+    UNSUP_EXCEPTION_SLOT_WRITE_IN_STAGED_CF = (
+        "`{target}` is an exception object's built-in slot (`{attr}`), and it is "
+        "written inside a for/while/if whose path is decided at run time. The "
+        "slot lives in the interpreter, not in storage the compiler tracks, so "
+        "the body's single trace would bake this write and every later read of "
+        "it, ignoring the path taken and earlier iterations.",
+        (
+            "Build the exception, its `args` and its cause/context before the "
+            "for/while/if, or create the exception inside the loop body so it "
+            "is fresh on every iteration.",
+            "Carry the changing quantity as a Runtime value (e.g. an `Int32` "
+            "field of your own object) instead of inside the exception.",
+        ),
+    )
     PROPERTY_GETTER_MUTATES_IN_STAGED_CF = (
         "Reading `{obj}.{attr}` runs the property getter `{getter}`, which "
         "writes state, and the read is inside a for/while/if that runs on the "
@@ -2141,11 +2502,6 @@ class DiagId(_DiagMixin, enum.Enum):
         "single line is not supported here.",
         ("Split it into separate assignment statements, one kind of target per line.",),
     )
-    UNSUP_NO_SOURCE = (
-        "The source of `{func}` is not available (e.g. defined in the REPL or "
-        "via exec()), so it cannot be compiled.",
-        ("Save the function to a .py file and import it from there.",),
-    )
 
     UNSUP_WALRUS_CONDITIONAL = (
         "A walrus assignment (`{name} := ...`) inside a conditionally-evaluated "
@@ -2166,6 +2522,11 @@ class DiagId(_DiagMixin, enum.Enum):
             "Move the walrus assignment out to its own statement before the "
             "expression, or compute the call's result into a variable first.",
         ),
+    )
+    UNSUP_NO_SOURCE = (
+        "The source of `{func}` is not available (e.g. defined in the REPL or "
+        "via exec()), so it cannot be compiled.",
+        ("Save the function to a .py file and import it from there.",),
     )
 
     # =====================================================================
@@ -2257,6 +2618,20 @@ class DiagId(_DiagMixin, enum.Enum):
             "Pass a non-negative address, or use cute.runtime.nullptr() for null pointers",
         ),
     )
+    ARG_POINTER_REQUIRED = (
+        "`cute.arch.{op}` expects a pointer (a cute.Pointer or an `!llvm.ptr` value) for `{param}`, but got {got}.",
+        (
+            "Pass the tensor's iterator, e.g. `cute.arch.{op}(tensor.iterator, ...)`: a cute.Pointer to its first element.",
+            "Or pass an explicit LLVM pointer value: `tensor.iterator.llvm_ptr`.",
+        ),
+    )
+    ARG_REJECTED_BY_OP = (
+        "`{api}` rejected one of its arguments: {detail}",
+        (
+            "Check the kind and value of each argument passed to `{api}` against its documentation.",
+            "The error raised by the MLIR op builder is attached as the cause of this error.",
+        ),
+    )
     ARG_TENSOR_NOT_ON_DEVICE = (
         "The tensor `{arg_name}` must be in GPU memory, but it is currently on the host. Move it to the GPU before passing it to the kernel.",
         (
@@ -2313,6 +2688,17 @@ class DiagId(_DiagMixin, enum.Enum):
             "Convert the value to an integer type, e.g., `int({name})`.",
         ),
     )
+    # --- ASSERT ---
+    ASSERT_DYNAMIC_CONDITION = (
+        "`assert` is checked while the compiler reads your code and needs a "
+        "{meta} condition, but this condition is a {staged}.",
+        (
+            "For a run-time check use `cutlass.assert_(cond, msg)` (active only "
+            "with CUTE_DSL_COMPILER_OPT=debug / CUTE_DSL_ENABLE_ASSERTIONS=1).",
+            "To assert on a compile-time value wrap it in "
+            "`cutlass.const_expr(...)` or make it a `cutlass.Constexpr` parameter.",
+        ),
+    )
     # --- ATTR ---
     ATTR_BUILDER_REQUIRES_CONSTANT = (
         "`{var}` is passed to `{callee}`, which needs one plain compile-time "
@@ -2342,13 +2728,6 @@ class DiagId(_DiagMixin, enum.Enum):
         "Got multiple values for argument {argument_name}",
         (
             "Pass the value either as a positional argument or as a keyword argument, not both",
-        ),
-    )
-    CALL_EXPERIMENTAL_MISMATCH = (
-        "The is_experimental flag does not match the function's DSL routing. Either remove the flag or use @cute.jit(is_experimental=True).",
-        (
-            "If using experimental DSL, decorate the function with @cute.jit(is_experimental=True).",
-            "Otherwise, remove the is_experimental=True flag from cute.compile().",
         ),
     )
     CALL_FFI_NO_KWARGS = (
@@ -2537,6 +2916,16 @@ class DiagId(_DiagMixin, enum.Enum):
             "or use min_version and/or max_version for a range, but not both.",
         ),
     )
+    CONFIG_VERSION_KIND_INVALID = (
+        '"{kind}" is not a valid version kind for target_version().',
+        ("Use one of: {valid_kinds}.",),
+    )
+    CONFIG_VERSION_MALFORMED = (
+        '"{version_string}" is not a valid version string for {class_name}.',
+        (
+            'Use dot-separated numeric components like "4.6" or "4.6.1"; missing components default to 0.',
+        ),
+    )
     CONFIG_VERSION_MISSING = (
         "When checking a version range, at least min_version or max_version must be provided.",
         (
@@ -2556,13 +2945,12 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             'Provide exact_version="X.Y" for a specific version,',
             'or min_version="X.Y" and/or max_version="X.Y" for a version range.',
+            'Add kind="dsl" to check the DSL package version instead of the CUDA toolkit version.',
         ),
     )
     CONFIG_VERSION_TYPE = (
-        '{param_name} must be a version string (e.g., "12.3") or DSLCudaVersion, not {got_type}',
-        (
-            'Pass a version string like "12.3" or use DSLCudaVersion("{version_string}")',
-        ),
+        '{param_name} must be a version string (e.g., "12.3") or {expected_type}, not {got_type}',
+        ('Pass a version string like "12.3" or use {expected_type}("12.3")',),
     )
     # --- INSTRUMENTATION ---
     INSTRUMENTATION_GAP = (
@@ -2595,6 +2983,13 @@ class DiagId(_DiagMixin, enum.Enum):
     LAUNCH_INVALID_GRID = (
         "Launch {name} must have at most 3 dimensions, but got {count}.",
         ("Reduce the {name} to at most 3 elements, e.g. `{name}=[x, y, z]`.",),
+    )
+    LAUNCH_INVALID_STREAM = (
+        "Launch `stream=` must be a CUDA stream (a `cuda.CUstream` host parameter or a 64-bit integer stream handle), but got {got}.",
+        (
+            "Declare the host parameter as `stream: cuda.CUstream` (`import cuda.bindings.driver as cuda`) and pass `cuda.CUstream(torch.cuda.current_stream().cuda_stream)`.",
+            "A raw integer handle must be 64-bit: annotate the parameter as `cutlass.Int64` (an un-annotated Python int is marshalled as `Int32`, which cannot hold a CUstream handle).",
+        ),
     )
     LAUNCH_MISSING_ARG = (
         "Required argument `{name}` is missing when launching kernel `{kernel_name}`.",
@@ -2648,6 +3043,54 @@ class DiagId(_DiagMixin, enum.Enum):
             "Or perform the change outside the run-time for/while/if.",
         ),
     )
+    OWNER_STAGED_SELECTION_WRITE = (
+        "`{obj}.{attr}` is written{write_loc} through an object that a run-time "
+        "condition selected (`x if cond else y` where `cond` is a {staged}). "
+        "Which object receives the write is only known at run time, and the "
+        "conditional expression yields a merged copy of the two candidates' "
+        "values, so the write would land on that copy and neither candidate "
+        "would change.",
+        (
+            "Mutate inside an if statement instead, one candidate per arm: "
+            "`if cond: x.advance()` / `else: y.advance()`.",
+            "Or select values, not objects: `v = x.field if cond else y.field`.",
+            "Or make the choice compile-time with `cutlass.const_expr(cond)`, "
+            "so one candidate is picked while the code is read.",
+        ),
+    )
+    OWNER_STAGED_SELECTION_READ_AFTER_CANDIDATE_WRITE = (
+        "`{obj}.{attr}` is read{read_loc} through the result of a run-time "
+        "selection (`x if cond else y` with a run-time `cond`, or a re-point "
+        "inside a run-time `if`) after one of its candidates was written"
+        "{write_loc}. In Python the result IS the selected candidate and sees "
+        "that write; the compiler's result is a merged copy taken at the "
+        "selection, so it would still show the old value.",
+        (
+            "Select after the write: move `x if cond else y` below the "
+            "candidate's update.",
+            "Or read the candidate itself, or choose values, not objects "
+            "(`x.field if cond else y.field`) after the write.",
+            "Or make the choice compile-time with `cutlass.const_expr(cond)`.",
+        ),
+    )
+    OWNER_STAGED_SELECTION_CANDIDATE_READ = (
+        "`{obj}.{attr}` is read{read_loc} after a field write went through a "
+        "run-time selection between this object and another (`x if cond else "
+        "y` where `cond` is a {staged}). Python would have mutated whichever "
+        "candidate the condition picked; the compiler carries an object as "
+        "one storage cell per field, so the write landed on the merged copy "
+        "the selection produced and this object's fields no longer say what "
+        "Python's would.",
+        (
+            "Read the selected object through the binding the selection "
+            "produced (`sel = x if cond else y`; `sel.field`), not through a "
+            "candidate.",
+            "Or mutate inside an if statement, one candidate per arm: "
+            "`if cond: x.advance()` / `else: y.advance()`.",
+            "Or make the choice compile-time with `cutlass.const_expr(cond)`, "
+            "so one candidate is picked while the code is read.",
+        ),
+    )
     OWNER_FABRICATED_ATTR_IN_STAGED_CF = (
         "`{obj}.{attr}` is fabricated by `{definer}.__getattr__` inside "
         "staged (runtime) control flow: the name resolves to no storage "
@@ -2681,6 +3124,18 @@ class DiagId(_DiagMixin, enum.Enum):
             "instead of serialized bytes.",
         ),
     )
+    PHASE_STAGED_VALUE_OUTLIVED_COMPILATION = (
+        "This `{what}` value was computed inside a compiled function that has "
+        "finished compiling: it has no Python value on the host, and the IR "
+        "behind it died with that compilation, so it can neither be read here "
+        "nor used in a later compilation.",
+        (
+            "Return the result through a tensor/array argument the kernel "
+            "writes, or recompute it in plain Python.",
+            "A value a later compilation needs must be passed in as an "
+            "argument, not kept in a module global, container or object field.",
+        ),
+    )
     PHASE_NUMERIC_PROTOCOL_ON_STAGED = (
         "`{proto}` is not supported on `{what}`, a {staged}: this numeric "
         "protocol has no runtime (staged) form.",
@@ -2696,10 +3151,33 @@ class DiagId(_DiagMixin, enum.Enum):
         ("Ensure the condition is a runtime value (Boolean, Int32, etc.).",),
     )
     PHASE_DYNAMIC_INDEX = (
-        "Cannot use a {staged} value as a list index or for loop range in plain Python code",
+        "a {staged} is used where Python needs a fixed integer (`__index__`): a "
+        "tuple/list/str index or slice bound, or a builtin `range()` bound. "
+        "Python resolves these while your code is read, in a "
+        "`@cute.jit`/`@cute.kernel` body as much as in a plain helper, so the "
+        "value must be known at trace time.",
         (
-            "Mark the loop as dynamic with @dynamic_expr or @range_dynamic",
-            "Decorate the parent function with @jit so the indexing happens in staged code where {staged} values are allowed",
+            "Use an index known at trace time: iterate with "
+            "`cutlass.range_constexpr(...)`, or restructure so the runtime value "
+            "is the ELEMENT, not the index.",
+            "For a runtime-bound loop write `for i in cutlass.range(n)` inside a "
+            "`@cute.jit`/`@cute.kernel` body -- a plain helper's loops run at "
+            "trace time.",
+        ),
+    )
+    PHASE_DYNAMIC_RANGE_ITERATED_BY_PYTHON = (
+        "`cutlass.range(...)` was iterated by plain Python: a `for` in a helper "
+        "without `@cute.jit`/`@cute.kernel`, or a comprehension, generator "
+        "expression, `list()`/`tuple()` call or `iter()`/`next()` anywhere. A "
+        "dynamic range has no trace-time iteration; it only drives a `for` "
+        "statement written in a `@cute.jit`/`@cute.kernel` body, where the "
+        "compiler turns it into a runtime loop.",
+        (
+            "Move the runtime-bound `for` loop into a `@cute.jit`/`@cute.kernel` "
+            "function -- a plain helper's body is not staged.",
+            "For a trace-time loop over a Python int use "
+            "`cutlass.range_constexpr(...)` (or builtin `range()`); both work in "
+            "helpers and comprehensions.",
         ),
     )
     PHASE_DYNAMIC_TO_STATIC_BOOL = (
@@ -2707,6 +3185,17 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Decorate the function with @jit and ensure preprocess is enabled so control flow is staged",
             "Or move the boolean check inside a staged for/while/if block where {staged} values are allowed",
+        ),
+    )
+    PHASE_NATIVE_CALLEE_STAGED_TRUTH = (
+        "{callee} decides its result from a {staged}: a Python built-in or "
+        "container method runs at compile time and cannot branch on a runtime "
+        "value.",
+        (
+            "Write the loop explicitly: `for x in seq:` with a staged `if cond:` "
+            "that accumulates the result.",
+            "For reductions use `cutlass.min`/`cutlass.max`/`cutlass.any_`/"
+            "`cutlass.all_` (or the built-in on a list/tuple).",
         ),
     )
     PHASE_REQUIRES_CONSTANT = (
@@ -2741,6 +3230,32 @@ class DiagId(_DiagMixin, enum.Enum):
             "Or keep every read of `{var}` inside the same if branch that changes it.",
         ),
     )
+    PHASE_ARM_REWRITE_NOT_STAGEABLE = (
+        "`{var}` is a {meta} (type {old_type}, value {old_value}) before this "
+        "if, and a branch that only runs on some GPU paths changes it to a "
+        "{new_type} ({new_value}). Where the paths come back together no GPU "
+        "value can hold both possibilities, so the value after the if cannot "
+        "be represented in any mode.",
+        (
+            "If the condition is known at compile time, write `if "
+            "const_expr(...)` so only one branch is traced.",
+            "Otherwise keep `{var}` a number: express the state with a numeric "
+            "or bool flag decided before the if, and choose numbers, not "
+            "objects, inside the branches.",
+        ),
+    )
+    PHASE_BODY_BORN_CONSTANT_ESCAPES = (
+        "`{var}` is read here, but it belongs to a binding created inside a "
+        "for/while/if body (at {birth_file}:{birth_line}) and is tracked as a "
+        "compile-time constant there. The compiler runs the body once, so this "
+        "read outside the body would keep that pass's value even when the body "
+        "runs zero times or leaves a different object bound.",
+        (
+            "Read `{var}` inside the for/while/if body that creates it.",
+            "Or make the field a {staged} at construction (e.g. `Int32(...)`) "
+            "so the value is carried on every path.",
+        ),
+    )
     PHASE_PREDICATE_FOLDED_STALE = (
         "`{var}` is changed here inside a for/while body, but an if/while "
         "condition already folded on its compile-time value ({value}, at "
@@ -2751,6 +3266,42 @@ class DiagId(_DiagMixin, enum.Enum):
             "the condition stays a runtime comparison.",
             "Or hoist the mutation out of the loop and keep the value a fixed "
             "compile-time constant.",
+        ),
+    )
+    # --- PRINTF ---
+    PRINTF_ARG_COUNT_MISMATCH = (
+        "This cute.printf format string has {expected} placeholder(s) but "
+        "{got} value(s) were passed.",
+        (
+            "Pass exactly one value per `{{}}` / `{{:spec}}` / `%` placeholder, "
+            "in placeholder order.",
+            "Write a literal percent sign as `%%`; every `{{}}` is a placeholder.",
+        ),
+    )
+    PRINTF_BRACE_ESCAPE_UNSUPPORTED = (
+        "cute.printf can't print literal braces: {detail}.",
+        (
+            "The generated printf reads every `{{}}` as a placeholder, so `{{{{` / "
+            "`}}}}` escapes and stray braces can't be honored.",
+            "Drop the braces, or print the surrounding text with a separate "
+            "cute.printf call.",
+        ),
+    )
+    PRINTF_POSITIONAL_FIELD = (
+        "cute.printf fields must be empty (`{{}}` or `{{:spec}}`); the field "
+        "`{field}` selects a value by position or name.",
+        (
+            "Pass the values in placeholder order and use `{{}}` or `{{:spec}}`.",
+            'Use an f-string to refer to values by name: cute.printf(f"{{name}}").',
+        ),
+    )
+    PRINTF_UNSUPPORTED_SPEC = (
+        "cute.printf can't use the format spec `{spec}` here: {reason}.",
+        (
+            "Supported specs are the printf-compatible ones: an optional sign "
+            "(`+`, space), `#`, zero padding, width, precision and a type letter, "
+            "e.g. `{{:04d}}`, `{{:+.2f}}`, `{{:#x}}`, `{{:8.3e}}`.",
+            "Format the value in Python first when it is a compile-time constant.",
         ),
     )
     # --- READ ---
@@ -2862,7 +3413,25 @@ class DiagId(_DiagMixin, enum.Enum):
             "Call `allocate()` (and `copy_to_gpu()` if you need its contents) before using it here.",
         ),
     )
+    TENSOR_MAP_INVALID_DESCRIPTOR = (
+        "Cannot create the TensorMap descriptor: {detail}",
+        (
+            "Correct the arguments passed to `create_tensor_map_*` so they satisfy "
+            "the reported CUDA TensorMap constraint.",
+        ),
+    )
     # --- TYPE ---
+    TYPE_BOOLOP_OPERAND_NOT_NUMERIC = (
+        "`{op}` with a left operand that is only known at run time selects its "
+        "result at run time, so the right operand must be a Python number or a "
+        "DSL numeric value (Int32, Float32, Boolean, ...); it is a `{got}`.",
+        (
+            "Select between numeric values (e.g. `y if x != 0 else x`), or test "
+            "the property you need explicitly instead of the object itself.",
+            "Or make the left operand a compile-time constant so Python's own "
+            "`{op}` applies.",
+        ),
+    )
     TYPE_CHANGED_INSIDE_REGION = (
         "`{var}` changes its compiled type from `{old_type}` to `{new_type}` "
         "inside {region}. A value carried across a for/while/if boundary must "
@@ -2938,6 +3507,14 @@ class DiagId(_DiagMixin, enum.Enum):
         "The return_types must all be DSL types (Int32, Float32, Boolean, etc.).",
         ("Use DSL types for return_types.",),
     )
+    TYPE_TRUTH_OF_DSL_OBJECT = (
+        "A `{type}` has no truth value, so it cannot be tested by `if`/`while`, "
+        "`not`/`and`/`or` or `bool()`.",
+        (
+            "Test a property of it explicitly, e.g. a size or shape "
+            "(`cute.size(x) > 0`) or an element it holds (`x[0] != 0`).",
+        ),
+    )
     TYPE_UNSUPPORTED_C_ARG = (
         "Argument type {arg_type} is not supported for C header export. Only numeric types (Int32, Float32, etc.) are supported.",
         (
@@ -2950,6 +3527,12 @@ class DiagId(_DiagMixin, enum.Enum):
         (
             "Use a supported scalar type (Int8/16/32/64, Uint8/16/32/64, Float32/64, BFloat16, Float16, Boolean) or a @native_struct.",
             "If you need to pass a custom type, define it as a @native_struct with supported fields.",
+        ),
+    )
+    TYPE_UNSUPPORTED_NUMERIC_INPUT = (
+        "`{target}` cannot be constructed from {value!r} of type `{value_type}`.",
+        (
+            "Pass a Python bool, int or float, a DSL Numeric, or an MLIR value of a matching type.",
         ),
     )
     TYPE_UNSUPPORTED_TENSOR = (
@@ -3023,6 +3606,17 @@ class DiagId(_DiagMixin, enum.Enum):
             "paths produce the same class.",
         ),
     )
+    WRAPPER_FIELD_WRITE_ON_STAGED_COPY = (
+        "`{field}` is written on a `{type}` that was read back through the "
+        "compiler as a fresh copy of the tracked value, so the write lands on "
+        "that copy: the attribute it was read from never sees the new `{field}`.",
+        (
+            "Replace the whole value instead of one of its fields, e.g. "
+            "`obj.attr = new_value` for the `obj.attr` you read the `{type}` from.",
+            "If you need a different `{field}`, build a new `{type}` with it and "
+            "assign that whole value.",
+        ),
+    )
     WRAPPER_REBIND_DUPLICATE_LEAF = (
         "A `{cls}` is replaced inside {region}, but the value it held on "
         "entry stores the SAME compiled value at more than one leaf "
@@ -3033,6 +3627,15 @@ class DiagId(_DiagMixin, enum.Enum):
             "Enter the for/while/if with a distinct value at every leaf "
             "position (compute each initial value separately), or update "
             "the positions in place instead of replacing the whole object.",
+        ),
+    )
+    TYPE_STRUCT_ORDER_STAGED = (
+        "`{op}` between `{cls}` values runs the dataclass-generated ordering, "
+        "which compares the fields lexicographically, and field `{field}` holds "
+        "a {staged}; only `==` and `!=` are staged field-wise for dataclasses.",
+        (
+            "Compare the fields explicitly, e.g. `lhs.{field} {op} rhs.{field}`.",
+            "Or compare only fields holding a {meta} so Python's own ordering applies.",
         ),
     )
 
@@ -3098,6 +3701,31 @@ class WarnId(_DiagMixin, enum.Enum):
         (
             "Use a wider float type that can represent {value}, e.g. "
             "`Float64({value})`.",
+        ),
+    )
+
+    HOST_JIT_RETURNS_STAGED = (
+        "`{func}` returns a {staged} (`{what}`) to plain Python.",
+        (
+            "Write the result into a tensor/array argument, or return only "
+            "Python values.",
+        ),
+    )
+    TS_AUDIT_ADVISORY = (
+        "The task-scheduling audit could not fully verify this schedule "
+        "(non-fatal):\n{details}",
+        (
+            "These findings are advisory: parts of the schedule could not be "
+            "proven correct (dynamic values, conditional steps). Review the "
+            "listed locations; the compiled kernel is unchanged.",
+        ),
+    )
+
+    TS_INFRA_DEGRADED = (
+        "Task-scheduling audit infrastructure degraded (ignored): {details}",
+        (
+            "The kernel compiles unaffected, but this schedule was not "
+            "audited. Report this warning to the compiler team.",
         ),
     )
     ARG_UNIVERSAL_COPY_ATTRS_IGNORED = (

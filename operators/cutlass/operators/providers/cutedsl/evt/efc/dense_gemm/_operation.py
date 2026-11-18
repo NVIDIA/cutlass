@@ -42,11 +42,40 @@ tcgen05 epilogue copy/partition helpers, ...).
 
 from __future__ import annotations
 
+import warnings
+
 import cutlass
 import cutlass.cute as cute  # noqa: F401 — used inside method bodies.
+from cutlass.utils.gemm.sm100 import transform_partitioned_tensor_layout
 
 import cutlass.operators.providers.cutedsl.evt.efc as common_efc
-from cutlass.operators.providers.cutedsl.evt.efc import log, trace_in_mlir  # noqa: F401
+from cutlass.operators.providers.cutedsl.evt.efc import log, trace_in_mlir
+
+
+def _group_by_instruction(tensor: cute.Tensor) -> cute.Tensor:
+    """Regroup ``((ATOM_M, MMA_M), (ATOM_N, MMA_N), ...)`` partition modes
+    into ``((ATOM_M, ATOM_N), MMA_M, MMA_N, ...)``.
+
+    The result has the mode order returned by ``thr_mma.partition_C``.
+    """
+    layout = tensor.layout
+    outer = layout.outer if isinstance(layout, cute.ComposedLayout) else layout
+    (atom_m, mma_m), (atom_n, mma_n), *rest_shape = outer.shape
+    (atom_m_stride, mma_m_stride), (atom_n_stride, mma_n_stride), *rest_stride = (
+        outer.stride
+    )
+    regrouped = cute.make_layout(
+        shape=((atom_m, atom_n), mma_m, mma_n, *rest_shape),
+        stride=(
+            (atom_m_stride, atom_n_stride),
+            mma_m_stride,
+            mma_n_stride,
+            *rest_stride,
+        ),
+    )
+    if isinstance(layout, cute.ComposedLayout):
+        regrouped = cute.make_composed_layout(layout.inner, layout.offset, regrouped)
+    return cute.make_tensor(tensor.iterator, regrouped)
 
 
 class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
@@ -60,9 +89,84 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
     arch-specific methods.
     """
 
+    def partition_global_tensor(self, tensor_name, source):
+        """Tile one supplemental tensor by the MMA tiler, per CTA tile.
+
+        Returns the ``((ATOM_M, MMA_M), (ATOM_N, MMA_N), loopM, loopN,
+        loopL)`` form the epilogue partition helpers consume: the tiled
+        MMA's partition with each atom mode folded with its MMA count.
+        ``MMA_M`` and ``MMA_N`` both have extent 1, since the tiled MMA is
+        a single tcgen05 atom spanning the whole CTA tile
+        (``make_trivial_tiled_mma``), one atom along M and one along N.
+        If the caller class does not set the private ``_folds_partition_modes``
+        flag (or sets it to False), it returns the unfolded
+        ``((ATOM_M, ATOM_N), MMA_M, MMA_N, ...)`` form instead.
+        This is an older form for compatibility, and will emit a
+        ``DeprecationWarning``.
+
+        A tensor written from ``accum_split`` parts spans ``1 / num_parts``
+        of the output's N.  It is re-viewed at full width
+        (``extend_split_n``) so the accumulator's CTA tiler and
+        ``partition_C`` apply to it unchanged -- ``partition_C`` halves M
+        under a 2-CTA MMA and adds that CTA's M offset, which nothing else
+        should re-derive -- and the stride-0 sub-mode is sliced away right
+        after.  The tile's N mode is then the flat pair
+        ``(num_parts, bN // num_parts)``: slicing it at 0 leaves the narrow
+        columns, and ``group_modes`` restores the profile the slice
+        flattened.  The result is at narrow width,
+        ``((bM, bN // num_parts), 1, 1, loopM, loopN, loopL)``, and tiles
+        with ``JIT.epi_tile_of`` from there on, like the SMEM stage it is
+        stored from.
+
+        :param tensor_name: Name of the epilogue parameter.
+        :param source: The tensor's global ``(M, N, L)`` view.
+        :return: The tiled tensor.
+        """
+        tiler = cutlass.cute.slice_(self.operation.mma_tiler, (None, None, 0))
+        num_parts = self.efc.parameter_attributes[tensor_name].accum_split_parts
+        if num_parts is not None:
+            # Full-width interleaved view, so the accumulator's own tiler
+            # and MMA partition apply to the narrowed tensor unchanged.
+            source = common_efc.extend_split_n(source, num_parts)
+        # (bM, bN, loopM, loopN, loopL)
+        g_mnl = cutlass.cute.local_tile(source, tiler, (None, None, None))
+        log(f"Kernel.partition_global_tensor: g_mnl[{tensor_name}] = {g_mnl!s}")
+        # ((ATOM_M, MMA_M), (ATOM_N, MMA_N), loopM, loopN, loopL)
+        tiled = transform_partitioned_tensor_layout(
+            self.operation.thr_mma.partition_C(g_mnl)
+        )
+        if num_parts is not None:
+            # ((bM, 1), ((num_parts, bN // num_parts), 1), loopM, loopN, loopL):
+            # slice the stride-0 leaf at 0, which flattens the two tile
+            # modes into (bM, 1, bN // num_parts, 1), then regroup them.
+            # ((bM, 1), (bN // num_parts, 1), loopM, loopN, loopL)
+            sliced = tiled[((None, None), ((0, None), None), None, None, None)]
+            tiled = cutlass.cute.group_modes(
+                cutlass.cute.group_modes(sliced, 0, 2), 1, 3
+            )
+        if getattr(self.operation, "_folds_partition_modes", False):
+            return tiled
+        warnings.warn(
+            f"{type(self.operation).__qualname__} does not set _folds_partition_modes"
+            ", so its C/D partitions use "
+            "the unfolded modes ((ATOM_M, ATOM_N), MMA_M, MMA_N, ...). This "
+            "use is deprecated. A future release will give it the folded modes "
+            "((ATOM_M, MMA_M), (ATOM_N, MMA_N), ...).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _group_by_instruction(tiled)
+
     @trace_in_mlir
     def partition_global_tensors_for_tiled_mma(self):
-        """Partition the global supplemental tensors for TiledMMA_C/D."""
+        """Partition the global supplemental tensors for TiledMMA_C/D.
+
+        Every epilogue-side ``partition_C`` result is MMA-folded here, to
+        ``((ATOM_M, MMA_M), (ATOM_N, MMA_N), loopM, loopN, loopL)``, so the
+        subtile divisions downstream span every accumulator when the tiler
+        exceeds the instruction (Bkeep-Breuse: MMA_M == 2).  Consumers take
+        the folded shape as is; re-slicing the MMA modes fails at trace time.
+        """
         self.tCgC_read = {}
         self.tCgD_written = {}
 
@@ -79,17 +183,10 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
                     if is_tma
                     else f"{tensor_name}_gmem_tensor_read"
                 )
-                # (bM, bN, loopM, loopN, loopL)
-                gC_mnl = cutlass.cute.local_tile(
-                    self.parameter[read_source_arg],
-                    cutlass.cute.slice_(self.operation.mma_tiler, (None, None, 0)),
-                    (None, None, None),
+                # ((ATOM_M, MMA_M), (ATOM_N, MMA_N), loopM, loopN, loopL)
+                self.tCgC_read[tensor_name] = self.partition_global_tensor(
+                    tensor_name, self.parameter[read_source_arg]
                 )
-                log(
-                    f"Kernel.partition_global_tensors_for_tiled_mma: gC_mnl[{tensor_name}] = {gC_mnl!s}"
-                )
-                # (MMA, MMA_M, MMA_N, loopM, loopN, loopL)
-                self.tCgC_read[tensor_name] = self.operation.thr_mma.partition_C(gC_mnl)
                 log(
                     f"Kernel.partition_global_tensors_for_tiled_mma: self.tCgC_read[{tensor_name}] = {self.tCgC_read[tensor_name]!s}"
                 )
@@ -100,24 +197,34 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
                     if is_tma
                     else f"{tensor_name}_gmem_tensor_written"
                 )
-                # (bM, bN, loopM, loopN, loopL)
-                gD_mnl = cutlass.cute.local_tile(
-                    self.parameter[written_source_arg],
-                    cutlass.cute.slice_(self.operation.mma_tiler, (None, None, 0)),
-                    (None, None, None),
-                )
-                log(
-                    f"Kernel.partition_global_tensors_for_tiled_mma: gD_mnl[{tensor_name}] = {gD_mnl!s}"
-                )
-                # (MMA, MMA_M, MMA_N, loopM, loopN, loopL)
-                self.tCgD_written[tensor_name] = self.operation.thr_mma.partition_C(
-                    gD_mnl
+                # ((ATOM_M, MMA_M), (ATOM_N, MMA_N), loopM, loopN, loopL)
+                self.tCgD_written[tensor_name] = self.partition_global_tensor(
+                    tensor_name, self.parameter[written_source_arg]
                 )
                 log(
                     f"Kernel.partition_global_tensors_for_tiled_mma: self.tCgD_written[{tensor_name}] = {self.tCgD_written[tensor_name]!s}"
                 )
 
         self.foreach_tensor(f)
+
+    @trace_in_mlir
+    def partition_output_coordinates(self, output_shape_mnl):
+        """Partition an identity tensor of the output shape for TiledMMA_C,
+        congruent to the supplemental tensors, so direct GMEM accesses can be
+        predicated against the output bounds on partial tiles."""
+        self.output_shape_mnl = output_shape_mnl
+        idC = cutlass.cute.make_identity_tensor(output_shape_mnl)
+        # (bM, bN, loopM, loopN, loopL)
+        cC_mnl = cutlass.cute.local_tile(
+            idC,
+            cutlass.cute.slice_(self.operation.mma_tiler, (None, None, 0)),
+            (None, None, None),
+        )
+        # ((ATOM_M, MMA_M), (ATOM_N, MMA_N), loopM, loopN, loopL), MMA-folded
+        # like the supplemental tensors (see partition_global_tensors_for_tiled_mma).
+        self.tCcC = transform_partitioned_tensor_layout(
+            self.operation.thr_mma.partition_C(cC_mnl)
+        )
 
     # The following functions are executed by the specialized warps for
     # epilogue computation.
@@ -315,34 +422,34 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
         self.efc.foreach_remapped_tensor(broadcast_degenerate_tensor_load)
 
         def load_setup(tensor_name, attributes):
-            # ``self.subtile_retile`` (set in
-            # ``copy_and_partition_supplemental_rmem_tensors``) brings
-            # any per-thread register fragment into the per-subtile
-            # register layout the store path expects -- R2S when there
-            # is a TMA D, T2R otherwise.  ``retile`` is a layout-only
-            # re-view; for direct-read fragments the retile is
-            # effectively a no-op, but we keep the call uniform so both
-            # branches read alike.
+            # ``retile_t2r_fragment`` (set in
+            # ``copy_and_partition_supplemental_rmem_tensors``) brings a
+            # T2R-partitioned register fragment into the per-subtile
+            # register layout the store path expects -- R2S when there is
+            # a TMA D, T2R (identity) otherwise.
             if attributes.is_direct:
                 # The per-subtile direct load already fired in
                 # ``load_direct_read_tensors_per_subtile``;
-                # ``tTR_rC_direct[name]`` holds the loaded data.
-                epilogue_context.load[tensor_name] = self.subtile_retile(
+                # ``tTR_rC_direct[name]`` holds the loaded data in the
+                # T2R layout.
+                epilogue_context.load[tensor_name] = self.retile_t2r_fragment(
                     self.tTR_rC_direct[tensor_name]
                 ).load()
                 return
-            # TMA-loaded read.  ``tSR_rC`` is the S2R-shape view of a
-            # T2R-shape register; ``subtile_retile`` converts it to
-            # whichever shape the store path expects.
-            epilogue_context.load[tensor_name] = self.subtile_retile(
-                self.tSR_rC[tensor_name]
+            # TMA-loaded read.  The S2R copy filled ``tSR_rC``, an S2R-shaped
+            # view of the T2R register ``tTR_rC``; the body reads that
+            # register through the same conversion as the accumulator.
+            epilogue_context.load[tensor_name] = self.retile_t2r_fragment(
+                self.tTR_rC[tensor_name]
             ).load()
-            log(f"Kernel.epilogue_computation load_setup: {self.subtile_retile = !s}")
+            log(
+                f"Kernel.epilogue_computation load_setup: {self.retile_t2r_fragment = !s}"
+            )
             log(
                 f"Kernel.epilogue_computation load_setup: self.tSR_rC[{tensor_name}] = {self.tSR_rC[tensor_name]!s}"
             )
             log(
-                f"Kernel.epilogue_computation load_setup: self.subtile_retile(self.tSR_rC[{tensor_name}]) = {self.subtile_retile(self.tSR_rC[tensor_name])!s}"
+                f"Kernel.epilogue_computation load_setup: self.retile_t2r_fragment(self.tTR_rC[{tensor_name}]) = {self.retile_t2r_fragment(self.tTR_rC[tensor_name])!s}"
             )
             log(
                 f"Kernel.epilogue_computation load_setup: epilogue_context.load[{tensor_name}] = {epilogue_context.load[tensor_name]!s}"
@@ -359,7 +466,7 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
                 # in ``store_direct_written_tensors_per_subtile`` reads
                 # back through the T2R-shape name and writes the same
                 # underlying registers straight to global memory.
-                epilogue_context.store[tensor_name] = self.subtile_retile(
+                epilogue_context.store[tensor_name] = self.retile_t2r_fragment(
                     self.tTR_rD_direct[tensor_name]
                 )
                 return
@@ -396,7 +503,9 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
                 return
             common_efc._tensor._emit_axis_reduce_smem_init(
                 attributes.reduce_op,
-                self.operation.epi_dtype,
+                # The fold buffer and its identity live in the
+                # destination's dtype (see ``Tensor.reduce``).
+                self.parameter[tensor_name].element_type,
                 self.smem_reduce[tensor_name],
                 self.reduce_kept_extent[tensor_name],
                 barrier,
@@ -434,7 +543,9 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
             ].iterator
             common_efc._tensor._emit_axis_reduce_smem_flush(
                 attributes.reduce_op,
-                self.operation.epi_dtype,
+                # Destination dtype, matching the fold buffer and the
+                # global atomic (see ``Tensor.reduce``).
+                self.parameter[tensor_name].element_type,
                 self.smem_reduce[tensor_name],
                 gmem_base,
                 self.reduce_kept_extent[tensor_name],
@@ -485,10 +596,16 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
         Called from the kernel main loop on every epilogue warp -- each
         thread reads its own slice; no warp gating, no pipeline.
         """
+        # In-bounds predicate of the subtile, shared by all direct tensors
+        # and built on first use.
+        pred = None
 
         def f(tensor_name, attributes):
+            nonlocal pred
             if not attributes.is_direct or not attributes.is_read:
                 return
+            if pred is None:
+                pred = self.direct_subtile_predicate(mma_tile_coord_mnl, subtile_idx)
             # tTR_gC_direct_partitioned shape:
             # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL).
             # First slice (RestM, RestN, RestL) by the current MMA tile,
@@ -503,6 +620,7 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
                 self.direct_load_atom[tensor_name],
                 tTR_gC_subtile,
                 self.tTR_rC_direct[tensor_name],
+                pred=pred,
             )
 
         self.foreach_read_tensor(f)
@@ -517,10 +635,16 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
         thread writes its own slice, independently of the TMA-store
         warp gate that handles the staged-store path.
         """
+        # In-bounds predicate of the subtile, shared by all direct tensors
+        # and built on first use.
+        pred = None
 
         def f(tensor_name, attributes):
+            nonlocal pred
             if not attributes.is_direct or not attributes.is_written:
                 return
+            if pred is None:
+                pred = self.direct_subtile_predicate(mma_tile_coord_mnl, subtile_idx)
             tTR_gD = self.tTR_gD_direct_partitioned[tensor_name][
                 (None, None, None, None, None, *mma_tile_coord_mnl)
             ]
@@ -530,9 +654,34 @@ class _DenseGemmEFCKernelBase(common_efc.EFC.Kernel):
                 self.direct_store_atom[tensor_name],
                 self.tTR_rD_direct[tensor_name],
                 tTR_gD_subtile,
+                pred=pred,
             )
 
         self.foreach_written_tensor(f)
+
+    def direct_subtile_predicate(self, mma_tile_coord_mnl, subtile_idx):
+        """Return the in-bounds predicate of the current subtile for the
+        direct tensors: one flag per register vector of the per-thread
+        fragment, true when the vector's first coordinate lies inside the
+        output shape.  The contiguous dimension of every tensor is a
+        multiple of the vector width, so a vector never straddles the
+        boundary."""
+        # (T2R, T2R_M, T2R_N, EPI_M, EPI_N)
+        tTR_cC = self.tTR_cC_direct_partitioned[
+            (None, None, None, None, None, *mma_tile_coord_mnl)
+        ]
+        tTR_cC = cutlass.cute.group_modes(tTR_cC, 3, cutlass.cute.rank(tTR_cC))
+        # (T2R, T2R_M, T2R_N)
+        tTR_cC_subtile = tTR_cC[(None, None, None, subtile_idx)]
+        pred = cutlass.cute.make_rmem_tensor(
+            (1, *tTR_cC_subtile.shape[1:]), cutlass.Boolean
+        )
+        for m_idx in range(tTR_cC_subtile.shape[1]):
+            for n_idx in range(tTR_cC_subtile.shape[2]):
+                pred[(0, m_idx, n_idx)] = cutlass.cute.elem_less(
+                    tTR_cC_subtile[(0, m_idx, n_idx)], self.output_shape_mnl
+                )
+        return pred
 
     @trace_in_mlir
     def prepare_tensor_load_for_subtiles(

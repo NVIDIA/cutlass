@@ -31,10 +31,12 @@ from ..base_dsl.common import (
     is_auto_m2s_enabled,
 )
 from ..base_dsl.diagnostics import DiagId
+from ..base_dsl.ast_helpers import truth_of
 from ..base_dsl.multi_stage_manager import enter_staged_cf, exit_staged_cf
 from ..base_dsl.pyir_runtime import (
     CF_ATTR_FIRST_DEF,
     PYIR_REGION_ATTR_WRITES_ATTR,
+    PYIR_REGION_DEAD_ON_ENTRY_ATTR,
     PYIR_REGION_FREE_CALLS_ATTR,
     PYIR_REGION_METHOD_CALLS_ATTR,
     _PyirScopeGuard,
@@ -51,19 +53,35 @@ from ..base_dsl.pyir_runtime import (
     _pyir_bump_region_epoch,
     _pyir_region_entry_pop,
     _pyir_region_entry_push,
+    _pyir_region_entry_pin_holders,
+    _pyir_snapshot_region_entry_compounds,
+    _pyir_open_loop_body_blocks,
     _pyir_gather_captured_leaf_holders,
     _pyir_lookup_slot_from_value,
+    _pyir_adopt_declared_staged_place_ref,
     _pyir_loop_carried_meta_needs_rebind,
     _PYIR_LAST_NOTIN_COMPARE,
     _PYIR_CF_ATTR_FIRST_DEFS,
+    _PYIR_FOLDED_IF_PATH,
     _PYIR_FOLD_FIRSTDEF_STACK,
+    _pyir_collapse_cf_attr_first_defs_at_if_exit,
+    _pyir_current_region_frame,
+    _pyir_attr_keysets,
+    _pyir_record_born_attr_first_defs,
+    _pyir_bind_sibling_first_def,
+    _pyir_settle_sibling_arm_values,
     _PYIR_GATE_ONCE_INIT_SLOTS,
     _slot_first_def_inside_cf,
     _pyir_pop_loop_body_scope,
     _pyir_push_loop_body_scope,
     _pyir_rebind_local_place_cells_post_region,
+    _pyir_rematerialize_escaped_tuple_local,
     _pyir_rebind_carried_leaves_post_loop,
+    _pyir_rebind_select_joins_post_if,
     _pyir_rebind_unstored_scalar_carries_post_loop,
+    _pyir_drop_sibling_born_attrs,
+    _pyir_restore_dropped_sibling_attrs,
+    _pyir_translate_missing_attr,
     _pyir_reload_stale_staged_attr_leaves,
     _pyir_repair_captured_escaped_leaves,
     _pyir_repair_region_escaped_leaves,
@@ -74,24 +92,29 @@ from ..base_dsl.pyir_runtime import (
     _pyir_snapshot_meta_numeric_leaves,
     _pyir_snapshot_region_arg,
     _pyir_snapshot_region_meta,
+    _pyir_snapshot_loop_meta_leaves,
+    _pyir_mark_if_arm_meta_leaves,
     _pyir_snapshot_registry_meta_slots,
     _pyir_store_back_unstored_slot_carries_sweep,
     _pyir_carry_if_region_mutated_leaves,
+    _pyir_verify_region_structure,
     _pyir_carry_loop_body_mutated_leaves,
     _pyir_unwrap_meta_primitive,
     _pyir_verify_opaque_owner_audits,
+    _pyir_verify_loop_meta_leaves,
     _pyir_verify_registry_meta_slots,
     _raw_backing_ir_value,
     _same_ir_value,
     _slot_refs,
     _stage_meta_compound_leaves,
 )
-from ..base_dsl.pyir_call_boundary import _pyir_boundary_module_is_user
+from ..base_dsl.pyir_callee_rewrite import _pyir_boundary_module_is_user
+from ..base_dsl.pyir_core import _is_compound_single_leaf, _pyir_extract_leaf_values
 from ..base_dsl.pyir_class_facts import (
     register_class_fact_modules,
     transitive_write_facts,
 )
-from ..base_dsl.typing import as_numeric
+from ..base_dsl.typing import Boolean
 from ..base_dsl.utils.logger import log
 from .cutlass_ast_decorators import ScfGenerator
 
@@ -431,9 +454,13 @@ class PyIRScfGenerator(ScfGenerator):
         _collect_gate_once = bool(const) and _gate_cand is not None
         if _collect_gate_once:
             _PYIR_FOLD_FIRSTDEF_STACK.append([])
+        # Name this folded arm for binding-position facts (F-BIRTHPOS): a place
+        # born under it is not re-bound on a path that skips the arm.
+        _PYIR_FOLDED_IF_PATH.append(object())
         try:
             region_result = live_builder(None, [], [], None, mix_iter_args, 0)
         finally:
+            _PYIR_FOLDED_IF_PATH.pop()
             if _collect_gate_once:
                 _fold_firstdefs = _PYIR_FOLD_FIRSTDEF_STACK.pop()
                 try:
@@ -500,8 +527,13 @@ class PyIRScfGenerator(ScfGenerator):
             if op_type_name in ("for", "while")
             else None
         )
-        log().debug("Generated scf.%s (pyir) \n[%s]", op_type_name, op)
-
+        # Close-time meta-leaf audit: every meta-primitive attribute leaf the
+        # loop enters with, judged by owner identity at the close.
+        _loop_meta_leaf_snapshot = (
+            _pyir_snapshot_loop_meta_leaves(mix_iter_args)
+            if op_type_name in ("for", "while") and not is_auto_m2s_enabled()
+            else None
+        )
         # Constant-condition ``if`` is META CF: run the single reachable arm IN-LINE and
         # erase the shell, else a staged ``scf.if %true`` traps a leaf mutation (miscompile).
         folded = self._maybe_fold_constant_if(
@@ -516,6 +548,10 @@ class PyIRScfGenerator(ScfGenerator):
         original_mix_iter_args: Optional[List[object]] = (
             list(mix_iter_args) if is_multi_region else None
         )
+        # Entry bindings for the region-exit shape check: every arm / body
+        # result joins with these (the untaken arm, the zero-trip loop, the
+        # back-edge), so a container shape that differs at exit is refused.
+        entry_mix_iter_args: List[object] = list(mix_iter_args)
 
         # Snapshot each iter_arg's value-tree leaves at the OUTER IP; bodies run on
         # shared objects, so the post-region repair reverts any region-trapped escapee.
@@ -532,8 +568,21 @@ class PyIRScfGenerator(ScfGenerator):
         # Also snapshot value-tree leaves of CAPTURED read-only objects (not in
         # ``mix_iter_args``); a shared sub-object leaf mutation else traps an SSA a sibling reads.
         captured_leaf_ids = {id(arg) for arg in mix_iter_args}
-        captured_leaf_snapshot: Optional[List[tuple]] = (
-            _pyir_gather_captured_leaf_holders(exclude_ids=captured_leaf_ids)
+        captured_leaf_snapshot = _pyir_gather_captured_leaf_holders(
+            exclude_ids=captured_leaf_ids
+        )
+
+        # Entry-reachable compound objects WITHOUT a registry row (nested in a
+        # plain holder or a container, never sighted by a choke): pinned at
+        # each region entry as pre-existing so the identity re-point
+        # classification in ``pyir_assign`` sees them; objects with a row are
+        # covered by the registry watermark the entry push records.  A
+        # loop-free ``if`` does not pay for the walk: there the classification
+        # relies on the registry watermark alone.
+        entry_pin_holders: List[Any] = (
+            _pyir_snapshot_region_entry_compounds(mix_iter_args)
+            if op_type_name in ("for", "while") or _pyir_open_loop_body_blocks
+            else []
         )
 
         # Gate the Numeric-leaf region-escape revert to ``if`` only: in a loop a Numeric
@@ -581,15 +630,14 @@ class PyIRScfGenerator(ScfGenerator):
                 _attr: str,
                 _plain_meta_only: bool = False,
                 _stage_compound_only: bool = False,
+                _admit_staged: bool = False,
             ) -> None:
                 """Get-or-mint the ledger cell for ``(holder, attr)`` at the
                 OUTER IP so the body's stores carry it as a loop carry."""
                 # A value-protocol holder carries its state through its own
                 # extract/reconstruct pair: the callee-fact call sites must
                 # not stage (and so clone) its fields behind that protocol.
-                if _stage_compound_only and _implements_dynamic_expression(
-                    _holder
-                ):
+                if _stage_compound_only and _implements_dynamic_expression(_holder):
                     return
                 # The declared pair names a ledger place only when it is an
                 # INSTANCE-STORAGE slot of the holder.
@@ -603,6 +651,17 @@ class PyIRScfGenerator(ScfGenerator):
                 # pair stores back through the assign choke, which serves
                 # both cells, so staged current values stay admitted there.
                 if _plain_meta_only and _is_staged_value(_cur):
+                    if not _admit_staged:
+                        return
+                    try:
+                        _place = _make_slot_key(None, _holder, _attr)
+                    except Exception:
+                        _place = None
+                    _ref = _pyir_adopt_declared_staged_place_ref(_place, _cur)
+                    if _ref is not None:
+                        declared_attr_write_records.append(
+                            (_holder, _attr, _ref, _place)
+                        )
                     return
                 _py = _pyir_unwrap_meta_primitive(_cur)
                 if _py is None or type(_py) not in (bool, int, float):
@@ -733,6 +792,36 @@ class PyIRScfGenerator(ScfGenerator):
                 _target = getattr(_target, "__func__", _target)
                 if not callable(_target) or not hasattr(_target, "__code__"):
                     continue
+                if _method == "__setitem__":
+                    # Subscription syntax is routed through the boundary even
+                    # though no ast.Call exists in the source.  Pre-adopt every
+                    # scalar receiver write so both plain meta and SSA-backed
+                    # staged fields read the previous iteration and boundary
+                    # replay stores into the same carry cell.
+                    #
+                    # Two deliberate departures from the sibling arms below:
+                    #   * The ``while`` audit-only carve-out does not apply.  A
+                    #     hidden protocol write reaches no choke at all, so
+                    #     auditing it would only restate the silent bake; the
+                    #     adoption is what makes the carry exist.
+                    #   * No ``is_auto_m2s_enabled()`` split.  The mode gate
+                    #     lives one level down in ``_meta_promote_slot``, which
+                    #     still refuses a plain-meta field loudly when AUTO_M2S
+                    #     is off; an already-staged field needs no promotion, so
+                    #     minting its cell is mode-independent.
+                    if _pyir_boundary_module_is_user(
+                        getattr(_target, "__module__", None)
+                    ):
+                        for _attr in _callee_write_attrs(
+                            _target.__get__(_holder, type(_holder))
+                        ):
+                            _adopt_declared_attr_write(
+                                _holder,
+                                _attr,
+                                _plain_meta_only=True,
+                                _admit_staged=True,
+                            )
+                    continue
                 # USER-module defs are rewritten by the preprocessor, so their
                 # receiver writes reach the chokes directly; the declared
                 # completion imports write knowledge only for defs the
@@ -812,18 +901,14 @@ class PyIRScfGenerator(ScfGenerator):
                 ):
                     continue
                 if is_auto_m2s_enabled():
-                    if _pyir_boundary_module_is_user(
-                        getattr(_fn, "__module__", None)
-                    ):
+                    if _pyir_boundary_module_is_user(getattr(_fn, "__module__", None)):
                         for _attr in _callee_write_attrs(_fn):
                             _adopt_declared_attr_write(
                                 _holder, _attr, _stage_compound_only=True
                             )
                     continue
                 for _attr in _callee_write_attrs(_fn):
-                    _arm_unpromoted_write_audit(
-                        _holder, _attr, f"{_base}.{_attr}"
-                    )
+                    _arm_unpromoted_write_audit(_holder, _attr, f"{_base}.{_attr}")
 
         # If analogue: carry an opaque leaf advanced+trapped in an ``scf.if``
         # forward (yield, not revert) so a post-``if`` reader sees it; aliases
@@ -836,11 +921,18 @@ class PyIRScfGenerator(ScfGenerator):
         if_aliased_leaves: Optional[list] = None
         if carries_if_leaves and not _op_has_enclosing_loop(op):
             if_aliased_leaves = []
-            if captured_leaf_snapshot:
-                for _ch, _ca, _cv in captured_leaf_snapshot:
+            if captured_leaf_snapshot is not None:
+                # Every captured leaf (not only the possibly changed ones).
+                for _ch, _ca, _cv in captured_leaf_snapshot.pyir_materialize():
                     _craw = _raw_backing_ir_value(_cv)
                     if _craw is not None:
                         if_aliased_leaves.append(_craw)
+            # A compound single-leaf iter_arg (a tensor wrapper) is threaded whole
+            # through its own ref by ``pyir_assign``; its leaf keeps the revert here
+            # so the if carry does not yield it a second time.
+            for _arg in mix_iter_args:
+                if _is_compound_single_leaf(_arg):
+                    if_aliased_leaves.extend(_pyir_extract_leaf_values(_arg) or [])
             # Opaque leaf SSAs held by 2+ mix_iter_args objects (aliased sub-object):
             # collect per-slot, then keep those seen in more than one iter_arg slot.
             _per_arg_leaves: List[List[ir.Value]] = []
@@ -863,6 +955,16 @@ class PyIRScfGenerator(ScfGenerator):
                     if _in_other:
                         if_aliased_leaves.append(_v)
 
+        # Region frames the op's regions are traced under: the exit collapses
+        # attr first-def records written on every arm of an if, and prunes the
+        # records born under a loop body (which may run zero times).
+        cf_region_frames: List[Any] = []
+        # State-based first-def fallback for the arms of an ``scf.if``: each
+        # arm takes the attribute key-sets of the reachable holders after the
+        # sibling-born drop and diffs at its end, before the restore, so a key
+        # this arm bound (including one a sibling first defined) is its birth
+        # (see ``_pyir_record_born_attr_first_defs``).
+        if_attr_keysets_enabled = op_type_name == "if"
         enter_staged_cf()
         try:
             for i, builder in enumerate(region_builders):
@@ -929,24 +1031,77 @@ class PyIRScfGenerator(ScfGenerator):
                     # (F-BIRTHPOS): first-defs traced inside it are region-born.
                     is_loop_body_region = i == loop_body_region_index
                     if is_loop_body_region:
-                        _pyir_push_loop_body_scope(block)
+                        _pyir_push_loop_body_scope(
+                            block,
+                            op,
+                            op_type_name,
+                            getattr(self, "region_dead_on_entry", None),
+                        )
                     else:
                         # Non-body region entry (if arm / while cond) is a region-epoch
                         # boundary; body regions bump inside the body-scope push.
                         _pyir_bump_region_epoch()
                         _pyir_region_entry_push()
+                    if entry_pin_holders:
+                        _pyir_region_entry_pin_holders(entry_pin_holders)
 
                     # Execute body -- AST-inserted pyir_assign/pyir_read handle ref
                     # creation, load, store for all mutable values.
                     with _PyirScopeGuard(kind="region", inherit=True):
-                        region_result = builder(
-                            op,
-                            block_args,
-                            [],  # ir_values: empty (no iter_args)
-                            None,  # pytree_def: not used (pyir handles everything)
-                            mix_iter_args,
-                            0,  # full_write_args_count: 0
+                        cf_region_frames.append(_pyir_current_region_frame())
+                        # Inside the guard so the arm path names THIS arm: a
+                        # sibling's first-def is unbound on this path in Python.
+                        # For instance, the if-branch's acc.total is dropped so
+                        # that the else-branch doesn't see the value 100.
+                        # ```
+                        #  if pred:
+                        #    acc.total = 100
+                        #  else:
+                        #    acc.total = getattr(acc, "total", 0) + 1
+                        # ```
+                        _dropped = (
+                            _pyir_drop_sibling_born_attrs(
+                                f"{op_type_name} region {i} entry"
+                            )
+                            if op_type_name == "if"
+                            else []
                         )
+                        _arm_keysets = (
+                            _pyir_attr_keysets(mix_iter_args)
+                            if if_attr_keysets_enabled
+                            else None
+                        )
+                        try:
+                            region_result = builder(
+                                op,
+                                block_args,
+                                [],  # ir_values: empty (no iter_args)
+                                None,  # pytree_def: not used (pyir handles everything)
+                                mix_iter_args,
+                                0,  # full_write_args_count: 0
+                            )
+                            if _arm_keysets is not None:
+                                _, _sibling_births = _pyir_record_born_attr_first_defs(
+                                    _arm_keysets, mix_iter_args
+                                )
+                                for _h, _a in _sibling_births:
+                                    _pyir_bind_sibling_first_def(_h, _a)
+                                _pyir_settle_sibling_arm_values(mix_iter_args)
+                                # Arm-end meta-leaf mark: an attribute bound at
+                                # the arm's start that this arm moved and left
+                                # meta is path-dependent after the if; a read of
+                                # it outside the arm refuses
+                                # (see ``_pyir_mark_if_arm_meta_leaves``).
+                                _pyir_mark_if_arm_meta_leaves(_arm_keysets, block)
+                        except AttributeError as _missing:
+                            # A drop above is why Python raised: report it as
+                            # read-before-set, not as a bare AttributeError.
+                            _pyir_translate_missing_attr(_missing)
+                            raise
+                        finally:
+                            _pyir_restore_dropped_sibling_attrs(
+                                _dropped, f"{op_type_name} region {i} exit"
+                            )
 
                     # Update mix_iter_args from body result so slot-backed objects (and their
                     # ``_mutable_ref`` / load-version tags) survive to the post-loop bridge.
@@ -956,6 +1111,20 @@ class PyIRScfGenerator(ScfGenerator):
                             if isinstance(region_result, (list, tuple))
                             else [region_result]
                         )
+                        # The ``if`` arms and the loop BODY return the
+                        # write-arg bindings; the ``while`` before-region
+                        # returns the condition and is not a join partner.
+                        if op_type_name == "if" or i == loop_body_region_index:
+                            for idx, val in enumerate(result_list):
+                                if idx < len(entry_mix_iter_args):
+                                    _pyir_verify_region_structure(
+                                        entry_mix_iter_args[idx],
+                                        val,
+                                        mix_iter_arg_names[idx]
+                                        if idx < len(mix_iter_arg_names)
+                                        else None,
+                                        op_type_name,
+                                    )
                         for idx, val in enumerate(result_list):
                             if idx < len(mix_iter_args) and val is not None:
                                 mix_iter_args[idx] = val
@@ -992,13 +1161,15 @@ class PyIRScfGenerator(ScfGenerator):
                             if _ls
                             for (_h, _a, _v) in _ls
                         }
+                        # The carry acts only on leaves whose identity moved,
+                        # so the snapshot's possibly-changed records suffice.
                         captured_carry_snapshot = (
                             [
                                 rec
-                                for rec in captured_leaf_snapshot
+                                for rec in captured_leaf_snapshot.pyir_changed_candidates()
                                 if (id(rec[0]), rec[1]) not in _arg_covered_leaf_keys
                             ]
-                            if captured_leaf_snapshot
+                            if captured_leaf_snapshot is not None
                             else None
                         )
                         loop_leaf_records.extend(
@@ -1061,7 +1232,11 @@ class PyIRScfGenerator(ScfGenerator):
         finally:
             exit_staged_cf()
 
-        log().debug("Completed scf.%s (pyir) \n[%s]", op_type_name, op)
+        # An attr first-defined on every arm of this if is bound after it; one
+        # first defined under a loop body is bound after the loop on no path.
+        _pyir_collapse_cf_attr_first_defs_at_if_exit(
+            cf_region_frames, len(op.regions), may_skip_body=op_type_name != "if"
+        )
 
         # Rebind any loop-carried leaf to a dominating post-loop ``pyir.load`` so post-
         # loop reads observe the loop result (the repair below then skips it).
@@ -1096,6 +1271,11 @@ class PyIRScfGenerator(ScfGenerator):
                 if 0 <= ai < len(mix_iter_args):
                     mix_iter_args[ai] = obj
 
+        # A whole-object branch-select joined through this ``if`` rebinds to
+        # its entry prototype rebuilt from the post-``if`` leaf loads.
+        if carries_if_leaves:
+            _pyir_rebind_select_joins_post_if(op, entry_mix_iter_args, mix_iter_args)
+
         # Post-region rebind FROM the ledger cell (clause A, read half): a bare
         # LOCAL re-sources its binding from a dominating post-region load.
         _pyir_rebind_local_place_cells_post_region(
@@ -1122,6 +1302,15 @@ class PyIRScfGenerator(ScfGenerator):
                 leaf_snapshots[idx],
                 f"{op_type_name} iter_arg #{idx}",
                 allow_numeric_revert,
+            )
+            # Re-source the escaped elements of a TUPLE-valued local from their
+            # ledger cells: a nested region's exit rebinds the body's tuple to
+            # in-body loads, and a post-region element read takes no read choke.
+            arg = _pyir_rematerialize_escaped_tuple_local(
+                arg,
+                mix_iter_arg_names[idx] if idx < len(mix_iter_arg_names) else None,
+                op,
+                f"{op_type_name} iter_arg #{idx}",
             )
             # Re-bind a TUPLE-contained scalar value-tree leaf the body trapped: the
             # value-tree walk above never collects a tuple-nested scalar, so a sibling
@@ -1216,6 +1405,14 @@ class PyIRScfGenerator(ScfGenerator):
                     var=_label,
                 )
 
+        # Refuse (loudly) a meta leaf that entered the loop, is still meta and
+        # unpromoted at its close, and moved -- unless the body's last write to
+        # it is iteration-invariant.  Owner-identity based: covers the alias,
+        # helper, property-setter and unchoked spellings alike.  Default mode
+        # only: under AUTO_M2S the read-side promotion owns these leaves.
+        if _loop_meta_leaf_snapshot is not None:
+            _pyir_verify_loop_meta_leaves(_loop_meta_leaf_snapshot, op_type_name)
+
         # Refuse (loudly) any container key created through an opaque
         # ``__setitem__`` owner in this region's bodies; retires the audits.
         _pyir_verify_opaque_owner_audits()
@@ -1254,6 +1451,9 @@ class PyIRScfGenerator(ScfGenerator):
         self.region_free_calls = getattr(
             while_after_block, PYIR_REGION_FREE_CALLS_ATTR, None
         )
+        self.region_dead_on_entry = getattr(
+            while_after_block, PYIR_REGION_DEAD_ON_ENTRY_ATTR, None
+        )
         self.region_body_func = while_after_block
 
         _pyir_cond = [None]  # list for nonlocal mutation in closures
@@ -1287,7 +1487,7 @@ class PyIRScfGenerator(ScfGenerator):
             # getter's pre-loop value gets a ``pyir.load`` and carries as an iter_arg.
             # The condition cell is the row the before-block just wrote.
             cond = _pyir_auto_load_arg(_pyir_cond[0], row_authoritative=True)
-            ir_cond = as_numeric(cond).ir_value()
+            ir_cond = Boolean(truth_of(cond)).ir_value()
             scf.ConditionOp(ir_cond, [])
 
         def after_block_builder_pyir(
