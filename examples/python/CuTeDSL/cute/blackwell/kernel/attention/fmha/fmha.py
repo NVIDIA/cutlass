@@ -5776,8 +5776,11 @@ def run(
     problem_size = ext.problem_size
 
     print("Compiling kernel with cute.compile ...")
-    cutlass_major_minor = tuple(map(int, cutlass.__version__.split(".")[:2]))
-    compile_options = "--opt-level=2" if cutlass_major_minor >= (4, 6) else ""
+    compile_options = (
+        "--opt-level=2"
+        if cutlass.target_version(kind="dsl", min_version="4.6")
+        else ""
+    )
     if (
         fmha_class is BlackwellFusedMultiHeadAttentionForward
         and qk_dtype == pv_dtype == out_dtype == cutlass.Float16
