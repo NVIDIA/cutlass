@@ -1022,6 +1022,9 @@ struct CollectiveMma<
         mainloop_pipeline_tma.consumer_wait(mainloop_pipe_tma_consumer_state);
       }
       mainloop_pipeline_cpasync.consumer_wait(mainloop_pipe_cpasync_consumer_state);
+      // cp.async writes B through the generic proxy and tcgen05.mma reads it through the async proxy.
+      // Each CTA fences after its own wait, so in 2SM kernels the peer CTA fences before its trampoline arrive.
+      cutlass::arch::fence_view_async_shared();
 
       int read_stage_tma = mainloop_pipe_tma_consumer_state.index();
       int read_stage_cpasync = mainloop_pipe_cpasync_consumer_state.index();
