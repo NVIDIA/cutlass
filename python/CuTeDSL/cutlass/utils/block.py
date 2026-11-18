@@ -12,12 +12,12 @@
 import functools
 from typing import Any
 
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
 from cutlass.block import block_copy as _block_copy
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.block.block_copy is deprecated; use cutlass.block.block_copy "
     "instead. It will be removed in a future release."
 )

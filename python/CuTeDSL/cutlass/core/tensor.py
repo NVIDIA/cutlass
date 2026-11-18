@@ -12,14 +12,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Optional, Type
+from typing import Optional, Type, cast
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import arith
 from cutlass._mlir.dialects import core as _core_ir
 from cutlass._mlir.dialects import cute as _cute_ir
 from cutlass._mlir._mlir_libs._cutlass_ir._core import TensorType as _CoreTensorType
+from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.typing import Integer, Numeric
+from cutlass.core.types import TensorElementType
 from cutlass.cute.core import _pack_coord, _unpack_x_tuple
 from cutlass.cute.typing import Coord, Shape
 from cutlass.cutlass_dsl import dsl_user_op
@@ -30,12 +32,26 @@ class Tensor:
     Thin SSA wrapper for ``!core.tensor`` values.
     """
 
-    def __init__(self, value: ir.Value):
+    def __init__(self, value: ir.Value, dtype: TensorElementType):
+        """
+        :param value: SSA value of ``!core.tensor`` type.
+        :param dtype: Element type, as accepted by ``TensorType``. Required:
+            MLIR integers are signless, so signedness cannot be recovered from
+            the IR.
+        """
+        assert (
+            dtype.mlir_type == _CoreTensorType(value.type).element_type
+        ), f"dtype {dtype} does not match {_CoreTensorType(value.type).element_type}"
         self.value = value
+        self._dtype = dtype
 
     @property
     def type(self) -> ir.Type:
         return self.value.type
+
+    @property
+    def element_type(self) -> TensorElementType:
+        return self._dtype
 
     @property
     @dsl_user_op
@@ -51,7 +67,11 @@ class Tensor:
         return [self.value]
 
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> Tensor:
-        return Tensor(values[0])
+        return Tensor(values[0], self._dtype)
+
+    def __rewrap__(self, value: ir.Value) -> Tensor:
+        """Rebuild this wrapper around ``value``, keeping the element type."""
+        return Tensor(value, self._dtype)
 
     @dsl_user_op
     def __getitem__(
@@ -63,7 +83,7 @@ class Tensor:
     ) -> Tensor:
         if isinstance(coord, tuple):
             coord = _pack_coord(coord, loc=loc, ip=ip)
-        return Tensor(_cute_ir.slice(self.value, coord, loc=loc, ip=ip))
+        return Tensor(_cute_ir.slice(self.value, coord, loc=loc, ip=ip), self._dtype)
 
     @dsl_user_op
     def to(
@@ -80,7 +100,9 @@ class Tensor:
         :param dtype: Target element type (e.g. Float16, Float32)
         """
         src_ty = _CoreTensorType(self.value.type)
-        src_dtype = Numeric.from_mlir_type(src_ty.element_type)
+        if not issubclass(self._dtype, Numeric):
+            raise DSLRuntimeError(f"Unsupported DSL type: {self._dtype}")
+        src_dtype = cast(Type[Numeric], self._dtype)
         if src_dtype is dtype:
             return self
 
@@ -103,7 +125,7 @@ class Tensor:
             else:
                 op = _core_ir.extui
 
-        return Tensor(op(ir_dst_type, self.value, loc=loc, ip=ip))
+        return Tensor(op(ir_dst_type, self.value, loc=loc, ip=ip), dtype)
 
     # Splat a scalar operand to this tensor's type; a Tensor passes through.
     def _coerce(
@@ -135,13 +157,15 @@ class Tensor:
     ) -> Tensor:
         rhs = self._coerce(other, loc, ip)
         lhs, rhs = (rhs, self.value) if swap else (self.value, rhs)
-        numeric = Numeric.from_mlir_type(_CoreTensorType(self.value.type).element_type)
+        if not issubclass(self._dtype, Numeric):
+            raise DSLRuntimeError(f"Unsupported DSL type: {self._dtype}")
+        numeric = cast(Type[Numeric], self._dtype)
         if numeric.is_float:
             op = float_op
         else:
             assert issubclass(numeric, Integer)
             op = int_op_signed if numeric.signed else int_op_unsigned
-        return Tensor(op(self.value.type, lhs, rhs, loc=loc, ip=ip))
+        return Tensor(op(self.value.type, lhs, rhs, loc=loc, ip=ip), self._dtype)
 
     @dsl_user_op
     def __add__(

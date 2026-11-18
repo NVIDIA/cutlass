@@ -143,6 +143,22 @@ def add_cluster_shape_arg(
     )
 
 
+def add_fallback_cluster_shape_arg(
+    parser: argparse.ArgumentParser,
+    *,
+    help: str = "Optional fallback cluster shape (comma-separated). When "
+    "provided and different from --cluster_shape_mn, the kernel is "
+    "compiled in mixed-cluster mode.",
+) -> None:
+    """Add ``--fallback_cluster_shape_mn``."""
+    parser.add_argument(
+        "--fallback_cluster_shape_mn",
+        type=comma_separated_ints_of(2),
+        default=None,
+        help=help,
+    )
+
+
 def add_dtype_args(
     parser: argparse.ArgumentParser,
     *,

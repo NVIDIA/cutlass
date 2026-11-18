@@ -37,6 +37,14 @@ from cutlass.operators.utils.device import device_or_env_supports
 from test_utils import assert_close_with_reference_conversion
 
 
+def _make_device_properties() -> ops.DeviceProperties:
+    """Return device properties populated for every tested cluster size."""
+    device_properties = ops.DeviceProperties()
+    for cluster_size in (1, 2, 4, 8):
+        device_properties.max_active_clusters((cluster_size, 1))
+    return device_properties
+
+
 @pytest.mark.parametrize(
     "M, N, K",
     [
@@ -87,6 +95,7 @@ def test_gemm_sm100(
     assert operator.supports(args)
     compiled_artifact = operator.compile(args)
     stream = torch.cuda.Stream()
+    device_properties = _make_device_properties()
 
     # Create a CUDA Graph to run our compiled Operator N times
     g = torch.cuda.CUDAGraph()
@@ -98,6 +107,7 @@ def test_gemm_sm100(
                 compiled_artifact=compiled_artifact,
                 stream=current_stream(),
                 assume_supported_args=True,
+                device_properties=device_properties,
             )
 
     # Zero the output so we don't refcheck stale results
@@ -125,6 +135,7 @@ def test_gemm_sm100(
             compiled_artifact=compiled_artifact,
             stream=stream,
             assume_supported_args=True,
+            device_properties=device_properties,
         )
 
     # Run without CUDA graph and time it
@@ -135,6 +146,7 @@ def test_gemm_sm100(
             compiled_artifact=compiled_artifact,
             stream=stream,
             assume_supported_args=True,
+            device_properties=device_properties,
         )
     end.record()
     torch.cuda.synchronize()
@@ -147,6 +159,7 @@ def test_gemm_sm100(
             compiled_artifact=compiled_artifact,
             stream=stream,
             assume_supported_args=True,
+            device_properties=device_properties,
         )
 
     # Run with CUDA graph and time it

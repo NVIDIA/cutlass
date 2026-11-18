@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from typing import Any, Iterator, List, Optional, Tuple, Type, Union, cast
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
 from cutlass.cutlass_dsl import (
     dsl_user_op,
@@ -680,7 +680,7 @@ def tma_partition(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
+) -> Tuple[Tensor, ...]:
     """
     Tiles the GMEM and SMEM tensors for the provided TMA Copy Atom.
 
@@ -760,8 +760,10 @@ def tma_partition(
     :param gmem_tensor:  A single GMEM tensor, ``[data_coord_tensor, index_tensor]``
                           for gather4, or ``[dst_coord_tensor, index_tensor]``
                           for scatter4
-    :return: ``(smem_tensor, gmem_tensor)`` for standard TMA, or
-             ``(smem_tensor, coord_tensor, index_tensor)`` for gather4/scatter4
+    :return: A tuple of the partitioned SMEM tensor followed by one partitioned
+             tensor per GMEM tensor: ``(smem_tensor, gmem_tensor)`` for standard
+             TMA, or ``(smem_tensor, coord_tensor, index_tensor)`` for
+             gather4/scatter4
     """
 
     # Normalize src/dst to lists for variadic IR operands
@@ -778,7 +780,7 @@ def tma_partition(
         ip=ip,
     )
     # partitioned smem_tensor, gmem_tensors
-    return res
+    return tuple(res)
 
 
 
@@ -965,10 +967,11 @@ def fence_tma_desc_release(
 
 
 @dsl_user_op
-@deprecated("`group_bulk_copy_modes` is deprecated, use `group_modes` instead")
+@_deprecated("`group_bulk_copy_modes` is deprecated, use `group_modes` instead")
 def group_bulk_copy_modes(
     src: Tensor,
     dst: Tensor,
+    *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Tuple[Tensor, Tensor]:

@@ -26,10 +26,18 @@ from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.dsl import is_dynamic_expression
 from .._mlir_helpers.arith import ArithValue
 from ..base_dsl.ast_helpers import *  # noqa: F401,F403
+from ..base_dsl.ast_helpers import truth_of
 from ..base_dsl.pyir_runtime import (
     PYIR_REGION_ATTR_WRITES_ATTR,
+    PYIR_REGION_DEAD_ON_ENTRY_ATTR,
     PYIR_REGION_FREE_CALLS_ATTR,
     PYIR_REGION_METHOD_CALLS_ATTR,
+    _pyir_bump_region_epoch,
+    _pyir_fresh_selection_template,
+    _pyir_register_staged_selection,
+    _pyir_staged_selection_presight,
+    _pyir_staged_selection_scope,
+    _pyir_staged_selection_verdicts,
 )
 from ..base_dsl.utils.logger import log
 from ..base_dsl import typing as t
@@ -96,6 +104,10 @@ class ScfGenerator:
     # as bare-Name free functions with a Name-rooted first argument
     # (preprocessor-tagged; completed via the callee's first-parameter facts).
     region_free_calls: "Optional[tuple[tuple[str, str], ...]]" = None
+    # The (path, line) pairs of the places a staged loop body's ORIGINAL code
+    # stores before any read (preprocessor-tagged; the identity re-point
+    # classification's dead-on-entry fact).
+    region_dead_on_entry: "Optional[tuple[tuple[str, int], ...]]" = None
     # The staged loop-body function itself: a read-only captured receiver
     # name resolves through its closure at region entry.
     region_body_func: "Optional[Callable[..., Any]]" = None
@@ -221,8 +233,6 @@ class ScfGenerator:
 
         # 2) Create the SCF op
         op = create_op_func(ir_values)
-        log().debug("Generated scf.%s \n[%s]", op_type_name, op)
-
         # 3) Build the regions
         for i, builder in enumerate(region_builders):
             region = op.regions[i]
@@ -268,7 +278,9 @@ class ScfGenerator:
                     if mismatch != -1:
                         # Get arg name
                         filterd_arg_names = (
-                            cutlass_dsl.filter_readonly_frozen_dataclass_names(
+                            mix_iter_arg_names
+                            if op_type_name == "ifexp"
+                            else cutlass_dsl.filter_readonly_frozen_dataclass_names(
                                 mix_iter_args, mix_iter_arg_names, full_write_args_count
                             )
                         )
@@ -288,8 +300,6 @@ class ScfGenerator:
                         )
 
                     scf.YieldOp(region_values)
-
-        log().debug("Completed scf.%s \n[%s]", op_type_name, op)
 
         # 4) Pack final results.
         #
@@ -336,9 +346,7 @@ class ScfGenerator:
                 yield_operands, carried_args = _terminator_operands_and_args(
                     op.regions[0].blocks[0], skip_args=1
                 )
-                for i, (yielded, entry) in enumerate(
-                    zip(yield_operands, carried_args)
-                ):
+                for i, (yielded, entry) in enumerate(zip(yield_operands, carried_args)):
                     if _same_ssa(yielded, entry):
                         results[i] = ir_values[i]
             elif op_type_name == "while":
@@ -357,7 +365,7 @@ class ScfGenerator:
 
         assert isinstance(pytree_def, PyTreeDef)
         final_results = cutlass_dsl.pack_from_irvalue(
-            results, pytree_def, mix_iter_args, full_write_args_count
+            results, pytree_def, mix_iter_args, full_write_args_count, op_type_name
         )
 
         # 5) Return in a nice pattern
@@ -407,6 +415,7 @@ def _loop_execute_range_dynamic(
     scf_gen.region_attr_writes = getattr(func, PYIR_REGION_ATTR_WRITES_ATTR, None)
     scf_gen.region_method_calls = getattr(func, PYIR_REGION_METHOD_CALLS_ATTR, None)
     scf_gen.region_free_calls = getattr(func, PYIR_REGION_FREE_CALLS_ATTR, None)
+    scf_gen.region_dead_on_entry = getattr(func, PYIR_REGION_DEAD_ON_ENTRY_ATTR, None)
     scf_gen.region_body_func = func
 
     def create_for_op(dyn_yield_ops: List[ir.Value]) -> ir.Operation:
@@ -535,12 +544,6 @@ def _loop_execute_range_dynamic(
         # scf.ForOp block_args are typically [induction_var, iter_args...]
         # But MLIR also gives you op.induction_variable
         iv = t.as_numeric(op.induction_variable)
-        log().debug(
-            "For body builder: %s block_args: %s full_write_args_count: %s",
-            iv,
-            block_args,
-            full_write_args_count,
-        )
         if pytree_def is None:
             # PyIR mode: no iter_arg block_args.  Pass original objects.
             func_args = list(mix_iter_args)
@@ -576,6 +579,7 @@ def _if_execute_dynamic(
     mix_yield_args: List[object] = [],
     full_write_args_count: int = 0,
     mix_yield_arg_names: List[str] = [],
+    branch_weights: Optional[Sequence[int]] = None,
 ) -> object:
     """
     Build an scf.if with optional else, using our universal helper.
@@ -594,6 +598,7 @@ def _if_execute_dynamic(
                 results_=result_types,
                 has_else=else_block is not None,
             )
+            cutlass_dsl._set_cute_branch_weights(if_op, branch_weights)
         except Exception as e:
             raise DSLRuntimeError(
                 f"Failed to create dynamic if \n\t\tpred={pred_}: type : {type(pred_)}"
@@ -696,7 +701,6 @@ def _while_execute_dynamic(
             while_op = scf.WhileOp(result_types, dyn_yield_ops)
             while_op.before.blocks.append(*result_types)
             while_op.after.blocks.append(*result_types)
-            log().debug("[%s]", while_op)
             return while_op
         except Exception as e:
             yield_ops = "\n".join(
@@ -722,19 +726,12 @@ def _while_execute_dynamic(
             )
         )
 
-        log().debug("before block args: %s", flat_args)
-
         cond, before_results = while_before_block(*flat_args)
 
         if not isinstance(before_results, (list, ir.OpResultList)):
             before_results = [before_results]
 
         log().debug("cond [%s]", cond)
-        log().debug(
-            "before_results [%s]",
-            before_results,
-        )
-
         return cond, before_results
 
     def before_block_terminator(
@@ -742,17 +739,12 @@ def _while_execute_dynamic(
     ) -> None:
         # Generate a condition op instead of yield op.
         cond = cond_and_results[0]
-        ir_cond = as_numeric(cond).ir_value()
+        ir_cond = Boolean(truth_of(cond)).ir_value()
         before_result_list = ScfGenerator._normalize_region_result_to_list(
             cond_and_results[1]
         )
         ir_results_list, pytree_def = cutlass_dsl.unpack_to_irvalue(
             before_result_list, while_op_type_name, full_write_args_count
-        )
-        log().debug(
-            "creating scf.ConditionOp with [%s], [%s]",
-            ir_cond,
-            ir_results_list,
         )
         scf.ConditionOp(ir_cond, ir_results_list)
 
@@ -771,18 +763,11 @@ def _while_execute_dynamic(
             )
         )
 
-        log().debug("after block args: %s", flat_args)
-
         assert while_after_block is not None
         after_results = while_after_block(*flat_args)
 
         if not isinstance(after_results, (list, ir.OpResultList)):
             after_results = [after_results]
-
-        log().debug(
-            "after_results [%s]",
-            after_results,
-        )
 
         return after_results
 
@@ -805,6 +790,7 @@ def _ifexp_execute_dynamic(
     block_args: tuple,
     then_block: Callable[..., object],
     else_block: Callable[..., object],
+    branch_weights: Optional[Sequence[int]] = None,
 ) -> object:
     """
     Dynamically execute a Python inline if-expression (ternary) as a runtime-dispatched control flow op.
@@ -843,76 +829,144 @@ def _ifexp_execute_dynamic(
     This function is a low-level implementation intended for use by the AST transformation machinery,
     and not for direct user invocation. It acts as the backend for transformed Python inline if-expressions.
     """
-    # Infer result types by running both branches with dummy arguments in a temporary region
+    # scf.IfOp needs its result types at creation, but they are only known
+    # once the arms have been traced.  Trace each arm exactly once into its own
+    # scratch block of a temporary execute_region, create the IfOp from the
+    # inferred types, then MOVE the traced ops into the real regions.  Tracing
+    # the arm closures a second time would replay their Python side effects
+    # and leave every object they mutated (e.g. a PipelineState advanced in
+    # the arm) holding SSA values of the erased scratch ops.
     execution_region = scf.ExecuteRegionOp(result=[])
-    execution_region.region.blocks.append()
+    then_scratch = execution_region.region.blocks.append()
+    else_scratch = execution_region.region.blocks.append()
 
-    result_types = []
-    mix_iter_args = []
+    try:
+        # PyIR: judge each arm's candidate objects right after the arm is
+        # traced and BEFORE extraction (which sights every object it walks):
+        # a candidate that pre-exists the open region, or that storage
+        # outliving the expression holds, gets the write wall on the merged
+        # result; a merge of two unsighted temporaries is a fresh object
+        # whose writes are exact.  The result list and the arm closure are
+        # the executor's own references, not sightings.
+        with ir.InsertionPoint(then_scratch):
+            # Each scratch block is a staged-region boundary for the read choke
+            # (like an scf.if branch): a load cached in one branch must not serve
+            # the other branch or the code after the ternary.
+            _pyir_bump_region_epoch()
+            then_results = ScfGenerator._normalize_region_result_to_list(
+                then_block(*block_args)
+            )
+            then_sight = _pyir_staged_selection_presight(
+                then_results,
+                (then_results, getattr(then_block, "__closure__", None)),
+            )
+            ir_values, then_tree = cutlass_dsl.unpack_to_irvalue(
+                then_results, "ifexp", 0
+            )
 
-    with ir.InsertionPoint(execution_region.region.blocks[0]):
-        # Call the then block and unpack its results to IR values and tree structure
-        then_results = ScfGenerator._normalize_region_result_to_list(
-            then_block(*block_args)
-        )
-        ir_values, then_tree = cutlass_dsl.unpack_to_irvalue(then_results, "ifexp", 0)
+        with ir.InsertionPoint(else_scratch):
+            _pyir_bump_region_epoch()
+            else_results = ScfGenerator._normalize_region_result_to_list(
+                else_block(*block_args)
+            )
+            else_sight = _pyir_staged_selection_presight(
+                else_results,
+                (else_results, getattr(else_block, "__closure__", None)),
+            )
+            _, else_tree = cutlass_dsl.unpack_to_irvalue(else_results, "ifexp", 0)
 
-        # Call the else block and unpack its results to IR values and tree structure
-        else_results = ScfGenerator._normalize_region_result_to_list(
-            else_block(*block_args)
-        )
-        _, else_tree = cutlass_dsl.unpack_to_irvalue(else_results, "ifexp", 0)
+        # Back at the outer scope: another boundary, so nothing cached inside
+        # a scratch block (erased below) is served out here.
+        _pyir_bump_region_epoch()
 
         assert isinstance(then_tree, PyTreeDef)
         assert isinstance(else_tree, PyTreeDef)
-        if check_tree_equal(then_tree, else_tree) != -1:
+        if (
+            len(then_tree.child_treedefs) != len(else_tree.child_treedefs)
+            or check_tree_equal(then_tree, else_tree) != -1
+        ):
             raise DSLUserCodeError(
                 DiagId.TYPE_CONDITIONAL_BRANCH_MISMATCH,
             )
 
         # Collect result types for the SCF IfOp
-        result_types.extend([arg.type for arg in ir_values])
-        mix_iter_args.extend(then_results)
+        result_types = [arg.type for arg in ir_values]
+        mix_iter_args = list(then_results)
 
-    # Set up a generator for SCF op creation
-    scf_gen = ScfGenerator()
+        # PyIR: pair the two arms' candidate objects once for the packing
+        # bracket below (a pair that is one object adopts it).
+        arm_verdicts = _pyir_staged_selection_verdicts(
+            then_results, else_results, then_sight, else_sight
+        )
+        # PyIR: a plain dataclass result is packed IN PLACE on its template,
+        # so pack into fresh instances instead of the then-arm objects (the
+        # program still holds those); each fresh node is recorded below as a
+        # staged selection like a rebuilt value-protocol product.
+        selection_copies: List[Any] = []
+        if is_pyir_enabled():
+            mix_iter_args = [
+                _pyir_fresh_selection_template(t_res, e_res, selection_copies)
+                for t_res, e_res in zip(then_results, else_results)
+            ] + mix_iter_args[len(else_results) :]
 
-    # Function to create the IfOp with correct predicate and result types
-    def create_if_op(_: List[ir.Value]) -> ir.Operation:
-        pred_ = Boolean(pred)
-        try:
-            if_op = scf.IfOp(
-                pred_.ir_value(),
-                results_=result_types,
-                has_else=else_block is not None,
+        # Set up a generator for SCF op creation
+        scf_gen = ScfGenerator()
+
+        # Function to create the IfOp with correct predicate and result types
+        def create_if_op(_: List[ir.Value]) -> ir.Operation:
+            pred_ = Boolean(pred)
+            try:
+                if_op = scf.IfOp(
+                    pred_.ir_value(),
+                    results_=result_types,
+                    has_else=else_block is not None,
+                )
+                cutlass_dsl._set_cute_branch_weights(if_op, branch_weights)
+            except Exception as e:
+                raise DSLRuntimeError(
+                    f"Failed to create dynamic if-expression \n\t\tpred={pred_}: type : {type(pred_)}"
+                ) from e
+            return if_op
+
+        def _adopt_scratch_ops(scratch: ir.Block, target: ir.Block) -> None:
+            """Move the ops traced into ``scratch`` to the end of ``target``
+            (the region block the generator is about to terminate)."""
+            for scratch_op in list(scratch.operations):
+                target.append(scratch_op)
+
+        def then_builder(if_op: ir.Operation, *args: object) -> object:
+            _adopt_scratch_ops(then_scratch, if_op.regions[0].blocks[0])
+            return then_results
+
+        def else_builder(if_op: ir.Operation, *args: object) -> object:
+            _adopt_scratch_ops(else_scratch, if_op.regions[1].blocks[0])
+            return else_results
+
+        # Prepare the list of region builders for the SCF IfOp: first for "then", then for "else"
+        region_builders = [then_builder, else_builder]
+
+        # IfExp (ternary) always has results and its create_if_op hardcodes
+        # result_types, so use "ifexp" as op_type_name to ensure standard execution.
+        #
+        # The packed result is rebuilt from the THEN arm's template object; it
+        # is a merge of both arms' values, not that object.  The PyIR bracket
+        # keeps the rebuilt object from adopting the then-arm object's slot
+        # identity (a field read would otherwise serve the then-arm value and
+        # a field write would land on the then-arm object) and records it so
+        # a later field write through it refuses (OWNER_STAGED_SELECTION_WRITE).
+        with _pyir_staged_selection_scope(arm_verdicts):
+            ret = scf_gen.scf_execute_dynamic(
+                op_type_name="ifexp",
+                mix_iter_args=mix_iter_args,
+                full_write_args_count=0,
+                mix_iter_arg_names=["unknown" for _ in mix_iter_args],
+                create_op_func=create_if_op,
+                region_builders=region_builders,
             )
-        except Exception as e:
-            raise DSLRuntimeError(
-                f"Failed to create dynamic if-expression \n\t\tpred={pred_}: type : {type(pred_)}"
-            ) from e
-        return if_op
-
-    def then_builder(*args: object) -> object:
-        return then_block(*block_args)
-
-    def else_builder(*args: object) -> object:
-        return else_block(*block_args)
-
-    # Prepare the list of region builders for the SCF IfOp: first for "then", then for "else"
-    region_builders = [then_builder, else_builder]
-
-    # IfExp (ternary) always has results and its create_if_op hardcodes
-    # result_types, so use "ifexp" as op_type_name to ensure standard execution.
-    ret = scf_gen.scf_execute_dynamic(
-        op_type_name="ifexp",
-        mix_iter_args=mix_iter_args,
-        full_write_args_count=0,
-        mix_iter_arg_names=["unknown" for _ in mix_iter_args],
-        create_op_func=create_if_op,
-        region_builders=region_builders,
-    )
-
-    # Clean up: Remove the temporary execution region from the IR graph
-    execution_region.operation.erase()
+            for fresh, then_node in selection_copies:
+                _pyir_register_staged_selection(fresh, arm_verdicts.get(id(then_node)))
+    finally:
+        # Clean up: Remove the (now empty) temporary execution region from the IR graph
+        execution_region.operation.erase()
 
     return ret

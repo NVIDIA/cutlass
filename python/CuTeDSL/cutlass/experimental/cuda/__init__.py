@@ -11,25 +11,34 @@
 
 """CUDA runtime helper and descriptor APIs."""
 
+from . import graph
+
 from .tensor_map import (
     TensorMap,
+    TensorMapOverride,
     TensorMapDataFormat,
     TensorMapFloatOOBFill,
     TensorMapInterleave,
     TensorMapL2Promotion,
     TensorMapSwizzle,
+    create_tensor_map_im2col,
+    create_tensor_map_im2col_from_view,
     create_tensor_map_tiled,
     create_tensor_map_tiled_from_view,
 )
 
 
 __all__: list[str] = [
+    "graph",
     "TensorMap",
+    "TensorMapOverride",
     "TensorMapDataFormat",
     "TensorMapFloatOOBFill",
     "TensorMapInterleave",
     "TensorMapL2Promotion",
     "TensorMapSwizzle",
+    "create_tensor_map_im2col",
+    "create_tensor_map_im2col_from_view",
     "create_tensor_map_tiled",
     "create_tensor_map_tiled_from_view",
 ]

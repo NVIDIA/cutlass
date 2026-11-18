@@ -21,7 +21,7 @@ import contextlib
 import types
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 from typing_extensions import override
 
 from .ast_preprocessor import (
@@ -165,10 +165,22 @@ def _ast_node_depths(node: ast.AST) -> dict[int, int]:
 
 def _deferred_execution_node_ids(node: ast.AST) -> set[int]:
     """Ids of AST nodes whose evaluation Python defers past the statement:
-    lambda bodies and a genexp's lazy parts (elt / targets / ifs / inner iters)."""
+    lambda bodies and a genexp's lazy parts (elt / targets / ifs / inner iters).
+
+    Inline lazy-read chokes own their receiver evaluation too: statement-level
+    collection/substitution must not replace it with an earlier read's temp.
+    """
     deferred: set[int] = set()
     for child in ast.walk(node):
-        if isinstance(child, ast.Lambda):
+        if (
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and isinstance(child.func.value, ast.Name)
+            and child.func.value.id == _PYIR_RUNTIME_ALIAS
+            and child.func.attr == "_pyir_post_attr_read"
+        ):
+            deferred.update(id(sub) for sub in ast.walk(child))
+        elif isinstance(child, ast.Lambda):
             for sub in ast.walk(child.body):
                 deferred.add(id(sub))
         elif isinstance(child, ast.GeneratorExp):
@@ -190,14 +202,9 @@ def _deferred_execution_node_ids(node: ast.AST) -> set[int]:
 class PyIRScopeManager(ScopeManager):
     """
     PyIR-specific scope manager that tracks variables to skip for PyIR instrumentation.
-
-    Extends the base ScopeManager with functionality to mark variables that should NOT
-    be instrumented with pyir_read/pyir_assign operations (e.g., loop induction variables).
     """
 
     # Variables that should NOT be instrumented with pyir_read/pyir_assign.
-    # Currently: for-loop induction variables when _handle_negative_step
-    # injects `idx = offset - idx if isNeg else idx`.
     skip_pyir_reference_taking: set[str]
     # Track which self.<attr> names have been assigned in current __init__.
     # First assignment is a definition (skip instrumentation); subsequent
@@ -206,7 +213,7 @@ class PyIRScopeManager(ScopeManager):
 
     @classmethod
     def create(cls) -> "PyIRScopeManager":
-        return cls([], [], set(), set())
+        return cls([], [], set(), set(), set())
 
     def add_skip_reference_taking(self, name: str) -> None:
         """Mark *name* so pyir_read/pyir_assign are NOT emitted for it."""
@@ -216,24 +223,34 @@ class PyIRScopeManager(ScopeManager):
         self.skip_pyir_reference_taking.discard(name)
 
     def is_skip_reference_taking(self, name: str) -> bool:
-        return name in self.skip_pyir_reference_taking
+        return (
+            super().is_skip_reference_taking(name)
+            or name in self.skip_pyir_reference_taking
+        )
 
     @contextlib.contextmanager
     def enter_local_scope(self) -> Generator[None, None, None]:
         """
-        Override to save/restore skip_pyir_reference_taking state across scopes.
+        Save and restore base and PyIR skip-reference state across local scopes.
         """
         self.scopes.append(set())
         self.callables.append(set())
+        self.local_scope_indices.append(len(self.scopes) - 1)
+        saved_base_skip = self.skip_reference_taking
+        self.skip_reference_taking = set()
         saved_skip = self.skip_pyir_reference_taking
         self.skip_pyir_reference_taking = set()
         saved_init_attrs = self.seen_init_attrs
         self.seen_init_attrs = set()
-        yield
-        self.scopes.pop()
-        self.callables.pop()
-        self.skip_pyir_reference_taking = saved_skip
-        self.seen_init_attrs = saved_init_attrs
+        try:
+            yield
+        finally:
+            self.local_scope_indices.pop()
+            self.scopes.pop()
+            self.callables.pop()
+            self.skip_reference_taking = saved_base_skip
+            self.skip_pyir_reference_taking = saved_skip
+            self.seen_init_attrs = saved_init_attrs
 
 
 @dataclass
@@ -246,6 +263,11 @@ class PyIRSessionData(SessionData):
     # Synthetic live-out carry name per loop node, keyed by ``id(node)`` so
     # nested loops don't collide; forces a body-entry promotion of the carry.
     liveout_loop_carried_vars: dict[int, str] = field(default_factory=dict)
+    # Names a staged ``while`` condition binds with ``:=`` and nothing binds
+    # before the loop, keyed by ``id(node)``: carried as write_args, bound at
+    # body entry to a load of the row the condition's binding mints, and
+    # published to the enclosing scope after the loop (Python binds them there).
+    while_condition_bound_vars: dict[int, tuple[str, ...]] = field(default_factory=dict)
 
 
 def _collect_direct_attr_write_pairs(body: "list[ast.stmt]") -> "set[tuple[str, str]]":
@@ -321,6 +343,31 @@ def _collect_receiver_method_call_pairs(
     return pairs
 
 
+def _collect_subscript_store_pairs(
+    body: "list[ast.stmt]",
+) -> "set[tuple[str, str]]":
+    """``(base, "__setitem__")`` pairs for Name-rooted subscript stores.
+
+    Subscription assignment invokes the receiver's special method without an
+    ``ast.Call`` node, so the ordinary method-call collector cannot declare
+    the callee's transitive receiver writes.  Nested callable scopes are
+    excluded for the same reason as the sibling fact collectors: their bodies
+    execute only when called.
+    """
+    pairs: "set[tuple[str, str]]" = set()
+    stack: "list[ast.AST]" = list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
+            base = _name_rooted_receiver_path(node.value)
+            if base is not None:
+                pairs.add((base, "__setitem__"))
+        stack.extend(ast.iter_child_nodes(node))
+    return pairs
+
+
 def _collect_free_call_arg_pairs(
     body: "list[ast.stmt]",
 ) -> "set[tuple[str, str]]":
@@ -345,10 +392,327 @@ def _collect_free_call_arg_pairs(
     return pairs
 
 
+class _WhileCondCalleeReceivers(NamedTuple):
+    """Body calls of one ``while`` that receive an object on a condition-read
+    attribute path of one root (see ``_while_cond_callee_receivers``)."""
+
+    cond_paths: "tuple[tuple[str, ...], ...]"
+    free_calls: "tuple[tuple[tuple[str, ...], str], ...]"
+    method_calls: "tuple[tuple[tuple[str, ...], str], ...]"
+    opaque_hops: "tuple[tuple[str, ...], ...]"
+
+
+def _dead_on_entry_path_text(node: "ast.expr") -> "str | None":
+    """The place text the assign choke names *node* by (``c``, ``self.cur``,
+    ``d['k']``; the ``_target_to_path_str`` spelling); ``None`` for a shape
+    with no static place: a non-Name root or a run-time subscript key."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dead_on_entry_path_text(node.value)
+        return None if base is None else f"{base}.{node.attr}"
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+        base = _dead_on_entry_path_text(node.value)
+        return None if base is None else f"{base}[{node.slice.value!r}]"
+    return None
+
+
+def _dead_on_entry_path_root(node: "ast.expr") -> "str | None":
+    """The longest static place prefix of an access chain (``lst`` for
+    ``lst[i].x``); ``None`` when the chain is not Name-rooted."""
+    while True:
+        text = _dead_on_entry_path_text(node)
+        if text is not None:
+            return text
+        if isinstance(node, (ast.Attribute, ast.Subscript)):
+            node = node.value
+            continue
+        return None
+
+
+def _path_extends(longer: str, prefix: str) -> bool:
+    """True when place text *longer* is *prefix* or reaches through it."""
+    return longer == prefix or (
+        longer.startswith(prefix) and longer[len(prefix)] in ".["
+    )
+
+
+def _staged_for_loop(stmt: "ast.For | ast.AsyncFor") -> bool:
+    """True for a ``for`` the preprocessor rewrites into a staged loop region
+    (a literal ``range(...)`` / ``<module>.range(...)`` iterable); an unrolled
+    ``range_constexpr``, a literal list/tuple or an iterable classified only
+    at trace time is not."""
+    return DSLPreprocessor._literal_for_iter_kind(stmt.iter) == "range"
+
+
+def _collect_dead_on_entry_paths(
+    body: "list[ast.stmt]",
+    captured_names: "frozenset[str]" = frozenset(),
+) -> "tuple[tuple[str, str], ...]":
+    """``(path, verdict)`` pairs for the places the staged loop *body* stores,
+    judged over its ORIGINAL statements in evaluation order (right-hand side
+    before targets).
+
+    * ``"dead"``: the place's first occurrence is a store that runs on every
+      pass of the body -- a top-level statement of *body*, or one nested only
+      in ``for`` / ``while`` loops the preprocessor stages (the assign choke
+      proves each of those runs at least once).
+    * ``"skipped:<construct>"``: the first occurrence is a store the body may
+      skip, under the named construct: any ``if`` (``const_expr`` too), an
+      unrolled loop, ``with``, ``try``, ``match``, a loop ``else``, an
+      assignment expression, a comprehension, or a statement after a
+      ``break`` / ``continue`` / ``return`` / ``raise``.
+    * ``"swap"``: the first occurrence is a read by an unpack statement that
+      also stores the place (``a, b = b, a``).
+    * ``"captured"``: a bare name in *captured_names* (a parameter of the
+      function or a name a nested scope refers to): other code can read it,
+      so no syntactic fact about the body covers it.
+
+    A read is any evaluation that can observe the place: a load of it or of
+    a longer path through it (``c.value``, ``c.inc()``), a store through it
+    (``c.value = 1`` reads ``c``), a whole-object use of a shorter path
+    (``f(self)``, ``self.m()``), and every name a nested scope or a match
+    pattern mentions.  Places first read are omitted.
+    """
+    # ("L", text, whole, unpack) read events and ("S", text, skip, None)
+    # stores, in evaluation order; ``skip`` names the construct that may skip
+    # the store (None: it runs on every pass); ``unpack`` is the unpack
+    # statement whose right-hand side the read belongs to (None elsewhere).
+    events: "list[tuple[str, str, Any, Any]]" = []
+    escaped = [False]
+    _early = "a statement after an early exit"
+    unpack: "list[Any]" = [None]
+
+    def load(node: "ast.expr | None", whole: bool = True) -> None:
+        if node is None:
+            return
+        if isinstance(node, (ast.Name, ast.Attribute, ast.Subscript)):
+            text = _dead_on_entry_path_text(node)
+            if text is not None:
+                events.append(("L", text, whole, unpack[0]))
+                if isinstance(node, ast.Subscript):
+                    load(node.slice)
+                return
+            if isinstance(node, ast.Subscript):
+                # Run-time key: any entry of the container may be read.
+                root = _dead_on_entry_path_root(node.value)
+                if root is not None:
+                    events.append(("L", root, True, unpack[0]))
+                else:
+                    load(node.value)
+                load(node.slice)
+                return
+            if isinstance(node, ast.Attribute):
+                load(node.value)
+            return
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            # A method call hands its receiver over whole.
+            load(node.func.value, whole=True)
+            load(node.func)
+            for arg in node.args:
+                load(arg)
+            for kw in node.keywords:
+                load(kw.value)
+            return
+        if isinstance(node, ast.Lambda):
+            mention(node)
+            return
+        if isinstance(node, ast.NamedExpr):
+            load(node.value)
+            store(node.target, "an assignment expression")
+            return
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.expr):
+                load(child)
+            elif isinstance(child, ast.comprehension):
+                load(child.iter)
+                store(child.target, "a comprehension")
+                for cond in child.ifs:
+                    load(cond)
+            elif isinstance(child, ast.keyword):
+                load(child.value)
+
+    def mention(node: "ast.AST") -> None:
+        # A nested callable may run later and read anything it names.
+        for sub in ast.walk(node):
+            if isinstance(sub, (ast.Name, ast.Attribute, ast.Subscript)):
+                root = _dead_on_entry_path_root(sub)
+                if root is not None:
+                    events.append(("L", root, True, unpack[0]))
+
+    def store(target: "ast.expr", skip: "str | None") -> None:
+        if isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                store(elt, skip)
+            return
+        if isinstance(target, ast.Starred):
+            store(target.value, skip)
+            return
+        text = _dead_on_entry_path_text(target)
+        if isinstance(target, (ast.Attribute, ast.Subscript)):
+            # The store reaches its place through the base object.
+            load(target.value, whole=False)
+            if isinstance(target, ast.Subscript) and text is None:
+                load(target.slice)
+                root = _dead_on_entry_path_root(target.value)
+                if root is not None:
+                    events.append(("L", root, True, unpack[0]))
+                return
+        if text is not None:
+            events.append(("S", text, skip or (_early if escaped[0] else None), None))
+
+    def stmts(body_: "list[ast.stmt]", skip: "str | None") -> None:
+        for stmt in body_:
+            statement(stmt, skip)
+
+    def statement(stmt: "ast.stmt", skip: "str | None") -> None:
+        # *skip*: the construct that may skip this statement (None: it runs on
+        # every pass -- top level, or nested only in staged loops the choke
+        # proves run); the outermost construct is the one reported.
+        if isinstance(stmt, ast.Assign):
+            if any(isinstance(t, (ast.Tuple, ast.List)) for t in stmt.targets):
+                unpack[0] = stmt
+            try:
+                load(stmt.value)
+            finally:
+                unpack[0] = None
+            for target in stmt.targets:
+                store(target, skip)
+        elif isinstance(stmt, ast.AugAssign):
+            load(stmt.target)
+            load(stmt.value)
+            store(stmt.target, skip)
+        elif isinstance(stmt, ast.AnnAssign):
+            if stmt.value is not None:
+                load(stmt.value)
+                store(stmt.target, skip)
+        elif isinstance(stmt, (ast.For, ast.AsyncFor)):
+            load(stmt.iter)
+            store(stmt.target, skip or "a loop target")
+            staged = _staged_for_loop(stmt)
+            stmts(stmt.body, skip or (None if staged else "an unrolled loop"))
+            stmts(stmt.orelse, skip or "a loop `else`")
+        elif isinstance(stmt, ast.While):
+            load(stmt.test)
+            unrolled = _is_const_expr_test(stmt.test)
+            stmts(stmt.body, skip or ("an unrolled loop" if unrolled else None))
+            stmts(stmt.orelse, skip or "a loop `else`")
+        elif isinstance(stmt, ast.If):
+            load(stmt.test)
+            stmts(stmt.body, skip or "an `if`")
+            stmts(stmt.orelse, skip or "an `if`")
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+            for item in stmt.items:
+                load(item.context_expr)
+                if item.optional_vars is not None:
+                    store(item.optional_vars, skip or "a `with` target")
+            stmts(stmt.body, skip or "a `with` block")
+        elif isinstance(stmt, ast.Match):
+            load(stmt.subject)
+            for case in stmt.cases:
+                mention(case.pattern)
+                if case.guard is not None:
+                    load(case.guard)
+                stmts(case.body, skip or "a match statement")
+        elif isinstance(stmt, ast.Try) or type(stmt).__name__ == "TryStar":
+            try_stmt: Any = stmt  # ``ast.TryStar`` (3.11+) has the same fields
+            for part in (try_stmt.body, try_stmt.orelse, try_stmt.finalbody):
+                stmts(part, skip or "a try statement")
+            for handler in try_stmt.handlers:
+                stmts(handler.body, skip or "a try statement")
+        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            mention(stmt)
+        elif isinstance(stmt, (ast.Break, ast.Continue, ast.Return, ast.Raise)):
+            if isinstance(stmt, (ast.Return, ast.Raise)):
+                for child in ast.iter_child_nodes(stmt):
+                    if isinstance(child, ast.expr):
+                        load(child)
+            escaped[0] = True
+        elif isinstance(stmt, ast.Expr):
+            load(stmt.value)
+        else:
+            # delete / global / assert / ...: every place it names may be read.
+            mention(stmt)
+
+    stmts(body, None)
+
+    def _unpack_stores(stmt: "ast.Assign", path: str) -> bool:
+        return any(
+            _dead_on_entry_path_text(sub) == path
+            for target in stmt.targets
+            for sub in ast.walk(target)
+            if isinstance(sub, (ast.Name, ast.Attribute, ast.Subscript))
+        )
+
+    decided: "dict[str, str | None]" = {}
+    candidates = {text for kind, text, _, _ in events if kind == "S"}
+    for kind, text, info, stmt in events:
+        for path in candidates:
+            if path in decided:
+                continue
+            if kind == "S":
+                if text == path:
+                    decided[path] = "dead" if info is None else f"skipped:{info}"
+                elif _path_extends(path, text):
+                    # The base binding changes under the path: not a plain kill.
+                    decided[path] = None
+            elif _path_extends(text, path) or (info and _path_extends(path, text)):
+                decided[path] = (
+                    "swap" if stmt is not None and _unpack_stores(stmt, path) else None
+                )
+    for path in candidates & captured_names:
+        decided[path] = "captured"
+    return tuple(
+        sorted(
+            (path, verdict) for path, verdict in decided.items() if verdict is not None
+        )
+    )
+
+
+def _identity_captured_names(
+    fn: "ast.FunctionDef | ast.AsyncFunctionDef",
+) -> "frozenset[str]":
+    """Names of *fn* that no loop-body fact of *fn* covers: its parameters
+    (the caller holds the argument objects, and a receiver write-back copies
+    a re-pointed ``self`` into the caller's), and every name mentioned inside
+    a nested def, lambda, class or comprehension anywhere in *fn* (a closure
+    can read the binding before or after any loop)."""
+    args = fn.args
+    names = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+    for extra in (args.vararg, args.kwarg):
+        if extra is not None:
+            names.add(extra.arg)
+    nested = (
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.Lambda,
+        ast.ClassDef,
+        ast.ListComp,
+        ast.SetComp,
+        ast.DictComp,
+        ast.GeneratorExp,
+    )
+    for stmt in fn.body:
+        for sub in ast.walk(stmt):
+            if isinstance(sub, nested):
+                names.update(n.id for n in ast.walk(sub) if isinstance(n, ast.Name))
+    return frozenset(names)
+
+
+def _is_const_expr_test(test: "ast.expr") -> bool:
+    """True for an ``if`` test the tracer folds at trace time: a call of a
+    ``const_expr`` name or attribute (``cutlass.const_expr(...)``)."""
+    if not isinstance(test, ast.Call):
+        return False
+    func = test.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+    return name == "const_expr"
+
+
 # F-COVER: version of the choke set this preprocessor emits.  Stamped as
 # ``__pyir_rewritten__`` on every rewritten function object; bump on any
 # change to the emitted choke vocabulary so stale rewrites fail attestation.
-PYIR_CHOKE_SET_VERSION: int = 6
+PYIR_CHOKE_SET_VERSION: int = 10
 
 
 def _own_scope_nonlocal_names(body: "list[ast.stmt]") -> "list[str]":
@@ -434,6 +798,56 @@ class _ScopeBindingCollector(ast.NodeVisitor):
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
         self.declared_nonlocal.update(node.names)
+
+
+# A nested def or class owns its own bindings; everything else in the body is
+# this scope's, and over-counting (e.g. a comprehension target) only disqualifies.
+_PYIR_NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _function_single_def_names(
+    fn_node: "ast.FunctionDef | ast.AsyncFunctionDef",
+) -> "frozenset[str]":
+    """Given one function's AST node, return the set of names that function
+    binds exactly once and can never re-bind."""
+    counts: "dict[str, int]" = {}
+    blocked: "set[str]" = set()  # disqualified regardless of count
+
+    def visit(node: ast.AST, in_loop: bool) -> None:
+        if isinstance(node, _PYIR_NESTED_SCOPES):
+            counts[node.name] = counts.get(node.name, 0) + 1
+            # Disqualify nonlocals
+            blocked.update(
+                n
+                for sub in ast.walk(node)
+                if isinstance(sub, ast.Nonlocal)
+                for n in sub.names
+            )
+            # Returns since nested function bind their locals, not current variable.
+            return
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            counts[node.id] = counts.get(node.id, 0) + 1
+            # One binding statement in a loop body still re-binds per iteration.
+            if in_loop or isinstance(node.ctx, ast.Del):
+                blocked.add(node.id)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            blocked.update(node.names)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            #  Disqualify e.g. x += 1 since it's read-modify-write
+            blocked.add(node.target.id)
+        in_loop = in_loop or isinstance(node, (ast.For, ast.AsyncFor, ast.While))
+        for child in ast.iter_child_nodes(node):
+            visit(child, in_loop)
+
+    args = fn_node.args
+    for arg in args.posonlyargs + args.args + args.kwonlyargs:
+        counts[arg.arg] = 1
+    for extra in (args.vararg, args.kwarg):
+        if extra is not None:
+            counts[extra.arg] = 1
+    for stmt in fn_node.body:
+        visit(stmt, False)
+    return frozenset(n for n, k in counts.items() if k == 1 and n not in blocked)
 
 
 def _function_scope_bindings(
@@ -598,6 +1012,37 @@ class _CallBoundaryWrapPass(ast.NodeTransformer):
         )
         return ast.copy_location(wrapper, node)
 
+    @staticmethod
+    def _is_materialized_for_iter_call(node: ast.Call) -> bool:
+        """Return whether *node* is the BaseDSL-emitted iterable helper.
+
+        Runtime-dispatched ``for`` rewrites ``factory(args)`` as
+        ``materialize_for_iter(factory, args)`` before this pass runs.  The
+        original callee therefore lives in argument zero and needs the same
+        boundary routing that an ordinary user call receives.
+        """
+        return (
+            _is_synthetic_call(node.func)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "materialize_for_iter"
+        )
+
+    def _wrap_callee(self, callee: ast.expr, location: ast.AST) -> ast.Call:
+        """Route *callee* through the function-local boundary dispatcher."""
+        if self._class_depth == 0:
+            wrap_func: ast.expr = ast.Name(id=self.ALIAS_NAME, ctx=ast.Load())
+            ast.copy_location(wrap_func, location)
+        else:
+            wrap_func = _create_module_attribute(
+                "_pyir_call_boundary_",
+                submodule_name="pyir_runtime",
+                lineno=getattr(location, "lineno", None),
+                col_offset=getattr(location, "col_offset", None),
+            )
+        return ast.copy_location(
+            ast.Call(func=wrap_func, args=[callee], keywords=[]), location
+        )
+
     def visit_Call(self, node: ast.Call) -> ast.Call:
         if self._short_circuit_helper_name(node.func) and len(node.args) >= 2:
             # First operand is unconditioned (Python evaluates it always);
@@ -611,9 +1056,21 @@ class _CallBoundaryWrapPass(ast.NodeTransformer):
                 self._sc_depth -= 1
             return node
         self.generic_visit(node)
-        if getattr(node, "_pyir_synth", False):
+        if (
+            self._is_materialized_for_iter_call(node)
+            and node.args
+            and not (
+                isinstance(node.args[0], ast.Name)
+                and node.args[0].id in self._BARE_BUILTIN_SKIP
+            )
+            and not _is_synthetic_call(node.args[0])
+        ):
+            # This synthetic call is the exception to the machinery skip:
+            # its first argument was the callee of the user's original call.
+            node.args[0] = self._wrap_callee(node.args[0], node.args[0])
+            self.wrapped_any = True
             return node
-        if _is_synthetic_call(node.func):
+        if getattr(node, "_pyir_synth", False) or _is_synthetic_call(node.func):
             return node
         if (
             isinstance(node.func, ast.Name)
@@ -627,26 +1084,115 @@ class _CallBoundaryWrapPass(ast.NodeTransformer):
         wrap_args: list[ast.expr] = [node.func]
         if self._sc_depth > 0:
             wrap_args.append(ast.Constant(value=True))
-        if self._class_depth == 0:
-            wrap_func: ast.expr = ast.Name(id=self.ALIAS_NAME, ctx=ast.Load())
-            ast.copy_location(wrap_func, node)
-        else:
-            wrap_func = _create_module_attribute(
-                "_pyir_call_boundary_",
-                submodule_name="pyir_runtime",
-                lineno=getattr(node, "lineno", None),
-                col_offset=getattr(node, "col_offset", None),
+        # A comprehension or generator expression in argument position is an
+        # object born for this call: its own cursor cannot be loop-carried
+        # host state, so the boundary skips its fingerprint (never its
+        # elements' writes).
+        fresh = tuple(
+            i
+            for i, arg in enumerate(node.args)
+            if isinstance(
+                arg, (ast.GeneratorExp, ast.ListComp, ast.SetComp, ast.DictComp)
             )
-        node.func = ast.copy_location(
-            ast.Call(
-                func=wrap_func,
-                args=wrap_args,
-                keywords=[],
-            ),
-            node,
         )
+        node.func = self._wrap_callee(wrap_args[0], node)
+        if len(wrap_args) > 1:
+            node.func.args.extend(wrap_args[1:])
+        if fresh:
+            node.func.keywords.append(
+                ast.keyword(
+                    arg="fresh_args",
+                    value=ast.Tuple(
+                        elts=[ast.Constant(value=i) for i in fresh], ctx=ast.Load()
+                    ),
+                )
+            )
         self.wrapped_any = True
         return node
+
+
+def _pure_attr_chain(node: "ast.expr") -> "tuple[str, ...] | None":
+    """The exact dotted path of a pure Name-rooted attribute chain
+    (``a.b.c`` -> ``("a", "b", "c")``), or ``None`` when any hop is not a
+    plain attribute over a plain name (subscripts, calls, literals): the
+    RMW witness must never compare lossy renderings of different paths."""
+    parts: "list[str]" = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return tuple(reversed(parts))
+
+
+def _comprehension_shadows_name(
+    comp: "ast.ListComp | ast.SetComp | ast.DictComp", name: str
+) -> bool:
+    """Whether one of *comp*'s ``for`` targets binds *name*: if so, an
+    Attribute/Name chain rooted at *name* inside the comp body names the
+    SHADOWED comp-local, not the outer receiver the RMW witness matches
+    against."""
+    for gen in comp.generators:
+        for sub in ast.walk(gen.target):
+            if isinstance(sub, ast.Name) and sub.id == name:
+                return True
+    return False
+
+
+def _rhs_loads_target_chain(
+    target: "ast.expr", value: "ast.expr"
+) -> "tuple[str, ...] | None":
+    """The target's dotted chain when *value* loads that exact chain (a
+    read-modify-write, ``x.n = x.n + 1``), else ``None``.  Exact Name-rooted
+    match only; subscript/call roots yield nothing.  Deferred bodies are not
+    scanned (lambda body, generator-expression body, comprehension parts under
+    a shadowing ``for`` target); lambda parameter defaults and the leftmost
+    iterable of a comprehension or generator expression are, since PEP 289
+    evaluates that iterable in the enclosing scope (``x.n = len([0 for x in
+    x.n])`` and ``x.n = sum(v for v in x.n)`` read x.n)."""
+    if not isinstance(target, ast.Attribute):
+        return None
+    chain = _pure_attr_chain(target)
+    if chain is None:
+        return None
+    stack: "list[ast.AST]" = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            stack.extend(node.args.defaults)
+            stack.extend(d for d in node.args.kw_defaults if d is not None)
+            continue
+        if isinstance(node, ast.GeneratorExp):
+            # PEP 289: the leftmost iterable of a generator expression is
+            # evaluated eagerly in the enclosing scope, like a comprehension's;
+            # the deferred body is not scanned.
+            if node.generators:
+                stack.append(node.generators[0].iter)
+            continue
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp)):
+            generators = node.generators
+            if generators:
+                stack.append(generators[0].iter)
+            if not _comprehension_shadows_name(node, chain[0]):
+                if isinstance(node, ast.DictComp):
+                    stack.append(node.key)
+                    stack.append(node.value)
+                else:
+                    stack.append(node.elt)
+                for gen in generators:
+                    stack.extend(gen.ifs)
+                for gen in generators[1:]:
+                    stack.append(gen.iter)
+            continue
+        if (
+            isinstance(node, (ast.Attribute, ast.Name))
+            and isinstance(getattr(node, "ctx", None), ast.Load)
+            and _pure_attr_chain(node) == chain
+        ):
+            return chain
+        stack.extend(ast.iter_child_nodes(node))
+    return None
 
 
 class PyIRDSLPreprocessor(DSLPreprocessor):
@@ -730,6 +1276,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
     # owner table for ``nonlocal`` name resolution (a PyIR-mode fact; the base
     # rewrite resolves nonlocal from the visitation position only).
     _function_scope_stack: "tuple[ast.FunctionDef, ...]" = ()
+    # Innermost-last: per user function being visited, the names no syntactic
+    # loop-body fact covers (its parameters, and every name a nested scope
+    # mentions), computed on the ORIGINAL def (see ``_identity_captured_names``).
+    _pyir_identity_captured_stack: "tuple[frozenset[str], ...]" = ()
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> ast.Nonlocal:
         active_symbols = self.session_data.scope_manager.get_active_symbols()
@@ -804,44 +1354,82 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         for i in range(1, len(node.values)):
             tmp_name = f"_pyir_bool_{self.session_data.counter}"
             self.session_data.counter += 1
-            test = ast.Call(
-                func=_create_module_attribute(
-                    "bool_short_circuits",
-                    lineno=node.lineno,
-                    col_offset=node.col_offset,
-                ),
-                args=[
-                    ast.NamedExpr(
-                        target=ast.Name(id=tmp_name, ctx=ast.Store()),
-                        value=lhs,
+            # Every node synthesized here is given the BoolOp's location
+            # explicitly.  The temp's named expression is a walrus like any
+            # other, so whatever reads it later -- a diagnostic, the walrus
+            # lowering itself -- must find a location there rather than trip
+            # over a missing one.  Locating each new node as it is built (and
+            # not fixing up the finished tree) keeps the cost flat over a long
+            # ``and`` / ``or`` chain: the located user subtrees spliced in are
+            # never re-walked.
+            # The temp's write is MACHINERY (``_pyir_synth``): the expansion
+            # already evaluates it exactly once, in a position Python always
+            # reaches, so the walrus lowering must leave it inline and the
+            # conditional-walrus refusal must not report it as the author's.
+            walrus = ast.copy_location(
+                ast.NamedExpr(
+                    target=ast.copy_location(
+                        ast.Name(id=tmp_name, ctx=ast.Store()), node
                     ),
-                    ast.Constant(value=sc_value),
-                ],
-                keywords=[],
+                    value=lhs,
+                ),
+                node,
+            )
+            walrus._pyir_synth = True  # type: ignore[attr-defined]
+            test = ast.copy_location(
+                ast.Call(
+                    func=_create_module_attribute(
+                        "bool_short_circuits",
+                        lineno=node.lineno,
+                        col_offset=node.col_offset,
+                    ),
+                    args=[
+                        walrus,
+                        ast.copy_location(ast.Constant(value=sc_value), node),
+                    ],
+                    keywords=[],
+                ),
+                node,
             )
             lhs = ast.copy_location(
                 ast.IfExp(
-                    test=ast.copy_location(test, node),
-                    body=ast.Name(id=tmp_name, ctx=ast.Load()),
-                    orelse=ast.Call(
-                        func=_create_module_attribute(
-                            helper_name,
-                            use_base_dsl=False,
-                            submodule_name=None,
-                            lineno=node.lineno,
-                            col_offset=node.col_offset,
+                    test=test,
+                    body=ast.copy_location(ast.Name(id=tmp_name, ctx=ast.Load()), node),
+                    orelse=ast.copy_location(
+                        ast.Call(
+                            func=_create_module_attribute(
+                                helper_name,
+                                use_base_dsl=False,
+                                submodule_name=None,
+                                lineno=node.lineno,
+                                col_offset=node.col_offset,
+                            ),
+                            args=[
+                                ast.copy_location(
+                                    ast.Name(id=tmp_name, ctx=ast.Load()), node
+                                ),
+                                node.values[i],
+                            ],
+                            keywords=(
+                                [
+                                    ast.keyword(
+                                        arg="_constexpr",
+                                        value=ast.copy_location(
+                                            ast.Constant(value=True), node
+                                        ),
+                                    )
+                                ]
+                                if getattr(node, "_pyir_constexpr_boolop", False)
+                                else []
+                            ),
                         ),
-                        args=[
-                            ast.Name(id=tmp_name, ctx=ast.Load()),
-                            node.values[i],
-                        ],
-                        keywords=[],
+                        node,
                     ),
                 ),
                 node,
             )
 
-        return ast.fix_missing_locations(lhs)
+        return lhs
 
     def check_early_exit(self, tree: ast.AST, kind: str) -> None:
         """
@@ -1052,15 +1640,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
         def _call(name: str) -> ast.Expr:
             return ast.copy_location(
-                ast.fix_missing_locations(
-                    ast.Expr(
-                        value=ast.Call(
-                            func=_create_module_attribute(
-                                name, lineno=lineno, col_offset=col_offset
-                            ),
-                            args=[],
-                            keywords=[],
-                        )
+                ast.Expr(
+                    value=ast.Call(
+                        func=_create_module_attribute(
+                            name, lineno=lineno, col_offset=col_offset
+                        ),
+                        args=[],
+                        keywords=[],
                     )
                 ),
                 node,
@@ -1069,13 +1655,11 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         return [
             _call(self._ENTER_CONSTEXPR_LOOP),
             ast.copy_location(
-                ast.fix_missing_locations(
-                    ast.Try(
-                        body=body,
-                        handlers=[],
-                        orelse=[],
-                        finalbody=[_call(self._EXIT_CONSTEXPR_LOOP)],
-                    )
+                ast.Try(
+                    body=body,
+                    handlers=[],
+                    orelse=[],
+                    finalbody=[_call(self._EXIT_CONSTEXPR_LOOP)],
                 ),
                 node,
             ),
@@ -1201,7 +1785,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 keywords=[],
             )
         )
-        return ast.copy_location(ast.fix_missing_locations(stmt), node)
+        return ast.copy_location(stmt, node)
 
     def _wrap_body_in_fn_scope(
         self, node: ast.stmt, body: list[ast.stmt]
@@ -1221,15 +1805,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
         def _call(name: str, args: list[ast.expr]) -> ast.Expr:
             return ast.copy_location(
-                ast.fix_missing_locations(
-                    ast.Expr(
-                        value=ast.Call(
-                            func=_create_runtime_attribute(
-                                name, lineno=lineno, col_offset=col_offset
-                            ),
-                            args=args,
-                            keywords=[],
-                        )
+                ast.Expr(
+                    value=ast.Call(
+                        func=_create_runtime_attribute(
+                            name, lineno=lineno, col_offset=col_offset
+                        ),
+                        args=args,
+                        keywords=[],
                     )
                 ),
                 node,
@@ -1272,35 +1854,31 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             for a in (*args.posonlyargs, *args.args, *args.kwonlyargs):
                 entry_calls.append(
                     ast.copy_location(
-                        ast.fix_missing_locations(
-                            ast.Assign(
-                                targets=[ast.Name(id=a.arg, ctx=ast.Store())],
-                                value=ast.Call(
-                                    func=_create_runtime_attribute(
-                                        "pyir_bind_param",
-                                        lineno=lineno,
-                                        col_offset=col_offset,
-                                    ),
-                                    args=[
-                                        ast.Constant(value=a.arg),
-                                        ast.Name(id=a.arg, ctx=ast.Load()),
-                                    ],
-                                    keywords=[],
+                        ast.Assign(
+                            targets=[ast.Name(id=a.arg, ctx=ast.Store())],
+                            value=ast.Call(
+                                func=_create_runtime_attribute(
+                                    "pyir_bind_param",
+                                    lineno=lineno,
+                                    col_offset=col_offset,
                                 ),
-                            )
+                                args=[
+                                    ast.Constant(value=a.arg),
+                                    ast.Name(id=a.arg, ctx=ast.Load()),
+                                ],
+                                keywords=[],
+                            ),
                         ),
                         node,
                     )
                 )
         return entry_calls + [
             ast.copy_location(
-                ast.fix_missing_locations(
-                    ast.Try(
-                        body=body,
-                        handlers=[],
-                        orelse=[],
-                        finalbody=[_call("pyir_exit_fn", [])],
-                    )
+                ast.Try(
+                    body=body,
+                    handlers=[],
+                    orelse=[],
+                    finalbody=[_call("pyir_exit_fn", [])],
                 ),
                 node,
             ),
@@ -1309,6 +1887,35 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
     # >0 while visiting a def nested inside the outermost one: a nested def
     # compiles from this same instrumented AST, so the dispatcher fast-exits it.
     _pyir_fn_def_depth: int = 0
+
+    def _pyir_name_is_single_def(self, name: str) -> bool:
+        """True when the innermost USER (not pyir generated scope) scope binds
+        *name* exactly once, so no write can ever force the slot to promote
+        and its reads need no retargetable wrapper.
+        Generated region defs are skipped: their body is one arm of the user
+        scope that owns the binding, and the answer is a fact about that whole
+        scope.  One staged ``if`` becomes two generated defs::
+
+            def kernel(n):          def kernel(n):
+                flag = False            flag = False
+                ...                     ...
+                if n > 0:       =>      def if_region_1(pred):    # generated
+                    use(flag)               def then_block_5():   # generated
+                                                use(pyir_read('flag', flag,
+                                                    maybe_written=False))
+                                            ...
+
+        The scope stack at that read is ``(kernel, if_region_1, then_block_5)``,
+        so both generated names are skipped and ``kernel`` answers."""
+        for fn in reversed(self._function_scope_stack):
+            if fn.name.startswith(self._GENERATED_FN_PREFIXES):
+                continue
+            names = getattr(fn, "_pyir_single_def_names", None)
+            if names is None:
+                names = _function_single_def_names(fn)
+                fn._pyir_single_def_names = names  # type: ignore[attr-defined]
+            return name in names
+        return False
 
     @override
     def visit_FunctionDef(
@@ -1325,6 +1932,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         )
         # This def's whole body is one scope of the nonlocal owner table.
         self._function_scope_stack = self._function_scope_stack + (node,)
+        self._pyir_identity_captured_stack = self._pyir_identity_captured_stack + (
+            _identity_captured_names(node),
+        )
         try:
             result = super().visit_FunctionDef(node)
         finally:
@@ -1332,6 +1942,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             self._pyir_class_body_depth = _saved_class_depth
             self._pyir_import_scope_stack = self._pyir_import_scope_stack[:-1]
             self._function_scope_stack = self._function_scope_stack[:-1]
+            self._pyir_identity_captured_stack = self._pyir_identity_captured_stack[:-1]
         if isinstance(result, ast.FunctionDef):
             # Register the frame's closure cells at entry (user AND generated
             # fns own cells); generated region fns register on the inherited
@@ -1371,7 +1982,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     col_offset=result.col_offset,
                 )
                 result.decorator_list.append(stamp)
-                ast.fix_missing_locations(result)
         return result
 
     @override
@@ -1569,9 +2179,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             )
         )
         return [
-            ast.copy_location(ast.fix_missing_locations(guard), node),
+            ast.copy_location(guard, node),
             node,
-            ast.copy_location(ast.fix_missing_locations(record), node),
+            ast.copy_location(record, node),
         ]
 
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
@@ -1602,7 +2212,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ),
                     item.context_expr,
                 )
-            ast.fix_missing_locations(result)
         return result
 
     def _prepare_loop_induction_var(
@@ -1815,9 +2424,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=anchor, ctx=ast.Store())],
                 value=anchor_call,
             )
-            anchor_stmts.append(
-                ast.copy_location(ast.fix_missing_locations(anchor_assign), node)
-            )
+            anchor_stmts.append(ast.copy_location(anchor_assign, node))
             for r in reads:
                 anchor_by_read_id[id(r)] = anchor
         if not anchor_stmts:
@@ -1834,7 +2441,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 return n  # opaque
 
         _RewritePreWalrusReads().visit(node)
-        ast.fix_missing_locations(node)
         # Before the walrus's own hoisted assign (visit_NamedExpr appends
         # during the statement's generic_visit, which runs after this).
         self.session_data.region_stack[-1].append_new_stmts(anchor_stmts)
@@ -1874,7 +2480,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # Before the walrus's own hoisted assign (visit_NamedExpr appends
         # during the statement's generic_visit, which runs after this).
         self.session_data.region_stack[-1].append_new_stmts(
-            [ast.copy_location(ast.fix_missing_locations(anchor_assign), node)]
+            [ast.copy_location(anchor_assign, node)]
         )
         return anchor
 
@@ -1980,7 +2586,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 ),
                 node,
             )
-            ast.fix_missing_locations(assign)
             # The synthetic temp is machinery-owned (no pyir_assign choke),
             # but the hoisted VALUE still visits: its reads and call-boundary
             # instrumentation execute at the anchor position, as Python does.
@@ -1999,7 +2604,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 return super().visit(n)
 
         _RewriteAnchoredEffects().visit(node)
-        ast.fix_missing_locations(node)
 
     # ------------------------------------------------------------------
     # Walrus (``ast.NamedExpr``) lowering
@@ -2010,14 +2614,19 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
 
     @staticmethod
     def _find_eager_walrus(root: ast.AST) -> "ast.NamedExpr | None":
-        """First ``ast.NamedExpr`` under *root* whose write would land in the ENCLOSING
-        function scope when *root* evaluates."""
+        """First AUTHOR ``ast.NamedExpr`` under *root* whose write would land in
+        the ENCLOSING function scope when *root* evaluates.
+
+        A ``_pyir_synth`` named expression is the ``and`` / ``or`` expansion's
+        own temp: reporting it would refuse code the author never wrote, naming
+        a temp they have never seen.  Its value subtree is still scanned, since
+        an author walrus can sit inside the operand it binds."""
         stack: list[ast.AST] = [root]
         while stack:
             n = stack.pop()
             if isinstance(n, ast.Lambda):
                 continue
-            if isinstance(n, ast.NamedExpr):
+            if isinstance(n, ast.NamedExpr) and not getattr(n, "_pyir_synth", False):
                 return n
             stack.extend(ast.iter_child_nodes(n))
         return None
@@ -2045,15 +2654,74 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # always evaluates, so a walrus there lowers normally.
         for v in node.values[1:]:
             self._refuse_conditional_walrus(v)
+        node.values[1:] = [self._wrap_lazy_reads(v) for v in node.values[1:]]
         return self._expand_boolop_evaluate_once(node)
+
+    def _mark_constexpr_conditions(self, node: ast.If | ast.While) -> None:
+        """Mark eager Boolean operations only in explicit constexpr conditions."""
+
+        class MarkConstexprBoolOps(ast.NodeVisitor):
+            def visit_BoolOp(self, expr: ast.BoolOp) -> None:
+                expr._pyir_constexpr_boolop = True  # type: ignore[attr-defined]
+                self.generic_visit(expr)
+
+            def visit_Lambda(self, expr: ast.Lambda) -> None:
+                pass  # The deferred body is outside this condition's evaluation.
+
+            def visit_GeneratorExp(self, expr: ast.GeneratorExp) -> None:
+                pass
+
+        marker = MarkConstexprBoolOps()
+        while True:
+            if self.is_node_constexpr(node):
+                marker.visit(node.test)
+            # Elif outlining can bypass visit_If, so mark its condition here.
+            if len(node.orelse) != 1 or not isinstance(node.orelse[0], ast.If):
+                break
+            node = node.orelse[0]
+
+    def visit_If(self, node: ast.If) -> ast.If | list[ast.stmt]:
+        self._mark_constexpr_conditions(node)
+        return super().visit_If(node)
+
+    def visit_While(self, node: ast.While) -> ast.While | list[ast.stmt]:
+        self._mark_constexpr_conditions(node)
+        result = super().visit_While(node)
+        # Python binds a while-condition walrus target after the loop as well:
+        # publish it to the enclosing scope once the region scope has closed.
+        for name in self.session_data.while_condition_bound_vars.pop(id(node), ()):
+            self.session_data.scope_manager.add_to_scope(name)
+        return result
+
+    def _adopt_while_condition_bound_names(
+        self,
+        node: ast.While,
+        names: list[str],
+        write_args: list[str],
+        full_write_args_count: int,
+    ) -> tuple[list[str], int]:
+        """Carry a condition-bound name like a pre-bound write_arg: the
+        condition's first-def mints its row inside the before region, the body
+        prologue binds the name to a load of that row (``condition_bound``) and
+        the post-loop writeback rebinds it to the body's binding."""
+        self.session_data.while_condition_bound_vars[id(node)] = tuple(names)
+        return (
+            write_args[:full_write_args_count]
+            + names
+            + write_args[full_write_args_count:],
+            full_write_args_count + len(names),
+        )
 
     def visit_IfExp(self, node: ast.IfExp) -> ast.Call:
         # Ternary arms evaluate conditionally; the test always evaluates.
         self._refuse_conditional_walrus(node.body)
         self._refuse_conditional_walrus(node.orelse)
+        node.body = self._wrap_lazy_reads(node.body)
+        node.orelse = self._wrap_lazy_reads(node.orelse)
         return super().visit_IfExp(node)
 
     def visit_Lambda(self, node: ast.Lambda) -> ast.Lambda:
+        node.body = self._wrap_lazy_reads(node.body)
         self._pyir_lambda_depth += 1
         try:
             return super().visit_Lambda(node)
@@ -2066,10 +2734,70 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # A comprehension walrus writes the ENCLOSING function scope from the
         # comprehension's looped scope (PEP 572): iteration-dependent, refuse.
         self._refuse_conditional_walrus(node)
+        if isinstance(node, ast.GeneratorExp):
+            node.elt = self._wrap_lazy_reads(node.elt)
+            for pos, generator in enumerate(node.generators):
+                # Python evaluates the outer iterable at generator creation.
+                if pos > 0:
+                    generator.iter = self._wrap_lazy_reads(generator.iter)
+                generator.ifs = [self._wrap_lazy_reads(c) for c in generator.ifs]
         return super()._visit_Comprehension(node, ele_visitor)
+
+    def _wrap_lazy_reads(self, expr: ast.expr) -> ast.expr:
+        """Read attributes at evaluation time, without hoisting or rebinding.
+
+        This runs before the ordinary visitors lower the expression. Subscripts
+        already have an inline read choke. The runtime decides the read's phase:
+        a lambda created outside staged CF may be called inside it later.
+        """
+        outer = self
+        mod_name = self._reading_module_name()
+
+        class LazyReads(ast.NodeTransformer):
+            def visit_Call(self, node: ast.Call) -> ast.Call:
+                if _is_synthetic_call(node.func):
+                    # Nested lazy visitors may encounter an already wrapped
+                    # expression. Its receiver and arguments are already owned.
+                    return node
+                if isinstance(node.func, ast.Attribute):
+                    # Preserve method binding, but observe reads of its receiver
+                    # (e.g. the field in ``holder.value.ir_value()``).
+                    node.func.value = self.visit(node.func.value)
+                else:
+                    node.func = self.visit(node.func)
+                node.args = [self.visit(arg) for arg in node.args]
+                for keyword in node.keywords:
+                    keyword.value = self.visit(keyword.value)
+                return node
+
+            def visit_Attribute(self, node: ast.Attribute) -> ast.expr:
+                if not isinstance(node.ctx, ast.Load) or _is_synthetic_call(node):
+                    return node
+                path = outer._access_path_str(node) or _unparse_safe(node)
+                receiver = self.visit(node.value)
+                call = ast.Call(
+                    func=_create_runtime_attribute("_pyir_post_attr_read"),
+                    args=[
+                        ast.Constant(value=path),
+                        receiver,
+                        ast.Constant(value=node.attr),
+                        ast.Constant(value=mod_name),
+                    ],
+                    keywords=[],
+                )
+                return ast.copy_location(call, node)
+
+        return LazyReads().visit(expr)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> ast.expr:
         """Lower ``name := value`` into a real, fully instrumented assignment."""
+        # The ``and`` / ``or`` expansion's own temp stays exactly where it is.
+        # Hoisting it to a statement would evaluate the operand it binds
+        # unconditionally -- wrong whenever the BoolOp itself sits in a
+        # conditionally-evaluated position -- and its value subtree has already
+        # been visited, as a child of the BoolOp this expansion replaced.
+        if getattr(node, "_pyir_synth", False):
+            return node
         if self._pyir_lambda_depth or not self.session_data.region_stack:
             self.generic_visit(node)
             return node
@@ -2083,7 +2811,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             ),
             node,
         )
-        ast.fix_missing_locations(assign)
         visited = self.visit(assign)
         self.session_data.region_stack[-1].append_new_stmts(
             visited if isinstance(visited, list) else [visited]
@@ -2129,7 +2856,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             orelse=[],
             finalbody=[],
         )
-        return ast.copy_location(ast.fix_missing_locations(tried), node)
+        return ast.copy_location(tried, node)
 
     @staticmethod
     def _is_multi_targets_assign(node: ast.Assign) -> bool:
@@ -2235,9 +2962,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # was staged and ``followups`` is never empty here.
         result: list[ast.stmt] = list(prereads)
         for stmt in [node, *followups]:
-            visited = self.visit(
-                ast.copy_location(ast.fix_missing_locations(stmt), node)
-            )
+            visited = self.visit(ast.copy_location(stmt, node))
             result.extend(visited if isinstance(visited, list) else [visited])
         return result
 
@@ -2479,15 +3204,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             targets=[ast.Name(id=tmp, ctx=ast.Store())],
             value=node.value,
         )
-        rewritten: list[ast.stmt] = [
-            ast.copy_location(ast.fix_missing_locations(hoist), node)
-        ]
+        rewritten: list[ast.stmt] = [ast.copy_location(hoist, node)]
         for target in node.targets:
             store = ast.Assign(
                 targets=[_deepcopy_ast_root(target)],
                 value=ast.Name(id=tmp, ctx=ast.Load()),
             )
-            rewritten.append(ast.copy_location(ast.fix_missing_locations(store), node))
+            rewritten.append(ast.copy_location(store, node))
         result: list[ast.stmt] = []
         for stmt in rewritten:
             visited = self.visit(stmt)
@@ -2543,7 +3266,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         assign = ast.copy_location(
             ast.Assign(targets=[node.target], value=node.value), node
         )
-        ast.fix_missing_locations(assign)
         return self.visit_Assign(assign)
 
     def visit_Delete(self, node: ast.Delete) -> ast.stmt | list[ast.stmt]:
@@ -2562,8 +3284,11 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         ``del obj.attr`` rewrites to ``_pyir_delete_attr(obj, "attr")`` -- the
         funnel the routed ``delattr`` also uses (it performs the native delete,
         refuses inside dynamic staged CF, and records the unbind in meta flow).
-        Subscript targets stay native: watched containers choke in their own
-        ``__delitem__``, trace-internal ones keep Python protocol semantics.
+        ``del obj[key]`` rewrites to ``_pyir_delete_item(obj, key, path)``: the
+        native delete behind the plain dict / list key wall (a container no
+        adoption tracks would otherwise miss a Staged key by identity); watched
+        containers still choke in their own ``__delitem__``.  A slice or tuple
+        subscript (a tensor coordinate) stays native.
         """
         active = self.session_data.scope_manager.get_active_symbols()
         if len(active) > 1:
@@ -2584,9 +3309,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                         end_col_offset=getattr(node, "end_col_offset", None),
                         var=tgt.id,
                     )
-        if self._pyir_class_body_depth > 0 or not any(
-            isinstance(t, ast.Attribute) for t in node.targets
-        ):
+
+        def _routed(t: ast.expr) -> bool:
+            return isinstance(t, ast.Attribute) or (
+                isinstance(t, ast.Subscript) and not self._is_subscript_skippable(t)
+            )
+
+        if self._pyir_class_body_depth > 0 or not any(_routed(t) for t in node.targets):
             return node
         stmts: list[ast.stmt] = []
         for tgt in node.targets:
@@ -2605,9 +3334,25 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                         keywords=[],
                     )
                 )
+            elif isinstance(tgt, ast.Subscript) and _routed(tgt):
+                new_stmt = ast.Expr(
+                    value=ast.Call(
+                        func=_create_runtime_attribute(
+                            "_pyir_delete_item",
+                            lineno=node.lineno,
+                            col_offset=node.col_offset,
+                        ),
+                        args=[
+                            self._target_as_load(tgt.value),
+                            _deepcopy_ast_root(tgt.slice),
+                            ast.Constant(value=self._target_to_path_str(tgt)),
+                        ],
+                        keywords=[],
+                    )
+                )
             else:
                 new_stmt = ast.Delete(targets=[tgt])
-            stmts.append(ast.copy_location(ast.fix_missing_locations(new_stmt), node))
+            stmts.append(ast.copy_location(new_stmt, node))
         return stmts
 
     def visit_AugAssign(self, node: ast.AugAssign) -> ast.AugAssign | list[ast.stmt]:
@@ -2701,7 +3446,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             ],
             keywords=[],
         )
-        return ast.copy_location(ast.fix_missing_locations(call), node)
+        return ast.copy_location(call, node)
 
     def visit_Return(self, node: ast.Return) -> ast.stmt | list[ast.stmt]:
         """Override to add PyIR instrumentation for attribute reads in returns."""
@@ -2712,8 +3457,8 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         return node
 
     # Method names whose call on a meta ``list`` / ``dict`` / ``set`` /
-    # ``collections.deque`` mutates the container in place.  When the call
-    # appears as a statement inside staged CF,
+    # ``collections.deque`` / ``bytearray`` mutates the container in place.
+    # When the call appears as a statement inside staged CF,
     # ``_pyir_check_no_complex_m2m_call`` raises a ``DSLUserCodeError`` so
     # users see a clear diagnostic instead of silent single-iteration baking.
     _CONTAINER_MUTATOR_METHODS: frozenset[str] = frozenset(
@@ -2802,7 +3547,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             value=func.value,
         )
         func.value = ast.Name(id=recv_name, ctx=ast.Load())
-        return ast.copy_location(ast.fix_missing_locations(hoist), node)
+        return ast.copy_location(hoist, node)
 
     def _build_container_mutator_guard(self, node: ast.Expr) -> ast.stmt | None:
         """Return an ``_pyir_check_no_complex_m2m_call(container, ...)``
@@ -2834,28 +3579,26 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         else:
             values_arg = ast.Constant(value=None)
         return ast.copy_location(
-            ast.fix_missing_locations(
-                ast.Expr(
-                    value=ast.Call(
-                        func=_create_runtime_attribute(
-                            "_pyir_check_no_complex_m2m_call",
-                            lineno=node.lineno,
-                            col_offset=node.col_offset,
-                        ),
-                        args=[
-                            _deepcopy_ast_root(container),
-                            ast.Constant(value=func.attr),
-                            ast.Constant(
-                                value=getattr(call, "_pyir_recv_spelling", None)
-                                or _unparse_safe(container)
-                            ),
-                            ast.Constant(value=self.session_data.file_name),
-                            ast.Constant(value=node.lineno),
-                            values_arg,
-                        ],
-                        keywords=[],
+            ast.Expr(
+                value=ast.Call(
+                    func=_create_runtime_attribute(
+                        "_pyir_check_no_complex_m2m_call",
+                        lineno=node.lineno,
+                        col_offset=node.col_offset,
                     ),
-                )
+                    args=[
+                        _deepcopy_ast_root(container),
+                        ast.Constant(value=func.attr),
+                        ast.Constant(
+                            value=getattr(call, "_pyir_recv_spelling", None)
+                            or _unparse_safe(container)
+                        ),
+                        ast.Constant(value=self.session_data.file_name),
+                        ast.Constant(value=node.lineno),
+                        values_arg,
+                    ],
+                    keywords=[],
+                ),
             ),
             node,
         )
@@ -2881,21 +3624,19 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         if not isinstance(container, (ast.Name, ast.Attribute)):
             return None
         return ast.copy_location(
-            ast.fix_missing_locations(
-                ast.Expr(
-                    value=ast.Call(
-                        func=_create_runtime_attribute(
-                            "_pyir_freeze_staged_container_inserts",
-                            lineno=node.lineno,
-                            col_offset=node.col_offset,
-                        ),
-                        args=[
-                            _deepcopy_ast_root(container),
-                            ast.Constant(value=func.attr),
-                        ],
-                        keywords=[],
+            ast.Expr(
+                value=ast.Call(
+                    func=_create_runtime_attribute(
+                        "_pyir_freeze_staged_container_inserts",
+                        lineno=node.lineno,
+                        col_offset=node.col_offset,
                     ),
-                )
+                    args=[
+                        _deepcopy_ast_root(container),
+                        ast.Constant(value=func.attr),
+                    ],
+                    keywords=[],
+                ),
             ),
             node,
         )
@@ -2917,51 +3658,26 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         check = self._insert_cf_symbol_check(node.test.func)
         return [check, node]
 
-    def _handle_constexpr_if(self, node: ast.If) -> list[ast.stmt]:
-        """Override to add PyIR scope isolation for const_expr if statements."""
-        # Visit test expression outside branch scopes; test-position reads
-        # skip the statement hoist, so they take record-only chokes here.
-        self.visit(node.test)
-        node.test = self._wrap_test_observation_reads(node.test)
-        # Visit each branch in its own scope so first-definitions in one
-        # branch don't leak into sibling branches (fixes UnboundLocalError
-        # when only one const_expr branch runs at runtime).
+    def _visit_constexpr_if_branches(self, node: ast.If) -> None:
+        """Override to add PyIR scope isolation for const_expr ``if``/``elif``
+        and native loop-exit ``if`` statements.
+
+        Test-position reads skip the statement hoist, so they take record-only
+        chokes here.  Each arm is visited in its own scope so first-definitions
+        in one arm don't leak into its sibling (fixes UnboundLocalError when
+        only one const_expr arm runs at runtime), and each arm is bracketed so
+        mutations directly inside the trace-time-selected arm are treated as
+        constexpr-governed by the M->M and container-mutation guards.
+        """
+        visited_test = self.visit(node.test)
+        assert isinstance(visited_test, ast.expr)
+        node.test = self._wrap_test_observation_reads(visited_test)
         born: set[str] = set()
         node.body = self._visit_stmts_in_cf_scope(node.body, collect_bindings=born)
         node.orelse = self._visit_stmts_in_cf_scope(node.orelse, collect_bindings=born)
         self._readd_constexpr_arm_bindings(born)
-        # Bracket each branch (the trace-time-selected one runs once) so
-        # mutations directly inside it are treated as constexpr-governed.
         node.body = self._wrap_body_in_constexpr_scope(node, node.body)
         node.orelse = self._wrap_body_in_constexpr_scope(node, node.orelse)
-        assert isinstance(node.test, ast.Call)
-        check = self._insert_cf_symbol_check(node.test.func)
-        return [check, node]
-
-    def _handle_constexpr_elif(self, elif_node: ast.If) -> ast.stmt:
-        """Override to add PyIR scope isolation for const_expr elif nodes."""
-        # Visit test outside branch scopes; visit each
-        # branch in its own scope to prevent cross-branch
-        # first-definition leakage.  Test-position reads skip the statement
-        # hoist, so they take record-only chokes here.
-        self.visit(elif_node.test)
-        elif_node.test = self._wrap_test_observation_reads(elif_node.test)
-        born: set[str] = set()
-        elif_node.body = self._visit_stmts_in_cf_scope(
-            elif_node.body, collect_bindings=born
-        )
-        elif_node.orelse = self._visit_stmts_in_cf_scope(
-            elif_node.orelse, collect_bindings=born
-        )
-        self._readd_constexpr_arm_bindings(born)
-        # Bracket each branch so mutations directly inside the
-        # trace-time-selected branch are treated as constexpr-governed.
-        elif_node.body = self._wrap_body_in_constexpr_scope(elif_node, elif_node.body)
-        elif_node.orelse = self._wrap_body_in_constexpr_scope(
-            elif_node, elif_node.orelse
-        )
-        assert isinstance(elif_node.test, ast.Call)
-        return self._insert_cf_symbol_check(elif_node.test.func)
 
     def _wrap_test_observation_reads(self, expr: ast.expr) -> ast.expr:
         """Record-only observation chokes for symbol reads in TEST position:
@@ -3017,7 +3733,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ],
                     keywords=[],
                 )
-                return ast.copy_location(ast.fix_missing_locations(call), n)
+                return ast.copy_location(call, n)
 
             def visit_Name(self, n: ast.Name) -> ast.expr:
                 if not isinstance(n.ctx, ast.Load):
@@ -3052,10 +3768,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ],
                     keywords=[],
                 )
-                return ast.copy_location(ast.fix_missing_locations(call), n)
+                return ast.copy_location(call, n)
 
         wrapped = _Wrapper().visit(expr)
-        ast.fix_missing_locations(wrapped)
         return wrapped
 
     def create_if_function(
@@ -3076,21 +3791,17 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
     def _attr_chain_root_path(node: ast.expr) -> "tuple[str, tuple[str, ...]] | None":
         """``(root_name, hops)`` for a pure Name-rooted attribute chain, e.g.
         ``c0.inner.v0`` -> ``("c0", ("inner", "v0"))``; ``None`` otherwise."""
-        hops: list[str] = []
-        cur = node
-        while isinstance(cur, ast.Attribute):
-            hops.append(cur.attr)
-            cur = cur.value
-        if isinstance(cur, ast.Name) and hops:
-            return cur.id, tuple(reversed(hops))
-        return None
+        chain = _pure_attr_chain(node)
+        if chain is None or len(chain) < 2:
+            return None
+        return chain[0], chain[1:]
 
     @classmethod
-    def _while_cond_carried_attr_paths(
+    def _while_cond_attr_read_paths(
         cls, node: ast.While
-    ) -> "dict[str, tuple[tuple[str, ...], ...]]":
-        """Attribute paths both READ in the while condition and WRITTEN in the
-        body, per root name (the runtime promotes and re-loads exactly these)."""
+    ) -> "dict[str, set[tuple[str, ...]]]":
+        """Maximal Name-rooted attribute paths the while condition reads, per
+        root name (``m.remaining > 0`` -> ``{"m": {("remaining",)}}``)."""
         read_paths: "dict[str, set[tuple[str, ...]]]" = {}
         for n in ast.walk(node.test):
             if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
@@ -3103,6 +3814,15 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             read_paths[root] = {
                 p for p in paths if not any(q != p and q[: len(p)] == p for q in paths)
             }
+        return read_paths
+
+    @classmethod
+    def _while_cond_carried_attr_paths(
+        cls, node: ast.While
+    ) -> "dict[str, tuple[tuple[str, ...], ...]]":
+        """Attribute paths both READ in the while condition and WRITTEN in the
+        body, per root name (the runtime promotes and re-loads exactly these)."""
+        read_paths = cls._while_cond_attr_read_paths(node)
 
         write_paths: "dict[str, set[tuple[str, ...]]]" = {}
 
@@ -3162,6 +3882,206 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 out[root] = tuple(sorted(carried))
         return out
 
+    @classmethod
+    def _while_cond_callee_receivers(
+        cls, node: ast.While
+    ) -> "dict[str, _WhileCondCalleeReceivers]":
+        """Per condition-read root with a path the body's own text never
+        rewrites: the body calls that receive an object ON such a path (a
+        Name-rooted chain that is a proper prefix of the read), keyed by how
+        the callee's write facts can name that object as their receiver.
+
+        The body text cannot show a write hidden in a callee, so the runtime
+        decides the carry from the callee's def (``transitive_write_facts``):
+        exact when the passed chain is provably the callee's first parameter
+        (``free_calls``: bare-Name callee, chain as the sole first positional
+        argument) or its method receiver (``method_calls``); every other pass
+        (``opaque_hops``: later positional, keyword, starred, non-Name callee,
+        a chain aliased twice in one call, the chain called itself) names no
+        parameter the facts track, so every read under it must carry."""
+        read_paths = cls._while_cond_attr_read_paths(node)
+        syntactic = cls._while_cond_carried_attr_paths(node)
+        pending: "dict[str, set[tuple[str, ...]]]" = {}
+        for root, paths in read_paths.items():
+            rest = paths - set(syntactic.get(root, ()))
+            if rest:
+                pending[root] = rest
+        if not pending:
+            return {}
+
+        def _passed(expr: ast.expr) -> "tuple[str, tuple[str, ...]] | None":
+            chain = _pure_attr_chain(expr)
+            if chain is None or chain[0] not in pending:
+                return None
+            root, hops = chain[0], chain[1:]
+            if not any(
+                len(p) > len(hops) and p[: len(hops)] == hops for p in pending[root]
+            ):
+                return None
+            return root, hops
+
+        free: "dict[str, set[tuple[tuple[str, ...], str]]]" = {}
+        meth: "dict[str, set[tuple[tuple[str, ...], str]]]" = {}
+        opaque: "dict[str, set[tuple[str, ...]]]" = {}
+
+        class _CallWalker(ast.NodeVisitor):
+            def visit_Call(self, n: ast.Call) -> None:
+                f = n.func
+                recv: "tuple[str, tuple[str, ...]] | None" = None
+                recv_name = ""
+                if isinstance(f, ast.Attribute):
+                    recv = _passed(f.value)
+                    recv_name = f.attr
+                elif isinstance(f, ast.Name):
+                    # The object itself is called: ``type(obj).__call__``.
+                    recv = _passed(f)
+                    recv_name = "__call__"
+                passes: "list[tuple[tuple[str, tuple[str, ...]], bool]]" = []
+                for i, a in enumerate(n.args):
+                    if isinstance(a, ast.Starred):
+                        got = _passed(a.value)
+                        if got is not None:
+                            passes.append((got, False))
+                        continue
+                    got = _passed(a)
+                    if got is not None:
+                        passes.append((got, i == 0))
+                for kw in n.keywords:
+                    got = _passed(kw.value)
+                    if got is not None:
+                        passes.append((got, False))
+                if recv is not None:
+                    if any(got == recv for got, _ in passes):
+                        opaque.setdefault(recv[0], set()).add(recv[1])
+                    else:
+                        meth.setdefault(recv[0], set()).add((recv[1], recv_name))
+                for got, first in passes:
+                    root, hops = got
+                    if got == recv:
+                        continue  # aliased onto its own method: recorded above
+                    sole = sum(1 for g, _ in passes if g == got) == 1
+                    if first and sole and isinstance(f, ast.Name):
+                        free.setdefault(root, set()).add((hops, f.id))
+                    else:
+                        opaque.setdefault(root, set()).add(hops)
+                self.generic_visit(n)
+
+            # Nested scopes bind at call time; their calls are not this
+            # loop body's calls.
+            def visit_FunctionDef(self, n: ast.FunctionDef) -> None:
+                return
+
+            def visit_AsyncFunctionDef(self, n: ast.AsyncFunctionDef) -> None:
+                return
+
+            def visit_Lambda(self, n: ast.Lambda) -> None:
+                return
+
+            def visit_ClassDef(self, n: ast.ClassDef) -> None:
+                return
+
+        walker = _CallWalker()
+        for stmt in node.body:
+            walker.visit(stmt)
+
+        out: "dict[str, _WhileCondCalleeReceivers]" = {}
+        for root, paths in pending.items():
+            if not (free.get(root) or meth.get(root) or opaque.get(root)):
+                continue
+            out[root] = _WhileCondCalleeReceivers(
+                cond_paths=tuple(sorted(paths)),
+                free_calls=tuple(sorted(free.get(root, ()))),
+                method_calls=tuple(sorted(meth.get(root, ()))),
+                opaque_hops=tuple(sorted(opaque.get(root, ()))),
+            )
+        return out
+
+    def _build_while_cond_callee_leg_stmts(
+        self, node: ast.While, *, reload: bool
+    ) -> list[ast.stmt]:
+        """``pyir_promote_while_cond_callee_legs(root, <root>, ...)`` for every
+        condition-read root a body callee may rewrite (an expression
+        statement: the hook rebinds the legs in place, and the root may be a
+        closure name, which an assignment would shadow).  Free callees travel
+        as thunks so the hook resolves each name exactly where the body's
+        call would, and an unbound name stays a conservative pass."""
+        stmts: list[ast.stmt] = []
+
+        def _hops(hops: "tuple[str, ...]") -> ast.Tuple:
+            return ast.Tuple(elts=[ast.Constant(value=h) for h in hops], ctx=ast.Load())
+
+        def _thunk(name: str) -> ast.Lambda:
+            return ast.Lambda(
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=ast.Name(id=name, ctx=ast.Load()),
+            )
+
+        for root, facts in self._while_cond_callee_receivers(node).items():
+            keywords = [
+                ast.keyword(
+                    arg="cond_paths",
+                    value=ast.Tuple(
+                        elts=[_hops(p) for p in facts.cond_paths], ctx=ast.Load()
+                    ),
+                ),
+                ast.keyword(
+                    arg="free_calls",
+                    value=ast.Tuple(
+                        elts=[
+                            ast.Tuple(
+                                elts=[_hops(h), ast.Constant(value=f), _thunk(f)],
+                                ctx=ast.Load(),
+                            )
+                            for h, f in facts.free_calls
+                        ],
+                        ctx=ast.Load(),
+                    ),
+                ),
+                ast.keyword(
+                    arg="method_calls",
+                    value=ast.Tuple(
+                        elts=[
+                            ast.Tuple(
+                                elts=[_hops(h), ast.Constant(value=m)],
+                                ctx=ast.Load(),
+                            )
+                            for h, m in facts.method_calls
+                        ],
+                        ctx=ast.Load(),
+                    ),
+                ),
+                ast.keyword(
+                    arg="opaque_hops",
+                    value=ast.Tuple(
+                        elts=[_hops(h) for h in facts.opaque_hops], ctx=ast.Load()
+                    ),
+                ),
+            ]
+            if reload:
+                keywords.append(
+                    ast.keyword(arg="reload", value=ast.Constant(value=True))
+                )
+            call = ast.Call(
+                func=_create_runtime_attribute(
+                    "pyir_promote_while_cond_callee_legs",
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
+                args=[
+                    ast.Constant(value=root),
+                    ast.Name(id=root, ctx=ast.Load()),
+                ],
+                keywords=keywords,
+            )
+            stmts.append(ast.copy_location(ast.Expr(value=call), node))
+        return stmts
+
     def _prepare_while_condition_vars(
         self,
         node: ast.While,
@@ -3198,30 +4118,46 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 for name in ast.walk(node.test)
                 if isinstance(name, ast.Name) and isinstance(name.ctx, ast.Load)
             }
-        return self._build_pyir_read_prologue(
+        # A condition-bound name has no pre-loop value to promote: the
+        # condition's own binding mints its row.
+        condition_bound = self.session_data.while_condition_bound_vars.get(id(node), ())
+        # Callee-hidden writes first: the write_arg prologue below promotes a
+        # protocol root's leaves through the cells these legs mint.
+        return self._build_while_cond_callee_leg_stmts(
+            node, reload=False
+        ) + self._build_pyir_read_prologue(
             node,
-            write_args,
+            [var for var in write_args if var not in condition_bound],
             helper="pyir_promote_while_carried_arg",
             condition_read=condition_read,
             attr_paths=self._while_cond_carried_attr_paths(node),
             attr_paths_kwarg="condition_attr_paths",
         )
 
-    @staticmethod
-    def _region_facts_tag(node: "ast.For | ast.While") -> "ast.Call | None":
+    def _region_facts_tag(self, node: "ast.For | ast.While") -> "ast.Call | None":
         """The ``pyir_tag_region_attr_writes`` decorator call carrying the
         declared write facts of *node*'s ORIGINAL body: the ``(base, attr)``
         pairs it assigns directly, the ``(base, method)`` pairs it calls on
         Name-rooted receiver paths, and the ``(func_name, arg_base)`` pairs it
-        calls as free functions with a Name-rooted first argument; ``None``
-        with no facts."""
+        calls as free functions with a Name-rooted first argument, and the
+        ``(path, verdict)`` identity re-point facts of the places it stores
+        (see :func:`_collect_dead_on_entry_paths`); ``None`` with no facts."""
         attr_writes = sorted(_collect_direct_attr_write_pairs(node.body))
-        method_calls = sorted(_collect_receiver_method_call_pairs(node.body))
+        method_calls = sorted(
+            _collect_receiver_method_call_pairs(node.body)
+            | _collect_subscript_store_pairs(node.body)
+        )
         free_calls = sorted(_collect_free_call_arg_pairs(node.body))
-        if not (attr_writes or method_calls or free_calls):
+        captured = (
+            self._pyir_identity_captured_stack[-1]
+            if self._pyir_identity_captured_stack
+            else frozenset()
+        )
+        dead_on_entry = _collect_dead_on_entry_paths(node.body, captured)
+        if not (attr_writes or method_calls or free_calls or dead_on_entry):
             return None
 
-        def _pairs_tuple(pairs: "list[tuple[str, str]]") -> "ast.Tuple":
+        def _pairs_tuple(pairs: "list[tuple[str, Any]]") -> "ast.Tuple":
             return ast.Tuple(
                 elts=[
                     ast.Tuple(
@@ -3246,11 +4182,11 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 _pairs_tuple(attr_writes),
                 _pairs_tuple(method_calls),
                 _pairs_tuple(free_calls),
+                _pairs_tuple(list(dead_on_entry)),
             ],
             keywords=[],
         )
         ast.copy_location(tag, node)
-        ast.fix_missing_locations(tag)
         return tag
 
     @override
@@ -3318,6 +4254,14 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         ):
             needs_prologue.append(liveout_carry)
             bare_first_use[liveout_carry] = True
+        # A condition-bound name (while-test walrus, nothing bound before the
+        # loop) enters the body as a ``None`` placeholder: force its prologue
+        # so the body binds it to a load of the row the condition minted.
+        condition_bound = self.session_data.while_condition_bound_vars.get(id(node), ())
+        for var in condition_bound:
+            if var in write_args and var not in bare_first_use:
+                needs_prologue.append(var)
+                bare_first_use[var] = True
         # Re-load the same declared carried attr paths at the after-block top:
         # a cross-region use of the before-block SSA would break dominance.
         attr_paths: "dict[str, tuple[tuple[str, ...], ...]]" = {}
@@ -3331,16 +4275,23 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     )
         # WHOLE-Name-rebound fact (list carry gate): a rebound name marks a genuine
         # loop-carried list; element-only writes keep the watched-choke lifecycle.
-        whole_rebound = {
-            var: var in _whole_name_rebound_names(node.body) for var in needs_prologue
-        }
-        return self._build_pyir_read_prologue(
+        _rebound_whole_names = _whole_name_rebound_names(node.body)
+        whole_rebound = {var: var in _rebound_whole_names for var in needs_prologue}
+        # The callee-written condition legs re-load here for the same reason
+        # as the declared ones: the before-block load does not dominate.
+        callee_leg_stmts: list[ast.stmt] = []
+        if isinstance(node, ast.While):
+            callee_leg_stmts = self._build_while_cond_callee_leg_stmts(
+                node, reload=True
+            )
+        return callee_leg_stmts + self._build_pyir_read_prologue(
             node,
             needs_prologue,
             bare_first_use=bare_first_use,
             attr_paths=attr_paths,
             attr_paths_kwarg="carried_attr_paths",
             whole_rebound=whole_rebound,
+            condition_bound=set(condition_bound),
         )
 
     @classmethod
@@ -3505,10 +4456,20 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         attr_paths: "dict[str, tuple[tuple[str, ...], ...]] | None" = None,
         attr_paths_kwarg: str = "condition_attr_paths",
         whole_rebound: "dict[str, bool] | None" = None,
+        condition_bound: "set[str] | None" = None,
     ) -> list[ast.stmt]:
         read_stmts: list[ast.stmt] = []
         for var in write_args:
             keywords: list[ast.keyword] = []
+            # A while-condition walrus target with no pre-loop binding: the
+            # body-entry hook binds it to a load of the condition's row.
+            if condition_bound and var in condition_bound:
+                keywords.append(
+                    ast.keyword(
+                        arg="condition_bound",
+                        value=ast.Constant(value=True),
+                    )
+                )
             # Only ``pyir_promote_loop_body_arg`` reads ``whole_rebound``, and
             # only the True case changes behaviour (the list-carry gate).
             if whole_rebound is not None and whole_rebound.get(var):
@@ -3570,7 +4531,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=var, ctx=ast.Store())],
                 value=pyir_read_call,
             )
-            ast.fix_missing_locations(read_stmt)
             read_stmts.append(read_stmt)
         return read_stmts
 
@@ -4364,7 +5324,6 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                         value=self._target_as_load(node.value.func),
                     )
                 ]
-
             pyir_call = ast.Call(
                 func=_create_runtime_attribute(
                     "pyir_assign",
@@ -4384,7 +5343,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[_deepcopy_ast_root(target)],
                 value=pyir_call,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(reassign), node))
+            stmts.append(ast.copy_location(reassign, node))
         return stmts
 
     def _build_generation_probe_stmts(
@@ -4429,7 +5388,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     keywords=[],
                 )
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(probe), node))
+            stmts.append(ast.copy_location(probe, node))
         return stmts
 
     def _insert_pyir_attr_reads(
@@ -4538,7 +5497,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=local_var, ctx=ast.Store())],
                 value=pyir_read_call,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(read_stmt), node))
+            stmts.append(ast.copy_location(read_stmt, node))
 
         # ----- (2) obj.X reads using local-var pattern (D1) -----
         # We avoid the write-back ``obj.X = pyir_read(...)`` shape here
@@ -4607,7 +5566,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=local_var, ctx=ast.Store())],
                 value=pyir_read_call,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(read_stmt), node))
+            stmts.append(ast.copy_location(read_stmt, node))
 
         # ----- (3) Name-Load reads using substitution pattern (D1) -----
         # We use a substitution pattern (``_pyir_name_N = pyir_read(...)``)
@@ -4643,6 +5602,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             self.session_data.counter += 1
             name_replacements[name] = local_var
 
+            _read_keywords = [
+                ast.keyword(arg="attach_ref", value=ast.Constant(value=False))
+            ]
+            if self._pyir_name_is_single_def(name):
+                _read_keywords.append(
+                    ast.keyword(arg="maybe_written", value=ast.Constant(value=False))
+                )
             pyir_read_call = ast.Call(
                 func=_create_runtime_attribute(
                     "pyir_read",
@@ -4653,15 +5619,13 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ast.Constant(value=name),
                     ast.Name(id=name, ctx=ast.Load()),
                 ],
-                keywords=[
-                    ast.keyword(arg="attach_ref", value=ast.Constant(value=False)),
-                ],
+                keywords=_read_keywords,
             )
             read_stmt = ast.Assign(
                 targets=[ast.Name(id=local_var, ctx=ast.Store())],
                 value=pyir_read_call,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(read_stmt), node))
+            stmts.append(ast.copy_location(read_stmt, node))
 
         # ----- (3b) bare GLOBAL Name reads: record-only observation -----
         # No staging choke exists for a module-level binding at any scope;
@@ -4693,7 +5657,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=local_var, ctx=ast.Store())],
                 value=obs_call,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(read_stmt), node))
+            stmts.append(ast.copy_location(read_stmt, node))
 
         # ----- (2b) deep-path reads: hop-wise three-address lowering -----
         # Each hop is choked on its runtime-resolved receiver (owner = the
@@ -4730,7 +5694,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     targets=[ast.Name(id=recv, ctx=ast.Store())],
                     value=root,
                 )
-                hoist = ast.copy_location(ast.fix_missing_locations(hoist), node)
+                hoist = ast.copy_location(hoist, node)
                 stmts.append(hoist)
                 call_hoist_stmts.append(hoist)
                 cur_path = recv
@@ -4803,9 +5767,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     targets=[ast.Name(id=local_var, ctx=ast.Store())],
                     value=value,
                 )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(read_stmt), node)
-                )
+                stmts.append(ast.copy_location(read_stmt, node))
                 hop_temps[hop_path] = local_var
                 recv, cur_path = local_var, hop_path
             for nid in node_ids:
@@ -4948,7 +5910,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=chain_name, ctx=ast.Store())],
                 value=node.value,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(rhs_hoist), node))
+            stmts.append(ast.copy_location(rhs_hoist, node))
 
         node_reinserted = False
 
@@ -4971,7 +5933,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[_deepcopy_ast_root(tgt)],
                 value=ast.Name(id=chain_name, ctx=ast.Load()),
             )
-            return ast.copy_location(ast.fix_missing_locations(single), node)
+            return ast.copy_location(single, node)
 
         iter_targets = list(node.targets) if chain_name is not None else targets
         for target in iter_targets:
@@ -5018,6 +5980,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     orelse=[],
                 )
 
+            # RMW witness for the post-store choke (see _rhs_loads_target_chain).
+            _rmw_chain = (
+                _rhs_loads_target_chain(target, node.value) if is_attr_target else None
+            )
             # target = pyir_read("target", target, owner=..., slot_name=...)
             # For dict-style subscripts (d['key']), use d.get('key') to
             # avoid KeyError on first-time key insertion.
@@ -5064,6 +6030,62 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             # target = pyir_assign(path, _old, target, __file__, lineno,
             #                      owner=..., slot_name=...)
             target_load2 = self._target_as_load(target)
+            assign_kwargs = [_deepcopy_ast_root(kw) for kw in slot_kwargs]
+            # Declare a direct-call RHS's callee for RE-BOUND names too, same
+            # as on the first-def path: the runtime re-proves the allocation
+            # (plain ``__new__``, exact type) before recording anything, so a
+            # re-bound ``t = Tmp()`` gets its per-field birth facts instead of
+            # silently carrying the fields (the rebound-name lock).  Dunder
+            # roots are this preprocessor's own executors, never a user ctor.
+            _rebind_callee_root = (
+                self._callee_root_name(node.value.func)
+                if isinstance(node.value, ast.Call)
+                else None
+            )
+            # ATTRIBUTE targets carry the same witness (``self.st = mk()``
+            # first-assigned in a loop body): the callee chain must not run
+            # THROUGH the target's own path (``self.st = self.st.clone()`` is a
+            # chain via the binding, never an allocation witness).
+            # The callee expression to declare, or None when no witness applies.
+            _rhs_ctor_callee: ast.expr | None = None
+            if (
+                isinstance(node.value, ast.Call)
+                and _rebind_callee_root is not None
+                and not _rebind_callee_root.startswith("__")
+            ):
+                _rhs_ctor_witness_ok = False
+                if isinstance(target, ast.Name):
+                    _rhs_ctor_witness_ok = _rebind_callee_root != target.id
+                elif isinstance(target, ast.Attribute):
+                    _tgt_chain_w = _pure_attr_chain(target)
+                    _callee_chain_w = _pure_attr_chain(node.value.func)
+                    _rhs_ctor_witness_ok = _tgt_chain_w is not None and not (
+                        _callee_chain_w is not None
+                        and _callee_chain_w[: len(_tgt_chain_w)] == _tgt_chain_w
+                    )
+                if _rhs_ctor_witness_ok:
+                    _rhs_ctor_callee = node.value.func
+            _rhs_ctor_kws: list[ast.keyword] = (
+                [
+                    ast.keyword(
+                        arg="rhs_ctor",
+                        value=self._target_as_load(_rhs_ctor_callee),
+                    )
+                ]
+                if _rhs_ctor_callee is not None
+                else []
+            )
+            if _rhs_ctor_kws:
+                assign_kwargs = assign_kwargs + [
+                    _deepcopy_ast_root(kw) for kw in _rhs_ctor_kws
+                ]
+            if _rmw_chain is not None:
+                assign_kwargs = assign_kwargs + [
+                    ast.keyword(arg="rmw_self", value=ast.Constant(value=True)),
+                    ast.keyword(
+                        arg="rmw_path", value=ast.Constant(value=".".join(_rmw_chain))
+                    ),
+                ]
             pyir_call = ast.Call(
                 func=_create_runtime_attribute(
                     "_pyir_post_attr_assign" if is_attr_target else "pyir_assign",
@@ -5077,7 +6099,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ast.Constant(value=self.session_data.file_name),
                     ast.Constant(value=lineno),
                 ],
-                keywords=[_deepcopy_ast_root(kw) for kw in slot_kwargs],
+                keywords=assign_kwargs,
             )
             if is_attr_target:
                 assign_tmp_name = f"_pyir_assign_{self.session_data.counter}"
@@ -5117,16 +6139,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 # keep it bare through the call-boundary pass.
                 hasattr_test._pyir_synth = True  # type: ignore[attr-defined]
                 guarded_body: list[ast.stmt] = [
-                    *(
-                        ast.copy_location(ast.fix_missing_locations(s), node)
-                        for s in read_stmts
-                    ),
-                    ast.copy_location(ast.fix_missing_locations(capture_old), node),
+                    *(ast.copy_location(s, node) for s in read_stmts),
+                    ast.copy_location(capture_old, node),
                     _orig_stmt_for(target),
-                    *(
-                        ast.copy_location(ast.fix_missing_locations(s), node)
-                        for s in reassign_stmts
-                    ),
+                    *(ast.copy_location(s, node) for s in reassign_stmts),
                 ]
                 # First-def branch: the plain assignment plus a trace-only note
                 # recording the binding-position fact (read-before-set).
@@ -5143,12 +6159,24 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                             ast.Constant(value=target.attr),
                             self._target_as_load(target),
                         ],
-                        keywords=[],
+                        keywords=[_deepcopy_ast_root(kw) for kw in _rhs_ctor_kws]
+                        + [
+                            ast.keyword(
+                                arg="site",
+                                value=ast.Tuple(
+                                    elts=[
+                                        ast.Constant(value=self.session_data.file_name),
+                                        ast.Constant(value=lineno),
+                                    ],
+                                    ctx=ast.Load(),
+                                ),
+                            )
+                        ],
                     )
                 )
                 fallback_body: list[ast.stmt] = [
                     _orig_stmt_for(target),
-                    ast.copy_location(ast.fix_missing_locations(note_call), node),
+                    ast.copy_location(note_call, node),
                 ]
                 if_guard: ast.stmt = ast.If(
                     test=hasattr_test,
@@ -5198,16 +6226,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     )
                     if_guard = ast.If(
                         test=is_prop_test,
-                        body=[
-                            ast.copy_location(
-                                ast.fix_missing_locations(prop_store), node
-                            )
-                        ],
+                        body=[ast.copy_location(prop_store, node)],
                         orelse=[if_guard],
                     )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(if_guard), node)
-                )
+                stmts.append(ast.copy_location(if_guard, node))
             else:
                 # A statically in-scope Name can be UNBOUND at run time (prior
                 # ``del`` / failed bind): seed ``_pyir_old = None`` on unbound read.
@@ -5217,11 +6239,8 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 )
                 guarded_read = ast.Try(
                     body=[
-                        *(
-                            ast.copy_location(ast.fix_missing_locations(s), node)
-                            for s in read_stmts
-                        ),
-                        ast.copy_location(ast.fix_missing_locations(capture_old), node),
+                        *(ast.copy_location(s, node) for s in read_stmts),
+                        ast.copy_location(capture_old, node),
                     ],
                     handlers=[
                         ast.ExceptHandler(
@@ -5233,24 +6252,15 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                                 ctx=ast.Load(),
                             ),
                             name=None,
-                            body=[
-                                ast.copy_location(
-                                    ast.fix_missing_locations(set_old_none), node
-                                )
-                            ],
+                            body=[ast.copy_location(set_old_none, node)],
                         )
                     ],
                     orelse=[],
                     finalbody=[],
                 )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(guarded_read), node)
-                )
+                stmts.append(ast.copy_location(guarded_read, node))
                 stmts.append(_orig_stmt_for(target))  # original assignment
-                stmts.extend(
-                    ast.copy_location(ast.fix_missing_locations(s), node)
-                    for s in reassign_stmts
-                )
+                stmts.extend(ast.copy_location(s, node) for s in reassign_stmts)
 
         if len(stmts) == 0:
             return node
@@ -5274,34 +6284,154 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         ast.BitAnd: "and",
     }
 
-    def _inplace_binop_stmt(
-        self, node: ast.AugAssign, base_name: "str | None" = None
+    def _subscript_store_stmt(
+        self,
+        target: ast.Subscript,
+        value: ast.expr,
+        lineno: int,
+        col_offset: int,
     ) -> ast.stmt:
-        """``target op= value`` -> ``target = _pyir_inplace_binop("op", target,
-        value)``: value-identical (CPython's in-place protocol), with the dunder
-        routed through the call boundary (operator dispatch has no ast.Call).
-        *base_name* substitutes a pre-walrus anchor temp for the target load
-        (Python loads the base before a same-statement walrus store)."""
+        """``_pyir_subscript_store(<base>, <key>, <value>)``: the one store
+        choke every instrumented subscript target goes through.
+
+        Which owners need more than a native store is a RUNTIME fact -- a
+        tracked dict, a staged value, an opaque class whose ``__setitem__``
+        hides receiver writes -- so the rewrite emits a single shape and the
+        runtime picks.
+        """
+        return ast.Expr(
+            value=ast.Call(
+                func=_create_runtime_attribute(
+                    "_pyir_subscript_store",
+                    lineno=lineno,
+                    col_offset=col_offset,
+                ),
+                args=[
+                    self._target_as_load(target.value),
+                    _deepcopy_ast_root(target.slice),
+                    value,
+                ],
+                keywords=[],
+            )
+        )
+
+    @staticmethod
+    def _operator_operands(node: ast.AST) -> "list[ast.expr] | None":
+        """The operand expressions of an operator node (``BinOp``, ``UnaryOp``,
+        ``BoolOp``, ``Compare``), whose evaluation dispatches the operands'
+        dunder methods; ``None`` for any other node."""
+        if isinstance(node, ast.BinOp):
+            return [node.left, node.right]
+        if isinstance(node, ast.UnaryOp):
+            return [node.operand]
+        if isinstance(node, ast.BoolOp):
+            return list(node.values)
+        if isinstance(node, ast.Compare):
+            return [node.left, *node.comparators]
+        return None
+
+    @classmethod
+    def _is_literal_operand(cls, node: ast.expr) -> bool:
+        """A constant, or an operator node over constants only (``-1``,
+        ``1 + 1``): its dunders are the builtin types' own."""
+        if isinstance(node, ast.Constant):
+            return True
+        operands = cls._operator_operands(node)
+        return operands is not None and all(
+            cls._is_literal_operand(operand) for operand in operands
+        )
+
+    @classmethod
+    def _augassign_rhs_may_run_user_code(cls, value: ast.expr) -> bool:
+        """Whether evaluating the RHS of ``target op= value`` can run user
+        code (a call, a descriptor or ``__getitem__`` read, a walrus, an
+        await/yield, or an operator whose operand may be a user object with
+        its own dunder) and so write the target's place before the binop
+        reads it.  A literal, a bare name, or an operator over literals
+        cannot."""
+        for sub in ast.walk(value):
+            if isinstance(
+                sub,
+                (
+                    ast.Call,
+                    ast.Attribute,
+                    ast.Subscript,
+                    ast.NamedExpr,
+                    ast.Await,
+                    ast.Yield,
+                    ast.YieldFrom,
+                ),
+            ):
+                return True
+            operands = cls._operator_operands(sub)
+            if operands is not None and not all(
+                cls._is_literal_operand(operand) for operand in operands
+            ):
+                return True
+        return False
+
+    def _inplace_binop_expr(
+        self, node: ast.AugAssign, base_name: "str | None" = None
+    ) -> ast.Call:
+        """The VALUE half of ``target op= value``:
+        ``_pyir_inplace_binop("op", target, value)`` -- value-identical to
+        CPython's in-place protocol, with the resolved dunder routed through
+        the call boundary (operator dispatch has no ``ast.Call`` of its own,
+        so a user-class ``__iadd__`` mutating its receiver would otherwise go
+        unobserved).  *base_name* substitutes a pre-walrus anchor temp for the
+        target load (Python loads the base before a same-statement walrus
+        store)."""
         base_load: ast.expr = (
             ast.Name(id=base_name, ctx=ast.Load())
             if base_name is not None
             else self._target_as_load(node.target)
         )
-        call = ast.Call(
+        # Python captures the old target value before evaluating the RHS.
+        # A watched meta scalar otherwise materializes only in the binop,
+        # after an RHS call may have promoted and changed its place. Anchor
+        # here, as the first argument evaluation, to preserve that read.
+        # Only an RHS that can run user code needs it; elsewhere the anchor
+        # would be a second load of the same cell.
+        if self._augassign_rhs_may_run_user_code(node.value):
+            base_load = ast.Call(
+                func=_create_runtime_attribute(
+                    "_pyir_anchor_statement_read",
+                    lineno=node.lineno,
+                    col_offset=node.col_offset,
+                ),
+                args=[base_load],
+                keywords=[],
+            )
+        args = [
+            ast.Constant(value=self._AUGASSIGN_OP_KEYS[type(node.op)]),
+            base_load,
+            _deepcopy_ast_root(node.value),
+        ]
+        if isinstance(node.op, ast.BitOr):
+            # ``d |= other``: the funnel's dict arm names the target in its key
+            # wall (the only arm that consumes a label).
+            args.append(ast.Constant(value=self._target_to_path_str(node.target)))
+        return ast.Call(
             func=_create_runtime_attribute(
                 "_pyir_inplace_binop",
                 lineno=node.lineno,
                 col_offset=node.col_offset,
             ),
-            args=[
-                ast.Constant(value=self._AUGASSIGN_OP_KEYS[type(node.op)]),
-                base_load,
-                _deepcopy_ast_root(node.value),
-            ],
+            args=args,
             keywords=[],
         )
-        stmt = ast.Assign(targets=[_deepcopy_ast_root(node.target)], value=call)
-        return ast.copy_location(ast.fix_missing_locations(stmt), node)
+
+    def _inplace_binop_stmt(
+        self, node: ast.AugAssign, base_name: "str | None" = None
+    ) -> ast.stmt:
+        """The STORE half for a NON-subscript target: ``target = <value half>``.
+        A subscript target stores through :meth:`_subscript_store_stmt`
+        instead, so its owner can be classified at run time."""
+        stmt = ast.Assign(
+            targets=[_deepcopy_ast_root(node.target)],
+            value=self._inplace_binop_expr(node, base_name),
+        )
+        return ast.copy_location(stmt, node)
 
     def _insert_pyir_augassign(
         self, node: ast.AugAssign, base_anchor: "str | None" = None
@@ -5359,6 +6489,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 orelse=[],
             )
 
+        # An in-place op always reads its target: the post-store choke
+        # carries the RMW witness for an attribute target.
+        _aug_chain = _pure_attr_chain(target) if is_attr_target else None
         # target = pyir_read("target", target, owner=..., slot_name=...)
         # (load before the += computation)
         target_load_for_read = self._target_as_load(target)
@@ -5405,6 +6538,23 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         # target = pyir_assign(path, _old, target, __file__, lineno,
         #                      owner=..., slot_name=...)
         target_load2 = self._target_as_load(target)
+        assign_kwargs = [_deepcopy_ast_root(kw) for kw in slot_kwargs]
+        # An in-place op is a READ-MODIFY-WRITE by construction: ``target op=
+        # expr`` always reads ``target``'s own path before writing it back
+        # (unlike a plain ``=``, there is no RHS shape to scan -- the target
+        # itself IS the self-read).  Same witness, same audit, as the plain-
+        # assign path above; only pure Name-rooted attribute targets carry it
+        # (a subscripted target yields no witness and falls through to the
+        # promotion-entry gate instead, same as the plain-assign shape).
+        _tgt_chain = _aug_chain
+        if _tgt_chain is not None:
+            assign_kwargs = assign_kwargs + [
+                ast.keyword(arg="rmw_self", value=ast.Constant(value=True)),
+                ast.keyword(
+                    arg="rmw_path",
+                    value=ast.Constant(value=".".join(_tgt_chain)),
+                ),
+            ]
         pyir_call = ast.Call(
             func=_create_runtime_attribute(
                 "_pyir_post_attr_assign" if is_attr_target else "pyir_assign",
@@ -5418,7 +6568,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 ast.Constant(value=self.session_data.file_name),
                 ast.Constant(value=lineno),
             ],
-            keywords=[_deepcopy_ast_root(kw) for kw in slot_kwargs],
+            keywords=assign_kwargs,
         )
         if is_attr_target:
             assign_tmp_name = f"_pyir_assign_{self.session_data.counter}"
@@ -5439,18 +6589,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             ]
 
         native_stmts: list[ast.stmt] = [
-            *(
-                ast.copy_location(ast.fix_missing_locations(s), node)
-                for s in read_stmts
-            ),  # load from ref
-            ast.copy_location(
-                ast.fix_missing_locations(capture_old), node
-            ),  # capture old
+            *(ast.copy_location(s, node) for s in read_stmts),  # load from ref
+            ast.copy_location(capture_old, node),  # capture old
             self._inplace_binop_stmt(node, base_anchor),  # boundary-routed in-place op
-            *(
-                ast.copy_location(ast.fix_missing_locations(s), node)
-                for s in reassign_stmts
-            ),  # store + reload
+            *(ast.copy_location(s, node) for s in reassign_stmts),  # store + reload
         ]
         if not isinstance(target, ast.Attribute):
             return native_stmts
@@ -5471,19 +6613,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             keywords=[],
         )
         is_prop_test._pyir_synth = True  # type: ignore[attr-defined]
-        inplace_call = ast.Call(
-            func=_create_runtime_attribute(
-                "_pyir_inplace_binop",
-                lineno=lineno,
-                col_offset=node.col_offset,
-            ),
-            args=[
-                ast.Constant(value=self._AUGASSIGN_OP_KEYS[type(node.op)]),
-                self._target_as_load(target),
-                _deepcopy_ast_root(node.value),
-            ],
-            keywords=[],
-        )
+        # The shared builder: the same call shape as the non-property path,
+        # including the target label a dict ``|=`` names in its key wall.
+        inplace_call = self._inplace_binop_expr(node)
         prop_store = ast.Expr(
             value=ast.Call(
                 func=_create_runtime_attribute(
@@ -5501,10 +6633,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         )
         if_guard = ast.If(
             test=is_prop_test,
-            body=[ast.copy_location(ast.fix_missing_locations(prop_store), node)],
+            body=[ast.copy_location(prop_store, node)],
             orelse=native_stmts,
         )
-        return [ast.copy_location(ast.fix_missing_locations(if_guard), node)]
+        return [ast.copy_location(if_guard, node)]
 
     def _hoist_subscript_parts(
         self, node: ast.stmt, target: ast.Subscript
@@ -5523,9 +6655,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=cont_name, ctx=ast.Store())],
                 value=self._target_as_load(target.value),
             )
-            hoists.append(
-                ast.copy_location(ast.fix_missing_locations(cont_hoist), node)
-            )
+            hoists.append(ast.copy_location(cont_hoist, node))
             target.value = ast.Name(id=cont_name, ctx=ast.Load())
         key = target.slice
         if not isinstance(key, (ast.Name, ast.Constant, ast.Slice, ast.Tuple)):
@@ -5539,7 +6669,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=key_name, ctx=ast.Store())],
                 value=key_load,
             )
-            hoists.append(ast.copy_location(ast.fix_missing_locations(key_hoist), node))
+            hoists.append(ast.copy_location(key_hoist, node))
             target.slice = ast.Name(id=key_name, ctx=ast.Load())
         return hoists
 
@@ -5554,7 +6684,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
         )
 
     def _insert_pyir_subscript_assign(
-        self, node: ast.stmt, target: ast.Subscript
+        self, node: ast.Assign, target: ast.Subscript
     ) -> list[ast.stmt]:
         """Generate conditional pyir instrumentation for a subscript assignment."""
         lineno = node.lineno
@@ -5580,9 +6710,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=rhs_name, ctx=ast.Store())],
                 value=node.value,
             )
-            part_hoists.insert(
-                0, ast.copy_location(ast.fix_missing_locations(rhs_hoist), node)
-            )
+            part_hoists.insert(0, ast.copy_location(rhs_hoist, node))
             node.value = ast.Name(id=rhs_name, ctx=ast.Load())
 
         container_node = self._target_as_load(target.value)
@@ -5667,12 +6795,14 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             orelse=[],
         )
 
+        store = self._subscript_store_stmt(target, node.value, lineno, col_offset)
+
         return [
             *part_hoists,
-            ast.copy_location(ast.fix_missing_locations(pre_assign), node),
-            ast.copy_location(ast.fix_missing_locations(if_writeback), node),
-            node,
-            ast.copy_location(ast.fix_missing_locations(if_stmt), node),
+            ast.copy_location(pre_assign, node),
+            ast.copy_location(if_writeback, node),
+            ast.copy_location(store, node),
+            ast.copy_location(if_stmt, node),
         ]
 
     def _insert_pyir_subscript_augassign(
@@ -5768,12 +6898,16 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
             orelse=[],
         )
 
+        store = self._subscript_store_stmt(
+            target, self._inplace_binop_expr(node), lineno, col_offset
+        )
+
         return [
             *part_hoists,
-            ast.copy_location(ast.fix_missing_locations(pre_assign), node),
-            ast.copy_location(ast.fix_missing_locations(if_writeback), node),
-            self._inplace_binop_stmt(node),  # boundary-routed in-place op
-            ast.copy_location(ast.fix_missing_locations(if_post), node),
+            ast.copy_location(pre_assign, node),
+            ast.copy_location(if_writeback, node),
+            ast.copy_location(store, node),
+            ast.copy_location(if_post, node),
         ]
 
     def _make_rhs_pin(self, node: ast.Assign) -> "tuple[str, ast.stmt]":
@@ -5801,7 +6935,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 ],
             ),
         )
-        return tmp, ast.copy_location(ast.fix_missing_locations(pin), node)
+        return tmp, ast.copy_location(pin, node)
 
     def _decompose_unpack_assign(
         self,
@@ -5909,9 +7043,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     targets=[ast.Name(id=isprop_name, ctx=ast.Store())],
                     value=is_prop_test,
                 )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(isprop_assign), node)
-                )
+                stmts.append(ast.copy_location(isprop_assign, node))
                 flag_name = f"_pyir_has_{self.session_data.counter}"
                 self.session_data.counter += 1
                 has_flags[idx] = flag_name
@@ -5939,9 +7071,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                         ],
                     ),
                 )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(flag_assign), node)
-                )
+                stmts.append(ast.copy_location(flag_assign, node))
 
         def _maybe_guard(stmt: ast.stmt, idx: int) -> ast.stmt:
             """Wrap *stmt* in ``if <has-flag>:`` for possible-first-def attrs."""
@@ -5953,7 +7083,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 body=[stmt],
                 orelse=[],
             )
-            return ast.copy_location(ast.fix_missing_locations(guard), node)
+            return ast.copy_location(guard, node)
 
         def _guard_unbound_name(stmt: ast.stmt, on_unbound: list[ast.stmt]) -> ast.stmt:
             """Wrap a bare-name element's old-value read/capture so an unbound name
@@ -5976,7 +7106,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 orelse=[],
                 finalbody=[],
             )
-            return ast.copy_location(ast.fix_missing_locations(tried), node)
+            return ast.copy_location(tried, node)
 
         def _skip_guarded(stmt: ast.stmt, old_name: str) -> ast.stmt:
             """Wrap *stmt* in ``if <old_name> is not _PYIR_SKIP:`` (the
@@ -5993,7 +7123,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 ],
             )
             guarded = ast.If(test=guard, body=[stmt], orelse=[])
-            return ast.copy_location(ast.fix_missing_locations(guarded), node)
+            return ast.copy_location(guarded, node)
 
         def _pin_rhs() -> str:
             tmp, pin = self._make_rhs_pin(node)
@@ -6049,16 +7179,12 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     targets=[ast.Name(id=old_name, ctx=ast.Store())],
                     value=pre_call,
                 )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(pre_assign), node)
-                )
+                stmts.append(ast.copy_location(pre_assign, node))
                 writeback = ast.Assign(
                     targets=[_deepcopy_ast_root(elt)],
                     value=ast.Name(id=old_name, ctx=ast.Load()),
                 )
-                writeback = ast.copy_location(
-                    ast.fix_missing_locations(writeback), node
-                )
+                writeback = ast.copy_location(writeback, node)
                 stmts.append(_skip_guarded(writeback, old_name))
                 continue
             target_load = self._target_as_load(elt)
@@ -6076,7 +7202,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[_deepcopy_ast_root(elt)],
                 value=read_call,
             )
-            read_stmt = ast.copy_location(ast.fix_missing_locations(read_stmt), node)
+            read_stmt = ast.copy_location(read_stmt, node)
             if isinstance(elt, ast.Attribute):
                 stmts.append(_maybe_guard(read_stmt, idx))
             else:
@@ -6098,7 +7224,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[ast.Name(id=old_name, ctx=ast.Store())],
                 value=target_load,
             )
-            capture = ast.copy_location(ast.fix_missing_locations(capture), node)
+            capture = ast.copy_location(capture, node)
             flag = has_flags.get(idx)
             if flag is None:
                 # Bare name may be unbound (const_expr-branch first-def); seed
@@ -6110,11 +7236,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 stmts.append(
                     _guard_unbound_name(
                         capture,
-                        [
-                            ast.copy_location(
-                                ast.fix_missing_locations(name_else_seed), node
-                            )
-                        ],
+                        [ast.copy_location(name_else_seed, node)],
                     )
                 )
             else:
@@ -6125,11 +7247,9 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 guard = ast.If(
                     test=ast.Name(id=flag, ctx=ast.Load()),
                     body=[capture],
-                    orelse=[
-                        ast.copy_location(ast.fix_missing_locations(else_seed), node)
-                    ],
+                    orelse=[ast.copy_location(else_seed, node)],
                 )
-                stmts.append(ast.copy_location(ast.fix_missing_locations(guard), node))
+                stmts.append(ast.copy_location(guard, node))
 
         # --- Step 3: evaluate RHS into temp ---
         if rhs_temp_name is not None:
@@ -6164,7 +7284,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 keywords=[],
             )
         )
-        stmts.append(ast.copy_location(ast.fix_missing_locations(arity_check), node))
+        stmts.append(ast.copy_location(arity_check, node))
 
         # --- Step 4: decompose -- extract each element from temp ---
         n_elts = len(elts)
@@ -6211,9 +7331,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     targets=[ast.Name(id=elt_name, ctx=ast.Store())],
                     value=extract_value,
                 )
-                stmts.append(
-                    ast.copy_location(ast.fix_missing_locations(elt_hoist), node)
-                )
+                stmts.append(ast.copy_location(elt_hoist, node))
                 prop_store = ast.Expr(
                     value=ast.Call(
                         func=_create_runtime_attribute(
@@ -6235,14 +7353,10 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 )
                 branch = ast.If(
                     test=ast.Name(id=prop_flag, ctx=ast.Load()),
-                    body=[
-                        ast.copy_location(ast.fix_missing_locations(prop_store), node)
-                    ],
-                    orelse=[
-                        ast.copy_location(ast.fix_missing_locations(plain_store), node)
-                    ],
+                    body=[ast.copy_location(prop_store, node)],
+                    orelse=[ast.copy_location(plain_store, node)],
                 )
-                stmts.append(ast.copy_location(ast.fix_missing_locations(branch), node))
+                stmts.append(ast.copy_location(branch, node))
                 continue
             nest_root = elt.value if isinstance(elt, ast.Starred) else elt
             if isinstance(nest_root, ast.Name) and nest_root.id.startswith(
@@ -6260,13 +7374,26 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     args=[extract_value],
                     keywords=[],
                 )
-            extract = ast.Assign(
-                targets=[target_node],
-                value=extract_value,
-            )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(extract), node))
+            if isinstance(elt, ast.Subscript) and not self._is_subscript_skippable(elt):
+                # Same store choke as a single subscript target: the runtime
+                # decides native store vs boundary-routed ``__setitem__``.
+                extract: ast.stmt = self._subscript_store_stmt(
+                    elt, extract_value, lineno, col_offset
+                )
+            else:
+                extract = ast.Assign(
+                    targets=[target_node],
+                    value=extract_value,
+                )
+            stmts.append(ast.copy_location(extract, node))
 
         # --- Step 5: pyir_assign for each instrumented element ---
+        # One ``stmt_id`` for every element choke of THIS unpack: the assign
+        # choke's swap check (``a, b = b, a`` re-points the second target to the
+        # object whose fields the first target's copy already replaced) keys
+        # on it, so single-target assigns on the same line never pair up.
+        stmt_id = self.session_data.counter
+        self.session_data.counter += 1
         for idx, elt in instrumented:
             path_str = self._target_to_path_str(elt)
             target_load = self._target_as_load(elt)
@@ -6285,13 +7412,14 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                     ast.Constant(value=self.session_data.file_name),
                     ast.Constant(value=lineno),
                 ],
-                keywords=[_deepcopy_ast_root(kw) for kw in slot_kwargs],
+                keywords=[_deepcopy_ast_root(kw) for kw in slot_kwargs]
+                + [ast.keyword(arg="stmt_id", value=ast.Constant(value=stmt_id))],
             )
             reassign: ast.stmt = ast.Assign(
                 targets=[_deepcopy_ast_root(elt)],
                 value=pyir_call,
             )
-            reassign = ast.copy_location(ast.fix_missing_locations(reassign), node)
+            reassign = ast.copy_location(reassign, node)
             if isinstance(elt, ast.Subscript):
                 # Pre-hook-skipped elements record no facts and never fire
                 # another element access (single-subscript guard shape).
@@ -6320,7 +7448,7 @@ class PyIRDSLPreprocessor(DSLPreprocessor):
                 targets=[_deepcopy_ast_root(elt)],
                 value=fd_call,
             )
-            stmts.append(ast.copy_location(ast.fix_missing_locations(fd_stmt), node))
+            stmts.append(ast.copy_location(fd_stmt, node))
 
         if len(stmts) == 0:
             return node

@@ -47,7 +47,15 @@ import cutlass
 """
 CUTLASS EFC Framework
 """
-from ._helpers import log, maximum, minimum
+from ._helpers import (
+    ACTIVATION_FUNCTIONS,
+    SplitPart,
+    analysis_result_of,
+    check_accum_split_fragment,
+    log,
+    maximum,
+    minimum,
+)
 from ._phase import Phase
 from ._remap import torch_tensor_remap_modes
 from ._tensor import Tensor, Transport
@@ -60,6 +68,15 @@ if typing.TYPE_CHECKING:
     # import annotations`` keeps the parameter / attribute annotations
     # below as strings, so ``EFC`` is only resolved by type checkers.
     from ._base import EFC
+
+
+def _sigmoid_f32(xf):
+    """``1 / (1 + exp(-x))`` on a float32 fragment, the kernel's sigmoid.
+
+    Shared by ``Configuration.sigmoid`` and ``Configuration.silu`` so the
+    gated unit multiplies the unrounded float32 sigmoid.
+    """
+    return 1.0 / (1.0 + cutlass.cute.exp(-xf))
 
 
 class Configuration:
@@ -82,7 +99,7 @@ class Configuration:
     # Re-export each ``Transport`` member directly on the class so
     # user epilogue bodies can reach them via the ``efc_config``
     # parameter they already receive, without needing a separate
-    # ``from helpers.efc import Transport`` line:
+    # ``from cutlass.operators.providers.cutedsl.evt.efc import Transport`` line:
     #
     #     v = v + bias.load(via=efc_config.SYNC_GMEM_LOAD)
     #     D.store(v, via=efc_config.SYNC_GMEM_STORE)
@@ -187,6 +204,188 @@ class Configuration:
                 raise NotImplementedError(
                     f"accum() not implemented for phase {self.phase}"
                 )
+
+    def gated(self, gate_activation: str) -> object:
+        """The gated linear unit ``up * gate_activation(gate)``.
+
+        Splits the accumulator in two along N -- the gate half first, the
+        up half second -- and applies one of the built-in activations to
+        the gate::
+
+            D.store(efc_config.gated("silu"))    # SwiGLU
+
+        The result has half the accumulator's elements, so ``D`` is half
+        the output's N.
+
+        Clamped or per-half-scaled variants need the halves themselves;
+        use ``accum_split`` for those.
+
+        :param gate_activation: Name of the activation to gate with, one
+            of ``ACTIVATION_FUNCTIONS``.
+        :type gate_activation: str
+        :return: The gated result.
+        :raises ValueError: If ``gate_activation`` is not a built-in
+            activation.
+        """
+        if gate_activation not in ACTIVATION_FUNCTIONS:
+            raise ValueError(
+                f"gated() needs one of {ACTIVATION_FUNCTIONS}, got {gate_activation!r}."
+            )
+        gate, up = self.accum_split(2)
+        return up * getattr(self, gate_activation)(gate)
+
+    def swiglu(self) -> object:
+        """SwiGLU: ``up * silu(gate)``.  See ``gated``."""
+        return self.gated("silu")
+
+    def geglu(self) -> object:
+        """GeGLU: ``up * gelu(gate)``.  See ``gated``."""
+        return self.gated("gelu")
+
+    def reglu(self) -> object:
+        """ReGLU: ``up * relu(gate)``.  See ``gated``."""
+        return self.gated("relu")
+
+    def accum_split(self, num_parts: int) -> tuple:
+        """Split the accumulator into ``num_parts`` interleaved parts along N.
+
+        Part ``i`` holds the accumulator elements whose N index is
+        congruent to ``i`` modulo ``num_parts``::
+
+            gate, up = efc_config.accum_split(2)
+            D.store(up * efc_config.silu(gate))
+
+        Each part has ``1 / num_parts`` of the accumulator's elements, so
+        a tensor written from them is ``num_parts`` times narrower along N
+        than the accumulator tile.
+
+        :param num_parts: Number of interleaved parts, at least 2.
+        :type num_parts: int
+        :return: A ``num_parts``-tuple of accumulator parts.
+        :rtype: tuple
+        :raises ValueError: If ``num_parts`` is not a usable split factor
+            for the accumulator fragment.
+        """
+        # Validate before touching any phase state, so the check does not
+        # depend on the dispatch below.
+        if not isinstance(num_parts, int) or num_parts < 2:
+            raise ValueError(
+                f"accum_split() needs an integer num_parts >= 2, got {num_parts!r}."
+            )
+        log(f"Configuration.accum_split {self.phase = } {num_parts = }")
+
+        match self.phase:
+            case Phase.ParameterAnalysis:
+                # One narrowed thread-to-value map is built per kernel, so a
+                # second factor would leave one of the two sets of parts with
+                # a map built for the other's width.
+                previous = self.efc.accum_split_factor
+                if previous is not None and previous != num_parts:
+                    raise ValueError(
+                        f"An epilogue may use one accum_split factor; got "
+                        f"{previous} and {num_parts}."
+                    )
+                # Only phase running before the layouts are fixed, so record
+                # the split factor for the host-side output tile sizing.
+                self.efc.accum_split_factor = num_parts
+                # Marked dummies, so a store of any expression built from
+                # them records that its tensor tiles narrower along N.
+                return tuple(SplitPart(num_parts) for _ in range(num_parts))
+
+            case Phase.ThreadOperation:
+                return self._accum_split_fragment(num_parts)
+
+            case Phase.PyTorchEvaluation:
+                # The reference accumulator is (m, n, l), so split on mode 1.
+                # An indivisible extent would slice into unequal parts and
+                # surface later as an opaque shape mismatch; the thread
+                # phase rejects the same split, so match it here.
+                n = self.accum_value.shape[1]
+                if n % num_parts != 0:
+                    raise ValueError(
+                        f"accum_split({num_parts}) needs the accumulator's n "
+                        f"extent ({n}) to be a multiple of {num_parts}."
+                    )
+                return tuple(
+                    self.accum_value[:, i::num_parts, :] for i in range(num_parts)
+                )
+
+            case _:
+                raise NotImplementedError(
+                    f"accum_split() not implemented for phase {self.phase}"
+                )
+
+    def _accum_split_fragment(self, num_parts: int) -> tuple:
+        """Take ``num_parts`` strided views of the accumulator register fragment.
+
+        The fragment is one thread's compact run of N-consecutive elements,
+        so re-viewing it as ``(num_parts, n // num_parts)`` with stride ``(1, num_parts)`` puts
+        part ``i`` at ``[i, None]``.  Cutting the fragment
+        rather than the loaded ``TensorSSA`` keeps this in layout space,
+        where it emits no instructions.
+        """
+        if getattr(self.epilogue_context, "accum_split_across_lanes", False):
+            return self._accum_split_exchange(num_parts)
+        fragment = self.epilogue_context.acc_frag
+        # Normally already checked once per kernel by the operation; repeated
+        # here so a body reaching this directly still gets the same error.
+        n = check_accum_split_fragment(fragment, num_parts)
+        interleaved = cutlass.cute.make_tensor(
+            fragment.iterator,
+            cutlass.cute.make_layout(
+                shape=(num_parts, n // num_parts), stride=(1, num_parts)
+            ),
+        )
+        log(f"Configuration._accum_split_fragment interleaved = {interleaved!s}")
+        return tuple(
+            interleaved[i, None].load().to(self.efc.operation.epi_dtype)
+            for i in range(num_parts)
+        )
+
+    def _accum_split_exchange(self, num_parts: int) -> tuple:
+        """Gather each part from the lane that holds it.
+
+        Each thread's fragment holds only one part's columns, and each
+        aligned run of ``num_parts`` lanes (the lanes sharing
+        ``lane // num_parts``) holds the parts in order: this thread's
+        own part is ``lane % num_parts``, and the lane holding ``part``
+        at the same fragment slots is ``lane - own_part + part``
+        (established by ``accum_split_across_lanes``).  One index shuffle
+        per part and slot gathers all the parts; the fetched value is
+        that part by construction.  The lanes of a run gather the same
+        values, compute the same results, and store them through the
+        ``extend_split_n`` view, whose addresses alias for the whole run
+        -- the duplicate writes carry the same bytes.
+
+        The parts keep the fragment's full width: every slot yields a
+        result, so the store fragment equals the accumulator's, unlike
+        the in-thread split where a part is ``1 / num_parts`` of it.
+        """
+        epi_dtype = self.efc.operation.epi_dtype
+        fragment = self.epilogue_context.acc_frag
+        if fragment.element_type.width != 32:
+            raise NotImplementedError(
+                f"accum_split({num_parts}) across lanes shuffles 32-bit "
+                f"values, but the accumulator fragment holds "
+                f"{fragment.element_type.__name__}."
+            )
+        # The fragment is compact and address-ordered (checked once per
+        # kernel), so slot i of this thread's flat view pairs with slot i
+        # of the lanes holding the other parts.
+        # The shuffle moves one 32-bit element at a time.
+        n = cutlass.cute.size(fragment)
+        flat = cutlass.cute.make_tensor(fragment.iterator, cutlass.cute.make_layout(n))
+        lane = cutlass.cute.arch.lane_idx()
+        own_part = lane % num_parts
+        parts = []
+        for part in range(num_parts):
+            holder = lane - own_part + part
+            gathered = cutlass.cute.make_rmem_tensor(n, fragment.element_type)
+            for i in range(n):
+                gathered[i] = cutlass.cute.arch.shuffle_sync(flat[i], offset=holder)
+            parts.append(gathered.load().to(epi_dtype))
+        log(f"Configuration._accum_split_exchange {num_parts = } {n = }")
+        return tuple(parts)
 
     def remap_modes(
         self,
@@ -334,7 +533,7 @@ class Configuration:
         """Element-wise maximum of 2 tensors"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x, y)
             case Phase.ThreadOperation:
                 return maximum(x, y)
             case Phase.PyTorchEvaluation:
@@ -350,7 +549,7 @@ class Configuration:
         """Element-wise minimum of 2 tensors"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x, y)
             case Phase.ThreadOperation:
                 return minimum(x, y)
             case Phase.PyTorchEvaluation:
@@ -366,11 +565,32 @@ class Configuration:
     # - cutlass/python/cutlass_cppgen/epilogue/epilogue.py
     # - cutlass/python/cutlass_cppgen/backend/epilogue.py
 
+    @staticmethod
+    def _in_float32(x, f):
+        """Evaluate ``f`` on ``x`` widened to float32, rounded once to ``x``'s type.
+
+        The device evaluates exp, rcp and erf in float32 whatever the
+        element type, so a narrow activation is a float32 computation
+        with conversions around it.  Keeping one rounding, at the end,
+        is torch's rule for half-precision inputs (float32 "opmath"), so
+        a float16 or bfloat16 activation matches torch's bit for bit
+        when the float32 computations agree.  Rounding an intermediate
+        instead loses the result wherever that intermediate falls below
+        the narrow type's resolution.
+
+        :param x: Activation input, a fragment load of any float type.
+        :param f: The activation on a float32 input.
+        :return: ``f(x)`` in ``x``'s element type.
+        """
+        if x.dtype.width >= 32:
+            return f(x)
+        return f(x.to(cutlass.Float32)).to(x.dtype)
+
     def identity(self, x):
         """Identity activation function: f(x) = x"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
                 return x
             case Phase.PyTorchEvaluation:
@@ -384,7 +604,7 @@ class Configuration:
         """ReLU activation function: f(x) = maximum(0, x)"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
                 return maximum(x, self.full_like(x, 0))
             case Phase.PyTorchEvaluation:
@@ -400,7 +620,7 @@ class Configuration:
         """Leaky ReLU activation function: f(x) = maximum(0, x) + negative_slope * minimum(0, x)"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
                 # Use self.full_like to have all the computation done with
                 # the same type as x element type.
@@ -421,7 +641,7 @@ class Configuration:
         """Hyperbolic tangent activation function"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
                 return cutlass.cute.tanh(x)
             case Phase.PyTorchEvaluation:
@@ -437,15 +657,9 @@ class Configuration:
         """Sigmoid activation function: f(x) = 1 / (1 + exp(-x))"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
-                # sigmoid(x) = 1 / (1 + exp(-x))
-                # Equivalent to torch.sigmoid: compute in f32 and round
-                # once back to the element type, so an f16 sigmoid is
-                # bitwise-identical to torch's (which uses f32 opmath
-                # internally for half-precision inputs).
-                xf = x.to(cutlass.Float32) if x.dtype.width < 32 else x
-                return (1.0 / (1.0 + cutlass.cute.exp(-xf))).to(x.dtype)
+                return self._in_float32(x, _sigmoid_f32)
             case Phase.PyTorchEvaluation:
                 import torch
 
@@ -460,10 +674,12 @@ class Configuration:
         """SiLU (Swish) activation function: f(x) = x * sigmoid(x)"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
-                # silu(x) = x * sigmoid(x)
-                return x * self.sigmoid(x)
+                # Not ``x * self.sigmoid(x)``: that rounds the sigmoid to
+                # ``x``'s type first, and sigmoid(-17) is 4e-8, below
+                # float16's smallest subnormal step.
+                return self._in_float32(x, lambda xf: xf * _sigmoid_f32(xf))
             case Phase.PyTorchEvaluation:
                 import torch
 
@@ -477,7 +693,7 @@ class Configuration:
         """Hard Swish activation function: f(x) = x * relu6(x + 3) / 6"""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
                 # Use self.full_like to have all the computation done with
                 # the same type as x element type.
@@ -500,23 +716,27 @@ class Configuration:
         """GELU (Gaussian Error Linear Unit) activation function."""
         match self.phase:
             case Phase.ParameterAnalysis:
-                return 1
+                return analysis_result_of(x)
             case Phase.ThreadOperation:
-                # Use self.full_like to have all the computation done with
-                # the same type as x element type.
-                # GELU approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
-                # Using a simpler approximation for CuTe
-                sqrt_2_over_pi = self.full_like(x, 0.7978845608028654)
-                return (
-                    self.full_like(x, 0.5)
-                    * x
-                    * (
-                        self.full_like(x, 1)
-                        + cutlass.cute.tanh(
-                            sqrt_2_over_pi
-                            * (x + self.full_like(x, 0.044715) * x * x * x)
-                        )
-                    )
+                # The erf form, 0.5 * x * (1 + erf(x / sqrt(2))): the same
+                # gelu as the PyTorchEvaluation phase (``F.gelu``'s default)
+                # and as the plain ``gelu`` of the CUTLASS Python API
+                # (``cutlass::epilogue::thread::GELU``), so one epilogue
+                # vocabulary carries one gelu.  The tanh approximation is
+                # 4.8e-4 away at its worst (x = -2.7), which a gated
+                # unit multiplies by the unbounded up half.
+                #
+                # In float32 because ``1 + erf`` cancels for negative x:
+                # at float16 resolution the sum keeps a few ULPs of the
+                # true value, and a gated unit multiplies that error by
+                # the up half.
+                return self._in_float32(
+                    x,
+                    lambda xf: (
+                        xf
+                        * 0.5
+                        * (1.0 + cutlass.cute.math.erf(xf * 0.7071067811865476))
+                    ),
                 )
             case Phase.PyTorchEvaluation:
                 import torch

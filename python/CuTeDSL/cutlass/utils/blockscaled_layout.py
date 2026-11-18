@@ -385,8 +385,15 @@ def sm120_make_smem_layout_sfb(
     assert sf_vec_size == 16 or sf_vec_size == 32, "sf_vec_size must be 16 or 32"
     assert isinstance(tile_shape_mnk, tuple)
 
-    assert tile_shape_mnk[1] % blk_mn == 0, (  # type: ignore[operator]
-        "tile_shape_mnk[1] must be divisible by blk_mn"
+    # Below a chunk the layout describes that chunk's leading tile_n columns, so
+    # tile_n only has to land on the 32-row basic block. At or above a chunk the N
+    # mode still spans exactly blk_sf blocks, so a tile_n that is not a whole number
+    # of chunks would leave the layout covering fewer columns than the tile.
+    assert tile_shape_mnk[1] % 32 == 0 and (  # type: ignore[operator]
+        tile_shape_mnk[1] < blk_mn or tile_shape_mnk[1] % blk_mn == 0  # type: ignore[operator]
+    ), (
+        "tile_shape_mnk[1] must be a multiple of the 32-row SF basic block, and "
+        f"either below blk_mn={blk_mn} or a whole number of chunks"
     )
 
     assert tile_shape_mnk[2] % sf_vec_size == 0, (  # type: ignore[operator]
@@ -395,16 +402,19 @@ def sm120_make_smem_layout_sfb(
 
     mma_nsf = tiled_mma.shape_mnk[2] // sf_vec_size
 
-    mn_basic_block_shape = (32, 4)
+    # A chunk holds blk_mn=128 columns and is indivisible in SMEM, so a tile_n
+    # narrower than a chunk describes the leading tile_n columns of one chunk:
+    # the N atom shrinks to (32, tile_n/32) while every stride, including the
+    # K-mode chunk stride, still steps over whole chunks.
+    n_chunks = max(1, tile_shape_mnk[1] // blk_mn)  # type: ignore[operator]
+    n_atom_blocks = min(blk_sf, tile_shape_mnk[1] // 32)  # type: ignore[operator]
+
+    mn_basic_block_shape = (32, n_atom_blocks)
     mn_basic_block_stride = (16, 4)
     k_basic_block_shape = (sf_vec_size, mma_nsf)
     k_basic_block_stride = (0, 1)
 
-    assert tile_shape_mnk[1] % blk_mn == 0, (  # type: ignore[operator]
-        "tile_shape_mnk[1] must be divisible by blk_mn"
-    )
-
-    sSFA_shapeN = (mn_basic_block_shape, tile_shape_mnk[1] // blk_mn)  # type: ignore[operator]
+    sSFA_shapeN = (mn_basic_block_shape, n_chunks)
     sSF_strideN = (mn_basic_block_stride, blk_elems)
 
     assert tile_shape_mnk[2] % (blk_sf * mma_nsf) == 0, (
@@ -419,7 +429,7 @@ def sm120_make_smem_layout_sfb(
     sSF_strideK = (
         k_basic_block_stride,
         mma_nsf,
-        tile_shape_mnk[1] // blk_mn * blk_elems,  # type: ignore[operator]
+        n_chunks * blk_elems,
     )
 
     sSFA_shape = (sSFA_shapeN, sSFA_shapeK)
@@ -427,12 +437,17 @@ def sm120_make_smem_layout_sfb(
 
     smem_layout = cute.make_layout(sSFA_shape, stride=sSFA_stride)
 
+    # A stage always spans whole chunks, so its stride comes from the chunk
+    # count rather than the layout's cosize: a tile_n narrower than a chunk
+    # addresses only part of the chunk it sits in, and a cosize would place the
+    # next stage inside that same chunk.
+    k_chunks = tile_shape_mnk[2] // sf_vec_size // blk_sf  # type: ignore[operator]
+    stage_stride = n_chunks * blk_elems * k_chunks
+
     # (((Atom_Inst_M, Rest_M),(Atom_Inst_K, Rest_K)), MMA_M, MMA_K, STAGE)
     sfb_smem_layout_staged = cute.append(
         smem_layout,
-        cute.make_layout(
-            num_stages, stride=cute.cosize(cute.filter_zeros(smem_layout))
-        ),
+        cute.make_layout(num_stages, stride=stage_stride),
     )
 
     return sfb_smem_layout_staged

@@ -46,7 +46,11 @@ def make_warp_uniform(
 class IfOpRegion:
     """
     A context manager for if Op.
-    Automatically inserts `scf.yield([])` when exiting the context.
+    Automatically inserts `scf.yield([])` at the end of ``block`` when exiting
+    the context. The yield always goes into ``block`` itself; where the ``scf.if``
+    that owns ``block`` was inserted is decided by its creator.
+    Entering the context binds nothing; the MLIR block, insertion point and
+    location it works with are private.
     """
 
     __dsl_trace_time_ctxmgr__ = True
@@ -56,16 +60,13 @@ class IfOpRegion:
         block: ir.Block,
         *,
         loc: Optional[ir.Location] = None,
-        ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        self.block = block
-        self.insert_point = ir.InsertionPoint(self.block)
-        self.loc = loc
-        self.ip = ip
+        self._block = block
+        self._insert_point = ir.InsertionPoint(self._block)
+        self._loc = loc
 
-    def __enter__(self) -> ir.BlockArgumentList:
-        self.insert_point.__enter__()
-        return self.block.arguments
+    def __enter__(self) -> None:
+        self._insert_point.__enter__()
 
     def __exit__(
         self,
@@ -73,8 +74,8 @@ class IfOpRegion:
         exc_value: Optional[BaseException],
         traceback: object,
     ) -> None:
-        scf.yield_([], loc=self.loc, ip=self.ip)
-        self.insert_point.__exit__(exc_type, exc_value, traceback)
+        scf.yield_([], loc=self._loc, ip=self._insert_point)
+        self._insert_point.__exit__(exc_type, exc_value, traceback)
 
 
 @dsl_user_op
@@ -137,15 +138,15 @@ def elect_one(
     :rtype: IfOpRegion
 
     .. seealso::
-       - :func:`cute.arch.mbarrier_init` - Requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx` - Requires elect_one
-       - :func:`cute.arch.mbarrier_arrive_and_expect_tx` - Requires elect_one
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_arrive_and_expect_tx <cutlass.cute.arch.mbarrier_arrive_and_expect_tx>` - Requires elect_one
        - PTX ISA documentation on ``elect.sync``
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
     from cutlass import base_dsl
 
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= base_dsl.Arch.sm_90)
-    is_thread_leader = _nvvm.elect_sync()
+    is_thread_leader = _nvvm.elect_sync(loc=loc, ip=ip)
     if_op = scf.IfOp(is_thread_leader, loc=loc, ip=ip)
-    return IfOpRegion(if_op.then_block, loc=loc, ip=ip)
+    return IfOpRegion(if_op.then_block, loc=loc)

@@ -12,15 +12,13 @@
 from __future__ import annotations
 
 import ctypes
-import re
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional, Type, Union
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cuda as _cuda_dialect
 from cutlass.base_dsl import AddressSpace
-from cutlass.base_dsl.env_manager import get_prefix_dsl_libs
+from cutlass.cutlass_dsl.cutlass_env_manager import find_cute_dsl_runtime_library
 from cutlass.base_dsl.export import ExternalBinaryModule
 
 if TYPE_CHECKING:
@@ -75,49 +73,19 @@ def make_fake_stream(*, use_tvm_ffi_env_stream: bool = False) -> _FakeStream:
 
 
 def find_runtime_libraries(*, enable_tvm_ffi: bool = True) -> list[str]:
-    """
-    Find the runtime libraries that needs to be available for loading modules.
-
-    :param enable_tvm_ffi: Whether to enable TVM-FFI.
-    :type enable_tvm_ffi: bool, optional
-    :return: A list of runtime libraries that needs to be available for loading modules.
-    :rtype: list
-    """
-
-    def _get_cute_dsl_runtime_path() -> str | None:
-        libs = get_prefix_dsl_libs("CUTE_DSL")
-        if libs is None:
-            return None
-
-        # ':' before a path separator is a drive colon, not a separator.
-        if sys.platform.startswith("win32"):
-            libs = [p for p in re.split(r";|:(?![\\/])", libs) if p]  # type: ignore[assignment]
-        else:
-            libs = libs.split(":")  # type: ignore[assignment]
-
-        # MSVC drops the "lib" prefix.
-        runtime_name = (
-            "cute_dsl_runtime.dll"
-            if sys.platform.startswith("win32")
-            else "libcute_dsl_runtime.so"
-        )
-        for path in libs:
-            if path.endswith(runtime_name):
-                return path
-
-        return None
-
-    libs = []
-    cute_dsl_runtime_path = _get_cute_dsl_runtime_path()
-    if cute_dsl_runtime_path:
-        libs.append(cute_dsl_runtime_path)
+    """Find the runtime libraries required to load a compiled CuTe module."""
+    runtime_libraries: list[str] = []
+    cute_dsl_runtime = find_cute_dsl_runtime_library()
+    if cute_dsl_runtime is not None:
+        runtime_libraries.append(cute_dsl_runtime)
 
     if enable_tvm_ffi:
         import tvm_ffi
 
-        libs.append(tvm_ffi.libinfo.find_libtvm_ffi())
+        runtime_libraries.append(tvm_ffi.libinfo.find_libtvm_ffi())
 
-    return libs
+    return runtime_libraries
+
 
 # Keep runtime library handles alive so they remain visible to the DSO loader.
 _LOAD_MODULE_LIBS_CACHE: dict[str, ctypes.CDLL] = {}

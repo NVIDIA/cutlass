@@ -37,7 +37,7 @@ simultaneously:
   full preferred cluster, keeping all SMs busy.
 
 From the caller's perspective this Operator is identical to the non-preferred-cluster
-:class:`PersistentDenseGemmOperator` — it accepts the same
+:class:`Sm100PersistentDenseGemmOperator` — it accepts the same
 :class:`~cutlass.operators.arguments.GemmArguments` and the same
 :class:`~cutlass.operators.metadata.OperatorMetadata`.  The distinction is expressed
 solely through the :class:`~cutlass.operators.metadata.Sm100DesignMetadata` fields:
@@ -47,7 +47,7 @@ solely through the :class:`~cutlass.operators.metadata.Sm100DesignMetadata` fiel
 
 When ``fallback_cluster_shape`` is ``None`` or equal to ``cluster_shape`` the
 design metadata represents a regular single-cluster operator, handled by
-:class:`PersistentDenseGemmOperator`.
+:class:`Sm100PersistentDenseGemmOperator`.
 
 Usage example::
 
@@ -80,6 +80,7 @@ from math import prod
 from typing import TYPE_CHECKING
 
 import cutlass
+from cutlass.cutlass_dsl import Int32
 
 import cutlass.operators.utils.generate as generate
 from cutlass.operators.arch import TargetSm
@@ -88,20 +89,21 @@ from cutlass.operators.arguments import (
     EpilogueArguments,
     GemmArguments,
 )
+from cutlass.operators.arguments.tile_scheduler_settings import RasterOrder
 from cutlass.operators.metadata import (
     GemmOperandsMetadata,
     OperatorMetadata,
     Sm100DesignMetadata,
 )
 from cutlass.operators.metadata.design.tile_scheduler import (
-    CLCDynamicPersistentTileSchedulerMetadata,
-    StaticPersistentTileSchedulerMetadata,
+    CLCDynamicPersistentMetadata,
+    NoRasterizationMetadata,
+    NoReductionMetadata,
+    StaticPersistentMetadata,
+    TileSchedulerMetadata,
+    TileSwizzleRasterizationMetadata,
 )
 from cutlass.operators.mma import BlackwellTcgen05Mma
-from cutlass.operators.providers.cutedsl import CuTeDSLProvider
-from cutlass.operators.providers.cutedsl.integration_utils.mma import (
-    get_max_active_clusters,
-)
 from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
 from cutlass.operators.utils.common import tuple_to_string
 from cutlass.operators.utils.device import to_cuda_stream
@@ -110,7 +112,6 @@ from cutlass.operators.utils.tensor import (
     strides_to_layout_string,
 )
 
-from .implementations.operator_helpers import scheduler_metadata_to_enum
 from .implementations.sm100_persistent_preferred_cluster_impl import (
     PersistentDenseGemmPreferredClusterKernel,
 )
@@ -119,11 +120,20 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from cutlass.operators.artifact import CompiledArtifact
+    from cutlass.operators.device_properties import (
+        DeviceProperties,
+    )
 
 
-@CuTeDSLProvider.register
-class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
+class Sm100PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
     """Persistent batched dense GEMM with preferred cluster on SM100 Blackwell GPUs.
+
+    .. deprecated::
+        Superseded by
+        :class:`~cutlass.operators.providers.cutedsl.gemm.sm100_dense_gemm_universal.Sm100DenseGemmUniversalOperator`,
+        which offers the same preferred/fallback cluster designs. This class is
+        not registered with ``CuTeDSLProvider``, so ``get_operators`` does not
+        return it; generate its operators from the class directly.
 
     Launches with two cluster shapes simultaneously:
 
@@ -179,8 +189,8 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             fallback_cluster_shape_mn=fallback_cluster_shape_mn,
             use_tma_store=metadata.design.use_tma_store,
             epilogue_op=epilogue_op,
-            persistent_tile_scheduler_type=scheduler_metadata_to_enum(
-                metadata.design.tile_scheduler
+            persistent_tile_scheduler_type=(
+                metadata.design.tile_scheduler.persistence.arg_name()
             ),
         )
 
@@ -188,25 +198,14 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> CompiledArtifact:
         stream = cutlass.cute.runtime.make_fake_stream()
-
-        if self.impl.use_static_persistent_scheduler:
-            max_active_preferred_clusters = get_max_active_clusters(
-                self.impl.preferred_cluster_shape_mn
-            )
-            max_active_fallback_clusters = get_max_active_clusters(
-                self.impl.fallback_cluster_shape_mn
-            )
-        else:
-            max_active_preferred_clusters = None
-            max_active_fallback_clusters = None
-
         return self.cute_compile(
             self.impl,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
-            max_active_preferred_clusters,
-            max_active_fallback_clusters,
+            # Placeholders: querying real occupancy would need a GPU to compile.
+            Int32(0),
+            Int32(0),
             stream,
             self.impl.epilogue_op,
             target_sm=target_sm,
@@ -218,6 +217,8 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        *,
+        device_properties: DeviceProperties,
     ) -> None:
         stream = to_cuda_stream(stream)
 
@@ -227,6 +228,8 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
+            device_properties.max_active_clusters(self.impl.preferred_cluster_shape_mn),
+            device_properties.max_active_clusters(self.impl.fallback_cluster_shape_mn),
             stream,
         )
 
@@ -365,7 +368,9 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             alignment_bytes=16,
         )
 
-        if not PersistentDenseGemmPreferredClusterOperator._valid_operands(operands):
+        if not Sm100PersistentDenseGemmPreferredClusterOperator._valid_operands(
+            operands
+        ):
             return
 
         yield operands
@@ -474,7 +479,7 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
 
     @staticmethod
     def _valid_metadata(metadata: OperatorMetadata) -> bool:
-        if not PersistentDenseGemmPreferredClusterOperator._valid_operands(
+        if not Sm100PersistentDenseGemmPreferredClusterOperator._valid_operands(
             metadata.operands
         ):
             return False
@@ -486,12 +491,11 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
         if not design.use_fallback_cluster():
             return False
 
+        if not isinstance(design.tile_scheduler, TileSchedulerMetadata):
+            return False
         if not isinstance(
-            design.tile_scheduler,
-            (
-                CLCDynamicPersistentTileSchedulerMetadata,
-                StaticPersistentTileSchedulerMetadata,
-            ),
+            design.tile_scheduler.persistence,
+            (CLCDynamicPersistentMetadata, StaticPersistentMetadata),
         ):
             return False
 
@@ -501,11 +505,11 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             design.fallback_cluster_shape[1],
         )
 
-        if not PersistentDenseGemmPreferredClusterOperator._valid_cluster_shape(
+        if not Sm100PersistentDenseGemmPreferredClusterOperator._valid_cluster_shape(
             preferred_m, preferred_n
         ):
             return False
-        if not PersistentDenseGemmPreferredClusterOperator._valid_cluster_shape(
+        if not Sm100PersistentDenseGemmPreferredClusterOperator._valid_cluster_shape(
             fallback_m, fallback_n
         ):
             return False
@@ -547,7 +551,7 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
         epilogue_args: EpilogueArguments = None,
         target_sm: TargetSm | None = None,
         args: GemmArguments = None,
-    ) -> list[PersistentDenseGemmPreferredClusterOperator]:
+    ) -> list[Sm100PersistentDenseGemmPreferredClusterOperator]:
         """Return all valid preferred-cluster operator configurations matching *metadata_filter*.
 
         :param metadata_filter: Predicate applied to each candidate :class:`OperatorMetadata`.
@@ -576,11 +580,7 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             (preferred, fallback)
             for preferred in preferred_cluster_shapes
             for fallback in fallback_cluster_shapes
-            if (
-                preferred != fallback
-                and preferred[0] % fallback[0] == 0
-                and preferred[1] % fallback[1] == 0
-            )
+            if Sm100DesignMetadata.is_valid_fallback_cluster(preferred, fallback)
         ]
 
         design_params = {
@@ -593,8 +593,18 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
             # cluster_shape and fallback_cluster_shape are co-varied below.
             "use_tma_store": [True],
             "tile_scheduler": [
-                CLCDynamicPersistentTileSchedulerMetadata(),
-                StaticPersistentTileSchedulerMetadata(),
+                TileSchedulerMetadata(
+                    persistence=CLCDynamicPersistentMetadata(),
+                    reduction=NoReductionMetadata(),
+                    rasterization=NoRasterizationMetadata(),
+                ),
+                TileSchedulerMetadata(
+                    persistence=StaticPersistentMetadata(),
+                    reduction=NoReductionMetadata(),
+                    rasterization=TileSwizzleRasterizationMetadata(
+                        swizzle_size=(1,), raster_order=(RasterOrder.ALONG_M,)
+                    ),
+                ),
             ],
         }
 
@@ -625,13 +635,13 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
                     )
 
                     operator_name = (
-                        "cutedsl.PersistentDenseGemmPreferredClusterOperator_sm100"
+                        "cutedsl.Sm100PersistentDenseGemmPreferredClusterOperator"
                         "_{layout}"
                         "_A{A}_B{B}_out{out}_acc{acc}"
                         "_{num_cta}cta"
                         "_preferred{preferred}_fallback{fallback}"
                         "_tile{tile}"
-                        "_scheduler_{scheduler}"
+                        "_{scheduler}"
                         "{_tma_store}"
                     ).format(
                         layout=strides_to_layout_string(
@@ -647,9 +657,7 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
                         preferred=tuple_to_string(preferred_shape),
                         fallback=tuple_to_string(fallback_shape),
                         tile=tuple_to_string(design.tile_shape),
-                        scheduler=scheduler_metadata_to_enum(
-                            design.tile_scheduler
-                        ).name.lower(),
+                        scheduler=str(design.tile_scheduler),
                         _tma_store="_tma_store" if design.use_tma_store else "",
                     )
 
@@ -664,11 +672,11 @@ class PersistentDenseGemmPreferredClusterOperator(CuteDslOperator):
                         epilogue=None,
                     )
 
-                    if PersistentDenseGemmPreferredClusterOperator._valid_metadata(
+                    if Sm100PersistentDenseGemmPreferredClusterOperator._valid_metadata(
                         metadata
                     ) and metadata_filter(metadata):
                         operator_list.append(
-                            PersistentDenseGemmPreferredClusterOperator(metadata)
+                            Sm100PersistentDenseGemmPreferredClusterOperator(metadata)
                         )
 
         return operator_list

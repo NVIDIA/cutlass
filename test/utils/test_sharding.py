@@ -310,7 +310,7 @@ def pytest_collection_modifyitems(config, items):
             return None
 
     for item in items:
-        func_name = item.nodeid[: len(item.originalname) - len(item.name)]
+        func_name = item.nodeid[: -len(item.name)] + item.originalname
         params = item.callspec.params if hasattr(item, "callspec") else {}
 
         if item.get_closest_marker("skip"):

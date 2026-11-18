@@ -34,14 +34,18 @@ import cutlass.torch as cutlass_torch
 
 import cutlass.operators as ops
 from cutlass.operators.providers.cutedsl.gemm.sm100_static_persistent_efc import (
-    PersistentDenseGemmEFCOperator,
+    Sm100PersistentDenseGemmEFCOperator,
+)
+from cutlass.operators.providers.cutedsl.gemm.sm107_static_persistent_efc import (
+    Sm107PersistentDenseGemmEFCOperator,
 )
 from cutlass.operators.utils.device import (
     device_or_env_supports,
     device_or_env_target_sm,
 )
 
-from test_utils import assert_close_with_reference_conversion
+from test_utils import assert_close_with_reference_conversion, reference_device
+from test_utils.gemm import small_integer_gemm_inputs
 from test_utils.reference_check import get_torch_default_tolerances
 
 torch.manual_seed(2025)
@@ -103,7 +107,7 @@ def test_gemm_no_fusion(fixture_toggle_tvm_ffi):
     D = torch.empty((L, M, N), device="cuda", dtype=torch.float16)
 
     def metadata_filter(metadata):
-        return metadata.operator_class is PersistentDenseGemmEFCOperator
+        return metadata.operator_class is Sm100PersistentDenseGemmEFCOperator
 
     args = ops.GemmArguments(A, B, D, accumulator_type=torch.float16)
     operators = ops.get_operators(
@@ -113,6 +117,39 @@ def test_gemm_no_fusion(fixture_toggle_tvm_ffi):
     operators[0].run(args)
 
     reference = A @ B
+    assert_close_with_reference_conversion(D, reference, D.dtype)
+
+
+@pytest.mark.parametrize("d_dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and sm_100a or sm_100f",
+)
+def test_gemm_fusion_relu_fp32_accumulator(d_dtype):
+    """Bare relu works with BF16 inputs, FP32 accumulation, and either output type."""
+    A = torch.randint(-1, 2, (1, 128, 64), device="cuda", dtype=torch.bfloat16)
+    B = torch.randint(-1, 2, (1, 64, 128), device="cuda", dtype=torch.bfloat16)
+    D = torch.empty((1, 128, 128), device="cuda", dtype=d_dtype)
+    source = "def epi(accum): D = relu(accum); return D"
+    args = ops.GemmArguments(
+        A,
+        B,
+        D,
+        accumulator_type=torch.float32,
+        epilogue=ops.EpilogueArguments(source, D=D),
+    )
+    operators = ops.get_operators(
+        args,
+        target_sm=device_or_env_target_sm(),
+        metadata_filter=lambda metadata: (
+            metadata.operator_class is Sm100PersistentDenseGemmEFCOperator
+        ),
+    )
+    assert operators
+    operators[0].run(args)
+
+    # Integer inputs keep GEMM exact; evaluate ReLU before the output conversion.
+    reference = torch.relu(A.float() @ B.float())
     assert_close_with_reference_conversion(D, reference, D.dtype)
 
 
@@ -1220,6 +1257,63 @@ def test_gemm_fusion_scalar_sum_reduction(fixture_toggle_tvm_ffi):
     torch.testing.assert_close(total, ref_accum.sum().unsqueeze(0), rtol=1e-2, atol=1.0)
 
 
+@pytest.mark.parametrize(
+    "epi_str, dest_name, dest_shape, dest_fill, reference",
+    [
+        (
+            "def epi(accum): D = accum; total = sum(accum); return D, total",
+            "total",
+            (1,),
+            0.0,
+            lambda acc: acc.sum().unsqueeze(0),
+        ),
+        (
+            "def epi(accum): D = accum; col_max = max(accum, dim=[0]); return D, col_max",
+            "col_max",
+            (512,),
+            float("-inf"),
+            lambda acc: acc.amax(dim=0),
+        ),
+    ],
+    ids=["scalar_sum", "column_max"],
+)
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_fusion_reduction_with_direct_store(
+    epi_str, dest_name, dest_shape, dest_fill, reference, fixture_toggle_tvm_ffi
+):
+    """A reduction next to a D stored through ``SYNC_GMEM_STORE``.
+
+    When every written tensor takes the direct store, the accumulator keeps
+    its T2R register layout and the EFC kernel must not retile it (the
+    retile of an already-T2R fragment aliases every register 32 times).
+    The scalar sum came out 32x too large and the column max failed to
+    trace with a fragment shape mismatch before that was fixed.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float32)
+    dest = torch.full(dest_shape, dest_fill, device="cuda", dtype=torch.float32)
+    epi_args = ops.EpilogueArguments(
+        epi_str,
+        **{dest_name: dest},
+        D=ops.Store(D, via=ops.Transport.SYNC_GMEM_STORE),
+    )
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+    operators[0].run(args)
+    ref_accum = A.float() @ B.float()
+    torch.testing.assert_close(D, ref_accum)
+    # The integer-valued inputs make the sum exact up to atomic ordering.
+    torch.testing.assert_close(dest, reference(ref_accum), rtol=1e-2, atol=1.0)
+
+
 @pytest.mark.skipif(
     not device_or_env_supports("100f"),
     reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
@@ -1576,3 +1670,583 @@ def test_gemm_fusion_both_row_and_col_broadcast(
 
     reference = epi_ref(A @ B, row_bias, col_bias)
     assert_close_with_reference_conversion(D, reference, D.dtype)
+
+
+@pytest.mark.parametrize(
+    "dest_dtype, accepted",
+    [(torch.float32, True), (torch.bfloat16, False), (torch.float16, False)],
+    ids=["f32", "bf16", "f16"],
+)
+def test_gemm_efc_reduce_destination_must_be_32bit(dest_dtype, accepted):
+    """Reduce destinations must be 32-bit (see the EpilogueArguments docs):
+    discovery offers no operator for a narrower one instead of compiling a
+    fold that would narrow the result.  The f32 case is the positive
+    control that keeps the rejections from passing vacuously."""
+    M, N, K = 256, 256, 128
+    A = torch.empty((M, K), device="cpu", dtype=torch.float16)
+    B = torch.empty((K, N), device="cpu", dtype=torch.float16)
+    D = torch.empty((M, N), device="cpu", dtype=torch.float32)
+    col_max = torch.full((N,), float("-inf"), device="cpu", dtype=dest_dtype)
+
+    epi_str = (
+        "def epi(accum): D = accum; col_max = max(accum, dim=[0]); return D, col_max"
+    )
+    epi_args = ops.EpilogueArguments(epi_str, col_max=col_max, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args)
+    assert bool(operators) is accepted
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_efc_mixed_fp8_dtypes():
+    """Mixed fp8 A/B (e4m3 x e5m2) through a fused epilogue: the f8f6f4 MMA
+    kind decodes each operand's format independently."""
+    M, N, K, L = 256, 512, 128, 2
+    A, B, A_ref, B_ref = small_integer_gemm_inputs(
+        M, N, K, L, b_dtype=torch.float8_e5m2
+    )
+    D = torch.empty((L, M, N), device="cuda", dtype=torch.bfloat16)
+
+    epi_args = ops.EpilogueArguments("def epi(accum): D = relu(accum); return D", D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    reference = torch.relu(A_ref @ B_ref)
+    assert_close_with_reference_conversion(D, reference, D.dtype)
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and to be compiled with sm_100a or sm_100f",
+)
+def test_gemm_efc_fusion_narrow_store_wider_reduce():
+    """A reduce destination wider than every stored output (f32 column-max
+    with a bf16 D).  Pins two things: the tiling reference skips reduce
+    destinations, and the fold runs at the destination's f32 precision even
+    though the operator computes the epilogue in the bf16 out dtype."""
+    M, N, K = 512, 512, 512
+    device = reference_device()
+    A_ref = torch.randint(-1, 2, (M, K), device=device, dtype=torch.float32)
+    B_ref = torch.randint(-1, 2, (K, N), device=device, dtype=torch.float32)
+    A = A_ref.to(torch.float8_e4m3fn).cuda()
+    B = B_ref.to(torch.float8_e4m3fn).cuda()
+    D = torch.empty((M, N), device="cuda", dtype=torch.bfloat16)
+    # Max identity: start at -inf so atomic max composes correctly.
+    col_max = torch.full((N,), float("-inf"), device="cuda", dtype=torch.float32)
+
+    epi_str = (
+        "def epi(accum): D = accum; col_max = max(accum, dim=[0]); return D, col_max"
+    )
+    epi_args = ops.EpilogueArguments(epi_str, col_max=col_max, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    ref_accum = A_ref @ B_ref
+    assert_close_with_reference_conversion(D, ref_accum, D.dtype)
+    # The operator computes the epilogue in out.dtype (bf16), so the values
+    # entering the reduce are bf16-rounded; the fold itself runs at the
+    # destination's f32 precision.  (Integer-valued inputs make the bf16
+    # rounding exact here, but the reference states the true contract.)
+    epi_ref = ref_accum.to(torch.bfloat16).float()
+    assert_close_with_reference_conversion(col_max, epi_ref.amax(dim=0), col_max.dtype)
+
+
+# ---------------------------------------------------------------------------
+# SM107 (Rubin) fp8 EFC operator
+# ---------------------------------------------------------------------------
+@pytest.mark.skipif(
+    not device_or_env_supports("107f"),
+    reason="Requires the Rubin fp8 MMA (sm_107)",
+)
+def test_gemm_sm107_fp8_fusion():
+    """A scaled-relu epilogue fuses into an fp8 GEMM on Rubin.  Discovery is
+    pinned to the Rubin operator: the Blackwell EFC operator is family-portable
+    to sm107 and would otherwise be picked first."""
+    M, N, K, L = 512, 512, 512, 1
+    A, B, A_ref, B_ref = small_integer_gemm_inputs(M, N, K, L)
+    D = torch.empty((L, M, N), device="cuda", dtype=torch.bfloat16)
+
+    epi_str = "def epi(accum, alpha): D = relu(accum * alpha); return D"
+    epi_args = ops.EpilogueArguments(epi_str, D=D, alpha=2.0)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+
+    def rubin_efc_only(metadata):
+        return metadata.operator_class is Sm107PersistentDenseGemmEFCOperator
+
+    operators = ops.get_operators(
+        args, target_sm=device_or_env_target_sm(), metadata_filter=rubin_efc_only
+    )
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    reference = torch.relu((A_ref @ B_ref) * 2.0)
+    assert_close_with_reference_conversion(D, reference, D.dtype)
+
+
+def gated_data_types():
+    """(A/B, accumulator, D) combinations a gated epilogue supports.
+
+    Every A/B and accumulator pairing the operator declares in
+    ``_valid_ab_acc_combinations``, crossed with the D types it stores,
+    less two families:
+
+    * integer accumulators (Uint8/Int8 -> Int32), since a gate activation
+      on an integer accumulator is not meaningful;
+    * D wider than the accumulator, which the epilogue rejects on its own
+      ("Can not handle acc/d type combination"), independently of gating.
+    """
+    combinations = []
+    for ab_dtype, accumulator_type in [
+        (torch.float16, torch.float16),
+        (torch.float16, torch.float32),
+        (torch.bfloat16, torch.float32),
+        (torch.float8_e4m3fn, torch.float16),
+        (torch.float8_e4m3fn, torch.float32),
+        (torch.float8_e5m2, torch.float16),
+        (torch.float8_e5m2, torch.float32),
+    ]:
+        for d_dtype in [torch.float16, torch.bfloat16, torch.float32]:
+            if accumulator_type is torch.float16 and d_dtype is torch.float32:
+                continue
+            combinations.append((ab_dtype, accumulator_type, d_dtype))
+    return combinations
+
+
+def gated_problem_sizes():
+    """Problem sizes spanning many N tiles for a gated epilogue.
+
+    N grows rather than K.  N is the axis the narrowed store is tiled
+    along, so it is what exercises the tile offsets, whereas the gated
+    product is quadratic in K and would overflow a float16 D beyond a few
+    hundred K with the +/-1 operands used here.
+
+    Ordered by decreasing size.  This is the innermost parametrisation, so
+    the order repeats within every dtype group, and running each group's
+    longest case first is what keeps one from being picked up at the end
+    and extending the whole run by its own duration.  ``--dist=worksteal``
+    rebalances a bad split but cannot reorder work that has already
+    started, so the sort is what bounds the tail.
+    """
+    return [(512, 4096, 128, 2), (1024, 2048, 128, 1)]
+
+
+def gated_operands(M, N, K, L, ab_dtype, d_dtype):
+    """Build A, B and a half-width D.
+
+    ``randint`` cannot produce fp8, so the operands are drawn in float32
+    and cast.
+    """
+    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=torch.float32).to(ab_dtype)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=torch.float32).to(ab_dtype)
+    D = torch.empty((L, M, N // 2), device="cuda", dtype=d_dtype)
+    return A, B, D
+
+
+def gated_reference(A, B, accumulator_type, d_dtype, gate_fn):
+    """The gated result along the kernel's numeric path: accumulate, round
+    to the accumulator type, then gate the even N indices with the odd.
+
+    The gate is evaluated in float32 even though the kernel loads the
+    split parts into D's dtype: the kernel widens a narrow part back to
+    float32 for the activation and rounds once, torch's rule for
+    half-precision inputs, so a reference that gates at the storage
+    precision lands *farther* from the kernel.
+    """
+    accum = (A.float() @ B.float()).to(accumulator_type).float()
+    return (accum[..., 1::2] * gate_fn(accum[..., 0::2])).to(d_dtype)
+
+
+#: Each gate activation as the kernel computes it.  EFC's gelu is the erf
+#: form, torch's default.
+GATE_FUNCTIONS = {
+    "swiglu": torch.nn.functional.silu,
+    "geglu": torch.nn.functional.gelu,
+    "reglu": torch.nn.functional.relu,
+}
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="The gated epilogue is provided by the SM100 EFC operator",
+)
+@pytest.mark.parametrize("gate", ["swiglu", "geglu", "reglu"])
+def test_gemm_gated_linear_unit(gate, fixture_toggle_tvm_ffi):
+    """A gated linear unit fused onto a single MMA.
+
+    ``B`` holds the gate and up projections interleaved along N, so one
+    GEMM produces both and the epilogue pairs them.  ``D`` is therefore
+    half of B's N -- the one epilogue where the output is not the
+    accumulator's shape.
+    """
+    M, N, K, L = 256, 512, 128, 2
+    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((L, M, N // 2), device="cuda", dtype=torch.float16)
+
+    epi_str = f"def epi(accum): D = {gate}(accum); return D"
+    epi_args = ops.EpilogueArguments(epi_str, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    reference = gated_reference(A, B, torch.float32, D.dtype, GATE_FUNCTIONS[gate])
+
+    # The activations go through the hardware's fast transcendentals, which
+    # cannot be matched bit-for-bit.
+    rtol, atol = get_torch_default_tolerances()[D.dtype]
+    assert_close_with_reference_conversion(
+        D, reference, D.dtype, rtols=rtol, atols=atol
+    )
+
+
+def test_gemm_plain_epilogue_rejects_wrong_out_n():
+    """A wrong-N ``out`` fails before the epilogue is traced.
+
+    Tracing binds ``out``'s shape into the epilogue's shape propagation,
+    so without the pre-trace check the mismatch surfaces as a broadcast
+    error that names neither ``out`` nor B.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N - 12), device="cuda", dtype=torch.float16)
+
+    epi_args = ops.EpilogueArguments("def epi(accum): D = relu(accum); return D", D=D)
+    with pytest.raises(ValueError, match=rf"{N - 12}.*{N}"):
+        ops.GemmArguments(
+            A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+        )
+
+
+def test_gemm_gated_linear_unit_rejects_full_width_output():
+    """``out`` has to be half of B's N when the epilogue gates.
+
+    A full-width ``out`` is rejected while the epilogue is traced -- the
+    store cannot reconcile its own N with the gated value's -- rather than
+    silently leaving half the tensor unwritten.  The rejection names both
+    extents and the gating, which is what this matches on.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N), device="cuda", dtype=torch.float16)  # not halved
+
+    epi_args = ops.EpilogueArguments("def epi(accum): D = swiglu(accum); return D", D=D)
+    with pytest.raises(ValueError, match=rf"{N}.*{N // 2}.*gated"):
+        ops.GemmArguments(
+            A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+        )
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="The gated epilogue is provided by the SM100 EFC operator",
+)
+@pytest.mark.L0(False)
+@pytest.mark.parametrize("M, N, K, L", gated_problem_sizes())
+@pytest.mark.parametrize(
+    "ab_dtype, accumulator_type, d_dtype",
+    gated_data_types(),
+    ids=lambda dtype: str(dtype).removeprefix("torch."),
+)
+@pytest.mark.parametrize("gate", ["swiglu", "geglu", "reglu"])
+def test_gemm_gated_linear_unit_dtypes(
+    gate, ab_dtype, accumulator_type, d_dtype, M, N, K, L
+):
+    """A gated linear unit over every supported dtype, at MLP-sized N.
+
+    Excluded from L0: this is the whole ``gated_data_types`` matrix
+    crossed with problem sizes spanning many N tiles, which is where a
+    narrowed store's tile offsets are exercised but which costs far more
+    than the L0 budget allows.  ``test_gemm_gated_linear_unit`` remains
+    the L0 smoke test.
+    """
+    A, B, D = gated_operands(M, N, K, L, ab_dtype, d_dtype)
+
+    epi_str = f"def epi(accum): D = {gate}(accum); return D"
+    epi_args = ops.EpilogueArguments(epi_str, D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=accumulator_type, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    reference = gated_reference(A, B, accumulator_type, d_dtype, GATE_FUNCTIONS[gate])
+    rtol, atol = get_torch_default_tolerances()[d_dtype]
+    assert_close_with_reference_conversion(
+        D, reference, d_dtype, rtols=rtol, atols=atol
+    )
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="The gated epilogue is provided by the SM100 EFC operator",
+)
+def test_gemm_gated_linear_unit_offers_all_designs():
+    """Discovery offers a gated epilogue on every design a plain one gets.
+
+    The narrowed store follows the accumulator's own thread-to-value map
+    (in registers where the map permits, through a cross-lane gather
+    where each thread holds only one part's columns), so no design is
+    withheld from a gated epilogue: an MMA tiler M of 64 and 2-CTA below
+    an N tile of 128 store correctly.  Equality against the
+    plain-epilogue design set is what pins that no fusion-specific
+    filter exists.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+
+    def offered_designs(epilogue_source, out_n):
+        out = torch.empty((M, out_n), device="cuda", dtype=torch.float16)
+        args = ops.GemmArguments(
+            A,
+            B,
+            out,
+            accumulator_type=torch.float32,
+            epilogue=ops.EpilogueArguments(epilogue_source, D=out),
+        )
+        # (use_2cta_mma, MMA tiler M, MMA tiler N)
+        return {
+            (
+                o.metadata.design.use_2cta_mma,
+                o.metadata.design.tile_shape[0],
+                o.metadata.design.tile_shape[1],
+            )
+            for o in ops.get_operators(args, target_sm=device_or_env_target_sm())
+            if o.metadata.operator_class is Sm100PersistentDenseGemmEFCOperator
+        }
+
+    gated = offered_designs("def epi(accum): D = swiglu(accum); return D", N // 2)
+    plain = offered_designs("def epi(accum): D = relu(accum); return D", N)
+
+    assert gated == plain
+    # The families needing special store handling are present.
+    assert [design for design in gated if design[1] == 64]
+    assert [design for design in gated if design[0] and design[2] < 128]
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="The gated epilogue is provided by the SM100 EFC operator",
+)
+@pytest.mark.parametrize(
+    "family",
+    ["tiler_m_64", "2cta_tiler_n_below_128"],
+)
+def test_gemm_gated_linear_unit_design_families(family):
+    """The design families whose narrowed store needs its own handling.
+
+    An MMA tiler M of 64 gives each thread only one part's columns, so
+    the parts are gathered from other lanes; 2-CTA below an N tile of
+    128 sizes the store fragment from the accumulator's own map.  Both
+    families are selected here by their metadata rather than by taking
+    ``operators[0]``, so this coverage does not depend on how discovery
+    ranks the designs.
+    """
+
+    def wanted(design):
+        if family == "tiler_m_64":
+            return not design.use_2cta_mma and design.tile_shape[0] == 64
+        return design.use_2cta_mma and design.tile_shape[1] < 128
+
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N // 2), device="cuda", dtype=torch.float16)
+
+    epi_args = ops.EpilogueArguments("def epi(accum): D = swiglu(accum); return D", D=D)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = [
+        o
+        for o in ops.get_operators(args, target_sm=device_or_env_target_sm())
+        if o.metadata.operator_class is Sm100PersistentDenseGemmEFCOperator
+        and wanted(o.metadata.design)
+    ]
+    assert operators, f"no {family} design offered"
+    operators[0].run(args)
+
+    reference = gated_reference(A, B, torch.float32, D.dtype, GATE_FUNCTIONS["swiglu"])
+    rtol, atol = get_torch_default_tolerances()[D.dtype]
+    assert_close_with_reference_conversion(
+        D, reference, D.dtype, rtols=rtol, atols=atol
+    )
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="The gated epilogue is provided by the SM100 EFC operator",
+)
+def test_gemm_gated_linear_unit_rejects_direct_store():
+    """A gated output cannot use a direct (non-TMA) store transport.
+
+    The direct store drains the accumulator-shaped fragment at full
+    width and has no narrowed variant, so a gated output must go through
+    TMA.  The framework says so rather than storing the wrong elements,
+    and this checks the Python API surfaces that.
+    """
+    M, N, K = 256, 512, 128
+    A = torch.randint(-1, 2, (M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((M, N // 2), device="cuda", dtype=torch.float16)
+
+    epi_args = ops.EpilogueArguments(
+        "def epi(accum): D = swiglu(accum); return D",
+        D=ops.Store(D, via=ops.Transport.SYNC_GMEM_STORE),
+    )
+    args = ops.GemmArguments(A, B, D, accumulator_type=torch.float32, epilogue=epi_args)
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert len(operators) > 0
+
+    with pytest.raises(ValueError, match="accum_split"):
+        operators[0].run(args)
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="The gated epilogue is provided by the SM100 EFC operator",
+)
+def test_gemm_gated_linear_unit_beside_full_width_output():
+    """A gated output and a full-width one in the same epilogue.
+
+    D is half of B's N and E is all of it, so the kernel holds two
+    supplemental tensors tiled differently at once -- the case where a
+    per-tensor tiler that leaked between them would show up.  It also
+    covers the only path where ``out`` is narrowed while another output
+    is not.
+    """
+    M, N, K, L = 256, 512, 128, 2
+    A = torch.randint(-1, 2, (L, M, K), device="cuda", dtype=torch.float16)
+    B = torch.randint(-1, 2, (L, K, N), device="cuda", dtype=torch.float16)
+    D = torch.empty((L, M, N // 2), device="cuda", dtype=torch.float16)
+    E = torch.empty((L, M, N), device="cuda", dtype=torch.float16)
+
+    epi_str = (
+        "def epi(accum):\n    D = swiglu(accum)\n    E = relu(accum)\n    return D, E\n"
+    )
+    epi_args = ops.EpilogueArguments(epi_str, D=D, E=E)
+    args = ops.GemmArguments(
+        A=A, B=B, out=D, accumulator_type=torch.float32, epilogue=epi_args
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+
+    assert len(operators) > 0
+    operators[0].run(args)
+
+    accum = (A.float() @ B.float()).to(torch.float32)
+    rtol, atol = get_torch_default_tolerances()[D.dtype]
+    assert_close_with_reference_conversion(
+        D,
+        gated_reference(A, B, torch.float32, D.dtype, GATE_FUNCTIONS["swiglu"]),
+        D.dtype,
+        rtols=rtol,
+        atols=atol,
+    )
+    assert_close_with_reference_conversion(
+        E, torch.relu(accum).to(E.dtype), E.dtype, rtols=rtol, atols=atol
+    )
+
+
+@pytest.mark.skipif(
+    not device_or_env_supports("100f"),
+    reason="Requires compute capability 100 and sm_100a or sm_100f",
+)
+@pytest.mark.parametrize(
+    "epilogue",
+    ["bias_relu", "scaled_relu_colmax", "residual_add", "bf16_scaled_relu"],
+)
+def test_mxfp8_gemm_fusion(epilogue):
+    """MXFP8 scaled operands take the same fused-epilogue path as dense GEMM.
+
+    ``ScaledOperand`` A/B (fp8 quantized values, E8M0 block scales over 32 K
+    elements in the swizzled layout) plus an ``EpilogueArguments`` resolve to
+    the block-scaled EFC operator, which runs the fused epilogue bit-exactly
+    against the scaled fp32 reference: a broadcast bias with relu, a scaled
+    relu with a column-max reduction, a residual add from an output-shaped
+    tensor, and a bf16 output.  The operator computes the epilogue in the
+    output dtype, so the f32-D cases keep the adds on these large scaled
+    accumulators exact, and the bf16 case uses ``relu(accum * 2)``: doubling
+    only changes the exponent, so rounding to bf16 before or after it gives
+    the same bits.
+    """
+    from test_utils.gemm import (
+        mxfp8_integer_inputs,
+        mxfp8_reference,
+        mxfp8_scaled_operands,
+    )
+
+    M, N, K = 256, 512, 1024
+    A, B, SFA, SFB = mxfp8_integer_inputs(M, N, K)
+    accum = mxfp8_reference(A, B, SFA, SFB, torch.float32)
+    d_dtype = torch.bfloat16 if epilogue == "bf16_scaled_relu" else torch.float32
+    D = torch.empty((M, N), device="cuda", dtype=d_dtype)
+    extra_checks = []
+    if epilogue == "bias_relu":
+        bias = torch.randint(-4, 5, (N,), device="cuda").to(torch.float32)
+        epi_args = ops.EpilogueArguments(
+            "def epi(accum, bias): D = relu(accum + bias); return D", D=D, bias=bias
+        )
+        reference = torch.relu(accum + bias)
+    elif epilogue == "scaled_relu_colmax":
+        col_max = torch.full((N,), float("-inf"), device="cuda", dtype=torch.float32)
+        epi_args = ops.EpilogueArguments(
+            "def epi(accum, alpha): "
+            "D = relu(accum * alpha); col_max = max(accum, dim=[0]); return D, col_max",
+            D=D,
+            alpha=2.0,
+            col_max=col_max,
+        )
+        reference = torch.relu(accum * 2.0)
+        extra_checks.append(
+            lambda: torch.testing.assert_close(
+                col_max, accum.amax(dim=0), atol=0.0, rtol=0.0
+            )
+        )
+    elif epilogue == "residual_add":
+        C = torch.randint(-4, 5, (M, N), device="cuda").to(torch.float32)
+        epi_args = ops.EpilogueArguments(
+            "def epi(accum, C): D = accum + C; return D", D=D, C=C
+        )
+        reference = accum + C
+    else:
+        epi_args = ops.EpilogueArguments(
+            "def epi(accum, alpha): D = relu(accum * alpha); return D", D=D, alpha=2.0
+        )
+        reference = torch.relu(accum * 2.0)
+    args = ops.GemmArguments(
+        *mxfp8_scaled_operands(A, B, SFA, SFB),
+        out=D,
+        accumulator_type=torch.float32,
+        epilogue=epi_args,
+    )
+    operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
+    assert operators
+    assert all("BlockScaledGemmEFC" in o.metadata.operator_name for o in operators)
+    operators[0].run(args)
+
+    assert_close_with_reference_conversion(D, reference, D.dtype)
+    for check in extra_checks:
+        check()

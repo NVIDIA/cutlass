@@ -440,6 +440,11 @@ class MmaSM120BlockScaledOp(MmaOp):
     sf_type: Type[Numeric]
     sf_vec_size: int
     use_sf_layout_TV: bool = False
+    # A nonnegative value selects one byte out of a word-backed scale-factor
+    # operand instead of extracting it with PRMT/LOP3. -1 preserves the
+    # canonical scalar scale-factor path. A K32 MMA spends one byte per operand
+    # and admits 0-3; a K64 MMA spends two and admits 0 or 2.
+    sf_byte_id: int = -1
 
     admissible_archs = [
         base_dsl.Arch.sm_120a,
@@ -496,6 +501,24 @@ class MmaSM120BlockScaledOp(MmaOp):
             raise DSLUserCodeError(
                 "expects the 'sf_vec_size' Op parameter to be 16 or 32",
             )
+        if self.sf_byte_id < -1 or self.sf_byte_id > 3:
+            raise DSLUserCodeError("expects 'sf_byte_id' to be -1 or in [0, 3]")
+        if self.sf_byte_id >= 0:
+            # One operand spans atomK / sf_vec_size bytes of the packed word, so
+            # that width is also the stride between the byte IDs a shape admits.
+            if self.sf_vec_size == 32 and self.shape_mnk == (16, 8, 32):
+                atom_k, operand_bytes = 32, 1
+            elif self.sf_vec_size == 32 and self.shape_mnk == (16, 8, 64):
+                atom_k, operand_bytes = 64, 2
+            else:
+                raise DSLUserCodeError(
+                    "sf_byte_id requires a K32 or K64 MMA with sf_vec_size=32",
+                )
+            if self.sf_byte_id % operand_bytes != 0:
+                raise DSLUserCodeError(
+                    f"sf_byte_id must be a multiple of {operand_bytes} for a "
+                    f"K{atom_k} MMA",
+                )
 
     def __str__(self) -> str:
         return (
@@ -534,7 +557,6 @@ class Field(enum.Enum):
     ACCUMULATE = "accum_c"
     SFA = "sf_a"
     SFB = "sf_b"
-
     def __str__(self) -> str:
         return f"{self.__class__.__name__}.{self.name}"
 
@@ -546,6 +568,7 @@ class Field(enum.Enum):
 
 
 class MmaBlockScaledTrait(Trait):
+    field_attr_name = "atom_mma_field_sm120_block_scaled"
     admissible_fields = [
         Field.SFA,
         Field.SFB,
@@ -564,14 +587,15 @@ class MmaBlockScaledTrait(Trait):
                 f"expects field to be one of {self.admissible_fields}, but got {field}"
             )
         mlir_operand = value
-        if field in [Field.SFA, Field.SFB]:
+        pointer_fields = [Field.SFA, Field.SFB]
+        if field in pointer_fields:
             if not isinstance(value, Pointer):
                 raise ValueError(
                     f"expects value to be a pointer for {field}, but got {type(value).__name__}"
                 )
             mlir_operand = cast(Any, value).value
 
-        field_name = f"#cute_nvgpu.atom_mma_field_sm120_block_scaled<{field._to_ir_field_name()}>"
+        field_name = f"#cute_nvgpu.{self.field_attr_name}<{field._to_ir_field_name()}>"
         attr = ir.Attribute.parse(field_name)
         self.value = _cute_nvgpu_ir.atom_set_value(
             self.value, attr, mlir_operand, loc=loc, ip=ip
@@ -617,6 +641,14 @@ class MmaMXF4Op(MmaSM120BlockScaledOp):
 
     * Operand layout is fixed: A = row-major (K-major), B = col-major (K-major). Transpose is not supported.
 
+    **Parameters:**
+
+    * ``sf_byte_id`` (keyword-only, default ``-1``): selects one byte out of a
+      word-backed scale-factor operand through the MMA byte selector instead of
+      extracting it with ``PRMT``/``LOP3``. This Op is fixed to a K64 shape, whose
+      operands are two bytes wide, so only ``0`` and ``2`` are accepted; ``-1``
+      preserves the scalar scale-factor path.
+
     **Execution Model:**
 
     * Block-scaled WMMA (``mma.sync.aligned`` with ``.block_scale``) is a warp-collective synchronous
@@ -635,6 +667,8 @@ class MmaMXF4Op(MmaSM120BlockScaledOp):
         ab_dtype: Type[Numeric],
         acc_dtype: Type[Numeric],
         sf_type: Type[Numeric],
+        *,
+        sf_byte_id: int = -1,
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -642,6 +676,7 @@ class MmaMXF4Op(MmaSM120BlockScaledOp):
             (16, 8, 64),
             sf_type,
             32,
+            sf_byte_id=sf_byte_id,
         )
 
     def _make_trait(
@@ -660,6 +695,7 @@ class MmaMXF4Op(MmaSM120BlockScaledOp):
             self.ab_dtype.mlir_type,
             self.acc_dtype.mlir_type,
             self.sf_type.mlir_type,
+            sfByteId=self.sf_byte_id,
         )
         return MmaMXF4Trait(make_atom(ty, loc=loc, ip=ip))
 
@@ -763,6 +799,14 @@ class MmaMXF8Op(MmaSM120BlockScaledOp):
     .kind           = {.kind::mxf8};
     .scale_vec_size = {.scale_vec::1X};
     .stype          = {.ue8m0};
+
+    **Parameters:**
+
+    * ``sf_byte_id`` (keyword-only, default ``-1``): selects one byte out of a
+      word-backed scale-factor operand through the MMA byte selector instead of
+      extracting it with ``PRMT``/``LOP3``. This Op is fixed to a K32 shape, whose
+      operands are one byte wide, so ``0``-``3`` are accepted; ``-1`` preserves
+      the scalar scale-factor path.
     """
 
     descriptive_name = "warp-level MXF8 MMA Operation"
@@ -772,6 +816,8 @@ class MmaMXF8Op(MmaSM120BlockScaledOp):
         ab_dtype: Type[Numeric],
         acc_dtype: Type[Numeric],
         sf_type: Type[Numeric],
+        *,
+        sf_byte_id: int = -1,
     ) -> None:
         super().__init__(
             ab_dtype,
@@ -779,6 +825,7 @@ class MmaMXF8Op(MmaSM120BlockScaledOp):
             (16, 8, 32),
             sf_type,
             32,
+            sf_byte_id=sf_byte_id,
         )
 
     def _make_trait(
@@ -797,6 +844,7 @@ class MmaMXF8Op(MmaSM120BlockScaledOp):
             self.ab_dtype.mlir_type,
             self.acc_dtype.mlir_type,
             self.sf_type.mlir_type,
+            sfByteId=self.sf_byte_id,
         )
         return MmaMXF8Trait(make_atom(ty, loc=loc, ip=ip))
 
@@ -836,12 +884,16 @@ class MmaMXF8F6F4Op(MmaOp):
     paths remain on ``MmaMXF4Op`` / ``MmaMXF4NVF4Op`` / ``MmaMXF8Op``
     respectively. Same-width mixed-FP8 (E4M3 + E5M2) and FP6 mixed pairs
     are not supported.
+
+    ``sf_byte_id`` optionally selects one byte from a word-backed packed scale
+    factor. Its default value ``-1`` preserves scalar scale-factor operands.
     """
 
     a_dtype: Type[Numeric]
     b_dtype: Type[Numeric]
     acc_dtype: Type[Numeric]
     sf_type: Type[Numeric]
+    sf_byte_id: int = -1
 
     descriptive_name = "warp-level MXF8F6F4 mixed-precision MMA Operation"
 
@@ -872,6 +924,8 @@ class MmaMXF8F6F4Op(MmaOp):
             raise DSLUserCodeError(
                 "expects the 'sf_type' Op parameter to be Float8E8M0FNU",
             )
+        if self.sf_byte_id < -1 or self.sf_byte_id > 3:
+            raise DSLUserCodeError("expects 'sf_byte_id' to be -1 or in [0, 3]")
         # Reject same-dtype pairs explicitly (route to dedicated ops).
         if self.a_dtype == self.b_dtype:
             if self.a_dtype == Float4E2M1FN:
@@ -946,9 +1000,12 @@ class MmaMXF8F6F4Op(MmaOp):
             self.b_dtype.mlir_type,
             self.acc_dtype.mlir_type,
             self.sf_type.mlir_type,
+            sfByteId=self.sf_byte_id,
         )
         return MmaMXF8F6F4Trait(make_atom(ty, loc=loc, ip=ip))
 
 
 class MmaMXF8F6F4Trait(MmaBlockScaledTrait):
     pass
+
+

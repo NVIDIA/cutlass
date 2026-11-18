@@ -276,11 +276,6 @@ public:
     Tensor tTR_cD_mn_frg = tensor<1>(zipped_divide(coalesce(tTR_cCD), mclD.compose(Int<VD>{})));
     Tensor tDpD = make_tensor<bool>(shape(tR2G_rD_dst));
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int t = 0; t < size(tDpD); t++) {
-      tDpD(t) = elem_less(tTR_cD_mn_frg(t), problem_shape_mnl);
-    }
-
     constexpr auto mclC = decltype(max_common_layout(tTR_rAcc.layout(), tTR_gC.layout())){};
     constexpr int VC = cute::min(AlignmentC{}, size(mclC));
 
@@ -288,10 +283,6 @@ public:
     Tensor tG2R_rC_dst = recast<Array<GmemElementC, VC>>(coalesce(tTR_gC));
     Tensor tCpC = make_tensor<bool>(shape(tG2R_rC_dst));
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int t = 0; t < size(tCpC); t++) {
-      tCpC(t) = elem_less(tTR_cC_mn_frg(t), problem_shape_mnl);
-    }
     Tensor tTR_rC_src = recast<Array<GmemElementC, VC>>(coalesce(tTR_gC));
     Tensor tTR_rC_dst = recast<Array<GmemElementC, VC>>(coalesce(tTR_rC));
 
@@ -336,14 +327,24 @@ public:
 
     // 2. Apply element-wise operation and store to gmem
     ThreadEpilogueOp epilogue_op{params.thread};
+    // Compute predicates near their copies to limit overlap with accumulator live ranges.
+    // Keep the output predicate loop in each branch rather than sharing a common tail.
     // source is needed
     if (epilogue_op.is_source_needed()) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int t = 0; t < size(tCpC); t++) {
+        tCpC(t) = elem_less(tTR_cC_mn_frg(t), problem_shape_mnl);
+      }
       copy_if(tCpC, tTR_rC_src, tTR_rC_dst);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(tTR_rAcc); i++) {
         tTR_rD_frag(i) = epilogue_op(tTR_rAcc(i), tTR_rC(i));
       }
 
+      CUTLASS_PRAGMA_UNROLL
+      for (int t = 0; t < size(tDpD); t++) {
+        tDpD(t) = elem_less(tTR_cD_mn_frg(t), problem_shape_mnl);
+      }
       copy_if(tDpD, tTR_rD_src, tR2G_rD_dst);
     }
     // source is not needed, avoid load
@@ -353,6 +354,10 @@ public:
         tTR_rD_frag(i) = epilogue_op(tTR_rAcc(i));
       }
 
+      CUTLASS_PRAGMA_UNROLL
+      for (int t = 0; t < size(tDpD); t++) {
+        tDpD(t) = elem_less(tTR_cD_mn_frg(t), problem_shape_mnl);
+      }
       copy_if(tDpD, tTR_rD_src, tR2G_rD_dst);
     }
 

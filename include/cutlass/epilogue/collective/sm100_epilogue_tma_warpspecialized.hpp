@@ -159,8 +159,8 @@ private:
   constexpr static int StrideStageC = (ReuseSmemC ? MaxStageBits : StageCBits) / sizeof_bits_v<SmemElementC>;
   constexpr static int StrideStageD = (ReuseSmemC ? MaxStageBits : StageDBits) / sizeof_bits_v<SmemElementD>;
 
-  using SmemLayoutC = decltype(cute::append<3>(SmemLayoutStageC{}, Layout<Int<StagesC>,                        Int<StrideStageC>>{}));
-  using SmemLayoutD = decltype(cute::append<3>(SmemLayoutStageD{}, Layout<Int<ReuseSmemC ? StagesC : StagesD>, Int<StrideStageD>>{}));
+  using SmemLayoutC = decltype(cute::append<3>(SmemLayoutStageC{}, cute::Layout<Int<StagesC>,                        Int<StrideStageC>>{}));
+  using SmemLayoutD = decltype(cute::append<3>(SmemLayoutStageD{}, cute::Layout<Int<ReuseSmemC ? StagesC : StagesD>, Int<StrideStageD>>{}));
 
   constexpr static bool support_smem_reuse = is_source_supported && StagesD <= StagesC
                                               && MaxStageBits % sizeof_bits_v<SmemElementC> == 0
@@ -651,7 +651,7 @@ public:
     TiledCopy tiled_s2r = make_tiled_copy_D(Copy_Atom<CopyOpS2R, SmemElementC>{}, tiled_t2r);
     ThrCopy thread_s2r = tiled_s2r.get_slice(thread_idx);
     Tensor tSR_sC        = thread_s2r.partition_S(sC_epi);                                  // (S2R,S2R_M,S2R_N,PIPE_C)
-    Layout tSR_rC_layout = thread_s2r.retile_D(tTR_rD).layout();                            // (S2R,S2R_M,S2R_N)
+    cute::Layout tSR_rC_layout = thread_s2r.retile_D(tTR_rD).layout();                            // (S2R,S2R_M,S2R_N)
 
     // Allocate C registers
     // If C smem load is a non-vectorized dst(i) = src(i) then we can allocate C registers directly in the compute type
@@ -723,7 +723,7 @@ public:
     auto synchronize = [] () { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
     // Predication for sub-128 thread T2R tiled copy
-    Layout tmem_warp_layout = typename decltype(make_tmem_warp_partitioner(tAcc_epi(_,_,0,0)))::TiledLayout_TV{};
+    cute::Layout tmem_warp_layout = typename decltype(make_tmem_warp_partitioner(tAcc_epi(_,_,0,0)))::TiledLayout_TV{};
     constexpr bool predicate_tmem_load = size(tmem_warp_layout) != cosize(tmem_warp_layout);
     bool issue_tmem_load = true;
 
@@ -1037,7 +1037,7 @@ public:
     TiledCopy tiled_s2r  = make_tiled_copy_D(Copy_Atom<CopyOpS2R, SmemElementC>{}, tiled_t2r);
     ThrCopy thread_s2r   = tiled_s2r.get_slice(thread_idx);
     Tensor tSR_sC        = thread_s2r.partition_S(sC_epi);                                  // (S2R,S2R_M,S2R_N,PIPE_C)
-    Layout tSR_rC_layout = thread_s2r.retile_D(tTR_rD).layout();                                   // (S2R,S2R_M,S2R_N)
+    cute::Layout tSR_rC_layout = thread_s2r.retile_D(tTR_rD).layout();                                   // (S2R,S2R_M,S2R_N)
 
     // Allocate C registers
     // If C smem load is a non-vectorized dst(i) = src(i) then we can allocate C registers directly in the compute type

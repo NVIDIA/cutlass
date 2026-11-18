@@ -40,13 +40,15 @@ import os
 import sys
 import textwrap
 import types
-import warnings
 from collections.abc import Callable, Generator, Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from enum import Enum, auto
 from typing import Any, TypeVar
 from types import ModuleType
 from copy import deepcopy
 from itertools import chain
+
+from .ast_helpers import register_deferred_for_error
 
 from .common import *
 from .diagnostics import DiagId
@@ -54,6 +56,13 @@ from .utils.logger import log
 
 
 _AstNode = TypeVar("_AstNode", bound=ast.AST)
+
+
+class ControlFlowPolicy(Enum):
+    """Select whether control-flow nodes are staged or kept as native Python."""
+
+    TRACE = auto()
+    NATIVE = auto()
 
 
 def _deepcopy_ast_root(node: _AstNode) -> _AstNode:
@@ -70,6 +79,13 @@ def _deepcopy_ast_root(node: _AstNode) -> _AstNode:
     if hasattr(copied, "_parent"):
         delattr(copied, "_parent")
     return copied
+
+
+# Loop options transform_for_loop understands; any other range keyword keeps the
+# trace-time dispatch (see DSLPreprocessor._literal_for_iter_kind).
+_STAGED_RANGE_KEYWORDS = frozenset(
+    {"unroll", "unroll_full", "prefetch_stages", "vectorize", "at_least_once"}
+)
 
 
 class OrderedSet:
@@ -129,10 +145,28 @@ class ScopeManager:
 
     scopes: list[set[str]]
     callables: list[set[str]]
+    skip_reference_taking: set[str]
+    local_scope_indices: list[int] = field(default_factory=list, init=False)
 
     @classmethod
     def create(cls) -> "ScopeManager":
-        return cls([], [])
+        return cls([], [], set())
+
+    def add_skip_reference_taking(self, name: str) -> None:
+        self.skip_reference_taking.add(name)
+
+    def remove_skip_reference_taking(self, name: str) -> None:
+        self.skip_reference_taking.discard(name)
+
+    def is_skip_reference_taking(self, name: str) -> bool:
+        return name in self.skip_reference_taking
+
+    def restore_from(self, snapshot: "ScopeManager") -> None:
+        """Restore a snapshot without replacing this manager object."""
+        if type(self) is not type(snapshot):
+            raise TypeError("scope manager snapshots must have the same type")
+        for state_field in fields(self):
+            setattr(self, state_field.name, getattr(snapshot, state_field.name))
 
     def add_to_scope(self, name: str) -> None:
         if name == "_":
@@ -149,6 +183,19 @@ class ScopeManager:
 
     def get_active_callables(self) -> list[set[str]]:
         return self.callables.copy()
+
+    def current_function_owns(self, name: str) -> bool:
+        """Return whether *name* belongs to the innermost function scope."""
+        return (
+            bool(self.local_scope_indices)
+            and name in self.scopes[self.local_scope_indices[-1]]
+        )
+
+    def enclosing_function_owns(self, name: str) -> bool:
+        """Return whether *name* belongs to an enclosing function scope."""
+        return any(
+            name in self.scopes[index] for index in self.local_scope_indices[:-1]
+        )
 
     @contextlib.contextmanager
     def enter_local_scope(self) -> Generator[None, None, None]:
@@ -173,21 +220,27 @@ class ScopeManager:
         """
         self.scopes.append(set())
         self.callables.append(set())
-        yield
-        self.scopes.pop()
-        self.callables.pop()
+        self.local_scope_indices.append(len(self.scopes) - 1)
+        saved_skip = self.skip_reference_taking
+        self.skip_reference_taking = set()
+        try:
+            yield
+        finally:
+            self.local_scope_indices.pop()
+            self.scopes.pop()
+            self.callables.pop()
+            self.skip_reference_taking = saved_skip
 
     @contextlib.contextmanager
-    def enter_control_flow_scope(self) -> Generator[None, None, None]:
-        """
-        Context manager for entering a new dynamic control-flow scope.
+    def enter_control_flow_scope(
+        self, *, isolate_callables: bool = False
+    ) -> Generator[None, None, None]:
+        """Enter a dynamic control-flow symbol scope.
 
-        This scope rule diverge from Python's local scope, variables defined here are discarded after exiting the block, but callables are kept in parent scope.
-
-        This context manager pushes a new, empty variable scope onto the stack for the
-        duration of a control-flow block (such as within loops or if/else blocks). Variables
-        introduced inside this block are tracked separately and discarded after exiting the block.
-        Callable symbol scopes are not affected.
+        Variables introduced in the region are discarded on exit. Callable
+        definitions normally remain function-scoped; speculative dispatch
+        arms pass ``isolate_callables=True`` so their definitions stay visible
+        within that arm but are discarded before tracing another candidate.
 
         :yields: None
 
@@ -199,8 +252,14 @@ class ScopeManager:
                     ...
         """
         self.scopes.append(set())
-        yield
-        self.scopes.pop()
+        if isolate_callables:
+            self.callables.append(set())
+        try:
+            yield
+        finally:
+            if isolate_callables:
+                self.callables.pop()
+            self.scopes.pop()
 
 
 class Region:
@@ -296,6 +355,12 @@ class SessionData:
     region_stack: list[Region] = field(default_factory=list)
     generator_targets: list[str] = field(default_factory=list)
     lambda_args: list[str] = field(default_factory=list)
+    captured_control_flow_writebacks: list[set[str]] = field(default_factory=list)
+    control_flow_policies: list[ControlFlowPolicy] = field(
+        default_factory=lambda: [ControlFlowPolicy.TRACE]
+    )
+    # Nesting depth inside the argument list of a ``const_expr(...)`` call.
+    const_expr_arg_depth: int = 0
 
     @contextlib.contextmanager
     def _set_attr(self, attr: str, value: str) -> Generator[None, None, None]:
@@ -312,6 +377,66 @@ class SessionData:
 
     def set_current_function_name(self, function_name: str) -> Any:
         return self._set_attr("function_name", function_name)
+
+    @contextlib.contextmanager
+    def control_flow_policy(
+        self, policy: ControlFlowPolicy
+    ) -> Generator[None, None, None]:
+        """Temporarily select how nested control-flow nodes are transformed."""
+        self.control_flow_policies.append(policy)
+        try:
+            yield
+        finally:
+            popped = self.control_flow_policies.pop()
+            assert popped is policy
+            assert self.control_flow_policies
+
+    @property
+    def current_control_flow_policy(self) -> ControlFlowPolicy:
+        return self.control_flow_policies[-1]
+
+    @contextlib.contextmanager
+    def const_expr_arguments(self) -> Generator[None, None, None]:
+        """Mark the arguments of a ``const_expr(...)`` call as declared
+        trace-time constants for the duration of the visit."""
+        self.const_expr_arg_depth += 1
+        try:
+            yield
+        finally:
+            self.const_expr_arg_depth -= 1
+
+    @contextlib.contextmanager
+    def deferred_body(self) -> Generator[None, None, None]:
+        """Visit code that runs LATER than the expression it is written in (a
+        lambda body): the surrounding ``const_expr(...)`` declaration covers
+        only what argument evaluation itself executes, so it is suspended."""
+        depth = self.const_expr_arg_depth
+        self.const_expr_arg_depth = 0
+        try:
+            yield
+        finally:
+            self.const_expr_arg_depth = depth
+
+    @property
+    def inside_const_expr_argument(self) -> bool:
+        return self.const_expr_arg_depth > 0
+
+    @contextlib.contextmanager
+    def collect_captured_control_flow_writebacks(
+        self,
+    ) -> Generator[set[str], None, None]:
+        """Collect outlined writebacks that target an enclosing closure."""
+        writebacks: set[str] = set()
+        self.captured_control_flow_writebacks.append(writebacks)
+        try:
+            yield writebacks
+        finally:
+            self.captured_control_flow_writebacks.pop()
+
+    def record_captured_control_flow_writeback(self, name: str) -> None:
+        """Record a generated writeback only when it changes closure scope."""
+        if self.captured_control_flow_writebacks:
+            self.captured_control_flow_writebacks[-1].add(name)
 
 
 def _create_module_attribute(
@@ -363,16 +488,46 @@ def _create_module_attribute(
     return result
 
 
-def _mark_synth_scope(func_def: ast.FunctionDef) -> ast.FunctionDef:
+def _mark_synth_scope(func_def: ast.FunctionDef, origin: ast.AST) -> ast.FunctionDef:
     """SYNTHESIZED-scope fact: this def is a rewrite-created arm/body block,
-    not a source scope; the call-boundary pass keys frame reflection on it."""
+    not a source scope; the call-boundary pass keys frame reflection on it.
+
+    The def also takes *origin*'s source location here rather than at each
+    construction site.  This is the one funnel every synthesized scope block
+    passes through, and PyIR reads such a block's ``lineno`` while the pass is
+    still running (the closure-cell registration it inserts at the block's
+    entry), long before the tree-wide location fixup at the end of
+    ``transform_function``.
+    """
     func_def._pyir_synth_scope = True  # type: ignore[attr-defined]
-    return func_def
+    return ast.copy_location(func_def, origin)
 
 
 _ComprehensionT = TypeVar(
     "_ComprehensionT", ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp
 )
+
+
+def _while_condition_bound_names(test: ast.expr) -> list[str]:
+    """Bare names a ``while`` condition binds with ``:=``, in source order.
+    A comprehension's walrus binds the enclosing scope while the condition
+    runs (PEP 572), so it counts; a lambda body binds only when the lambda is
+    called, so its walruses are not condition bindings."""
+    names: list[str] = []
+
+    class _Targets(ast.NodeVisitor):
+        def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+            if isinstance(node.target, ast.Name) and node.target.id not in names:
+                names.append(node.target.id)
+            self.generic_visit(node)
+
+        def _skip(self, node: ast.AST) -> None:
+            return None
+
+        visit_Lambda = _skip
+
+    _Targets().visit(test)
+    return names
 
 
 class DSLPreprocessor(ast.NodeTransformer):
@@ -396,10 +551,11 @@ class DSLPreprocessor(ast.NodeTransformer):
     WHILE_EXECUTOR = "while_executor"
     ASSERT_EXECUTOR = "assert_executor"
     IMPLICIT_DOWNCAST_NUMERIC_TYPE = "implicitDowncastNumericType"
-    SUPPORTED_FOR_RANGE_STATEMENTS = {"range", "range_dynamic", "range_constexpr"}
     CONST_EXPR_NAME = {"const_expr", "target_version"}
     COMPARE_EXECUTOR = "compare_executor"
     BUILTIN_REDIRECTOR = "redirect_builtin_function"
+    NATIVE_EXIT_GUARD = "native_exit_guard"
+    COMPREHENSION_CONDITION = "comprehension_condition"
 
     def generic_visit(self, node: ast.AST) -> ast.AST:
         """
@@ -436,11 +592,14 @@ class DSLPreprocessor(ast.NodeTransformer):
                     setattr(node, field, new_node)
         return node
 
-    def __init__(self, client_module_name: list[str]) -> None:
+    def __init__(
+        self, client_module_name: list[str], *, warnings_ignore: bool = False
+    ) -> None:
         super().__init__()
         # Persistent state
         self.processed_functions: set[Callable[..., Any]] = set()
         self.client_module_name = client_module_name
+        self.warnings_ignore: bool = warnings_ignore
         self._session_data: SessionData | None = None
 
     def _create_session_data(self) -> SessionData:
@@ -712,9 +871,20 @@ class DSLPreprocessor(ast.NodeTransformer):
         # Step 5. Return the transformed tree
         return combined_body
 
-    def check_early_exit(self, tree: ast.AST, kind: str) -> None:
-        """
-        Checks if a given region or scope in the provided Python code has early exits.
+    # Early exits that leave a loop rather than the whole function.
+    _LOOP_EXIT_TYPES = frozenset({"break", "continue"})
+
+    def _find_early_exit(
+        self,
+        tree: ast.AST,
+        kind: str,
+        exit_types: frozenset[str] | None = None,
+    ) -> tuple[ast.AST, str] | None:
+        """Find an early exit owned by the given control-flow region.
+
+        The checker keeps the last exit it meets, so a caller interested in
+        one class of exits narrows the search with *exit_types* instead of
+        inspecting the reported kind.
         """
 
         class EarlyExitChecker(ast.NodeVisitor):
@@ -725,27 +895,26 @@ class DSLPreprocessor(ast.NodeTransformer):
                 self.kind = kind
                 self.loop_nest_level = 0
 
-            def visit_Return(self, node: ast.Return) -> None:
+            def record(self, node: ast.AST, exit_type: str) -> None:
+                if exit_types is not None and exit_type not in exit_types:
+                    return
                 self.has_early_exit = True
                 self.early_exit_node = node
-                self.early_exit_type = "return"
+                self.early_exit_type = exit_type
+
+            def visit_Return(self, node: ast.Return) -> None:
+                self.record(node, "return")
 
             def visit_Raise(self, node: ast.Raise) -> None:
-                self.has_early_exit = True
-                self.early_exit_node = node
-                self.early_exit_type = "raise"
+                self.record(node, "raise")
 
             def visit_Break(self, node: ast.Break) -> None:
                 if self.loop_nest_level == 0 and self.kind != "if":
-                    self.has_early_exit = True
-                    self.early_exit_node = node
-                    self.early_exit_type = "break"
+                    self.record(node, "break")
 
             def visit_Continue(self, node: ast.Continue) -> None:
                 if self.loop_nest_level == 0 and self.kind != "if":
-                    self.has_early_exit = True
-                    self.early_exit_node = node
-                    self.early_exit_type = "continue"
+                    self.record(node, "continue")
 
             def visit_For(self, node: ast.For) -> None:
                 self.loop_nest_level += 1
@@ -763,61 +932,51 @@ class DSLPreprocessor(ast.NodeTransformer):
         checker = EarlyExitChecker(kind)
         checker.generic_visit(tree)
         if not checker.has_early_exit:
+            return None
+        assert checker.early_exit_node is not None
+        assert checker.early_exit_type is not None
+        return checker.early_exit_node, checker.early_exit_type
+
+    def check_early_exit(self, tree: ast.AST, kind: str) -> None:
+        """Reject an early exit owned by the given control-flow region."""
+        early_exit = self._find_early_exit(tree, kind)
+        if early_exit is None:
             return
+        offender, exit_type = early_exit
         where = f"`{self.session_data.function_name}`" + (
             f" in `{self.session_data.class_name}`"
             if self.session_data.class_name
             else ""
         )
-        offender = checker.early_exit_node or tree
         raise DSLUserCodeError(
             DiagId.UNSUP_EARLY_EXIT,
             filename=self.session_data.file_name,
             lineno=getattr(offender, "lineno", None),
             col_offset=getattr(offender, "col_offset", None),
             end_col_offset=getattr(offender, "end_col_offset", None),
-            kind=checker.early_exit_type,
+            kind=exit_type,
             where=where,
         )
+
+    def is_const_expr_call(self, node: ast.expr) -> bool:
+        """``const_expr(...)`` / ``<pkg>.const_expr(...)`` (and the
+        ``target_version`` twin): the call declares its argument a trace-time
+        constant expression."""
+        if not isinstance(node, ast.Call):
+            return False
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            return func.attr in self.CONST_EXPR_NAME
+        return isinstance(func, ast.Name) and func.id in self.CONST_EXPR_NAME
 
     def is_node_constexpr(self, node: ast.If | ast.While) -> bool:
         """
         Determines if the node is a constexpr.
         Supported nodes are if, while statements.
         """
-        if isinstance(node, ast.If) or isinstance(node, ast.While):
-            if isinstance(node.test, ast.Call):
-                func = node.test.func
-
-                if (
-                    isinstance(func, ast.Attribute)
-                    and func.attr in self.CONST_EXPR_NAME
-                ):
-                    return True
-
-                elif isinstance(func, ast.Name) and func.id in self.CONST_EXPR_NAME:
-                    return True
+        if isinstance(node, (ast.If, ast.While)):
+            return self.is_const_expr_call(node.test)
         return False
-
-    def _get_range_kind(
-        self, iter_node: ast.expr
-    ) -> tuple[str | None, bool | None, bool | None]:
-        """
-        Return "range", "range_dynamic", "range_constexpr" or None for the iterable
-        """
-        if isinstance(iter_node, ast.Call):
-            func = iter_node.func
-            if (
-                isinstance(func, ast.Name)
-                and func.id in self.SUPPORTED_FOR_RANGE_STATEMENTS
-            ):
-                return func.id, True, len(iter_node.keywords) != 0
-            if (
-                isinstance(func, ast.Attribute)
-                and func.attr in self.SUPPORTED_FOR_RANGE_STATEMENTS
-            ):
-                return func.attr, False, len(iter_node.keywords) != 0
-        return None, None, None
 
     def transform(
         self,
@@ -841,7 +1000,9 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
         self.session_data.function_globals = None
         unified_tree = ast.Module(body=transformed_tree, type_ignores=[])
-        return ast.fix_missing_locations(unified_tree)
+        # Both backends already fixed every returned statement's locations.
+        # ast.Module adds no source-location fields, so no further walk is needed.
+        return unified_tree
 
     def analyze_region_variables(
         self,
@@ -993,24 +1154,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             keywords.get("unroll_full", ast.Constant(value=False)),
         )
 
-    def issue_deprecation_warning(
-        self, *, message: str, category: type[Warning], filename: str, lineno: int
-    ) -> None:
-        warnings.simplefilter("always", category)  # turn off filter
-        warnings.warn_explicit(
-            message, category=category, filename=filename, lineno=lineno
-        )
-        warnings.simplefilter("default", category)  # reset filter
-
     def extract_prefetch_stages_args(self, iter_node: ast.Call) -> ast.expr:
         keywords = self._keyword_map(iter_node)
         if "pipelining" in keywords:
-            self.issue_deprecation_warning(
-                message="pipelining is deprecated, use prefetch_stages instead",
-                category=DeprecationWarning,
-                filename=self.session_data.file_name,
-                lineno=iter_node.lineno,
-            )
             return keywords.get("pipelining", ast.Constant(value=None))
         return keywords.get("prefetch_stages", ast.Constant(value=None))
 
@@ -1121,20 +1267,18 @@ class DSLPreprocessor(ast.NodeTransformer):
             node,
         )
 
-        return ast.copy_location(
-            _mark_synth_scope(
-                ast.FunctionDef(
-                    name=func_name,
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=func_args,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        defaults=[],
-                    ),
-                    body=transformed_body,
-                    decorator_list=[decorator],
-                )
+        return _mark_synth_scope(
+            ast.FunctionDef(
+                name=func_name,
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=func_args,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=transformed_body,
+                decorator_list=[decorator],
             ),
             node,
         )
@@ -1293,62 +1437,320 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
         return ast.Expr(check_call)
 
+    def _create_for_iter_symbol_check(self, iter_node: ast.expr) -> ast.Expr | None:
+        """Validate reserved DSL range spellings before evaluating the iterable."""
+        if not isinstance(iter_node, ast.Call):
+            return None
+
+        func = iter_node.func
+        if isinstance(func, ast.Name):
+            if func.id in {"range_constexpr", "range_dynamic"}:
+                return self._insert_cf_symbol_check(func)
+            return None
+
+        if isinstance(func, ast.Attribute):
+            if func.attr == "range":
+                return self._insert_cf_symbol_check(func.value)
+            if func.attr in {"range_constexpr", "range_dynamic"}:
+                return self._insert_cf_symbol_check(func)
+        return None
+
     def _handle_constexpr_for(self, node: ast.For) -> ast.For | list[ast.stmt]:
         """Handle const_expr/static for loops. Override for custom behavior."""
         self.generic_visit(node)
         return node
 
-    def visit_For(self, node: ast.For) -> ast.For | list[ast.stmt]:
-        # For static for loop (for with range_constexpr or not range based for), preprocessor keeps the loop.
-        range_kind, is_builtin_range, has_keyword = self._get_range_kind(node.iter)
-        if range_kind == "range_constexpr" or range_kind is None:
-            # Delegate to template method for extensibility
-            result = self._handle_constexpr_for(node)
-            if range_kind == "range_constexpr":
-                # Add check and transform to builtin range
-                assert isinstance(node.iter, ast.Call)
-                check_call = self._insert_cf_symbol_check(node.iter.func)
-                node.iter.func = ast.Name(id="range", ctx=ast.Load())
-                self._insert_range_value_check(node)
-                return [
-                    check_call,
-                    result if isinstance(result, ast.For) else result[0],
-                ]
-            return result
+    @staticmethod
+    def _is_range_constexpr_for(node: ast.For) -> bool:
+        """Return whether *node* directly uses the reserved constexpr range.
 
+        An explicit ``range_constexpr`` is guaranteed to be a trace-time
+        Python loop, so its body definitions follow Python's function-local
+        scope rules. Every other iterable spelling is classified at trace
+        time; its native arm follows the same Python scope rules, while its
+        staged arm carries only variables bound before the loop.
+        """
+        if not isinstance(node.iter, ast.Call):
+            return False
+        func = node.iter.func
+        return (isinstance(func, ast.Name) and func.id == "range_constexpr") or (
+            isinstance(func, ast.Attribute) and func.attr == "range_constexpr"
+        )
+
+    def _transform_runtime_dispatched_for(self, node: ast.For) -> list[ast.stmt]:
+        """Select staged or native loop handling from the trace-time iterable."""
+        symbol_check = self._create_for_iter_symbol_check(node.iter)
+        suffix = self.session_data.counter
+        self.session_data.counter += 1
+        iter_name = f"_dsl_for_iter_{suffix}"
+        self.session_data.scope_manager.add_skip_reference_taking(iter_name)
+
+        visited_iter = self.visit(node.iter)
+        assert isinstance(visited_iter, ast.expr)
+        if isinstance(visited_iter, ast.Call):
+            factory = visited_iter.func
+            if isinstance(factory, ast.Attribute) and factory.attr == "range":
+                factory = _create_module_attribute(
+                    "range",
+                    lineno=factory.lineno,
+                    col_offset=factory.col_offset,
+                )
+            visited_iter = ast.copy_location(
+                ast.Call(
+                    func=_create_module_attribute(
+                        "materialize_for_iter",
+                        lineno=visited_iter.lineno,
+                        col_offset=visited_iter.col_offset,
+                    ),
+                    args=[factory, *visited_iter.args],
+                    keywords=visited_iter.keywords,
+                ),
+                visited_iter,
+            )
+        iter_assign = ast.copy_location(
+            ast.Assign(
+                targets=[ast.Name(id=iter_name, ctx=ast.Store())],
+                value=visited_iter,
+            ),
+            node.iter,
+        )
+
+        def iter_attr(name: str) -> ast.Attribute:
+            return ast.Attribute(
+                value=ast.Name(id=iter_name, ctx=ast.Load()),
+                attr=name,
+                ctx=ast.Load(),
+            )
+
+        def iter_option(name: str, default: int | bool | None) -> ast.Call:
+            return ast.Call(
+                func=ast.Name(id="getattr", ctx=ast.Load()),
+                args=[
+                    ast.Name(id=iter_name, ctx=ast.Load()),
+                    ast.Constant(value=name),
+                    ast.Constant(value=default),
+                ],
+                keywords=[],
+            )
+
+        dynamic_for = _deepcopy_ast_root(node)
+        dynamic_for.iter = ast.copy_location(
+            ast.Call(
+                func=ast.Name(id="range", ctx=ast.Load()),
+                args=[iter_attr("start"), iter_attr("stop"), iter_attr("step")],
+                keywords=[
+                    ast.keyword(arg="unroll", value=iter_option("unroll", -1)),
+                    ast.keyword(
+                        arg="unroll_full", value=iter_option("unroll_full", False)
+                    ),
+                    ast.keyword(
+                        arg="prefetch_stages",
+                        value=iter_option("prefetch_stages", None),
+                    ),
+                    ast.keyword(arg="vectorize", value=iter_option("vectorize", None)),
+                    ast.keyword(
+                        arg="at_least_once",
+                        value=iter_option("at_least_once", False),
+                    ),
+                ],
+            ),
+            node.iter,
+        )
+
+        python_for = _deepcopy_ast_root(node)
+        python_for.iter = ast.copy_location(
+            ast.Name(id=iter_name, ctx=ast.Load()), node.iter
+        )
+        active_symbols = self.session_data.scope_manager.get_active_symbols()
+        # The native arm keeps the user's spellings. Like plain Python, a name
+        # first bound in the loop body belongs to the enclosing function and
+        # stays readable after the loop; the ScopeManager scope below only
+        # keeps such names from becoming loop-carried values of the staged arm.
+        with self.session_data.scope_manager.enter_control_flow_scope(
+            isolate_callables=True
+        ):
+            # Keep the selected arm as a native ``for``. Nested regions decide
+            # locally whether an early exit requires native ownership or they
+            # can return to TRACE, avoiding a pre-scan of the whole loop body.
+            with self.session_data.control_flow_policy(ControlFlowPolicy.NATIVE):
+                visited_python_for = self._handle_constexpr_for(python_for)
+        assert isinstance(visited_python_for, ast.For)
+        python_for = visited_python_for
+
+        active_callables = self.session_data.scope_manager.get_active_callables()
+        counter_snapshot = self.session_data.counter
+        scope_manager_snapshot = deepcopy(self.session_data.scope_manager)
+        python_preamble: list[ast.stmt] = []
+        try:
+            with self.session_data.scope_manager.enter_control_flow_scope():
+                if isinstance(dynamic_for.target, ast.Name):
+                    self.session_data.scope_manager.add_to_scope(dynamic_for.target.id)
+                dynamic_body = self.transform_for_loop(
+                    dynamic_for, active_symbols, active_callables
+                )
+        except Exception as error:
+            # The dynamic arm is speculative until trace-time dispatch. Keep an
+            # error from that dead arm from rejecting a native Python loop, but
+            # preserve the exact exception if the iterable is actually dynamic.
+            self.session_data.counter = counter_snapshot
+            self.session_data.scope_manager.restore_from(scope_manager_snapshot)
+            error_id = register_deferred_for_error(error)
+            dynamic_body = [
+                ast.copy_location(
+                    ast.Expr(
+                        ast.Call(
+                            func=_create_module_attribute(
+                                "raise_deferred_for_error",
+                                lineno=node.lineno,
+                                col_offset=node.col_offset,
+                            ),
+                            args=[ast.Constant(value=error_id)],
+                            keywords=[],
+                        )
+                    ),
+                    node,
+                )
+            ]
+            python_preamble = [
+                ast.copy_location(
+                    ast.Expr(
+                        ast.Call(
+                            func=_create_module_attribute(
+                                "discard_deferred_for_error",
+                                lineno=node.lineno,
+                                col_offset=node.col_offset,
+                            ),
+                            args=[ast.Constant(value=error_id)],
+                            keywords=[],
+                        )
+                    ),
+                    node,
+                )
+            ]
+
+        dispatch = ast.copy_location(
+            ast.If(
+                test=ast.Call(
+                    func=_create_module_attribute(
+                        "is_dynamic_range",
+                        lineno=node.iter.lineno,
+                        col_offset=node.iter.col_offset,
+                    ),
+                    args=[ast.Name(id=iter_name, ctx=ast.Load())],
+                    keywords=[],
+                ),
+                body=dynamic_body,
+                orelse=[*python_preamble, python_for],
+            ),
+            node,
+        )
+        self._visit_runtime_dispatch(dispatch)
+        return [
+            *([symbol_check] if symbol_check is not None else []),
+            iter_assign,
+            dispatch,
+        ]
+
+    @staticmethod
+    def _literal_for_iter_kind(iter_node: ast.expr) -> str | None:
+        """Classify an iterable whose loop kind is already known before tracing.
+
+        "range" is a ``range(...)`` / ``<module>.range(...)`` call with plain
+        positional arguments and only the loop options the staged lowering
+        knows; "python" is a list or tuple display; None is anything else
+        (name, attribute, subscript, other call). Star-unpacking and any other
+        keyword (``pipelining``, ``**kw``, unknown names) keep the dispatch, so
+        the range object built at trace time still does their argument check,
+        deprecation warning and unexpected-keyword error.
+        """
+        if isinstance(iter_node, (ast.List, ast.Tuple)):
+            return "python"
+        if not isinstance(iter_node, ast.Call):
+            return None
+        func = iter_node.func
+        is_range = (isinstance(func, ast.Name) and func.id == "range") or (
+            isinstance(func, ast.Attribute) and func.attr == "range"
+        )
+        if not is_range:
+            return None
+        if any(isinstance(arg, ast.Starred) for arg in iter_node.args) or any(
+            keyword.arg not in _STAGED_RANGE_KEYWORDS for keyword in iter_node.keywords
+        ):
+            return None
+        return "range"
+
+    def _transform_staged_for(self, node: ast.For) -> list[ast.stmt]:
+        """Lower a ``for`` over a literal range call straight to a staged loop."""
+        assert isinstance(node.iter, ast.Call)
+        symbol_check = self._create_for_iter_symbol_check(node.iter)
+        # The positional bounds are visited by transform_for_loop; the loop
+        # options are copied into the loop_selector call as they are, so visit
+        # them here like the dispatch visits the whole iterable expression.
+        for keyword in node.iter.keywords:
+            visited_value = self.visit(keyword.value)
+            assert isinstance(visited_value, ast.expr)
+            keyword.value = visited_value
         active_symbols = self.session_data.scope_manager.get_active_symbols()
         active_callables = self.session_data.scope_manager.get_active_callables()
-
         with self.session_data.scope_manager.enter_control_flow_scope():
             if isinstance(node.target, ast.Name):
                 self.session_data.scope_manager.add_to_scope(node.target.id)
+            statements = self.transform_for_loop(node, active_symbols, active_callables)
+        return [*([symbol_check] if symbol_check is not None else []), *statements]
 
-            if range_kind == "range_dynamic":
-                # Generate a warning
-                self.issue_deprecation_warning(
-                    message="range_dynamic is deprecated and will be removed in the future, please remove it.",
-                    category=DeprecationWarning,
-                    filename=self.session_data.file_name,
-                    lineno=node.iter.lineno,
-                )
+    def _transform_native_for(self, node: ast.For) -> list[ast.stmt]:
+        """Keep a ``for`` over a list or tuple display as the Python loop.
 
-            is_prefixed_range = range_kind == "range" and not is_builtin_range
-            check_call: ast.Expr | None = None  # type: ignore[no-redef]
-            if range_kind == "range_dynamic" or is_prefixed_range:
-                assert isinstance(node.iter, ast.Call)
-                if not is_prefixed_range:
-                    check_call = self._insert_cf_symbol_check(node.iter.func)
-                else:
-                    assert isinstance(node.iter.func, ast.Attribute)
-                    check_call = self._insert_cf_symbol_check(node.iter.func.value)
+        Same shape as the Python candidate of a dispatched loop, minus the
+        dispatch: the iterable is bound once and the body runs as plain
+        Python, so names bound in the body follow Python's function scope.
+        """
+        suffix = self.session_data.counter
+        self.session_data.counter += 1
+        iter_name = f"_dsl_for_iter_{suffix}"
+        self.session_data.scope_manager.add_skip_reference_taking(iter_name)
+        visited_iter = self.visit(node.iter)
+        assert isinstance(visited_iter, ast.expr)
+        iter_assign = ast.copy_location(
+            ast.Assign(
+                targets=[ast.Name(id=iter_name, ctx=ast.Store())],
+                value=visited_iter,
+            ),
+            node.iter,
+        )
+        node.iter = ast.copy_location(ast.Name(id=iter_name, ctx=ast.Load()), node.iter)
+        with self.session_data.scope_manager.enter_control_flow_scope(
+            isolate_callables=True
+        ):
+            with self.session_data.control_flow_policy(ControlFlowPolicy.NATIVE):
+                visited = self._handle_constexpr_for(node)
+        assert isinstance(visited, ast.For)
+        return [iter_assign, visited]
 
-            new_for_node = self.transform_for_loop(
-                node, active_symbols, active_callables
-            )
-            if check_call is not None:
-                new_for_node = [check_call] + new_for_node
+    def visit_For(self, node: ast.For) -> ast.For | list[ast.stmt]:
+        if self._is_range_constexpr_for(node):
+            symbol_check = self._create_for_iter_symbol_check(node.iter)
+            visited = self._handle_constexpr_for(node)
+            self._insert_range_value_check(node)
+            statements = visited if isinstance(visited, list) else [visited]
+            checks = [symbol_check] if symbol_check is not None else []
+            return [*checks, *statements]
 
-        return new_for_node
+        if self.session_data.current_control_flow_policy is ControlFlowPolicy.NATIVE:
+            if self._find_early_exit(node, "for") is not None:
+                return self._handle_constexpr_for(node)
+            with self.session_data.control_flow_policy(ControlFlowPolicy.TRACE):
+                return self.visit_For(node)
+
+        # A literal iterable settles the loop kind here, so its body is
+        # transformed once. Only an iterable the rewrite cannot classify pays
+        # for the trace-time dispatch and its two candidate bodies.
+        literal_kind = self._literal_for_iter_kind(node.iter)
+        if literal_kind == "range":
+            return self._transform_staged_for(node)
+        if literal_kind == "python":
+            return self._transform_native_for(node)
+        return self._transform_runtime_dispatched_for(node)
 
     @staticmethod
     def _hoist_expr_to_assignments(expr: ast.expr, name: str) -> ast.Assign:
@@ -1712,8 +2114,9 @@ class DSLPreprocessor(ast.NodeTransformer):
             keywords.append(
                 ast.keyword(arg="conversion", value=ast.Constant(value=node.conversion))
             )
-        if node.format_spec:
-            assert isinstance(node.format_spec, ast.JoinedStr)
+        # ``f"{n:}"`` carries an empty JoinedStr: Python formats it like a bare
+        # ``{n}``, so no spec is passed.
+        if isinstance(node.format_spec, ast.JoinedStr) and node.format_spec.values:
             keywords.append(
                 ast.keyword(
                     arg="format_spec",
@@ -1769,23 +2172,44 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         When ``name`` (the callee's ``id`` for a Name callee or ``attr`` for an
         Attribute callee) is printf/print_runtime and the first arg is an f-string,
-        replace the args with a single starred processFString expansion. Shared by
-        the Name and Attribute branches of visit_Call.
+        replace that arg with a starred processFString expansion; any further
+        positional args stay behind it so the callee sees (and counts) them.
+        Shared by the Name and Attribute branches of visit_Call.
         """
         if (
             name in ("printf", "print_runtime")
             and len(node.args) > 0
             and isinstance(node.args[0], ast.JoinedStr)
         ):
-            node.args = [ast.Starred(value=self.processFString(node), ctx=ast.Load())]
+            node.args = [
+                ast.Starred(value=self.processFString(node), ctx=ast.Load())
+            ] + node.args[1:]
             return True
         return False
 
     def visit_Call(self, node: ast.Call) -> ast.Call:
+        # The callee expression is visited ONCE and the result is what the call
+        # keeps.  Every rewrite below reads `func`, and none of them may reach
+        # `node.func` again: visiting an already-transformed callee re-runs the
+        # non-idempotent lowerings inside it (ternary blocks, and/or expansion,
+        # walrus hoists), which for a chained call -- `f(...).g(...)`, whose
+        # callee is an Attribute over the receiver Call -- walks the receiver's
+        # whole argument list a second time.
+        # Judge the callee's spelling on the SOURCE node: a callee rewrite below
+        # may replace the `const_expr` Name/Attribute the predicate looks at.
+        declares_const_expr = self.is_const_expr_call(node)
         func = self.visit(node.func)
-        # Visit args and kwargs
-        node.args = [self.visit(arg) for arg in node.args]
-        node.keywords = [self.visit(kwarg) for kwarg in node.keywords]
+        node.func = func
+        # Visit args and kwargs.  ``const_expr(...)`` declares its whole
+        # argument expression a trace-time constant, so the visit runs under
+        # that declaration (see ``const_expr_arguments``).
+        with (
+            self.session_data.const_expr_arguments()
+            if declares_const_expr
+            else contextlib.nullcontext()
+        ):
+            node.args = [self.visit(arg) for arg in node.args]
+            node.keywords = [self.visit(kwarg) for kwarg in node.keywords]
 
         # Track whether a special-case rewrite already handled this call
         already_rewritten = False
@@ -1823,18 +2247,15 @@ class DSLPreprocessor(ast.NodeTransformer):
                 redirected._pyir_synth = True  # type: ignore[attr-defined]
                 return redirected
             elif func.id == "super" and node.args == [] and node.keywords == []:
-                # If it's a Python3 argument free super(), rewrite to old style super with args
-                # So if this call is under dynamic control flow, it still works.
+                # Spell out super()'s implicit arguments.  The rewritten code object
+                # runs on the original function, whose closure still holds the
+                # lexical class in its __class__ cell, so read the class by name.
                 return ast.copy_location(
                     ast.Call(
                         func=func,
                         args=node.args
                         + [
-                            ast.Attribute(
-                                value=ast.Name(id="self", ctx=ast.Load()),
-                                attr="__class__",
-                                ctx=ast.Load(),
-                            ),
+                            ast.Name(id="__class__", ctx=ast.Load()),
                             ast.Name(id="self", ctx=ast.Load()),
                         ],
                         keywords=node.keywords,
@@ -1886,8 +2307,8 @@ class DSLPreprocessor(ast.NodeTransformer):
                     return ast.copy_location(
                         ast.Call(func=func, args=args, keywords=kwargs), node
                     )
-        else:
-            node.func = self.visit(node.func)
+        # No `else` arm: a callee that is neither a Name nor an Attribute over a
+        # Name needs no rewrite here, and it is already visited and stored above.
 
         return node
 
@@ -2076,6 +2497,36 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
+    @staticmethod
+    def _insert_captured_writeback_nonlocals(
+        node: ast.FunctionDef,
+        captured_names: set[str],
+    ) -> None:
+        """Declare captured names written back by outlined control flow.
+
+        Without this declaration, a generated ``captured = region(...)``
+        classifies ``captured`` as a local in the nested function and makes a
+        preceding closure read fail. ``nonlocal`` keeps the writeback on the
+        original closure cell while still carrying the SSA value across the
+        outlined region.
+        """
+        if not captured_names:
+            return
+
+        existing_names = {
+            name
+            for statement in node.body
+            if isinstance(statement, ast.Nonlocal)
+            for name in statement.names
+        }
+        names_to_declare = sorted(captured_names - existing_names)
+        if not names_to_declare:
+            return
+
+        declaration = ast.copy_location(ast.Nonlocal(names=names_to_declare), node)
+        insert_at = 1 if ast.get_docstring(node, clean=False) is not None else 0
+        node.body.insert(insert_at, declaration)
+
     def visit_FunctionDef(
         self, node: ast.FunctionDef
     ) -> "ast.FunctionDef | list[ast.stmt]":
@@ -2085,6 +2536,7 @@ class DSLPreprocessor(ast.NodeTransformer):
         with (
             self.session_data.scope_manager.enter_local_scope(),
             self.session_data.set_current_function_name(node.name),
+            self.session_data.collect_captured_control_flow_writebacks() as writebacks,
         ):
             # Keep recursive calls visible as callables without pretending the
             # function name is an initialized body local. Python does not bind
@@ -2111,6 +2563,7 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Remove .jit and .kernel decorators
         node.decorator_list = self.remove_dsl_decorator(node.decorator_list)
+        self._insert_captured_writeback_nonlocals(node, writebacks)
 
         return node
 
@@ -2136,6 +2589,13 @@ class DSLPreprocessor(ast.NodeTransformer):
         return self._handle_constexpr_test(node)
 
     def visit_While(self, node: ast.While) -> ast.While | list[ast.stmt]:
+        if self.session_data.current_control_flow_policy is ControlFlowPolicy.NATIVE:
+            if self._find_early_exit(node, "while") is not None:
+                visited = self.generic_visit(node)
+                assert isinstance(visited, ast.While)
+                return visited
+            with self.session_data.control_flow_policy(ControlFlowPolicy.TRACE):
+                return self.visit_While(node)
         # Constexpr doesn't get preprocessed
         if self.is_node_constexpr(node):
             return self._handle_constexpr_while(node)
@@ -2160,6 +2620,20 @@ class DSLPreprocessor(ast.NodeTransformer):
             write_args, full_write_args_count, called_closures = (
                 self.analyze_region_variables(node, active_symbols, active_callables)
             )
+            # The region analysis keeps only names bound before the loop; a
+            # name the condition itself binds with ``:=`` is bound on every
+            # path into the body and after the loop (Python semantics).
+            condition_bound = [
+                name
+                for name in _while_condition_bound_names(node.test)
+                if name not in write_args
+            ]
+            if condition_bound:
+                write_args, full_write_args_count = (
+                    self._adopt_while_condition_bound_names(
+                        node, condition_bound, write_args, full_write_args_count
+                    )
+                )
             exprs = []
             if called_closures:
                 cc = self._create_closure_check_call(called_closures, node)
@@ -2179,13 +2653,19 @@ class DSLPreprocessor(ast.NodeTransformer):
     def create_cf_call(
         self, func_name: str, yield_args: list[str], node: ast.stmt
     ) -> list[ast.stmt]:
-        """Creates the assignment statement for the if function call"""
+        """Create result writeback for a rewritten control-flow region."""
         if not yield_args:
             return [
                 ast.copy_location(
                     ast.Expr(value=ast.Name(id=func_name, ctx=ast.Load())), node
                 )
             ]
+        for name in yield_args:
+            scopes = self.session_data.scope_manager
+            if not scopes.current_function_owns(
+                name
+            ) and scopes.enclosing_function_owns(name):
+                self.session_data.record_captured_control_flow_writeback(name)
         has_self = False
         for i, arg in enumerate(yield_args):
             if arg == "self":
@@ -2229,6 +2709,13 @@ class DSLPreprocessor(ast.NodeTransformer):
         self, node: _ComprehensionT, ele_visitor: Callable[..., Any]
     ) -> _ComprehensionT:
         node.generators = [self.visit(generator) for generator in node.generators]
+        # The filter runs in Python while the comprehension is built: a
+        # runtime condition is refused as a built-in's truth test would be.
+        for generator in node.generators:
+            generator.ifs = [
+                self._wrap_truth_guard(test, self.COMPREHENSION_CONDITION)
+                for test in generator.ifs
+            ]
 
         targets: list[str] = []
 
@@ -2260,7 +2747,10 @@ class DSLPreprocessor(ast.NodeTransformer):
         for arg in node.args.args:
             self.session_data.lambda_args.append(arg.arg)
 
-        node.body = self.visit(node.body)
+        # The body runs when the lambda is CALLED, not where it is written, so
+        # an enclosing ``const_expr(...)`` declaration does not reach into it.
+        with self.session_data.deferred_body():
+            node.body = self.visit(node.body)
 
         self.session_data.lambda_args = self.session_data.lambda_args[
             :current_lambda_args
@@ -2352,7 +2842,10 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         # Insert the block definitions into the most recent (innermost) region before the statement
         self.session_data.region_stack[-1].append_new_stmts(
-            [_mark_synth_scope(then_block_def), _mark_synth_scope(else_block_def)]
+            [
+                _mark_synth_scope(then_block_def, node),
+                _mark_synth_scope(else_block_def, node),
+            ]
         )
 
         # Create the executor call node, wiring up the predicate and newly synthesized blocks
@@ -2417,6 +2910,12 @@ class DSLPreprocessor(ast.NodeTransformer):
             ),
             ast.keyword(arg="ops", value=comparator_strs),
         ]
+        if self.session_data.inside_const_expr_argument:
+            # Inside ``const_expr(...)`` the operands are declared trace-time
+            # constants, so an identity leg compares the declared PAYLOADS.
+            keywords.append(
+                ast.keyword(arg="const_expr", value=ast.Constant(value=True))
+            )
 
         call = ast.copy_location(
             ast.Call(
@@ -2435,6 +2934,15 @@ class DSLPreprocessor(ast.NodeTransformer):
         assert isinstance(node.test, ast.Call)
         check = self._insert_cf_symbol_check(node.test.func)
         return [check, node]
+
+    def _handle_loop_exit_if(self, node: ast.If) -> ast.If:
+        """Keep an ``if`` that owns a ``break``/``continue`` as native Python.
+
+        Scoped like a const_expr ``if`` -- only one arm runs at trace time --
+        without its symbol check. Override for custom behavior.
+        """
+        self._visit_constexpr_if_branches(node)
+        return node
 
     def _visit_constexpr_branch(
         self, stmts: list[ast.stmt]
@@ -2464,10 +2972,69 @@ class DSLPreprocessor(ast.NodeTransformer):
         for name in body_definitions | else_definitions:
             self.session_data.scope_manager.add_to_scope(name)
 
+    def _visit_runtime_dispatch(
+        self,
+        node: ast.If,
+    ) -> None:
+        """Visit the dispatch test without leaking for-local definitions.
+
+        A staged for only carries names that were bound before the loop. Names
+        first assigned in either dispatch arm remain internal to that arm and
+        are intentionally unavailable to later staged control flow.
+        """
+        visited_test = self.visit(node.test)
+        assert isinstance(visited_test, ast.expr)
+        node.test = visited_test
+
+    def _wrap_truth_guard(
+        self, test: ast.expr, func_name: str, *consts: str
+    ) -> ast.Call:
+        """``ast_helpers.<func_name>(test, *consts)``: a pure predicate run just
+        before Python truth-tests *test* itself, refusing a runtime condition
+        with a diagnostic naming the construct."""
+        return ast.copy_location(
+            ast.Call(
+                func=_create_module_attribute(func_name),
+                args=[test, *(ast.Constant(value=c) for c in consts)],
+                keywords=[],
+            ),
+            test,
+        )
+
     def visit_If(self, node: ast.If) -> ast.If | list[ast.stmt]:
+        if self.session_data.current_control_flow_policy is ControlFlowPolicy.NATIVE:
+            # The native policy is entered only while visiting the Python arm
+            # of a runtime-dispatched ``for``.  Keep an ``if`` native when
+            # outlining it would detach an early exit from that loop/function;
+            # ordinary nested conditions must still be staged.
+            early_exit = self._find_early_exit(node, "for")
+            if early_exit is not None:
+                # Python truth-tests this condition at trace time: a runtime
+                # value there gets the construct's own diagnostic.
+                guard = not self.is_node_constexpr(node) and not isinstance(
+                    node.test, ast.Constant
+                )
+                visited = self.generic_visit(node)
+                assert isinstance(visited, ast.If)
+                if guard:
+                    visited.test = self._wrap_truth_guard(
+                        visited.test, self.NATIVE_EXIT_GUARD, early_exit[1]
+                    )
+                return visited
+            with self.session_data.control_flow_policy(ControlFlowPolicy.TRACE):
+                return self.visit_If(node)
         # const_expr doesn't get preprocessed
         if self.is_node_constexpr(node):
             return self._handle_constexpr_if(node)
+
+        # A ``break``/``continue`` owned by this ``if`` targets a trace-time
+        # loop: a staged loop refuses early exits before visiting its body
+        # and Python rejects a loop exit outside a loop. Outlining the arm
+        # would detach the exit from that loop, so the ``if`` stays native:
+        # a Meta predicate follows Python and a Staged one is refused by
+        # ``Numeric.__bool__``.
+        if self._find_early_exit(node, "for", self._LOOP_EXIT_TYPES) is not None:
+            return self._handle_loop_exit_if(node)
 
         active_symbols = self.session_data.scope_manager.get_active_symbols()
         active_callables = self.session_data.scope_manager.get_active_callables()
@@ -2566,14 +3133,12 @@ class DSLPreprocessor(ast.NodeTransformer):
         self.session_data.counter += 1
 
         # Create then block
-        then_block = ast.copy_location(
-            _mark_synth_scope(
-                ast.FunctionDef(
-                    name=then_block_name,
-                    args=func_then_else_arguments,
-                    body=then_body + [ast.Return(value=return_list)],
-                    decorator_list=[],
-                )
+        then_block = _mark_synth_scope(
+            ast.FunctionDef(
+                name=then_block_name,
+                args=func_then_else_arguments,
+                body=then_body + [ast.Return(value=return_list)],
+                decorator_list=[],
             ),
             node,
         )
@@ -2628,7 +3193,6 @@ class DSLPreprocessor(ast.NodeTransformer):
                 arg="then_block", value=ast.Name(id=then_block_name, ctx=ast.Load())
             ),
         ]
-
         # Handle different cases
         if not write_args and node.orelse == []:
             # No write_args case - only then_block needed
@@ -2721,7 +3285,7 @@ class DSLPreprocessor(ast.NodeTransformer):
                     decorator_list=[],
                 )
 
-            _mark_synth_scope(else_block)
+            _mark_synth_scope(else_block, node)
             # Add else_block to execute keywords
             execute_keywords.append(
                 ast.keyword(
@@ -2741,7 +3305,7 @@ class DSLPreprocessor(ast.NodeTransformer):
             )
             func_body = [
                 then_block,
-                ast.copy_location(else_block, node),
+                else_block,
                 ast.Return(value=execute_call),
             ]
 
@@ -2754,6 +3318,40 @@ class DSLPreprocessor(ast.NodeTransformer):
             ),
             node,
         )
+
+    def _adopt_while_condition_bound_names(
+        self,
+        node: ast.While,
+        names: list[str],
+        write_args: list[str],
+        full_write_args_count: int,
+    ) -> tuple[list[str], int]:
+        """Hook for names a staged ``while`` condition binds with ``:=`` that
+        have no binding before the loop.  This lowering keeps such a name a
+        local of the condition block, so a body read of it is refused with
+        the pre-binding fix; a name the body never reads stays as it is."""
+        for name in names:
+            read = next(
+                (
+                    sub
+                    for stmt in node.body
+                    for sub in ast.walk(stmt)
+                    if isinstance(sub, ast.Name)
+                    and sub.id == name
+                    and isinstance(sub.ctx, ast.Load)
+                ),
+                None,
+            )
+            if read is not None:
+                raise DSLUserCodeError(
+                    DiagId.SCOPE_WALRUS_IN_WHILE_CONDITION,
+                    filename=self.session_data.file_name,
+                    lineno=getattr(read, "lineno", node.lineno),
+                    col_offset=getattr(read, "col_offset", None),
+                    end_col_offset=getattr(read, "end_col_offset", None),
+                    name=name,
+                )
+        return write_args, full_write_args_count
 
     def _prepare_while_condition_vars(
         self,
@@ -2885,14 +3483,12 @@ class DSLPreprocessor(ast.NodeTransformer):
             ctx=ast.Load(),
         )
         while_before_stmts.append(ast.Return(value=while_before_return_list))
-        while_before_block = ast.copy_location(
-            _mark_synth_scope(
-                ast.FunctionDef(
-                    name=while_before_block_name,
-                    args=block_args,
-                    body=while_before_stmts,
-                    decorator_list=[],
-                )
+        while_before_block = _mark_synth_scope(
+            ast.FunctionDef(
+                name=while_before_block_name,
+                args=block_args,
+                body=while_before_stmts,
+                decorator_list=[],
             ),
             test_expr,
         )
@@ -2912,14 +3508,12 @@ class DSLPreprocessor(ast.NodeTransformer):
 
         while_after_stmts.append(ast.Return(value=yield_args_ast_name_list))
 
-        while_after_block = ast.copy_location(
-            _mark_synth_scope(
-                ast.FunctionDef(
-                    name=while_after_block_name,
-                    args=block_args,
-                    body=while_after_stmts,
-                    decorator_list=[],
-                )
+        while_after_block = _mark_synth_scope(
+            ast.FunctionDef(
+                name=while_after_block_name,
+                args=block_args,
+                body=while_after_stmts,
+                decorator_list=[],
             ),
             node,
         )
@@ -2953,7 +3547,6 @@ class DSLPreprocessor(ast.NodeTransformer):
                 ),
             ),
         ]
-
         execute_call = ast.Call(
             func=_create_module_attribute(
                 self.WHILE_EXECUTOR, lineno=node.lineno, col_offset=node.col_offset

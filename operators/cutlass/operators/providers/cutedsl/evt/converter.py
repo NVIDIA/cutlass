@@ -42,11 +42,13 @@ transport.  The user selects that transport with the public
 ``efc.Transport`` enum (same string values).  Names with no descriptor default
 to ``Transport.TMA``.
 
-The EFC framework is imported as ``from ...evt import efc`` -- a verbatim copy
-of the upstream example package (see ``evt/efc/``); do not edit it here.
+The EFC framework is imported as ``from ...evt import efc``.  That package
+tracks the upstream example (see ``evt/efc/``).
 """
 
 from collections.abc import Callable
+
+import torch
 
 from cutlass.operators.arguments.epilogue import Load, Store
 from cutlass.operators.fusion.ir import DAGIR, LoadNode, StoreNode, TopoVisitorNode
@@ -61,9 +63,45 @@ from cutlass.operators.fusion.ir.store_nodes import (
     RowReductionImpl,
     ScalarReductionImpl,
 )
-from cutlass.operators.fusion.library import ActivationOp, FunctionalOp
+from cutlass.operators.fusion.library import ActivationOp, FunctionalOp, GatedOp
 from cutlass.operators.providers.cutedsl.evt import efc
 from cutlass.operators.status import Status
+from cutlass.operators.utils.dtype import get_torch_to_cutlass_dtype_map
+
+# Name of the ``efc_config`` method implementing each gated linear unit.  The
+# method is nullary: it calls ``accum_split`` itself rather than consuming a
+# value, because the split has to happen on the register fragment, before the
+# accumulator is loaded.
+_GATED_OP_TO_EFC: dict[GatedOp, str] = {
+    GatedOp.SwiGLU: "swiglu",
+    GatedOp.GeGLU: "geglu",
+    GatedOp.ReGLU: "reglu",
+}
+
+
+def _gated_impl(efc_method_name: str):
+    """Return the op calling ``efc_config.<efc_method_name>()``.
+
+    The DAGIR gives a gated node one input -- the accumulator -- but the
+    EFC method takes none: it splits the register fragment itself, which
+    has to happen before the accumulator is loaded.  So the value the
+    interpreter passes is discarded.
+    """
+
+    def _op(efc_config, accum_value):
+        return getattr(efc_config, efc_method_name)()
+
+    return _op
+
+
+def _gated_impl_str(efc_method_name: str):
+    """Return the debug-string form matching ``_gated_impl``."""
+
+    def _str(accum_name):
+        return f"efc_config.{efc_method_name}()"
+
+    return _str
+
 
 OpToCuteImplStr = {
     FunctionalOp.Exp: lambda x: f"exp({x})",
@@ -74,6 +112,7 @@ OpToCuteImplStr = {
     FunctionalOp.Multiplies: lambda x, y: f"({x} * {y})",
     FunctionalOp.Plus: lambda x, y: f"({x} + {y})",
     FunctionalOp.Minus: lambda x, y: f"({x} - {y})",
+    **{op: _gated_impl_str(name) for op, name in _GATED_OP_TO_EFC.items()},
 }
 
 
@@ -92,6 +131,9 @@ OpToCuteImpl = {
     FunctionalOp.Multiplies: lambda efc_config, x, y: x * y,
     FunctionalOp.Plus: lambda efc_config, x, y: x + y,
     FunctionalOp.Minus: lambda efc_config, x, y: x - y,
+    # A gated op reads the accumulator itself, through its own N-interleaved
+    # split, so it ignores the full-width value the interpreter hands it.
+    **{op: _gated_impl(name) for op, name in _GATED_OP_TO_EFC.items()},
 }
 
 
@@ -606,8 +648,19 @@ class EFCConverter:
         return named_epi
 
     @staticmethod
-    def supports(dag_ir: DAGIR) -> Status:
-        """Checks if the DAGIR is supported by CuTe DSL EFC."""
+    def supports(dag_ir: DAGIR, tensors=None) -> Status:
+        """Check whether the DAG IR is supported by the CuTe DSL EFC backend.
+
+        Args:
+            dag_ir: The epilogue DAG to check.
+            tensors: Optional mapping of tensor name to ``TensorWrapper``.
+                When provided, the epilogue's parameter dtypes are validated
+                too, so unsupported fusions are rejected at operator discovery
+                instead of failing later at compile time.
+
+        Returns:
+            Status: A successful status, or a failed one carrying the reason.
+        """
         for meta in dag_ir.node_metas_topological_order():
             if isinstance(meta, TopoVisitorNode):
                 return Status.fail("TopoVisitorNode is not supported")
@@ -625,6 +678,37 @@ class EFCConverter:
                     return Status.fail(
                         f"Reduction operator {meta.reg_reduce_fn!r} is not "
                         "supported; use sum(), max(), or min()"
+                    )
+                # Mirror Tensor.reduce's trace-time rule at discovery.
+                # ``tensors`` may hold raw framework tensors (TensorWrapper
+                # conversion happens in GemmArguments, and only for torch
+                # today), so normalize torch dtypes and skip any dtype we
+                # cannot attribute (e.g. the numpy dtypes jax reports) --
+                # the trace-time check stays the authoritative gate.
+                dest = tensors.get(meta.name) if tensors is not None else None
+                dest_dtype = getattr(dest, "dtype", None)
+                if isinstance(dest_dtype, torch.dtype):
+                    dest_dtype = get_torch_to_cutlass_dtype_map().get(dest_dtype)
+                if not hasattr(dest_dtype, "width"):
+                    dest_dtype = None
+                if dest_dtype is not None and not efc.is_valid_reduce_destination_dtype(
+                    dest_dtype
+                ):
+                    return Status.fail(
+                        f"Reduction destination '{meta.name}' has dtype "
+                        f"{dest_dtype}; EFC reductions require 32-bit "
+                        "destinations"
+                    )
+            if isinstance(getattr(meta, "fn", None), GatedOp):
+                # A gated op splits the accumulator's register fragment,
+                # which exists only for the accumulator itself.  The EFC
+                # method takes no operand, so a gated node reading anything
+                # else would silently gate the raw accumulator instead.
+                inputs = dag_ir.get_all_inputs(meta.name)
+                if inputs != ["accum"]:
+                    return Status.fail(
+                        f"{meta.fn.name} must be applied to accum directly, "
+                        f"but reads {inputs}"
                     )
         return Status.success()
 

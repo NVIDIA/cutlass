@@ -10,10 +10,9 @@
 # is strictly prohibited.
 
 import enum
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type, Union, cast
-from typing_extensions import deprecated
 from abc import ABCMeta, abstractmethod
 
 from cutlass import base_dsl
@@ -41,10 +40,106 @@ from ...typing import (
     Float32,
     Float64,
 )
-from ..common import LoadCacheMode as LoadCacheMode_
+from ..cache_policy import CachePolicy as _CachePolicy
+from ..common import (
+    CacheEvictionPriority as CacheEvictionPriority_,
+    LoadCacheMode as LoadCacheMode_,
+)
+
+from ...arch import supports_report_valid
 
 from ..tcgen05.mma import CtaGroup
 
+
+class SentinelPattern(enum.Enum):
+    """Sentinel pattern for a TMA report_valid (data-driven sync) load.
+
+    Pass an explicit member to force a specific hardware sentinel.
+    ``PER_ELEMENT_FF`` checks the 0xFF / 0xF sentinel used by 8-bit scale
+    metadata / 4-bit sparse metadata.
+    """
+
+    NONE = _cute_nvgpu_ir.SentinelPattern.NONE
+    PER_16BYTES_80000000 = _cute_nvgpu_ir.SentinelPattern.PER_16BYTES_80000000
+    PER_16BYTES_8000 = _cute_nvgpu_ir.SentinelPattern.PER_16BYTES_8000
+    PER_16BYTES_80 = _cute_nvgpu_ir.SentinelPattern.PER_16BYTES_80
+    PER_16BYTES_8 = _cute_nvgpu_ir.SentinelPattern.PER_16BYTES_8
+    PER_ELEMENT_FF = _cute_nvgpu_ir.SentinelPattern.PER_ELEMENT_FF
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+    def _to_ir(self) -> _cute_nvgpu_ir.SentinelPattern:
+        return self.value
+
+
+# A ``report_valid`` argument may be a bool, an explicit ``SentinelPattern``, or a
+# dtype (converted to the sentinel for that dtype)
+# Note sentinel check is per-16B on Rubin for non scale factor types, so the
+# producer must write in atomic 16B chunks.
+ReportValidArg = Union[bool, SentinelPattern, Type[Numeric]]
+
+_SENTINEL_BY_WIDTH = {
+    32: SentinelPattern.PER_16BYTES_80000000,
+    16: SentinelPattern.PER_16BYTES_8000,
+    8: SentinelPattern.PER_16BYTES_80,
+    4: SentinelPattern.PER_16BYTES_8,
+}
+
+
+def _sentinel_pattern_from_dtype(dtype: Type[Numeric]) -> SentinelPattern:
+    """Map a float dtype to its -0.0 sentinel, at the finest granularity the arch supports."""
+    if not dtype.is_float:
+        raise DSLUserCodeError(
+            f"cannot derive a report_valid sentinel from non-float dtype {dtype}; "
+            "use an explicit SentinelPattern instead"
+        )
+    by_width = _SENTINEL_BY_WIDTH
+    if dtype.width not in by_width:
+        raise DSLUserCodeError(
+            f"cannot derive a report_valid sentinel from dtype {dtype} "
+            f"(unsupported width {dtype.width})"
+        )
+    return by_width[dtype.width]
+
+
+def _report_valid_to_sentinel_pattern(
+    report_valid: ReportValidArg,
+    atom_val: Optional[ir.Value] = None,
+) -> Optional[_cute_nvgpu_ir.SentinelPattern]:
+    """Resolve a ``report_valid`` argument to an IR ``SentinelPattern`` or None.
+
+    - ``False`` / ``None`` / ``SentinelPattern.NONE``: None (attribute omitted).
+    - ``True``: derived from ``atom_val``'s element dtype.
+    - a ``SentinelPattern``: used directly.
+    - a dtype: mapped to its -0.0 sentinel by bit width.
+    """
+    if report_valid is None or report_valid is False:
+        return None
+    if report_valid is True:
+        if atom_val is None:
+            raise DSLUserCodeError("report_valid=True requires the non-exec atom value")
+        mlir_ty = atom_val.type.value_type
+        try:
+            dtype = Numeric.from_mlir_type(mlir_ty)
+        except Exception as e:
+            raise DSLUserCodeError(
+                f"report_valid=True cannot derive a sentinel for non-numeric "
+                f"element type {mlir_ty}; pass an explicit SentinelPattern instead"
+            ) from e
+        pattern = _sentinel_pattern_from_dtype(dtype)
+    elif isinstance(report_valid, SentinelPattern):
+        if report_valid is SentinelPattern.NONE:
+            return None
+        pattern = report_valid
+    elif isinstance(report_valid, type) and issubclass(report_valid, Numeric):
+        pattern = _sentinel_pattern_from_dtype(report_valid)
+    else:
+        raise DSLUserCodeError(
+            f"report_valid must be a bool, SentinelPattern, or dtype, but got "
+            f"{report_valid!r}"
+        )
+
+    return pattern._to_ir()
 
 
 ####################################################################################################
@@ -54,7 +149,7 @@ from ..tcgen05.mma import CtaGroup
 ####################################################################################################
 
 
-@deprecated(
+@_deprecated(
     "cute.nvgpu.cpasync.LoadCacheMode is deprecated, use cute.nvgpu.LoadCacheMode instead"
 )
 class LoadCacheMode(enum.Enum):
@@ -149,6 +244,43 @@ TMA_DESC_PTR_FIELD_NAME = "tma_descriptor_ptr"
 TMA_BYTE_MASK_FIELD_NAME = "byte_mask"
 TMA_CTA_RANK_FIELD_NAME = "cta_rank"
 TMA_CACHE_POLICY_FIELD_NAME = "cache_policy"
+
+TmaCachePolicy = Union[
+    _CachePolicy,
+    Int64,
+    CacheEvictionPriority_,
+    _cute_nvgpu_ir.CacheEvictionPriority,
+]
+
+
+def _normalize_tma_cache_policy(
+    cache_policy: Optional[TmaCachePolicy],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Optional[Int64]:
+    """Convert a typed policy or eviction priority to the descriptor TMA consumes.
+
+    ``Int64`` remains supported as an escape hatch for descriptors created by
+    CUDA APIs or more specialized ``createpolicy`` forms.
+    """
+    if cache_policy is None or isinstance(cache_policy, Int64):
+        return cache_policy
+    if isinstance(cache_policy, _CachePolicy):
+        return Int64(cache_policy.ir_value())
+
+    priority_types = (
+        CacheEvictionPriority_,
+        _cute_nvgpu_ir.CacheEvictionPriority,
+    )
+    if not isinstance(cache_policy, priority_types):
+        raise ValueError(
+            "expects a `CachePolicy`, `Int64` descriptor or `CacheEvictionPriority` via the "
+            "cache_policy kw argument"
+        )
+
+    policy = _CachePolicy(primary_priority=cache_policy, loc=loc, ip=ip)
+    return Int64(policy.ir_value())
 
 
 class TmaCopyOp(CopyOp):
@@ -249,14 +381,16 @@ class CopyG2STileNonExecBaseTrait(TmaTrait):
         ip: Optional[ir.InsertionPoint] = None,
         tma_bar_ptr: Optional[Pointer] = None,
         tma_desc_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
+        report_valid: ReportValidArg = False,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
 
         The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
-        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        using `cute.copy`. `cache_policy` accepts a `CachePolicy`, `CacheEvictionPriority` or
+        an opaque `Int64` descriptor to set the L2 eviction policy.
         Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(tma_bar_ptr, Pointer):
@@ -264,8 +398,16 @@ class CopyG2STileNonExecBaseTrait(TmaTrait):
                 "expects a pointer to an mbarrier to be provided via the tma_bar_ptr kw argument"
             )
 
+        arch = BaseDSL._get_dsl().get_arch_enum()
+        if report_valid and not supports_report_valid(arch):
+            raise DSLUserCodeError(
+                f"report_valid is only supported on arch {base_dsl.Arch.sm_107.name} and above",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        sentinel = _report_valid_to_sentinel_pattern(report_valid, self.value)
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
             self.value,
+            report_valid=sentinel,
             loc=loc,
             ip=ip,
         )
@@ -281,12 +423,8 @@ class CopyG2STileNonExecBaseTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -338,9 +476,9 @@ class CopyBulkTensorTileG2SOp(CopyG2STileBaseOp):
     This Operation uses TMA in the ``.tile`` mode.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA copy, but needed for barrier setup
-       - :func:`cute.arch.mbarrier_init` - Requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx` - Requires elect_one
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **NOT** needed for TMA copy, but needed for barrier setup
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Requires elect_one
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
 
@@ -464,15 +602,17 @@ class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
         tma_bar_ptr: Optional[Pointer] = None,
         mcast_mask: Any = None,
         tma_desc_ptr: Any = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
+        report_valid: ReportValidArg = False,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
 
         The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
-        provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
-        l2 cache eviction priority.
+        provided when using `cute.copy`. `cache_policy` accepts a
+        `CachePolicy`, `CacheEvictionPriority` or an opaque `Int64` descriptor to set the
+        L2 eviction policy.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
@@ -483,8 +623,16 @@ class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
                 "expects a multicast mask to be provided via the mcast_mask kw argument"
             )
 
+        arch = BaseDSL._get_dsl().get_arch_enum()
+        if report_valid and not supports_report_valid(arch):
+            raise DSLUserCodeError(
+                f"report_valid is only supported on arch {base_dsl.Arch.sm_107.name} and above",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        sentinel = _report_valid_to_sentinel_pattern(report_valid, self.value)
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
             self.value,
+            report_valid=sentinel,
             loc=loc,
             ip=ip,
         )
@@ -499,12 +647,8 @@ class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -551,7 +695,7 @@ class CopyBulkTensorTileG2SMulticastOp(CopyG2STileBaseOp):
     This Operation uses TMA in the ``.tile`` mode.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA copy
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **NOT** needed for TMA copy
        - :class:`CopyBulkTensorTileG2SOp` - Non-multicast TMA load
     """
 
@@ -734,14 +878,16 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
         ip: Optional[ir.InsertionPoint] = None,
         tma_bar_ptr: Optional[Pointer] = None,
         tma_desc_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
+        report_valid: ReportValidArg = False,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
 
         The non-multicast TMA load requires a `tma_bar_ptr` keyword argument to be provided when
-        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        using `cute.copy`. `cache_policy` accepts a `CachePolicy`, `CacheEvictionPriority` or
+        an opaque `Int64` descriptor to set the L2 eviction policy.
         Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(tma_bar_ptr, Pointer):
@@ -749,8 +895,17 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
                 "expects a pointer to an mbarrier to be provided via the tma_bar_ptr kw argument"
             )
 
+        arch = BaseDSL._get_dsl().get_arch_enum()
+        if report_valid and not supports_report_valid(arch):
+            raise DSLUserCodeError(
+                f"report_valid is only supported on arch {base_dsl.Arch.sm_107.name} and above",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        sentinel = _report_valid_to_sentinel_pattern(report_valid, self.value)
+
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
             self.value,
+            report_valid=sentinel,
             loc=loc,
             ip=ip,
         )
@@ -765,12 +920,8 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -866,15 +1017,17 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
         tma_bar_ptr: Optional[Pointer] = None,
         mcast_mask: Any = None,
         tma_desc_ptr: Any = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
+        report_valid: ReportValidArg = False,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for non-executable TMAs.
 
         The multicast TMA load requires a `tma_bar_ptr`  and a `mcast_mask` keyword arguments to be
-        provided when using `cute.copy`. `cache_policy` keyword argument to be provided to set the
-        l2 cache eviction priority.
+        provided when using `cute.copy`. `cache_policy` accepts a
+        `CachePolicy`, `CacheEvictionPriority` or an opaque `Int64` descriptor to set the
+        L2 eviction policy.
         """
         if not isinstance(tma_bar_ptr, Pointer):
             raise ValueError(
@@ -885,8 +1038,16 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
                 "expects a multicast mask to be provided via the mcast_mask kw argument"
             )
 
+        arch = BaseDSL._get_dsl().get_arch_enum()
+        if report_valid and not supports_report_valid(arch):
+            raise DSLUserCodeError(
+                f"report_valid is only supported on arch {base_dsl.Arch.sm_107.name} and above",
+                suggestion="Ensure env CUTE_DSL_ARCH matches your GPU architecture",
+            )
+        sentinel = _report_valid_to_sentinel_pattern(report_valid, self.value)
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(
             self.value,
+            report_valid=sentinel,
             loc=loc,
             ip=ip,
         )
@@ -901,12 +1062,8 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -961,7 +1118,7 @@ class CopyBulkTensorTileS2GOp(TmaCopyOp):
     This Operation uses TMA in the ``.tile`` mode.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - **NOT** needed for TMA store
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - **NOT** needed for TMA store
        - :class:`CopyBulkTensorTileG2SOp` - TMA load operation
        - Tutorial example: ``examples/blackwell/tutorial_tma/tma_v0.py``
     """
@@ -1007,7 +1164,7 @@ class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         tma_desc_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
@@ -1022,12 +1179,8 @@ class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -1115,13 +1268,12 @@ class CopyReduceBulkTensorTileS2GOp(TmaCopyOp):
             # Hardware-correct upstream enum; convert silently by name.
             self.reduction_kind = ReductionKind[kind.name]
         elif isinstance(kind, _CuteReductionOp):
-            warnings.warn(
+            _warn_deprecated(
                 "Passing cute.ReductionOp to CopyReduceBulkTensorTileS2GOp "
                 "is deprecated: cute.ReductionOp models compute reductions "
                 "(for cute.reduce). TMA hardware reduction uses a separate "
                 "enum -- use cute.ReductionKind instead.",
-                DeprecationWarning,
-                stacklevel=3,
+                user_input=True,
             )
             try:
                 self.reduction_kind = ReductionKind[kind.name]
@@ -1186,7 +1338,7 @@ class CopyReduceBulkTensorTileS2GNonExecTrait(TmaTrait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         tma_desc_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
@@ -1201,11 +1353,8 @@ class CopyReduceBulkTensorTileS2GNonExecTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmareduce<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -1359,7 +1508,7 @@ class CopyBulkTensorTileG2SOverrideNonExecTrait(TmaTrait):
         ip: Optional[ir.InsertionPoint] = None,
         tma_bar_ptr: Optional[Pointer] = None,
         mcast_mask: Any = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
@@ -1403,11 +1552,8 @@ class CopyBulkTensorTileG2SOverrideNonExecTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -1496,7 +1642,7 @@ class CopyBulkTensorTileS2GOverrideNonExecTrait(TmaTrait):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
@@ -1511,11 +1657,8 @@ class CopyBulkTensorTileS2GOverrideNonExecTrait(TmaTrait):
             loc=loc,
             ip=ip,
         )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -1582,7 +1725,7 @@ class CopyBulkTensorIm2ColS2GNonExecTrait(TmaTrait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         tma_desc_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
@@ -1597,12 +1740,8 @@ class CopyBulkTensorIm2ColS2GNonExecTrait(TmaTrait):
             exec_value = _cute_nvgpu_ir.atom_set_value(
                 exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
             )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
-
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -1674,14 +1813,15 @@ class CopyBulkG2STrait(Trait):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
         mbar_ptr: Optional[Pointer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for bulk copy load.
 
         The non-multicast bulk load requires a `mbar_ptr` keyword argument to be provided when
-        using `cute.copy`. `cache_policy` keyword argument to be provided to set the l2 cache eviction priority.
+        using `cute.copy`. `cache_policy` accepts a `CachePolicy`, `CacheEvictionPriority` or
+        an opaque `Int64` descriptor to set the L2 eviction policy.
         Any other kw arguments will be ignored instead of triggering an error.
         """
         if not isinstance(mbar_ptr, Pointer):
@@ -1693,11 +1833,8 @@ class CopyBulkG2STrait(Trait):
         val = _cute_nvgpu_ir.atom_set_value(
             self.value, attr, cast(Any, mbar_ptr).value, loc=loc, ip=ip
         )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )
@@ -1719,6 +1856,18 @@ class CopyBulkG2SMulticastOp(CopyOp):
     Bulk multicast copy asynchronous GMEM to SMEM Copy Operation.
 
     The compiler does not perform thread election for this operation.
+
+    Exactly one thread in one CTA must issue the :func:`cute.copy`. For every
+    destination CTA selected by ``mcast_mask``, initialize and set the expected
+    transaction bytes on the mbarrier at the same CTA-relative SMEM offset.
+    Publish those initializations with :func:`cute.arch.mbarrier_init_fence
+    <cutlass.cute.arch.mbarrier_init_fence>` and cluster synchronization before
+    issuing the copy. Every destination CTA must wait on its local mbarrier
+    before reading the multicast destination.
+
+    The compiler cannot infer the destination participant set from a general
+    run-time multicast mask, so the caller is responsible for this cross-CTA
+    barrier lifecycle.
 
     See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-cp-async-bulk>`__.
     """
@@ -1766,14 +1915,16 @@ class CopyBulkG2SMulticastTrait(Trait):
         ip: Optional[ir.InsertionPoint] = None,
         mbar_ptr: Optional[Pointer] = None,
         mcast_mask: Optional[Integer] = None,
-        cache_policy: Optional[Int64] = None,
+        cache_policy: Optional[TmaCachePolicy] = None,
         **kwargs: Any,
     ) -> ir.Value:
         """
         Custom implementation of unpack for bulk copy load.
 
-        The non-multicast bulk load requires a `mbar_ptr` keyword argument to be provided when
-        using `cute.copy`. Any other kw arguments will be ignored instead of triggering an error.
+        The multicast bulk load requires ``mbar_ptr`` and ``mcast_mask`` keyword
+        arguments when using :func:`cute.copy`. ``mbar_ptr`` identifies the
+        CTA-relative barrier offset replicated across the destination CTAs.
+        Other keyword arguments are ignored instead of triggering an error.
         """
         if not isinstance(mbar_ptr, Pointer):
             raise ValueError(
@@ -1793,11 +1944,8 @@ class CopyBulkG2SMulticastTrait(Trait):
         val = _cute_nvgpu_ir.atom_set_value(
             val, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
+        cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
-            if not isinstance(cache_policy, Int64):
-                raise ValueError(
-                    "expects `Int64` value to be provided via the cache_policy kw argument"
-                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_bulkg2s<{TMA_CACHE_POLICY_FIELD_NAME}>"
             )

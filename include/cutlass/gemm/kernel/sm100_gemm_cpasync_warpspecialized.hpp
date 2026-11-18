@@ -463,6 +463,9 @@ public:
     clc_pipeline_params.producer_arv_count = 1;
     clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
                                                  (NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads);
+    if (is_epi_load_needed) {
+      clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
+    }
 
     clc_pipeline_params.transaction_bytes = CLCResponseSize;
     clc_pipeline_params.initializing_warp = 1;

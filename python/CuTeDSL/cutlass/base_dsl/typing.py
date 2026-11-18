@@ -13,6 +13,7 @@ import ctypes
 import math
 import struct
 from abc import abstractmethod
+from functools import lru_cache
 from itertools import chain
 import operator
 from typing import (
@@ -37,6 +38,7 @@ from typing import (
 
 from .common import *
 from .common import DSLRuntimeError as DSLRuntimeError
+from .common import DSLUserCodeTypeError
 from .diagnostics import DiagId
 from .._mlir_helpers import arith as arith_helper
 from .._mlir_helpers.arith import ArithValue
@@ -54,6 +56,8 @@ from .pyir_runtime import (
     _PYIR_SCOPE_STACK,
     _WatchedM,
     _pyir_declare_write_funnel,
+    _pyir_fatal_trace_error,
+    _pyir_is_stale_staged,
     _pyir_note_holder_write,
     _pyir_record_external_payload_consumption,
     _pyir_record_staged_identity_hashed,
@@ -1000,15 +1004,20 @@ def _pyir_mark_fold_srcs(result: Any, operands: "tuple[Any, ...]") -> None:
         pass
 
 
+def is_staged_numeric(x: Any) -> bool:
+    """Whether *x* is a ``Numeric`` carrying no trace-time payload: its value
+    is decided at run time, so a Python truth test, index or fold of it has
+    nothing to read."""
+    return isinstance(x, Numeric) and not isinstance(
+        x.__dict__.get("value"), (bool, int, float)
+    )
+
+
 def _pyir_numeric_protocol_gate(proto: str, *operands: Any) -> None:
     """Refuse a numeric protocol that has no staged form when any operand is a
     staged (runtime) value; payload operands proceed to the fold arm."""
     for o in operands:
-        staged = isinstance(o, ArithValue) or (
-            isinstance(o, Numeric)
-            and not isinstance(o.__dict__.get("value"), (bool, int, float))
-        )
-        if staged:
+        if isinstance(o, ArithValue) or is_staged_numeric(o):
             raise DSLUserCodeError(
                 DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
                 proto=proto,
@@ -1022,6 +1031,25 @@ def _pyir_numeric_payload(operand: Any) -> Any:
     if isinstance(operand, Numeric):
         return operand.__dict__.get("value")
     return operand
+
+
+def _refuse_stale_staged(*operands: Any) -> None:
+    """Refuse a Numeric whose ``ir.Value`` payload outlived the compilation
+    that minted it (:func:`_pyir_is_stale_staged`), before an operator
+    dereferences the dangling handle.  Literal payloads pay one dict probe per
+    operand; the context probe runs only for a staged payload."""
+    for o in operands:
+        if (
+            isinstance(o, Numeric)
+            and isinstance(o.__dict__.get("value"), ir.Value)
+            and _pyir_is_stale_staged(o)
+        ):
+            raise _pyir_fatal_trace_error(
+                DSLUserCodeRuntimeError(
+                    DiagId.PHASE_STAGED_VALUE_OUTLIVED_COMPILATION,
+                    what=type(o).__name__,
+                )
+            )
 
 
 def _binary_op(
@@ -1063,6 +1091,7 @@ def _binary_op(
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Any:
+        _refuse_stale_staged(lhs, rhs)
         orig_lhs_type = type(lhs)
         orig_rhs_type = type(rhs)
         # Captured BEFORE promotion rebinds lhs/rhs: the fold witness must key
@@ -1183,14 +1212,12 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         # Birth-context stamp: an SSA-backed wrapper belongs to the MLIR context
         # that minted it (a live ``ir.Value`` keeps the context id stable).
 
-        # The read funnels refuse a cross-context wrapper instead of
-        # dereferencing a handle whose defining op is gone.  PyIR-only: the
-        # trace-close host-place restore keys this-compilation identity on the
-        # stamp, and only PyIR's read funnels consume it, so an unstamped
-        # wrapper in the baseline mode pays no per-mint guard work.  The
-        # C-level type test leads so a literal payload never reaches the
-        # environment manager lookup.
-        if isinstance(value, ir.Value) and is_pyir_enabled():
+        # The read funnels and ``_refuse_stale_staged`` refuse a cross-context
+        # wrapper instead of dereferencing a handle whose defining op is gone;
+        # both frontends stamp, so a wrapper that escaped one compilation is
+        # caught inside the next one in either mode.  The C-level type test
+        # leads so a literal payload never reaches the context lookup.
+        if isinstance(value, ir.Value):
             try:
                 self._pyir_birth_ctx = id(ir.Context.current)
             except Exception:
@@ -1334,26 +1361,9 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             if isinstance(self.value, (int, float, bool)):
                 res = arith_helper.const(self.value, type(self), loc=loc, ip=ip)
             elif isinstance(self.value, ir.Value):
-                # Cross-compilation guard: a raw SSA minted under a DIFFERENT MLIR
-                # context belongs to a finalized compilation -- refuse loudly.
-                # An unstamped wrapper (baseline mode never stamps) skips the
-                # guard entirely, paying one attribute probe and no context id.
-                _birth: "int | None" = getattr(self, "_pyir_birth_ctx", None)
-                if _birth is not None:
-                    _cur_ctx: "int | None"
-                    try:
-                        _cur_ctx = id(ir.Context.current)
-                    except Exception:
-                        _cur_ctx = _birth
-                    if _birth != _cur_ctx:
-                        raise DSLRuntimeError(
-                            "this value was produced by a previous @jit "
-                            "compilation and cannot be reused here: its "
-                            "backing IR lives in an already-finalized "
-                            "compilation context. Pass it through the "
-                            "kernel's arguments or recompute it in this "
-                            "compilation."
-                        )
+                # A raw SSA minted by a finished compilation (host code, or a
+                # later compilation) is refused before it is dereferenced.
+                _refuse_stale_staged(self)
                 # Staged-read choke: a wrapper paired with a live place cell
                 # materialises the CELL's current content, never a stale raw.
                 refreshed = _pyir_refresh_cell_read(self)
@@ -1557,23 +1567,51 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         zero = type(self).zero
         return self.__ne__(zero, loc=loc, ip=ip)
 
-    def __bool__(self) -> bool:
+    def _consume_meta_payload(self) -> Any:
+        """The trace-time payload a coercion dunder folds (``bool()``,
+        ``__index__``, ``int()``, ``float()``, ``complex()``), witnessed as a
+        structural consumption; ``None`` for a staged value, which has none.
+        The dunder raises its own refusal: the native-call boundary recognises
+        ``PHASE_DYNAMIC_TO_STATIC_BOOL`` by the frame that raised it."""
         v = self.__dict__.get("value")
-        if isinstance(v, (int, float, bool)):
-            # A truth-test on the payload folds trace-time data: witness it.
-            _pyir_record_external_payload_consumption(self)
-            return bool(v)
-        else:
+        if not isinstance(v, (int, float, bool)):
+            return None
+        # The recorder is told the consumer sits one helper frame up.
+        _pyir_record_external_payload_consumption(self, depth=3)
+        return v
+
+    def __bool__(self) -> bool:
+        v = self._consume_meta_payload()
+        if v is None:
             raise DSLUserCodeError(DiagId.PHASE_DYNAMIC_TO_STATIC_BOOL)
+        return bool(v)
 
     def __index__(self) -> int:
-        v = self.__dict__.get("value")
-        if isinstance(v, (int, float, bool)):
-            # An index coercion of the payload is a structural bake: witness it.
-            _pyir_record_external_payload_consumption(self)
-            return v  # type: ignore[return-value]
-        else:
+        v = self._consume_meta_payload()
+        if v is None:
             raise DSLUserCodeError(DiagId.PHASE_DYNAMIC_INDEX)
+        # Returned as is: a float payload must still fail CPython's own
+        # "__index__ returned non-int" check.
+        return v
+
+    def __int__(self) -> int:
+        v = self._consume_meta_payload()
+        if v is None:
+            raise DSLUserCodeError(
+                DiagId.PHASE_REQUIRES_CONSTANT,
+                what="Explicit integer conversion (int())",
+            )
+        # Python semantics: a float truncates toward zero, a bool folds to 0/1.
+        return int(v)
+
+    def __float__(self) -> float:
+        v = self._consume_meta_payload()
+        if v is None:
+            raise DSLUserCodeError(
+                DiagId.PHASE_REQUIRES_CONSTANT,
+                what="Explicit float conversion (float())",
+            )
+        return float(v)
 
     def __complex__(self) -> complex:
         # The arm is a PyIR-mode fact: without PyIR there is no __complex__,
@@ -1581,16 +1619,14 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         # (``operator.index`` applies the same non-int return check).
         if not is_pyir_enabled():
             return complex(operator.index(self))
-        v = self.__dict__.get("value")
-        if isinstance(v, (int, float, bool)):
-            # complex() consumes the trace-time payload: witness it.
-            _pyir_record_external_payload_consumption(self)
-            return complex(v)
-        raise DSLUserCodeError(
-            DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
-            proto="complex()",
-            what=type(self).__name__,
-        )
+        v = self._consume_meta_payload()
+        if v is None:
+            raise DSLUserCodeError(
+                DiagId.PHASE_NUMERIC_PROTOCOL_ON_STAGED,
+                proto="complex()",
+                what=type(self).__name__,
+            )
+        return complex(v)
 
     def __neg__(
         self,
@@ -1603,6 +1639,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             _pyir_mark_fold_srcs(res, (self,))
             return res
         else:
+            _refuse_stale_staged(self)
             return type(self)(-self.value, loc=loc, ip=ip)  # type: ignore[operator]
 
     def __abs__(
@@ -1616,6 +1653,7 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             _pyir_mark_fold_srcs(res, (self,))
             return res
         else:
+            _refuse_stale_staged(self)
             return type(self)(abs(self.value), loc=loc, ip=ip)  # type: ignore[arg-type]
 
     @staticmethod
@@ -1625,6 +1663,8 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         if isinstance(value, Numeric):
             return value
 
+        # A NumPy scalar is its Python value here, as in the constructors.
+        value = _numpy_scalar_to_python(value)
         if isinstance(value, bool):
             res_type: Type["Numeric"] = Boolean
         elif isinstance(value, int):
@@ -1911,7 +1951,14 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
         return [type(self).mlir_type]
 
     @staticmethod
-    def from_mlir_type(mlir_type: ir.Type) -> Type["Numeric"]:
+    @lru_cache(maxsize=1)
+    def _get_mlir_type_map() -> dict[str, type["Numeric"]]:
+        """Cache scalar type spellings without retaining an MLIR context.
+
+        All supported scalar types have context-independent assembly names.
+        Keeping those names instead of MLIR types lets later compilations use
+        the same map without extending the lifetime of their contexts.
+        """
         type_map = {
             T.bool(): Boolean,
             T.f64(): Float64,
@@ -1946,9 +1993,14 @@ class Numeric(metaclass=NumericMeta, is_abstract=True):
             T.f6E3M2FN(): Float6E3M2FN,
             T.f8E8M0FNU(): Float8E8M0FNU,
         }
-        if mlir_type not in type_map:
+        return {str(mlir_type): numeric for mlir_type, numeric in type_map.items()}
+
+    @staticmethod
+    def from_mlir_type(mlir_type: ir.Type) -> Type["Numeric"]:
+        numeric = Numeric._get_mlir_type_map().get(str(mlir_type))
+        if numeric is None:
             raise DSLRuntimeError(f"Unsupported DSL type: {mlir_type}")
-        return type_map[mlir_type]
+        return numeric
 
 
 # The wrapper write funnel is INSTALLED, not merely gated.  A ``property`` and a
@@ -2015,12 +2067,16 @@ def _numeric_construct_read(x: "Numeric") -> Any:
     """Read *x*'s current backing for wrapper-from-wrapper construction.
 
     Constructing a Numeric FROM another Numeric is a READ of the source at the
-    construction point: the same staged-read choke ``Numeric.to(ir.Value)`` applies.
+    construction point: the same staged-read choke ``Numeric.to(ir.Value)`` applies,
+    and so does its stale guard -- a source whose payload outlived its
+    compilation is refused here, before the copy would re-stamp the dead
+    handle as this compilation's own.
 
     A literal-backed wrapper read inside staged CF is the place's first
     in-region observation: the choke promotes it so the construction consumes
     the region's carry, not a re-baked loop-invariant constant.
     """
+    _refuse_stale_staged(x)
     refreshed = _pyir_refresh_cell_read(x)
     if refreshed is not None:
         return refreshed.value
@@ -2087,6 +2143,49 @@ def _float_to_int(
     return _wrap_to_exact_range(int(x), exact_range)
 
 
+def _host_float32_bits(value: float) -> int:
+    """Binary32 bits of NumPy's scalar ``float32`` cast.
+
+    That cast is the host ``(float)`` conversion. ``struct.pack("<f")`` is a
+    different function on CPython 3.14: after the cast it clears the quiet bit
+    when the input was a signaling NaN.
+    """
+    if _native_numeric_cast is not None:
+        return int(_native_numeric_cast.double_to_float_bits(value))
+    # Same instruction as the binding, for a package that ships no extension.
+    # The little-endian ctypes setter stores the cast directly.
+    stored = ctypes.c_float(value)
+    return ctypes.c_uint32.from_address(ctypes.addressof(stored)).value
+
+
+def _numpy_scalar_to_python(x: Any) -> Any:
+    """A NumPy scalar as the Python number it holds (``np.bool_`` -> bool,
+    ``np.integer`` -> int, ``np.floating`` -> float); anything else is returned
+    unchanged. The module stays numpy-free: the import runs only for a value
+    NumPy itself produced."""
+    if type(x).__module__ != "numpy":
+        return x
+    import numpy
+
+    if isinstance(x, numpy.bool_):
+        return bool(x)
+    if isinstance(x, numpy.integer):
+        return int(x)
+    if isinstance(x, numpy.floating):
+        return float(x)
+    return x
+
+
+def _ctor_operand(x: Any) -> Any:
+    """A numeric constructor's operand.  D1: a watched meta unwraps through
+    the declared promotion (its numeric class survives; ``ir_value()`` inside
+    records the leaf for the retroactive rewrite) -- never to a raw signless
+    value.  A NumPy scalar is the Python number it holds."""
+    if isinstance(x, _WatchedM):
+        x = as_numeric(x)
+    return _numpy_scalar_to_python(x)
+
+
 class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True):
     """A class representing integer values with specific width and signedness.
 
@@ -2101,8 +2200,8 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
     :rtype: Integer
 
     :raises AssertionError: If the type has no exactly representable range
-    :raises NotImplementedError: If converting between different Integer types
-    :raises ValueError: If the input type is not supported for conversion
+    :raises DSLUserCodeTypeError: If the input type is not supported for conversion
+    :raises ValueError: If converting float NaN to integer
     :raises OverflowError: If converting float infinity to integer, or an
         integer too wide for any C integer type
 
@@ -2163,11 +2262,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
-        # D1: a watched meta unwraps through the declared promotion (its
-        # numeric class survives; ir_value() inside records the leaf for the
-        # retroactive rewrite) -- never to a raw signless value.
-        if isinstance(x, _WatchedM):
-            x = as_numeric(x)
+        x = _ctor_operand(x)
 
         if isinstance(x, (bool, int, float)):
             # Add check for NaN before the cast
@@ -2285,18 +2380,22 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
                 # A target with no exactly representable range (Int4, Int128)
                 # has no cast to perform, so the value carries across as is.
                 target_range = ty._exact_range
-                src_val = tcast(Union[bool, int, float], x.value)
                 x_val = (
-                    int(src_val)
+                    int(x.value)
                     if target_range is None
-                    else _wrap_to_exact_range(int(src_val), target_range)
+                    else _wrap_to_exact_range(int(x.value), target_range)
                 )
         elif isinstance(x, Float):
             # float -> int is handled by Integer.__init__ recursively
             Integer.__init__(self, _numeric_construct_read(x))
             return
         else:
-            raise DSLRuntimeError(f"{x} to integer conversion is not supported")
+            raise DSLUserCodeTypeError(
+                DiagId.TYPE_UNSUPPORTED_NUMERIC_INPUT,
+                target=ty.__name__,
+                value=x,
+                value_type=type(x).__name__,
+            )
 
         super().__init__(x_val)
 
@@ -2447,17 +2546,21 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
          loss (``Float32(0.1)``) is not flagged.
 
     2. MLIR Value with FloatType:
+
        - If width differs: converts between float types
        - Example: f16 -> f32
 
     3. MLIR Value with IntegerType:
+
        - Not supported, raises ValueError
 
     4. Integer:
+
        - Converts using MLIR int-to-float operation
        - Example: Float32(Int32(5)) -> 5.0
 
     5. Float:
+
        - Direct conversion between float types
        - Example: Float32(Float32(1.5)) -> 1.5
 
@@ -2480,7 +2583,7 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
 
         Narrow precision types and special floating-point formats support matrix on device:
 
-    :raises ValueError: If conversion from the input type is not supported
+    :raises DSLUserCodeTypeError: If conversion from the input type is not supported
     """
 
     def __init__(
@@ -2491,11 +2594,7 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
         ty = type(self)
-        # D1: a watched meta unwraps through the declared promotion (its
-        # numeric class survives; ir_value() inside records the leaf for the
-        # retroactive rewrite) -- never to a raw signless value.
-        if isinstance(x, _WatchedM):
-            x = as_numeric(x)
+        x = _ctor_operand(x)
 
         if isinstance(x, (bool, int, float)):
             fx = float(x)
@@ -2553,6 +2652,9 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
                     x = arith_helper.cvtf(x, ty.mlir_type, loc=loc, ip=ip)
             super().__init__(x)
         elif isinstance(x, Integer):
+            # A source whose payload outlived its compilation is refused before
+            # its raw is handed to ``itofp`` (this arm reads it directly).
+            _refuse_stale_staged(x)
             # Consult the staged-read choke BEFORE dispatching: a loop-carried
             # wrapper still caches its pre-loop literal, so a ``x.value`` type
             # test would bake the stale constant instead of loading the cell.
@@ -2573,7 +2675,12 @@ class Float(Numeric, metaclass=FloatMeta, mlir_type=T.f32, is_abstract=True):
         elif isinstance(x, Float):
             Float.__init__(self, _numeric_construct_read(x))
         else:
-            raise DSLRuntimeError(f"{x} to Float conversion is not supported")
+            raise DSLUserCodeTypeError(
+                DiagId.TYPE_UNSUPPORTED_NUMERIC_INPUT,
+                target=ty.__name__,
+                value=x,
+                value_type=type(x).__name__,
+            )
 
     def __tvm_ffi_float__(self) -> Union[float, ir.Value]:
         return self.value
@@ -2591,7 +2698,7 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
     :type loc: Optional[Location], optional
     :param ip: Insertion point for MLIR operations, defaults to None
     :type ip: Optional[InsertionPoint], optional
-    :raises DSLRuntimeError: If the input value cannot be converted to Boolean
+    :raises DSLUserCodeTypeError: If the input value cannot be converted to Boolean
 
     Conversion rules:
 
@@ -2618,11 +2725,7 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        # D1: a watched meta unwraps through the declared promotion (its
-        # numeric class survives; ir_value() inside records the leaf for the
-        # retroactive rewrite) -- never to a raw signless value.
-        if isinstance(a, _WatchedM):
-            a = as_numeric(a)
+        a = _ctor_operand(a)
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
@@ -2635,7 +2738,12 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
             else:
                 value = a != arith_helper.const(0, a.type, loc=loc, ip=ip)
         if value is None:
-            raise DSLRuntimeError(f"Cannot convert {a} to Boolean")
+            raise DSLUserCodeTypeError(
+                DiagId.TYPE_UNSUPPORTED_NUMERIC_INPUT,
+                target=type(self).__name__,
+                value=a,
+                value_type=type(a).__name__,
+            )
         super().__init__(value, loc=loc, ip=ip)
         self._value_int8 = None
 
@@ -2788,22 +2896,21 @@ class Float16(Float, metaclass=FloatMeta, width=16, mlir_type=T.f16):
 
 
 class BFloat16(Float, metaclass=FloatMeta, width=16, mlir_type=T.bf16):
+    @staticmethod
+    def _get_c_pointer(value: float) -> ctypes.c_void_p:
+        """Marshal ``value`` as its bfloat16 bit pattern.
+
+        bfloat16 keeps the high 16 bits of the host ``float`` cast, which is
+        NumPy's scalar ``float32`` conversion. A signaling NaN is quieted when
+        that cast quiets it.
+        """
+        bf16_bits = _host_float32_bits(value) >> 16
+        return _make_owning_c_pointer(ctypes.c_short(bf16_bits))
+
     def __c_pointers__(self) -> list[ctypes.c_void_p]:
         if not isinstance(self.value, float):
             raise ValueError("only float is supported")
-        # Convert float32 to bfloat16 representation
-        # First convert the value to float32 bit representation
-        try:
-            bits = struct.unpack("<I", struct.pack("<f", self.value))[0]
-        except OverflowError:
-            # binary32 pack raises rather than saturating to inf.
-            bits = 0xFF800000 if self.value < 0 else 0x7F800000
-        # Truncate to 16 bits, keeping the high 16 bits
-        bf16_bits = bits >> 16
-        # Create a short (16-bit int) with those bits
-        c_val = ctypes.c_short(bf16_bits)
-        c_pointer = _make_owning_c_pointer(c_val)
-        return [c_pointer]
+        return [BFloat16._get_c_pointer(self.value)]
 
 
 class Float8E5M2(Float, metaclass=FloatMeta, width=8, mlir_type=T.f8E5M2): ...
@@ -3590,6 +3697,7 @@ class Pointer(ir.Value):
             res = res.ir_value()
         return Vector(res, dtype=self._dtype)
 
+    @dsl_user_op
     def store(
         self,
         value: Any,
@@ -3602,6 +3710,15 @@ class Pointer(ir.Value):
         loc: ir.Location | None = None,
         ip: ir.InsertionPoint | None = None,
     ) -> None:
+        """Store a scalar or vector value through this pointer.
+
+        .. code-block:: python
+
+            values = cutlass.Vector.from_elements(
+                (x0, x1, x2, x3), dtype=cutlass.Float32
+            )
+            (output_ptr + offset).store(values, alignment=16)
+        """
         effective_alignment = self._effective_alignment(alignment)
         ir_value = self._prepare_store_value(value, loc=loc, ip=ip)
         return llvm.store(
@@ -3619,6 +3736,7 @@ class Pointer(ir.Value):
             ip=ip,
         )
 
+    @dsl_user_op
     def nvvm_store_ext(
         self,
         value: Any,
@@ -3689,6 +3807,16 @@ class Pointer(ir.Value):
         loc: ir.Location | None = None,
         ip: ir.InsertionPoint | None = None,
     ) -> None:
+        """Store vector lanes selected by a boolean mask.
+
+        .. code-block:: python
+
+            values = cutlass.Vector.from_elements(
+                (x0, x1, x2, x3), dtype=cutlass.Float32
+            )
+            mask = cutlass.vector.create_mask(valid, 4)
+            (output_ptr + offset).masked_store(values, mask, alignment=16)
+        """
         from cutlass._mlir_helpers.vector import Vector  # noqa: PLC0415
 
         if not isinstance(value, Vector):

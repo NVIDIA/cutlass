@@ -209,6 +209,7 @@ from .algorithm import gemm, copy, basic_copy, basic_copy_if, autovec_copy, pref
 from . import typing as typing_module
 from . import core
 from . import arch
+from . import dsmem
 
 from . import export
 
@@ -217,7 +218,34 @@ from . import testing
 from . import runtime
 from . import math
 
-from . import experimental
+import importlib as _importlib
+import types as _types
+import typing as _typing
+
+if _typing.TYPE_CHECKING:
+    from . import experimental as experimental
+
+
+if not _typing.TYPE_CHECKING:
+
+    def __getattr__(name: str) -> _types.ModuleType:
+        """Import ``cutlass.cute.experimental`` on first attribute access.
+
+        Nothing in ``cutlass.cute`` depends on the experimental API, so binding it
+        on first use keeps its import cost out of ``import cutlass.cute`` while
+        ``cute.experimental.X`` and ``from cutlass.cute import experimental`` keep
+        working unchanged.
+
+        Defined only at run time: type checkers would otherwise treat every
+        unknown attribute of this package as a module, hiding real errors.
+        """
+        if name == "experimental":
+            return _importlib.import_module(f"{__name__}.experimental")
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    def __dir__() -> list[str]:
+        return sorted({*globals(), "experimental"})
+
 
 # Export all math ops without "math."
 from .math import *
@@ -250,8 +278,10 @@ GPUArch = _dsl.GPUArch
 LinkLibraries = _dsl.LinkLibraries
 EnableTVMFFI = _dsl.EnableTVMFFI
 DeviceTarget = _dsl.DeviceTarget
+EnableCuteExtCompile = _dsl.EnableCuteExtCompile
 DisableCuteExtCompile = _dsl.DisableCuteExtCompile
 FrontendNext = _dsl.FrontendNext
+DivmodSemantics = _dsl.DivmodSemantics
 RDC = _dsl.RDC
 RemarkFilter = _dsl.RemarkFilter
 RemarkOutput = _dsl.RemarkOutput
@@ -452,7 +482,9 @@ __all__ = [
     "kernel",
     "register_jit_arg_adapter",
     "compile",
+    "DivmodSemantics",
     "compile_to",
+    "EnableCuteExtCompile",
     "DisableCuteExtCompile",
     "ArtifactType",
     "PreCompiledMlirArtifact",

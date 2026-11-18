@@ -29,12 +29,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
-from cutlass.operators.arguments.base import Operand, RuntimeArguments
+from cutlass.operators.arguments.base import (
+    Operand,
+    PerformanceControls,
+    RuntimeArguments,
+)
 from cutlass.operators.arguments.epilogue import EpilogueArguments
 from cutlass.operators.arguments.operand import _operand_or_dense
+from cutlass.operators.fusion.ir.compute_nodes import GATED_OP_NUM_PARTS
 from cutlass.operators.typing import NumericLike, TensorLike
+
+if TYPE_CHECKING:
+    from types import EllipsisType
 
 
 def _logical_contraction_extent(operand: Operand, k_axis: int) -> int:
@@ -140,6 +148,8 @@ class GemmArguments(RuntimeArguments):
         out: TensorLike | Operand,
         accumulator_type: NumericLike,
         epilogue: EpilogueArguments | None = None,
+        *,
+        performance: PerformanceControls | None | EllipsisType = ...,
     ):
         self.A = _operand_or_dense(A).copy()
         self.B = _operand_or_dense(B).copy()
@@ -152,7 +162,11 @@ class GemmArguments(RuntimeArguments):
         # ``accumulator_type``, which the trace records, so sharing the object
         # would let the second construction overwrite the first's trace.
         self.epilogue = None if epilogue is None else epilogue.copy()
-        super().__init__()
+        super().__init__(performance=performance)
+
+    @classmethod
+    def _numeric_like_field_names(cls) -> tuple[str, ...]:
+        return ("accumulator_type",)
 
     @property
     def problem_size(self) -> GemmProblemSize:
@@ -188,10 +202,6 @@ class GemmArguments(RuntimeArguments):
             raise ValueError(
                 f"out's M dimension ({self.out.shape[-2]}) must be equal to A's M dimension ({self.A.shape[-2]}). A shape (L, M, K): {self.A.shape}, out shape (L, M, N): {self.out.shape}"
             )
-        if self.out.shape[-1] != self.B.shape[-1]:
-            raise ValueError(
-                f"out's N dimension ({self.out.shape[-1]}) must be equal to B's N dimension ({self.B.shape[-1]}). B shape (L, K, N): {self.B.shape}, out shape (L, M, N): {self.out.shape}"
-            )
         if self.A.shape[:-2] != self.B.shape[:-2]:
             raise ValueError(
                 f"A & B must have the same rank and batch dimension (if any). A shape (L, M, K): {self.A.shape}, B shape (L, K, N): {self.B.shape}"
@@ -210,7 +220,32 @@ class GemmArguments(RuntimeArguments):
             self.epilogue.trace(accum_shape, self.accumulator_type)
             self.epilogue.to_tensor_wrappers()
 
+    def _validate_out_n_pretrace(self):
+        """Check ``out``'s N before an epilogue (if any) is traced.
+
+        Checks N_out N is either N_B of N_B // 2 (in case of gated epilogues).
+        If no epilogue is used, this is where N is checked.
+        If an epilogue is used, tracing it will determine whether the epilogue uses a gated
+        activation (like swiglu), and which of N_B or N_B//2 is correct.
+        In that case, this method serves to catch never-correct values early.
+        """
+        allowed = {self.B.shape[-1]}
+        if self.epilogue is not None:
+            allowed.add(self.B.shape[-1] // GATED_OP_NUM_PARTS)
+        if self.out.shape[-1] not in allowed:
+            gated = (
+                f" or {self.B.shape[-1] // GATED_OP_NUM_PARTS} for a gated epilogue"
+                if self.epilogue is not None
+                else ""
+            )
+            raise ValueError(
+                f"out's N dimension ({self.out.shape[-1]}) must be B's N "
+                f"({self.B.shape[-1]}){gated}. B shape (L, K, N): "
+                f"{self.B.shape}, out shape (L, M, N): {self.out.shape}"
+            )
+
     def __post_init__(self):
         self._validate()
+        self._validate_out_n_pretrace()
         self._convert_epilogue()
         super().__post_init__()

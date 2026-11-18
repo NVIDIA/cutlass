@@ -10,7 +10,7 @@ prune those candidates. A candidate's rank is its position in the returned
 list. Ranking is an estimate, not a guarantee of the fastest Operator.
 
 For a worked GEMM example, see the
-:doc:`heuristics tutorial </media/docs/operators/tutorials/007_heuristics>`.
+:doc:`heuristics tutorial <../tutorials/007_heuristics>`.
 
 Selecting a heuristic
 ---------------------
@@ -41,7 +41,7 @@ to the caller.
 Built-in nvMatmul heuristic
 ----------------------------
 
-``NvMatmulHeuristics`` supports SM100 non-blockscaled dense GEMM. Its ``gpu``
+``NvMatmulHeuristics`` supports SM100 dense and block-scaled GEMM. Its ``gpu``
 argument selects the modeled GPU SKU: ``"B200"`` (the default),
 ``"GB200_NVL"``, or ``"GB300_NVL"``. Other values raise ``ValueError``.
 The model is selected explicitly, without detecting the current GPU.

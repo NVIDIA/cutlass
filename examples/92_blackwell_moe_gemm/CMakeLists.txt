@@ -31,6 +31,7 @@ set(TEST_MIXTRAL_B --m=4096 --n=4 --k=14336 --groups=8 --iterations=0)
 set(TEST_DEEPSEEK_A --m=4096 --n=1 --k=7168 --groups=256 --iterations=0)
 set(TEST_DEEPSEEK_B --m=7168 --n=1 --k=2048 --groups=256 --iterations=0)
 set(TEST_IRREGULAR_MNK --m=4080 --n=9 --k=4112 --groups=8 --iterations=0)       # M,N,K not mugroupstipgroupses of tigroupse size
+set(TEST_LOAD_C --m=4096 --n=1024 --k=512 --beta=1 --iterations=0)               # beta=1 loads C; 2048 tiles give each persistent CTA many tiles
 
 set(TEST_DEEPSEEK_A_FP4 --m=1024 --n=1 --k=7168 --groups=256 --iterations=0)     # TP=1 shape is too groupsarge for PackedVectorLayout
 set(TEST_DEEPSEEK_B_FP4 --m=7168 --n=1 --k=512 --groups=256 --iterations=0)
@@ -49,6 +50,7 @@ cutlass_example_add_executable(
   TEST_DEEPSEEK_A
   TEST_DEEPSEEK_B
   TEST_IRREGULAR_MNK
+  TEST_LOAD_C
 )
 
 cutlass_example_add_executable(

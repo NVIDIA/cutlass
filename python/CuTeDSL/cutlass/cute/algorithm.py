@@ -15,7 +15,8 @@ from typing import Optional, Dict, Any, List, Tuple, Type, Union
 
 from cutlass._mlir import ir
 from cutlass.cutlass_dsl import (
-    DSLUserCodeError, BaseDSL,
+    DSLUserCodeError,
+    BaseDSL,
     for_generate,
     yield_out,
     if_generate,
@@ -61,7 +62,8 @@ from .nvgpu.common import (
     CopyG2ROp,
     CopyR2GOp,
     CopyS2ROp,
-    CopyR2SOp)
+    CopyR2SOp,
+)
 from .nvgpu.cpasync.copy import CopyReduceBulkS2GTrait, _copy_reduce_bulk_s2g
 
 
@@ -696,6 +698,7 @@ def copy(
             op.attributes[name] = attr
 
 
+
 @dsl_user_op
 def prefetch(
     atom: CopyAtom,
@@ -710,8 +713,7 @@ def prefetch(
     The "prefetch" expects source tensors to be partitioned according to the provided Copy Atom.
     Prefetch is used for loading tensors from global memory to L2.
 
-    Prefetch accepts Copy Atom but not all are allowed. Currently, only supports TMA prefetch.
-
+    Prefetch accepts Copy Atom but not all are allowed; the TMA load atoms are supported.
     For standard TMA modes (tiled, im2col), pass a single GMEM tensor:
 
     .. code-block:: python
@@ -731,12 +733,23 @@ def prefetch(
     any per-stage loop.
 
     Non-tensor bulk copy prefetch requires explicit thread election.
+
     """
     src_list = _normalize_variadic_tensor_operand(src, "src")
 
-    dummy_tma_bar_ptr = make_ptr(Int64, 0, AddressSpace.smem, loc=loc, ip=ip)
+    # The prefetch lowering never reads the barrier or the multicast mask, but the traits
+    # require them, so hand them placeholders.
+    dummy_bar_ptr = make_ptr(Int64, 0, AddressSpace.smem, loc=loc, ip=ip)
     dummy_mcast_mask = Int16(0)
     value = atom._unpack(
-        loc=loc, ip=ip, tma_bar_ptr=dummy_tma_bar_ptr, mcast_mask=dummy_mcast_mask
+        loc=loc,
+        ip=ip,
+        tma_bar_ptr=dummy_bar_ptr,
+        mcast_mask=dummy_mcast_mask,
     )
-    return _cute_ir.prefetch(value, [t.value for t in src_list], loc=loc, ip=ip)
+    return _cute_ir.prefetch(
+        value,
+        [t.value for t in src_list],
+        loc=loc,
+        ip=ip,
+    )
