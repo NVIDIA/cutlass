@@ -90,8 +90,9 @@ To collect performance with NCU profiler:
       --a_major k --b_major k --c_major n
 
 Constraints are same as dense_gemm.py:
-* Supported input data types: fp16, fp8 (e4m3fn, e5m2), int8, uint8
-* For fp16 types, A and B must have the same data type
+* Supported input data types: fp16, bf16, fp8 (e4m3fn, e5m2), int8, uint8
+* For fp16/bf16 types, A and B must have the same data type
+* bf16 inputs require fp32 accumulation
 * For fp8 types, A and B can have different types (e4m3fn or e5m2)
 * For 8-bit integer types, A and B can have different types (int8 or uint8)
 * 8-bit types (e4m3fn, e5m2, int8, uint8) only support k-major layout
@@ -100,7 +101,7 @@ Constraints are same as dense_gemm.py:
 * CTA tile shape K must be 64
 * Cluster shape M/N must be positive and power of 2, total cluster size <= 4
 * The contiguous dimension of A/B/C tensors must be at least 16 bytes aligned,
-  i.e, number of elements is a multiple of 8, 16 for Float16, and Float8, respectively.
+  i.e, number of elements is a multiple of 8, 16 for Float16/BFloat16, and Float8, respectively.
 """
 
 
@@ -220,7 +221,7 @@ class HopperWgmmaGemmPersistentKernel:
     :type cluster_shape_mn: Tuple[int, int]
 
     :note: Supported A/B data types:
-        - Float16
+        - Float16/BFloat16
           A and B must have the same data type
         - Float8E4M3FN/Float8E5M2
           A and B can have different types (Float8E4M3FN/Float8E5M2)
@@ -230,7 +231,8 @@ class HopperWgmmaGemmPersistentKernel:
           only support k-major layout
 
     :note: Supported accumulation types:
-        - Float32/Float16 (for all floating point inputs)
+        - Float32 (for all floating point inputs)
+        - Float16 (for Float16/Float8 inputs)
         - Int32 (for Int8/Uint8 inputs)
 
     :note: Constraints:
@@ -446,7 +448,7 @@ class HopperWgmmaGemmPersistentKernel:
                 f"Type width mismatch: {self.a_dtype.width} != {self.b_dtype.width}"
             )
         if cutlass.const_expr(self.a_dtype.width != 16 and self.a_dtype.width != 8):
-            raise TypeError("a_dtype should be float16, float8, or int8 ")
+            raise TypeError("a_dtype should be float16, bfloat16, float8, or int8")
 
         self._setup_attributes()
 
@@ -1289,6 +1291,7 @@ class HopperWgmmaGemmPersistentKernel:
 
         valid_ab_dtypes = {
             cutlass.Float16,
+            cutlass.BFloat16,
             cutlass.Float8E4M3FN,
             cutlass.Float8E5M2,
             cutlass.Uint8,
@@ -1317,6 +1320,7 @@ class HopperWgmmaGemmPersistentKernel:
         acc_ab_compatibility = {
             cutlass.Float32: {
                 cutlass.Float16,
+                cutlass.BFloat16,
                 cutlass.Float8E4M3FN,
                 cutlass.Float8E5M2,
             },
@@ -1336,6 +1340,7 @@ class HopperWgmmaGemmPersistentKernel:
             cutlass.Float32: {
                 cutlass.Float32,
                 cutlass.Float16,
+                cutlass.BFloat16,
                 cutlass.Float8E4M3FN,
                 cutlass.Float8E5M2,
             },
