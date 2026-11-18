@@ -506,6 +506,38 @@ void cublasLtGemmExDispatcher::initialize_cublaslt(){
   cublasLtMatrixLayoutCreate(&Cdesc, data_type_C, configuration.problem_size.m(), configuration.problem_size.n(), configuration.ldc);
   cublasLtMatrixLayoutCreate(&Ddesc, data_type_C, configuration.problem_size.m(), configuration.problem_size.n(), configuration.ldd);
 
+  if (configuration.mode == library::GemmUniversalMode::kBatched) {
+    int32_t batch_count = configuration.batch_count;
+
+    auto set_batch_layout = [this, batch_count](
+      cublasLtMatrixLayout_t layout,
+      int64_t batch_stride) {
+
+      if (status == Status::kSuccess) {
+        status = get_cutlass_status(
+          cublasLtMatrixLayoutSetAttribute(
+            layout,
+            CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
+            &batch_count,
+            sizeof(batch_count)));
+      }
+
+      if (status == Status::kSuccess) {
+        status = get_cutlass_status(
+          cublasLtMatrixLayoutSetAttribute(
+            layout,
+            CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET,
+            &batch_stride,
+            sizeof(batch_stride)));
+      }
+    };
+
+    set_batch_layout(Adesc, arguments.batch_stride_A);
+    set_batch_layout(Bdesc, arguments.batch_stride_B);
+    set_batch_layout(Cdesc, arguments.batch_stride_C);
+    set_batch_layout(Ddesc, arguments.batch_stride_D);
+  }
+
 }
 
 bool cublasLtGemmExDispatcher::get_cublaslt_algo(cublasLtHandle_t handle,
