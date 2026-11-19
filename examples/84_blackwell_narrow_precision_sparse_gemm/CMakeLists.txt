@@ -28,7 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+if (CUTLASS_NVCC_ARCHS MATCHES "100a|100f|103a|103f")
 cutlass_example_add_executable(
   84a_blackwell_nvfp4_bf16_sparse_gemm
   84a_blackwell_nvfp4_bf16_sparse_gemm.cu
