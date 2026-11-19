@@ -9,16 +9,18 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from cutlass.cute.typing import NumericMeta, Integer, SymInt
+from cutlass.cute.typing import NumericMeta, Numeric, Integer, SymInt, SymBool
 from cutlass.base_dsl.export import CHeaderGenerator, CHeaderArguments
+from cutlass.base_dsl.typing import Boolean
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.jit_executor import ExecutionArgs
 from cutlass.cutlass_dsl.cutlass import is_cute_algebra_type
-from ..runtime import Tensor, Pointer
+from ..runtime import Tensor, Pointer, _FakeStream
 
 from typing import Any, Union, get_origin, get_args
 from inspect import isclass, Parameter
 import cuda.bindings.driver as cuda
+import cuda.bindings.runtime as cuda_runtime
 
 # =============================================================================
 # Cute DSL C Header Generator for c/cpp AOT support
@@ -167,6 +169,9 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
         """
         Generate the arguments of the wrapper function.
         """
+        # lazy import to avoid circular dependency (cute -> export -> experimental.cuda -> cute)
+        from cutlass.experimental.cuda.graph.runtime import _FakeGraph, _FakeGraphNode
+
         arguments = []
         packed_args = []
         declarations = []
@@ -188,6 +193,13 @@ static inline void {symbol_prefix}_Kernel_Module_Unload({symbol_prefix}_Kernel_M
                 inner_types = [t for t in get_args(arg_type) if t is not type(None)]
                 if len(inner_types) == 1:
                     arg_type = inner_types[0]
+
+            # The C type may be inferred from the argument object itself only when the
+            # annotation is absent or is the argument's own class; any other annotation
+            # (e.g. a multi-type Union) falls through to the unsupported-argument error.
+            inferrable_from_arg = arg_type is Parameter.empty or (
+                isclass(arg_type) and isinstance(arg, arg_type)
+            )
 
             if isinstance(arg, Pointer):
                 arguments.append(f"void *{arg_name}")
@@ -257,8 +269,32 @@ typedef struct {{
                 arguments.append(f"{c_type}*{arg_name}")
                 for i in range(self._count_dynamic_expression(arg)):
                     packed_args.append("&" + arg_name + "[" + str(i) + "]")
-            elif isclass(arg_type) and issubclass(arg_type, cuda.CUstream):
+            elif (isclass(arg_type) and issubclass(arg_type, cuda.CUstream)) or (
+                inferrable_from_arg
+                and isinstance(
+                    arg, (_FakeStream, cuda.CUstream, cuda_runtime.cudaStream_t)
+                )
+            ):
                 arguments.append("cudaStream_t " + arg_name)
+                packed_args.append("&" + arg_name)
+            elif inferrable_from_arg and isinstance(
+                arg, (_FakeGraph, cuda_runtime.cudaGraph_t, cuda.CUgraph)
+            ):
+                arguments.append("cudaGraph_t " + arg_name)
+                packed_args.append("&" + arg_name)
+            elif inferrable_from_arg and isinstance(
+                arg, (_FakeGraphNode, cuda_runtime.cudaGraphNode_t, cuda.CUgraphNode)
+            ):
+                arguments.append("cudaGraphNode_t " + arg_name)
+                packed_args.append("&" + arg_name)
+            elif inferrable_from_arg and isinstance(arg, Numeric):
+                arguments.append(self.numeric_to_c_type[arg.dtype] + arg_name)
+                packed_args.append("&" + arg_name)
+            elif inferrable_from_arg and isinstance(arg, SymInt):
+                arguments.append(f"int{arg.width}_t {arg_name}")
+                packed_args.append("&" + arg_name)
+            elif inferrable_from_arg and isinstance(arg, SymBool):
+                arguments.append(self.numeric_to_c_type[Boolean] + arg_name)
                 packed_args.append("&" + arg_name)
             else:
                 raise DSLRuntimeError(

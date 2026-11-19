@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, cast
 
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import (
@@ -22,7 +22,7 @@ from cutlass.cutlass_dsl import (
     dsl_user_op,
 )
 from cutlass._mlir import ir
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
 from cutlass.utils import (
     PersistentTileSchedulerParams,
@@ -36,7 +36,7 @@ _DEPRECATION_MSG = (
 )
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class GroupSearchResult:
     """
     The result of the group search for grouped gemm.
@@ -90,7 +90,7 @@ class GroupSearchResult:
         return GroupSearchResult(*tuple(values))
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class GroupedGemmGroupSearchState:
     """
     The state of group index search for grouped gemm.
@@ -143,7 +143,7 @@ class GroupedGemmGroupSearchState:
         )
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 def create_initial_search_state() -> GroupedGemmGroupSearchState:
     """
     Create an initial search state for grouped gemm.
@@ -160,7 +160,7 @@ def create_initial_search_state() -> GroupedGemmGroupSearchState:
 
 
 # Grouped Work Tile Information
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class GroupedWorkTileInfo(WorkTileInfo):
     """A class to represent information about a work tile.
 
@@ -203,7 +203,7 @@ class GroupedWorkTileInfo(WorkTileInfo):
 
 
 # Static Persistent Grouped GEMM
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
     """A scheduler for static persistent group-based tile execution in CUTLASS/CuTe
     kernels.
@@ -476,21 +476,28 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         Load gemm problem (m,n,k,l) for the specified group from global memory to
         register.
 
-        :param problem_shape_mnkl: Tensor in global memory with layout
+        :param problem_shape_mnkl: Tensor in global memory holding one problem shape
+                                   per group, either (group_count, 4) as (m,n,k,l) or
+                                   (group_count, 3) as (m,n,k). The rank-3 form
+                                   implies l == 1.
         :return: The problem shape tensor for the specified group
         :rtype: Tuple[Int32, Int32, Int32, Int32]
         """
-        cur_problem_mnkl = cute.make_rmem_tensor(
-            cute.make_layout(4), problem_shape_mnkl.element_type, loc=loc, ip=ip
-        )
-        cute.autovec_copy(
-            problem_shape_mnkl[(group_idx, None)], cur_problem_mnkl, loc=loc, ip=ip
-        )
-        return (
-            cur_problem_mnkl[0],
-            cur_problem_mnkl[1],
-            cur_problem_mnkl[2],
-            cur_problem_mnkl[3],
+        # Slicing a `None` mode always yields a tensor view of the group's row.
+        cur_problem = cast(cute.Tensor, problem_shape_mnkl[(group_idx, None)])
+        cur_problem_rmem = cute.make_rmem_tensor_like(cur_problem, loc=loc, ip=ip)
+        cute.autovec_copy(cur_problem, cur_problem_rmem, loc=loc, ip=ip)
+
+        # This scheduler only supports L == 1. Copy the complete source row so
+        # four-mode inputs retain their vectorized load, then canonicalize L.
+        return cast(
+            Tuple[Int32, Int32, Int32, Int32],
+            (
+                cur_problem_rmem[0],
+                cur_problem_rmem[1],
+                cur_problem_rmem[2],
+                Int32(1),
+            ),
         )
 
     @dsl_user_op
@@ -845,7 +852,11 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         return grouped_work_tile
 
 
-@deprecated("API is deprecated, use StaticPersistentGroupTileScheduler instead.")
+@_deprecated(
+    "GroupedGemmTileSchedulerHelper is deprecated, use StaticPersistentGroupTileScheduler "
+    "from examples/CuTeDSL/helpers/grouped_gemm_persistent_tile_scheduler.py (BSD-3) "
+    "instead. The wheel copy will be removed in a future release."
+)
 class GroupedGemmTileSchedulerHelper:
     """
     A helper to translate the raw block index (x, y, z) from tile scheduler to real CTA

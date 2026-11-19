@@ -70,11 +70,19 @@ cutlass_test_unit_gemm_device_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
+  simt_sgemm_nn_sm80.cu
   simt_sgemm_nt_sm80.cu
   simt_sgemm_tn_sm80.cu
+  simt_sgemm_tt_sm80.cu
 
+  simt_cgemm_nn_sm80.cu
   simt_cgemm_nt_sm80.cu
   simt_cgemm_tn_sm80.cu
+  simt_cgemm_tt_sm80.cu
+
+  simt_zgemm_nn_sm80.cu
+  simt_zgemm_tn_sm80.cu
+  simt_zgemm_tt_sm80.cu
 
   simt_f8gemm_tn_sm50.cu
 

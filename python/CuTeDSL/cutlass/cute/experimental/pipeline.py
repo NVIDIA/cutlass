@@ -13,8 +13,14 @@
 Convenience pipeline classes that hide elect_one synchronization complexity
 """
 
+# The stdlib copy() FUNCTION, underscore-aliased so it stays out of this
+# module's star-exports (cute.experimental re-exports * from here and defines
+# its own `copy` op in memory.py, which an un-underscored name would shadow).
+from copy import copy as _shallow_copy
 from dataclasses import dataclass
 from typing import NoReturn, Optional, cast
+
+from typing_extensions import Self
 
 import cutlass
 
@@ -23,7 +29,11 @@ from cutlass.base_dsl.typing import Int32
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import lir as cutlass_lir_ir
 from cutlass.cutlass_dsl import extract_mlir_values
-from cutlass._mlir.dialects.core import OperationTypeEnum
+from cutlass._mlir.dialects.core import (
+    OperationTypeEnum,
+    is_sm10x_mma_2sm_operation,
+    is_sm10x_mma_operation,
+)
 from cutlass.cute.typing import Boolean
 from cutlass.cute.experimental.core import (
     create_pipeline,
@@ -39,6 +49,7 @@ from cutlass.cute.experimental.core import (
     pipeline_advance_iterator,
     PipelineState,
     consumer_wait,
+    consumer_test_valid,
     create_pipeline_state_at,
     pipeline_tail,
     create_circular_buffer_pipeline,
@@ -51,13 +62,82 @@ from cutlass.cute.experimental.core import (
     OperationTypeSpec,
     SkipWaitToken,
     PipelineLocale,
+    MmaOperand,
+    MmaOperation,
+    OperationDescriptor,
+    _mma_operand_of,
+    _operation_descriptors,
+    _operation_kind,
 )
 
-from cutlass.cutlass_dsl import CuteExperimentalDSL
+
+def _resolve_arrival_count(
+    side: str,
+    *,
+    arv_count: Optional[cute.Int32],
+    threads_per_cta: Optional[cute.Int32],
+    producer: OperationTypeSpec,
+    consumer: OperationTypeSpec,
+    locale: Optional[PipelineLocale] = None,
+) -> cute.Int32:
+    """Resolve one side's mbarrier arrival count from the two mutually
+    exclusive parameters a pipeline ``create`` exposes for that side.
+
+    ``arv_count`` is the explicit count (the legacy parameter); it is returned
+    verbatim, so callers that already know the count keep their behavior.
+    ``threads_per_cta`` is the number of threads per CTA that issue the release
+    on this side; the count is derived with :func:`get_arrival_count` from the
+    pipeline's producer/consumer operation types. The release on the resolved
+    side is the pipeline class's default -- non-elected and unmasked -- so an
+    elected or multicast-masked release must use ``arv_count``.
+
+    Exactly one of the two must be provided. The message describes the two
+    parameters semantically rather than by name -- the exact parameter names
+    live on each ``create`` signature, and this helper does not assume a naming
+    convention for them.
+    """
+    if (arv_count is None) == (threads_per_cta is None):
+        raise ValueError(
+            f"provide exactly one of the {side} arrival count or the {side} "
+            "per-CTA issuing thread count (see this pipeline's create signature)"
+        )
+    if arv_count is not None:
+        return arv_count
+    return get_arrival_count(
+        producer,
+        consumer,
+        side=side,
+        num_threads_per_cta=threads_per_cta,
+        locale=locale,
+    )
 
 
 class GenericPipelineBase:
-    """Base class for pipeline convenience wrappers"""
+    """Base class for pipeline convenience wrappers.
+
+    Ordinary Python assignment and indexing preserve object identity. For
+    example, ``selected = pipelines[0]`` aliases ``pipelines[0]``, so mutating
+    ``selected.consumer_state`` also updates that list entry.
+
+    This differs from reconstruction through the DynamicExpression protocol,
+    which the DSL uses when transporting values across staged control flow.
+    ``__extract_mlir_values__`` exposes the component SSA values and
+    ``__new_from_mlir_values__`` creates a distinct wrapper around transported
+    values. Later attribute mutation affects only the reconstructed wrapper; it
+    does not write back into the Python container that held the original
+    wrapper. Keeping and using either state is valid. Authors who intend to
+    propagate an updated state must do so explicitly through the surrounding
+    staged control flow.
+
+    To deliberately hold two positions on the same pipeline (e.g. a consumer
+    whose waits run ahead of its in-order releases), call :meth:`clone`
+    rather than re-invoking the constructor with another wrapper's fields,
+    which reads misleadingly like pipeline creation at the call site. The
+    constructor itself remains the right tool for its two jobs: wrapping a
+    fresh ``create_pipeline`` result when no ``create()`` factory covers the
+    configuration, and wrapper reconstruction by the DynamicExpression
+    protocol.
+    """
 
     def __init__(
         self,
@@ -111,6 +191,75 @@ class GenericPipelineBase:
             producer_state,
             consumer_state,
         )
+
+    def clone(self) -> Self:
+        """Return a new wrapper over the same pipeline with independent cursors.
+
+        The clone aliases this pipeline's mbarriers (``raw_pipeline``) -- no
+        barriers are allocated and no IR is emitted -- and snapshots the
+        current producer/consumer cursor values. From that point the two
+        wrappers advance independently.
+
+        The canonical use is a multi-hold consumer whose waits must run ahead
+        of its in-order releases. The clone's cursor does not move on a wait;
+        advance it explicitly with :meth:`consumer_advance`::
+
+            load_q_next = load_q_pipe.clone()  # runs ahead: waits on
+                                                   # upcoming stages
+            _, idx = load_q_next.consumer_wait_and_get_stage()
+            load_q_next.consumer_advance()
+            ...
+            load_q_pipe.consumer_release_and_advance()  # lags: FIFO releases
+
+        The concrete type matches ``type(self)``; subclass-specific fields
+        are carried over by shallow copy. Note: this recipe applies to
+        stage-indexed pipelines; ``TMAToUMMACircularPipeline`` tracks its
+        consumer position in ``circular_buffer_state`` and does not support
+        ``consumer_wait_and_get_stage``, so a clone of it cannot run ahead via
+        ``consumer_state``.
+        """
+        return _shallow_copy(self)
+
+    def consumer_advance(self) -> Self:
+        """Advance the consumer cursor without releasing the stage.
+
+        This does NOT stand in for a release: a stage whose release nobody
+        posts eventually deadlocks the producer at acquire. It is legal only
+        when the release is guaranteed elsewhere:
+
+        * another wrapper of the same pipeline (this clone's partner)
+          releases every stage in order via
+          :meth:`consumer_release_and_advance` -- the run-ahead multi-hold
+          pattern that :meth:`clone` exists for; or
+        * the pipeline has no producer-side acquire to unblock (a pure
+          ordering semaphore whose consumer only ever waits, e.g. the FMHA
+          prefill in-place S/P exchange); or
+        * partner consumers split stages by parity and each advances past
+          the stages the other owns (cursor-offset schemes).
+        """
+        self.consumer_state = pipeline_advance_iterator(
+            self.raw_pipeline, self.consumer_state
+        )
+        return self
+
+    def producer_advance(self) -> Self:
+        """Advance the producer cursor without acquiring or committing.
+
+        The producer-side mirror of :meth:`consumer_advance`, with the
+        analogous legality rule -- the skipped acquire/commit must be
+        covered elsewhere:
+
+        * another agent posts the commit for this stage, e.g. the non-leader
+          CTA of a 2-CTA TMA pair issuing its slice against the leader's
+          mbarrier (``update_expect_tx=False``) while the leader's commit
+          carries the arrive; or
+        * partner producers split stages by parity and each advances past
+          the stages the other owns (cursor-offset schemes).
+        """
+        self.producer_state = pipeline_advance_iterator(
+            self.raw_pipeline, self.producer_state
+        )
+        return self
 
     def producer_acquire(self) -> "GenericPipelineBase":
         """Acquire producer state."""
@@ -205,6 +354,14 @@ class GenericPipelineBase:
         """Try to wait for the next consumer stage without blocking."""
         return consumer_try_wait(self.raw_pipeline, self.consumer_state, token=token)
 
+    def consumer_test_valid(
+        self, state: Optional[PipelineState] = None
+    ) -> tuple[Boolean, Boolean]:
+        """Probe whether a consumer stage is ready and data-valid."""
+        if state is not None:
+            return consumer_test_valid(self.raw_pipeline, state)
+        return consumer_test_valid(self.raw_pipeline, self.consumer_state)
+
     def consumer_release(
         self,
         *,
@@ -295,9 +452,17 @@ class GenericPipelineBase:
             self.consumer_state = consumer_wait(self.raw_pipeline, self.consumer_state)
         return self
 
-    def consumer_release_and_advance(self) -> "GenericPipelineBase":
-        """Combined consumer release + advance with automatic elect_one using stored state."""
-        self.consumer_release()
+    def consumer_release_and_advance(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "GenericPipelineBase":
+        """Combined consumer release + advance using stored state."""
+        self.consumer_release(
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         # Update state in-place for better performance
         self.consumer_state = pipeline_advance_iterator(
             self.raw_pipeline, self.consumer_state
@@ -305,7 +470,11 @@ class GenericPipelineBase:
         return self
 
     def producer_tail(self) -> "GenericPipelineBase":
-        """Drain outstanding pipeline work visible to the producer state."""
+        """Drain outstanding pipeline work visible to the producer state.
+
+        A TMA producer role must call this after its final commit and before
+        exiting.
+        """
         self.producer_state = pipeline_tail(self.raw_pipeline, self.producer_state)
         return self
 
@@ -335,23 +504,35 @@ class GenericPipeline(GenericPipelineBase):
     @staticmethod
     def create(
         *,
-        producer: OperationTypeEnum,
-        consumer: OperationTypeEnum,
+        producer: OperationTypeSpec,
+        consumer: OperationTypeSpec,
         producer_arv_count: cute.Int32,
         consumer_arv_count: cute.Int32,
         num_stages: cute.Int32,
         locale: Optional[PipelineLocale] = None,
+        producer_report_valid: bool = False,
     ) -> "GenericPipeline":
         """
         Create a generic pipeline with parameterized producer and consumer.
 
+        GenericPipeline is the low-level primitive: the caller supplies both
+        operation types and the exact arrival counts. It deliberately does not
+        offer the ``*_threads_per_cta`` count-derivation the named helper
+        classes do -- the caller already has both op types (so it can call
+        ``get_arrival_count`` directly if it wants derivation) and drives the
+        release election itself, which the derivation cannot see.
+
         Args:
-            producer: Producer operation type
-            consumer: Consumer operation type
+            producer: Producer operation type(s); a tcgen05 MMA may be refined
+                with the operand it writes, ``MmaOperation(kind, MmaOperand.D)``.
+            consumer: Consumer operation type(s); a tcgen05 MMA may be refined
+                with the operand it reads, ``MmaOperation(kind, MmaOperand.A)``.
             producer_arv_count: Producer arrival count
             consumer_arv_count: Consumer arrival count
             num_stages: Number of pipeline stages
             locale: Optional explicit pipeline synchronization locale.
+            producer_report_valid: Enable producer validity-check mode. This
+                currently requires a TMA load producer.
         """
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
@@ -360,6 +541,7 @@ class GenericPipeline(GenericPipelineBase):
             producer_arv_count=producer_arv_count,
             consumer_arv_count=consumer_arv_count,
             locale=locale,
+            producer_report_valid=producer_report_valid,
         )
 
         return GenericPipeline(
@@ -370,28 +552,23 @@ class GenericPipeline(GenericPipelineBase):
         )
 
 
-def _validate_umma_operation_type(operation_type: OperationTypeEnum) -> None:
-    if operation_type not in [
-        OperationTypeEnum.SM100_MMA_1SM_SS,
-        OperationTypeEnum.SM100_MMA_1SM_TS,
-        OperationTypeEnum.SM100_MMA_2SM_SS,
-        OperationTypeEnum.SM100_MMA_2SM_TS,
-        OperationTypeEnum.SM100_MMA_SCALED_1SM_SS,
-        OperationTypeEnum.SM100_MMA_SCALED_1SM_TS,
-        OperationTypeEnum.SM100_MMA_SCALED_2SM_SS,
-        OperationTypeEnum.SM100_MMA_SCALED_2SM_TS,
-    ]:
+def _validate_umma_operation_type(operation_type: OperationDescriptor) -> None:
+    if not isinstance(operation_type, (OperationTypeEnum, MmaOperation)):
+        raise TypeError(
+            "mma_operation_type must be an OperationTypeEnum or an MmaOperation, "
+            f"got {type(operation_type)}"
+        )
+    if not is_sm10x_mma_operation(_operation_kind(operation_type)):
         raise ValueError(f"Invalid UMMA operation type: {operation_type}")
 
 
-def _is_2sm_umma_operation_type(operation_type: OperationTypeEnum) -> bool:
+def _has_kind(spec: OperationTypeSpec, kind: OperationTypeEnum) -> bool:
+    return kind in {_operation_kind(d) for d in _operation_descriptors(spec)}
+
+
+def _is_2sm_umma_operation_type(operation_type: OperationDescriptor) -> bool:
     """Check if the operation type is a 2SM UMMA operation."""
-    return operation_type in [
-        OperationTypeEnum.SM100_MMA_2SM_SS,
-        OperationTypeEnum.SM100_MMA_2SM_TS,
-        OperationTypeEnum.SM100_MMA_SCALED_2SM_SS,
-        OperationTypeEnum.SM100_MMA_SCALED_2SM_TS,
-    ]
+    return is_sm10x_mma_2sm_operation(_operation_kind(operation_type))
 
 
 def _is_multicast_tma_operation_type(operation_type: OperationTypeEnum) -> bool:
@@ -420,6 +597,9 @@ def _is_2sm_tma_pipeline_value(raw_pipeline: ir.Value) -> bool:
 class TMAToUMMAPipeline(GenericPipelineBase):
     """
     Pipeline for TMA to UMMA.
+
+    The TMA producer must call :meth:`producer_tail` after its final commit and
+    before exiting its producer role.
     """
 
     def __init__(
@@ -443,9 +623,10 @@ class TMAToUMMAPipeline(GenericPipelineBase):
     def create(
         *,
         num_stages: cute.Int32,
-        mma_operation_type: OperationTypeEnum,
+        mma_operation_type: OperationDescriptor,
         tma_operation_type: Optional[OperationTypeEnum] = None,
         cluster_layout_vmnk: Optional[cute.Layout] = None,
+        producer_report_valid: bool = False,
     ) -> "TMAToUMMAPipeline":
         """
         Create a TMA to UMMA pipeline.
@@ -453,16 +634,26 @@ class TMAToUMMAPipeline(GenericPipelineBase):
         Args:
             num_stages: Number of pipeline stages.
             mma_operation_type: UMMA operation type (e.g., SM100_MMA_1SM_SS).
+                An ``MmaOperation(kind, MmaOperand.A)`` (or ``B``) names the
+                operand the stages hold. A multicast pipeline signals only the CTAs sharing that
+                operand instead of the union of the A and B multicast sets.
             tma_operation_type: TMA operation type. Defaults to SM90_TMA_LOAD.
             cluster_layout_vmnk: Cluster layout in (v, m, n, k) order. Required
                 whenever the selected TMA load spans more than one CTA, i.e.
                 for any 2SM or multicast `tma_operation_type`. This layout is
                 the source of truth for CTA identity and v-pair membership. The
                 m/n/k dimensions can be dynamic.
+            producer_report_valid: Enable producer validity-check mode.
         """
         _validate_umma_operation_type(
             mma_operation_type,
         )
+        operand = _mma_operand_of(mma_operation_type)
+        if operand is not None and operand not in (MmaOperand.A, MmaOperand.B):
+            raise ValueError(
+                "TMAToUMMAPipeline stages are TMA-written shared memory, so "
+                f"the MMA operand must be A or B, got {mma_operation_type}"
+            )
 
         if tma_operation_type is None:
             tma_operation_type = OperationTypeEnum.SM90_TMA_LOAD
@@ -477,6 +668,7 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 tma_operation_type=tma_operation_type,
                 mma_operation_type=mma_operation_type,
                 cluster_layout_vmnk=cluster_layout_vmnk,
+                producer_report_valid=producer_report_valid,
             )
 
         if tma_operation_type == OperationTypeEnum.SM100_TMA_LOAD_2SM:
@@ -503,7 +695,6 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 # elect_one_sync elects one thread, and for 2SM only the
                 # leader CTA commits.
                 producer_arv_count=get_arrival_count(
-                    num_stages,
                     tma_operation_type,
                     mma_operation_type,
                     side="producer",
@@ -516,7 +707,6 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 # so the fan-in is not derivable from the pipeline: one
                 # issuing CTA pair converges on each barrier in the mask.
                 consumer_arv_count=get_arrival_count(
-                    num_stages,
                     tma_operation_type,
                     mma_operation_type,
                     side="consumer",
@@ -525,6 +715,7 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                     fan_in=1,
                 ),
                 arrival_mask=arrival_mask,
+                producer_report_valid=producer_report_valid,
             )
         elif tma_operation_type == OperationTypeEnum.SM90_TMA_LOAD:
             raw_pipeline, producer_state, consumer_state = create_pipeline(
@@ -534,7 +725,6 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 # Mirror this class's producer_commit / consumer_release:
                 # one warp issues each release with elect_one_sync.
                 producer_arv_count=get_arrival_count(
-                    num_stages,
                     tma_operation_type,
                     mma_operation_type,
                     side="producer",
@@ -542,13 +732,13 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                     elect_one_sync=True,
                 ),
                 consumer_arv_count=get_arrival_count(
-                    num_stages,
                     tma_operation_type,
                     mma_operation_type,
                     side="consumer",
                     num_threads_per_cta=32,
                     elect_one_sync=True,
                 ),
+                producer_report_valid=producer_report_valid,
             )
         else:
             raise ValueError(f"Invalid tma_operation_type: {tma_operation_type}")
@@ -562,30 +752,17 @@ class TMAToUMMAPipeline(GenericPipelineBase):
         )
 
     @staticmethod
-    def create_with_mask(
-        *,
-        num_stages: cute.Int32,
-        tma_operation_type: OperationTypeEnum,
-        mma_operation_type: OperationTypeEnum,
-        cluster_layout_vmnk: cute.Layout,
-    ) -> "TMAToUMMAPipeline":
-        """Backward-compatible alias. Prefer create(tma_operation_type=...MULTICAST)."""
-        return TMAToUMMAPipeline._create_with_multicast_mask(
-            num_stages=num_stages,
-            tma_operation_type=tma_operation_type,
-            mma_operation_type=mma_operation_type,
-            cluster_layout_vmnk=cluster_layout_vmnk,
-        )
-
-    @staticmethod
     def _create_with_multicast_mask(
         *,
         num_stages: cute.Int32,
         tma_operation_type: OperationTypeEnum,
-        mma_operation_type: OperationTypeEnum,
+        mma_operation_type: OperationDescriptor,
         cluster_layout_vmnk: cute.Layout,
+        producer_report_valid: bool,
     ) -> "TMAToUMMAPipeline":
         """Compute TMA multicast masks from cluster layout."""
+        # Standard GEMM projection; an operand-specific pipeline below relies
+        # on it matching the kernel's tma_load multicast modes.
         tma_mcast_proj_A = 2  # multicast across CTAs in same row
         tma_mcast_proj_B = 1  # multicast across CTAs in same column
 
@@ -630,13 +807,29 @@ class TMAToUMMAPipeline(GenericPipelineBase):
         )
 
         # if 1SM MMA, arrival_mask_a_peer==arrival_mask_a && arrival_mask_b==arrival_mask_b_peer
-        arrival_mask_c = (
-            arrival_mask_a | arrival_mask_a_peer | arrival_mask_b | arrival_mask_b_peer
-        )
-
         num_mcast_ctas_a = cute.size(cluster_shape_vmnk[2])
         num_mcast_ctas_b = cute.size(cluster_shape_vmnk[1])
-        num_mcast_participants = num_mcast_ctas_a + num_mcast_ctas_b - 1
+
+        # The consumer release must reach every CTA (pair) whose next TMA into
+        # this stage multicasts here. A stage holding both operands is refilled
+        # by its row (A) and its column (B), so the union converges on each
+        # barrier; a pipeline dedicated to one operand only needs that
+        # operand's multicast set, and the fan-in shrinks to match.
+        operand = _mma_operand_of(mma_operation_type)
+        if cutlass.const_expr(operand == MmaOperand.A):
+            arrival_mask_c = arrival_mask_a | arrival_mask_a_peer
+            num_mcast_participants = num_mcast_ctas_a
+        elif cutlass.const_expr(operand == MmaOperand.B):
+            arrival_mask_c = arrival_mask_b | arrival_mask_b_peer
+            num_mcast_participants = num_mcast_ctas_b
+        else:
+            arrival_mask_c = (
+                arrival_mask_a
+                | arrival_mask_a_peer
+                | arrival_mask_b
+                | arrival_mask_b_peer
+            )
+            num_mcast_participants = num_mcast_ctas_a + num_mcast_ctas_b - 1
 
         is_2sm = _is_2sm_tma_operation_type(tma_operation_type)
         raw_pipeline, producer_state, consumer_state = create_pipeline(
@@ -647,7 +840,6 @@ class TMAToUMMAPipeline(GenericPipelineBase):
             # elect_one_sync elects one thread, and for 2SM only the leader
             # CTA commits.
             producer_arv_count=get_arrival_count(
-                num_stages,
                 tma_operation_type,
                 mma_operation_type,
                 side="producer",
@@ -661,7 +853,6 @@ class TMAToUMMAPipeline(GenericPipelineBase):
             # issuing CTAs (pairs, for 2SM) converging on each barrier in
             # the mask.
             consumer_arv_count=get_arrival_count(
-                num_stages,
                 tma_operation_type,
                 mma_operation_type,
                 side="consumer",
@@ -670,6 +861,7 @@ class TMAToUMMAPipeline(GenericPipelineBase):
                 fan_in=num_mcast_participants,
             ),
             arrival_mask=arrival_mask_c,
+            producer_report_valid=producer_report_valid,
         )
         return TMAToUMMAPipeline(
             raw_pipeline,
@@ -735,7 +927,7 @@ class TMAToUMMACircularPipeline(TMAToUMMAPipeline):
     def create(  # type: ignore[override]
         *,
         num_stages: cute.Int32,
-        mma_operation_type: OperationTypeEnum,
+        mma_operation_type: OperationDescriptor,
         count_per_stage: int,
         count_per_iteration: int,
         tma_operation_type: Optional[OperationTypeEnum] = None,
@@ -848,9 +1040,17 @@ class TMAToUMMACircularPipeline(TMAToUMMAPipeline):
         )
         return self
 
-    def consumer_release_and_advance(self) -> "TMAToUMMACircularPipeline":
+    def consumer_release_and_advance(
+        self,
+        *,
+        elect_one_sync: Optional[bool] = None,
+        elect_leader_cta: Optional[bool] = None,
+    ) -> "TMAToUMMACircularPipeline":
         """Combined consumer release + advance using circular buffer semantics."""
-        self.consumer_release()
+        self.consumer_release(
+            elect_one_sync=elect_one_sync,
+            elect_leader_cta=elect_leader_cta,
+        )
         # Update circular buffer state
         self.circular_buffer_state = circular_buffer_pipeline_advance_iterator(
             self.raw_pipeline, self.circular_buffer_state
@@ -881,6 +1081,9 @@ class TMAToUMMACircularPipeline(TMAToUMMAPipeline):
 class TMAToAsyncPipeline(GenericPipelineBase):
     """
     Pipeline for TMA to * (except UMMA).
+
+    The TMA producer must call :meth:`producer_tail` after its final commit and
+    before exiting its producer role.
     """
 
     @staticmethod
@@ -888,10 +1091,15 @@ class TMAToAsyncPipeline(GenericPipelineBase):
         *,
         num_stages: cute.Int32,
         consumer: OperationTypeEnum,
-        consumer_arv_count: cute.Int32,
+        consumer_arv_count: Optional[cute.Int32] = None,
+        consumer_release_threads_per_cta: Optional[cute.Int32] = None,
     ) -> "TMAToAsyncPipeline":
         """
         Create a TMA to * (except UMMA) pipeline.
+
+        The consumer arrival count is given either directly, as
+        ``consumer_arv_count``, or derived from the issuing thread count, as
+        ``consumer_release_threads_per_cta`` (exactly one).
         """
 
         raw_pipeline, producer_state, consumer_state = create_pipeline(
@@ -901,14 +1109,19 @@ class TMAToAsyncPipeline(GenericPipelineBase):
             # Mirror this class's producer_commit: one warp issues the TMA
             # load with elect_one_sync.
             producer_arv_count=get_arrival_count(
-                num_stages,
                 OperationTypeEnum.SM90_TMA_LOAD,
                 consumer,
                 side="producer",
                 num_threads_per_cta=32,
                 elect_one_sync=True,
             ),
-            consumer_arv_count=consumer_arv_count,
+            consumer_arv_count=_resolve_arrival_count(
+                "consumer",
+                arv_count=consumer_arv_count,
+                threads_per_cta=consumer_release_threads_per_cta,
+                producer=OperationTypeEnum.SM90_TMA_LOAD,
+                consumer=consumer,
+            ),
         )
         return TMAToAsyncPipeline(
             raw_pipeline,
@@ -938,8 +1151,9 @@ class AsyncToUMMAPipeline(GenericPipelineBase):
         *,
         num_stages: cute.Int32,
         producer: OperationTypeSpec,
-        producer_arv_count: cute.Int32,
-        mma_operation_type: OperationTypeEnum,
+        producer_arv_count: Optional[cute.Int32] = None,
+        producer_commit_threads_per_cta: Optional[cute.Int32] = None,
+        mma_operation_type: OperationDescriptor,
     ) -> "AsyncToUMMAPipeline":
         """
         Create a * (except TMA) to UMMA pipeline.
@@ -953,21 +1167,32 @@ class AsyncToUMMAPipeline(GenericPipelineBase):
                 into SMEM under a single producer-commit). Each producer
                 kind contributes its own commit-side fence at lowering
                 time.
-            producer_arv_count: Number of producer arrivals.
-            mma_operation_type: UMMA operation type.
+            producer_arv_count: Explicit producer arrival count.
+            producer_commit_threads_per_cta: Threads per CTA issuing the
+                producer commit; the count is derived via get_arrival_count.
+                Exactly one of it or producer_arv_count must be given.
+            mma_operation_type: UMMA operation type. An ``MmaOperation(kind,
+                operand)`` names the operand (``A``, ``B``, ``C`` or
+                ``Metadata``) the MMA reads from the stage buffers.
         """
         _validate_umma_operation_type(
             mma_operation_type,
         )
 
-        if producer == OperationTypeEnum.SM90_TMA_LOAD:
+        if _has_kind(producer, OperationTypeEnum.SM90_TMA_LOAD):
             raise ValueError("TMA to UMMA is not supported.")
 
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
             producer,
             mma_operation_type,
-            producer_arv_count=producer_arv_count,
+            producer_arv_count=_resolve_arrival_count(
+                "producer",
+                arv_count=producer_arv_count,
+                threads_per_cta=producer_commit_threads_per_cta,
+                producer=producer,
+                consumer=mma_operation_type,
+            ),
             consumer_arv_count=1,
         )
         return AsyncToUMMAPipeline(
@@ -994,35 +1219,59 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
     """
 
     @staticmethod
+    def _compute_2sm_tmem_sync_mask() -> cute.Int16:
+        """Return the multicast mask for the caller's hardware CTA pair."""
+        cta_rank_in_cluster = cute.arch.make_warp_uniform(
+            cute.arch.block_idx_in_cluster()
+        )
+        pair_leader_rank = cta_rank_in_cluster // 2 * 2
+        return cutlass.Int16(0b11) << cutlass.Int16(pair_leader_rank)
+
+    @staticmethod
     def create(
         *,
         num_stages: cute.Int32,
-        consumer: OperationTypeEnum,
-        consumer_arv_count: cute.Int32,
-        mma_operation_type: OperationTypeEnum,
+        consumer: OperationTypeSpec,
+        consumer_arv_count: Optional[cute.Int32] = None,
+        consumer_release_threads_per_cta: Optional[cute.Int32] = None,
+        mma_operation_type: OperationDescriptor,
         cluster_layout_vmnk: Optional[cute.Layout] = None,
     ) -> "UMMAtoAsyncPipeline":
         """
         Create a UMMA to * (except TMA) pipeline.
 
-        For 2SM MMA, provide cluster_layout_vmnk for proper mask computation.
+        Prefer ``consumer_release_threads_per_cta``: it is the number of
+        threads in each CTA that call ``consumer_release``, and the pipeline
+        derives the final mbarrier arrival count, including CTA-pair fan-in.
+        For example, 128 releasing threads per CTA derive an arrival count of
+        256 for the usual 2SM MMA-to-T2R pipeline because both CTAs release.
+
+        ``consumer_arv_count`` is the legacy explicit-count escape hatch. It
+        must already be the final mbarrier arrival count after accounting for
+        the signaling topology and is forwarded verbatim without inference.
+        Provide exactly one of these two parameters.
+
+        ``cluster_layout_vmnk`` is deprecated and ignored. It is retained for
+        source compatibility; for 2SM MMA the pipeline derives the TMEM sync
+        mask directly from the caller's cluster-local CTA rank.
+
+        ``mma_operation_type`` may be an ``MmaOperation(kind, MmaOperand.D)``
+        naming the operand the producer MMA writes into the guarded buffers.
         """
         _validate_umma_operation_type(
             mma_operation_type,
         )
 
-        if consumer == OperationTypeEnum.SM90_TMA_LOAD:
+        if _has_kind(consumer, OperationTypeEnum.SM90_TMA_LOAD):
             raise ValueError("UMMA to TMA is not supported.")
 
         if _is_2sm_umma_operation_type(mma_operation_type):
-            if cluster_layout_vmnk is None:
-                raise ValueError("cluster_layout_vmnk cannot be None if using 2SM MMA")
-            return UMMAtoAsyncPipeline.create_with_mask(
+            return UMMAtoAsyncPipeline._create_with_mask(
                 num_stages=num_stages,
                 consumer_type=consumer,
                 consumer_arv_count=consumer_arv_count,
+                consumer_release_threads_per_cta=consumer_release_threads_per_cta,
                 mma_operation_type=mma_operation_type,
-                cluster_layout_vmnk=cluster_layout_vmnk,
             )
         else:  # 1SM MMA
             raw_pipeline, producer_state, consumer_state = create_pipeline(
@@ -1032,14 +1281,19 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
                 # Mirror this class's producer_commit: one warp issues the
                 # UMMA commit with elect_one_sync.
                 producer_arv_count=get_arrival_count(
-                    num_stages,
                     mma_operation_type,
                     consumer,
                     side="producer",
                     num_threads_per_cta=32,
                     elect_one_sync=True,
                 ),
-                consumer_arv_count=consumer_arv_count,
+                consumer_arv_count=_resolve_arrival_count(
+                    "consumer",
+                    arv_count=consumer_arv_count,
+                    threads_per_cta=consumer_release_threads_per_cta,
+                    producer=mma_operation_type,
+                    consumer=consumer,
+                ),
             )
             return UMMAtoAsyncPipeline(
                 raw_pipeline,
@@ -1049,20 +1303,22 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
             )
 
     @staticmethod
-    def create_with_mask(
+    def _create_with_mask(
         *,
         num_stages: cute.Int32,
         consumer_type: OperationTypeEnum,
-        consumer_arv_count: cute.Int32,
-        mma_operation_type: OperationTypeEnum,
-        cluster_layout_vmnk: cute.Layout,
+        consumer_arv_count: Optional[cute.Int32] = None,
+        consumer_release_threads_per_cta: Optional[cute.Int32] = None,
+        mma_operation_type: OperationDescriptor,
     ) -> "UMMAtoAsyncPipeline":
         """
         Create a UMMA to * pipeline with arrival mask for 2CTA operations.
+
+        The consumer arrival count is given either directly, as
+        ``consumer_arv_count``, or derived from the issuing thread count, as
+        ``consumer_release_threads_per_cta`` (exactly one).
         """
-        tmem_sync_mask = cutlass.pipeline.PipelineUmmaAsync._compute_tmem_sync_mask(
-            cta_layout_vmnk=cluster_layout_vmnk
-        )
+        tmem_sync_mask = UMMAtoAsyncPipeline._compute_2sm_tmem_sync_mask()
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
             mma_operation_type,
@@ -1073,7 +1329,6 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
             # the fan-in is not derivable from the pipeline: one issuing CTA
             # pair converges on each barrier in the mask.
             producer_arv_count=get_arrival_count(
-                num_stages,
                 mma_operation_type,
                 consumer_type,
                 side="producer",
@@ -1081,7 +1336,16 @@ class UMMAtoAsyncPipeline(GenericPipelineBase):
                 elect_one_sync=True,
                 fan_in=1,
             ),
-            consumer_arv_count=consumer_arv_count,
+            # The consumer edge does not carry the explicit TMEM sync mask.
+            # Its inferred ConvergeCTAPairLeader topology still contributes
+            # the CTA-pair fan-in (for example, 128 threads/CTA derives 256).
+            consumer_arv_count=_resolve_arrival_count(
+                "consumer",
+                arv_count=consumer_arv_count,
+                threads_per_cta=consumer_release_threads_per_cta,
+                producer=mma_operation_type,
+                consumer=consumer_type,
+            ),
             arrival_mask=tmem_sync_mask,
         )
         return UMMAtoAsyncPipeline(
@@ -1140,13 +1404,12 @@ class TMAStorePipeline:
         All warps then synchronize before producers write to SMEM.
         """
 
-        @CuteExperimentalDSL.jit
+        @cute.jit
         def acquire_sync_impl() -> "TMAStorePipeline":
             # Only TMA warp needs to wait for bulk async operations
             warp_idx = cute.arch.warp_idx()
             warp_idx = cute.arch.make_warp_uniform(warp_idx)
 
-            # Use Python if with @Cutlass_LIR.jit preprocessor
             if warp_idx == self.tma_warp_id:
                 # Allow N-1 TMA operations in flight for pipelining
                 # Now we can use the compile-time constant from type parameter
@@ -1182,25 +1445,34 @@ class TMAStorePipeline:
         All warps advance to the next pipeline stage.
         """
 
-        @CuteExperimentalDSL.jit
+        @cute.jit
         def release_advance_impl() -> "TMAStorePipeline":
             # Only TMA warp commits the TMA operations
             warp_idx = cute.arch.warp_idx()
             warp_idx = cute.arch.make_warp_uniform(warp_idx)
 
-            # Use Python if with @Cutlass_LIR.jit preprocessor
             if warp_idx == self.tma_warp_id:
                 cute.arch.cp_async_bulk_commit_group()
 
             # All warps advance to next stage
-            self.index = (self.index + 1) % self.get_num_stages()
+            # The bounded index makes this equivalent to modulo without lowering
+            # non-power-of-two stage counts through a reciprocal multiply.
+            next_index = self.index + 1
+            self.index = 0 if next_index == self.get_num_stages() else next_index
             return self
 
         return release_advance_impl()
 
     def get_index(self) -> int:
         """Get current pipeline stage index."""
-        return self.index
+        # A trace-time index is already uniform; returning it unchanged keeps
+        # stage addressing fully static.
+        if isinstance(self.index, int):
+            return self.index
+        # Every participating warp advances the pipeline state identically.
+        # Preserve that semantic guarantee when the index is used in address
+        # calculations.
+        return cute.arch.make_warp_uniform(self.index)
 
     def tail(self) -> "TMAStorePipeline":
         """
@@ -1209,12 +1481,11 @@ class TMAStorePipeline:
         Should be called at the end of the pipeline to ensure all TMA stores finish.
         """
 
-        @CuteExperimentalDSL.jit
+        @cute.jit
         def tail_impl() -> "TMAStorePipeline":
             warp_idx = cute.arch.warp_idx()
             warp_idx = cute.arch.make_warp_uniform(warp_idx)
 
-            # Use Python if with @Cutlass_LIR.jit preprocessor
             if warp_idx == self.tma_warp_id:
                 # Wait for all TMA operations to complete
                 cute.arch.cp_async_bulk_wait_group(0, read=True)
@@ -1242,18 +1513,37 @@ class GroupedGemmSchedulerPipeline(GenericPipelineBase):
     def create(
         *,
         num_stages: cute.Int32,
-        producer_arv_count: cute.Int32,
-        consumer_arv_count: cute.Int32,
+        producer_arv_count: Optional[cute.Int32] = None,
+        consumer_arv_count: Optional[cute.Int32] = None,
+        producer_commit_threads_per_cta: Optional[cute.Int32] = None,
+        consumer_release_threads_per_cta: Optional[cute.Int32] = None,
     ) -> "GroupedGemmSchedulerPipeline":
         """
         Create a grouped gemm scheduler pipeline.
+
+        Each side's arrival count is given either directly, as
+        ``producer_arv_count`` / ``consumer_arv_count``, or derived from the
+        issuing thread count, as ``producer_commit_threads_per_cta`` /
+        ``consumer_release_threads_per_cta`` (exactly one per side).
         """
         raw_pipeline, producer_state, consumer_state = create_pipeline(
             num_stages,
             OperationTypeEnum.SREG_CTAID,
             OperationTypeEnum.LD_SHARED,
-            producer_arv_count=producer_arv_count,
-            consumer_arv_count=consumer_arv_count,
+            producer_arv_count=_resolve_arrival_count(
+                "producer",
+                arv_count=producer_arv_count,
+                threads_per_cta=producer_commit_threads_per_cta,
+                producer=OperationTypeEnum.SREG_CTAID,
+                consumer=OperationTypeEnum.LD_SHARED,
+            ),
+            consumer_arv_count=_resolve_arrival_count(
+                "consumer",
+                arv_count=consumer_arv_count,
+                threads_per_cta=consumer_release_threads_per_cta,
+                producer=OperationTypeEnum.SREG_CTAID,
+                consumer=OperationTypeEnum.LD_SHARED,
+            ),
         )
         return GroupedGemmSchedulerPipeline(
             raw_pipeline,
@@ -1331,13 +1621,17 @@ class CLCPipeline(GenericPipelineBase):
     def create(
         *,
         num_stages: cute.Int32,
-        consumer_arv_count: cute.Int32,
+        consumer_arv_count: Optional[cute.Int32] = None,
+        consumer_release_threads_per_cta: Optional[cute.Int32] = None,
         response_buffer: "cute.Tensor",
     ) -> "CLCPipeline":
         """
         Create a CLC to consumer pipeline.
 
-        The consumer includes mma, tma, epilogue, and scheduler.
+        The consumer includes mma, tma, epilogue, and scheduler. The consumer
+        arrival count is given either directly, as ``consumer_arv_count``, or
+        derived from the issuing thread count, as
+        ``consumer_release_threads_per_cta`` (exactly one).
 
         :param response_buffer: Multi-stage shared-memory buffer for CLC responses.
             Each stage gets its own slot, indexed by stage index.
@@ -1347,16 +1641,25 @@ class CLCPipeline(GenericPipelineBase):
             num_stages,
             OperationTypeEnum.SM100_LAUNCH_CONTROL,
             OperationTypeEnum.LD_SHARED,
-            # The CLC producer edge is warp-distributed: one warp lands a
-            # single arrive on each CTA's barrier regardless of thread count.
+            # The CLC producer edge is warp-distributed: the issuing warp
+            # lane-distributes one arrive to each CTA's barrier, so each
+            # barrier sees num_threads_per_cta / warp_size arrives. This
+            # class's producer release is issued by the one full scheduler
+            # warp (32 threads, unelected -- an elected lane could not
+            # lane-distribute).
             producer_arv_count=get_arrival_count(
-                num_stages,
                 OperationTypeEnum.SM100_LAUNCH_CONTROL,
                 OperationTypeEnum.LD_SHARED,
                 side="producer",
-                num_threads_per_cta=1,
+                num_threads_per_cta=32,
             ),
-            consumer_arv_count=consumer_arv_count,
+            consumer_arv_count=_resolve_arrival_count(
+                "consumer",
+                arv_count=consumer_arv_count,
+                threads_per_cta=consumer_release_threads_per_cta,
+                producer=OperationTypeEnum.SM100_LAUNCH_CONTROL,
+                consumer=OperationTypeEnum.LD_SHARED,
+            ),
         )
         return CLCPipeline(
             raw_pipeline,
@@ -1401,3 +1704,5 @@ class CLCPipeline(GenericPipelineBase):
         cutlass_lir_ir.WorkItemIssueNextOp(
             mbar_ptr.value, response_ptr.value, elect_one_sync=True
         )
+
+

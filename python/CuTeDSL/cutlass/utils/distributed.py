@@ -18,7 +18,7 @@ from cutlass.cute.typing import Pointer, Int32
 from cutlass.cutlass_dsl import T, Numeric, dsl_user_op
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import llvm
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
 __all__ = [
     # Message Passing Lock & Unlock
@@ -59,8 +59,8 @@ __all__ = [
 ########################################################
 
 
-@deprecated("atomicAdd is deprecated, use cute.arch.atomic_add instead")
 @dsl_user_op
+@_deprecated("atomicAdd is deprecated, use cute.arch.atomic_add instead")
 def atomicAdd(
     dst_ptr: Pointer,
     val: Int32,
@@ -78,7 +78,7 @@ def atomicAdd(
     )
 
 
-@deprecated(
+@_deprecated(
     "ld_bypass is deprecated, use cute.arch.load with cop='cv' directly instead"
 )
 @cute.jit
@@ -323,7 +323,9 @@ def multimem_ld_reduce_128bit_base(
         loc=loc,
         ip=ip,
     )
-    return_regs = [llvm.extractvalue(T.i32(), return_struct, [i]) for i in range(4)]
+    return_regs = [
+        Int32(llvm.extractvalue(T.i32(), return_struct, [i])) for i in range(4)
+    ]
     return return_regs[0], return_regs[1], return_regs[2], return_regs[3]
 
 
@@ -347,7 +349,9 @@ def multimem_ld_reduce_64bit_base(
         loc=loc,
         ip=ip,
     )
-    return_regs = [llvm.extractvalue(T.i32(), return_struct, [i]) for i in range(2)]
+    return_regs = [
+        Int32(llvm.extractvalue(T.i32(), return_struct, [i])) for i in range(2)
+    ]
     return return_regs[0], return_regs[1]
 
 
@@ -371,7 +375,9 @@ def multimem_ld_reduce_32bit_base(
         loc=loc,
         ip=ip,
     )
-    return_regs = [llvm.extractvalue(T.i32(), return_struct, [i]) for i in range(1)]
+    return_regs = [
+        Int32(llvm.extractvalue(T.i32(), return_struct, [i])) for i in range(1)
+    ]
     return (return_regs[0],)
 
 
@@ -457,7 +463,7 @@ def multimem_st_4xb32(
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
         None,
-        [mc_ptr_int, x, y, z, w],
+        [mc_ptr_int] + [Int32(r).ir_value(loc=loc, ip=ip) for r in (x, y, z, w)],
         "multimem.st.weak.global.v4.f32 [$0], {$1, $2, $3, $4};",
         "l,r,r,r,r,~{memory}",
         has_side_effects=True,
@@ -480,7 +486,7 @@ def multimem_st_2xb32(
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
         None,
-        [mc_ptr_int, x, y],
+        [mc_ptr_int] + [Int32(r).ir_value(loc=loc, ip=ip) for r in (x, y)],
         "multimem.st.weak.global.v2.f32 [$0], {$1, $2};",
         "l,r,r,~{memory}",
         has_side_effects=True,
@@ -502,7 +508,7 @@ def multimem_st_1xb32(
     mc_ptr_int = mc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
     llvm.inline_asm(
         None,
-        [mc_ptr_int, x],
+        [mc_ptr_int, Int32(x).ir_value(loc=loc, ip=ip)],
         "multimem.st.weak.global.f32 [$0], {$1};",
         "l,r,~{memory}",
         has_side_effects=True,

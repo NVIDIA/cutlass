@@ -18,8 +18,9 @@ from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.typing import TypedPointer
 from cutlass.base_dsl.utils.tree_utils import is_constexpr_field
 from cutlass.cutlass_dsl import is_cute_algebra_type
+from cutlass.experimental.cuda.graph.runtime import _FakeGraph, _FakeGraphNode
 from .runtime import _FakeStream
-from .typing import Tensor, Pointer, SymInt
+from .typing import Tensor, Pointer, SymInt, SymBool
 from .typing import (
     Numeric,
     Boolean,
@@ -46,10 +47,12 @@ from .typing import (
     Float4E2M1FNx2,
 )
 import cuda.bindings.driver as cuda
+import cuda.bindings.runtime as cuda_runtime
 
 from types import UnionType
 from typing import (
     Annotated,
+    Callable,
     List,
     Dict,
     Any,
@@ -282,6 +285,7 @@ def _convert_single_arg(
     ctx: ConverterContext,
     *,
     is_constexpr: bool = False,
+    adapted: Any = None,
 ) -> spec.Param:
     """Convert a single argument to a spec.Param.
 
@@ -295,6 +299,8 @@ def _convert_single_arg(
         The type annotation of the argument.
     ctx : ConverterContext
         The converter context for managing variable allocation.
+    adapted: Any
+        The adapted version of the argument, or None if no adaptation was needed.
 
     Returns
     -------
@@ -350,6 +356,8 @@ def _convert_single_arg(
         else:
             dtype = NumericToTVMFFIDtype[Int64]
         return spec.Var(arg_name, dtype, divisibility=arg.divisibility)
+    elif isinstance(arg, SymBool):
+        return spec.Var(arg_name, NumericToTVMFFIDtype[Boolean])
     elif isinstance(arg, Tensor):
         arg_shape = arg.shape
         arg_stride = arg.stride
@@ -446,8 +454,16 @@ def _convert_single_arg(
             return spec.EnvStream(arg_name)
         else:
             return spec.Stream(arg_name)
+    elif isinstance(arg, (_FakeGraph, cuda.CUgraph, cuda_runtime.cudaGraph_t)):
+        return spec.CudaGraph(arg_name)
+    elif isinstance(
+        arg, (_FakeGraphNode, cuda.CUgraphNode, cuda_runtime.cudaGraphNode_t)
+    ):
+        return spec.CudaGraphNode(arg_name)
     elif isinstance(arg, cuda.CUstream):
         return spec.Stream(arg_name)
+    elif isinstance(arg, cuda.CUevent):
+        return spec.CudaEvent(arg_name)
     elif arg_type is not inspect.Parameter.empty and hasattr(arg_type, "_fields"):
         # Handle NamedTuple - normalize to Tuple by order of fields, ignoring defaults
         # Get field types from annotations
@@ -556,9 +572,33 @@ def _convert_single_arg(
             f"None of the union members matched: {member_types}"
         )
     else:
+        if adapted is not None:
+            return _convert_single_arg(adapted, arg_name, type(adapted), ctx)
+
         raise DSLRuntimeError(
             f"Unsupported argument type: {type(arg)} for annotated type: {get_origin(arg_type)}"
         )
+
+
+def _accepts_adapted_keyword(convert_single_arg: Callable[..., spec.Param]) -> bool:
+    """Return whether ``convert_single_arg`` can be called with ``adapted=``.
+
+    Downstream packages replace ``_convert_single_arg`` with wrappers pinned
+    to the signature ``(arg, arg_name, arg_type, ctx)``, which predates the
+    ``adapted`` keyword. Such a wrapper neither names ``adapted`` nor takes
+    ``**kwargs``. The wrapper itself is inspected rather than the function a
+    ``functools.wraps`` wrapper names, since only the wrapper's own
+    parameters decide whether the call succeeds.
+    """
+    try:
+        parameters = inspect.signature(
+            convert_single_arg, follow_wrapped=False
+        ).parameters
+    except (TypeError, ValueError):
+        return False
+    return "adapted" in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
 
 
 def _tvm_ffi_args_spec_converter(
@@ -566,6 +606,7 @@ def _tvm_ffi_args_spec_converter(
     signature: inspect.Signature,
     full_args: List[Any],
     full_kwargs: Dict[str, Any],
+    adapted_args: list[Any] | None = None,
 ) -> tuple[List[spec.Param], Any, List[str]]:
     """Convert cute algebra args to tvm ffi spec params.
 
@@ -587,11 +628,27 @@ def _tvm_ffi_args_spec_converter(
     ctx = ConverterContext()
     wrapper_extra_exclude_arg_names = []
     map_dataclass_to_tuple: List[str] = []
+    forwarded_adapted_args = (
+        adapted_args if _accepts_adapted_keyword(_convert_single_arg) else None
+    )
 
-    for arg, parameter in zip(rectified_args, exec_args.signature.parameters.values()):
+    for i, (arg, parameter) in enumerate(
+        zip(rectified_args, exec_args.signature.parameters.values())
+    ):
         arg_type = parameter.annotation
         arg_name = parameter.name
-        param = _convert_single_arg(arg, arg_name, arg_type, ctx)
+        adapted = (
+            forwarded_adapted_args[i] if forwarded_adapted_args is not None else None
+        )
+        # Temporary workaround: Quack (and PyTorch's vendored copy of it)
+        # monkey-patches this private _convert_single_arg with a wrapper pinned
+        # to (arg, arg_name, arg_type, ctx), which rejects adapted=. The call is
+        # split so adapted is passed only when the current function accepts it.
+        # Remove the split once Quack stops monkey-patching _convert_single_arg.
+        if adapted is None:
+            param = _convert_single_arg(arg, arg_name, arg_type, ctx)
+        else:
+            param = _convert_single_arg(arg, arg_name, arg_type, ctx, adapted=adapted)
         params.append(param)
         if isinstance(param, spec.EnvStream):
             wrapper_extra_exclude_arg_names.append(arg_name)

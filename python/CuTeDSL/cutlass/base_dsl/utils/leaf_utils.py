@@ -251,6 +251,12 @@ class LeafInfo:
             # Fallback: try in-place update
             if hasattr(self.obj, "__dict__") and hasattr(new_obj, "__dict__"):
                 self.obj.__dict__.update(new_obj.__dict__)
+                # This bypasses the object's ``__setattr__``: stamp the PyIR
+                # holder write clock by hand so a cached capture-scan row for
+                # a registered root is invalidated (no-op when unregistered).
+                from ..pyir_state import _pyir_note_holder_write
+
+                _pyir_note_holder_write(self.obj)
                 return
             if hasattr(self.obj, "value") and len(new_vals) >= 1:
                 self.obj.value = new_vals[0]
@@ -601,9 +607,13 @@ class TraversableLeafMixin:
 
     def __extract_mlir_values__(self) -> dict:
         ir_vals, infos, proxies = gather_leaves([self])
-        # Store with __ prefix so gather_leaves skips them on next call
-        self.__dict__["__gather_infos"] = infos
-        self.__dict__["__gather_proxies"] = proxies
+        # Store with __ prefix so gather_leaves skips them on next call. The
+        # raw funnel keeps the PyIR holder write stamp current when this
+        # object is a registered capture-scan root (no-op otherwise).
+        from ..pyir_state import _pyir_setattr_raw
+
+        _pyir_setattr_raw(self, "__gather_infos", infos)
+        _pyir_setattr_raw(self, "__gather_proxies", proxies)
 
         # Return a flat dict keyed by the full leaf path.
         # This makes framework error messages immediately show which
@@ -626,8 +636,12 @@ class TraversableLeafMixin:
     def __new_from_mlir_values__(
         self, values: dict[str, Any]
     ) -> "TraversableLeafMixin":
-        infos = self.__dict__.pop("__gather_infos")
-        proxies = self.__dict__.pop("__gather_proxies")
+        from ..pyir_state import _pyir_delattr_raw
+
+        infos = self.__dict__["__gather_infos"]
+        proxies = self.__dict__["__gather_proxies"]
+        _pyir_delattr_raw(self, "__gather_infos")
+        _pyir_delattr_raw(self, "__gather_proxies")
         # values is a flat {path: ir.Value} dict; just take values in order
         new_vals = list(values.values())
         inject_leaves(infos, new_vals, proxies)

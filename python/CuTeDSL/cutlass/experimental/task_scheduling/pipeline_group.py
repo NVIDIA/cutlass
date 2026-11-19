@@ -91,7 +91,7 @@ The merge/fork topology is auto-derived from the kind decomposition:
 - Both differ → **Error**
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import cutlass.pipeline as pipeline
 import cutlass.cute as cute
 import cutlass
@@ -107,11 +107,9 @@ class _GroupMemberRef:
 
     Instances are produced only by ``PipelineGroup.__getattr__`` —
     writing ``ab_sync.smem_a`` returns a ``_GroupMemberRef`` bound to
-    the group and the member resource.  The wrapper is consumed by
-    :func:`normalize_and_validate_schedule_list` (in ``task.py``),
-    which unwraps it to the underlying member while recording that
-    the access was group-qualified.  This distinction lets the
-    static checker enforce:
+    the group and the member resource.  The schedule builder unwraps it to the
+    underlying member while recording that the access was group-qualified.
+    This distinction lets the static checker enforce:
 
     - Merge groups: every member barrier op must go through the
       group; ``ConsumerRelease`` is additionally only legal at the
@@ -119,8 +117,8 @@ class _GroupMemberRef:
     - Fork groups: per-member ops go through ``group.member`` — the
       bare ``member`` is rejected.
 
-    ``_GroupMemberRef`` is **only** valid inside ``schedule_list``
-    entries; bare ``MemoryResource`` objects continue to live in
+    ``_GroupMemberRef`` is **only** valid inside traced schedule steps;
+    bare ``MemoryResource`` objects continue to live in
     ``src_resources`` / ``dst_resources`` (those describe data
     dependencies, independent of barrier identity).
     """
@@ -179,6 +177,13 @@ class PipelineGroup(MemoryResource):
 
     members: List["MemoryResource"] = field(default_factory=list)
     mode: cutlass.Constexpr[PipelineGroupMode] = PipelineGroupMode.Merge
+    # Coalesced-barrier placement and allocator keys are compile-time metadata.
+    # Declare them as fields so PipelineGroup has a stable shape when carried
+    # through the DSL frontend's state-allocation branches.
+    _coalesced_full_offsets: Optional[List[int]] = field(init=False, default=None)
+    _coalesced_empty_offsets: Optional[List[int]] = field(init=False, default=None)
+    _coalesced_full_keys: Optional[List[str]] = field(init=False, default=None)
+    _coalesced_empty_keys: Optional[List[str]] = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.is_barrier = True
@@ -226,7 +231,7 @@ class PipelineGroup(MemoryResource):
         constructed with ``name="smem_a"`` becomes accessible as
         ``group.smem_a``.  Callers therefore must give members Python-
         identifier names (snake_case by convention) matching how they
-        want to reference the member in ``schedule_list`` entries.
+        want to reference the member in schedule steps.
 
         Only invoked when normal attribute lookup fails, so it does
         not shadow dataclass fields (``members``, ``mode``, ...) or
@@ -626,6 +631,72 @@ class PipelineGroup(MemoryResource):
                 f"sum of member num_bytes ({total_bytes})."
             )
 
+    def assign_coalesced_barriers(
+        self,
+        barrier_ptr: cute.Pointer,
+        full_offsets: List[int],
+        empty_offsets: List[int],
+    ) -> None:
+        """Point this group at externally coalesced barrier storage.
+
+        Used together with
+        :class:`cutlass.experimental.task_scheduling.memory.BarrierAllocator`:
+        the allocator owns one coalesced mbarrier array and initializes it in a
+        single vectorized pass.  This records the base pointer and the element
+        offsets of the full- and empty-barrier runs, and flips the merged
+        config to ``defer_init=True`` so :meth:`create` builds sync objects
+        **without** emitting ``mbarrier.init`` (the allocator performs the init
+        instead).
+
+        The offset lists follow the same per-mode shape as
+        ``BarrierAllocator.add_pipeline_group`` returns: on the "many" side
+        there is one offset per member (in member order); on the collapsed side
+        there is a single shared offset.
+
+        Call after ``BarrierAllocator.compute_layout()`` /
+        ``allocate()`` and before ``TaskManager.setup_resources_and_tasks()``
+        (which invokes :meth:`create`).  Do **not** register the group with
+        ``SmemAllocator.add_pipeline_group()`` when using this path — the
+        barrier SMEM is owned by the ``BarrierAllocator``.
+
+        Parameters
+        ----------
+        barrier_ptr : cute.Pointer
+            Base pointer of the coalesced ``Int64`` mbarrier array.
+        full_offsets : List[int]
+            Offsets of the full barriers.
+        empty_offsets : List[int]
+            Offsets of the empty barriers.
+        """
+        if self.pipeline_config is None:
+            raise RuntimeError(
+                "PipelineGroup has no pipeline_config to attach barriers to."
+            )
+        n_members = len(self.members)
+        if self.mode == PipelineGroupMode.Merge:
+            expected = (n_members, 1)
+        elif self.mode == PipelineGroupMode.Fork:
+            expected = (1, n_members)
+        elif self.mode == PipelineGroupMode.FusedMerge:
+            expected = (1, 1)
+        else:
+            raise ValueError(
+                f"assign_coalesced_barriers() got unsupported group mode {self.mode!r}."
+            )
+        if (len(full_offsets), len(empty_offsets)) != expected:
+            raise ValueError(
+                f"For a {self.mode.value} group with {n_members} member(s), "
+                f"expected {expected[0]} full and {expected[1]} empty "
+                f"offset(s), got {len(full_offsets)} and {len(empty_offsets)}."
+            )
+        self._coalesced_full_offsets = list(full_offsets)
+        self._coalesced_empty_offsets = list(empty_offsets)
+        self.pipeline_config = replace(
+            self.pipeline_config,
+            barrier_ptr=barrier_ptr,
+            defer_init=True,
+        )
+
     def create(self) -> None:
         """Create pipeline(s) for this group and assign to members.
 
@@ -687,21 +758,39 @@ class PipelineGroup(MemoryResource):
         if cta_layout is not None and not isinstance(cta_layout, cute.Layout):
             cta_layout = cute.make_layout(cta_layout)
 
+        # When a ``BarrierAllocator`` owns the barriers (see
+        # ``assign_coalesced_barriers``) each barrier lives at its own coalesced
+        # offset and ``mbarrier.init`` is deferred to the allocator; otherwise
+        # the barriers are laid out contiguously and self-initialized here.
+        defer_init = cfg.defer_init
+
         if self.mode == PipelineGroupMode.Merge:
             # ── Merge: per-member full + shared empty ────────────
             # The shared empty barrier uses the merged config's
             # consumer_group (non-TMA size when mixed).  TmaAsync
             # members are built with is_signaling_thread=True so
             # all threads arrive uniformly.
+            if cutlass.const_expr(defer_init):
+                assert self._coalesced_empty_offsets is not None
+                empty_ptr = base_ptr + self._coalesced_empty_offsets[0]
+            else:
+                empty_ptr = base_ptr + N * S
             shared_empty = self._make_empty_sync_object(
                 cfg,
-                base_ptr + N * S,
+                empty_ptr,
+                defer_init=defer_init,
             )
             for i, m in enumerate(self.members):
                 assert m.pipeline_config is not None
+                if cutlass.const_expr(defer_init):
+                    assert self._coalesced_full_offsets is not None
+                    full_ptr = base_ptr + self._coalesced_full_offsets[i]
+                else:
+                    full_ptr = base_ptr + i * S
                 full_so = self._make_full_sync_object(
                     m.pipeline_config,
-                    base_ptr + i * S,
+                    full_ptr,
+                    defer_init=defer_init,
                 )
                 m.pipeline = self._build_member_pipeline(
                     m,
@@ -716,12 +805,27 @@ class PipelineGroup(MemoryResource):
             # bytes for one load, producer_group = validated-equal).
             # Per-member empties let each consumer release
             # independently with the correct signaling convention.
-            shared_full = self._make_full_sync_object(cfg, base_ptr)
+            if cutlass.const_expr(defer_init):
+                assert self._coalesced_full_offsets is not None
+                full_ptr = base_ptr + self._coalesced_full_offsets[0]
+            else:
+                full_ptr = base_ptr
+            shared_full = self._make_full_sync_object(
+                cfg,
+                full_ptr,
+                defer_init=defer_init,
+            )
             for i, m in enumerate(self.members):
                 assert m.pipeline_config is not None
+                if cutlass.const_expr(defer_init):
+                    assert self._coalesced_empty_offsets is not None
+                    empty_ptr = base_ptr + self._coalesced_empty_offsets[i]
+                else:
+                    empty_ptr = base_ptr + (1 + i) * S
                 empty_so = self._make_empty_sync_object(
                     m.pipeline_config,
-                    base_ptr + (1 + i) * S,
+                    empty_ptr,
+                    defer_init=defer_init,
                 )
                 m.pipeline = self._build_member_pipeline(
                     m,
@@ -739,13 +843,23 @@ class PipelineGroup(MemoryResource):
             # and combined transaction bytes; each member then arrives on
             # it with its own op convention via a recast view of the same
             # storage (no re-init, no double-arm of the init).
+            if cutlass.const_expr(defer_init):
+                assert self._coalesced_full_offsets is not None
+                assert self._coalesced_empty_offsets is not None
+                full_ptr = base_ptr + self._coalesced_full_offsets[0]
+                empty_ptr = base_ptr + self._coalesced_empty_offsets[0]
+            else:
+                full_ptr = base_ptr
+                empty_ptr = base_ptr + S
             shared_empty = self._make_empty_sync_object(
                 cfg,
-                base_ptr + S,
+                empty_ptr,
+                defer_init=defer_init,
             )
             shared_full = self._make_full_sync_object(
                 cfg,
-                base_ptr,
+                full_ptr,
+                defer_init=defer_init,
             )
             for m in self.members:
                 assert m.pipeline_config is not None
@@ -779,6 +893,7 @@ class PipelineGroup(MemoryResource):
         self,
         cfg: "PipelineConfig",
         full_ptr: cute.Pointer,
+        defer_init: bool = False,
     ) -> pipeline.SyncObject:
         """Build the full (producer-side) sync object from a config.
 
@@ -786,6 +901,9 @@ class PipelineGroup(MemoryResource):
         consumer.  ``cfg`` supplies the producer agent type and
         cooperative-group size.  For TMA producers, ``tx_count`` is set
         to ``cfg.num_bytes``; for all others it is 0.
+
+        When ``defer_init`` is ``True`` the sync object skips its built-in
+        ``mbarrier.init`` (a ``BarrierAllocator`` performs the init).
         """
         _PRODUCER_OP = {
             PipelineType.AsyncAsync: cfg.async_producer_op,
@@ -812,6 +930,7 @@ class PipelineGroup(MemoryResource):
             cfg.num_stages,
             producer_agent,
             tx_count,
+            defer_init=defer_init,
         )
 
     def _make_member_full_view(
@@ -864,12 +983,16 @@ class PipelineGroup(MemoryResource):
         self,
         cfg: "PipelineConfig",
         empty_ptr: cute.Pointer,
+        defer_init: bool = False,
     ) -> pipeline.SyncObject:
         """Build the empty (consumer-side) sync object from a config.
 
         The empty barrier is signaled by the consumer (release) and
         waited-on by the producer (acquire).  ``cfg`` supplies the
         consumer agent type and cooperative-group size.
+
+        When ``defer_init`` is ``True`` the sync object skips its built-in
+        ``mbarrier.init`` (a ``BarrierAllocator`` performs the init).
         """
         _CONSUMER_OP = {
             PipelineType.AsyncAsync: pipeline.PipelineOp.AsyncThread,
@@ -890,6 +1013,7 @@ class PipelineGroup(MemoryResource):
             empty_ptr,
             cfg.num_stages,
             consumer_agent,
+            defer_init=defer_init,
         )
 
     def _build_member_pipeline(

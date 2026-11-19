@@ -816,7 +816,7 @@ class autotune_jit:
 # working but emit ``DeprecationWarning``. Please migrate to
 # ``cutlass.testing.*``; these shims will be removed in a future release.
 
-from typing_extensions import deprecated as _deprecated
+from cutlass.base_dsl.common import _deprecated
 
 from cutlass.testing import CantImplementError as _CantImplementError
 from cutlass.testing import CuptiProfiler as _CuptiProfiler

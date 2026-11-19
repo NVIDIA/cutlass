@@ -12,6 +12,9 @@
 
 """PyIR runtime -- corewalk layer; see facade for the public surface."""
 
+import weakref as _weakref
+
+from .pyir_state import _PYIR_CANDIDATE_REGISTRY_ACTIVE
 from .pyir_state import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
 from .pyir_core import *  # noqa: F401,F403  (siblings: each layer imports ALL lower layers)
 
@@ -47,7 +50,12 @@ def _pyir_auto_load_arg(arg: Any, *, row_authoritative: bool = False) -> Any:
     """
     # Candidate-holder registry: every ``@dsl_user_op`` argument is a sighting
     # of an object the trace touches; the recursion below registers elements.
-    _pyir_register_candidate_holder(arg)
+    if _PYIR_CANDIDATE_REGISTRY_ACTIVE[0]:
+        _pyir_register_candidate_holder(arg)
+    # None cannot carry a mutable ref or a superseded wrapper. Keep its active
+    # registration above, including the registry's inert-class bookkeeping.
+    if arg is None:
+        return arg
 
     if isinstance(arg, _WatchedM):
         slot = arg._slot_key
@@ -74,7 +82,13 @@ def _pyir_auto_load_arg(arg: Any, *, row_authoritative: bool = False) -> Any:
         ]
         # ``type(arg)(genexpr)`` collapses / breaks a namedtuple; rebuild via
         # the tuple-aware primitive and keep a list a list.
-        return loaded if isinstance(arg, list) else _rebuild_tuple_like(arg, loaded)
+        # ``row_authoritative`` is set only where a closed region's results
+        # re-source the binding, which is the tuple-subclass region carry.
+        return (
+            loaded
+            if isinstance(arg, list)
+            else _rebuild_tuple_like(arg, loaded, region_carry=row_authoritative)
+        )
 
     # Owner-less retained-handle read (e.g. a container element's leaf) reaches
     # this auto-load with a superseded generation's own leaf wrapper.
@@ -111,16 +125,20 @@ def _pyir_auto_load_arg(arg: Any, *, row_authoritative: bool = False) -> Any:
             # binding (V-2); a retained snapshot keeps its own SSA (LAW 1).
             if row_authoritative or _pyir_route_is_current(arg, mv):
                 return mv.load()
+            # Clause B, shared with the read and store chokes: a routed raw
+            # consumed across a region boundary with no on-path store since
+            # its load observes its cell -- the region re-executes
+            # later-traced stores the pre-region snapshot cannot see.
+            fresh = _pyir_region_fresh_raw(arg)
+            if fresh is not None:
+                return fresh
             if _pyir_route_is_live_place_row(mv):
                 # LAW-1 counter-evidence: an epoch-tagged product a later
-                # store superseded, whose own SSA dominates, is a retained
-                # SNAPSHOT -- place authority does not govern that read.
-                _epoch_tag = _get_load_epoch(arg)
-                if (
-                    _epoch_tag is not None
-                    and _epoch_tag != _ref_write_epoch(mv.ref)
-                    and _value_dominates_current_ip(arg)
-                ):
+                # on-path store superseded, whose own SSA dominates, is a
+                # retained SNAPSHOT -- place authority does not govern it.
+                if _pyir_value_superseded_on_path(
+                    arg, mv.ref
+                ) and _value_dominates_current_ip(arg):
                     return arg
                 return mv.load()
             return _pyir_resolve_snapshot(arg, type(arg).__name__)
@@ -197,39 +215,34 @@ def _has_any_staged_content(obj: object, _visited: "set[int] | None" = None) -> 
     return False
 
 
+def _pyir_meta_state_value_tree(obj: object) -> bool:
+    """A value-protocol object holding ONLY meta content: no staged field at
+    any depth and no ``ir.Value`` among its canonical extract leaves.  Its
+    extract/reconstruct pair has nothing to carry, so the paths that own a
+    value-protocol object cannot follow a rebind of it; the compound paths
+    (per-leaf staging, the all-meta rebuild refusal) judge it like a plain
+    user object.  Staged content or an extractable leaf keeps the
+    value-protocol disposition."""
+    if _is_staged_value(obj) or not _implements_dynamic_expression(obj):
+        return False
+    if _has_any_staged_content(obj):
+        return False
+    return not _pyir_extract_leaf_values(obj)
+
+
 def _gather_captured_holders(
     exclude_ids: "set[int] | None",
     walk_obj: "Callable[[Any, set[int], list], Any]",
-) -> "list[tuple[Any, str, Any]]":
-    """Shared registry sweep behind the captured-holder gathers.
+) -> "Any":
+    """Shared registry sweep behind the captured-holder gathers: the leaf
+    holders of every object the trace registered (at any stack depth) except
+    the *exclude_ids* already snapshotted as ``mix_iter_args``. One visited
+    set spans all roots, so each ``(holder, attr)`` is collected once.
 
-    Collects leaf holders of objects CAPTURED by a staged region/loop body but
-    not passed as one of its ``mix_iter_args`` (captured free variables).
-
-    Discovery iterates the trace-scoped candidate-holder registry
-    (:data:`_PYIR_CANDIDATE_HOLDERS`) in sighting order.
-
-    Each live candidate is fed to *walk_obj*, which appends ``(holder, attr,
-    value)`` triples into the shared accumulator; the per-walker gate lives
-    entirely in *walk_obj*.
-
-    One shared visited set spans all candidates, so a holder reachable from
-    several candidates is walked once and each ``(holder, attr)`` pair is
-    collected exactly once.
-
-    Registration follows what the trace actually touched, not what happens to
-    sit in a Python frame, so a captured holder is reached at any stack depth.
-
-    *exclude_ids* holds ``id()`` of objects already snapshotted via
-    ``mix_iter_args``.  An empty result maps to the wrappers' sentinel.
-
-    Cross-sweep caching (value-tree walk only): a cacheable root's record
-    segment (:func:`_pyir_build_gather_segment`) is memoized against its
-    write stamp and spliced at the root's registry position when the root
-    stamp AND every recorded Numeric leaf's own guard stamp are unchanged AND
-    no earlier live walk already consumed the root this sweep (positional
-    splice validation); any failing takes the live walk in position, so
-    record multiset AND order equal the uncached sweep's."""
+    A custom *walk_obj* gets the plain flat record list. The value-tree walk
+    returns a :class:`_PyirCapturedSnapshot`: live-walked roots in the list
+    body, cacheable roots as a copy of the view table the two logs keep
+    current (:func:`_pyir_gather_sync`)."""
     if exclude_ids is None:
         exclude_ids = set()
     holders: "list[tuple[Any, str, Any]]" = []
@@ -240,85 +253,246 @@ def _gather_captured_holders(
                 continue
             walk_obj(cand, visited_objs, holders)
         return holders
-    # Per-root decision flow (cached value-tree walk):
-    #
-    #   root already visited this sweep? ──yes──► live walk (a no-op; replay
-    #     │no                                     here would emit duplicate rows)
-    #   root has a write stamp? ──────────no───► live walk (no stamp to validate
-    #     │yes                                   a cached row against yet)
-    #   cached row at the SAME stamp?
-    #     │        ├─ negative row ────────────► live walk (judged uncacheable)
-    #     │        ├─ a leaf guard stamp moved ► rebuild segment below
-    #     │        └─ all guards intact ───────► replay cached (attr, val) rows
-    #     │no (stale or missing row)
-    #   build a fresh segment ── cacheable? ──yes──► store + replay it
-    #                                └──────────no──► store negative row + live walk
+    # Cached value-tree walk: view roots (records memoized against the root
+    # stamp and the recorded leaf wrappers' guard stamps) are copied from the
+    # table, live roots (negative rows, no stamp row) are walked. Same record
+    # multiset as the uncached sweep; no consumer depends on record order.
+    _pyir_gather_sync()
+    cache = _PYIR_GATHER_CACHE
+    registry = _PYIR_CANDIDATE_HOLDERS
+    table = cache.view
+    # A view root counts as visited (its records come from its row); an
+    # excluded root is never replayed, so a walk may still enter it. The walk
+    # marks what it visits in this copy; the cache's own id set is not touched.
+    if _pyir_verify_scans() and cache.view_ids != set(table):
+        raise DSLRuntimeError(
+            "PyIR capture scan: the view id set is out of step with the view table"
+        )
+    visited: "set[int]" = cache.view_ids.copy()
+    if exclude_ids:
+        visited.difference_update(exclude_ids)
+    for oid in list(cache.live):
+        if oid in exclude_ids or oid in visited:
+            continue
+        entry = registry.get(oid)
+        cand = entry() if isinstance(entry, _weakref.ref) else entry
+        if cand is not None:
+            walk_obj(cand, visited, holders)
+    if exclude_ids and cache.nested:
+        # An excluded root is not replayed from its row, but the full walk
+        # still enters it through a parent it is nested in. A live parent's
+        # walk does that above; a VIEW parent's row does not, so walk the
+        # child here when such a parent is itself swept.
+        nested = cache.nested
+        for oid in exclude_ids:
+            parents = nested.get(oid)
+            if not parents or oid in visited:
+                continue
+            if any(p in table and p not in exclude_ids for p in parents):
+                entry = registry.get(oid)
+                cand = entry() if isinstance(entry, _weakref.ref) else entry
+                if cand is not None:
+                    walk_obj(cand, visited, holders)
+    view = dict(table)
+    for oid in exclude_ids:
+        view.pop(oid, None)
+    snap = _PyirCapturedSnapshot(holders)
+    snap.pyir_view = view
+    return snap
+
+
+def _pyir_gather_sync() -> None:
+    """Bring the sweep tables up to date: classify the roots registered since
+    the last sweep and re-classify every root the write log has named since
+    (its own stamp moved) or that guards on a wrapper the log named."""
+    cache = _PYIR_GATHER_CACHE
+    registry = _PYIR_CANDIDATE_HOLDERS
     segments = _PYIR_GATHER_SEGMENTS
+    live = cache.live
+    reg_log = _PYIR_REGISTRATION_LOG
+    write_log = _PYIR_WRITE_LOG
     stamps = _PYIR_HOLDER_WRITE_STAMPS
-    for cand in _pyir_registry_candidate_objects():
-        oid = id(cand)
-        if oid in exclude_ids:
-            continue
-        if oid in visited_objs:
-            # An earlier live walk consumed this root at ITS position.
-            walk_obj(cand, visited_objs, holders)
-            continue
-        stamp = stamps.get(oid)
-        if stamp is None:
-            walk_obj(cand, visited_objs, holders)
-            continue
-        row = segments.get(oid)
-        if row is not None and row[0] == stamp:
-            records = row[1]
-            if records is None:
-                # Negative row: judged not cacheable at this stamp; no
-                # re-judgment until the root is written again.
-                walk_obj(cand, visited_objs, holders)
+    guards = cache.guards
+    # Classifying a root may itself register or stamp holders (the probes it
+    # runs append to the logs), so each pass takes the log end FIRST and the
+    # loop repeats until both logs are drained.
+    while cache.reg_cursor < len(reg_log) or cache.write_cursor < len(write_log):
+        end = len(reg_log)
+        for oid in reg_log[cache.reg_cursor : end]:
+            if oid in segments or oid in live:
                 continue
-            # Numeric-leaf guards: an in-place write on a recorded wrapper
-            # stamps the WRAPPER's row (not the root's) and may flip its leaf
-            # classification -- any moved stamp takes the rebuild instead.
-            for w, ws in row[2]:
-                if stamps.get(id(w)) != ws:
-                    break
-            else:
-                visited_objs.add(oid)
-                for attr, val in records:
-                    holders.append((cand, attr, val))
+            entry = registry.get(oid)
+            cand = entry() if isinstance(entry, _weakref.ref) else entry
+            if cand is not None:
+                _pyir_gather_classify(oid, cand, entry)
+        cache.reg_cursor = end
+        end = len(write_log)
+        for oid in write_log[cache.write_cursor : end]:
+            row = segments.get(oid)
+            if row is not None and row[0] != stamps.get(oid):
+                entry = registry.get(oid)
+                cand = entry() if isinstance(entry, _weakref.ref) else entry
+                if cand is None:
+                    _pyir_gather_forget(oid)
+                else:
+                    _pyir_gather_classify(oid, cand, entry)
+            dependents = guards.get(oid)
+            if not dependents:
                 continue
-        seg = _pyir_build_gather_segment(cand)
-        if seg is None:
-            segments[oid] = (stamp, None, ())
-            walk_obj(cand, visited_objs, holders)
-            continue
-        records, guards = seg
-        segments[oid] = (stamp, records, guards)
-        visited_objs.add(oid)
-        for attr, val in records:
-            holders.append((cand, attr, val))
-    return holders
+            for root_oid in list(dependents):
+                root_row = segments.get(root_oid)
+                if root_row is None:
+                    continue
+                for w, ws in root_row[2]:
+                    if stamps.get(id(w)) != ws:
+                        break
+                else:
+                    continue
+                entry = registry.get(root_oid)
+                cand = entry() if isinstance(entry, _weakref.ref) else entry
+                if cand is None:
+                    _pyir_gather_forget(root_oid)
+                else:
+                    _pyir_gather_classify(root_oid, cand, entry)
+        cache.write_cursor = end
+
+
+def _pyir_gather_classify(oid: int, cand: Any, entry: Any) -> None:
+    """(Re)judge one root: a cacheable segment whose recorded attrs all read
+    storage becomes a view row (guards registered), anything else a live root
+    (negative row for a stamped root, no row for an unstamped one)."""
+    _pyir_gather_forget(oid)
+    cache = _PYIR_GATHER_CACHE
+    stamp = _PYIR_HOLDER_WRITE_STAMPS.get(oid)
+    if stamp is None:
+        cache.live[oid] = None
+        return
+    seg = _pyir_build_gather_segment(cand)
+    if seg is not None and not _pyir_segment_reads_storage(type(cand), seg[0]):
+        # A foreign data descriptor shadows a recorded attr: the repair's
+        # ``getattr`` would not read the cell. Same records from the live walk.
+        seg = None
+    if seg is None:
+        _PYIR_GATHER_SEGMENTS[oid] = (stamp, None, (), ())
+        cache.live[oid] = None
+        return
+    records, guards, nested = seg
+    _PYIR_GATHER_SEGMENTS[oid] = (stamp, records, guards, nested)
+    if guards:
+        table = cache.guards
+        for w, _ws in guards:
+            table.setdefault(id(w), set()).add(oid)
+    if nested:
+        table = cache.nested
+        for cid in nested:
+            table.setdefault(cid, set()).add(oid)
+    if records or nested:
+        # The registry's own weakref: no pin on the root, no id-reuse hazard.
+        # A root whose only content is nested holders still takes a row, so
+        # the sweep counts it visited instead of walking into it.
+        cache.view[oid] = (entry, records)
+        cache.view_ids.add(oid)
+
+
+def _pyir_segment_reads_storage(cls: type, records: "tuple") -> bool:
+    """True when ``getattr`` on *cls* returns the storage cell for every
+    recorded attr, so an unchanged root stamp proves the records unchanged."""
+    for attr, _val in records:
+        if not _pyir_getattr_reads_storage(cls, attr):
+            return False
+    return True
 
 
 class _PyirCapturedSnapshot(list):
-    """Captured-holder snapshot carrying the write clock read at gather START
-    (any write during or after the sweep stamps later, so the repair's
-    stamp<=clock skip is exact); behaves as a plain record list."""
+    """Captured-holder snapshot of one staged region: the list body holds the
+    records of the live-walked roots, ``pyir_view`` the records of the
+    cacheable roots as ``id(root) -> (root or its weakref, records)``. A view
+    root is write-funneled and its ``getattr`` reads storage, so a root stamp
+    unmoved since ``pyir_gather_clock`` (the write clock read at gather start)
+    proves its records unchanged: consumers look at the view rows the write
+    log names since that clock, plus the body. Record order is not meaningful
+    (the repair and the carry act per record, the standalone-if alias
+    collection is a membership set)."""
 
-    __slots__ = ("pyir_gather_clock",)
+    __slots__ = ("pyir_gather_clock", "pyir_view")
     pyir_gather_clock: int
+    pyir_view: "dict[int, tuple[Any, tuple]]"
+
+    def __bool__(self) -> bool:
+        # Truthy when it holds ANY record, view rows included.
+        return len(self) > 0 or bool(self.pyir_view)
+
+    def pyir_dirty_rows(self) -> "list[tuple[Any, tuple]]":
+        """The view rows whose root was written since the gather clock."""
+        view = self.pyir_view
+        if not view:
+            return []
+        out: "list[tuple[Any, tuple]]" = []
+        seen: "set[int]" = set()
+        for oid in _PYIR_WRITE_LOG[self.pyir_gather_clock :]:
+            if oid in seen:
+                continue
+            seen.add(oid)
+            row = view.get(oid)
+            if row is not None:
+                holder = row[0]
+                if isinstance(holder, _weakref.ref):
+                    holder = holder()
+                    if holder is None:
+                        continue
+                out.append((holder, row[1]))
+        return out
+
+    def pyir_changed_candidates(self) -> "list[tuple[Any, str, Any]]":
+        """The records whose leaf identity may differ from the snapshot: the
+        body plus the dirty view rows. Any other record still binds its leaf
+        by the stamp invariant."""
+        out = list(self)
+        for holder, records in self.pyir_dirty_rows():
+            for attr, leaf in records:
+                out.append((holder, attr, leaf))
+        if _pyir_verify_scans():
+            covered = {(id(h), a) for h, a, _v in out}
+            _pyir_verify_leaves_unchanged(
+                self.pyir_materialize(), covered, "captured snapshot"
+            )
+        return out
+
+    def pyir_materialize(self) -> "list[tuple[Any, str, Any]]":
+        """Every record, the view rows flattened (a dead view root has no
+        leaves left to check)."""
+        out = list(self)
+        for entry, records in self.pyir_view.values():
+            holder = entry() if isinstance(entry, _weakref.ref) else entry
+            if holder is not None:
+                for attr, leaf in records:
+                    out.append((holder, attr, leaf))
+        return out
 
 
 def _pyir_gather_captured_leaf_holders(
     exclude_ids: "set[int] | None" = None,
-) -> "list[tuple[Any, str, ir.Value]] | None":
+) -> "_PyirCapturedSnapshot | None":
     """Collect value-tree ``ir.Value`` leaf holders of objects CAPTURED by a staged
     region body but not passed as one of its ``mix_iter_args``."""
     clock = _PYIR_WRITE_CLOCK[0]
-    holders = _gather_captured_holders(exclude_ids, _walk_ir_value_holders_into)
-    if not holders:
+    snap = _gather_captured_holders(exclude_ids, _walk_ir_value_holders_into)
+    if not snap:
         return None
-    snap = _PyirCapturedSnapshot(holders)
     snap.pyir_gather_clock = clock
+    if _pyir_verify_scans():
+        _pyir_check_write_log()
+        full = _gather_captured_holders(
+            exclude_ids, lambda o, v, h: _walk_ir_value_holders_into(o, v, h)
+        )
+        got = snap.pyir_materialize()
+        if sorted((id(h), a, id(v)) for h, a, v in got) != sorted(
+            (id(h), a, id(v)) for h, a, v in full
+        ):
+            raise DSLRuntimeError(
+                "PyIR captured snapshot differs from the full sweep: "
+                f"{len(got)} cached records vs {len(full)} live records"
+            )
     return snap
 
 
@@ -329,6 +503,10 @@ __all__ = [
     "_pyir_auto_load_arg",
     "_has_decomposable_staged_fields",
     "_has_any_staged_content",
+    "_pyir_meta_state_value_tree",
+    "_pyir_gather_sync",
+    "_pyir_gather_classify",
+    "_pyir_segment_reads_storage",
     "_PyirCapturedSnapshot",
     "_pyir_gather_captured_leaf_holders",
 ]

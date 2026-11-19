@@ -86,7 +86,7 @@ class DenseGemmPtrArrayKernel:
     This is used to load the pointers for A/B/D from the Ptr array.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _get_pointer(self, address_as_int, cute_type):
         cute_ptr = cute.make_ptr(
             cute_type,
@@ -96,7 +96,7 @@ class DenseGemmPtrArrayKernel:
         )
         return cute_ptr
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self, mA_tensor: cute.Tensor, mB_tensor: cute.Tensor, mD_tensor: cute.Tensor
     ):
@@ -112,10 +112,9 @@ class DenseGemmPtrArrayKernel:
             grid=grid,
             block=(192, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA_tensor: cute.Tensor,
@@ -218,7 +217,7 @@ class DenseGemmPtrArrayKernel:
             num_stages=acc_stage,
             mma_operation_type=cute_ext.OperationTypeEnum.SM100_MMA_1SM_SS,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
 
         warp_idx = cute.arch.warp_idx()
@@ -228,6 +227,7 @@ class DenseGemmPtrArrayKernel:
         mma_warp_id = 4
         tma_load_warp_id = 5
         is_tma_thr = warp_idx == tma_load_warp_id
+        is_tma_store_warp = warp_idx == tma_store_warp_id
         is_mma_thr = warp_idx == mma_warp_id
         is_epi_thr = warp_idx < 4
 
@@ -262,6 +262,10 @@ class DenseGemmPtrArrayKernel:
                 mB = cute.make_tensor(
                     ptr_B, layout=cute.make_layout(self.B_shape, stride=self.B_stride)
                 )
+                # Install this batch's descriptors (single-warp region; the
+                # enclosing branch is the warp guard).
+                mA = cute_ext.tma_update(mA)
+                mB = cute_ext.tma_update(mB)
                 gA_mkl = cute.local_tile(
                     mA,
                     cute.slice_(mnk_tiler, (None, 0, None)),
@@ -327,6 +331,10 @@ class DenseGemmPtrArrayKernel:
                 mD = cute.make_tensor(
                     ptr_D, layout=cute.make_layout(self.D_shape, stride=self.D_stride)
                 )
+                # All four epilogue warps need the view for partitioning; the
+                # descriptor update belongs to the TMA store warp alone.
+                if is_tma_store_warp:
+                    mD = cute_ext.tma_update(mD)
 
                 _, idx = acc_pipe.consumer_wait_and_get_stage()
                 accumulators_sliced = bufferAcc[(None, None), 0, 0, idx]
@@ -344,6 +352,14 @@ class DenseGemmPtrArrayKernel:
                 )
 
                 acc_pipe.consumer_release_and_advance()
+
+        if is_tma_thr:
+            mainloop_pipe.producer_tail()
+
+        if is_epi_thr:
+            # Stage reuse across batches is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per batch.
+            tma_store_pipe.tail()
 
 
 def create_tensors(l, m, n, k, a_major, b_major, d_major, ab_dtype, d_dtype):
@@ -485,6 +501,8 @@ def run(
     use_cold_l2: bool = False,
     tolerance: float = 1e-02,
     skip_ref_check: bool = False,
+    *,
+    benchmark: str | bool = "default",
     **kwargs,
 ):
     """Execute a Pointer array batched dense GEMM operation on Blackwell architecture with performance benchmarking.
@@ -507,6 +525,9 @@ def run(
     :type ab_dtype: Type[Numeric]
     :param d_dtype: Data type for output tensor D
     :type d_dtype: Type[Numeric]
+    :param benchmark: Benchmark mode: "default", "cupti", or "none".
+        Boolean values are accepted for compatibility with the old perf flow.
+    :type benchmark: str | bool, optional
     """
     cli.print_problem_config(
         "Blackwell Dense GEMM",
@@ -575,7 +596,7 @@ def run(
         D_stride=D_cutes[0].stride,
     )
 
-    compiled_dense_gemm = cute_ext.compile(
+    compiled_dense_gemm = cute.compile(
         ptr_array_dense_gemm, a_tensor, b_tensor, d_tensor
     )
 
@@ -598,6 +619,9 @@ def run(
                 tolerance,
             )
         print("check reference: PASS")
+
+    if benchmark is False or benchmark == "none":
+        return 0
 
     def generate_tensors():
         (
@@ -650,6 +674,7 @@ def run(
         workspace_count=workspace_count,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     return exec_time

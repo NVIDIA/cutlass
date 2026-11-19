@@ -47,6 +47,23 @@ from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.rubin_helpers as sm107_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
+from helpers.dynamic_persistent_tile_scheduler import (
+    ClcDynamicPersistentTileScheduler,
+    ClcDynamicPersistentTileSchedulerParams,
+)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -55,7 +72,6 @@ if __name__ == "__main__":
 
 from blackwell.kernel.blockscaled_gemm.dense_blockscaled_gemm_persistent import (
     Sm100BlockScaledPersistentDenseGemmKernel,
-    scaled_mm,
 )
 
 
@@ -193,7 +209,7 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         mma_inst_shape: Tuple[int, int, int],
         mma_tiler: Tuple[int, int, int],
         cluster_shape_mn: Tuple[int, int],
-        prefetch_dist: Union[int, None] = None,
+        prefetch_dist: Union[int, Literal["auto"]] = 0,
         swizzle_size: int = 1,
         raster_order: Literal["m", "n"] = "m",
         scheduler_type: Type = None,
@@ -213,10 +229,10 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         self.raster_order = raster_order
 
         if scheduler_type is None:
-            scheduler_type = utils.StaticPersistentTileScheduler
+            scheduler_type = StaticPersistentTileScheduler
         self.scheduler_type = scheduler_type
         self.use_clc_dynamic_scheduler = issubclass(
-            self.scheduler_type, utils.ClcDynamicPersistentTileScheduler
+            self.scheduler_type, ClcDynamicPersistentTileScheduler
         )
 
         # CLC scheduling requires a dedicated scheduler warp (warp 6)
@@ -455,6 +471,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             self.c_layout,
             self.c_dtype,
         )
+
+        print(f"[DSL INFO] Epilogue subtile is {self.epi_tile}")
         self.epi_tile_n = cute.size(self.epi_tile[1])
 
         # Setup A/B/C stage count in shared memory and ACC stage count in tensor memory
@@ -471,6 +489,11 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             self.smem_capacity,
             self.occupancy,
             self.enable_breuse,
+        )
+
+        print(
+            f"[DSL INFO] Stage counts: "
+            f"Load = {self.num_ab_stage}, Epilogue = {self.num_c_stage}, Acc = {self.num_acc_stage}"
         )
 
         # Compute A/B/SFA/SFB/C shared memory layout
@@ -548,8 +571,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         )
 
         # Set prefetch distance for both initial and rolling prefetch (unified control)
-        # None = use num_ab_stage (default), 0 = disable prefetch, >0 = explicit distance
-        if self.prefetch_dist_param is None:
+        # "auto" = use num_ab_stage, 0 = disable prefetch (default), >0 = explicit distance
+        if self.prefetch_dist_param == "auto":
             self.prefetch_dist = self.num_ab_stage
         else:
             self.prefetch_dist = self.prefetch_dist_param
@@ -581,20 +604,78 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
         if self.use_clc_dynamic_scheduler:
-            tile_sched_params = utils.ClcDynamicPersistentTileSchedulerParams(
+            tile_sched_params = ClcDynamicPersistentTileSchedulerParams(
                 num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_along_m
             )
-            grid = utils.ClcDynamicPersistentTileScheduler.get_grid_shape(
-                tile_sched_params
-            )
+            grid = ClcDynamicPersistentTileScheduler.get_grid_shape(tile_sched_params)
         else:
-            tile_sched_params = utils.PersistentTileSchedulerParams(
+            tile_sched_params = PersistentTileSchedulerParams(
                 num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_along_m
             )
-            grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+            grid = StaticPersistentTileScheduler.get_grid_shape(
                 tile_sched_params, max_active_clusters
             )
         return tile_sched_params, grid
+
+    # A jit frame, so the preprocessor stages the `if` on the runtime slot count.
+    @cute.jit
+    def _zero_sf_padding(self, sf_ptr, stage_bytes, stage, valid_slots, lane_idx):
+        """Zero the scale slots past K in one stage of one scale buffer.
+
+        A stage is a row of 512-byte atoms, one per 128 rows (M for SFA, N
+        for SFB) by 4 K slots; when a K tile spans several atoms along K
+        (fp4), the K atoms of one 128-row block are stored back to back.
+        Inside an atom, row r keeps its 4 slots in one 4-byte group::
+
+            byte(r, slot) = 16 * (r % 32) + 4 * (r // 32) + slot
+
+                        bytes +0..3  | +4..7   | +8..11  | +12..15
+            lane  0 @   0: row   0   | row  32 | row  64 | row  96
+            lane  1 @  16: row   1   | row  33 | row  65 | row  97
+            ...
+            lane 31 @ 496: row  31   | row  63 | row  95 | row 127
+
+        so lane t of the MMA warp (``cute.arch.lane_idx()``) owns the 16
+        bytes at 16t: slots 0..3 of rows t, t+32, t+64 and t+96.  Slot j of
+        the tile's K atom kb is padding when ``4 * kb + j >= valid_slots``;
+        the lane stores a zero byte over it in each of its four rows.  Byte
+        stores through a pointer, so the same code zeroes the peer CTA's
+        stage via a DSMEM pointer (tensor stores reject that address space).
+        """
+        k_atoms = self.mma_tiler[2] // (4 * self.sf_vec_size)
+        base = sf_ptr + (stage * stage_bytes + lane_idx * 16)
+        for atom in cutlass.range_constexpr(stage_bytes // 512):
+            kb = atom % k_atoms
+            for j in cutlass.range_constexpr(4):
+                if valid_slots <= 4 * kb + j:
+                    for row_group in cutlass.range_constexpr(4):
+                        (base + (atom * 512 + row_group * 4 + j)).store(
+                            cutlass.Uint8(0)
+                        )
+
+    def _zero_sf_padding_stage(
+        self, stage, sSFA, sSFB, valid_slots, cta_rank_in_cluster
+    ):
+        """Zero the scale slots past K in one stage of SFA and SFB right
+        before the stage is copied SMEM->TMEM.  Under 2-CTA the leader (the
+        CTA running this loop; its barrier covers both CTAs' TMA loads) also
+        zeroes the peer's stage through distributed SMEM; the peer is the
+        next cluster rank since V is the stride-1 cluster mode.  The proxy
+        fence orders the stores before the tcgen05.cp that reads them."""
+        lane_idx = cute.arch.lane_idx()
+        for sSF in (sSFA, sSFB):
+            stage_bytes = cute.cosize(sSF.layout) // self.num_ab_stage
+            sf_ptr = cute.recast_ptr(sSF.iterator, dtype=cutlass.Uint8)
+            self._zero_sf_padding(sf_ptr, stage_bytes, stage, valid_slots, lane_idx)
+            if cutlass.const_expr(self.use_2cta_instrs):
+                peer_ptr = cute.arch.map_dsmem_ptr(sf_ptr, cta_rank_in_cluster + 1)
+                self._zero_sf_padding(
+                    peer_ptr, stage_bytes, stage, valid_slots, lane_idx
+                )
+        if cutlass.const_expr(self.use_2cta_instrs):
+            cute.arch.fence_proxy("async.shared", space="cluster")
+        else:
+            cute.arch.fence_proxy("async.shared", space="cta")
 
     def _mainloop_s2t_copy_and_partition(
         self,
@@ -745,6 +826,9 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
         epilogue_op: cutlass.Constexpr = lambda x: x,
+        sfd_ptr: Optional[cute.Pointer] = None,
+        norm_const_tensor: Optional[cute.Tensor] = None,
+        sfd_vec_size: cutlass.Constexpr[Optional[int]] = None,
     ):
         """Execute the GEMM operation in steps:
         - Setup static attributes before smem/grid/tma computation
@@ -769,6 +853,16 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         :type stream: cuda.CUstream
         :param epilogue_op: Optional elementwise lambda function to apply to the output tensor
         :type epilogue_op: cutlass.Constexpr
+        :param sfd_ptr: Optional pointer to the block-scaled D (SFD) output
+            tensor. When provided, the epilogue generates per-vector scale
+            factors for the output and quantizes C accordingly.
+        :type sfd_ptr: Optional[cute.Pointer]
+        :param norm_const_tensor: Optional 1-element f32 tensor with the
+            matrix-wide norm constant St used for SFD generation (default 1.0)
+        :type norm_const_tensor: Optional[cute.Tensor]
+        :param sfd_vec_size: Scale factor vector size for SFD along N
+            (16 or 32); defaults to ``sf_vec_size`` when None
+        :type sfd_vec_size: cutlass.Constexpr[Optional[int]]
         :raises TypeError: If input data types are incompatible with the MMA instruction.
         """
 
@@ -784,23 +878,21 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
 
-        a_layout = cute.make_ordered_layout((m, cute.assume(k, 32), l), order=(0, 1, 2))
+        cute.assume(m, 32)
+        cute.assume(n, 32)
+        cute.assume(k, 32)
+
+        a_layout = cute.make_ordered_layout((m, k, l), order=(0, 1, 2))
         if cutlass.const_expr(self.a_major_mode == OperandMajorMode.K):
-            a_layout = cute.make_ordered_layout(
-                (cute.assume(m, 32), k, l), order=(1, 0, 2)
-            )
-        b_layout = cute.make_ordered_layout((n, cute.assume(k, 32), l), order=(0, 1, 2))
+            a_layout = cute.make_ordered_layout((m, k, l), order=(1, 0, 2))
+        b_layout = cute.make_ordered_layout((n, k, l), order=(0, 1, 2))
         if cutlass.const_expr(self.b_major_mode == OperandMajorMode.K):
-            b_layout = cute.make_ordered_layout(
-                (cute.assume(n, 32), k, l), order=(1, 0, 2)
-            )
-        c_layout = cute.make_ordered_layout((cute.assume(m, 32), n, l), order=(0, 1, 2))
+            b_layout = cute.make_ordered_layout((n, k, l), order=(1, 0, 2))
+        c_layout = cute.make_ordered_layout((m, n, l), order=(0, 1, 2))
         if cutlass.const_expr(
             self.c_layout == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
         ):
-            c_layout = cute.make_ordered_layout(
-                (m, cute.assume(n, 32), l), order=(1, 0, 2)
-            )
+            c_layout = cute.make_ordered_layout((m, n, l), order=(1, 0, 2))
         a_tensor = cute.make_tensor(a_ptr, a_layout)
         b_tensor = cute.make_tensor(b_ptr, b_layout)
         c_tensor = cute.make_tensor(c_ptr, c_layout)
@@ -817,6 +909,36 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             b_tensor.shape, self.sf_vec_size
         )
         sfb_tensor = cute.make_tensor(sfb_ptr, sfb_layout)
+
+        # Setup optional block-scaled D (SFD) output tensor in SF atom layout
+        self.generate_sfd = sfd_ptr is not None
+        sfd_tensor = None
+        if cutlass.const_expr(self.generate_sfd):
+            self.sfd_dtype: Type[cutlass.Numeric] = sfd_ptr.value_type
+            self.sfd_vec_size = (
+                self.sf_vec_size if sfd_vec_size is None else sfd_vec_size
+            )
+            # Single source of truth for SFD pre-conditions; raises ValueError
+            # so direct cute.compile users get a clear error before tracing
+            # descends into the kernel. Executed at trace time (plain Python
+            # helper on constexpr values).
+            utils.gemm.sm100.validate_sfd_output(
+                self.sfd_dtype,
+                self.sfd_vec_size,
+                self.c_dtype,
+                c_is_row_major=self.c_layout
+                == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR,
+                is_2cta_mma=self.cta_group != tcgen05.CtaGroup.ONE,
+                is_b_reuse=self.enable_breuse,
+            )
+            # Note: N % sfd_vec_size divisibility cannot be validated here —
+            # problem_mnkl is dynamic at compile time. It is enforced by
+            # can_implement() on the run()/test path.
+            # ((Atom_M, Rest_M),(Atom_N, Rest_N),RestL)
+            sfd_layout = blockscaled_utils.tile_atom_to_shape_SF(
+                c_tensor.shape, self.sfd_vec_size
+            )
+            sfd_tensor = cute.make_tensor(sfd_ptr, sfd_layout)
 
         atom_layout_mnk = (1, 1, 1)
         permutation_mnk = self._get_mma_permutation_mnk()
@@ -854,48 +976,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
 
         tiled_mma_sfb.set(tcgen05.Field.NEGATE_A, False)
         tiled_mma_sfb.set(tcgen05.Field.NEGATE_B, False)
-
-        tiled_mma_bkeep = None
-        tiled_mma_breuse = None
-        if cutlass.const_expr(self.enable_breuse):
-            # The 'FILL' collector operation indicates that B data should be kept
-            # for reuse in subsequent operations.
-            tiled_mma_bkeep = sm107_utils.make_blockscaled_trivial_tiled_mma(
-                self.a_dtype,
-                self.b_dtype,
-                self.a_major_mode,
-                self.b_major_mode,
-                self.sf_dtype,
-                self.sf_vec_size,
-                self.cta_group,
-                self.mma_inst_shape,
-                a_collector_op=CollectorOp.DISCARD,
-                b_collector_op=CollectorOp.FILL,
-                atom_layout_mnk=atom_layout_mnk,
-                permutation_mnk=permutation_mnk,
-            )
-            tiled_mma_bkeep.set(tcgen05.Field.NEGATE_A, False)
-            tiled_mma_bkeep.set(tcgen05.Field.NEGATE_B, False)
-
-            # The 'LASTUSE' collector operation indicates that this is the last use
-            # of the B data that was kept from the previous operation.
-            tiled_mma_breuse = sm107_utils.make_blockscaled_trivial_tiled_mma(
-                self.a_dtype,
-                self.b_dtype,
-                self.a_major_mode,
-                self.b_major_mode,
-                self.sf_dtype,
-                self.sf_vec_size,
-                self.cta_group,
-                self.mma_inst_shape,
-                a_collector_op=CollectorOp.DISCARD,
-                b_collector_op=CollectorOp.LASTUSE,
-                atom_layout_mnk=atom_layout_mnk,
-                permutation_mnk=permutation_mnk,
-            )
-
-            tiled_mma_breuse.set(tcgen05.Field.NEGATE_A, False)
-            tiled_mma_breuse.set(tcgen05.Field.NEGATE_B, False)
 
         atom_thr_size = cute.size(tiled_mma.thr_id.shape)
 
@@ -1002,8 +1082,9 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             mode=list(range(cute.rank(self.c_smem_layout_staged) - 1)),
         )
 
+        c_store_op = cpasync.CopyBulkTensorTileS2GOp()
         tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
-            cpasync.CopyBulkTensorTileS2GOp(),
+            c_store_op,
             c_tensor,
             epi_smem_layout,
             self.epi_tile,
@@ -1081,8 +1162,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         # Launch the kernel synchronously
         self.kernel(
             tiled_mma,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
             tiled_mma_sfb,
             tma_atom_a,
             tma_tensor_a,
@@ -1094,6 +1173,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             tma_tensor_sfb,
             tma_atom_c,
             tma_tensor_c,
+            sfd_tensor,
+            norm_const_tensor,
             self.cluster_layout_vmnk,
             self.cluster_layout_sfb_vmnk,
             self.a_smem_layout_staged,
@@ -1120,8 +1201,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
     def kernel_impl(
         self,
         tiled_mma: cute.TiledMma,
-        tiled_mma_bkeep: Optional[cute.TiledMma],
-        tiled_mma_breuse: Optional[cute.TiledMma],
         tiled_mma_sfb: cute.TiledMma,
         tma_atom_a: cute.CopyAtom,
         mA_mkl: cute.Tensor,
@@ -1148,6 +1227,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         cluster_shape_mn: Tuple[int, int],
         is_a_mcast: bool,
         is_b_mcast: bool,
+        mSFD_mnl: Optional[cute.Tensor] = None,
+        norm_const_tensor: Optional[cute.Tensor] = None,
     ):
         """
         GPU device kernel implementation performing the Persistent batched GEMM computation.
@@ -1234,7 +1315,9 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             clc_pipeline_producer_group = pipeline.CooperativeGroup(
                 pipeline.Agent.Thread
             )
-            cluster_size = cute.size(self.cluster_shape_mn)
+            # Use the per-branch cluster shape (differs from self.cluster_shape_mn
+            # in the mixed-cluster kernel's fallback branch).
+            cluster_size = cute.size(cluster_shape_mn)
             num_clc_consumer_threads = 32 * len(
                 (
                     self.sched_warp_id,
@@ -1345,7 +1428,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
         )
         k_tile_cnt = cute.size(gA_mkl, mode=[3])
-
         #
         # Partition global tensor for TiledMMA_A/B/C
         #
@@ -1445,14 +1527,14 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         # Construct the scheduler
         #
         if cutlass.const_expr(self.use_clc_dynamic_scheduler):
-            tile_sched = utils.ClcDynamicPersistentTileScheduler.create(
+            tile_sched = ClcDynamicPersistentTileScheduler.create(
                 tile_sched_params,
                 cute.arch.block_idx(),
                 cute.arch.grid_dim(),
                 clc_response_ptr,
             )
         else:
-            tile_sched = utils.StaticPersistentTileScheduler.create(
+            tile_sched = StaticPersistentTileScheduler.create(
                 tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
             )
         work_tile = tile_sched.initial_work_tile_info()
@@ -1477,6 +1559,9 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     cur_tile_coord[2],
                 )
 
+                # First K tile of this work tile (a Python 0 folds away in the
+                # load indexing below)
+                k_tile_start = 0
                 #
                 # Slice to per mma tile index
                 #
@@ -1508,10 +1593,11 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     for pf_k_tile in cutlass.range(
                         0, min(self.prefetch_dist, k_tile_cnt), unroll=1
                     ):
-                        cute.prefetch(tma_atom_a, tAgA_slice[(None, pf_k_tile)])
-                        cute.prefetch(tma_atom_b, tBgB_slice[(None, pf_k_tile)])
-                        cute.prefetch(tma_atom_sfa, tAgSFA_slice[(None, pf_k_tile)])
-                        cute.prefetch(tma_atom_sfb, tBgSFB_slice[(None, pf_k_tile)])
+                        pf_k = k_tile_start + pf_k_tile
+                        cute.prefetch(tma_atom_a, tAgA_slice[(None, pf_k)])
+                        cute.prefetch(tma_atom_b, tBgB_slice[(None, pf_k)])
+                        cute.prefetch(tma_atom_sfa, tAgSFA_slice[(None, pf_k)])
+                        cute.prefetch(tma_atom_sfb, tBgSFB_slice[(None, pf_k)])
 
                 # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt
                 ab_producer_state.reset_count()
@@ -1530,30 +1616,31 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     )
 
                     # TMA load A/B/SFA/SFB
+                    load_k = k_tile_start + ab_producer_state.count
                     cute.copy(
                         tma_atom_a,
-                        tAgA_slice[(None, ab_producer_state.count)],
+                        tAgA_slice[(None, load_k)],
                         tAsA[(None, ab_producer_state.index)],
                         tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
                         mcast_mask=a_full_mcast_mask,
                     )
                     cute.copy(
                         tma_atom_b,
-                        tBgB_slice[(None, ab_producer_state.count)],
+                        tBgB_slice[(None, load_k)],
                         tBsB[(None, ab_producer_state.index)],
                         tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
                         mcast_mask=b_full_mcast_mask,
                     )
                     cute.copy(
                         tma_atom_sfa,
-                        tAgSFA_slice[(None, ab_producer_state.count)],
+                        tAgSFA_slice[(None, load_k)],
                         tAsSFA[(None, ab_producer_state.index)],
                         tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
                         mcast_mask=sfa_full_mcast_mask,
                     )
                     cute.copy(
                         tma_atom_sfb,
-                        tBgSFB_slice[(None, ab_producer_state.count)],
+                        tBgSFB_slice[(None, load_k)],
                         tBsSFB[(None, ab_producer_state.index)],
                         tma_bar_ptr=ab_pipeline.producer_get_barrier(ab_producer_state),
                         mcast_mask=sfb_full_mcast_mask,
@@ -1562,7 +1649,7 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     # Prefetch: Rolling prefetch for next tiles
                     if self.prefetch_enabled:
                         if k_tile < k_tile_cnt - self.prefetch_dist:
-                            future_k_tile = ab_producer_state.count + self.prefetch_dist
+                            future_k_tile = load_k + self.prefetch_dist
                             cute.prefetch(
                                 tma_atom_a,
                                 tAgA_slice[(None, future_k_tile)],
@@ -1611,7 +1698,7 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         if warp_idx == self.mma_warp_id:
             # MMA warp needs its own tile_sched for CLC response reads
             if cutlass.const_expr(self.use_clc_dynamic_scheduler):
-                tile_sched = utils.ClcDynamicPersistentTileScheduler.create(
+                tile_sched = ClcDynamicPersistentTileScheduler.create(
                     tile_sched_params,
                     cute.arch.block_idx(),
                     cute.arch.grid_dim(),
@@ -1651,6 +1738,11 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             #
             sfa_s2t_bundle = self._mainloop_s2t_copy_and_partition(sSFA, tCtSFA)
             sfb_s2t_bundle = self._mainloop_s2t_copy_and_partition(sSFB, tCtSFB)
+            # Scale slots past K when K is not a tile multiple: the
+            # last K tile zeroes them in SMEM (_zero_sf_padding_stage).
+            sf_k_rem = cute.size(mA_mkl, mode=[1]) % self.mma_tiler[2]
+            sf_valid_slots = cute.ceil_div(sf_k_rem, self.sf_vec_size)
+            has_sf_k_pad = sf_k_rem != 0
 
             #
             # Persistent tile scheduling loop
@@ -1670,7 +1762,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     cur_tile_coord[1],
                     cur_tile_coord[2],
                 )
-
                 # Get accumulator stage index
                 acc_stage_index = acc_producer_state.index
 
@@ -1716,6 +1807,18 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                             ab_consumer_state, peek_ab_full_status
                         )
 
+                        # Last K tile of a ragged K: zero the scale slots past K
+                        # (TMA zero-fills A/B there; the slots hold the buffer's
+                        # padding) before the stage is copied to TMEM.
+                        if k_tile == k_tile_cnt - 1:
+                            if has_sf_k_pad:
+                                self._zero_sf_padding_stage(
+                                    ab_consumer_state.index,
+                                    sSFA,
+                                    sSFB,
+                                    sf_valid_slots,
+                                    cta_rank_in_cluster,
+                                )
                         if cutlass.const_expr(not self._is_interleaved_utccp()):
                             # Unless UTCCPs are to be interleaved, all SFA/SFB for all
                             # k_blocks are copied before MMA are executed
@@ -1761,24 +1864,20 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                                     )
 
                                 # Keep
-                                tiled_mma_bkeep.set(
-                                    tcgen05.Field.ACCUMULATE,
-                                    k_tile != 0 or k_block != 0,
-                                )
                                 cute.gemm(
-                                    tiled_mma_bkeep,
+                                    tiled_mma.with_bkeep(
+                                        accumulate=k_tile != 0 or k_block != 0
+                                    ),
                                     tCtAcc_bkeep,
                                     [tCrA[a_kblk_crd_keep], tCtSFA[sfa_kblk_crd_keep]],
                                     [tCrB[b_kblk_crd], tCtSFB_mma[sfb_kblk_crd]],
                                     tCtAcc_bkeep,
                                 )
                                 # Reuse
-                                tiled_mma_breuse.set(
-                                    tcgen05.Field.ACCUMULATE,
-                                    k_tile != 0 or k_block != 0,
-                                )
                                 cute.gemm(
-                                    tiled_mma_breuse,
+                                    tiled_mma.with_breuse(
+                                        accumulate=k_tile != 0 or k_block != 0
+                                    ),
                                     tCtAcc_breuse,
                                     [
                                         tCrA[a_kblk_crd_reuse],
@@ -1900,6 +1999,20 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     work_tile = tile_sched.get_current_work()
                     epi_tiles_executed += 1
                 num_tiles_executed = epi_tiles_executed
+                sfd_config = None
+                if cutlass.const_expr(mSFD_mnl is not None):
+                    # Validating factory: every config that reaches the
+                    # epilogue has passed the SFD pre-condition checks.
+                    sfd_config = utils.gemm.sm100.make_sfd_output_config(
+                        mSFD_mnl,
+                        self.sfd_vec_size,
+                        self.c_dtype,
+                        norm_const_tensor,
+                        c_is_row_major=self.c_layout
+                        == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR,
+                        is_2cta_mma=self.cta_group != tcgen05.CtaGroup.ONE,
+                        is_b_reuse=self.enable_breuse,
+                    )
                 acc_consumer_state = utils.gemm.sm100.epilogue_tma_store(
                     self,
                     tidx,
@@ -1915,6 +2028,7 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     acc_consumer_state,
                     acc_pipeline,
                     c_pipeline,
+                    sfd_config=sfd_config,
                 )
 
             # Wait for C store complete
@@ -1953,8 +2067,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
     def kernel(
         self,
         tiled_mma: cute.TiledMma,
-        tiled_mma_bkeep: Optional[cute.TiledMma],
-        tiled_mma_breuse: Optional[cute.TiledMma],
         tiled_mma_sfb: cute.TiledMma,
         tma_atom_a: cute.CopyAtom,
         mA_mkl: cute.Tensor,
@@ -1966,6 +2078,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         mSFB_nkl: cute.Tensor,
         tma_atom_c: cute.CopyAtom,
         mC_mnl: cute.Tensor,
+        mSFD_mnl: Optional[cute.Tensor],
+        norm_const_tensor: Optional[cute.Tensor],
         cluster_layout_vmnk: cute.Layout,
         cluster_layout_sfb_vmnk: cute.Layout,
         a_smem_layout_staged: cute.ComposedLayout,
@@ -1984,8 +2098,6 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         """
         self.kernel_impl(
             tiled_mma,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
             tiled_mma_sfb,
             tma_atom_a,
             mA_mkl,
@@ -2012,6 +2124,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
             self.cluster_shape_mn,
             self.is_a_mcast,
             self.is_b_mcast,
+            mSFD_mnl,
+            norm_const_tensor,
         )
 
     @staticmethod
@@ -2021,6 +2135,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         sf_dtype: Type[cutlass.Numeric],
         sf_vec_size: int,
         c_dtype: Type[cutlass.Numeric],
+        sfd_dtype: Optional[Type[cutlass.Numeric]] = None,
+        sfd_vec_size: Optional[int] = None,
     ):
         """
         Check if the dtypes and sf_vec_size are valid combinations
@@ -2035,6 +2151,10 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         :type sf_vec_size: int
         :param c_dtype: The data type of the output tensor
         :type c_dtype: Type[cutlass.Numeric]
+        :param sfd_dtype: Optional data type of the block-scaled D scale factor
+        :type sfd_dtype: Optional[Type[cutlass.Numeric]]
+        :param sfd_vec_size: Optional vector size of the block-scaled D scale factor
+        :type sfd_vec_size: Optional[int]
 
         :raises testing.CantImplementError: If data types and/or scale factors are invalid
         """
@@ -2042,18 +2162,22 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         # Check valid
         # Supported combinations of (a_dtype, b_dtype, sf_dtype, sf_vec_size)
         valid_combinations = {
+            # FP4 pair
             (cutlass.Float4E2M1FN, cutlass.Float4E2M1FN, cutlass.Float8E8M0FNU, 16),
             (cutlass.Float4E2M1FN, cutlass.Float4E2M1FN, cutlass.Float8E8M0FNU, 32),
             (cutlass.Float4E2M1FN, cutlass.Float4E2M1FN, cutlass.Float8E4M3FN, 16),
             (cutlass.Float4E2M1FN, cutlass.Float4E2M1FN, cutlass.Float8E4M3FN, 32),
             (cutlass.Float4E2M1FN, cutlass.Float4E2M1FN, cutlass.FloatNV8E5M3FNU, 16),
             (cutlass.Float4E2M1FN, cutlass.Float4E2M1FN, cutlass.FloatNV8E5M3FNU, 32),
+            # FP8xFP8
             (cutlass.Float8E5M2, cutlass.Float8E5M2, cutlass.Float8E8M0FNU, 32),
             (cutlass.Float8E5M2, cutlass.Float8E4M3FN, cutlass.Float8E8M0FNU, 32),
             (cutlass.Float8E4M3FN, cutlass.Float8E4M3FN, cutlass.Float8E8M0FNU, 32),
             (cutlass.Float8E4M3FN, cutlass.Float8E5M2, cutlass.Float8E8M0FNU, 32),
+            # FP8xFP4
             (cutlass.Float8E4M3FN, cutlass.Float4E2M1FN, cutlass.Float8E8M0FNU, 32),
             (cutlass.Float8E5M2, cutlass.Float4E2M1FN, cutlass.Float8E8M0FNU, 32),
+            # FP4xFP8
             (cutlass.Float4E2M1FN, cutlass.Float8E4M3FN, cutlass.Float8E8M0FNU, 32),
             (cutlass.Float4E2M1FN, cutlass.Float8E5M2, cutlass.Float8E8M0FNU, 32),
         }
@@ -2067,8 +2191,10 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                 f"Please refer to the supported combinations in the function documentation."
             )
 
-        # Check valid c_dtype
-        if c_dtype not in {
+        # Check valid c_dtype. With SFD, output-dtype constraints are
+        # validated together with the other SFD pre-conditions in
+        # can_implement() via utils.gemm.sm100.validate_sfd_output().
+        if sfd_dtype is None and c_dtype not in {
             cutlass.Float32,
             cutlass.Float16,
             cutlass.BFloat16,
@@ -2212,7 +2338,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
                     f"mma_tiler: {mma_tiler}, mma_inst_shape: {mma_inst_shape}"
                 )
         else:
-            # MXF4/MXF4NVF4 blockscaled kernels only support mma_tiler_k=256, mma_inst_shape_k=128
+            # FP4-pair blockscaled kernels only support mma_tiler_k=256,
+            # mma_inst_shape_k=128
             if mma_tiler[2] != 256 or mma_inst_shape[2] != 128:
                 raise testing.CantImplementError(
                     f"Unsupported K-mode for the MMA tiler/instruction shape. "
@@ -2286,6 +2413,8 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         mma_tiler: Tuple[int, int, int],
         mma_inst_shape: Tuple[int, int, int],
         cluster_shape_mn: Tuple[int, int],
+        sfd_dtype: Optional[Type[cutlass.Numeric]] = None,
+        sfd_vec_size: Optional[int] = None,
     ) -> bool:
         """
         Check if the gemm can be implemented
@@ -2321,12 +2450,41 @@ class Sm107BlockScaledPersistentDenseGemmKernel(
         try:
             # Skip unsupported types
             Sm107BlockScaledPersistentDenseGemmKernel.is_valid_dtypes_and_scale_factor_vec_size(
-                a_dtype, b_dtype, sf_dtype, sf_vec_size, c_dtype
+                a_dtype,
+                b_dtype,
+                sf_dtype,
+                sf_vec_size,
+                c_dtype,
+                sfd_dtype,
+                sfd_vec_size,
             )
             # Skip unsupported layouts
             Sm107BlockScaledPersistentDenseGemmKernel.is_valid_layouts(
                 a_dtype, b_dtype, c_dtype, a_major, b_major, c_major
             )
+            if sfd_dtype is not None:
+                effective_sfd_vec_size = (
+                    sf_vec_size if sfd_vec_size is None else sfd_vec_size
+                )
+                # Same single source of truth as __call__; translate the hard
+                # error into the skip semantics of can_implement().
+                try:
+                    utils.gemm.sm100.validate_sfd_output(
+                        sfd_dtype,
+                        effective_sfd_vec_size,
+                        c_dtype,
+                        c_is_row_major=c_major == "n",
+                        is_2cta_mma=mma_inst_shape[0] == 256,
+                        is_b_reuse=mma_tiler[0] // mma_inst_shape[0] == 2,
+                    )
+                except ValueError as e:
+                    raise testing.CantImplementError(str(e)) from e
+                # Shape-dependent check, only possible where mnkl is concrete.
+                if mnkl[1] % effective_sfd_vec_size != 0:
+                    raise testing.CantImplementError(
+                        f"N ({mnkl[1]}) must be divisible by the SFD vector "
+                        f"size ({effective_sfd_vec_size})"
+                    )
             # Skip invalid mma tile shape
             Sm107BlockScaledPersistentDenseGemmKernel.is_valid_mma_tiler(
                 a_dtype, b_dtype, mma_inst_shape, mma_tiler
@@ -2366,6 +2524,21 @@ def cvt_sf_MKL_to_M32x4xrm_K4xrk_L(
         sf_mma_tensor[mkl_coord] = sf_ref_tensor[mkl_coord]
 
 
+@cute.jit
+def cvt_sf_M32x4xrm_K4xrk_L_to_MKL(
+    sf_mma_tensor: cute.Tensor,
+    sf_ref_tensor: cute.Tensor,
+):
+    """Convert scale factor tensor from mma specification M(32x4xrest_m)xK(4xrest_k)xL layout back to MKL layout"""
+    # sf_mma_tensor has flatten shape (32, 4, rest_m, 4, rest_k, l)
+    # group to ((32, 4, rest_m), (4, rest_k), l)
+    sf_mma_tensor = cute.group_modes(sf_mma_tensor, 0, 3)
+    sf_mma_tensor = cute.group_modes(sf_mma_tensor, 1, 3)
+    for i in cutlass.range(cute.size(sf_ref_tensor)):
+        mkl_coord = sf_ref_tensor.layout.get_hier_coord(i)
+        sf_ref_tensor[mkl_coord] = sf_mma_tensor[mkl_coord]
+
+
 # Creates f32 tensors (a/b/c/sfa/sfb), regardless of their actual data type
 # Later these tensors will be properly converted to the intended data types
 def create_and_init_tensors_emulated(
@@ -2378,6 +2551,7 @@ def create_and_init_tensors_emulated(
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
+    c_as_f32: bool = False,
 ):
     m, n, k, l = mnkl
     sf_k = ceil_div(k, sf_vec_size)
@@ -2405,14 +2579,13 @@ def create_and_init_tensors_emulated(
                 torch.randint(-2, 2, tensor.shape, dtype=torch.float32, device="cuda")
             )
 
+    # Narrow output types (e.g. Float4E2M1FN) have no torch dtype; the caller
+    # stages C in f32 and packs it via cutlass_torch.cute_tensor_like instead.
+    c_torch_dtype = torch.float32 if c_as_f32 else cutlass_torch.dtype(c_dtype)
     if c_major == "n":
-        c = torch.empty(
-            (l, m, n), dtype=cutlass_torch.dtype(c_dtype), device="cuda"
-        ).permute(1, 2, 0)
+        c = torch.zeros((l, m, n), dtype=c_torch_dtype, device="cuda").permute(1, 2, 0)
     else:
-        c = torch.empty(
-            (l, n, m), dtype=cutlass_torch.dtype(c_dtype), device="cuda"
-        ).permute(2, 1, 0)
+        c = torch.zeros((l, n, m), dtype=c_torch_dtype, device="cuda").permute(2, 1, 0)
     return a, b, c, sfa, sfb
 
 
@@ -2434,7 +2607,7 @@ def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype, torch_tensor_f32):
     mma_permute_order = (3, 4, 1, 5, 2, 0)
 
     # Create f32 cute torch tensor (cpu)
-    cute_f32_torch_tensor_cpu = torch.empty(mma_shape, dtype=torch.float32).permute(
+    cute_f32_torch_tensor_cpu = torch.ones(mma_shape, dtype=torch.float32).permute(
         mma_permute_order
     )
 
@@ -2472,6 +2645,80 @@ def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype, torch_tensor_f32):
         is_dynamic_layout=True,
     )
     return ref_f32_torch_tensor_cpu, cute_tensor, torch_tensor
+
+
+_DTYPE_ABS_MAX = {
+    cutlass.Float8E4M3FN: 448.0,
+    cutlass.Float4E2M1FN: 6.0,
+}
+
+
+# Allocate a zero-filled SFD output buffer in the scale factor atom layout
+# M(32x4xrest_m) x N(4xrest_n) x L (same atom as SFA with K replaced by N).
+def create_sfd_output_tensor(l, m, n, sfd_vec_size, sfd_dtype):
+    sf_n = ceil_div(n, sfd_vec_size)
+
+    atom_m = (32, 4)
+    atom_n = 4
+    mma_shape = (
+        l,
+        ceil_div(m, atom_m[0] * atom_m[1]),
+        ceil_div(sf_n, atom_n),
+        atom_m[0],
+        atom_m[1],
+        atom_n,
+    )
+    mma_permute_order = (3, 4, 1, 5, 2, 0)
+    sfd_torch = torch.zeros(mma_shape, dtype=torch.uint8, device="cuda").permute(
+        mma_permute_order
+    )
+    sfd_ptr = make_ptr(
+        sfd_dtype, sfd_torch.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=16
+    )
+    return sfd_torch, sfd_ptr
+
+
+# Decode raw SFD bytes written by the kernel to f32 values (layout preserving)
+def decode_sfd_bytes_to_f32(sfd_bytes: torch.Tensor, sfd_dtype) -> torch.Tensor:
+    if sfd_dtype == cutlass.Float8E8M0FNU:
+        return torch.exp2(sfd_bytes.to(torch.float32) - 127.0)
+    if sfd_dtype == cutlass.Float8E4M3FN:
+        return sfd_bytes.view(torch.float8_e4m3fn).to(torch.float32)
+    raise ValueError(f"Unsupported SFD dtype: {sfd_dtype}")
+
+
+# Compute the reference SFD tensor and the SFD-rescaled f32 output, mirroring
+# the device epilogue: per-vector amax -> SFD (round-toward-+inf for UE8M0,
+# RN for E4M3) -> rescale by 1 / SFD.
+def compute_sfd_reference(
+    ref_f32: torch.Tensor,  # (m, n, l) f32
+    sfd_vec_size: int,
+    sfd_dtype,
+    c_dtype,
+    norm_const: float = 1.0,
+):
+    m, n, l = ref_f32.shape
+    sf_n = ceil_div(n, sfd_vec_size)
+    amax = (
+        ref_f32.abs().permute(2, 0, 1).reshape(l, m, sf_n, sfd_vec_size).amax(dim=3)
+    )  # (l, m, sf_n)
+    pvscale = amax * norm_const / _DTYPE_ABS_MAX[c_dtype]
+    if sfd_dtype == cutlass.Float8E8M0FNU:
+        # Round toward +inf to the next power of two; UE8M0 has no zero, the
+        # smallest representable value is 2^-127 (matches cvt.rp.ue8m0 of 0.0)
+        sfd_ref = torch.exp2(torch.ceil(torch.log2(pvscale)).clamp(-127.0, 127.0))
+    elif sfd_dtype == cutlass.Float8E4M3FN:
+        sfd_ref = pvscale.to(torch.float8_e4m3fn).to(torch.float32)
+    else:
+        raise ValueError(f"Unsupported SFD dtype: {sfd_dtype}")
+
+    fp32_max = torch.finfo(torch.float32).max
+    acc_scale = (norm_const / sfd_ref).clamp(max=fp32_max)  # (l, m, sf_n)
+    d_scaled_f32 = ref_f32 * acc_scale.unsqueeze(-1).expand(
+        l, m, sf_n, sfd_vec_size
+    ).reshape(l, m, n).permute(1, 2, 0)  # (m, n, l)
+    sfd_ref = sfd_ref.permute(1, 2, 0)  # (m, sf_n, l)
+    return sfd_ref, d_scaled_f32
 
 
 # Construct CuTe Pointers for the persistent dense blockscaled GEMM operation (emulated version)
@@ -2514,6 +2761,68 @@ def construct_abc_cute_pointers_emulated(
     return a_ptr, b_ptr, c_ptr, a_cute, b_cute
 
 
+# Compile wrapper. Extends the Blackwell `scaled_mm` with optional block-scaled
+# D (SFD) output support, which is only available on the Sm107 kernel.
+def scaled_mm(
+    gemm_obj: Sm107BlockScaledPersistentDenseGemmKernel,
+    a_dtype: Type[cutlass.Numeric],
+    b_dtype: Type[cutlass.Numeric],
+    c_dtype: Type[cutlass.Numeric],
+    sf_dtype: Type[cutlass.Numeric],
+    a_major: Literal["m", "k"],
+    b_major: Literal["n", "k"],
+    c_major: Literal["m", "n"],
+    max_active_clusters: cutlass.Constexpr,
+    stream: cuda.CUstream,
+    epilogue_op: cutlass.Constexpr = lambda x: x,
+    options: str = "",
+    sfd_dtype: Optional[Type[cutlass.Numeric]] = None,
+    sfd_vec_size: Optional[int] = None,
+    norm_const_tensor: Optional[cute.Tensor] = None,
+):
+    # Construct CuTe Pointers
+    a_ptr = make_ptr(a_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=16)
+    b_ptr = make_ptr(b_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=16)
+    c_ptr = make_ptr(c_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=16)
+    sfa_ptr = make_ptr(sf_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=32)
+    sfb_ptr = make_ptr(sf_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=32)
+    sfd_ptr = (
+        make_ptr(sfd_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=16)
+        if sfd_dtype is not None
+        else None
+    )
+
+    a_major_mode = OperandMajorMode.K if a_major == "k" else OperandMajorMode.MN
+    b_major_mode = OperandMajorMode.K if b_major == "k" else OperandMajorMode.MN
+    c_layout = (
+        cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
+        if c_major == "n"
+        else cutlass.tensor_utils.LayoutEnum.COL_MAJOR
+    )
+    # Only append the SFD trailing arguments when SFD output is requested:
+    # this driver is shared with kernels (mxfp6 dense/grouped, mixed clusters)
+    # whose __call__ does not take them, and passing the extra positional
+    # arguments — even as None — fails signature binding for those kernels.
+    sfd_args = (
+        (sfd_ptr, norm_const_tensor, sfd_vec_size) if sfd_dtype is not None else ()
+    )
+    return cute.compile(
+        gemm_obj,
+        a_ptr,
+        b_ptr,
+        sfa_ptr,
+        sfb_ptr,
+        c_ptr,
+        (a_major_mode, b_major_mode, c_layout),
+        (cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0)),
+        max_active_clusters,
+        stream,
+        epilogue_op,
+        *sfd_args,
+        options=options,
+    )
+
+
 def run_scaled_mm_with_emulated_dtype(
     gemm_obj: Sm107BlockScaledPersistentDenseGemmKernel,
     mnkl: Tuple[int, int, int, int],
@@ -2532,10 +2841,14 @@ def run_scaled_mm_with_emulated_dtype(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
+    benchmark: str = "default",
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
-    prefetch_dist: Union[int, None] = None,
+    prefetch_dist: Union[int, Literal["auto"]] = 0,
+    sfd_dtype: Optional[Type[cutlass.Numeric]] = None,
+    sfd_vec_size: Optional[int] = None,
+    norm_const: float = 1.0,
     **kwargs,
 ):
     """Execute a persistent batched dense blockscaled GEMM operation on Rubin architecture with performance benchmarking (emulated dtypes).
@@ -2573,8 +2886,8 @@ def run_scaled_mm_with_emulated_dtype(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
     :type use_cold_l2: bool, optional
-    :param prefetch_dist: Prefetch distance for TMA operations (None=auto uses num_ab_stage, 0=disable, >0=explicit).
-    :type prefetch_dist: Union[int, None], optional
+    :param prefetch_dist: Prefetch distance for TMA operations ("auto"=use num_ab_stage, 0=disable, >0=explicit).
+    :type prefetch_dist: Union[int, Literal["auto"]], optional
     :raises RuntimeError: If CUDA GPU is not available
     :raises ValueError: If the configuration is invalid or unsupported by the kernel
     :return: Execution time of the GEMM kernel
@@ -2593,7 +2906,7 @@ def run_scaled_mm_with_emulated_dtype(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-    if prefetch_dist is None:
+    if prefetch_dist == "auto":
         print("Prefetch distance: auto (num_ab_stage)")
     elif prefetch_dist == 0:
         print("Prefetch: Disabled")
@@ -2608,6 +2921,13 @@ def run_scaled_mm_with_emulated_dtype(
 
     torch.manual_seed(1111)
 
+    generate_sfd = sfd_dtype is not None
+    effective_sfd_vec_size = (
+        (sf_vec_size if sfd_vec_size is None else sfd_vec_size)
+        if generate_sfd
+        else None
+    )
+
     # Get current CUDA stream from PyTorch
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
@@ -2617,6 +2937,17 @@ def run_scaled_mm_with_emulated_dtype(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1]
     )
+
+    # Matrix-wide norm constant (St) for SFD generation. Created before the
+    # compile so the same tensor serves as compile-time argument and runtime
+    # argument.
+    norm_const_torch = None
+    norm_const_cute = None
+    if generate_sfd:
+        norm_const_torch = torch.tensor(
+            [norm_const], dtype=torch.float32, device="cuda"
+        )
+        norm_const_cute = from_dlpack(norm_const_torch)
 
     # Compile gemm kernel with fake tensors
     compiled_gemm = scaled_mm(
@@ -2630,6 +2961,9 @@ def run_scaled_mm_with_emulated_dtype(
         c_major,
         max_active_clusters,
         current_stream,
+        sfd_dtype=sfd_dtype,
+        sfd_vec_size=sfd_vec_size,
+        norm_const_tensor=norm_const_cute,
     )
 
     # Create Torch Tensors for A, scale factor A, B, scale factor B, C
@@ -2643,8 +2977,8 @@ def run_scaled_mm_with_emulated_dtype(
         init_normal=init_normal,
         normal_mean=normal_mean,
         normal_std=normal_std,
+        c_as_f32=generate_sfd,
     )
-
     sfa_f32_ref, sfa_reordered, sfa_torch = create_scale_factor_tensor(
         l, m, k, sf_vec_size, sf_dtype, sfa_f32
     )
@@ -2653,7 +2987,10 @@ def run_scaled_mm_with_emulated_dtype(
     )
     # Construct CuTe Pointers
 
-    a_ptr, b_ptr, c_ptr, _, _ = construct_abc_cute_pointers_emulated(
+    # Keep a_cute/b_cute alive: they own the converted A/B device buffers the
+    # kernel reads from. Discarding them frees the storage, and any later
+    # device allocation (e.g. the packed C tensor) may reuse and clobber it.
+    a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
         a_f32_ref,
         b_f32_ref,
         c,
@@ -2662,25 +2999,139 @@ def run_scaled_mm_with_emulated_dtype(
         c_dtype,
     )
 
+    sfd_torch = None
+    sfd_ptr = None
+    c_cute = None
+    if generate_sfd:
+        # Narrow output: pack C via a cute tensor (f32 staging in `c`)
+        c_cute, c_cute_torch = cutlass_torch.cute_tensor_like(
+            c.cpu(),
+            c_dtype,
+            is_dynamic_layout=True,
+            assumed_align=16,
+        )
+        c_ptr = c_cute.iterator
+        sfd_torch, sfd_ptr = create_sfd_output_tensor(
+            l, m, n, effective_sfd_vec_size, sfd_dtype
+        )
+
+    def launch_gemm():
+        if generate_sfd:
+            compiled_gemm(
+                a_ptr,
+                b_ptr,
+                sfa_reordered.iterator,
+                sfb_reordered.iterator,
+                c_ptr,
+                (m, n, k, l),
+                current_stream,
+                sfd_ptr,
+                norm_const_cute,
+            )
+        else:
+            compiled_gemm(
+                a_ptr,
+                b_ptr,
+                sfa_reordered.iterator,
+                sfb_reordered.iterator,
+                c_ptr,
+                (m, n, k, l),
+                current_stream,
+            )
+
     # Compute reference result
     if not skip_ref_check:
         # Execute kernel once for reference checking
-        compiled_gemm(
-            a_ptr,
-            b_ptr,
-            sfa_reordered.iterator,
-            sfb_reordered.iterator,
-            c_ptr,
-            (m, n, k, l),
-            current_stream,
-        )
+        launch_gemm()
 
         res_a = torch.einsum("mkl,mkl->mkl", a_f32_ref, sfa_f32_ref.cuda())
         res_b = torch.einsum("nkl,nkl->nkl", b_f32_ref, sfb_f32_ref.cuda())
         ref = torch.einsum("mkl,nkl->mnl", res_a, res_b)
-        c_ref = ref.to(dtype=cutlass_torch.dtype(c_dtype))
 
-        torch.testing.assert_close(c, c_ref, atol=tolerance, rtol=tolerance)
+        if generate_sfd:
+            torch.cuda.synchronize()
+            sf_n = ceil_div(n, effective_sfd_vec_size)
+
+            # Reference SFD and SFD-rescaled output. Computed on CPU: exp2 /
+            # log2 on CUDA tensors go through torch's jiterator (nvrtc), which
+            # may not support bring-up architectures.
+            sfd_ref, d_ref_f32 = compute_sfd_reference(
+                ref.cpu(),
+                effective_sfd_vec_size,
+                sfd_dtype,
+                c_dtype,
+                norm_const=norm_const,
+            )
+
+            # Quantize the rescaled reference through c_dtype (f32 -> c -> f32)
+            d_ref_narrow_ = torch.empty(
+                (l, m, n), dtype=torch.uint8, device="cuda"
+            ).permute(1, 2, 0)
+            d_ref_narrow = from_dlpack(
+                d_ref_narrow_, assumed_align=16
+            ).mark_layout_dynamic(leading_dim=1)
+            d_ref_narrow.element_type = c_dtype
+            d_ref_device = (
+                d_ref_f32.permute(2, 0, 1).contiguous().permute(1, 2, 0).cuda()
+            )
+            d_ref_tensor = from_dlpack(
+                d_ref_device, assumed_align=16
+            ).mark_layout_dynamic(leading_dim=1)
+            cute.testing.convert(d_ref_tensor, d_ref_narrow)
+            cute.testing.convert(d_ref_narrow, d_ref_tensor)
+
+            # Kernel output C -> f32 for comparison
+            c_f32_check_ = torch.zeros(
+                (l, m, n), dtype=torch.float32, device="cuda"
+            ).permute(1, 2, 0)
+            cute.testing.convert(
+                c_cute,
+                from_dlpack(c_f32_check_, assumed_align=16).mark_layout_dynamic(
+                    leading_dim=1
+                ),
+            )
+            # Kernel SFD (atom layout bytes) -> f32 -> MKL order. Decoded on
+            # CPU (exp2 goes through torch's jiterator, unavailable on
+            # bring-up architectures).
+            sfd_kernel_f32_mma = decode_sfd_bytes_to_f32(sfd_torch.cpu(), sfd_dtype)
+            sfd_kernel_mkl = (
+                torch.zeros((l, m, sf_n), dtype=torch.float32).permute(1, 2, 0).cpu()
+            )
+            cvt_sf_M32x4xrm_K4xrk_L_to_MKL(
+                from_dlpack(sfd_kernel_f32_mma),
+                from_dlpack(sfd_kernel_mkl),
+            )
+
+            debug_dump = os.environ.get("SFD_DEBUG_DUMP", "")
+            if debug_dump:
+                torch.save(
+                    {
+                        "c_kernel_f32": c_f32_check_.cpu(),
+                        "d_ref_f32_quant": d_ref_device.cpu(),
+                        "d_ref_f32_raw": d_ref_f32.cpu(),
+                        "ref_f32": ref.cpu(),
+                        "sfd_kernel_mkl": sfd_kernel_mkl,
+                        "sfd_ref": sfd_ref.cpu(),
+                        "sfd_bytes_mma": sfd_torch.cpu(),
+                    },
+                    debug_dump,
+                )
+                print(f"[SFD-DEBUG] tensors dumped to {debug_dump}")
+
+            # Compare SFD first: the output rescale depends on it, so an SFD
+            # mismatch is the more fundamental signal.
+            torch.testing.assert_close(
+                sfd_kernel_mkl, sfd_ref.cpu(), atol=tolerance, rtol=tolerance
+            )
+            torch.testing.assert_close(
+                c_f32_check_.cpu(), d_ref_device.cpu(), atol=tolerance, rtol=tolerance
+            )
+        else:
+            c_ref = ref.to(dtype=cutlass_torch.dtype(c_dtype))
+            torch.testing.assert_close(c, c_ref, atol=tolerance, rtol=tolerance)
+
+    if benchmark == "none":
+        return 0
 
     def generate_inputs():
         # Create Torch Tensors for A, scale factor A, B, scale factor B, C
@@ -2694,8 +3145,8 @@ def run_scaled_mm_with_emulated_dtype(
             init_normal=init_normal,
             normal_mean=normal_mean,
             normal_std=normal_std,
+            c_as_f32=generate_sfd,
         )
-
         _, sfa_reordered, sfa_torch = create_scale_factor_tensor(
             l, m, k, sf_vec_size, sf_dtype, sfa_f32
         )
@@ -2713,19 +3164,60 @@ def run_scaled_mm_with_emulated_dtype(
             c_dtype,
         )
 
-        jit_args = cutlass.testing.JitArguments(
-            a_ptr,
-            b_ptr,
-            sfa_reordered.iterator,
-            sfb_reordered.iterator,
-            c_ptr,
-            (m, n, k, l),
-            current_stream,
-        )
+        scope_tensors = [
+            a_f32_ref,
+            b_f32_ref,
+            sfa_reordered,
+            sfb_reordered,
+            c,
+            a_cute,
+            b_cute,
+        ]
+        if generate_sfd:
+            c_cute_ws, c_cute_ws_torch = cutlass_torch.cute_tensor_like(
+                c.cpu(),
+                c_dtype,
+                is_dynamic_layout=True,
+                assumed_align=16,
+            )
+            c_ptr = c_cute_ws.iterator
+            sfd_torch_ws, sfd_ptr_ws = create_sfd_output_tensor(
+                l, m, n, effective_sfd_vec_size, sfd_dtype
+            )
+            norm_const_torch_ws = torch.tensor(
+                [norm_const], dtype=torch.float32, device="cuda"
+            )
+            norm_const_cute_ws = from_dlpack(norm_const_torch_ws)
+            scope_tensors += [
+                c_cute_ws,
+                c_cute_ws_torch,
+                sfd_torch_ws,
+                norm_const_torch_ws,
+                norm_const_cute_ws,
+            ]
+            jit_args = cutlass.testing.JitArguments(
+                a_ptr,
+                b_ptr,
+                sfa_reordered.iterator,
+                sfb_reordered.iterator,
+                c_ptr,
+                (m, n, k, l),
+                current_stream,
+                sfd_ptr_ws,
+                norm_const_cute_ws,
+            )
+        else:
+            jit_args = cutlass.testing.JitArguments(
+                a_ptr,
+                b_ptr,
+                sfa_reordered.iterator,
+                sfb_reordered.iterator,
+                c_ptr,
+                (m, n, k, l),
+                current_stream,
+            )
         # Keep references to external variables (e.g., Torch tensors when taking a view)
-        jit_args.add_to_scope(
-            [a_f32_ref, b_f32_ref, sfa_reordered, sfb_reordered, c, a_cute, b_cute]
-        )
+        jit_args.add_to_scope(scope_tensors)
         return jit_args
 
     workspace_count = 1
@@ -2748,6 +3240,7 @@ def run_scaled_mm_with_emulated_dtype(
         stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     return exec_time  # Return execution time in microseconds
@@ -2774,20 +3267,24 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
+    benchmark: str = "default",
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
-    prefetch_dist: Union[int, None] = None,
+    prefetch_dist: Union[int, Literal["auto"]] = 0,
+    sfd_dtype: Optional[Type[cutlass.Numeric]] = None,
+    sfd_vec_size: Optional[int] = None,
+    norm_const: float = 1.0,
     **kwargs,
 ):
     """
     Execute the appropriate GEMM function based on dtype.
     """
     scheduler_map = {
-        "static_persistent": utils.StaticPersistentTileScheduler,
-        "clc_dynamic_persistent": utils.ClcDynamicPersistentTileScheduler,
+        "static_persistent": StaticPersistentTileScheduler,
+        "clc_dynamic_persistent": ClcDynamicPersistentTileScheduler,
     }
-    scheduler_type = scheduler_map.get(scheduler, utils.StaticPersistentTileScheduler)
+    scheduler_type = scheduler_map.get(scheduler, StaticPersistentTileScheduler)
 
     # Skip unsupported testcase
     if not Sm107BlockScaledPersistentDenseGemmKernel.can_implement(
@@ -2803,12 +3300,15 @@ def run(
         mma_tiler,
         mma_inst_shape,
         cluster_shape_mn,
+        sfd_dtype=sfd_dtype,
+        sfd_vec_size=sfd_vec_size,
     ):
         m, n, k, l = mnkl
         raise testing.CantImplementError(
             (
                 f"Unsupported testcase a_dtype: {a_dtype}, b_dtype: {b_dtype}, sf_dtype: {sf_dtype}, "
                 f"sf_vec_size: {sf_vec_size}, c_dtype: {c_dtype}, "
+                f"sfd_dtype: {sfd_dtype}, sfd_vec_size: {sfd_vec_size}, "
                 f"mma_tiler: {mma_tiler}, mma_inst_shape: {mma_inst_shape}, "
                 f"cluster_shape: {cluster_shape_mn}, "
                 f"mnkl: ({m}, {n}, {k}, {l}), "
@@ -2846,10 +3346,14 @@ def run(
         iterations,
         skip_ref_check,
         use_cold_l2,
+        benchmark,
         init_normal,
         normal_mean,
         normal_std,
         prefetch_dist,
+        sfd_dtype=sfd_dtype,
+        sfd_vec_size=sfd_vec_size,
+        norm_const=norm_const,
     )
 
     print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
@@ -2898,6 +3402,24 @@ def prepare_parser():
     parser.add_argument("--sf_dtype", type=cutlass.dtype, default=cutlass.Float8E8M0FNU)
     parser.add_argument("--sf_vec_size", type=int, default=16)
     parser.add_argument("--c_dtype", type=cutlass.dtype, default=cutlass.Float16)
+    parser.add_argument(
+        "--sfd_dtype",
+        type=cutlass.dtype,
+        default=None,
+        help="Scale factor dtype for block-scaled D output (enables SFD generation)",
+    )
+    parser.add_argument(
+        "--sfd_vec_size",
+        type=int,
+        default=None,
+        help="Scale factor vector size for block-scaled D output (defaults to sf_vec_size)",
+    )
+    parser.add_argument(
+        "--norm_const",
+        type=float,
+        default=1.0,
+        help="Global normalization constant applied to SFD computation (1.0 for MX formats)",
+    )
     parser.add_argument("--a_major", choices=["k", "m"], type=str, default="k")
     parser.add_argument("--b_major", choices=["k", "n"], type=str, default="k")
     parser.add_argument("--c_major", choices=["n", "m"], type=str, default="n")
@@ -2921,6 +3443,13 @@ def prepare_parser():
         action="store_true",
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
+    )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["cupti", "default", "none"],
+        help="Benchmark the kernel with cupti or default (cutlass.testing.benchmark) or none",
     )
     parser.add_argument(
         "--init_normal",
@@ -2954,9 +3483,9 @@ def prepare_parser():
     )
     parser.add_argument(
         "--prefetch_dist",
-        type=int,
-        default=None,
-        help="Prefetch distance for TMA operations (default: None=auto uses num_ab_stage, 0=disable, >0=explicit distance)",
+        type=lambda v: "auto" if v == "auto" else int(v),
+        default=0,
+        help="Prefetch distance for TMA operations (default: 0=disable, 'auto'=use num_ab_stage, >0=explicit distance)",
     )
     parser.add_argument(
         "--scheduler",
@@ -3023,9 +3552,13 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
+        args.benchmark,
         args.init_normal,
         args.normal_mean,
         args.normal_std,
         args.prefetch_dist,
+        sfd_dtype=args.sfd_dtype,
+        sfd_vec_size=args.sfd_vec_size,
+        norm_const=args.norm_const,
     )
     print("PASS")

@@ -192,6 +192,26 @@ class EpilogueScheduleType(enum.Enum):
     SparseTmaWarpSpecializedCooperativeSm120 = enum_auto()
 
 
+class GatedOp(enum.Enum):
+    """A gated linear unit consuming an N-interleaved ``[gate | up]`` pair.
+
+    Unlike an ``ActivationOp``, a gated op is not elementwise: it reads two
+    accumulator elements and produces one, so its output has half the N of
+    its input.  There is no ``...Tag`` table because no C++ EVT node
+    implements these; they exist only on the CuTe DSL EFC path.
+    """
+
+    GeGLU = enum_auto()
+    ReGLU = enum_auto()
+    SwiGLU = enum_auto()
+
+
+# Which N-interleaved part each gated op applies its activation to, and how
+# many parts the accumulator splits into.  ``gate`` is part 0 and ``up`` is
+# part 1, matching the ``[gate | up]`` interleave of the fused B operand.
+GATED_OP_NUM_PARTS = 2
+
+
 class ActivationOp(enum.Enum):
     DGelu = enum_auto()
     Gelu = enum_auto()

@@ -235,7 +235,10 @@ def CreateGemmUniversal3xOperator(
     if "sf_type" in data_type:
       gemm_op_extra_args["ScaleFactorA"] = data_type["sf_type"]
       gemm_op_extra_args["ScaleFactorB"] = data_type["sf_type"]
-      gemm_op_extra_args["ScaleFactorD"] = { "tensor": TensorDescription(data_type["sfd_type"]["type"], data_type["sfd_type"]["layout"]),
+      sfd_layout = data_type["sfd_type"]["layout"]
+      if data_type["sfd_type"]["type"] != DataType.void and sfd_layout is None:
+        sfd_layout = layout[2][0]
+      gemm_op_extra_args["ScaleFactorD"] = { "tensor": TensorDescription(data_type["sfd_type"]["type"], sfd_layout),
                                              "vector_size" : data_type["sfd_type"]["vector_size"]}
       assert is_block_scaled(gemm_kind)
     
@@ -8015,7 +8018,6 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     [[LayoutType.RowMajor,    128], [LayoutType.ColumnMajor, 128], [LayoutType.ColumnMajor, 0]],
     [[LayoutType.ColumnMajor, 128], [LayoutType.RowMajor,    128], [LayoutType.RowMajor,    0]],
   ]
-
   math_instructions_1sm, math_instructions_2sm = generate_mxf8f6f4_math_instructions_sm100(instantiation_level, enable_runtime_dtype=not grouped)
 
   def change_priority_func(shapes_1sm, shapes_2sm):
@@ -8127,6 +8129,36 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
         "epi_type" : epi_type,
         "sf_type"  : math_inst.element_scale_factor,
         "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.void,
+        "d_type"   : DataType.f16,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.bf16,
+        "d_type"   : DataType.e4m3,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.void,
+        "d_type"   : DataType.e4m3,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.ue8m0, "vector_size": 32, "layout" : LayoutType.RowMajor}
       }]
 
     # Set alignment d based on Destination format.
@@ -8180,6 +8212,36 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
         "epi_type" : epi_type,
         "sf_type"  : math_inst.element_scale_factor,
         "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.void,
+        "d_type"   : DataType.f16,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.bf16,
+        "d_type"   : DataType.e4m3,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.void,
+        "d_type"   : DataType.e4m3,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.ue8m0, "vector_size": 32, "layout" : LayoutType.RowMajor}
       },
       {
         "a_type"   : math_inst.element_a,
@@ -8326,6 +8388,16 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
       {
         "a_type"   : math_inst.element_a,
         "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.void,
+        "d_type"   : DataType.f16,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
         "c_type"   : DataType.bf16,
         "d_type"   : DataType.bf16,
         "acc_type" : math_inst.element_accumulator,
@@ -8446,6 +8518,16 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
         "b_type"   : math_inst.element_b,
         "c_type"   : DataType.void,
         "d_type"   : DataType.f32,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : epi_type,
+        "sf_type"  : math_inst.element_scale_factor,
+        "sfd_type" : {"type": DataType.void, "vector_size": None, "layout" : None}
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.void,
+        "d_type"   : DataType.f16,
         "acc_type" : math_inst.element_accumulator,
         "epi_type" : epi_type,
         "sf_type"  : math_inst.element_scale_factor,
@@ -12244,6 +12326,8 @@ def GenerateSM107_TensorOp_mxf8f6f4_UMMA_gemm_with_block_scaled(
     {"c_type": DataType.void, "d_type": DataType.f32 },
     {"c_type": DataType.void, "d_type": DataType.e4m3},
     {"c_type": DataType.void, "d_type": DataType.e5m2},
+    {"c_type": DataType.void, "d_type": DataType.e4m3,
+     "sfd_type": {"type": DataType.ue8m0, "vector_size": 32, "layout": LayoutType.RowMajor}},
   ]
   epilogue_schedule_1sm = EpilogueScheduleType.TmaWarpSpecialized1Sm
   epilogue_schedule_2sm = EpilogueScheduleType.TmaWarpSpecialized2Sm
@@ -12256,7 +12340,7 @@ def GenerateSM107_TensorOp_mxf8f6f4_UMMA_gemm_with_block_scaled(
       "acc_type": math_inst.element_accumulator,
       "epi_type": epi_type,
       "sf_type":  math_inst.element_scale_factor,
-      "sfd_type": {"type": DataType.void, "vector_size": None, "layout": None},
+      "sfd_type": dict(cd.get("sfd_type", {"type": DataType.void, "vector_size": None, "layout": None})),
     }
 
   for b_reuse in [False, True]:
@@ -12372,6 +12456,8 @@ def GenerateSM107_TensorOp_mxnvf4_UMMA_gemm_with_block_scaled(
     {"c_type": DataType.void, "d_type": DataType.f32 },
     {"c_type": DataType.void, "d_type": DataType.e4m3},
     {"c_type": DataType.void, "d_type": DataType.e5m2},
+    {"c_type": DataType.void, "d_type": DataType.e2m1,
+     "sfd_type": {"type": DataType.ue8m0, "vector_size": 32, "layout": None}},
   ]
   epilogue_schedule_1sm = EpilogueScheduleType.TmaWarpSpecialized1Sm
   epilogue_schedule_2sm = EpilogueScheduleType.TmaWarpSpecialized2Sm
@@ -12384,7 +12470,7 @@ def GenerateSM107_TensorOp_mxnvf4_UMMA_gemm_with_block_scaled(
       "acc_type": math_inst.element_accumulator,
       "epi_type": epi_type,
       "sf_type":  math_inst.element_scale_factor,
-      "sfd_type": {"type": DataType.void, "vector_size": None, "layout": None},
+      "sfd_type": cd.get("sfd_type", {"type": DataType.void, "vector_size": None, "layout": None}),
     }
 
   for vector_size in [16, 32]:
@@ -12424,6 +12510,10 @@ def GenerateSM107_TensorOp_mxnvf4_UMMA_gemm_with_block_scaled(
             for cd in cd_data_types:
               layout[2][1] = 128 // DataTypeSize[cd["d_type"]]
               if layout[1][0] == LayoutType.RowMajor and tile_description.math_instruction.instruction_shape[1] % 16 != 0:
+                continue
+              # 1SM B-reuse with the Vs16 schedule, N = 256 and a 32-bit C does not fit in SMEM: the
+              # builder's PipelineStages static_assert fails ("Smem usage is too high").
+              if b_reuse and vector_size == 16 and math_inst.instruction_shape[1] == 256 and cd["c_type"] == DataType.f32:
                 continue
               data_type = make_data_type(math_inst, cd)
               ops = CreateGemmUniversal3xOperator(manifest, [layout], [tile_description], data_type,

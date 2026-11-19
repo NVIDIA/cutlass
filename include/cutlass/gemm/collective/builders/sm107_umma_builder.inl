@@ -172,7 +172,7 @@ struct CollectiveBuilder<
   using BlockTileB_N = decltype(cute::size<0,0>(MmaShapeB_NK{}) * cute::size<1>(MmaShapeB_NK{}));
   using BlockTileB_K = decltype(cute::size<0,1>(MmaShapeB_NK{}) * cute::size<2>(MmaShapeB_NK{}));
 
-  // Right divide TileShape_M/N by 1SM/2SM
+  // Kludged right divide to divide TileShape_M/N by 1SM/2SM
   // Future work: fix partition_shape to account for hierarchies and
   // contiguity so we can pass BlockTileA/B to sm100_smem_selector instead
   using SmemShape_M = decltype(shape_div(shape<0>(TileShape_MNK{}), shape_div(shape<0>(TileShape_MNK{}), size<0>(TileShape_MNK{}) / size(AtomThrID{}))));

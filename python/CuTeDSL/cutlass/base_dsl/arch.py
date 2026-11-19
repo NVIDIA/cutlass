@@ -9,17 +9,15 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import warnings
+from .common import _warn_deprecated
 
 from .enums import Arch as ArchEnum
 
 
 def __getattr__(name: str) -> object:
     if name == "Arch":
-        warnings.warn(
-            message="Arch from arch.py is deprecated. Use Arch from enums.py instead.",
-            category=DeprecationWarning,
-            stacklevel=2,
+        _warn_deprecated(
+            "Arch from arch.py is deprecated. Use Arch from enums.py instead."
         )
         return ArchEnum
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

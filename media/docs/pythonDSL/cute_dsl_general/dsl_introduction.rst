@@ -123,11 +123,23 @@ Defines GPU kernel functions, compiled as specialized GPU symbols through |DC|.
   - ``False`` (default) — Shared memory is allocated additively across all branches (default CUDA C++ behavior).
   - ``True`` — Merge shared-memory allocations across branches (experimental feature, recommended for mega-kernels).
 
+- ``oversized_smem``
+  Controls permission to use oversized shared-memory for this launch. Only effective on supporting targets [``sm_107/a/f``].
+
+  - ``"allow"`` (default) — Permits oversized shared-memory on supporting targets. CUDA validates the request and chooses the actual partition, potentially reducing L1 cache capacity.
+  - ``"auto"`` — Automatically allows oversized memory on supporting targets when static + dynamic shared memory exceeds the executing device's normal opt-in limit.
+  - ``"disable"`` — Skips oversized shared-memory opt-in and automatic size queries.
+
 - ``preferred_smem_carveout``
   Set per-kernel hint specifying what percentage of SM on-chip memory to reserve for shared memory vs. L1 cache.
 
-  - ``None`` (default) — Auto calculate the percentage using formula ``ceil_div(min_blocks_per_mp * smem * 100, max_smem_per_mp)`` when **min_blocks_per_mp** is greater than 1
-  - ``int`` — Override the auto-calculated percentage and manually set hint.
+  - ``None`` (default) — Auto-calculate
+    ``min(100, ceil_div(min_blocks_per_mp * (dynamic_smem + static_smem + 1024) * 100, max_smem_per_mp))``.
+    SMEM sizes are in bytes; ``1024`` is CUDA's per-block reservation.
+    Requires ``min_blocks_per_mp > 1``, nonzero dynamic SMEM, and a CUDA device with the target's compute capability.
+    Otherwise keep the driver default, warn if the device is unavailable or mismatched.
+  - ``int`` — Set an explicit preference without querying a CUDA device. CUDA treats this preference as a hint.
+    Use -1 to request the driver default. Values from 0 to 100 specify a percentage; 0 favors L1 cache and 100 favors shared memory.
 
 - ``hint_smem_base_uniform``
   (Experimental feature) Set per-kernel hint for compiler to keep the dynamic-SMEM base ptr in a warp-uniform register.
