@@ -52,15 +52,9 @@ def _coerce_imm_payload(
 ) -> Any:
     """
     Convert a raw Python int or float immediate value to an MLIR constant ir.Value.
-    int -> signless i32 constant; float -> f32 constant.
+    int (including bool) -> signless i32 constant; float -> f32 constant.
     DSL typed values or ir.Value objects are returned unchanged.
     """
-    if isinstance(payload, bool):
-        # bool is a subclass of int; treat as i1
-        i1 = ir.IntegerType.get_signless(1)
-        return arith.ConstantOp(
-            i1, ir.IntegerAttr.get(i1, int(payload)), loc=loc, ip=ip
-        ).result
     if isinstance(payload, int):
         i32 = ir.IntegerType.get_signless(32)
         return arith.ConstantOp(
@@ -72,6 +66,30 @@ def _coerce_imm_payload(
             f32, ir.FloatAttr.get(f32, payload), loc=loc, ip=ip
         ).result
     return payload
+
+
+def _payload_ir_value(
+    payload: Any,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    """
+    Return the ir.Value to attach to an IKET event for *payload*.
+
+    The iket ops have no i1 payload, so a boolean (a ``Boolean`` value or a
+    comparison result) is zero-extended to i32, the same width as a Python
+    ``True``/``False`` literal.
+    """
+    if is_dynamic_expression(payload):
+        value = payload.ir_value(loc=loc, ip=ip)
+    else:
+        value = _coerce_imm_payload(payload, loc=loc, ip=ip)
+    if isinstance(value, Numeric):
+        value = value.ir_value(loc=loc, ip=ip)
+    if ir.IntegerType.isinstance(value.type) and ir.IntegerType(value.type).width == 1:
+        i32 = ir.IntegerType.get_signless(32)
+        value = arith.extui(i32, value, loc=loc, ip=ip)
+    return value
 
 
 def _attach_payload_signedness_attr(op: Any, payload: Any) -> Any:
@@ -162,10 +180,7 @@ def mark(
     """
 
     if payload is not None:
-        if is_dynamic_expression(payload):
-            payload_value = payload.ir_value(loc=loc, ip=ip)
-        else:
-            payload_value = _coerce_imm_payload(payload, loc=loc, ip=ip)
+        payload_value = _payload_ir_value(payload, loc=loc, ip=ip)
         op = iket.mark(event_name, payload=payload_value, loc=loc, ip=ip)
         return _attach_payload_signedness_attr(op, payload)
     return iket.mark(event_name, loc=loc, ip=ip)
@@ -239,10 +254,7 @@ def range_start(
 
     token = RangeToken()
     if payload is not None:
-        if is_dynamic_expression(payload):
-            payload_value = payload.ir_value(loc=loc, ip=ip)
-        else:
-            payload_value = _coerce_imm_payload(payload, loc=loc, ip=ip)
+        payload_value = _payload_ir_value(payload, loc=loc, ip=ip)
         token.op = iket.range_start(
             token.token, event_name, payload=payload_value, loc=loc, ip=ip
         )
@@ -288,10 +300,7 @@ def range_end(
             event_name_kwarg["event_name"] = token._event_name
 
         if payload is not None:
-            if is_dynamic_expression(payload):
-                payload_value = payload.ir_value(loc=loc, ip=ip)
-            else:
-                payload_value = _coerce_imm_payload(payload, loc=loc, ip=ip)
+            payload_value = _payload_ir_value(payload, loc=loc, ip=ip)
             op = iket.range_end(
                 token.op,
                 payload=payload_value,
@@ -335,10 +344,7 @@ def range_push(
     """
 
     if payload is not None:
-        if is_dynamic_expression(payload):
-            payload_value = payload.ir_value(loc=loc, ip=ip)
-        else:
-            payload_value = _coerce_imm_payload(payload, loc=loc, ip=ip)
+        payload_value = _payload_ir_value(payload, loc=loc, ip=ip)
         op = iket.range_push(event_name, payload=payload_value, loc=loc, ip=ip)
         return _attach_payload_signedness_attr(op, payload)
     return iket.range_push(event_name, loc=loc, ip=ip)
