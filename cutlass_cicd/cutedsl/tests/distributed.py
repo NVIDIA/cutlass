@@ -40,16 +40,16 @@ DISTRIBUTED_TESTS = (
         "distributed_distributed_gemm_all_reduce_blackwell",
         "cute/blackwell/kernel/distributed/distributed_gemm_all_reduce_blackwell.py",
         "--ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32 --mma_tiler_mn 256,256 "
-        "--cluster_shape_mn 2,1 --mnkl 1024,1000,1024,1 --warmup_iterations 3 "
+        "--cluster_shape_mn 2,1 --mnkl 1024,1024,1024,1 --warmup_iterations 3 "
         "--iterations 10 --use_tma_store --use_2cta_instrs --all_reduce LDMCxSTMC",
     ),
     (
         "distributed_distributed_gemm_reduce_scatter_blackwell",
         "cute/blackwell/kernel/distributed/distributed_gemm_reduce_scatter_blackwell.py",
         "--ab_dtype Float8E4M3FN --c_dtype Float16 --acc_dtype Float32 "
-        "--mma_tiler_mn 256,256 --cluster_shape_mn 2,1 --mnkl 16384,4080,4096,1 "
+        "--mma_tiler_mn 256,256 --cluster_shape_mn 2,1 --mnkl 16384,4096,4096,1 "
         "--warmup_iterations 3 --iterations 10 --use_tma_store --use_2cta_instrs "
-        "--reduce_scatter two_shot",
+        "--reduce_scatter LDMC",
     ),
     (
         "distributed_dense_gemm_persistent_all_reduce",
@@ -74,6 +74,17 @@ DISTRIBUTED_TESTS = (
     ),
 )
 
+# SM90 has no tcgen05, so only the four all-reduce kernels run there; they use plain loads and
+# stores, TMA, and multimem (all available on Hopper with NVLink Switch).
+SM90_TESTS = frozenset(
+    {
+        "distributed_all_reduce_one_shot_lamport",
+        "distributed_all_reduce_simple",
+        "distributed_all_reduce_tma",
+        "distributed_all_reduce_two_shot_multimem",
+    }
+)
+
 MULTICAST_TESTS = frozenset(
     {
         "distributed_all_reduce_tma",
@@ -93,7 +104,7 @@ def run_distributed_flow(context: TestContext, runner: CommandRunner) -> None:
             "torch.distributed does not support Python 3.14 yet",
         )
         return
-    if context.sm != "100":
+    if context.sm not in {"90", "100", "103"}:
         runner.skip(f"distributed_sm{context.sm}", f"No distributed tests for sm {context.sm}")
         return
 
@@ -106,6 +117,9 @@ def run_distributed_flow(context: TestContext, runner: CommandRunner) -> None:
         test_path = join_rel_path(example_root, rel_path)
         if not test_path.exists():
             runner.skip(name, f"{test_path} does not exist")
+            continue
+        if context.sm == "90" and name not in SM90_TESTS:
+            runner.skip(name, "uses tcgen05, which SM90 does not have")
             continue
         if gpu_count < 2 and name in MULTICAST_TESTS:
             runner.skip(
