@@ -640,6 +640,7 @@ def cluster_specific_kernel(
                 epilogue_sync_barrier.arrive_and_wait()
 
             # Async arrive accumulator buffer empty
+            cute.arch.fence_view_async_tmem_load()
             with cute.arch.elect_one():
                 acc_full.release()
 

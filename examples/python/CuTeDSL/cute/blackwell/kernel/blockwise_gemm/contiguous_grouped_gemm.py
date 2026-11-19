@@ -1708,6 +1708,7 @@ class BlockwiseContiguousGroupedGemmKernel:
                     #
                     # Async arrive accumulator buffer empty
                     #
+                    cute.arch.fence_view_async_tmem_load()
                     with cute.arch.elect_one():
                         acc_pipeline.consumer_release(acc_consumer_state)
                     acc_consumer_state.advance()
@@ -1938,6 +1939,7 @@ class BlockwiseContiguousGroupedGemmKernel:
                 #
                 # Async arrive accumulator buffer empty
                 #
+                cute.arch.fence_view_async_tmem_load()
                 epi_pipeline.consumer_release(epi_consumer_state)
                 epi_consumer_state.advance()
 

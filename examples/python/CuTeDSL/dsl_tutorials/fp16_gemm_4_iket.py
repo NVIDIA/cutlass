@@ -694,6 +694,7 @@ def cluster_specific_kernel(
                 cute.experimental.iket.range_pop()
 
             # Async arrive accumulator buffer empty
+            cute.arch.fence_view_async_tmem_load()
             with cute.arch.elect_one():
                 acc_full.release()
 

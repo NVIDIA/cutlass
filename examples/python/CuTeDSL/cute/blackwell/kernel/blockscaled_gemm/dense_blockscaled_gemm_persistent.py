@@ -1498,6 +1498,7 @@ class Sm100BlockScaledPersistentDenseGemmKernel:
                 # Async arrive accumulator buffer empty
                 #
                 if cutlass.const_expr(not self.overlapping_accum):
+                    cute.arch.fence_view_async_tmem_load()
                     acc_pipeline.consumer_release(acc_consumer_state)
                     acc_consumer_state.advance()
 

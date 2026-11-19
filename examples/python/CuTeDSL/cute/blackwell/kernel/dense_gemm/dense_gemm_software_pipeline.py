@@ -789,6 +789,7 @@ class DenseGemmKernel:
             self.epilogue(tidx, mma_tile_coord_mnl, tCtAcc, tCgC, epi_tile, epilogue_op)  # type: ignore
 
         # Dealloc the tensor memory buffer
+        cute.arch.fence_view_async_tmem_load()
         pipeline.sync(barrier_id=1)
         tmem.free(tmem_ptr)
 
