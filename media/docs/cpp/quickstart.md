@@ -660,7 +660,7 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=tensorop*s*
 ## Instantiating a Blackwell SM100 GEMM kernel
 
 Blackwell SM100 kernels are instantiated very similarly to Hopper kernels. Let us start with an
-[FP8 GEMM without blockscaling](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_gemm_f8_f8_f8_tensor_op_s32_batch_alpha_beta.cu)
+[FP8 GEMM without blockscaling](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/extra_tests/sm100_gemm_f8_f8_f8_tensor_op_s32_batch_alpha_beta.cu)
 as an example.
 
 The kernel starts with setting up datatypes and cluster shapes. 

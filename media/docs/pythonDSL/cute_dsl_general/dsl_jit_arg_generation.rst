@@ -81,7 +81,7 @@ In this example, ``epilogue_op`` is a static argument in the JIT kernel where th
 an elementwise lambda function can be passed in as the ``epilogue_op`` argument. For example, a ReLU can be applied for epilogue fusion by simply setting the
 ``epilogue_op`` to ``lambda x: cute.where(x > 0, x, cute.full_like(x, 0))``
 
-Refer to the `Blackwell dense GEMM example <https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_gemm_persistent.py>`__ for a complete example.
+Refer to the `Blackwell dense GEMM example <https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py>`__ for a complete example.
 
 .. note::
    For the per-thread/partition naming convention used above (``tTR_rAcc``, ``tTR_rC``, and related tokens such as ``tAgA``, ``bSG_sC``, ``tQgQ_qdl``, …), see the :ref:`cute_dsl_naming_conventions`.
@@ -127,7 +127,7 @@ JIT function arguments with |CUSTOM_TYPES|
     - ``__extract_mlir_values__``: Generate a dynamic expression for the current object.
     - ``__new_from_mlir_values__``: Create a new object from MLIR values.
 
-Refer to `typing.py <https://github.com/NVIDIA/cutlass/tree/main/python/CuTeDSL/base_dsl/typing.py>`__ for more details on these protocol APIs.
+Refer to `typing.py <https://github.com/NVIDIA/cutlass/tree/main/python/CuTeDSL/cutlass/base_dsl/typing.py>`__ for more details on these protocol APIs.
 
 Depending on different cases of the |CUSTOM_TYPES|, |DSL| provides easy ways to adopt |CUSTOM_TYPES| for JIT function arguments.
 
