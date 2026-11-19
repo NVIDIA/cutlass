@@ -308,6 +308,9 @@ public:
     params_.ref_C.reset(args.ref_C.non_const_ref().data());
     params_.ref_D.reset(args.ref_D.data());
     params_.ref_E.reset(args.ref_E.non_const_ref().data());
+    params_.ref_Aux.reset(args.ref_Aux.data());
+    params_.ptr_Vector = args.ptr_Vector;
+    params_.ldr = args.ldr;
     params_.output_op = args.epilogue;
     params_.semaphore = static_cast<int *>(workspace);
 
