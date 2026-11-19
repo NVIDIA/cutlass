@@ -75,6 +75,7 @@ from cutlass.operators.workspace import AllocationRequirement
 from ...cutedsl import CuTeDSLProvider
 from ...cutedsl.integration_utils import scheduling
 from ...cutedsl.integration_utils import workspace as workspace_utils
+from ...cutedsl.integration_utils.blockscaled import validate_blockscaled_factors
 from ...cutedsl.integration_utils.builders import make_ptr
 from ...cutedsl.operator import CuteDslOperator
 
@@ -149,7 +150,10 @@ class Sm107BlockScaledGemmUniversalOperator(CuteDslOperator):
     def _supports(
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> Status:
-        """Reject problem shapes the non-TMA store cannot safely handle."""
+        """Reject invalid scale buffers and problem shapes the non-TMA store
+        cannot safely handle."""
+        if not (status := validate_blockscaled_factors(args)):
+            return status
         design = self.metadata.design
         if not design.use_tma_store:
             cta_tile_m, cta_tile_n = design.tile_shape[:2]
