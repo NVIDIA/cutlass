@@ -475,16 +475,22 @@ public:
       // Compute position within threadblock
       int thread_idx = threadIdx.x;
 
+      // The iterators hold a reference into their Params, so the Params must outlive them
+      typename Mma1::IteratorA::Params params_A{ldm_A};
+      typename Mma1::IteratorB::Params params_BT{ldm_B};
+      typename Mma2::IteratorA::Params params_B{ldm_B};
+      typename Mma2::IteratorB::Params params_AT{ldm_A};
+
       // Construct iterators to A and B operands for Mma1
       typename Mma1::IteratorA iterator_A(
-        typename Mma1::IteratorA::Params(ldm_A),
+        params_A,
         ptr_A,
         {problem_size.m(), problem_size_k},
         thread_idx,
         tb_offset_MxK);
 
       typename Mma1::IteratorB iterator_BT(
-        typename Mma1::IteratorB::Params(ldm_B),
+        params_BT,
         ptr_B,
         {problem_size_k, problem_size.n()},
         thread_idx,
@@ -492,14 +498,14 @@ public:
 
       // Construct iterators to A and B operands for Mma2
       typename Mma2::IteratorA iterator_B(
-        typename Mma2::IteratorA::Params(ldm_B),
+        params_B,
         ptr_B,
         {problem_size.m(), problem_size_k},
         thread_idx,
         tb_offset_MxK);
 
       typename Mma2::IteratorB iterator_AT(
-        typename Mma2::IteratorB::Params(ldm_A),
+        params_AT,
         ptr_A,
         {problem_size_k, problem_size.n()},
         thread_idx,
