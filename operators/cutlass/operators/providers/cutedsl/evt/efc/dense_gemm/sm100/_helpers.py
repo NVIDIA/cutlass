@@ -30,7 +30,7 @@
 
 These functions are imported by `_operation.py` and bound as class
 attributes of DenseGemmEFC, so they remain callable as instance
-methods (e.g. `self.epilogue_tmem_copy_and_partition(...)`) but
+methods (e.g. `self.epilogue_gmem_copy_and_partition(...)`) but
 live in their own module for cohesion.  Each function takes
 `self` (a DenseGemmEFC instance) as its first argument and reads
 the kernel's MMA / layout / dtype attributes from it.
@@ -46,6 +46,7 @@ import cutlass
 import cutlass.cute as cute
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
+from cutlass.utils.gemm.sm100 import transform_partitioned_tensor_layout
 from cutlass.cute.viz import print_latex_tv
 
 
@@ -93,39 +94,53 @@ def maybe_dump_tv_latex(
         with open(path, "w") as out:
             out.write(buf.getvalue())
     except Exception as exc:  # noqa: BLE001 -- diagnostic, must not abort.
-        with contextlib.suppress(Exception), open(path + ".error", "w") as err:
-            err.write(f"{type(exc).__name__}: {exc}\n")
+        with contextlib.suppress(Exception):
+            with open(path + ".error", "w") as err:
+                err.write(f"{type(exc).__name__}: {exc}\n")
+
+
+def _tmem_copy_for_tile(
+    self,
+    tAcc: cute.Tensor,
+    tile: cute.Tile,
+) -> tuple[cute.TiledCopy, cute.Tensor]:
+    """The TMEM->register tiled copy for one tiling of the accumulator."""
+    copy_atom_t2r = sm100_utils.get_tmem_load_op(
+        self.cta_tile_shape_mnk,
+        self.d_layout,  # Take this as the reference layout for the epilogue tile.
+        self.epi_dtype,  # But we get the accumulator as epi_dtype in the epilogue.
+        self.acc_dtype,
+        tile,
+        self.use_2cta_instrs,
+    )
+    # Fold the accumulator's (MMA, MMA_M, MMA_N, STAGE) partition into
+    # ((ATOM_M, MMA_M), (ATOM_N, MMA_N), STAGE) before tiling, so every MMA
+    # tile of the CTA tile is covered: a kernel with more than one MMA tile
+    # along N (the SM107 Bkeep-Breuse doubled tile has two) would otherwise
+    # lose all but tile (0, 0) of its accumulator.
+    # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, STAGE)
+    tAcc_epi = cute.flat_divide(transform_partitioned_tensor_layout(tAcc), tile)
+    # (EPI_TILE_M, EPI_TILE_N)
+    return tcgen05.make_tmem_copy(
+        copy_atom_t2r, tAcc_epi[(None, None, 0, 0, 0)]
+    ), tAcc_epi
 
 
 def epilogue_tmem_copy_and_partition(
     self,
     tidx: cutlass.Int32,
     tAcc: cute.Tensor,
-    tCgC: cute.Tensor,
     epi_tile: cute.Tile,
-) -> tuple[cute.TiledCopy, cute.Tensor, cute.Tensor]:
-    """
-    Make tiledCopy for tensor memory load, then use it to partition tensor memory (source) and register array (destination).
-    """
-    # Make tiledCopy for tensor memory load
-    copy_atom_t2r = sm100_utils.get_tmem_load_op(
-        self.cta_tile_shape_mnk,
-        self.d_layout,  # Take this as the reference layout for the epilogue tile.
-        self.epi_dtype,  # But we get the accumulator as epi_dtype in the epilogue.
-        self.acc_dtype,
-        epi_tile,
-        self.use_2cta_instrs,
-    )
+) -> tuple[cute.TiledCopy, cute.Tensor, cute.Tensor, cute.Tensor]:
+    """Make the TMEM->register tiled copy and partition its source and
+    destination.
 
-    # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, STAGE)
-    tAcc_epi = cute.flat_divide(
-        tAcc[((None, None), 0, 0, None)],
-        epi_tile,
-    )
-    # (EPI_TILE_M, EPI_TILE_N)
-    tiled_copy_t2r = tcgen05.make_tmem_copy(
-        copy_atom_t2r, tAcc_epi[(None, None, 0, 0, 0)]
-    )
+    Returns the copy, the partitioned TMEM source, the register fragment,
+    and the fragment's coordinate map -- which (m, n) of the epilogue tile
+    each register holds.  ``accum_split`` needs that map: a register's
+    position in the fragment is not in general its position along N.
+    """
+    tiled_copy_t2r, tAcc_epi = _tmem_copy_for_tile(self, tAcc, epi_tile)
     # TV map of the accumulator's TMEM->register copy.
     maybe_dump_tv_latex(
         tiled_copy_t2r,
@@ -140,15 +155,16 @@ def epilogue_tmem_copy_and_partition(
     # (T2R, T2R_M, T2R_N, EPI_M, EPI_M, STAGE)
     tTR_tAcc = thr_copy_t2r.partition_S(tAcc_epi)
 
-    # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, RestM, RestN, RestL)
-    tCgC_epi = cute.flat_divide(tCgC[((None, None), 0, 0, None, None, None)], epi_tile)
-    # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
-    tTR_gC = thr_copy_t2r.partition_D(tCgC_epi)
+    # The register fragment's shape comes from the copy's destination
+    # partition, which needs a tensor laid out like the epilogue tile.  A
+    # coordinate tensor of that tile carries the layout without referencing
+    # memory, so the fragment does not depend on any written tensor's extent.
     # (T2R, T2R_M, T2R_N)
-    tTR_rAcc = cute.make_rmem_tensor(
-        tTR_gC[(None, None, None, 0, 0, 0, 0, 0)].shape, self.acc_dtype
+    tTR_cAcc = thr_copy_t2r.partition_D(
+        cute.make_identity_tensor(cute.product_each(cute.shape(epi_tile)))
     )
-    return tiled_copy_t2r, tTR_tAcc, tTR_rAcc
+    tTR_rAcc = cute.make_rmem_tensor(tTR_cAcc.shape, self.acc_dtype)
+    return tiled_copy_t2r, tTR_tAcc, tTR_rAcc, tTR_cAcc
 
 
 def epilogue_smem_copy_and_partition_load(
@@ -211,7 +227,7 @@ def epilogue_gmem_copy_and_partition(
     :type tidx: cutlass.Int32
     :param atom: The TMA copy atom to be used for the SMEM → GMEM store.
     :type atom: cute.CopyAtom
-    :param gC_mnl: The global tensor C.
+    :param gC_mnl: The global tensor C, MMA-partitioned and MMA-folded.
     :type gC_mnl: cute.Tensor
     :param epi_tile: The epilogue tiler.
     :type epi_tile: cute.Tile
@@ -226,7 +242,7 @@ def epilogue_gmem_copy_and_partition(
     # No TV dump: TMA is descriptor-driven and has no CuTe thread-value
     # layout for ``print_latex_tv`` to render.
     # (EPI_TILE_M, EPI_TILE_N, EPI_M, EPI_N, tiles_m, tiles_n, tiles_l)
-    gC_epi = cute.flat_divide(gC_mnl[((None, None), 0, 0, None, None, None)], epi_tile)
+    gC_epi = cute.flat_divide(gC_mnl, epi_tile)
 
     tma_atom_c = atom
     sC_for_tma_partition = cute.group_modes(sC, 0, 2)
@@ -453,8 +469,8 @@ def epilogue_gmem_copy_and_partition_non_tma(
         whose thread layout determines the per-thread shape that the
         body already operates on (no retile needed for the EFC body).
     :param tCgC: the MMA-partitioned GMEM tensor (output of
-        ``thr_mma.partition_C(g)``), shape
-        ``((MMA_inner1, MMA_inner2), MMA_M, MMA_N, RestM, RestN, RestL)``.
+        ``thr_mma.partition_C(g)`` and MMA-folded), shape
+        ``((ATOM_M, MMA_M), (ATOM_N, MMA_N), RestM, RestN, RestL)``.
     :param epi_tile: the epilogue subtile shape.
     :param dtype: element type of the GMEM tensor.
     :param num_bits_per_copy: width of one direct gmem transaction, in bits.
@@ -469,10 +485,7 @@ def epilogue_gmem_copy_and_partition_non_tma(
     """
     # No TV dump: the direct (synchronous) GMEM load/store partition reuses ``tiled_copy_t2r``
     # (only the atom differs), so its TV map is the ``t2r_acc`` dump.
-    # Drop the (MMA_M, MMA_N) modes by selecting index 0 -- the partition
-    # is uniform across MMA tiles, so flat_divide on the resulting
-    # (MMA_inner, RestM, RestN, RestL) shape gives the per-subtile axes.
-    gC_epi = cute.flat_divide(tCgC[((None, None), 0, 0, None, None, None)], epi_tile)
+    gC_epi = cute.flat_divide(tCgC, epi_tile)
     thr_copy_t2r = tiled_copy_t2r.get_slice(tidx)
     # (T2R, T2R_M, T2R_N, EPI_M, EPI_N, RestM, RestN, RestL)
     tTR_gC = thr_copy_t2r.partition_D(gC_epi)

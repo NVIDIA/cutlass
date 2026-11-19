@@ -67,7 +67,7 @@ To store the results from registers to global memory using TMA actually requires
 1). Write the tile from registers to shared memory
 2). Write the tile from shared memory to global memory
 Here we continue to use epiolgue subtiles, one reason is that it reduces the shared memory usage in the epilogue,
-and another reason is that it can hide the STS latency, that is the STS of the next subtile can be overlapped with the TMA store of the current subtile.
+and another reason is that it can hide the store to smem latency, that is the store to smem of the next subtile can be overlapped with the TMA store of the current subtile.
 
 For large mma tile size, the mainloop performance between Non-WS and WS version could be similar if there are enough ab_stages to hide the dram latency.
 The performance gain of WS version mainly comes from the prologue and epilogue in this case.

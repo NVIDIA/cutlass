@@ -15,14 +15,15 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Optional, Union, cast
 import warnings
+from cutlass.base_dsl.common import _warn_deprecated
 
 import cutlass
 import cutlass.cute as cute
 from cutlass._mlir import ir
 from cutlass import base_dsl
+from cutlass.base_dsl.common import DSLDeprecationWarning
 from cutlass.cute.arch.constants import WARP_SIZE
 from cutlass.cutlass_dsl import CuTeDSL, Boolean, Int32, Int64, if_generate, dsl_user_op
-from cutlass.memory.smem import SmemAllocator, SmemPartition
 
 
 ##############################################################################
@@ -59,6 +60,8 @@ def alloc_reserved_mbarrier(
         `barrier_storage` in pipeline `create()` methods.
     :rtype: cute.Pointer
     """
+    from cutlass.memory.smem import SmemAllocator, SmemPartition
+
     barrier_storage = SmemAllocator().allocate_array(
         Int64,
         num_stages * multiplier,
@@ -107,12 +110,10 @@ class CooperativeGroup:
         alignment: Optional[int] = None,
     ):
         if alignment is not None:
-            warnings.warn(
+            _warn_deprecated(
                 "The 'alignment' parameter of CooperativeGroup's constructor is "
                 "deprecated and will be removed in a subsequent release, please "
-                "remove it from your code.",
-                DeprecationWarning,
-                stacklevel=2,
+                "remove it from your code."
             )
 
         if agent in [
@@ -204,6 +205,9 @@ class MbarrierLayout(enum.Enum):
 
     # Transactional mbarrier
     V0 = enum.auto()
+    # Transactional mbarrier with payload report
+    V1 = enum.auto()
+
 
 ##############################################################################
 # SyncObject class
@@ -250,6 +254,8 @@ class SyncObject(ABC):
 class MbarrierArray(SyncObject):
     """
     MbarrierArray implements an abstraction for an array of smem barriers.
+
+    Supports both V0 (transaction) and V1 (payload) mbarriers via the mbarrier_layout parameter.
     """
 
     @dsl_user_op
@@ -262,6 +268,7 @@ class MbarrierArray(SyncObject):
         mbarrier_layout: MbarrierLayout = MbarrierLayout.V0,
         name: str = "",
         *,
+        defer_init: bool = False,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
@@ -281,11 +288,17 @@ class MbarrierArray(SyncObject):
             raise ValueError(
                 "Error: Mbarrier tx count must not be less than 0 for TMA ops."
             )
+        if self.mbarrier_layout == MbarrierLayout.V1 and self.arrive_count > 511:
+            raise ValueError(
+                "Error: V1 mbarrier arrival count must be <= 511 (9-bit limit)."
+            )
+
         # Store mbarrier base pointer
         self.mbarrier_base = self.barrier_storage
 
-        # Mbarrier initialization in constructor
-        self.mbarrier_init(loc=loc, ip=ip)
+        # Mbarrier initialization in constructor, unless deferred.
+        if not defer_init:
+            self.mbarrier_init(loc=loc, ip=ip)
 
     def recast_to_new_op_type(self, new_op_type: PipelineOp) -> "MbarrierArray":
         """
@@ -335,13 +348,20 @@ class MbarrierArray(SyncObject):
     ) -> None:
         """
         Initializes an array of mbarriers using warp 0.
+        Uses mbarrier_v1_init for V1 mbarriers (SM107+), regular mbarrier_init for V0.
         """
+        init_fn = (
+            cute.arch.mbarrier_v1_init
+            if self.mbarrier_layout == MbarrierLayout.V1
+            else cute.arch.mbarrier_init
+        )
+
         def then_body() -> None:
             use_uniform_mbarrier_init = True
             if use_uniform_mbarrier_init:
                 with cute.arch.elect_one(loc=loc, ip=ip):
                     for index in range(self.num_stages):
-                        cute.arch.mbarrier_init(
+                        init_fn(
                             self.get_barrier(index, loc=loc, ip=ip),
                             self.arrive_count,
                             loc=loc,
@@ -492,6 +512,13 @@ class MbarrierArray(SyncObject):
         ip: Optional[ir.InsertionPoint] = None,
     ) -> Boolean:
         with self._mbar_scope("try_wait"):
+            if self.mbarrier_layout == MbarrierLayout.V1:
+                return cute.arch.mbarrier_try_wait_conditional(
+                    self.get_barrier(index, loc=loc, ip=ip),
+                    phase,
+                    loc=loc,
+                    ip=ip,
+                )
             return cute.arch.mbarrier_try_wait(
                 self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
             )
@@ -525,9 +552,76 @@ class MbarrierArray(SyncObject):
         :param phase: Phase/parity to wait for (0 or 1)
         """
         with self._mbar_scope("wait"):
+            if self.mbarrier_layout == MbarrierLayout.V1:
+                cute.arch.mbarrier_wait_conditional(
+                    self.get_barrier(index, loc=loc, ip=ip),
+                    phase,
+                    loc=loc,
+                    ip=ip,
+                )
+                return
             cute.arch.mbarrier_wait(
                 self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
             )
+
+    @dsl_user_op
+    def test_wait_primary(
+        self,
+        index: int,
+        phase: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> tuple[Boolean, Boolean]:
+        """Non-blocking TEST on primary phase. Returns (phase_complete, invalid).
+
+        :param index: Index of the mbarrier in the array
+        :param phase: The phase to wait for (either 0 or 1)
+        :return: Tuple of (phase_complete, invalid) booleans
+        """
+        return cute.arch.mbarrier_test_wait_primary(
+            self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
+        )
+
+    @dsl_user_op
+    def try_wait_primary(
+        self,
+        index: int,
+        phase: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> tuple[Boolean, Boolean]:
+        """Potentially blocking try-wait on a v1 mbarrier's primary phase.
+
+        :param index: Index of the mbarrier in the array
+        :param phase: The phase to wait for (either 0 or 1)
+        :return: ``(wait_complete, report_seen, report)`` for > SM107,
+                 ``(wait_complete, report_seen)`` for SM107.
+        """
+        return cute.arch.mbarrier_try_wait_primary(
+            self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
+        )
+
+    @dsl_user_op
+    def wait_primary(
+        self,
+        index: int,
+        phase: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> tuple[Boolean, Boolean]:
+        """Blocking wait on a v1 mbarrier's primary phase.
+
+        :param index: Index of the mbarrier in the array
+        :param phase: The phase to wait for (either 0 or 1)
+        :return: ``(wait_complete, report_seen, report)`` for > SM107,
+                 ``(wait_complete, report_seen)`` for SM107.
+        """
+        return cute.arch.mbarrier_wait_primary(
+            self.get_barrier(index, loc=loc, ip=ip), phase, loc=loc, ip=ip
+        )
 
     @dsl_user_op
     def arrive_and_wait(
@@ -563,6 +657,9 @@ class MbarrierArray(SyncObject):
         return self.mbarrier_base + index
 
     def max(self) -> int:
+        # V1 mbarriers have a maximum arrive count of (2^9 - 1).
+        if self.mbarrier_layout == MbarrierLayout.V1:
+            return (1 << 9) - 1
         # Transactional barriers have a maximum arrive count of (2^20 - 1).
         return (1 << 20) - 1
 
@@ -679,9 +776,11 @@ class NamedBarrier(SyncObject):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
+        """Arrive and wait, allowing participants to use distinct instructions."""
         cute.arch.barrier(
             barrier_id=self.barrier_id,
             number_of_threads=self.num_threads,
+            aligned=False,
             loc=loc,
             ip=ip,
         )
@@ -1001,7 +1100,8 @@ class PerStagePipelineState:
     """Pipeline state that tracks phases and counts independently per stage.
 
     Unlike PipelineState (single global phase/count), each stage progresses
-    independently. Can be used when stages complete out of order due to retries.
+    independently. Can be used when stages complete out of order due to retries
+    (e.g. due to TMA report_valid feature)
     """
 
     def __init__(self, num_stages: int):
@@ -1104,38 +1204,38 @@ class PerStagePipelineState:
         new._counts = self._counts
         return new
 
+    @staticmethod
+    @dsl_user_op
+    def compute_producer_count(
+        stage_idx: Int32,
+        stage_count: Int32,
+        stage_offset: Int32,
+        num_stages: int,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> Int32:
+        """Return the producer ``count`` of the copy held in a stage.
 
-@dsl_user_op
-def compute_k_tile(
-    stage_idx: Int32,
-    stage_count: Int32,
-    stage_offset: Int32,
-    num_stages: int,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Int32:
-    """Compute which k_tile the given stage is processing.
+        The producer issues copies into the stages round-robin, starting at
+        ``stage_offset``. In a GEMM mainloop the result is the k_tile index.
 
-    Args:
-        stage_idx: Current stage index
-        stage_count: Rounds completed for this stage
-        stage_offset: Which stage k_tile 0 maps to (for this work tile)
-        num_stages: Total number of stage buffers
-
-    Returns:
-        k_tile index this stage is processing
-    """
-    # Avoid modulo: safe since x < 2 * num_stages
-    x = stage_idx - stage_offset + num_stages
-    pos_in_round = if_generate(
-        x < num_stages,
-        lambda x: x,
-        lambda x: x - num_stages,
-        [x],
-        [Int32],
-    )
-    return pos_in_round + stage_count * num_stages
+        Args:
+            stage_idx: Stage to query
+            stage_count: Copies marked valid in that stage since ``reset_count()``
+            stage_offset: Stage holding the producer's first copy (count 0)
+            num_stages: Number of stages
+        """
+        # Avoid modulo: safe since x < 2 * num_stages
+        x = stage_idx - stage_offset + num_stages
+        pos_in_round = if_generate(
+            x < num_stages,
+            lambda x: x,
+            lambda x: x - num_stages,
+            [x],
+            [Int32],
+        )
+        return pos_in_round + stage_count * num_stages
 
 
 ##############################################################################
@@ -1196,7 +1296,11 @@ def _sync(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
-    warnings.warn("_sync is deprecated. Please use agent_sync instead.")
+    warnings.warn(
+        "_sync is deprecated. Please use agent_sync instead.",
+        DSLDeprecationWarning,
+        stacklevel=3,
+    )
     agent_sync(group, is_relaxed, loc=loc, ip=ip)
 
 

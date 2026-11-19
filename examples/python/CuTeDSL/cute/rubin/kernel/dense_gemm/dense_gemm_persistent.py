@@ -41,8 +41,20 @@ import cutlass.utils as utils
 from cutlass.utils import create_cute_tensor_for_fp8, is_fp8_dtype
 import cutlass.pipeline as pipeline
 from cutlass.cute.nvgpu import cpasync, tcgen05
-from cutlass.cute.nvgpu.tcgen05 import CollectorOp
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 
 if __name__ == "__main__":
@@ -220,44 +232,6 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
             permutation_mnk=self._get_mma_permutation_mnk(),
         )
 
-    def _create_tiled_mma_bkeep(self):
-        """Create TiledMma for keep operation (with fill collector for B).
-
-        This is used in the Bkeep-Breuse pattern for the first GEMM operation.
-        The 'fill' collector operation indicates that B data should be kept
-        for reuse in subsequent operations.
-        """
-        return utils.sm107.make_trivial_tiled_mma(
-            self.a_dtype,
-            self.b_dtype,
-            self.a_major_mode,
-            self.b_major_mode,
-            self.acc_dtype,
-            self.cta_group,
-            self.mma_inst_shape,
-            permutation_mnk=self._get_mma_permutation_mnk(),
-            b_collector_op=CollectorOp.FILL,
-        )
-
-    def _create_tiled_mma_breuse(self):
-        """Create TiledMma for reuse operation (with lastuse collector for B).
-
-        This is used in the Bkeep-Breuse pattern for the second GEMM operation.
-        The 'lastuse' collector operation indicates that this is the last use
-        of the B data that was kept from the previous operation.
-        """
-        return utils.sm107.make_trivial_tiled_mma(
-            self.a_dtype,
-            self.b_dtype,
-            self.a_major_mode,
-            self.b_major_mode,
-            self.acc_dtype,
-            self.cta_group,
-            self.mma_inst_shape,
-            permutation_mnk=self._get_mma_permutation_mnk(),
-            b_collector_op=CollectorOp.LASTUSE,
-        )
-
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
 
@@ -373,10 +347,8 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
-        tiled_mma_bkeep: Optional[cute.TiledMma],
-        tiled_mma_breuse: Optional[cute.TiledMma],
         cluster_shape_mn: Tuple[int, int],
         is_a_mcast: bool,
         is_b_mcast: bool,
@@ -595,7 +567,7 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
         #
         # Construct the scheduler
         #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
+        tile_sched = StaticPersistentTileScheduler.create(
             tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
         )
         work_tile = tile_sched.initial_work_tile_info()
@@ -752,12 +724,10 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
                                 # C++ SliceOp(tcra, coord(_, 0))
                                 tCrA_keep = tCrA_stage[(None, 0, k_phase)]
 
-                                tiled_mma_bkeep.set(
-                                    tcgen05.Field.ACCUMULATE,
-                                    k_tile != 0 or k_phase != 0,
-                                )
                                 cute.gemm(
-                                    tiled_mma_bkeep,
+                                    tiled_mma.with_bkeep(
+                                        accumulate=k_tile != 0 or k_phase != 0
+                                    ),
                                     tCtAcc_keep,
                                     tCrA_keep,
                                     tCrB_slice,
@@ -769,12 +739,10 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
                                 # C++ SliceOp(tcra, coord(_, 1))
                                 tCrA_reuse = tCrA_stage[(None, 1, k_phase)]
 
-                                tiled_mma_breuse.set(
-                                    tcgen05.Field.ACCUMULATE,
-                                    k_tile != 0 or k_phase != 0,
-                                )
                                 cute.gemm(
-                                    tiled_mma_breuse,
+                                    tiled_mma.with_breuse(
+                                        accumulate=k_tile != 0 or k_phase != 0
+                                    ),
                                     tCtAcc_reuse,
                                     tCrA_reuse,
                                     tCrB_slice,
@@ -931,10 +899,8 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
-        tiled_mma_bkeep: Optional[cute.TiledMma] = None,
-        tiled_mma_breuse: Optional[cute.TiledMma] = None,
     ):
         """
         GPU device kernel performing the Persistent batched GEMM computation.
@@ -954,8 +920,6 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
             epi_tile,
             tile_sched_params,
             epilogue_op,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
             self.cluster_shape_mn,
             self.is_a_mcast,
             self.is_b_mcast,
@@ -1166,12 +1130,6 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
         ) and self._is_breuse_supported(self.a_dtype, self.b_dtype)
 
         tiled_mma = self._create_tiled_mma()
-        # Create Bkeep-Breuse tiled_mma variants if enabled
-        tiled_mma_bkeep = None
-        tiled_mma_breuse = None
-        if cutlass.const_expr(self.enable_breuse):
-            tiled_mma_bkeep = self._create_tiled_mma_bkeep()
-            tiled_mma_breuse = self._create_tiled_mma_breuse()
 
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
@@ -1258,8 +1216,6 @@ class SM107PersistentDenseGemmKernel(BlackwellPersistentDenseGemmKernel):
             self.epi_tile,
             self.tile_sched_params,
             epilogue_op,
-            tiled_mma_bkeep,  # Pass Bkeep tiled_mma
-            tiled_mma_breuse,  # Pass Breuse tiled_mma
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -1364,10 +1320,12 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
-    benchmark: bool = False,
+    use_cuda_graphs: bool = True,
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
+    *,
+    benchmark: str = "default",
     **kwargs,
 ):
     """
@@ -1416,8 +1374,8 @@ def run(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
     :type use_cold_l2: bool, optional
-    :param benchmark: Whether to only benchmark the kernel, defaults to False.
-    :type benchmark: bool, optional
+    :param benchmark: Benchmark mode - "default" uses CUDA events, "cupti" uses CUPTI profiler, "none" skips benchmarking. Defaults to "default".
+    :type benchmark: str, optional
     :param init_normal: Whether to use normal (Gaussian) initialization for tensors, defaults to False.
         When True, tensors are initialized with normal distribution N(normal_mean, normal_std).
     :type init_normal: bool, optional
@@ -1515,6 +1473,7 @@ def run(
     print(f"Iterations: {iterations}")
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
+    print(f"Use CUDA graphs: {'True' if use_cuda_graphs else 'False'}")
     print(f"Swizzle Size: {swizzle_size}")
     print(f"Raster Along: {raster_along}")
 
@@ -1536,8 +1495,10 @@ def run(
             rtol=1e-03,
         )
 
-    if not benchmark:
+    if benchmark == "none":
         return 0
+    bench_torch_stream = torch.cuda.Stream() if use_cuda_graphs else torch_stream
+    bench_stream = cuda.CUstream(bench_torch_stream.cuda_stream)
 
     def generate_tensors():
         # Use init_normal from outer scope, but force random init for Int8/Uint8 types
@@ -1567,7 +1528,7 @@ def run(
         c_ = create_cute_tensor_for_fp8(
             c_st, c_dtype, leading_dim_c, source_f32_tensor=c_f32
         )
-        return testing.JitArguments(a_, b_, c_, current_stream)
+        return testing.JitArguments(a_, b_, c_, bench_stream)
 
     workspace_count = 1
     if use_cold_l2:
@@ -1580,15 +1541,20 @@ def run(
             one_workspace_bytes, warmup_iterations, iterations
         )
 
-    # Return execution time in microseconds
-    exec_time = testing.benchmark(
-        compiled_fn,
-        workspace_generator=generate_tensors,
-        workspace_count=workspace_count,
-        stream=current_stream,
-        warmup_iterations=warmup_iterations,
-        iterations=iterations,
-    )
+    # Return execution time in microseconds. Run the workspace generator under
+    # bench_torch_stream so those launches, the kernel, and the graph capture all share
+    # the one capturable stream.
+    with torch.cuda.stream(bench_torch_stream):
+        exec_time = testing.benchmark(
+            compiled_fn,
+            workspace_generator=generate_tensors,
+            workspace_count=workspace_count,
+            stream=bench_stream,
+            warmup_iterations=warmup_iterations,
+            iterations=iterations,
+            use_cuda_graphs=use_cuda_graphs,
+            use_cupti=benchmark == "cupti",
+        )
     print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
     return exec_time
 
@@ -1623,10 +1589,11 @@ if __name__ == "__main__":
         type=str,
         default="default",
         choices=[
+            "cupti",
             "default",
             "none",
         ],
-        help="Benchmark the kernel with nsight or default (cutlass.testing.benchmark) or none",
+        help="Benchmark the kernel with nsight or cupti or default (cutlass.testing.benchmark) or none",
     )
 
     parser.add_argument(
@@ -1649,6 +1616,13 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help="Use circular buffer tensor sets to ensure L2 cold cache",
+    )
+
+    parser.add_argument(
+        "--use_cuda_graphs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Benchmark via CUDA graph replays (default: on; --no-use_cuda_graphs to disable)",
     )
 
     parser.add_argument(
@@ -1780,9 +1754,10 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
-        args.benchmark == "default",
+        args.use_cuda_graphs,
         args.init_normal,
         args.normal_mean,
         args.normal_std,
+        benchmark=args.benchmark,
     )
     print("PASS")

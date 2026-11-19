@@ -404,12 +404,10 @@ class MLIRBuilder(MLIRTypeBuilder):
 
     def _module_symbol_exists(self, module: ir.Module, symbol: str) -> bool:
         """Return whether a top-level module symbol already exists."""
-        for op in module.body:
-            if "sym_name" not in op.attributes:
-                continue
-            if str(op.attributes["sym_name"]).strip('"') == symbol:
-                return True
-        return False
+        # Builders can share a module and insert symbols independently. Use a
+        # fresh native table so those insertions are visible without walking
+        # every operation and converting its attributes through Python.
+        return symbol in ir.SymbolTable(module.operation)
 
     # function
     def function(

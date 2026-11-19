@@ -45,7 +45,17 @@ Most of the implementation is the same as the Blackwell grouped gemm example, bu
   enable the B-reuse/REST_M > 1 path.
 - It exercises the B-reuse/B-keep feature in the LIR compiler.
 
-NOTE: This feature is currently only supported for FP8 inputs.
+Data types:
+
+- A and B are independent element types. Any Float8E4M3FN / Float8E5M2 pair is
+  legal. The F16/BF16 and TF32 are single-dtype, so they need ``a_dtype == b_dtype``.
+- Supported operand types: Float8E4M3FN, Float8E5M2, Float16, BFloat16,
+  TFloat32.
+- Output D: Float32 / Float16 / BFloat16 / Float8E4M3FN / Float8E5M2 /
+  Float4E2M1FN. Narrow (<= 8-bit) D is a plain saturating cast of the accumulator.
+
+NOTE: The B-reuse feature is currently only supported for FP8 inputs, because
+only the SM107 FP8 atom exposes the operand-collector ops it needs.
 
 The B-reuse Feature:
 
@@ -64,7 +74,7 @@ In effect, as the CTA tile M is 2x larger, we break it into rest_m pieces and pe
 This outer loop can be wrapped into the utility with updated TMEM layouts carrying the REST_M mode. This is a future TODO.
 
 The ``run(...)`` helper at the bottom builds the per-group torch tensors,
-JIT-compiles the kernel via ``cute_ext.compile``, allocates the device
+JIT-compiles the kernel via ``cute.compile``, allocates the device
 workspace queried with ``QueryDeviceWorkspaceFunc``, optionally validates
 against a torch matmul reference, and benchmarks the result.
 """
@@ -84,6 +94,7 @@ from cutlass import cute as cute
 from cutlass import torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.rubin_helpers as sm107_utils
+from cutlass.utils.mixed_cluster_params import max_active_preferred_clusters
 from cutlass import testing
 from cutlass.cute.experimental.host_runtime import QueryDeviceWorkspaceFunc
 from cutlass.cute.runtime import from_dlpack
@@ -115,6 +126,8 @@ class GroupedGemmKernel:
         epilogue_op=lambda x: x,
         use_2cta_instrs: bool = False,
         cluster_shape_mn: Tuple[int, int] = (2, 1),
+        fallback_cluster_shape_mn: Tuple[int, int] = None,
+        max_active_fallback_clusters: int | None = None,
         tma_update_mode: str | None = None,
         mma_inst_shape: Tuple[int, int, int] | None = None,
         arch: str = "sm_107",
@@ -123,7 +136,19 @@ class GroupedGemmKernel:
             mma_inst_shape = mn_tiler
         self.mn_tiler = mn_tiler
         self.mma_inst_shape = mma_inst_shape
-        self.ab_dtype, self.acc_dtype = mma_dtype
+        # ``mma_dtype`` is (ab_dtype, acc_dtype) when A and B share an element
+        # type, or (a_dtype, b_dtype, acc_dtype) for a mixed-input GEMM.
+        if len(mma_dtype) == 2:
+            ab_dtype, self.acc_dtype = mma_dtype
+            self.a_dtype = ab_dtype
+            self.b_dtype = ab_dtype
+        elif len(mma_dtype) == 3:
+            self.a_dtype, self.b_dtype, self.acc_dtype = mma_dtype
+        else:
+            raise ValueError(
+                "mma_dtype must be (ab_dtype, acc_dtype) or "
+                f"(a_dtype, b_dtype, acc_dtype), got {mma_dtype}"
+            )
         self.tmem_output_dtype = tmem_output_dtype
         self.d_dtype = tmem_output_dtype
         self.use_2cta_instrs = use_2cta_instrs
@@ -131,12 +156,21 @@ class GroupedGemmKernel:
         self.epilogue_op = epilogue_op
         self.cluster_shape = (cluster_shape_mn[0], cluster_shape_mn[1], 1)
         cluster_shape_mn_selfcast = (2, 1) if use_2cta_instrs else (1, 1)
+        # A distinct fallback divides the preferred shape, so the
+        # preferred-derived flag covers both body clones.
         self.use_tma_multicast = cluster_shape_mn != cluster_shape_mn_selfcast
+        self.fallback_cluster_shape = cute_ext.resolve_fallback_cluster_shape(
+            cluster_shape_mn,
+            fallback_cluster_shape_mn,
+            cta_group_m=2 if use_2cta_instrs else 1,
+            error_cls=testing.CantImplementError,
+        )
         self.a_major_mode_ = a_major_mode
         self.b_major_mode_ = b_major_mode
         self.d_layout_ = d_layout
         self.group_count = group_count
         self.max_active_clusters = max_active_clusters
+        self.max_active_fallback_clusters = max_active_fallback_clusters
         self.tma_update_mode = tma_update_mode
         self.enable_breuse = True if mn_tiler[0] // mma_inst_shape[0] == 2 else False
         self.arch = utils.sm107.canonicalize_rubin_resource_arch(arch)
@@ -156,21 +190,62 @@ class GroupedGemmKernel:
         #
         # Check supported Data types
         #
+        # A and B are independent inputs, but each dtype family maps to one
+        # tcgen05 atom and the atom decides whether a mix is legal
+        # The SM107 FP8 atom takes a per-operand dtype, while the F16/BF16 and TF32 atoms
+        # are built from a single operand dtype.
         supported_ab_dtypes = {
             cutlass.Float8E4M3FN,
             cutlass.Float8E5M2,
             cutlass.Float16,
             cutlass.BFloat16,
+            cutlass.TFloat32,
             cutlass.Float32,
         }
-        if self.ab_dtype not in supported_ab_dtypes:
+        for name, dtype in (("a_dtype", self.a_dtype), ("b_dtype", self.b_dtype)):
+            if dtype not in supported_ab_dtypes:
+                raise testing.CantImplementError(
+                    f"Unsupported {name}: {dtype}; supported: Float8E4M3FN, "
+                    "Float8E5M2, Float16, BFloat16, TFloat32, Float32"
+                )
+        if not self._is_fp8() and self.a_dtype is not self.b_dtype:
             raise testing.CantImplementError(
-                f"Unsupported ab_dtype: {self.ab_dtype}; supported: "
-                "Float8E4M3FN, Float8E5M2, Float16, BFloat16, Float32"
+                f"Unsupported operand pair {self.a_dtype} x {self.b_dtype}; "
+                "only FP8 operands may differ (any Float8E4M3FN/Float8E5M2 "
+                "pair). F16/BF16 and TF32 require a_dtype == b_dtype"
             )
         if self.acc_dtype not in {cutlass.Float32, cutlass.Float16}:
             raise testing.CantImplementError(
                 f"Unsupported acc_dtype: {self.acc_dtype}; supported: Float32, Float16"
+            )
+
+        if self._is_tf32() and self.acc_dtype is not cutlass.Float32:
+            raise testing.CantImplementError(
+                f"TF32 operands require acc_dtype=Float32; got {self.acc_dtype}"
+            )
+
+        #
+        # Check supported output type
+        #
+        supported_d_dtypes = {
+            cutlass.Float32,
+            cutlass.Float16,
+            cutlass.BFloat16,
+            cutlass.Float8E4M3FN,
+            cutlass.Float8E5M2,
+            cutlass.Float4E2M1FN,
+        }
+        if self.d_dtype not in supported_d_dtypes:
+            raise testing.CantImplementError(
+                f"Unsupported d_dtype: {self.d_dtype}; supported: Float32, "
+                "Float16, BFloat16, Float8E4M3FN, Float8E5M2, Float4E2M1FN"
+            )
+        if (
+            self.d_dtype is cutlass.Float4E2M1FN
+            and self.d_layout_ is not cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
+        ):
+            raise testing.CantImplementError(
+                "Float4E2M1FN output must be n-major (row-major D)"
             )
 
         #
@@ -235,10 +310,31 @@ class GroupedGemmKernel:
                 f"Invalid cluster_shape: {cluster_shape_mn}"
             )
 
+        fallback_cluster_shape_mn = (
+            self.fallback_cluster_shape[0],
+            self.fallback_cluster_shape[1],
+        )
+        if fallback_cluster_shape_mn != cluster_shape_mn:
+            if (
+                fallback_cluster_shape_mn[0] * fallback_cluster_shape_mn[1] > 16
+                or (fallback_cluster_shape_mn[0] & (fallback_cluster_shape_mn[0] - 1))
+                != 0
+                or (fallback_cluster_shape_mn[1] & (fallback_cluster_shape_mn[1] - 1))
+                != 0
+            ):
+                raise testing.CantImplementError(
+                    f"Invalid fallback_cluster_shape: {fallback_cluster_shape_mn}"
+                )
+
         return True
 
     def _is_fp8(self) -> bool:
-        return self.ab_dtype in (cutlass.Float8E4M3FN, cutlass.Float8E5M2)
+        fp8_dtypes = (cutlass.Float8E4M3FN, cutlass.Float8E5M2)
+        return self.a_dtype in fp8_dtypes and self.b_dtype in fp8_dtypes
+
+    def _is_tf32(self) -> bool:
+        tf32_dtypes = (cutlass.TFloat32, cutlass.Float32)
+        return self.a_dtype in tf32_dtypes and self.b_dtype in tf32_dtypes
 
     """
     Consider this example with mma_inst = 256x128 and mma_tiler = 512x128.
@@ -299,10 +395,9 @@ class GroupedGemmKernel:
         # use the SM100 helper which infers K from the operand dtype and
         # only takes (M, N).
         if self._is_fp8():
-            # TODO: Add support for FP16/BF16/TF32 types.
             return sm107_utils.make_trivial_tiled_mma(
-                self.ab_dtype,
-                self.ab_dtype,
+                self.a_dtype,
+                self.b_dtype,
                 self.a_major_mode_,
                 self.b_major_mode_,
                 self.acc_dtype,
@@ -311,8 +406,8 @@ class GroupedGemmKernel:
                 permutation_mnk=self._get_mma_permutation_mnk(),
             )
         return sm100_utils.make_trivial_tiled_mma(
-            self.ab_dtype,
-            self.ab_dtype,
+            self.a_dtype,
+            self.b_dtype,
             self.a_major_mode_,
             self.b_major_mode_,
             self.acc_dtype,
@@ -347,7 +442,8 @@ class GroupedGemmKernel:
         ) = self._compute_stages(
             tiled_mma,
             mnk_tiler,
-            self.ab_dtype,
+            self.a_dtype,
+            self.b_dtype,
             epi_tile,
             self.d_dtype,
             self.d_layout_,
@@ -358,7 +454,8 @@ class GroupedGemmKernel:
     def _compute_stages(
         tiled_mma,
         mma_tiler_mnk: tuple[int, int, int],
-        ab_dtype: Type[Numeric],
+        a_dtype: Type[Numeric],
+        b_dtype: Type[Numeric],
         epi_tile,
         d_dtype: Type[Numeric],
         d_layout: cutlass.tensor_utils.LayoutEnum,
@@ -373,7 +470,8 @@ class GroupedGemmKernel:
 
         :param tiled_mma: The tiled MMA object defining the core computation.
         :param mma_tiler_mnk: The shape (M, N, K) of the MMA tiler.
-        :param ab_dtype: Data type of operands A and B.
+        :param a_dtype: Data type of operand A.
+        :param b_dtype: Data type of operand B.
         :param epi_tile: The epilogue tile shape.
         :param d_dtype: Data type of the output tensor D.
         :param d_layout: Layout enum of the output tensor D.
@@ -388,13 +486,13 @@ class GroupedGemmKernel:
         a_smem_layout_one = sm100_utils.make_smem_layout_a(
             tiled_mma,
             mma_tiler_mnk,
-            ab_dtype,
+            a_dtype,
             1,
         )
         b_smem_layout_one = sm100_utils.make_smem_layout_b(
             tiled_mma,
             mma_tiler_mnk,
-            ab_dtype,
+            b_dtype,
             1,
         )
         epi_smem_layout_one = sm100_utils.make_smem_layout_epi(
@@ -405,8 +503,8 @@ class GroupedGemmKernel:
         )
 
         ab_bytes_per_stage = cute.size_in_bytes(
-            ab_dtype, a_smem_layout_one
-        ) + cute.size_in_bytes(ab_dtype, b_smem_layout_one)
+            a_dtype, a_smem_layout_one
+        ) + cute.size_in_bytes(b_dtype, b_smem_layout_one)
         epi_bytes_per_stage = cute.size_in_bytes(d_dtype, epi_smem_layout_one)
         epi_bytes = epi_bytes_per_stage * num_tma_store_stage
 
@@ -422,7 +520,7 @@ class GroupedGemmKernel:
         num_tma_store_stage += remaining_smem // (occupancy * epi_bytes_per_stage)
         return num_mainloop_stage, num_tma_store_stage, num_acc_stage
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA_ptrs: cute.Tensor,
@@ -438,16 +536,24 @@ class GroupedGemmKernel:
     ):
         self._setup_stages()
 
+        num_active_clusters = max_active_preferred_clusters(
+            self.cluster_shape[:2],
+            self.fallback_cluster_shape[:2],
+            self.max_active_clusters,
+            self.max_active_fallback_clusters,
+        )
         problem_shape_ntile_mnl = (
             self.cluster_shape[0],
             self.cluster_shape[1],
-            cutlass.Int32(self.max_active_clusters),
+            cutlass.Int32(num_active_clusters),
         )
         tile_sched_params = PersistentTileSchedulerParams(
-            problem_shape_ntile_mnl, (*self.cluster_shape, 1)
+            problem_shape_ntile_mnl,
+            self.cluster_shape,
+            fallback_cluster_shape_mnk=self.fallback_cluster_shape,
         )
         grid_sched = StaticPersistentGroupTileScheduler.get_grid_shape(
-            tile_sched_params, self.max_active_clusters
+            tile_sched_params, num_active_clusters
         )
         self.kernel(
             mA_ptrs,
@@ -465,7 +571,7 @@ class GroupedGemmKernel:
             grid=grid_sched,
             block=(224, 1, 1),
             cluster=self.cluster_shape,
-            smem=cute.Int64(self.smem_capacity),
+            fallback_cluster=self.fallback_cluster_shape,
             min_blocks_per_mp=1,
         )
 
@@ -475,7 +581,7 @@ class GroupedGemmKernel:
     This is used to load the pointers for A/B/D from the Ptr array.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _get_pointer(self, address_as_int, cute_type):
         cute_ptr = cute.make_ptr(
             cute_type,
@@ -495,7 +601,7 @@ class GroupedGemmKernel:
     cute.make_tensor to create the actual tensor.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _get_shape_tuple_from_cute_tensor(
         self, cute_shape_tensor: cute.Tensor, group_idx: int
     ):
@@ -512,7 +618,7 @@ class GroupedGemmKernel:
     outside the region.
     """
 
-    @cute.experimental.jit
+    @cute.jit
     def _consume_work_tile_info(
         self,
         tile_info_pipe: cute_ext.GroupedGemmSchedulerPipeline,
@@ -536,7 +642,7 @@ class GroupedGemmKernel:
         )
         return tile_info_pipe, group_search_result, is_valid_tile
 
-    @cute.experimental.kernel(
+    @cute.kernel(
         attributes=lambda self, _kernel_name: (
             {"lir.tma_update_mode": self.tma_update_mode}
             if self.tma_update_mode is not None
@@ -581,8 +687,20 @@ class GroupedGemmKernel:
         # The accumulator is split along M only (each CTA holds full N columns).
         num_mma_ctas = cute.size(tiled_mma.thr_id.shape)
         cta_tile_shape_mnk = cute.shape_div(mnk_tiler, (num_mma_ctas, 1, 1))
+
+        # Cluster layout for 2-CTA coordination.
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
+        cluster_layout_vmnk = cute.tiled_divide(
+            cute.make_layout(cluster_shape),
+            cute.core._pack_shape((cute.size(tiled_mma.thr_id.shape),)),
+        )
+
         # Cluster tile shape: each cluster covers cta_tile * cluster_shape along M and N.
         # The tile scheduler operates at cluster granularity.
+        # Scheduling follows the logical grid; only TMA/multicast uses the
+        # physical cluster layout specialized above.
         cluster_tile_shape_mnk = (
             cta_tile_shape_mnk[0] * self.cluster_shape[0],
             cta_tile_shape_mnk[1] * self.cluster_shape[1],
@@ -601,23 +719,17 @@ class GroupedGemmKernel:
         # structure that the TMA partition expects.
         thr_mma = tiled_mma.get_slice(mma_tile_coord_v)
 
-        # Cluster layout for 2-CTA coordination
-        cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout(self.cluster_shape),
-            cute.core._pack_shape((cute.size(tiled_mma.thr_id.shape),)),
-        )
-
         # Compute A/B/C shared memory layout
         a_smem_layout_staged = sm100_utils.make_smem_layout_a(
             tiled_mma,
             mnk_tiler,
-            self.ab_dtype,
+            self.a_dtype,
             mainloop_stage,
         )
         b_smem_layout_staged = sm100_utils.make_smem_layout_b(
             tiled_mma,
             mnk_tiler,
-            self.ab_dtype,
+            self.b_dtype,
             mainloop_stage,
         )
 
@@ -629,14 +741,14 @@ class GroupedGemmKernel:
 
         # Allocate UMMA Buffers
         bufferA = cute_ext.allocate(
-            self.ab_dtype,
+            self.a_dtype,
             cutlass.AddressSpace.smem,
             a_smem_layout_staged,
             alignment=1024,
         )
 
         bufferB = cute_ext.allocate(
-            self.ab_dtype,
+            self.b_dtype,
             cutlass.AddressSpace.smem,
             b_smem_layout_staged,
             alignment=1024,
@@ -681,14 +793,13 @@ class GroupedGemmKernel:
         )
 
         # UMMA -> tcgen05.ld pipeline
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         warp_idx = cute.arch.warp_idx()
@@ -699,6 +810,7 @@ class GroupedGemmKernel:
         tma_load_warp_id = 5
         scheduler_warp_id = 6
         is_tma_thr = warp_idx == tma_load_warp_id
+        is_tma_store_warp = warp_idx == tma_store_warp_id
         is_mma_thr = warp_idx == mma_warp_id
         is_epi_thr = warp_idx < 4
         is_sched_thr = warp_idx == scheduler_warp_id
@@ -715,8 +827,8 @@ class GroupedGemmKernel:
         # Producer: scheduler warp (32 threads), Consumer: all other 6 warps (192 threads).
         tile_info_pipe = cute_ext.GroupedGemmSchedulerPipeline.create(
             num_stages=self.num_sched_stage,
-            producer_arv_count=32,
-            consumer_arv_count=192,
+            producer_commit_threads_per_cta=32,
+            consumer_release_threads_per_cta=192,
         )
 
         # Shared memory buffer for tile scheduling info (9 int32 values per stage)
@@ -778,8 +890,8 @@ class GroupedGemmKernel:
         elif is_tma_thr and initial_work_tile_info.is_valid_tile:
             cute.arch.setmaxregister_decrease(40)
             # Get initial pointers and tensors - Group 0, batch 0
-            A_0_ptr = self._get_pointer(mA_ptrs[0], self.ab_dtype)
-            B_0_ptr = self._get_pointer(mB_ptrs[0], self.ab_dtype)
+            A_0_ptr = self._get_pointer(mA_ptrs[0], self.a_dtype)
+            B_0_ptr = self._get_pointer(mB_ptrs[0], self.b_dtype)
             A_shape = self._get_shape_tuple_from_cute_tensor(A_shapes, 0)
             A_stride = self._get_shape_tuple_from_cute_tensor(A_strides, 0)
             B_shape = self._get_shape_tuple_from_cute_tensor(B_shapes, 0)
@@ -790,6 +902,11 @@ class GroupedGemmKernel:
             mB = cute.make_tensor(
                 B_0_ptr, layout=cute.make_layout(B_shape, stride=B_stride)
             )
+            # Install the initial TMA descriptors. This region runs on the
+            # single TMA load warp, which also issues the loads, so the
+            # enclosing branch is the warp guard.
+            mA = cute_ext.tma_update(mA)
+            mB = cute_ext.tma_update(mB)
 
             # group index of last tile
             last_group_idx = cutlass.Int32(0)
@@ -807,7 +924,7 @@ class GroupedGemmKernel:
                     is_group_changed = cur_group_idx != last_group_idx
 
                     if is_group_changed:
-                        # update pointers for the new group, call make_tensor
+                        # Update pointers and TMA views for the new group.
                         # Get problem shape and stride for each group
                         # Layout of the shape and strides is Tensor<ptr_address@gmem o (group_count,3):(3,1)>
                         A_shape = self._get_shape_tuple_from_cute_tensor(
@@ -823,14 +940,18 @@ class GroupedGemmKernel:
                             B_strides, cur_group_idx
                         )
 
-                        ptr_A = self._get_pointer(mA_ptrs[cur_group_idx], self.ab_dtype)
-                        ptr_B = self._get_pointer(mB_ptrs[cur_group_idx], self.ab_dtype)
+                        ptr_A = self._get_pointer(mA_ptrs[cur_group_idx], self.a_dtype)
+                        ptr_B = self._get_pointer(mB_ptrs[cur_group_idx], self.b_dtype)
                         mA = cute.make_tensor(
                             ptr_A, layout=cute.make_layout(A_shape, stride=A_stride)
                         )
                         mB = cute.make_tensor(
                             ptr_B, layout=cute.make_layout(B_shape, stride=B_stride)
                         )
+                        # New group: install the new descriptors before the
+                        # loads below consume them (single-warp region).
+                        mA = cute_ext.tma_update(mA)
+                        mB = cute_ext.tma_update(mB)
                         last_group_idx = cur_group_idx
 
                     # Tile by the full mma_tile and V-split the per-CTA atoms
@@ -920,6 +1041,8 @@ class GroupedGemmKernel:
                     self._consume_work_tile_info(tile_info_pipe, sTile_info)
                 )
 
+            mainloop_pipe.producer_tail()
+
         #
         # Specialized MMA warp (warp 4)
         #
@@ -933,7 +1056,7 @@ class GroupedGemmKernel:
 
                 # Only leader CTA performs actual MMA work and acc pipeline ops.
                 # Non-leader CTA's MMA warp still participates in the tile_info
-                # pipeline to satisfy consumer_arv_count.
+                # pipeline's consumer releases.
                 if is_leader_cta:
                     _, idx = acc_pipe.producer_acquire_and_get_stage()
                     accumulators_sliced = bufferAcc[None, None, None, idx]
@@ -970,6 +1093,12 @@ class GroupedGemmKernel:
             mD = cute.make_tensor(
                 D_0_ptr, layout=cute.make_layout(D_shape, stride=D_stride)
             )
+            # All four epilogue warps need the view for partitioning; the
+            # descriptor update side effect belongs to the TMA store warp
+            # alone. Non-issuing warps keep the un-updated view, which only
+            # feeds pure partition math.
+            if is_tma_store_warp:
+                mD = cute_ext.tma_update(mD)
             is_valid_tile = initial_work_tile_info.is_valid_tile
             group_search_result = initial_work_tile_info.group_search_result
             # group index of last tile
@@ -993,6 +1122,8 @@ class GroupedGemmKernel:
                     mD = cute.make_tensor(
                         ptr_D, layout=cute.make_layout(D_shape, stride=D_stride)
                     )
+                    if is_tma_store_warp:
+                        mD = cute_ext.tma_update(mD)
                     last_group_idx = cur_group_idx
 
                 _, idx = acc_pipe.consumer_wait_and_get_stage()
@@ -1040,29 +1171,55 @@ class GroupedGemmKernel:
                     self._consume_work_tile_info(tile_info_pipe, sTile_info)
                 )
 
+            # Stage reuse across CTA tiles is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per CTA tile.
+            tma_store_pipe.tail()
 
-def create_tensors(l, m, n, k, a_major, b_major, d_major, ab_dtype, d_dtype):
-    a_torch_cpu = cutlass_torch.matrix(l, m, k, a_major == "m", ab_dtype)
-    b_torch_cpu = cutlass_torch.matrix(l, n, k, b_major == "n", ab_dtype)
-    d_torch_cpu = cutlass_torch.matrix(l, m, n, d_major == "m", d_dtype)
 
-    a_tensor, a_torch_gpu = cutlass_torch.cute_tensor_like(
-        a_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
+def create_tensors(l, m, n, k, a_major, b_major, d_major, a_dtype, b_dtype, d_dtype):
+    """Create A, B, D tensors using tensor_utils (handles FP8/FP4 via DLPack)."""
+    from cutlass.utils.gemm.tensor_utils import get_gemm_tensors
+
+    a_major_mode = (
+        cute.nvgpu.OperandMajorMode.K
+        if a_major == "k"
+        else cute.nvgpu.OperandMajorMode.MN
     )
-    b_tensor, b_torch_gpu = cutlass_torch.cute_tensor_like(
-        b_torch_cpu, ab_dtype, is_dynamic_layout=True, assumed_align=16
+    b_major_mode = (
+        cute.nvgpu.OperandMajorMode.K
+        if b_major == "k"
+        else cute.nvgpu.OperandMajorMode.MN
     )
-    d_tensor, d_torch_gpu = cutlass_torch.cute_tensor_like(
-        d_torch_cpu, d_dtype, is_dynamic_layout=True, assumed_align=16
+    d_major_mode = (
+        cute.nvgpu.OperandMajorMode.K
+        if d_major == "n"
+        else cute.nvgpu.OperandMajorMode.MN
+    )
+
+    (
+        a_torch_gpu,
+        b_torch_gpu,
+        d_torch_gpu,
+        a_tensor,
+        b_tensor,
+        d_tensor,
+    ) = get_gemm_tensors(
+        m,
+        n,
+        k,
+        l,
+        (a_major_mode, b_major_mode, d_major_mode),
+        (
+            cutlass_torch.dtype(a_dtype),
+            cutlass_torch.dtype(b_dtype),
+            cutlass_torch.dtype(d_dtype),
+        ),
     )
 
     return (
         a_tensor,
         b_tensor,
         d_tensor,
-        a_torch_cpu,
-        b_torch_cpu,
-        d_torch_cpu,
         a_torch_gpu,
         b_torch_gpu,
         d_torch_gpu,
@@ -1109,7 +1266,8 @@ def create_tensors_for_grouped_gemm(
     a_major,
     b_major,
     d_major,
-    ab_dtype,
+    a_dtype,
+    b_dtype,
     d_dtype,
 ):
     num_groups = len(M_sizes)
@@ -1147,9 +1305,6 @@ def create_tensors_for_grouped_gemm(
                 A_tensor,
                 B_tensor,
                 D_tensor,
-                A_torch_cpu,
-                B_torch_cpu,
-                D_torch_cpu,
                 A_torch_gpu,
                 B_torch_gpu,
                 D_torch_gpu,
@@ -1161,7 +1316,8 @@ def create_tensors_for_grouped_gemm(
                 a_major,
                 b_major,
                 d_major,
-                ab_dtype,
+                a_dtype,
+                b_dtype,
                 d_dtype,
             )
 
@@ -1234,29 +1390,68 @@ def create_tensors_for_grouped_gemm(
     )
 
 
-def compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance):
-    # FP8 tensors do not support torch.einsum directly; promote to float32
-    # for the host-side reference computation. Round-tripping the FP8
-    # values through float32 preserves the exact value of every element
-    # since float32 is a strict superset of FP8.
-    _FP8_DTYPES = (torch.float8_e4m3fn, torch.float8_e5m2)
+def compare(
+    a_torch_cpu,
+    b_torch_cpu,
+    c_cute_tensor,
+    c_torch_gpu,
+    c_dtype,
+    c_major,
+    tolerance,
+):
+    """Reference check: D = A @ B.
+
+    FP8 A/B tensors do not support ``torch.einsum`` directly, so both operands
+    are promoted to float32 first; float32 is a strict superset of FP8, so the
+    promotion is exact.
+
+    D is read back through ``cute.testing.convert`` rather than torch, because
+    the narrow output types have no torch storage type of matching width. For
+    those types (<= 8 bit) the float32 reference is also round-tripped through
+    the hardware converter (f32 -> D -> f32) so rounding and saturation match
+    the kernel's epilogue exactly.
+    """
 
     def _to_f32(x):
-        return x.to(torch.float32) if x.dtype in _FP8_DTYPES else x
+        return x.to(torch.float32) if x.dtype != torch.float32 else x
 
     ref = torch.einsum("mkl,nkl->mnl", _to_f32(a_torch_cpu), _to_f32(b_torch_cpu))
 
-    _, ref_torch_gpu = cutlass_torch.cute_tensor_like(
-        ref, c_dtype, is_dynamic_layout=True, assumed_align=16
+    m, n, l = ref.shape[0], ref.shape[1], ref.shape[2]
+    leading_dim = 1 if c_major == "n" else 0
+
+    def _make_d_torch(dtype):
+        if c_major == "m":
+            return torch.empty(l, n, m, dtype=dtype, device="cuda").permute(2, 1, 0)
+        return torch.empty(l, m, n, dtype=dtype, device="cuda").permute(1, 2, 0)
+
+    gpu_f32_ = _make_d_torch(torch.float32)
+    gpu_f32 = from_dlpack(gpu_f32_, assumed_align=16).mark_layout_dynamic(
+        leading_dim=leading_dim
     )
-    ref_result = ref_torch_gpu.cpu()
-    actual = c_torch_gpu.cpu()
-    # torch.testing.assert_close does not accept FP8 dtypes directly; lift
-    # both sides to float32 before comparing when the output is FP8.
-    if actual.dtype in _FP8_DTYPES or ref_result.dtype in _FP8_DTYPES:
-        actual = actual.to(torch.float32)
-        ref_result = ref_result.to(torch.float32)
-    torch.testing.assert_close(actual, ref_result, atol=tolerance, rtol=1e-05)
+    cute.testing.convert(c_cute_tensor, gpu_f32)
+    gpu_result = gpu_f32_.cpu()
+
+    if c_dtype.width <= 8:
+        ref_narrow_ = _make_d_torch(torch.uint8)
+        ref_narrow = from_dlpack(ref_narrow_, assumed_align=16).mark_layout_dynamic(
+            leading_dim=leading_dim
+        )
+        ref_narrow.element_type = c_dtype
+
+        ref_device = _make_d_torch(torch.float32)
+        ref_device.copy_(ref)
+        ref_tensor = from_dlpack(ref_device, assumed_align=16).mark_layout_dynamic(
+            leading_dim=leading_dim
+        )
+        cute.testing.convert(ref_tensor, ref_narrow)
+        cute.testing.convert(ref_narrow, ref_tensor)
+        ref = ref_device.cpu()
+    else:
+        # Match the kernel's store precision before comparing.
+        ref = ref.to(cutlass_torch.dtype(c_dtype)).to(torch.float32)
+
+    torch.testing.assert_close(gpu_result, ref, atol=tolerance, rtol=1e-05)
 
 
 def run(
@@ -1278,7 +1473,10 @@ def run(
     use_2cta_instrs: bool = False,
     tma_update_mode: str | None = None,
     mma_inst_shape: Tuple[int, int, int] | None = None,
+    fallback_cluster_shape_mn: Tuple[int, int] = None,
     arch: str = "sm_107",
+    a_dtype: Type[Numeric] | None = None,
+    b_dtype: Type[Numeric] | None = None,
     **kwargs,
 ):
     """Execute a grouped GEMM operation on the Rubin architecture with performance benchmarking.
@@ -1291,7 +1489,7 @@ def run(
     For a 1CTA run, mma_inst_shape_mn=128,128 and mma_tiler_mn=256,128 would trigger the B-keep/B-reuse feature.
     This is internally handled within the compiler via heuristics.
 
-    NOTE: This is currently only supported for FP8 inputs. FP16 types will be supported in the future.
+    NOTE: B-reuse is currently only supported for FP8 inputs.
 
     :param mnkl: Problem size (M, N, K, L)
     :type mnkl: Tuple[int, int, int, int]
@@ -1299,7 +1497,11 @@ def run(
     :type mma_tiler_mn: Tuple[int, int]
     :param cluster_shape_mn: Cluster shape.
     :type cluster_shape_mn: Tuple[int, int]
-    :param ab_dtype: Data type for input tensors A and B
+    :param fallback_cluster_shape_mn: Optional. When provided and different
+        from cluster_shape_mn, the kernel runs in mixed-cluster mode.
+    :type fallback_cluster_shape_mn: Optional[Tuple[int, int]]
+    :param ab_dtype: Shared data type for input tensors A and B. Ignored for an
+        operand whose per-operand override (`a_dtype` / `b_dtype`) is given.
     :type ab_dtype: Type[Numeric]
     :param c_dtype: Data type for output tensor C
     :type c_dtype: Type[Numeric]
@@ -1310,11 +1512,19 @@ def run(
         REST_M > 1 atom tiles, exposing the B-reuse expansion opportunity.
         Defaults to `mma_tiler_mn` (REST_M = 1).
     :type mma_inst_shape: Tuple[int, int, int] | None
+    :param a_dtype: Per-operand override for A; defaults to `ab_dtype`.
+    :type a_dtype: Type[Numeric] | None
+    :param b_dtype: Per-operand override for B; defaults to `ab_dtype`. Only
+        FP8 operands may differ from A.
+    :type b_dtype: Type[Numeric] | None
     """
     if tma_update_mode not in (None, "gmem", "smem"):
         raise ValueError(
             f"Invalid tma_update_mode '{tma_update_mode}'. Expected one of: gmem, smem."
         )
+
+    a_dtype = ab_dtype if a_dtype is None else a_dtype
+    b_dtype = ab_dtype if b_dtype is None else b_dtype
 
     cli.print_problem_config(
         f"LIR Rubin ({arch.upper()}) Grouped GEMM",
@@ -1324,11 +1534,14 @@ def run(
                 f"Group {i}: {m}x{n}x{k}x{l}"
                 for i, (m, n, k, l) in enumerate(problem_sizes_mnkl)
             ),
-            f"AB dtype: {ab_dtype}, D dtype: {c_dtype}, Acc dtype: {acc_dtype}",
+            f"A dtype: {a_dtype}, B dtype: {b_dtype}, D dtype: {c_dtype}, "
+            f"Acc dtype: {acc_dtype}",
         ],
         majors={"A": a_major, "B": b_major, "D": c_major},
     )
     print(f"Mma Tiler (M, N, K): {mma_tiler}, Cluster Shape (M, N): {cluster_shape_mn}")
+    if fallback_cluster_shape_mn is not None:
+        print(f"Fallback Cluster Shape (M, N): {fallback_cluster_shape_mn}")
     print(
         "Mma Inst Shape (M, N, K): "
         f"{mma_inst_shape if mma_inst_shape is not None else mma_tiler}"
@@ -1342,10 +1555,9 @@ def run(
         use_cold_l2=use_cold_l2,
     )
     print(
-        f"TMA update mode: {tma_update_mode if tma_update_mode is not None else 'default(gmem)'}"
+        f"TMA update mode: {tma_update_mode if tma_update_mode is not None else 'default(smem)'}"
     )
 
-    ab_dtype = ab_dtype
     d_dtype = c_dtype
     d_major = c_major
 
@@ -1354,8 +1566,8 @@ def run(
             m,
             n,
             k,
-            ab_dtype,
-            ab_dtype,
+            a_dtype,
+            b_dtype,
             d_dtype,
             a_major,
             b_major,
@@ -1394,7 +1606,7 @@ def run(
         problem_sizes_mnkl_cute,
         problem_sizes_mnkl_torch,
     ) = create_tensors_for_grouped_gemm(
-        M_sizes, N_sizes, K_sizes, a_major, b_major, d_major, ab_dtype, d_dtype
+        M_sizes, N_sizes, K_sizes, a_major, b_major, d_major, a_dtype, b_dtype, d_dtype
     )
 
     a_major_mode = (
@@ -1415,9 +1627,17 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1]
     )
+    # Fallback occupancy sizes the persistent grid for a mixed launch (see
+    # max_active_preferred_clusters); only queried when a fallback is given.
+    if fallback_cluster_shape_mn is not None:
+        max_active_fallback_clusters = utils.HardwareInfo().get_max_active_clusters(
+            fallback_cluster_shape_mn[0] * fallback_cluster_shape_mn[1]
+        )
+    else:
+        max_active_fallback_clusters = None
     grouped_gemm = GroupedGemmKernel(
         mn_tiler=mma_tiler,
-        mma_dtype=(ab_dtype, acc_dtype),
+        mma_dtype=(a_dtype, b_dtype, acc_dtype),
         tmem_output_dtype=d_dtype,
         group_count=num_groups,
         a_major_mode=a_major_mode,
@@ -1426,13 +1646,15 @@ def run(
         epilogue_op=lambda x: x,
         use_2cta_instrs=use_2cta_instrs,
         cluster_shape_mn=cluster_shape_mn,
+        fallback_cluster_shape_mn=fallback_cluster_shape_mn,
+        max_active_fallback_clusters=max_active_fallback_clusters,
         max_active_clusters=max_active_clusters,
         tma_update_mode=tma_update_mode,
         mma_inst_shape=mma_inst_shape,
         arch=arch,
     )
 
-    compiled_grouped_gemm = cute_ext.compile(
+    compiled_grouped_gemm = cute.compile(
         grouped_gemm,
         a_tensor,
         b_tensor,
@@ -1483,8 +1705,10 @@ def run(
             compare(
                 As_torch_gpu[group_idx].cpu(),
                 Bs_torch_gpu[group_idx].cpu(),
+                D_cutes[group_idx],
                 Ds_torch_gpu[group_idx],
                 d_dtype,
+                d_major,
                 tolerance,
             )
         print("check reference: PASS")
@@ -1524,7 +1748,8 @@ def run(
             a_major,
             b_major,
             d_major,
-            ab_dtype,
+            a_dtype,
+            b_dtype,
             d_dtype,
         )
 
@@ -1721,7 +1946,22 @@ if __name__ == "__main__":
         ),
     )
     cli.add_cluster_shape_arg(parser)
+    cli.add_fallback_cluster_shape_arg(parser)
     cli.add_dtype_args(parser, ab=cutlass.Float32, c=cutlass.Float32)
+    # Per-operand overrides for a mixed-input GEMM; unset means "use --ab_dtype".
+    parser.add_argument(
+        "--a_dtype",
+        type=cutlass.dtype,
+        default=None,
+        help="A element type; defaults to --ab_dtype.",
+    )
+    parser.add_argument(
+        "--b_dtype",
+        type=cutlass.dtype,
+        default=None,
+        help="B element type; defaults to --ab_dtype. Only FP8 operands "
+        "(Float8E4M3FN / Float8E5M2) may differ from A.",
+    )
     cli.add_major_args(parser)
     cli.add_benchmark_args(parser, tolerance=1e-02)
     parser.add_argument(
@@ -1777,7 +2017,10 @@ if __name__ == "__main__":
         args.use_2cta_instrs,
         args.tma_update_mode,
         mma_inst_shape=args.mma_inst_shape,
+        fallback_cluster_shape_mn=args.fallback_cluster_shape_mn,
         arch=args.arch,
+        a_dtype=args.a_dtype,
+        b_dtype=args.b_dtype,
     )
 
     print(f"Execution time: {exec_time} microseconds per iteration")

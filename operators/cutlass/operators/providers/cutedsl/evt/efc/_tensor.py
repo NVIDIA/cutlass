@@ -56,7 +56,7 @@ from cutlass.cute.typing import Float32, Int32, Uint32
 """
 CUTLASS EFC Framework
 """
-from ._helpers import log
+from ._helpers import log, split_factor_of
 from ._phase import Phase
 
 if typing.TYPE_CHECKING:
@@ -80,6 +80,17 @@ _SUPPORTED_REDUCE_OPS = (
     cute.ReductionOp.MAX,
     cute.ReductionOp.MIN,
 )
+
+
+def is_valid_reduce_destination_dtype(dtype) -> bool:
+    """Whether ``dtype`` can serve as a reduce destination.
+
+    The fold and the cross-CTA atomics run in the destination's dtype,
+    whose lowerings are 32-bit only (see ``Tensor.reduce``).  Exported so
+    discovery-time gates (e.g. the operator API's ``EFCConverter``) share
+    the trace-time rule instead of restating it.
+    """
+    return dtype.width == 32
 
 
 @dsl_user_op
@@ -527,6 +538,23 @@ def _emit_axis_reduce_smem_flush(
     barrier.arrive_and_wait()
 
 
+def _ensure_split_not_read(attributes, name):
+    """Reject a tensor that is both read and stored from ``accum_split`` parts.
+
+    Reading a narrowed tensor is not supported: its register fragment and
+    subtile count come from a ``thr_mma.partition_C`` view, which
+    re-expands to the accumulator's shape, so the epilogue load warp
+    would drive more subtiles than the consumer waits for.  Called from
+    both ``Tensor.load`` and ``Tensor._record_split_provenance`` so the
+    diagnostic fires regardless of which call completes the conflict.
+    """
+    if attributes.is_read and attributes.accum_split_parts is not None:
+        raise ValueError(
+            f"Tensor '{name}' is read and stored from accum_split parts; "
+            f"reading a narrowed tensor is not supported."
+        )
+
+
 def _ensure_no_reduce_read_conflict(attributes, name):
     """Raise if the same destination is used as both a ``.load()``
     target and a ``.reduce()`` target inside one epilogue.
@@ -652,6 +680,10 @@ class Tensor:
         is_tensor: bool  # Tensor or scalar.
         is_read: bool = False  # This tensor is read.
         is_written: bool = False  # This tensor is written.
+        # Split factor of the accumulator parts this tensor is written
+        # from, or None when it spans the output's full N.  Stamped at
+        # ``ParameterAnalysis`` from the stored value's provenance.
+        accum_split_parts: int = None
         # The name of the tensor to be remapped.
         mapped_source: str = None
         # The remapping modes to define the new tensor in respect to the
@@ -670,14 +702,28 @@ class Tensor:
         # or asynchronous), applied when ``transport`` is not
         # ``Transport.TMA``.  Carries
         # the value the user passed to ``Tensor.load`` / ``Tensor.store``:
-        # ``None`` (the default) means "auto-derive in the kernel from
-        # the per-thread fragment's max-common-layout, capped at 256
-        # bits"; an explicit integer forces that exact width regardless
-        # of alignment.  The auto-derive path mirrors
-        # ``cutlass.utils.gemm.sm100.epilogue``, which has been the
-        # canonical no-TMA-store width-picking logic for a while --
-        # using the same formula keeps the direct paths consistent
-        # with the rest of the codebase.
+        # For the *synchronous* direct transports, ``None`` (the default)
+        # means "auto-derive in the kernel from the per-thread fragment's
+        # max-common-layout, capped at 256 bits"; an explicit integer
+        # forces that exact width regardless of alignment.  The auto-derive
+        # path mirrors ``cutlass.utils.gemm.sm100.epilogue``, which has been
+        # the canonical no-TMA-store width-picking logic for a while --
+        # using the same formula keeps the direct paths consistent with the
+        # rest of the codebase.
+        #
+        # ``ASYNC_GMEM_LOAD`` is different: its ``cp.async`` copy atom is
+        # built at JIT time, when the supplemental tensor is still
+        # *dynamically shaped* (one compiled kernel serves many problem
+        # sizes), so the contiguous extent is not statically known and the
+        # width cannot be auto-derived the way the in-kernel synchronous
+        # paths do.  ``None`` therefore defaults to 128 bits -- the
+        # ``cp.async`` per-thread maximum -- which is safe because a
+        # dynamic supplemental tensor is marked with a
+        # ``divisibility = align*8/width`` constraint (e.g. f16 at 16-byte
+        # alignment makes the contiguous extent a multiple of 128 bits), so
+        # 128-bit copies always divide it.  Pass an explicit
+        # ``num_bits_per_copy`` only for a *statically* shaped async tensor
+        # whose contiguous extent is narrower than 128 bits.
         num_bits_per_copy: int | None = None
         # Reduction operator, set by ``Tensor.reduce`` during
         # ``ParameterAnalysis``.  When ``None`` (the default), the
@@ -850,6 +896,9 @@ class Tensor:
                 # ordering, so a centralised helper keeps the
                 # invariant order-independent.
                 _ensure_no_reduce_read_conflict(self.attributes, self.name)
+                # A narrowed tensor cannot be read back; see
+                # ``_ensure_split_not_read``.
+                _ensure_split_not_read(self.attributes, self.name)
                 # Some value to have expression evaluation happy
                 return 1
 
@@ -911,6 +960,7 @@ class Tensor:
                 self._record_copy_options(via, num_bits_per_copy)
                 # Record that the tensor is written:
                 self.attributes.is_written = True
+                self._record_split_provenance(value)
 
             case Phase.ThreadOperation:
                 # Both paths surface a register fragment via
@@ -920,6 +970,7 @@ class Tensor:
                 # into it; for direct tensors, the per-subtile direct
                 # store fires after the body returns.
                 tRS_rD = self.configuration.epilogue_context.store[self.name]
+                self._check_store_fragment(value, tRS_rD)
                 tRS_rD.store(value.to(self.efc.jit.tensor_dtype[self.name]))
 
             case Phase.PyTorchEvaluation:
@@ -930,6 +981,59 @@ class Tensor:
                 raise NotImplementedError(
                     f"store({self.name}) not implemented for phase {self.phase}"
                 )
+
+    def _check_store_fragment(self, value, destination):
+        """Check that ``value`` fills this tensor's store fragment exactly.
+
+        The fragment's width follows from the narrowing recorded at
+        ``ParameterAnalysis``; the value's width is whatever the body
+        computed.  A mismatch means the recorded provenance does not
+        describe the body -- an ``accum_split`` part reaching the store
+        through a path that dropped its mark, say -- which would otherwise
+        store the wrong number of elements without complaint.
+
+        :raises ValueError: If the widths disagree.
+        """
+        expected = cute.size(destination.layout)
+        actual = cute.size(value.shape)
+        if actual != expected:
+            num_parts = self.attributes.accum_split_parts
+            raise ValueError(
+                f"Tensor '{self.name}' stores {actual} elements per thread but "
+                f"its fragment holds {expected}"
+                + (
+                    f", which is the width of an accum_split({num_parts}) part."
+                    if num_parts is not None
+                    else " (the accumulator's full width)."
+                )
+            )
+
+    def _record_split_provenance(self, value):
+        """Record the ``accum_split`` factor ``value`` was derived from.
+
+        :raises ValueError: If two stores to this tensor disagree.
+        """
+        num_parts = split_factor_of(value)
+        if num_parts is None:
+            return
+        previous = self.attributes.accum_split_parts
+        if previous is not None and previous != num_parts:
+            raise ValueError(
+                f"Tensor '{self.name}' is stored accum_split({previous}) parts "
+                f"and accum_split({num_parts}) parts."
+            )
+        self.attributes.accum_split_parts = num_parts
+        log(f"Tensor._record_split_provenance {self.name} -> {num_parts}")
+        _ensure_split_not_read(self.attributes, self.name)
+        # The direct transports drain the T2R-shaped fragment, whose
+        # thread->value map is the accumulator's own at full width; only
+        # the TMA path derives the narrowed store fragment.
+        if self.attributes.is_direct:
+            raise ValueError(
+                f"Tensor '{self.name}' is stored from accum_split parts "
+                f"via {self.attributes.transport.name}; a narrowed store "
+                f"is TMA-only."
+            )
 
     def reduce(self, value, *, op):
         """Reduce ``value`` (a tile-shaped expression) into this destination
@@ -991,6 +1095,19 @@ class Tensor:
                 # through the zero-stride destination view.  The split
                 # is decided in the ``ThreadOperation`` phase on
                 # ``degenerate_to_scalar``.
+                # A kept-axis destination is partitioned at the
+                # accumulator's width, which a split part does not fill;
+                # only the scalar (all-``:``) fold is width-agnostic.
+                if (
+                    split_factor_of(value) is not None
+                    and not self.attributes.degenerate_to_scalar
+                ):
+                    raise ValueError(
+                        f"Tensor.reduce() on '{self.name}' folds an "
+                        f"accum_split part onto kept axes; only the "
+                        f"scalar (all-':') destination supports a split "
+                        f"value."
+                    )
                 # Multiple reduce calls onto the same destination must
                 # agree on the operation: there is one atomic op type
                 # per destination address, not one per call site.
@@ -1019,6 +1136,20 @@ class Tensor:
                 # block runs at plain-Python time and cannot host that
                 # code directly.
                 ctx = self.configuration.epilogue_context
+                # Run the fold and the cross-CTA atomics in the destination's
+                # dtype: their lowerings exist only for 32-bit types, so convert
+                # the fragment once here and reject narrower destinations.
+                dest_dtype = ctx.reduce[self.name].element_type
+                if not is_valid_reduce_destination_dtype(dest_dtype):
+                    dest_name = self.attributes.mapped_source or self.name
+                    raise ValueError(
+                        f"Tensor.reduce() destination '{dest_name}' has "
+                        f"dtype {dest_dtype}; only 32-bit reduce "
+                        f"destinations are supported (the fold and the "
+                        f"cross-CTA atomic run in the destination dtype)."
+                    )
+                if value.dtype is not dest_dtype:
+                    value = value.to(dest_dtype)
                 if self.attributes.degenerate_to_scalar:
                     # Scalar destination: warpgroup-wide fold to one
                     # value, then a single cross-CTA atomic.  The

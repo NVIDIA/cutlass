@@ -11,7 +11,6 @@
 
 import os
 from typing import Any, List, Optional, Type, Union, Tuple, overload
-from typing_extensions import deprecated
 
 import cutlass
 from cutlass.cutlass_dsl import (
@@ -41,6 +40,9 @@ from cutlass.cute.nvgpu.common import CopyUniversalOp, OperandMajorMode
 from cutlass.cute.nvgpu.warp import StMatrix8x8x16bOp, StMatrix16x8x8bOp
 from cutlass.cute.nvgpu.tcgen05 import (
     MmaF16BF16Op,
+    MmaF16BF16SparseOp,
+    MmaFP8SparseOp,
+    MmaTF32SparseOp,
     MmaTF32Op,
     MmaI8Op,
     MmaF8F6F4Op,
@@ -72,6 +74,7 @@ from cutlass.cute.nvgpu.cpasync import (
 )
 from cutlass.tensor_utils import LayoutEnum
 from cutlass import testing
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 
 # Type alias for documentation clarity
 OperandSource = Tcgen05OperandSource
@@ -182,7 +185,6 @@ def check_gemm_tma_alignment(
 
 
 @dsl_user_op
-@deprecated("API is deprecated, use cutlass.memory.get_num_tmem_alloc_cols instead")
 def get_num_tmem_alloc_cols(
     tmem_tensors: Union[cute.Tensor, List[cute.Tensor]],
     rounding: bool = True,
@@ -190,6 +192,7 @@ def get_num_tmem_alloc_cols(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> int:
+    """Blackwell (sm_100) form of :func:`cutlass.memory.get_num_tmem_alloc_cols`."""
     return cutlass.memory.get_num_tmem_alloc_cols(
         tmem_tensors, rounding, arch="sm_100", loc=loc, ip=ip
     )
@@ -1139,7 +1142,7 @@ def make_trivial_tiled_mma(
 
 
 @overload
-@deprecated("use make_trivial_tiled_mma with separate a_dtype and b_dtype instead")
+@_deprecated("use make_trivial_tiled_mma with separate a_dtype and b_dtype instead")
 def make_trivial_tiled_mma(
     ab_dtype: Type[Numeric],
     a_leading_mode: OperandMajorMode,
@@ -1178,8 +1181,6 @@ def make_trivial_tiled_mma(
             ab_dtype, a_leading_mode, b_leading_mode,
             acc_dtype, cta_group, mma_tiler_mn, [a_source])
     """
-    import warnings
-
     new_params = (
         "a_dtype",
         "b_dtype",
@@ -1206,11 +1207,9 @@ def make_trivial_tiled_mma(
     bound.setdefault("a_source", OperandSource.SMEM)
 
     if not is_new_api:
-        warnings.warn(
+        _warn_deprecated(
             "make_trivial_tiled_mma with ab_dtype is deprecated, "
-            "use the overload with separate a_dtype and b_dtype instead",
-            DeprecationWarning,
-            stacklevel=2,
+            "use the overload with separate a_dtype and b_dtype instead"
         )
         a_dtype = bound["ab_dtype"]
         b_dtype = bound["ab_dtype"]
@@ -1312,7 +1311,7 @@ def make_blockscaled_trivial_tiled_mma(
 
 
 @overload
-@deprecated(
+@_deprecated(
     "use make_blockscaled_trivial_tiled_mma with separate a_dtype and b_dtype instead"
 )
 def make_blockscaled_trivial_tiled_mma(
@@ -1354,8 +1353,6 @@ def make_blockscaled_trivial_tiled_mma(
             ab_dtype, a_leading_mode, b_leading_mode,
             sf_dtype, sf_vec_size, cta_group, mma_tiler_mn, [a_source])
     """
-    import warnings
-
     new_params = (
         "a_dtype",
         "b_dtype",
@@ -1388,11 +1385,9 @@ def make_blockscaled_trivial_tiled_mma(
     bound.setdefault("a_source", OperandSource.SMEM)
 
     if not is_new_api:
-        warnings.warn(
+        _warn_deprecated(
             "make_blockscaled_trivial_tiled_mma with ab_dtype is deprecated, "
-            "use the overload with separate a_dtype and b_dtype instead",
-            DeprecationWarning,
-            stacklevel=2,
+            "use the overload with separate a_dtype and b_dtype instead"
         )
         a_dtype = bound["ab_dtype"]
         b_dtype = bound["ab_dtype"]
@@ -1797,6 +1792,195 @@ def sm120_get_smem_store_op(
 
 
 
+# Sparse utils
+def get_sparse_tensor_a_alignment(
+    a_raw_dtype: Type[Numeric],
+    is_k_major: bool,
+    sparsity: int = 2,
+) -> Tuple[int, int]:
+    """Calculate TensorAAlignmentM and TensorAAlignmentK for sparse tensor A.
+
+    :param a_raw_dtype: Element type of tensor A (e.g., Float16, Int8, TFloat32)
+    :type a_raw_dtype: Type[Numeric]
+    :param is_k_major: True for K-major (RowMajor), False for M-major (ColumnMajor)
+    :type is_k_major: bool
+    :param sparsity: Sparsity factor
+    :type sparsity: int
+
+    :return: (TensorAAlignmentM, TensorAAlignmentK) in logical elements
+    :rtype: Tuple[int, int]
+    """
+    dtype_bits = a_raw_dtype.width
+
+    # Determine LogicalElemsAPerChunk based on dtype
+    if dtype_bits == 4:  # F4
+        logical_elems_per_chunk = 8
+        is_f4_f6 = True  # Simplified - F4/F6 unpacked types
+    elif dtype_bits == 32:  # TF32/F32
+        logical_elems_per_chunk = 2
+        is_f4_f6 = False
+    else:  # F16/BF16/F8/I8 (16 or 8 bits)
+        logical_elems_per_chunk = 4
+        is_f4_f6 = False
+
+    # TensorAAlignmentK and TensorAAlignmentM calculation
+    if not is_k_major:  # M-major
+        # TensorAAlignmentK
+        alignment_k = logical_elems_per_chunk
+
+        # TensorAAlignmentM
+        if is_f4_f6:
+            alignment_m = 128
+        else:
+            alignment_m = 128 // dtype_bits
+    else:  # K-major
+        # TensorAAlignmentK
+        if is_f4_f6:
+            alignment_k = 128 * sparsity  # 128 * 2 = 256
+        else:
+            alignment_k = 128 // dtype_bits
+
+        # TensorAAlignmentM
+        alignment_m = 1  # No requirement
+
+    return (alignment_m, alignment_k)
+
+
+@dsl_user_op
+def make_sparse_gmem_layout_a(
+    problem_shape_mnkl: cute.Shape,
+    a_raw_dtype: Type[Numeric],
+    is_k_major: bool,
+    sparsity: int = 2,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Layout:
+    """Create GMEM layout for sparse tensor A.
+
+    :param problem_shape_mnkl: Problem shape (M, N, K, L)
+    :type problem_shape_mnkl: cute.Shape
+    :param a_raw_dtype: Element type of tensor A (needed for alignment calculation)
+    :type a_raw_dtype: Type[Numeric]
+    :param is_k_major: True for K-major (RowMajor), False for M-major (ColumnMajor)
+    :type is_k_major: bool
+    :param sparsity: Sparsity factor
+    :type sparsity: int
+
+    :return: GMEM layout for sparse compressed A tensor with proper alignment
+    :rtype: cute.Layout
+    """
+    assert isinstance(problem_shape_mnkl, tuple)
+    m, _, k, l = problem_shape_mnkl[:4]
+
+    alignment_m, alignment_k = get_sparse_tensor_a_alignment(
+        a_raw_dtype, is_k_major, sparsity
+    )
+
+    m_aligned = cute.round_up(m, alignment_m)
+    k_aligned = cute.round_up(k, alignment_k)
+
+    shape = (m_aligned, (sparsity, k_aligned // sparsity), l)  # type: ignore[operator]
+
+    batch_stride = m_aligned * k_aligned  # type: ignore[operator]
+
+    if is_k_major:
+        stride = (
+            k_aligned,  # Stride for M
+            (1, sparsity),  # Stride for (2, K/2): inner=1, outer=2
+            batch_stride,  # Stride for L
+        )
+    else:
+        stride = (  # type: ignore[assignment]
+            sparsity,  # Stride for M
+            (1, m_aligned * sparsity),  # Stride for (2, K/2): inner=1, outer=M*2
+            batch_stride,  # Stride for L
+        )
+
+    return cute.make_layout(shape, stride=stride, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def make_sparse_trivial_tiled_mma(
+    ab_dtype: Type[Numeric],
+    a_leading_mode: OperandMajorMode,
+    b_leading_mode: OperandMajorMode,
+    acc_dtype: Type[Numeric],
+    cta_group: CtaGroup,
+    mma_tiler_mn: Tuple[int, int],
+    sparse_metadata_format: SparseMetadataFormat = SparseMetadataFormat.TID,
+    a_source: OperandSource = OperandSource.SMEM,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.TiledMma:
+    """Make a sparse tiled MMA atom with given data type, leading dimension, cta group and mma tile shape.
+    By default, the MMA atom is created with SMEM operand source for A and TID sparse metadata format.
+
+    Supported data types:
+    - Float16/BFloat16 (instruction K=32)
+    - Float8E4M3FN/Float8E5M2 (instruction K=64) (instruction K=32)
+    - TFloat32 (instruction K=16)
+
+    :param ab_dtype: Data type of operands A and B.
+    :type ab_dtype: Type[Numeric]
+    :param a_leading_mode: Leading dimension of operand A (1 for K, 0 for M/N).
+    :type a_leading_mode: cute.nvgpu.OperandMajorMode
+    :param b_leading_mode: Leading dimension of operand B (1 for K, 0 for M/N).
+    :type b_leading_mode: cute.nvgpu.OperandMajorMode
+    :param acc_dtype: Data type of the accumulator.
+    :type acc_dtype: Type[Numeric]
+    :param cta_group: The CTA group to use.
+    :type cta_group: tcgen05.CtaGroup
+    :param mma_tiler_mn: The shape (M, N, K) of the MMA tiler.
+    :type mma_tiler_mn: Tuple[int, int]
+    :param sparse_metadata_format: Format for sparse metadata.
+    :type sparse_metadata_format: SparseMetadataFormat
+    :param a_source: The source of operand A (SMEM by default or TMEM).
+    :type a_source: cutlass.cute.nvgpu.tcgen05.OperandSource
+
+    :return: A tiled sparse MMA atom.
+    :rtype: cute.TiledMma
+
+    :raises TypeError: If the data type is not supported for sparse operations.
+    """
+
+    # Currently only Float16/BFloat16/Float8E4M3FN/Float8E5M2/TF32 sparse MMA is implemented
+    mma_op: Any
+    if ab_dtype in {Float16, BFloat16}:
+        mma_op = MmaF16BF16SparseOp(
+            ab_dtype=ab_dtype,
+            acc_dtype=acc_dtype,
+            instruction_shape=(*mma_tiler_mn, 32),
+            cta_group=cta_group,
+            a_src=a_source,
+            a_major_mode=a_leading_mode,
+            b_major_mode=b_leading_mode,
+            sparse_metadata_format=sparse_metadata_format,
+        )
+    elif ab_dtype in {Float8E4M3FN, Float8E5M2}:
+        mma_op = MmaFP8SparseOp(
+            ab_dtype=ab_dtype,
+            acc_dtype=acc_dtype,
+            instruction_shape=(*mma_tiler_mn, 64),
+            cta_group=cta_group,
+            a_src=a_source,
+            a_major_mode=a_leading_mode,
+            b_major_mode=b_leading_mode,
+            sparse_metadata_format=sparse_metadata_format,
+        )
+    else:
+        raise TypeError(
+            f"Sparse MMA not yet supported for ab_dtype={ab_dtype}. "
+            f"Currently only Float16/BFloat16/Float8E4M3FN/Float8E5M2/TFloat32 are supported."
+        )
+
+    return cute.make_tiled_mma(
+        cute.make_mma_atom(mma_op, loc=loc, ip=ip), loc=loc, ip=ip
+    )
+
+
+
 @dsl_user_op
 def make_sparse_a_dtype(
     a_raw_dtype: Type[Numeric],
@@ -2030,17 +2214,14 @@ def make_sparse_tmem_layout_e(
     M_MMA = cute.size(tmem_shape, mode=[0, 0])
     N_MMA = cute.size(tmem_shape, mode=[0, 1])
     # TMEM DP stride constant for byte-based addressing (1 << 21 = 2097152)
-    TMEM_DP_BYTES_STRIDE = 1 << 21
+    TMEM_DP_BIT_STRIDE = 1 << 21
 
     if M_MMA != 128:
         raise ValueError(f"Only M_MMA=128 is implemented, got {M_MMA}")
 
-    # TMEM restride layout for virtual tensor memory addressing
-    # DP_b is the DP stride constant from TMEM allocator
-    # For metadata, we use byte-based addressing
     tmem_restride = cute.make_layout(
         (128, 16384),
-        stride=(TMEM_DP_BYTES_STRIDE, 1),
+        stride=(TMEM_DP_BIT_STRIDE, 1),
         loc=loc,
         ip=ip,
     )
@@ -2066,7 +2247,7 @@ def make_sparse_tmem_layout_e(
 
         # Address transformations with upcast<2> for 2-bit base types
         tmem_layout = cute.composition(
-            cute.upcast(tmem_restride, 2, loc=loc, ip=ip),  # type: ignore[attr-defined]
+            cute.recast_layout(2, 1, tmem_restride, loc=loc, ip=ip),  # type: ignore[attr-defined]
             tmem_logical_layout,
             loc=loc,
             ip=ip,
@@ -2118,9 +2299,8 @@ def make_sparse_tmem_layout_e(
         if N_MMA != 128:
             raise ValueError(f"For F4, expected N_MMA=128, got {N_MMA}")
 
-        # F4 has different restride
         tmem_restride_f4 = cute.make_layout(
-            (128, 32768), stride=(TMEM_DP_BYTES_STRIDE, 1), loc=loc, ip=ip
+            (128, 32768), stride=(TMEM_DP_BIT_STRIDE * 2, 1), loc=loc, ip=ip
         )
 
         # F4 metadata atom layout
@@ -2727,7 +2907,7 @@ __all__ = [
     "cluster_shape_to_tma_atom_B",
     "cluster_shape_to_tma_atom_SFB",
     "get_permutation_mnk",
-    "get_num_tmem_alloc_cols",  # deprecated; use cutlass.memory.get_num_tmem_alloc_cols instead
+    "get_num_tmem_alloc_cols",
     "make_sparse_a_dtype",
     "make_sparse_e_dtype",
     "make_sparse_gmem_layout_a",
@@ -2735,6 +2915,7 @@ __all__ = [
     "make_sparse_smem_layout_a",
     "make_sparse_smem_layout_e",
     "make_sparse_tmem_layout_e",
+    "make_sparse_trivial_tiled_mma",
     "thrfrg_SFA",
     "thrfrg_SFB",
     "partition_fragment_SFA",

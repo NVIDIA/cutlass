@@ -37,7 +37,7 @@ import cutlass.operators as ops
 from cutlass.operators.utils.common import ceil_div
 from cutlass.operators.utils.dtype import torch_storage_packing_factor
 
-from .common import reference_device
+from test_utils.common import reference_device
 
 ################################################################################
 # Reference computation
@@ -89,9 +89,9 @@ def dense_gemm_reference(
             B_tensor = args.B.tensor.runtime_tensor
             assert isinstance(B_tensor, torch.Tensor)
             device = reference_device()
-            reference = A_tensor.to(device).to(torch.float32) @ B_tensor.to(device).to(
-                torch.float32
-            )
+            A = A_tensor.to(device=device, dtype=torch.float32)
+            B = B_tensor.to(device=device, dtype=torch.float32)
+            reference = A * B if A.shape[-1] == B.shape[-2] == 1 else A @ B
             if not ref_as_acc_dtype:
                 # pytorch and numpy, following the IEEE standard, converts to Inf or NaN
                 # but our kernels use satfinite. To make them the same output we have to
@@ -361,8 +361,9 @@ def scaled_dense_gemm_reference(
     acc_dtype = cutlass.torch.dtype(args.accumulator_type)
     out_dtype = cutlass.torch.dtype(args.out.dtype)
 
-    # Emulate when the scales are not torch tensors (SF dtypes with no torch
-    # storage, e.g. FloatNV8E5M3FNU), which torch._scaled_mm cannot take.
+    # Emulate when the scales are not torch tensors, which torch._scaled_mm
+    # cannot take.
+    # (SF dtypes with no torch storage, e.g. FloatNV8E5M3FNU.)
     #
     # This determines *how* reference is computed. reference_device() determines
     # *where* (on which device) reference is computed.
@@ -522,6 +523,32 @@ def make_random_pow2_scale(numel: int) -> torch.Tensor:
     lut = torch.tensor([1.0, 2.0, 4.0], device=device)
     idx = torch.randint(0, lut.numel(), (numel,), device=device)
     return lut[idx].to(torch.float8_e8m0fnu).cuda()
+
+
+def poison_mxfp8_scale_padding(
+    SF: torch.Tensor, outer: int, K: int, L: int | None = None
+) -> None:
+    """Set the padding of a ``Swizzle32x4x4`` MXFP8 scale buffer to E8M0 NaN.
+
+    The buffer is sized by :meth:`ScaledOperand.numel_scale`, i.e. to whole
+    128-row by 4-slot atoms; the bytes no ``(outer, K)`` position maps to are
+    set to ``0xFF`` in place, so a kernel that reads them produces NaN.
+
+    Args:
+        SF (torch.Tensor): Flat E8M0 scale buffer on the device.
+        outer (int): Rows of the scaled operand (M for A, N for B).
+        K (int): Reduction length of the scaled operand.
+        L (int | None): Batch count, ``None`` for a rank-2 operand.
+    """
+    valid = unpack_scale_factors(
+        torch.arange(SF.numel()), 32, outer, K, 1 if L is None else L
+    )
+    padding = torch.ones(SF.numel(), dtype=torch.bool)
+    padding[valid.flatten()] = False
+    flat = SF.view(torch.uint8).view(-1)
+    host = flat.cpu()
+    host[padding] = 0xFF
+    flat.copy_(host)
 
 
 # UNPACK_U8 FP6 metadata requires ptr_alignment_bytes =
@@ -710,3 +737,115 @@ def scaled_dense_gemm_reference_from_f32(
         reference = clamp_to_finite_range(reference, out_dtype).to(out_dtype)
 
     return reference
+
+
+def small_integer_gemm_inputs(
+    M: int,
+    N: int,
+    K: int,
+    L: int,
+    a_dtype: torch.dtype = torch.float8_e4m3fn,
+    b_dtype: torch.dtype = torch.float8_e4m3fn,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build GEMM inputs from small integers with an exact fp32 reference.
+
+    Values in {-1, 0, 1} are exact in any 8-bit or wider dtype, and their
+    fp32 accumulation is order-independent, so references are bit-exact. The
+    reference tensors live on ``reference_device()``; A and B move to the GPU
+    for the operator.
+
+    Args:
+        M (int): Rows of A and of the output.
+        N (int): Columns of B and of the output.
+        K (int): Reduction length.
+        L (int): Batch size.
+        a_dtype (torch.dtype): GPU dtype of A.
+        b_dtype (torch.dtype): GPU dtype of B.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+            ``(A, B, A_ref, B_ref)`` with A/B on the GPU in ``a_dtype`` and
+            ``b_dtype`` and the references in fp32.
+    """
+    device = reference_device()
+    A_ref = torch.randint(-1, 2, (L, M, K), device=device, dtype=torch.float32)
+    B_ref = torch.randint(-1, 2, (L, K, N), device=device, dtype=torch.float32)
+    A = A_ref.to(a_dtype).cuda()
+    B = B_ref.to(b_dtype).cuda()
+    return A, B, A_ref, B_ref
+
+
+def mxfp8_integer_inputs(
+    M: int,
+    N: int,
+    K: int,
+    L: int | None = None,
+    a_dtype: torch.dtype = torch.float8_e4m3fn,
+    b_dtype: torch.dtype = torch.float8_e4m3fn,
+    mn_major: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build MXFP8 GEMM inputs that are bit-exact in fp32.
+
+    Quantized values in {-1, 0, 1} and power-of-two E8M0 scales keep every
+    product and partial sum an exact integer, so the fp32 accumulation is
+    order-independent.  A is ``(M, K)`` (``(L, M, K)`` when ``L`` is given) and
+    B is a K-major ``(K, N)`` view (``(L, K, N)``); with ``mn_major`` A is an
+    M-major view and B is N-major (contiguous ``(K, N)``) instead.  SFA/SFB are
+    flat E8M0 buffers in the ``Swizzle32x4x4`` layout for
+    ``ScaleMode.Blockwise1x32``, sized by :meth:`ScaledOperand.numel_scale`.
+    Wrap them with :func:`mxfp8_scaled_operands`.
+    """
+    batch = () if L is None else (L,)
+    if mn_major:
+        A = torch.randint(-1, 2, (*batch, K, M), device="cuda").to(a_dtype)
+        A = A.transpose(-1, -2)
+        B = torch.randint(-1, 2, (*batch, K, N), device="cuda").to(b_dtype)
+    else:
+        A = torch.randint(-1, 2, (*batch, M, K), device="cuda").to(a_dtype)
+        B = torch.randint(-1, 2, (*batch, N, K), device="cuda").to(b_dtype)
+        B = B.transpose(-1, -2)
+    mode, swizzle = ops.ScaleMode.Blockwise1x32, ops.ScaleSwizzleMode.Swizzle32x4x4
+    sf_l = 1 if L is None else L
+    SFA = make_random_pow2_scale(
+        ops.ScaledOperand.numel_scale((sf_l, M, K), mode, swizzle)
+    )
+    SFB = make_random_pow2_scale(
+        ops.ScaledOperand.numel_scale((sf_l, N, K), mode, swizzle)
+    )
+    return A, B, SFA, SFB
+
+
+def mxfp8_scaled_operands(
+    A: torch.Tensor, B: torch.Tensor, SFA: torch.Tensor, SFB: torch.Tensor
+) -> tuple[ops.ScaledOperand, ops.ScaledOperand]:
+    """Fresh MXFP8 ``ScaledOperand`` pairs for ``GemmArguments`` (one pair per
+    ``GemmArguments``: argument construction wraps the operand's tensors)."""
+    mode, swizzle = ops.ScaleMode.Blockwise1x32, ops.ScaleSwizzleMode.Swizzle32x4x4
+    return (
+        ops.ScaledOperand(A, SFA, mode, swizzle),
+        ops.ScaledOperand(B, SFB, mode, swizzle),
+    )
+
+
+def mxfp8_reference(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    SFA: torch.Tensor,
+    SFB: torch.Tensor,
+    out_dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """fp32 reference of the MXFP8 GEMM ``scale * A @ scale * B`` for inputs
+    from :func:`mxfp8_integer_inputs`, in the rank of ``A`` (``(M, N)`` or
+    ``(L, M, N)``).  Rank-2 inputs are viewed as a batch of one for
+    :func:`scaled_dense_gemm_reference`, which takes rank-3 operands.
+    """
+    batched = A.dim() == 3
+    A3, B3 = (A, B) if batched else (A.unsqueeze(0), B.unsqueeze(0))
+    L, M, N = A3.shape[0], A3.shape[1], B3.shape[2]
+    reference_args = ops.GemmArguments(
+        *mxfp8_scaled_operands(A3, B3, SFA, SFB),
+        out=torch.empty((L, M, N), device=A.device, dtype=out_dtype),
+        accumulator_type=torch.float32,
+    )
+    reference = scaled_dense_gemm_reference(reference_args, ref_as_acc_dtype=True)
+    return reference if batched else reference.reshape(M, N)

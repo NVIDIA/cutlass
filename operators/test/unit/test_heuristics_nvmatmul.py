@@ -48,7 +48,9 @@ from cutlass.operators.heuristics.nvmatmul._mapping import (
     NvmmhQuery,
     _config_matches_design,
     _tile_k_penalty,
+    build_precision_string,
     match_operators_to_configs,
+    numeric_to_precision_letter,
 )
 from cutlass.operators.heuristics.nvmatmul.ranker import _version_tuple
 from cutlass.operators.metadata import Sm100DesignMetadata
@@ -121,25 +123,126 @@ class TestConfigMatchesDesign:
 
 
 class TestNvmmhQueryFromArgs:
-    """``NvmmhQuery.from_args`` must reject non-dense operands early."""
+    """``NvmmhQuery.from_args`` accepts dense/block-scaled A, B and dense-only out."""
 
-    def test_rejects_scaled_operand(self):
+    def test_accepts_scaled_operand_for_a_and_b(self):
         torch = pytest.importorskip("torch")
-        m, n, k = 64, 64, 32
+        m, n, k = 64, 64, 64
         a = ops.ScaledOperand(
-            torch.empty((m, k), dtype=torch.float16),
-            torch.empty((m, k // 32), dtype=torch.float16),
+            torch.empty((m, k // 2), dtype=torch.float4_e2m1fn_x2),
+            torch.empty((m, k // 32), dtype=torch.float8_e8m0fnu),
+            ops.ScaleMode.Blockwise1x32,
+            ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        b = ops.ScaledOperand(
+            # (N, K // 2) transposed, not (K // 2, N): packing unwraps
+            # whichever axis is physically contiguous.
+            torch.empty((n, k // 2), dtype=torch.float4_e2m1fn_x2).transpose(0, 1),
+            torch.empty((n, k // 32), dtype=torch.float8_e8m0fnu),
             ops.ScaleMode.Blockwise1x32,
             ops.ScaleSwizzleMode.SwizzleNone,
         )
         args = ops.GemmArguments(
             A=a,
-            B=torch.empty((k, n), dtype=torch.float16),
+            B=b,
             out=torch.empty((m, n), dtype=torch.float16),
             accumulator_type=torch.float32,
         )
-        with pytest.raises(TypeError, match="dense GEMM only"):
+        query = NvmmhQuery.from_args(args)
+        assert query.m == m
+        assert query.n == n
+        assert query.k == k
+        assert query.precision == "OOHSH"
+
+    def test_accepts_scaled_operand_for_out(self):
+        """No registered operator produces a block-scaled ``out`` today, but
+        the query itself only reads dtype/shape/stride, so it must not
+        hard-reject one -- a future operator shouldn't need a change here."""
+        torch = pytest.importorskip("torch")
+        m, n, k = 64, 64, 32
+        out = ops.ScaledOperand(
+            torch.empty((m, n), dtype=torch.float8_e4m3fn),
+            torch.empty((m, n // 32), dtype=torch.float8_e8m0fnu),
+            ops.ScaleMode.Blockwise1x32,
+            ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        args = ops.GemmArguments(
+            A=torch.empty((m, k), dtype=torch.float16),
+            B=torch.empty((k, n), dtype=torch.float16),
+            out=out,
+            accumulator_type=torch.float32,
+        )
+        query = NvmmhQuery.from_args(args)
+        assert query.m == m
+        assert query.n == n
+
+    def test_rejects_dtype_without_precision_letter(self):
+        """A dtype nvMMH has no letter for fails with an actionable ValueError,
+        not a bare KeyError. Int16 stands in for FP6, which torch
+        cannot allocate on CPU."""
+        torch = pytest.importorskip("torch")
+        m, n, k = 64, 64, 32
+        args = ops.GemmArguments(
+            A=torch.empty((m, k), dtype=torch.int16),
+            B=torch.empty((k, n), dtype=torch.int16),
+            out=torch.empty((m, n), dtype=torch.int32),
+            accumulator_type=torch.int32,
+        )
+        with pytest.raises(ValueError, match="does not support data type Int16"):
             NvmmhQuery.from_args(args)
+
+
+class TestPrecisionMapping:
+    """Direct tests for the precision-letter map and string builder."""
+
+    def test_fp4_letter(self):
+        import cutlass
+
+        assert numeric_to_precision_letter(cutlass.Float4E2M1FN) == "O"
+
+    def test_fp4_uses_long_form(self):
+        import cutlass
+
+        result = build_precision_string(
+            cutlass.Float4E2M1FN,
+            cutlass.Float4E2M1FN,
+            cutlass.Float32,
+            cutlass.Float16,
+            cutlass.Float16,
+        )
+        assert result == "OOHSH"
+
+    def test_fp8_e5m2_as_a_uses_long_form(self):
+        import cutlass
+
+        result = build_precision_string(
+            cutlass.Float8E5M2,
+            cutlass.Float8E4M3FN,
+            cutlass.Float32,
+            cutlass.Float16,
+            cutlass.Float16,
+        )
+        assert result == "RQHSH"
+
+    @pytest.mark.parametrize("fp6_name", ["Float6E3M2FN", "Float6E2M3FN"])
+    def test_fp6_has_no_letter(self, fp6_name):
+        import cutlass
+
+        with pytest.raises(ValueError, match=f"does not support data type {fp6_name}"):
+            numeric_to_precision_letter(getattr(cutlass, fp6_name))
+
+    @pytest.mark.parametrize("fp6_as_a", [True, False])
+    def test_mixed_fp8_fp6_raises(self, fp6_as_a):
+        """MXFP8 x MXFP6 is a supported SM100 block-scaled pair, but nvMMH
+        cannot express it in either operand order."""
+        import cutlass
+
+        fp8, fp6 = cutlass.Float8E4M3FN, cutlass.Float6E3M2FN
+        a, b = (fp6, fp8) if fp6_as_a else (fp8, fp6)
+        with pytest.raises(ValueError, match="does not support data type Float6E3M2FN"):
+            build_precision_string(
+                a, b, cutlass.Float32, cutlass.BFloat16, cutlass.BFloat16
+            )
 
 
 class TestTileKPenalty:

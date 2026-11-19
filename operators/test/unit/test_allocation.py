@@ -49,6 +49,7 @@ from test_utils.allocation import (
     RandomIntInitializationMode,
     _pool_seed,
 )
+from test_utils.common import get_cuda_device_id
 
 # Large enough that the aliasing signature (~K/2) and the legitimate
 # random-walk spread (~0.5*sqrt(K)) are orders of magnitude apart.
@@ -270,3 +271,45 @@ def test_host_generated_fill_holds_the_same_data_as_a_host_pool():
         )
 
     assert torch.equal(on_device.cpu().to(torch.float32), on_host.to(torch.float32))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+def test_pool_binds_a_device_index_rather_than_a_bare_cuda():
+    """The pool names the GPU it allocates on."""
+    pool = MemPool(device="cuda")
+
+    assert isinstance(pool.device, torch.device)
+    assert pool.device.index is not None, "pool device is still index-free"
+    assert pool.device.index == get_cuda_device_id()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+def test_pool_keeps_every_operand_on_one_device_when_current_moves():
+    """Operands requested either side of a device switch stay together."""
+    shape, stride = (1, M, K), (M * K, K, 1)
+    init = RandomIntInitializationMode.from_dtypes(cutlass.Float8E5M2, cutlass.BFloat16)
+    pool = MemPool(device="cuda")
+
+    a = pool.get(cutlass.Float8E5M2, shape, stride, init, None, name="A")
+    moved = (torch.cuda.current_device() + 1) % torch.cuda.device_count()
+    with mock.patch.object(torch.cuda, "current_device", return_value=moved):
+        b = pool.get(cutlass.Float8E5M2, shape, stride, init, None, name="B")
+
+    assert a.device == b.device == pool.device
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+def test_session_pins_one_cuda_device():
+    """The session runs on the device the resolver names."""
+    if torch.cuda.device_count() <= 1:
+        pytest.skip("single-GPU host: there is no device to choose between")
+    assert torch.cuda.current_device() == get_cuda_device_id()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+def test_pool_honours_an_explicit_device_id():
+    """An explicit ``device_id`` wins over the session default."""
+    explicit = torch.cuda.device_count() - 1
+    pool = MemPool(device="cuda", device_id=explicit)
+
+    assert pool.device == torch.device("cuda", explicit)

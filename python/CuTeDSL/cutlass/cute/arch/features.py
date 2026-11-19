@@ -12,3 +12,13 @@
 from cutlass import base_dsl
 
 
+
+def supports_report_valid(arch: base_dsl.Arch) -> bool:
+    res = arch.is_family_of(base_dsl.Arch.sm_107f)
+    return res
+
+
+
+def supports_pzo_convert(arch: base_dsl.Arch) -> bool:
+    res = arch.is_family_of(base_dsl.Arch.sm_107f)
+    return res

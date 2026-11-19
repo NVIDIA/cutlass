@@ -81,6 +81,11 @@ void initialize_block_scaled_gemm_reference_operations_fp4a_vs16(Manifest &manif
 
   make_block_scaled_gemm_tn<
     float_e2m1_t /*A*/, float_ue4m3_t /*SFA*/, float_e2m1_t /*B*/, float_ue4m3_t /*SFB*/,
+    half_t /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, half_t /*D*/, 16 /*SFVecSize*/
+  >(manifest);
+
+  make_block_scaled_gemm_tn<
+    float_e2m1_t /*A*/, float_ue4m3_t /*SFA*/, float_e2m1_t /*B*/, float_ue4m3_t /*SFB*/,
     half_t /*C*/, float /*Compute*/, float_ue8m0_t /*SFD*/, float /*Accum*/, float_e2m1_t /*D*/, 16 /*SFVecSize*/,
     32 /*EpilogueSFVecSize*/
   >(manifest);
@@ -122,6 +127,17 @@ void initialize_block_scaled_gemm_reference_operations_fp4a_vs16(Manifest &manif
     float_e2m1_t /*A*/, float_ue8m0_t /*SFA*/, float_e2m1_t /*B*/, float_ue8m0_t /*SFB*/,
     void /*C*/, float /*Compute*/, float_ue8m0_t /*SFD*/, float /*Accum*/, float_e2m1_t /*D*/, 16 /*SFVecSize*/,
     32 /*EpilogueSFVecSize*/
+  >(manifest);
+
+  make_block_scaled_gemm_tn<
+    float_e2m1_t /*A*/, float_ue8m0_t /*SFA*/, float_e2m1_t /*B*/, float_ue8m0_t /*SFB*/,
+    half_t /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, half_t /*D*/, 16 /*SFVecSize*/
+  >(manifest);
+
+  // (float_e2m1_t * float_ue5m3_t) * (float_e2m1_t * float_ue5m3_t)
+  make_block_scaled_gemm_tn<
+    float_e2m1_t /*A*/, float_ue5m3_t /*SFA*/, float_e2m1_t /*B*/, float_ue5m3_t /*SFB*/,
+    half_t /*C*/, float /*Compute*/, void /*SFD*/, float /*Accum*/, half_t /*D*/, 16 /*SFVecSize*/
   >(manifest);
 
 }

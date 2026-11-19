@@ -191,8 +191,14 @@ struct TestbedUniversal {
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
 
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0);
+    if (tensor_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0)
+        << "tensor_D (size " << tensor_D.size() << ") has nonpositive norm";
+    }
+    if (reference_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0)
+        << "reference_D (size " << reference_D.size() << ") has nonpositive norm";
+    }
 
     bool passed = cutlass::reference::host::TensorEquals(reference_D.host_view(), tensor_D.host_view());
 

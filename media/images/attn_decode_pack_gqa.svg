@@ -1,0 +1,115 @@
+<svg width="1200" height="500" viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="52%" cy="52%" r="78%">
+      <stop offset="0%" stop-color="#f2f2f2"/>
+      <stop offset="72%" stop-color="#fbfbfb"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </radialGradient>
+
+    <linearGradient id="seq0Fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd8b8" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ffd8b8" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="seq1Fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#b8d8f0" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#b8d8f0" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="seq2Fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c8e8c8" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#c8e8c8" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="seq3Fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d8c8e8" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#d8c8e8" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="otherFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#dddddd" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#dddddd" stop-opacity="0.55"/>
+    </linearGradient>
+
+    <filter id="shadow" x="-12%" y="-12%" width="130%" height="140%">
+      <feDropShadow dx="3" dy="6" stdDeviation="4" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <style>
+      svg { font-family: "DejaVu Sans", Arial, sans-serif; }
+      .figure-title { font: 700 23px Arial, sans-serif; fill: #1f2933; text-anchor: middle; }
+      .panel-title { font: 700 21px Arial, sans-serif; fill: #1f2933; text-anchor: middle; }
+      .panel-sub { font: 500 16px Arial, sans-serif; fill: #5f6b76; text-anchor: middle; }
+      .row-label { font: 600 16px Arial, sans-serif; fill: #1f2933; text-anchor: middle; dominant-baseline: middle; }
+      .dots { font: 700 21px Arial, sans-serif; fill: #9aa3ad; text-anchor: middle; }
+      .caption-note { font: italic 500 15px Arial, sans-serif; fill: #5f6b76; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="500" fill="url(#bg)"/>
+
+  <text class="figure-title" x="600" y="34">Pack GQA's row layout</text>
+
+  <g transform="translate(100 70)">
+    <text class="panel-title" x="200" y="0">Standard layout</text>
+    <text class="panel-sub" x="200" y="22">each row = one sequence position</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="50" width="320" height="40" rx="8" fill="url(#seq0Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="70">row 0: seq 0</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="100" width="320" height="40" rx="8" fill="url(#seq1Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="120">row 1: seq 1</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="150" width="320" height="40" rx="8" fill="url(#seq2Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="170">row 2: seq 2</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="200" width="320" height="40" rx="8" fill="url(#seq3Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="220">row 3: seq 3</text>
+
+    <text class="dots" x="200" y="265">⋮</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="285" width="320" height="40" rx="8" fill="url(#otherFill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="305">row 127: seq 127</text>
+  </g>
+
+  <g transform="translate(700 70)">
+    <text class="panel-title" x="200" y="0">Pack GQA layout</text>
+    <text class="panel-sub" x="200" y="22">each row = (sequence, head) pair</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="50" width="320" height="40" rx="8" fill="url(#seq0Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="70">row 0: seq 0, head 0</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="100" width="320" height="40" rx="8" fill="url(#seq0Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="120">row 1: seq 0, head 1</text>
+
+    <text class="dots" x="200" y="165">⋮</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="185" width="320" height="40" rx="8" fill="url(#seq0Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="205">row gs−1: seq 0, head gs−1</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="235" width="320" height="40" rx="8" fill="url(#seq1Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="255">row gs: seq 1, head 0</text>
+
+    <g filter="url(#shadow)">
+      <rect x="40" y="285" width="320" height="40" rx="8" fill="url(#seq1Fill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="row-label" x="200" y="305">row gs+1: seq 1, head 1</text>
+
+    <text class="dots" x="200" y="350">⋮</text>
+  </g>
+
+  <text class="caption-note" x="600" y="465">Pack GQA packs the group_size query heads that share one KV head into the same Q tile along M.</text>
+</svg>

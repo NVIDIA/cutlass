@@ -129,12 +129,11 @@ def is_available() -> bool:
 class NvMatmulHeuristics(Heuristic):
     """Rank Operators using NVIDIA's nvMatmulHeuristics analytical model.
 
-    Currently supports only SM100 non-blockscaled dense GEMM (:class:`~cutlass.operators.GemmArguments`).
+    Currently supports only SM100 dense and block-scaled GEMM (:class:`~cutlass.operators.GemmArguments`).
 
     Queries nvMMH for recommended configs, ranks Operators that match the recommended
     configs, and prunes away Operators that do not match any recommended config or that
-    were designed for a different compute capability than the GPU selected by
-    ``gpu``.
+    do not exactly match the GPU modeled in `self.gpu`.
 
     Missing optional dependencies raise :class:`ImportError`. Non-GEMM
     ``args`` raise :class:`TypeError`.
@@ -201,9 +200,11 @@ class NvMatmulHeuristics(Heuristic):
                 not silently ignored.
             TypeError: If ``operators`` is non-empty and ``args`` is not a
                 :class:`~cutlass.operators.GemmArguments`, or if operands are
-                not dense (:class:`~cutlass.operators.DenseTensor`).
+                not :class:`~cutlass.operators.DenseTensor` or
+                :class:`~cutlass.operators.ScaledOperand`.
             ValueError: If ``operators`` is non-empty and no candidate
-                matches any heuristic config.
+                matches any heuristic config, or ``args`` uses a data type
+                nvMMH does not support (e.g. FP6).
         """
         del target_sm
         if not operators:

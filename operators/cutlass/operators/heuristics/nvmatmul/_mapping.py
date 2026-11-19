@@ -39,6 +39,10 @@ Resulting operators are limited to those native to the GPU SKU requested
 (designed_for_min_cc==modeled_cc) that also match a configuration
 recommended by the heuristic. All other Operators are excluded from the
 results.
+
+Scope: SM100 dense and block-scaled GEMM args (``DenseTensor``/``ScaledOperand``
+for A, B, out); other Operand kinds are rejected by ``NvmmhQuery.from_args``
+before ranking is ever attempted.
 """
 
 from __future__ import annotations
@@ -46,7 +50,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cutlass.operators.arguments.operand import DenseTensor
+from cutlass.operators.arguments.operand import DenseTensor, ScaledOperand
 from cutlass.operators.utils.tensor import normalized_major_stride
 
 if TYPE_CHECKING:
@@ -90,13 +94,17 @@ class NvmmhQuery:
 
     @classmethod
     def from_args(cls, args: GemmArguments) -> NvmmhQuery:
-        """Build a query from dense-GEMM :class:`~cutlass.operators.GemmArguments`.
+        """Build a query from dense or block-scaled :class:`~cutlass.operators.GemmArguments`.
 
-        Only plain :class:`~cutlass.operators.DenseTensor` operands are
-        supported. Block-scaled / sparse / indexed operands (e.g.
-        :class:`~cutlass.operators.ScaledOperand`) forward ``dtype`` /
-        ``shape`` / ``stride`` to an underlying dense tensor, so without an
-        explicit check they would be silently treated as dense GEMM.
+        ``A``, ``B``, and ``out`` may each independently be a plain
+        :class:`~cutlass.operators.DenseTensor` or a
+        :class:`~cutlass.operators.ScaledOperand` (block-scaled) operand --
+        the query only ever reads ``.dtype``/``.shape``/``.stride``, which
+        both operand kinds expose identically, so no registered block-scaled
+        ``out`` operator is required for this to work once one exists. Other
+        operand kinds (e.g. sparse / indexed) are rejected explicitly rather
+        than silently treated as dense GEMM, since they also forward those
+        same attributes to an underlying dense tensor.
 
         Args:
             args (GemmArguments): The runtime GEMM arguments to rank for.
@@ -105,18 +113,20 @@ class NvmmhQuery:
             NvmmhQuery: The resolved query for :meth:`MatmulHeuristics.get_configs`.
 
         Raises:
-            KeyError: If an operand dtype has no precision-letter mapping.
             TypeError: If ``A``, ``B``, or ``out`` is not a
-                :class:`~cutlass.operators.DenseTensor`.
-            ValueError: If an operand is not a plain row-/column-major dense
-                tensor.
+                :class:`~cutlass.operators.DenseTensor` or
+                :class:`~cutlass.operators.ScaledOperand`.
+            ValueError: If nvMMH does not support an operand data type
+                (e.g. FP6), or an operand is not a plain row-/column-major
+                dense tensor.
         """
         for name, operand in (("A", args.A), ("B", args.B), ("out", args.out)):
-            if not isinstance(operand, DenseTensor):
+            if not isinstance(operand, (DenseTensor, ScaledOperand)):
                 raise TypeError(
-                    "nvmatmul heuristic supports dense GEMM only "
-                    f"(DenseTensor operands); got {type(operand).__name__} "
-                    f"for {name}. Omit heuristic= for non-dense args."
+                    "nvmatmul heuristic supports dense and block-scaled GEMM "
+                    "only (DenseTensor / ScaledOperand); got "
+                    f"{type(operand).__name__} for {name}. Omit heuristic= "
+                    "for unsupported args."
                 )
 
         problem = args.problem_size
@@ -166,12 +176,15 @@ def numeric_to_precision_letter(numeric: type[Numeric]) -> str:
         str: A single precision letter (``'H'``, ``'S'``, ``'Q'``, ...).
 
     Raises:
-        KeyError: If ``numeric`` has no known precision-letter counterpart.
+        ValueError: If ``numeric`` has no nvMMH precision letter, so nvMMH
+            cannot rank problems using it.
     """
     import cutlass
 
-    # Only the dtypes the SM100 dense GEMM operator can produce are mapped; any
-    # other dtype raises KeyError rather than guessing a precision letter.
+    # Only the dtypes nvMMH defines a precision letter for are mapped; any other
+    # dtype raises ValueError rather than guessing a precision letter. FP6
+    # (Float6E3M2FN / Float6E2M3FN) has no letter in nvMMH 0.1.0.27 even though
+    # SM100 block-scaled operators support MXFP8 x MXFP6.
     numeric_to_letter = {
         cutlass.Float64: "D",
         cutlass.Float32: "S",
@@ -179,6 +192,7 @@ def numeric_to_precision_letter(numeric: type[Numeric]) -> str:
         cutlass.BFloat16: "T",
         cutlass.Float8E4M3FN: "Q",
         cutlass.Float8E5M2: "R",
+        cutlass.Float4E2M1FN: "O",
         cutlass.Int32: "I",
         cutlass.Int8: "B",
         cutlass.Uint8: "B",
@@ -186,7 +200,12 @@ def numeric_to_precision_letter(numeric: type[Numeric]) -> str:
     try:
         return numeric_to_letter[numeric]
     except KeyError:
-        raise KeyError(f"No nvMMH precision letter mapping for {numeric!r}") from None
+        name = getattr(numeric, "__name__", repr(numeric))
+        raise ValueError(
+            f"nvMatmulHeuristics does not support data type {name}, so the "
+            "nvmatmul heuristic cannot rank this problem. Omit heuristic= to "
+            "get the unranked Operators."
+        ) from None
 
 
 def build_precision_string(
@@ -198,11 +217,12 @@ def build_precision_string(
 ) -> str:
     """Build the nvMMH precision string for ``(A, B, acc, C, D)``.
 
-    Non-FP8 A uses the short form ``A + acc + D``. FP8 A (``'Q'``) uses the
-    longer form ``A + B + C + acc + D``.
+    Non-narrow-precision A uses the short form ``A + acc + D``. FP8/FP4 A
+    (``'Q'``, ``'R'``, ``'O'``) uses the longer form ``A + B + C + acc + D``.
     """
     a_letter = numeric_to_precision_letter(a)
-    if a_letter.lower() != "q":
+    long_form_letters = {"q", "r", "o"}
+    if a_letter.lower() not in long_form_letters:
         return (
             a_letter + numeric_to_precision_letter(acc) + numeric_to_precision_letter(d)
         )

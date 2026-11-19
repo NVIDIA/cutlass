@@ -36,9 +36,9 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
-#include "cutlass/floating_point_nvrtc.h"
-#else
+#include "cutlass/detail/fp_category.h"
+
+#if !defined(__CUDACC_RTC__)
 #include <cmath>
 #include <limits>
 #include <cstdint>
@@ -265,26 +265,26 @@ bool isnormal(cutlass::bfloat16_t const& h) {
 }
 
 CUTLASS_HOST_DEVICE
-int fpclassify(cutlass::bfloat16_t const& h) {
+fp_category fpclassify(cutlass::bfloat16_t const& h) {
   int exp = h.exponent_biased();
   int mantissa = h.mantissa();
   if (exp == 0x0ff) {
     if (mantissa) {
-      return FP_NAN;
+      return fp_category::nan;
     }
     else {
-      return FP_INFINITE;
+      return fp_category::infinite;
     }
   }
   else if (!exp) {
     if (mantissa) {
-      return FP_SUBNORMAL;
+      return fp_category::subnormal;
     }
     else {
-      return FP_ZERO;
+      return fp_category::zero;
     }
   }
-  return FP_NORMAL;
+  return fp_category::normal;
 }
 
 CUTLASS_HOST_DEVICE

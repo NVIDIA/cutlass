@@ -59,7 +59,10 @@ class _PreprocessModeState:
         self._apply(
             enable_pyir=True,
             auto_m2s=True,
-            preprocessor=PyIRDSLPreprocessor(self._dsl.package_name),
+            preprocessor=PyIRDSLPreprocessor(
+                self._dsl.package_name,
+                warnings_ignore=self._dsl.envar.warnings_ignore,
+            ),
         )
 
     def pop(self) -> None:

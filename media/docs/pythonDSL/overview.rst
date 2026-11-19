@@ -32,8 +32,9 @@ The CUTLASS Python documentation is organized around:
   Utilities.
 
 
-- :doc:`limitations`, :doc:`deprecation`, and :doc:`faqs` for support boundaries,
-  compatibility policy, and common questions.
+- :doc:`limitations`, :doc:`deprecation`, :doc:`known_issues`, and :doc:`faqs`
+  for support boundaries, compatibility policy, known issues, and common
+  questions.
 
 Why CUTLASS Python?
 ============================
@@ -174,8 +175,9 @@ Use this path when learning CUTLASS Python:
   Utilities.
 
 
-- Check :doc:`limitations`, :doc:`deprecation`, and :doc:`faqs` for support
-  boundaries, compatibility policy, common questions, and known issues.
+- Check :doc:`limitations`, :doc:`deprecation`, :doc:`known_issues`, and
+  :doc:`faqs` for support boundaries, compatibility policy, known issues, and
+  common questions.
 
 Current Status
 =================================
@@ -183,7 +185,7 @@ Current Status
 CUTLASS Python is actively evolving with the CUTLASS 4.x releases. Interfaces
 that are experimental or subject to change are documented through the
 :doc:`deprecation` policy, API reference, and limitations pages. For known issues
-and workarounds, consult :doc:`limitations` and :doc:`faqs`.
+and workarounds, consult :doc:`known_issues`, :doc:`limitations`, and :doc:`faqs`.
 
 Community & Feedback
 ==================================

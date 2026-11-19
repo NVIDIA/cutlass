@@ -731,7 +731,7 @@ public:
     auto [M, N, K] = args.tile_shape_mnk;
     auto thr_mma = args.tiled_mma.get_thread_slice(args.thread_idx);
     auto gColReduce = make_tensor<ElementCompute>(
-        make_layout(make_shape(M, N), make_stride(_1{}, 0_c)));                                                // (M,N)
+        make_layout(make_shape(M, N), make_stride(_1{}, _0{})));                                               // (M,N)
     auto tCrColReduce = make_tensor_like<ElementCompute>(                                       // (FrgV, MMA_M, MMA_N)
         thr_mma.partition_C(gColReduce).layout());
 
