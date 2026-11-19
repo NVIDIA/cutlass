@@ -40,6 +40,19 @@ from cutlass import testing
 import cutlass.utils as utils
 from cutlass.utils import create_cute_tensor_for_fp8
 from cutlass.cute.nvgpu import cpasync
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -58,7 +71,7 @@ from rubin.kernel.dense_gemm.dense_gemm_persistent import (
 """
 This example provides an implementation of the SM107 batched dense GEMM kernel with mixed cluster support.
 
-The primary goal of this example, compared to the one in dense_gemm_persistent.py,
+The primary goal of this example, compared to the one in examples/cute/rubin/kernel/dense_gemm/dense_gemm_persistent.py,
 is around the usage of mixed cluster launches: If there are not enough resources to schedule a cluster with
 preferred_cluster_shape_mn, then a fallback_cluster_shape_mn is used.
 
@@ -254,10 +267,8 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
-        tiled_mma_bkeep: Optional[cute.TiledMma] = None,
-        tiled_mma_breuse: Optional[cute.TiledMma] = None,
     ):
         """
         GPU device kernel performing the Persistent batched GEMM computation with mixed cluster support.
@@ -293,8 +304,6 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
                 epi_tile,
                 tile_sched_params,
                 epilogue_op,
-                tiled_mma_bkeep,
-                tiled_mma_breuse,
                 self.preferred_cluster_shape_mn,
                 self.is_preferred_a_mcast,
                 self.is_preferred_b_mcast,
@@ -315,8 +324,6 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
                 epi_tile,
                 tile_sched_params,
                 epilogue_op,
-                tiled_mma_bkeep,
-                tiled_mma_breuse,
                 self.fallback_cluster_shape_mn,
                 self.is_fallback_a_mcast,
                 self.is_fallback_b_mcast,
@@ -333,7 +340,7 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
         preferred_max_active_clusters: cutlass.Constexpr,
         fallback_max_active_clusters: cutlass.Constexpr,
     ) -> Tuple[
-        utils.PersistentTileSchedulerParams,
+        PersistentTileSchedulerParams,
         Tuple[int, int, int],
     ]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C.
@@ -359,7 +366,7 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
             - preferred_tile_sched_params: Parameters for the preferred persistent tile scheduler
             - grid: Grid shape for kernel launch
         :rtype: Tuple[
-            utils.PersistentTileSchedulerParams,
+            PersistentTileSchedulerParams,
             tuple[int, int, int]
         ]
         """
@@ -370,20 +377,20 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
         # Tile scheduler and grid shape for the preferred cluster
         preferred_cluster_shape_mnl = (*preferred_cluster_shape_mn, 1)
 
-        preferred_tile_sched_params = utils.PersistentTileSchedulerParams(
+        preferred_tile_sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl, preferred_cluster_shape_mnl
         )
-        preferred_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        preferred_grid = StaticPersistentTileScheduler.get_grid_shape(
             preferred_tile_sched_params, preferred_max_active_clusters
         )
 
         # Tile scheduler and grid shape for the fallback cluster
         fallback_cluster_shape_mnl = (*fallback_cluster_shape_mn, 1)
 
-        fallback_tile_sched_params = utils.PersistentTileSchedulerParams(
+        fallback_tile_sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl, fallback_cluster_shape_mnl
         )
-        fallback_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        fallback_grid = StaticPersistentTileScheduler.get_grid_shape(
             fallback_tile_sched_params, fallback_max_active_clusters
         )
 
@@ -570,12 +577,6 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
         ) and self._is_breuse_supported(self.a_dtype, self.b_dtype)
 
         tiled_mma = self._create_tiled_mma()
-        # Create Bkeep-Breuse tiled_mma variants if enabled
-        tiled_mma_bkeep = None
-        tiled_mma_breuse = None
-        if cutlass.const_expr(self.enable_breuse):
-            tiled_mma_bkeep = self._create_tiled_mma_bkeep()
-            tiled_mma_breuse = self._create_tiled_mma_breuse()
 
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
@@ -696,8 +697,6 @@ class SM107PersistentDenseGemmMixedClustersKernel(SM107PersistentDenseGemmKernel
             self.epi_tile,
             self.tile_sched_params,
             epilogue_op,
-            tiled_mma_bkeep,
-            tiled_mma_breuse,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],

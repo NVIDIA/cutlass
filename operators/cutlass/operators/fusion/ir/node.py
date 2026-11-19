@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -176,6 +175,13 @@ class NodeBase:
     Base class of DAG Node
     """
 
+    #: How many times narrower along N this node's value is than the
+    #: accumulator.  Only a gated op changes it (see ``GatedComputeNode``);
+    #: every other node inherits the widest factor among its inputs, so a
+    #: consumer of a gated value stays marked however much elementwise
+    #: computation sits in between.
+    accum_split_factor = 1
+
     def __init__(self, name: str) -> None:
         self.name = name
         self.underlying_impl = None
@@ -220,6 +226,9 @@ class NodeBase:
         1. they are equal
         2. one of them is 1
         """
+        self.accum_split_factor = max(
+            (src.accum_split_factor for src in input_node_metas), default=1
+        )
         if self._tensor is not None:
             return
 

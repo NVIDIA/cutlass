@@ -591,6 +591,16 @@ void shared_store<16>(uint32_t ptr, void const *src) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// ld.acquire.sys - 64b
+CUTLASS_DEVICE
+uint64_t ld_acquire_sys(uint64_t const *ptr) {
+  uint64_t value;
+  asm volatile("ld.acquire.sys.global.u64 %0, [%1];\n" : "=l"(value) : "l"(ptr) : "memory");
+  return value;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace arch
 } // namespace cutlass
 

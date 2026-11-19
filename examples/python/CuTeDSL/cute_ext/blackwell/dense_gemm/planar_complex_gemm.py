@@ -70,7 +70,7 @@ class PlanarComplexGemmKernel:
         self.mn_tiler = mn_tiler
         self.ab_dtype, self.acc_dtype = mma_dtype
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA_real: cute.Tensor,
@@ -87,10 +87,9 @@ class PlanarComplexGemmKernel:
             grid=grid,
             block=(192, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA_real: cute.Tensor,
@@ -106,6 +105,7 @@ class PlanarComplexGemmKernel:
         c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(mD_real)
 
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
+            self.ab_dtype,
             self.ab_dtype,
             cutlass.tensor_utils.LayoutEnum.from_tensor(mA_real).mma_major_mode(),
             cutlass.tensor_utils.LayoutEnum.from_tensor(mB_real).mma_major_mode(),
@@ -300,7 +300,7 @@ class PlanarComplexGemmKernel:
             num_stages=acc_stage,
             mma_operation_type=cute_ext.OperationTypeEnum.SM100_MMA_1SM_SS,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
 
         tma_store_warp_id = 0
@@ -356,6 +356,8 @@ class PlanarComplexGemmKernel:
                     mbar,
                 )
                 mainloop_pipe.producer_commit_and_advance()
+
+            mainloop_pipe.producer_tail()
 
         # ---- MMA Compute (Complex Arithmetic) ----
         # realAcc =  realA * realB - imagA * imagB
@@ -520,7 +522,7 @@ def run(
     Raises:
         AssertionError: If reference checking is enabled and either output
             plane does not match the Torch reference within tolerance.
-        Exception: Compilation failures from cute_ext.compile propagate
+        Exception: Compilation failures from cute.compile propagate
             unchanged, e.g. when mma_tiler_mn is not supported for the
             requested dtypes.
     """
@@ -566,7 +568,7 @@ def run(
         mma_dtype=(ab_dtype, acc_dtype),
     )
 
-    compiled_planar_gemm = cute_ext.compile(
+    compiled_planar_gemm = cute.compile(
         planar_gemm,
         a_real_tensor,
         a_imag_tensor,

@@ -1054,7 +1054,7 @@ def run_dense_gemm(
     import cutlass.torch as cutlass_torch
 
     print("===================================================================")
-    print("Running Blackwell fp16 GEMM example 4 (with MIX CGA support):")
+    print("Running Blackwell fp16 GEMM example 4 (with MIX cluster support):")
     print(f"  mnk:                        {mnk}")
     print(f"  tolerance:                  {tolerance}")
     print(f"  Preferred cluster shape:    {preferred_cluster_shape_mnk}")

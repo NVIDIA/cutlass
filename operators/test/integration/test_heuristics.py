@@ -42,6 +42,10 @@ import torch
 
 import cutlass.operators as ops
 from cutlass.operators.heuristics.nvmatmul import NvMatmulHeuristics
+from cutlass.operators.metadata import Sm100DesignMetadata
+from cutlass.operators.providers.cutedsl.gemm.sm100_blockscaled_static_persistent import (
+    Sm100BlockscaledStaticPersistentOperator,
+)
 from cutlass.operators.utils.device import device_or_env_target_sm
 
 from test_utils import assert_close_with_reference_conversion, reference_device
@@ -151,3 +155,88 @@ def test_heuristic_none_matches_unranked_discovery():
     assert [op.metadata.operator_name for op in default] == [
         op.metadata.operator_name for op in explicit_none
     ]
+
+
+def _sm100_blockscaled_only(metadata: ops.OperatorMetadata) -> bool:
+    return (
+        isinstance(metadata.design, Sm100DesignMetadata)
+        and metadata.operator_class is Sm100BlockscaledStaticPersistentOperator
+    )
+
+
+def _make_sm100_blockscaled_gemm_args(
+    M: int = 256, N: int = 512, K: int = 1024, L: int = 1
+) -> ops.GemmArguments:
+    ab_dtype = torch.float8_e4m3fn
+    scale_dtype = torch.float8_e8m0fnu
+    scale_mode = ops.ScaleMode.Blockwise1x32
+    swizzle = ops.ScaleSwizzleMode.Swizzle32x4x4
+    device = reference_device()
+
+    a = torch.randint(-1, 2, (L, M, K), device=device).to(ab_dtype)
+    b = torch.randint(-1, 2, (L, N, K), device=device).to(ab_dtype).transpose(1, 2)
+    out = torch.empty((L, M, N), device="cuda", dtype=torch.float32)
+    sfa = torch.rand(
+        ops.ScaledOperand.numel_scale((L, M, K), scale_mode, swizzle), device="cuda"
+    ).to(scale_dtype)
+    sfb = torch.rand(
+        ops.ScaledOperand.numel_scale((L, N, K), scale_mode, swizzle), device="cuda"
+    ).to(scale_dtype)
+
+    return ops.GemmArguments(
+        A=ops.ScaledOperand(a.cuda(), sfa, scale_mode, swizzle),
+        B=ops.ScaledOperand(b.cuda(), sfb, scale_mode, swizzle),
+        out=out,
+        accumulator_type=torch.float32,
+    )
+
+
+def test_blockscaled_heuristic_returns_subset_of_operator_set():
+    """Block-scaled analogue of ``test_heuristic_returns_subset_of_operator_set``.
+
+    Same subset relationship as the dense case -- ``match_operators_to_configs``
+    prunes candidates that match no recommended config or fall outside the
+    modeled compute capability, so the ranked block-scaled set need not equal
+    the unranked one either.
+    """
+    _require_sm100_for_nvmatmul()
+    args = _make_sm100_blockscaled_gemm_args()
+    target_sm = device_or_env_target_sm()
+
+    without = ops.get_operators(
+        args, target_sm=target_sm, metadata_filter=_sm100_blockscaled_only
+    )
+    if not without:
+        pytest.skip("No SM100 PersistentBlockScaledGemm operators for this problem")
+
+    with_heuristic = ops.get_operators(
+        args,
+        target_sm=target_sm,
+        metadata_filter=_sm100_blockscaled_only,
+        heuristic=NvMatmulHeuristics(gpu="B200"),
+    )
+
+    names_without = _operator_names(without)
+    names_with = _operator_names(with_heuristic)
+    assert names_with <= names_without, (
+        "Heuristic returned Operators not present without a heuristic: "
+        f"{names_with - names_without}"
+    )
+
+
+def test_blockscaled_heuristic_top_pick_runs():
+    """The top-ranked block-scaled Operator after ``nvmatmul`` must still execute correctly."""
+    _require_sm100_for_nvmatmul()
+    target_sm = device_or_env_target_sm()
+    args = _make_sm100_blockscaled_gemm_args()
+
+    ranked = ops.get_operators(
+        args,
+        target_sm=target_sm,
+        metadata_filter=_sm100_blockscaled_only,
+        heuristic=NvMatmulHeuristics(gpu="B200"),
+    )
+    if not ranked:
+        pytest.skip("No SM100 PersistentBlockScaledGemm operators for this problem")
+
+    ranked[0].run(args)

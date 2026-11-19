@@ -125,19 +125,19 @@ public:
     void const * ptr_C;
     void * ptr_D;
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_C;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_C{0};
 
     typename LayoutA::Stride stride_a;
     typename LayoutB::Stride stride_b;
     typename LayoutC::Stride stride_c;
     typename LayoutC::Stride stride_d;
 
-    typename LayoutA::Stride::LongIndex lda;
-    typename LayoutB::Stride::LongIndex ldb;
-    typename LayoutC::Stride::LongIndex ldc;
-    typename LayoutC::Stride::LongIndex ldd;
+    typename LayoutA::Stride::LongIndex lda{0};
+    typename LayoutB::Stride::LongIndex ldb{0};
+    typename LayoutC::Stride::LongIndex ldc{0};
+    typename LayoutC::Stride::LongIndex ldd{0};
 
     int const * ptr_gather_A_indices;
     int const * ptr_gather_B_indices;

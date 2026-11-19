@@ -34,8 +34,8 @@ import torch
 
 import cutlass.operators as ops
 from cutlass.operators.metadata.design.tile_scheduler import (
-    CLCDynamicPersistentTileSchedulerMetadata,
-    StaticPersistentTileSchedulerMetadata,
+    CLCDynamicPersistentMetadata,
+    StaticPersistentMetadata,
 )
 from cutlass.operators.utils.device import (
     device_or_env_supports,
@@ -82,14 +82,14 @@ def test_gemm_persistent_tile_schedulers(
     def clc_dynamic_persistent_filter(metadata):
         scheduler = getattr(metadata.design, "tile_scheduler", None)
         if scheduler and isinstance(
-            scheduler, CLCDynamicPersistentTileSchedulerMetadata
+            scheduler.persistence, CLCDynamicPersistentMetadata
         ):
             return True
         return False
 
     def static_persistent_filter(metadata):
         scheduler = getattr(metadata.design, "tile_scheduler", None)
-        if scheduler and isinstance(scheduler, StaticPersistentTileSchedulerMetadata):
+        if scheduler and isinstance(scheduler.persistence, StaticPersistentMetadata):
             return True
         return False
 

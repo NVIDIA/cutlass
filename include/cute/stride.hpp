@@ -556,7 +556,7 @@ struct ForwardCoordIterator
   bool operator!=(ForwardCoordIterator const& other) const { return coord != other.coord; }
 
   Coord coord;
-  Shape const& shape;
+  Shape shape;
 };
 
 // A forward iterator for a coordinate that starts from a provided coordinate and increments in a prescribed order

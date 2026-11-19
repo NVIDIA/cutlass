@@ -25,32 +25,109 @@ once on normal tile execution and once on skipped-tile execution.
 
 Algorithm
 ---------
-State includes per-task cursor positions into the expanded
-(head + loop + tail) schedule plus dynamic protocol state (producer
-credits, consumer credits, and held-resource access windows).  The
-default visited-set key is a packed cursor vector; the dynamic protocol
-state is deterministic from the cursor positions.  A defensive full-state
-key remains available for debugging via ``cursor_only_visited=False``.
+Synchronization is modelled as **mbarrier phases**.  Every
+pipelined resource owns, per physical ring stage, a *full* barrier and an
+*empty* barrier.  Each barrier holds a phase bit plus a pending arrival
+count, and flips its phase once the arrival count reaches the number of
+participants the schedule declares for that side.
+
+A waiter compares the barrier phase against the phase its own software
+cursor names::
+
+    wait succeeds  <=>  barrier.phase != cursor.phase
+
+Empty barriers start at phase ``1`` and full barriers at phase ``0``, while
+every software cursor starts at phase ``0``.  The first ``num_stages``
+producer acquires therefore pass immediately and the first consumer wait
+blocks until the producer side completes the stage — the same slack the
+hardware ring provides.
+
+Software cursors are minted per schedule builder, so they are task-local:
+every mutation of a cursor sits in that task's own schedule in a fixed
+order, which makes each step's ``(index, phase, count)`` a pure function of
+that task's position.  :func:`~.task_manager._simulate_cursors` resolves
+them once per expansion and stamps ``FlatScheduleOp.cursor_state``, so
+``advance(n)``, ``previous()`` and ``state.at(k)`` all reach the phase
+compare with the stage and phase the schedule actually names.  Because a
+``StateAdvance`` node mutates nothing that another task can observe, it
+is dropped from the explored timeline rather than interleaved.
+
+Barrier state, by contrast, is shared, so it lives in the BFS state and in
+the default visited key.  The same task cursors can be reached with different
+pending arrivals when independent tasks release or commit in different orders,
+so pruning only by cursor positions can drop the path that completes the
+handshake — see :func:`check_all_interleavings`.
 
 At each state the checker:
 
-1. Computes which tasks are **enabled** (next op is non-blocking, or
-   blocking with credits available).
+1. Computes which tasks are **enabled**.  ``ConsumerWait`` compares the full
+   barrier phase and ``ProducerAcquire`` compares the empty barrier phase.
+   Everything else is always enabled.
 2. If no task is enabled and work remains → **deadlock**.
 3. Checks enabled PDL launch ops against the already-executed prefix; a
    launch is unsafe if no task has executed a PDL wait yet.
 4. Checks held-resource windows and next point-access ops for aliasing
    **races** (conflicting concurrent accesses to shared physical storage).
-5. For each enabled task, advances its cursor by one step, updates
-   credits and held sets, and enqueues the successor state.
+5. For each enabled task, advances its cursor by one step, applies the
+   barrier and held-state transitions, and enqueues the successor.
 
-Synchronization rules mirror the ``TaskManager`` credit model:
+Which op arrives on the full barrier depends on the pipeline type.  For
+``PipelineAsync``-style pipelines ``producer_commit`` issues the arrive, so
+the checker counts the arrival there.  For producer types whose
+``producer_commit`` is a no-op because the transfer's own transaction count
+completes the barrier, the arrival is counted at the transfer instead, on the
+last ``ProducerWork`` of that round.  A round whose commit is not
+preceded by producer work on the same resource keeps the arrival on the
+commit; that is the group-level commit shape, where the transfers are
+issued on the members.  A ``ProducerAcquire`` also closes any transfer group
+left open on that stage, and every group's last transfer arrives.
 
-- ``ConsumerWait(R)`` blocks until ``prod_credits[R] > 0``
-  (a ``ProducerCommit`` has been recorded).
-- ``ProducerAcquire(R)`` blocks until ``cons_credits[R] > 0``
-  (a ``ConsumerRelease`` or initial pipeline stage is available).
-- ``WorkQueue`` resources are not credit-tracked.
+``PipelineGroup`` fork/merge is "one op arrives on several barriers":
+a fork ``ProducerCommit`` arrives on every member's full barrier and a
+merge ``ConsumerRelease`` on every member's empty barrier.  A
+``FusedMerge`` group owns one shared full barrier that every member's
+transfer arrives on.
+
+Round counts have to agree across tasks for arrival counts to balance.  Each
+loop kind is modelled on its own terms: a ``domain_loop`` over its folded
+trip count, a ``while_true_loop`` over ``verify_num_iters``.  The checker
+does not reconcile the two.  A ``verify_num_iters`` that does not match the
+rounds its partner tasks drive therefore reports a deadlock, and the fix is
+to pick a ``verify_num_iters`` that models the loop faithfully — a count the
+schedule author knows and the checker cannot infer.
+
+A while loop's *exit* is opaque in the same way, and worse: it is enumerated
+per round, so the loop is modelled as exiting after any number of rounds.
+When the exit tests a counter the loop body feeds — the Rubin retry loop
+exits once ``valid_tile_count`` reaches the row count — almost every one of
+those exits is unreachable, and each unreachable one strands the partner
+tasks and reports a deadlock.  ``when_true(..., verify_num_fires=N)`` is how
+the author closes that gap: it declares that the hinted block runs on
+exactly ``N`` of the modelled rounds, and round sequences that disagree are
+dropped before the BFS ever sees them (:func:`collect_fire_count_hints`).  A
+hint that cannot be met over ``verify_num_iters`` rounds is an error, not a
+silently empty search.  Failures reported for a loop whose exit is still
+unconstrained carry :func:`while_loop_exit_caveat`, because they may be
+artifacts of an exit the kernel cannot reach.
+
+Counting rounds is not enough for a guard that decides *which* stage a round
+works on.  The retry loop skips a stage whose logical row is past the end
+(``current_stage_pending()`` is ``loop_offset < retry_tile_count``), and
+enumerating that freely lets a sequence call the early stages inactive and
+the late ones active — which slides every productive round onto a stage the
+producer never filled, and reports the resulting unreleased stage as a
+deadlock.  Such an output is a function of the cursor, so it comes with a
+pure-Python replica declared as ``@consumer_work(verify_model=...)``; the
+checker evaluates that against the cursor it already simulates and keeps
+only the rounds where the enumerated value agrees
+(:func:`collect_cursor_models`).  Unlike a fire-count hint this is a
+recomputation rather than a count, so it also pins the round *positions*.
+
+A round is enumerated over the guards it reads and no others
+(:func:`_replay_round`).  A retry loop that sweeps several pipelines in
+alternating phases reads one phase's probes per round, and enumerating the
+idle phases as well would multiply the round classes by their outcomes --
+each product being a separate BFS over the whole kernel.
 
 Ownership/access model
 ----------------------
@@ -118,7 +195,6 @@ declare which allocations each role accesses by overriding
 on ``MemoryResource``.  Each returns a mixed list of
 ``SmemAllocation`` / ``TmemAllocation`` objects, or ``None`` (default)
 to mean "all allocations".
-
 ``build_alias_info`` builds three alias maps:
 
 - **alias_map** — all-ranges × all-ranges (symmetric).  Used by the
@@ -132,26 +208,68 @@ A race between resources A and B is only flagged when **both** sides
 confirm the overlap through their respective role alias maps.
 """
 
+import itertools
+import warnings
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from dataclasses import dataclass, field, replace
+from typing import (
+    Callable,
+    Dict,
+    Hashable,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    cast,
+)
 
-from .enums import PipelineGroupMode, PipelineType, ScheduleStage
+from typing_extensions import assert_never
+
+from .enums import (
+    BlockGuard,
+    Every,
+    FIRST_ITER,
+    GuardAnd,
+    GuardOr,
+    LAST_ITER,
+    OpaqueCondition,
+    PipelineGroupMode,
+    PipelineType,
+    SKIPPABLE,
+    ScheduleStage,
+    guard_fires,
+    iter_leaves,
+)
 from .resources import (
     MemoryResource,
     PdlLaunchBarrier,
     PdlWaitBarrier,
-    PipelineGroup,
+    PipelineConfig,
     WorkQueue,
+    verify_model_for,
 )
+from .pipeline_group import PipelineGroup
 from .task import Task
+from .schedule_builder import (
+    ConditionalBlock,
+    DomainLoop,
+    LoopBreak,
+    PipelineStateRef,
+    ScheduleError,
+    StateAdvance,
+    Step,
+    WhileTrueLoop,
+    WorkTileLoop,
+    _format_block_guard,
+    _iter_nodes,
+)
 from .task_manager import (
-    CreditKey,
     _count_independent_interleave_lane,
-    _credit_key,
     _domain_interleaved_resource_ids,
-    _precompute_stage_credit_keys,
-    expand_loop,
+    _opaque_assignments,
+    _simulate_cursors,
 )
 
 # Pipeline types whose consumer completes asynchronously.  For these
@@ -169,11 +287,287 @@ _DMA_CONSUMER_TYPES = frozenset(
 _SLOTLESS = -1
 _UNTAGGED = -1
 
+# Pipeline types whose ``producer_commit`` is a no-op because the producer's
+# own transfer completes the full barrier's transaction count.  For these the
+# checker counts the full-barrier arrival on the transfer (``ProducerWork``)
+# instead of on the commit.  Every other type arrives in ``producer_commit``
+# (``sync_object_full.arrive``).
+_TRANSFER_COMPLETES_FULL = frozenset(
+    {
+        PipelineType.TmaAsync,
+        PipelineType.TmaUmma,
+        PipelineType.ClcFetchAsync,
+    }
+)
+
+# The ops that arm a stage's full barrier, and therefore begin a new group of
+# transfers into it.  Used to close the previous group when no
+# ``ProducerCommit`` does, which is the V1 reissue shape.
+_ARMS_FULL_BARRIER = frozenset(
+    {
+        ScheduleStage.ProducerAcquire,
+    }
+)
+
 HeldEntry = Tuple[str, int, int, int]
 HeldMap = Dict[int, List[HeldEntry]]
 PointAccess = Tuple[int, int, str, int]
-CreditTuple = Tuple[int, ...]
-TotalCounts = Dict[str, Dict[int, int]]
+
+# ── Barrier state vector ────────────────────────────────────────────────
+#
+# One record per ``(barrier owner, physical stage)``, flattened into a single
+# tuple of ints so a successor state is one tuple copy.  ``barrier owner`` is
+# the resource itself, except for the shared full barrier of a ``FusedMerge``
+# group, which is owned by the group (see :func:`_full_barrier_owner`).  The
+# full fields are read at the owner's slot; the empty and window fields are
+# always read at the resource's own slot, because arming and empty-barrier
+# signalling stay per-resource even when the full barrier is shared.
+_B_FULL_PHASE = 0
+_B_FULL_ARRIVALS = 1
+_B_EMPTY_PHASE = 2
+_B_EMPTY_ARRIVALS = 3
+_BARRIER_FIELDS = 4
+
+# What has to become true before a step can execute.  Every gate is a phase
+# compare between a barrier field and the phase the step's software cursor
+# names; they differ only in which field is read.
+_GATE_NONE = 0
+_GATE_FULL = 1  # ConsumerWait
+_GATE_EMPTY = 2  # ProducerAcquire
+_GATE_FIELD = {
+    _GATE_FULL: _B_FULL_PHASE,
+    _GATE_EMPTY: _B_EMPTY_PHASE,
+}
+
+BarrierTuple = Tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class FlatScheduleOp:
+    """One barrier/work op in a flattened schedule timeline.
+
+    Produced by :func:`expand_task` for the credit simulator, schedule
+    printer, and exhaustive BFS.  ``domain_start`` / ``domain_end`` /
+    ``domain_step`` are the enclosing :class:`DomainLoop` bounds (``None``
+    outside any domain loop).  ``domain_entry`` numbers that loop's entry
+    within this expansion, so ops from two entries of the same or equally
+    bounded loops -- successive loops, or one loop re-entered per work tile
+    -- stay distinguishable (``None`` outside any domain loop).
+    ``sync_phase`` is set by :func:`_explode_sync_work` when non-pipelined
+    ``ConsumerWork`` is split into synthetic write/read phases.
+
+    """
+
+    resource: MemoryResource
+    schedule_stage: ScheduleStage | None
+    unique_id: int
+    phase: str
+    state_binding: PipelineStateRef | None = None
+    state_advance: StateAdvance | None = None
+    cursor_state: Tuple[int, int, int] | None = None
+    domain_start: object | None = None
+    domain_end: object | None = None
+    domain_step: object | None = None
+    domain_entry: int | None = None
+    domain_iteration: int | None = None
+    sync_phase: str | None = None
+
+
+OpaqueAssignment = dict[object, bool]
+OpaqueAssignmentSequence = list[OpaqueAssignment]
+
+
+@dataclass(frozen=True)
+class OpaqueAssignmentScenario:
+    """Per-task opaque assignments for a joint interleaving check.
+
+    Tasks that contain a ``while_true_loop`` receive an assignment
+    *sequence* (one dict per modeled iteration).  Partner tasks without a
+    while loop receive ``default_assignment``, which is the last (break)
+    assignment of the first while-loop task so they observe exit-iteration
+    effects.
+    """
+
+    default_assignment: OpaqueAssignment
+    task_assignments: dict[int, OpaqueAssignment | OpaqueAssignmentSequence]
+    task_names: dict[int, str] = field(default_factory=dict)
+
+    def for_task(self, task: Task) -> OpaqueAssignment | OpaqueAssignmentSequence:
+        """Return the assignment or sequence recorded for ``task``."""
+        return self.task_assignments.get(id(task), self.default_assignment)
+
+
+OpaqueAssignmentLike = (
+    OpaqueAssignment | OpaqueAssignmentSequence | OpaqueAssignmentScenario | None
+)
+
+# Pipeline stages that count as retry-iteration progress.  Auxiliary work
+# (including ``should_exit`` probes) is excluded: a spinning retry that only
+# polls a predicate does not make progress.
+_WHILE_RETRY_PROGRESS_STAGES = frozenset(
+    {
+        ScheduleStage.ProducerTryAcquire,
+        ScheduleStage.ProducerAcquire,
+        ScheduleStage.ProducerCommit,
+        ScheduleStage.ProducerWork,
+        ScheduleStage.ConsumerTryWait,
+        ScheduleStage.ConsumerWait,
+        ScheduleStage.ConsumerRelease,
+        ScheduleStage.ConsumerWork,
+    }
+)
+
+
+def _keep_bfs_entry(entry: FlatScheduleOp) -> bool:
+    """Keep the ops the BFS has to interleave.
+
+    A schedule node earns a place in the timeline by being able to block or by
+    having an effect or a check the checker applies to shared state.  Barrier
+    and work ops always qualify.
+
+    ``advance()`` and ``next()`` do not.  They move a software cursor, which is
+    minted per schedule builder and therefore task-local: no other task can
+    observe the write, and nothing gates on it.  Their effect is not lost —
+    :func:`~.task_manager._simulate_cursors` has already resolved it into the
+    ``(stage, phase)`` every later step on that resource carries, so a
+    misplaced ``advance()`` still shows up as a later op naming the wrong
+    stage or comparing the wrong phase.  Interleaving the node itself would
+    only add states whose shared component is identical to the state before
+    it, so dropping it is exact rather than approximate.  The cost is that a
+    verbose timeline does not list the cursor moves.
+    """
+    return entry.schedule_stage is not None
+
+
+def _full_barrier_owner(res: MemoryResource) -> int:
+    """Id of the object owning the full barrier ``res``'s producer signals.
+
+    This is the resource itself except for a member of a ``FusedMerge`` group,
+    whose members share one full barrier held by the group.  A member's
+    transfer and the group's ``ConsumerWait`` then resolve to the same owner
+    and therefore to the same barrier record, which is what makes the fused
+    wait see both members' arrivals.
+
+    The empty barrier is never shared this way — each member is acquired and
+    released on its own — so it always sits at ``id(res)``.
+    """
+    pg = getattr(res, "pipeline_group", None)
+    if pg is not None and pg.mode == PipelineGroupMode.FusedMerge:
+        return id(pg)
+    return id(res)
+
+
+def _commits_at_group_level(res: MemoryResource) -> bool:
+    """Return whether ``res``'s full-barrier signal is emitted on its group.
+
+    A ``Fork`` group owns the signal: the schedule emits one
+    ``ProducerCommit`` on the group and it arrives on every member's full
+    barrier, so a member's own transfer must not arrive a second time.
+    """
+    pg = getattr(res, "pipeline_group", None)
+    return pg is not None and pg.mode == PipelineGroupMode.Fork
+
+
+def _fallback_domain_cursor(
+    entry: "FlatScheduleOp",
+    cfg: PipelineConfig,
+) -> Tuple[int, int, int]:
+    """Infer a ring cursor for legacy entries without usable explicit state."""
+    num_stages = cfg.num_stages
+    iteration = entry.domain_iteration or 0
+    return (
+        iteration % num_stages,
+        (iteration // num_stages) % 2,
+        iteration,
+    )
+
+
+def _step_cursor_state(entry: "FlatScheduleOp") -> Tuple[int, int, int] | None:
+    """Return the cursor state the barrier checker should use for ``entry``."""
+    res = entry.resource
+    cfg = res.pipeline_config
+    if cfg is None:
+        return None
+    pg = getattr(res, "pipeline_group", None)
+    if (
+        pg is not None
+        and pg.mode == PipelineGroupMode.Fork
+        and entry.schedule_stage
+        in {
+            ScheduleStage.ProducerAcquire,
+            ScheduleStage.ProducerWork,
+            ScheduleStage.ProducerCommit,
+        }
+    ):
+        return _fallback_domain_cursor(entry, cfg)
+    if entry.cursor_state is not None:
+        return entry.cursor_state
+    return _fallback_domain_cursor(entry, cfg)
+
+
+def _barrier_layout(
+    resources: List[MemoryResource],
+    schedules: List[List[FlatScheduleOp]],
+) -> Tuple[Dict[int, int], BarrierTuple]:
+    """Assign a dense record to every ``(barrier owner, physical stage)``.
+
+    Returns the per-owner base offset and the initial barrier vector.  Empty
+    barriers start at phase ``1`` and full barriers at phase ``0`` so that,
+    against software cursors that all start at phase ``0``, the first
+    ``num_stages`` producer acquires pass and the first consumer wait blocks.
+
+    Owners are the pipelined resources plus every ``PipelineGroup`` a schedule
+    names, since a group carries its own merged ``pipeline_config`` and, in
+    ``FusedMerge`` mode, its own full barrier.
+    """
+    owners: List[MemoryResource] = []
+    seen: Set[int] = set()
+
+    def add(candidate: MemoryResource) -> None:
+        if candidate.pipeline_config is None or isinstance(candidate, WorkQueue):
+            return
+        if id(candidate) in seen:
+            return
+        seen.add(id(candidate))
+        owners.append(candidate)
+
+    for res in resources:
+        add(res)
+    for sched in schedules:
+        for entry in sched:
+            add(entry.resource)
+            if isinstance(entry.resource, PipelineGroup):
+                for member in entry.resource.members:
+                    add(member)
+
+    offsets: Dict[int, int] = {}
+    initial: List[int] = []
+    for owner in owners:
+        cfg = owner.pipeline_config
+        assert cfg is not None
+        offsets[id(owner)] = len(initial) // _BARRIER_FIELDS
+        for _ in range(cfg.num_stages):
+            record = [0] * _BARRIER_FIELDS
+            record[_B_EMPTY_PHASE] = 1
+            initial.extend(record)
+    return offsets, tuple(initial)
+
+
+# Pipeline stages that count as retry-iteration progress.  Auxiliary work
+# (including ``should_exit`` probes) is excluded: a spinning retry that only
+# polls a predicate does not make progress.
+_WHILE_RETRY_PROGRESS_STAGES = frozenset(
+    {
+        ScheduleStage.ProducerTryAcquire,
+        ScheduleStage.ProducerAcquire,
+        ScheduleStage.ProducerCommit,
+        ScheduleStage.ProducerWork,
+        ScheduleStage.ConsumerTryWait,
+        ScheduleStage.ConsumerWait,
+        ScheduleStage.ConsumerRelease,
+        ScheduleStage.ConsumerWork,
+    }
+)
 
 
 def _is_dma_consumer_resource(res: MemoryResource) -> bool:
@@ -192,15 +586,18 @@ def _is_completion_producer_resource(res: MemoryResource) -> bool:
     }
 
 
-def _consumer_work_phase_entries(entry: tuple) -> List[tuple]:
+def _consumer_work_phase_entries(entry: FlatScheduleOp) -> List[FlatScheduleOp]:
     """Split slotless ConsumerWork into conservative write/read phases."""
-    res, stage = entry[0], entry[1]
+    res, stage = entry.resource, entry.schedule_stage
     if (
         not res.is_barrier
         and stage == ScheduleStage.ConsumerWork
         and res.pipeline_config is None
     ):
-        return [(*entry, "cons_write_phase"), (*entry, "cons_read_phase")]
+        return [
+            replace(entry, sync_phase="cons_write_phase"),
+            replace(entry, sync_phase="cons_read_phase"),
+        ]
     return [entry]
 
 
@@ -239,7 +636,7 @@ def _explode_sync_work(schedules: List[list]) -> List[list]:
     for sched in schedules:
         new_sched: list = []
         for entry in sched:
-            res, stage = entry[0], entry[1]
+            res, stage = entry.resource, entry.schedule_stage
             phase_entries = _consumer_work_phase_entries(entry)
             new_sched.extend(phase_entries)
             if len(phase_entries) > 1:
@@ -251,51 +648,1163 @@ def _explode_sync_work(schedules: List[list]) -> List[list]:
     return result
 
 
-def _entry_consumer_work_phase(entry: tuple) -> str | None:
+def _entry_consumer_work_phase(entry: FlatScheduleOp) -> str | None:
     """Return internal ConsumerWork phase tag, if present."""
-    if not entry:
-        return None
-    tag = entry[-1]
-    if isinstance(tag, str) and tag in {"cons_write_phase", "cons_read_phase"}:
+    tag = entry.sync_phase
+    if tag in {"cons_write_phase", "cons_read_phase"}:
         return tag
     return None
 
 
-def _expand_skipped_tile(task: Task) -> List:
-    """Expand the schedule executed by one skipped work-tile iteration.
+def _fold_domain_bound(
+    bound: object, task: Task, name: str, *, warn: bool = True
+) -> int | None:
+    """Fold a ``DomainLoop`` bound to a compile-time int.
 
-    Runtime skipped-tile execution replays every non-skippable head/tail
-    slot and omits the loop body.  Slots inside ``wtl.skippable()`` are
-    omitted from the skipped-tile path.
+    Literal ints are returned as-is. Callables are invoked as
+    ``bound(task, (0, 0, 0))`` on a representative work tile. Returns the
+    value only when it is a plain ``int``; otherwise ``None`` so the caller
+    uses the representative fallback.
+
+    ``warn=False`` suppresses the diagnostic, reporting a bound that does not
+    fold through the ``None`` return alone.
     """
-    skippable_head_slots: frozenset[tuple[int, ScheduleStage, int]] = getattr(
-        task, "skippable_head_slots", frozenset()
-    )
-    skippable_tail_slots: frozenset[tuple[int, ScheduleStage, int]] = getattr(
-        task, "skippable_tail_slots", frozenset()
-    )
-    head = [
-        (res, stage, cid, "SH")
-        for res, stage, cid, _lbl in task.head_schedule_list
-        if (id(res), stage, cid) not in skippable_head_slots
-    ]
-    tail = [
-        (res, stage, cid, "ST")
-        for res, stage, cid, _lbl in task.tail_schedule_list
-        if (id(res), stage, cid) not in skippable_tail_slots
-    ]
-    return head + tail
+    if isinstance(bound, int) and not isinstance(bound, bool):
+        return bound
+    if not callable(bound):
+        if warn:
+            warnings.warn(
+                f"Task {getattr(task, 'name', '?')!r}: domain_loop {name} is not "
+                "a compile-time int or callable; using the representative "
+                "iteration-count fallback for schedule validation.",
+                stacklevel=2,
+            )
+        return None
+    validation_tile = (0, 0, 0)
+    try:
+        value = bound(task, validation_tile)
+    except Exception:
+        value = None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if warn:
+        warnings.warn(
+            f"Task {getattr(task, 'name', '?')!r}: domain_loop {name} callable "
+            "did not fold to a compile-time int; using the representative "
+            "iteration-count fallback for schedule validation.",
+            stacklevel=2,
+        )
+    return None
 
 
-def _expand_task_for_check(
+def _domain_loop_iters(
+    node: DomainLoop,
     task: Task,
-    skipped_tile: bool,
-    opaque_assignment: dict | None = None,
-) -> List:
-    """Return the schedule variant to explore for one logical tile."""
-    if skipped_tile and getattr(task, "skip_if", None) is not None:
-        return _expand_skipped_tile(task)
-    return expand_loop(task, opaque_assignment=opaque_assignment)
+    dynamic_domain_fallback: int,
+) -> int:
+    """Representative unroll count for one ``DomainLoop``.
+
+    Bounds fold to compile-time ints from literals, or from callables probed on
+    a representative all-zero work tile.  When every bound folds, the count is
+    ``len(range(start, end, step))``.
+
+    ``dynamic_domain_fallback`` is a representative *end* bound: one past the
+    largest static ``domain_loop`` start in the kernel.  Substituting it for an
+    unfoldable end preserves the relative trip counts of loops that begin at
+    different offsets, so a loop peeled to start at 1 runs one iteration fewer
+    than the loader it consumes from.  That relationship is what keeps producer
+    commits balanced against consumer waits.  Loops with an unfoldable end
+    always run at least once.
+
+    A folded ``step`` must be positive.
+    """
+    start = _fold_domain_bound(node.start, task, "start")
+    end = _fold_domain_bound(node.end, task, "end")
+    step = _fold_domain_bound(node.step, task, "step")
+    if step is not None and step <= 0:
+        raise ScheduleError(
+            f"Task {getattr(task, 'name', '?')!r}: domain_loop() step must be "
+            f"a positive int, got {step}."
+        )
+    if start is None or step is None:
+        count = max(1, dynamic_domain_fallback)
+    else:
+        if end is None:
+            end = max(dynamic_domain_fallback, start + step)
+        count = len(range(start, end, step))
+    return count
+
+
+def _emit_nodes(
+    nodes: list,
+    task: Task,
+    opaque_assignment: dict | None,
+    dynamic_domain_fallback: int,
+    *,
+    iter_index: int | None,
+    iter_count: int | None,
+    phase: str,
+    skip: bool = False,
+    num_tiles: int = 1,
+    domain_start: object | None = None,
+    domain_end: object | None = None,
+    domain_step: object | None = None,
+    domain_entry: int | None = None,
+    entry_counter: Iterator[int],
+    result: List,
+    while_sequence: OpaqueAssignmentSequence | None = None,
+    break_hits: list | None = None,
+) -> None:
+    """Append the ops for ``nodes`` in execution order.
+
+    Each entry is a :class:`FlatScheduleOp`. ``phase`` is ``"O"`` outside any
+    domain loop, ``""`` inside a plain ``DomainLoop`` body, or ``"F"`` / ``"L"``
+    / ``"P"`` / ``"I"`` for a first-iter / last-iter / ``Every`` /
+    opaque-guarded block (see :func:`_guard_phase`).
+
+    ``iter_index`` / ``iter_count`` are set inside a ``DomainLoop`` or
+    ``WhileTrueLoop`` body and ``None`` outside.  ``domain_start`` /
+    ``domain_end`` / ``domain_step`` are the enclosing domain loop's bounds
+    (``None`` outside any domain loop), and ``domain_entry`` is that loop
+    entry's index, drawn from ``entry_counter`` once per ``DomainLoop`` visit --
+    so a loop replayed per work tile draws a fresh index each time, matching
+    the walker's per-entry lane reseed.
+
+    ``num_tiles`` replays the ``WorkTileLoop`` body that many times, once per
+    simulated work tile.  Steps outside the work-tile loop are emitted once, so
+    per-tile bookkeeping repeats while a kernel-once prologue/epilogue does not.
+
+    When ``skip`` is set the traversal models a skipped work tile (the walker's
+    ``ctx.skip`` gate): ``DomainLoop`` / ``WhileTrueLoop`` bodies and
+    ``skippable()`` regions are omitted.
+
+    ``while_sequence`` is the modeled assignment list for an enclosing
+    ``while_true_loop`` (one dict per iteration).  Init/advance hooks are not
+    emitted.  ``LoopBreak`` is a marker, not a :class:`FlatScheduleOp`.
+    """
+
+    def recurse(
+        body: list,
+        *,
+        assignment: dict | None = opaque_assignment,
+        iter_index: int | None = iter_index,
+        iter_count: int | None = iter_count,
+        phase: str = phase,
+        skip: bool = skip,
+        num_tiles: int = num_tiles,
+        domain_start: object | None = domain_start,
+        domain_end: object | None = domain_end,
+        domain_step: object | None = domain_step,
+        domain_entry: int | None = domain_entry,
+        while_sequence: OpaqueAssignmentSequence | None = while_sequence,
+        break_hits: list | None = break_hits,
+    ) -> None:
+        _emit_nodes(
+            body,
+            task,
+            assignment,
+            dynamic_domain_fallback,
+            iter_index=iter_index,
+            iter_count=iter_count,
+            phase=phase,
+            skip=skip,
+            num_tiles=num_tiles,
+            domain_start=domain_start,
+            domain_end=domain_end,
+            domain_step=domain_step,
+            domain_entry=domain_entry,
+            entry_counter=entry_counter,
+            result=result,
+            while_sequence=while_sequence,
+            break_hits=break_hits,
+        )
+
+    for node in nodes:
+        if break_hits:
+            break
+        match node:
+            case Step():
+                result.append(
+                    FlatScheduleOp(
+                        resource=node.memory_resource,
+                        schedule_stage=node.schedule_stage,
+                        unique_id=node.unique_id,
+                        phase=phase,
+                        state_binding=node.state_binding,
+                        domain_start=domain_start,
+                        domain_end=domain_end,
+                        domain_step=domain_step,
+                        domain_entry=domain_entry,
+                        domain_iteration=iter_index,
+                    )
+                )
+            case StateAdvance():
+                result.append(
+                    FlatScheduleOp(
+                        resource=node.state.resource,
+                        schedule_stage=None,
+                        unique_id=node.unique_id,
+                        phase=phase,
+                        state_advance=node,
+                        domain_start=domain_start,
+                        domain_end=domain_end,
+                        domain_step=domain_step,
+                        domain_entry=domain_entry,
+                        domain_iteration=iter_index,
+                    )
+                )
+            case LoopBreak():
+                if break_hits is not None:
+                    break_hits.append(True)
+            case WorkTileLoop():
+                # The persistent work-tile loop: replay its body once per
+                # simulated work tile.  ``num_tiles`` resets to 1 inside the
+                # body so the count applies to this loop alone.
+                for _ in range(num_tiles):
+                    recurse(node.body, num_tiles=1)
+            case DomainLoop():
+                if skip:
+                    continue  # loop body omitted on a skipped tile
+                iters = _domain_loop_iters(node, task, dynamic_domain_fallback)
+                entry = next(entry_counter)
+                for i in range(iters):
+                    recurse(
+                        node.body,
+                        iter_index=i,
+                        iter_count=iters,
+                        phase="",
+                        domain_start=node.start,
+                        domain_end=node.end,
+                        domain_step=node.step,
+                        domain_entry=entry,
+                    )
+            case WhileTrueLoop():
+                if skip:
+                    continue
+                sequence = while_sequence
+                check_structure = sequence is not None
+                if sequence is None:
+                    sequence = [opaque_assignment or {}]
+                if not sequence:
+                    raise ValueError(
+                        f"Task {getattr(task, 'name', '?')!r}: while_true_loop() "
+                        "expansion received an empty assignment sequence."
+                    )
+                modeled = len(sequence)
+                for i, assignment in enumerate(sequence):
+                    hits: list = []
+                    start = len(result)
+                    recurse(
+                        node.body,
+                        assignment=assignment,
+                        iter_index=i,
+                        iter_count=modeled,
+                        phase="",
+                        while_sequence=None,
+                        break_hits=hits,
+                    )
+                    if not check_structure:
+                        continue
+                    emitted = result[start:]
+                    is_last = i == modeled - 1
+                    if is_last:
+                        if not hits:
+                            raise ValueError(
+                                f"Task {getattr(task, 'name', '?')!r}: "
+                                f"while_true_loop last iteration {i} of "
+                                f"{modeled} does not reach a break_loop()."
+                            )
+                    else:
+                        if hits:
+                            raise ValueError(
+                                f"Task {getattr(task, 'name', '?')!r}: "
+                                f"while_true_loop retry iteration {i} of "
+                                f"{modeled} reaches break_loop()."
+                            )
+                        if not any(
+                            op.schedule_stage in _WHILE_RETRY_PROGRESS_STAGES
+                            for op in emitted
+                        ):
+                            raise ValueError(
+                                f"Task {getattr(task, 'name', '?')!r}: "
+                                f"while_true_loop retry iteration {i} of "
+                                f"{modeled} has no blocking or state-changing "
+                                "pipeline op "
+                                f"(init={node.init.resource.name}."
+                                f"{node.init.label})."
+                            )
+            case ConditionalBlock(condition=guard) if guard is SKIPPABLE:
+                if skip:
+                    continue
+                recurse(node.body)
+            case ConditionalBlock(condition=guard):
+                # A non-skippable guard: an iteration predicate (always inside a
+                # domain loop, so iter_index/iter_count are set) or an opaque
+                # condition (which may sit outside any loop, where they are None;
+                # guard_fires ignores iter_index/iter_count for opaque guards).
+                if guard_fires(
+                    guard,
+                    iter_index if iter_index is not None else 0,
+                    iter_count if iter_count is not None else 0,
+                    opaque_assignment=opaque_assignment,
+                ):
+                    recurse(node.body, phase=_guard_phase(guard))
+            case _:
+                assert_never(node)
+
+
+def _assignment_for_task(
+    opaque_assignment: OpaqueAssignmentLike, task: Task
+) -> OpaqueAssignment | OpaqueAssignmentSequence | None:
+    """Unwrap a scenario (or pass through a dict / sequence) for one task."""
+    if isinstance(opaque_assignment, OpaqueAssignmentScenario):
+        return opaque_assignment.for_task(task)
+    return opaque_assignment
+
+
+def expand_task(
+    task: Task,
+    *,
+    skipped_tile: bool = False,
+    opaque_assignment: OpaqueAssignmentLike = None,
+    num_tiles: int = 1,
+    dynamic_domain_fallback: int = 1,
+) -> List[FlatScheduleOp]:
+    """Expand a task's schedule tree into execution-order :class:`FlatScheduleOp`s.
+
+    ``phase`` is ``"O"`` outside any domain loop, ``""`` inside a plain
+    domain-loop body, or ``"F"`` / ``"L"`` / ``"P"`` / ``"I"`` for a
+    first-iter / last-iter / ``Every`` / opaque-guarded step (see
+    :func:`_guard_phase`).  Domain-loop bounds travel on each op for
+    per-loop lane identity, together with the entry index that separates one
+    loop entry from the next; both are ``None`` outside a loop.
+
+    The ``WorkTileLoop`` body is replayed ``num_tiles`` times; work outside it
+    (prologue/epilogue) is emitted once.  On a skipped tile (``skipped_tile``
+    with a ``skip_if`` loop), domain-loop bodies, ``while_true_loop`` bodies,
+    and ``skippable()`` regions are omitted.
+
+    ``opaque_assignment`` may be a single assignment dict, a while-loop
+    assignment sequence, or an :class:`OpaqueAssignmentScenario`.  A sequence
+    unrolls the ``while_true_loop`` once per modeled iteration; init/advance
+    hooks are not emitted.  Partner-task opaque guards outside the while loop
+    see the last (break) assignment of that sequence.
+    """
+    result: List[FlatScheduleOp] = []
+    work_tile_loop = task._find_work_tile_loop()
+    skip = bool(
+        skipped_tile
+        and work_tile_loop is not None
+        and work_tile_loop.skip_if is not None
+    )
+    raw = _assignment_for_task(opaque_assignment, task)
+    if isinstance(raw, list):
+        outer: dict | None = raw[-1] if raw else {}
+        sequence: OpaqueAssignmentSequence | None = raw
+    else:
+        outer = raw
+        sequence = None
+    _emit_nodes(
+        task.schedule.body,
+        task,
+        outer,
+        dynamic_domain_fallback,
+        iter_index=None,
+        iter_count=None,
+        phase="O",
+        skip=skip,
+        num_tiles=num_tiles,
+        entry_counter=itertools.count(),
+        result=result,
+        while_sequence=sequence,
+    )
+    return result
+
+
+def _guard_phase(guard: object) -> str:
+    if guard is FIRST_ITER:
+        return "F"
+    if guard is LAST_ITER:
+        return "L"
+    if isinstance(guard, Every):
+        return "P"
+    if isinstance(guard, OpaqueCondition):
+        return "I"
+    if isinstance(guard, (GuardAnd, GuardOr)):
+        leaves = tuple(iter_leaves(guard))
+        if any(isinstance(leaf, OpaqueCondition) for leaf in leaves):
+            return "I"
+        if any(leaf is FIRST_ITER for leaf in leaves):
+            return "F"
+        if any(leaf is LAST_ITER for leaf in leaves):
+            return "L"
+        if any(isinstance(leaf, Every) for leaf in leaves):
+            return "P"
+    return ""
+
+
+def collect_opaque_keys(tasks: List[Task]) -> list:
+    """Return distinct opaque correlation keys across all task schedule trees.
+
+    Walks every conditional expression and collects opaque leaf keys once, in
+    first-seen order. Tokens used only as routed data are not verifier keys.
+    """
+    keys: list = []
+    seen: set = set()
+    for task in tasks:
+        for node in _iter_nodes(task.schedule.body):
+            if isinstance(node, ConditionalBlock):
+                for leaf in iter_leaves(node.condition):
+                    if isinstance(leaf, OpaqueCondition) and leaf.key not in seen:
+                        seen.add(leaf.key)
+                        keys.append(leaf.key)
+    return keys
+
+
+def collect_guard_observations(
+    tasks: List[Task],
+) -> list[tuple[BlockGuard, int, int]]:
+    """Collect each guard at every enclosing domain iteration it can observe."""
+    observations: list[tuple[BlockGuard, int, int]] = []
+    dynamic_fallback = dynamic_domain_fallback_for(tasks)
+
+    for task in tasks:
+
+        def walk(nodes: list, contexts: tuple[tuple[int, int], ...]) -> None:
+            for node in nodes:
+                if isinstance(node, (Step, StateAdvance, LoopBreak)):
+                    continue
+                if isinstance(node, DomainLoop):
+                    count = _domain_loop_iters(node, task, dynamic_fallback)
+                    walk(node.body, tuple((index, count) for index in range(count)))
+                    continue
+                if isinstance(node, ConditionalBlock):
+                    if node.condition is not SKIPPABLE:
+                        observations.extend(
+                            (node.condition, index, count) for index, count in contexts
+                        )
+                    walk(node.body, contexts)
+                    continue
+                if isinstance(node, (WorkTileLoop, WhileTrueLoop)):
+                    walk(node.body, contexts)
+                    continue
+                assert_never(node)
+
+        walk(task.schedule.body, ((0, 0),))
+    return observations
+
+
+def find_while_true_loop(task: Task) -> WhileTrueLoop | None:
+    """Return the unique ``WhileTrueLoop`` in ``task``, or ``None``."""
+    return task._find_while_true_loop()
+
+
+def collect_fire_count_hints(loop: WhileTrueLoop) -> list[tuple[BlockGuard, int]]:
+    """Collect ``verify_num_fires`` hints declared inside ``loop``.
+
+    Each hint pairs the *effective* firing condition of a hinted block with
+    the number of modeled rounds on which the author says it fires.  That
+    number is exact, not a floor: the arm this is meant for releases one stage
+    per row, so a sequence that runs it more often over-releases and a
+    sequence that runs it less leaves rows stranded.  Both are bugs to
+    surface, not models to admit.
+
+    The effective condition conjoins the enclosing conditional guards, because
+    a nested block only runs when its ancestors do; counting its own guard
+    alone would also count rounds on which an enclosing guard is false.
+
+    Hints are the only handle the verifier has on a counter-backed exit.  A
+    ``while_true_loop`` whose break tests ``valid_tile_count >= num_rows``
+    reads, to the verifier, as a free boolean, so without a hint it enumerates
+    exits after zero rounds, one round, and everything between -- almost all
+    of which the kernel cannot reach.
+    """
+    hints: list[tuple[BlockGuard, int]] = []
+
+    def walk(nodes: list, chain: tuple[BlockGuard, ...]) -> None:
+        for node in nodes:
+            if isinstance(node, ConditionalBlock):
+                inner = chain
+                if node.condition is not SKIPPABLE:
+                    inner = chain + (node.condition,)
+                if node.verify_num_fires is not None:
+                    # A hinted block always contributes its own condition, and
+                    # that condition is never SKIPPABLE (skippable() takes no
+                    # hint), so ``inner`` holds at least one guard.
+                    guard = inner[0] if len(inner) == 1 else GuardAnd(inner)
+                    hints.append((guard, node.verify_num_fires))
+                walk(node.body, inner)
+            elif isinstance(node, (DomainLoop, WorkTileLoop, WhileTrueLoop)):
+                walk(node.body, chain)
+
+    walk(loop.body, ())
+    return hints
+
+
+@dataclass(frozen=True)
+class CursorSnapshot:
+    """Ordinary pipeline-cursor state observed by a verifier model."""
+
+    index: int
+    count: int
+    num_stages: int
+
+    @property
+    def loop_offset(self) -> int:
+        """Logical position of the stage the cursor currently names."""
+        return self.index + self.count * self.num_stages
+
+
+@dataclass(frozen=True)
+class _CursorModel:
+    """One opaque work result derived from an ordinary pipeline cursor."""
+
+    key: Hashable
+    resource: MemoryResource
+    method_label: str
+    model: Callable[[MemoryResource, CursorSnapshot], object]
+
+    def evaluate(self, position: int) -> bool:
+        cfg = self.resource.pipeline_config
+        assert cfg is not None
+        snapshot = CursorSnapshot(
+            index=position % cfg.num_stages,
+            count=position // cfg.num_stages,
+            num_stages=cfg.num_stages,
+        )
+        return bool(self.model(self.resource, snapshot))
+
+    def produced_by(self, step: Step) -> bool:
+        """Return whether ``step`` is the work call this model stands in for."""
+        label = step.label or step.schedule_stage.value
+        return step.memory_resource is self.resource and label == self.method_label
+
+
+_LoopCursors = Dict[int, int]
+
+
+def collect_cursor_models(task: Task, loop: WhileTrueLoop) -> list[_CursorModel]:
+    """Collect ``verify_model`` declarations read inside ``loop``."""
+    models: dict[Hashable, _CursorModel] = {}
+    for node in _iter_nodes(loop.body):
+        if not isinstance(node, ConditionalBlock):
+            continue
+        for leaf in iter_leaves(node.condition):
+            if not isinstance(leaf, OpaqueCondition):
+                continue
+            if leaf.resource is None or leaf.method_label is None:
+                continue
+            if leaf.key in models:
+                continue
+            if not isinstance(leaf.resource, MemoryResource):
+                continue
+            model = verify_model_for(leaf.resource, leaf.method_label)
+            if model is None:
+                continue
+            if leaf.resource.pipeline_config is None:
+                raise ValueError(
+                    f"{leaf.resource.name}.{leaf.method_label}() declares "
+                    "verify_model=, but the resource has no pipeline_config "
+                    "and therefore no cursor to model."
+                )
+            models[leaf.key] = _CursorModel(
+                key=leaf.key,
+                resource=leaf.resource,
+                method_label=leaf.method_label,
+                model=model,
+            )
+    return list(models.values())
+
+
+def _apply_state_advance(cursors: _LoopCursors, advance: StateAdvance) -> _LoopCursors:
+    """Apply one ordinary pipeline-cursor advance."""
+    updated = dict(cursors)
+    rid = id(advance.state.resource)
+    updated[rid] = updated.get(rid, 0) + advance.count
+    return updated
+
+
+def _guard_keys(guard: BlockGuard) -> Iterator[Hashable]:
+    """Yield the opaque correlation keys ``guard`` reads."""
+    for leaf in iter_leaves(guard):
+        if isinstance(leaf, OpaqueCondition):
+            yield leaf.key
+
+
+def _replay_round(
+    loop: WhileTrueLoop,
+    models: list[_CursorModel],
+    assignment: OpaqueAssignment,
+    cursors: _LoopCursors,
+    pinned_keys: Set[Hashable],
+) -> Tuple[bool, OpaqueAssignment, _LoopCursors]:
+    """Replay one round: check its models and reduce it to what it observes.
+
+    Walks the loop body in schedule order under ``assignment`` and returns
+    ``(agrees, canonical_assignment, cursors_after)``.
+
+    ``agrees`` is false when a model disagrees with the value ``assignment``
+    stamped for its key, which means the round cannot happen and neither can
+    any sequence containing it.  A model constrains a round only when the
+    round both runs the work call and reads its output: a value nothing
+    branches on has no effect on the round, so pinning it would drop rounds
+    the kernel can reach.
+
+    ``canonical_assignment`` forces every key the round did not read to
+    ``False``.  Rounds that differ only in unread keys expand identically,
+    so canonicalizing lets the caller explore one of them instead of all,
+    which is what keeps a loop over several pipelines finite: a round of the
+    Q phase reads the Q probe and leaves the K and V probes untouched, and
+    without this the K/V outcomes would multiply into every Q round.  It also
+    makes ``verify_num_fires`` exact, because a hinted block cannot be
+    counted as firing on the strength of a guard the round never evaluated.
+    ``pinned_keys`` are exempt, and the caller supplies them for the break
+    round only: that round is the assignment :func:`expand_task` hands the
+    rest of this task and every partner task, so it also speaks for guards
+    outside the loop.
+
+    Raises ``ValueError`` when a modelled work call whose output the round
+    reads runs after the round has already moved that resource's cursor.
+    ``StageInfo.loop_offset`` inside a while loop is the value the loop's
+    ``advance=`` hook returned at the top of the round, so a work call
+    reading it after a ``next()`` in the same round sees the pre-``next()``
+    offset while this walk would hand the model the post-``next()`` cursor.
+    The retry idiom puts every cursor mutation after the guards, so this is a
+    shape the verifier rejects rather than mismodels.
+    """
+    read: Set[Hashable] = set()
+    pending: list[Tuple[_CursorModel, int]] = []
+
+    def fires(guard: BlockGuard) -> bool:
+        read.update(_guard_keys(guard))
+        return guard_fires(guard, 0, 0, opaque_assignment=assignment)
+
+    def walk(nodes: list) -> bool:
+        """Apply one nesting level of the round.
+
+        Returns whether a ``break_loop()`` ended it.  :func:`expand_task`
+        stops emitting the rest of the round once one is reached, and this
+        stops too, including through the conditional that contained it.  The
+        read set is then exactly the guards the expansion evaluates, which is
+        what makes the reduction below safe.
+        """
+        nonlocal cursors
+        for node in nodes:
+            if isinstance(node, LoopBreak):
+                for condition in node.conditions:
+                    read.update(_guard_keys(condition))
+                return True
+            if isinstance(node, Step):
+                for model in models:
+                    if model.produced_by(node):
+                        pending.append((model, cursors.get(id(model.resource), 0)))
+                continue
+            if isinstance(node, StateAdvance):
+                cursors = _apply_state_advance(cursors, node)
+                continue
+            if isinstance(node, ConditionalBlock):
+                if node.condition is not SKIPPABLE and not fires(node.condition):
+                    continue
+                if walk(node.body):
+                    return True
+                continue
+            # A domain_loop cannot nest inside a while_true_loop and neither
+            # can a second while loop, so the only containers left run their
+            # body once.
+            if walk(node.body):
+                return True
+        return False
+
+    walk(loop.body)
+    canonical = {
+        key: value if key in read or key in pinned_keys else False
+        for key, value in assignment.items()
+    }
+    for model, position in pending:
+        if model.key not in read:
+            continue
+        if model.evaluate(position) != bool(assignment.get(model.key, False)):
+            return False, canonical, cursors
+    return True, canonical, cursors
+
+
+def _cursors_entering_loop(
+    task: Task, loop: WhileTrueLoop, models: list[_CursorModel]
+) -> _LoopCursors:
+    """Cursor state the modelled resources hold when the loop starts.
+
+    Everything the task does before the loop is unguarded in practice (cursor
+    setup precedes the retry loop), so this applies the state ops it finds and
+    refuses the cases it cannot resolve statically rather than guessing.
+
+    Raises ``ValueError`` when a modelled resource's cursor is mutated inside
+    a conditional or a loop before the while loop: the entering state would
+    then depend on values this walk does not have, and a wrong entering state
+    silently mismodels every round.
+    """
+    cursors: _LoopCursors = {}
+    modelled = {id(model.resource) for model in models}
+    if not modelled:
+        return cursors
+
+    def walk(nodes: list, guarded: bool) -> bool:
+        """Apply pre-loop state ops; return whether the loop was reached."""
+        nonlocal cursors
+        for node in nodes:
+            if node is loop:
+                return True
+            if isinstance(node, StateAdvance):
+                if id(node.state.resource) not in modelled:
+                    continue
+                if guarded:
+                    raise ValueError(
+                        f"Task {task.name!r}: "
+                        f"{node.state.resource.name} carries a verify_model= "
+                        "guard, but its cursor is mutated inside a "
+                        "conditional or loop before while_true_loop(); the "
+                        "verifier cannot resolve the state the loop starts in."
+                    )
+                cursors = _apply_state_advance(cursors, node)
+                continue
+            if isinstance(node, (Step, LoopBreak)):
+                continue
+            # This walk sees the work-tile body once.  A second tile would
+            # enter where the first tile finished, which this map does not
+            # name.  :func:`check_all_interleavings` therefore checks one tile
+            # when a while loop has a ``verify_model``.  A conditional or a
+            # domain loop still makes the entering state depend on a guard
+            # this walk does not have.
+            nested_guarded = guarded or isinstance(node, (ConditionalBlock, DomainLoop))
+            if walk(node.body, nested_guarded):
+                return True
+        return False
+
+    walk(task.schedule.body, False)
+    return cursors
+
+
+def while_loop_exit_caveat(tasks: List[Task]) -> str | None:
+    """Note that a while-loop failure may be an unreachable-exit artifact.
+
+    A ``while_true_loop`` exit is an opaque formula, so the verifier models the
+    loop exiting after any number of rounds.  Most of those rounds counts are
+    unreachable when the exit tests a counter the loop body feeds, and a
+    failure found on one of them is a false positive: the partners stall
+    because the loop stopped releasing stages in a round sequence the kernel
+    never executes.  Returns ``None`` when no task has a while loop, so the
+    note only appears where it applies.
+    """
+    notes: list[str] = []
+    for task in tasks:
+        loop = find_while_true_loop(task)
+        if loop is None:
+            continue
+        hints = collect_fire_count_hints(loop)
+        counts = ", ".join(str(count) for count in loop.verify_num_iters)
+        pinned = (
+            ", ".join(
+                f"{_format_block_guard(guard)} fires {declared}x"
+                for guard, declared in hints
+            )
+            if hints
+            else "none"
+        )
+        models = collect_cursor_models(task, loop)
+        modelled = (
+            ", ".join(
+                f"{model.resource.name}.{model.method_label}()" for model in models
+            )
+            if models
+            else "none"
+        )
+        notes.append(
+            f"  {task.name}: opaque exit, "
+            f"modeled rounds {counts}, fire-count hints: {pinned}, "
+            f"cursor models: {modelled}"
+        )
+    if not notes:
+        return None
+    return "\n".join(
+        [
+            "NOTE: this kernel has a while_true_loop() whose exit is opaque, so "
+            "the report above may be a false positive: the verifier explores "
+            "round sequences that exit earlier or later than the kernel can. "
+            "Constrain them with when_true(..., verify_num_fires=N) on the "
+            "block whose count drives the exit.",
+            *notes,
+        ]
+    )
+
+
+def _fire_count(guard: BlockGuard, sequence: OpaqueAssignmentSequence) -> int:
+    """Count the rounds of ``sequence`` on which ``guard`` holds.
+
+    Iteration predicates cannot occur inside a ``while_true_loop`` (the
+    builder rejects a nested ``domain_loop``), so the iteration arguments are
+    unused and passed as zero.
+    """
+    return sum(
+        1
+        for assignment in sequence
+        if guard_fires(guard, 0, 0, opaque_assignment=assignment)
+    )
+
+
+def _reachable_fire_counts(
+    guard: BlockGuard,
+    retry_assignments: list[OpaqueAssignment],
+    break_assignments: list[OpaqueAssignment],
+    count: int,
+) -> Tuple[int, int]:
+    """Smallest and largest fire count ``guard`` can reach over ``count`` rounds.
+
+    A round is either one of the ``count - 1`` retry rounds or the final break
+    round.  A position contributes to the ceiling when some assignment fires
+    ``guard`` there and to the floor when every assignment does.
+
+    Because ``verify_num_fires`` is an exact count, a hint can be out of range
+    in either direction, and the two failures need different fixes: too high
+    wants a larger ``verify_num_iters``, while too low means the guard is one
+    the loop cannot avoid running that often.  Reporting only a ceiling would
+    describe the second case as if it were the first.
+
+    This treats every round as free, so it is only used when the loop carries
+    no ``verify_model``; with models the range is measured on the sequences
+    the models admit instead.
+    """
+    retry_rounds = count - 1
+    retry_can = any(
+        guard_fires(guard, 0, 0, opaque_assignment=a) for a in retry_assignments
+    )
+    retry_must = bool(retry_assignments) and all(
+        guard_fires(guard, 0, 0, opaque_assignment=a) for a in retry_assignments
+    )
+    break_can = any(
+        guard_fires(guard, 0, 0, opaque_assignment=a) for a in break_assignments
+    )
+    break_must = bool(break_assignments) and all(
+        guard_fires(guard, 0, 0, opaque_assignment=a) for a in break_assignments
+    )
+    low = (retry_rounds if retry_must else 0) + (1 if break_must else 0)
+    high = (retry_rounds if retry_can else 0) + (1 if break_can else 0)
+    return low, high
+
+
+def _opaque_clause_holds(
+    clause: tuple[BlockGuard, ...], assignment: OpaqueAssignment
+) -> bool:
+    """Return whether every conjunct in ``clause`` holds under ``assignment``.
+
+    An empty clause is an unconditional break (always true).
+    """
+    return all(guard_fires(cond, 0, 0, opaque_assignment=assignment) for cond in clause)
+
+
+def _is_break_assignment(loop: WhileTrueLoop, assignment: OpaqueAssignment) -> bool:
+    """Return whether ``assignment`` satisfies any captured break clause."""
+    return any(
+        _opaque_clause_holds(clause, assignment) for clause in loop.break_conditions
+    )
+
+
+def _round_signature(
+    assignment: OpaqueAssignment, keys: list[object]
+) -> Tuple[bool, ...]:
+    """Order-independent identity of one round's canonical assignment."""
+    return tuple(bool(assignment.get(key, False)) for key in keys)
+
+
+def _model_consistent_sequences(
+    loop: WhileTrueLoop,
+    models: list[_CursorModel],
+    retry_assignments: list[OpaqueAssignment],
+    break_assignments: list[OpaqueAssignment],
+    count: int,
+    entering: _LoopCursors,
+    keys: list[object],
+    pinned_keys: Set[Hashable],
+) -> list[OpaqueAssignmentSequence]:
+    """Enumerate the ``count``-round sequences this loop can run.
+
+    Rounds are extended one at a time rather than filtered out of a finished
+    product, for two reasons.  A round that contradicts a cursor model prunes
+    the whole subtree, and the contradiction is only visible in order because
+    the cursor state depends on the rounds before it.  And each round is
+    reduced to the guards it actually reads
+    (:func:`_replay_round`), so rounds that expand identically are explored
+    once: without that, a loop that probes three pipelines in alternating
+    phases multiplies the two idle pipelines' outcomes into every round.
+    """
+    sequences: list[OpaqueAssignmentSequence] = []
+
+    def rounds(
+        candidates: list[OpaqueAssignment],
+        cursors: _LoopCursors,
+        pinned: Set[Hashable],
+    ) -> list[Tuple[OpaqueAssignment, _LoopCursors]]:
+        """Distinct rounds runnable from ``cursors``, in candidate order."""
+        distinct: dict[Tuple[bool, ...], Tuple[OpaqueAssignment, _LoopCursors]] = {}
+        for candidate in candidates:
+            agrees, canonical, after = _replay_round(
+                loop, models, candidate, cursors, pinned
+            )
+            if not agrees:
+                continue
+            distinct.setdefault(_round_signature(canonical, keys), (canonical, after))
+        return list(distinct.values())
+
+    def extend(
+        prefix: List[OpaqueAssignment], cursors: _LoopCursors, remaining: int
+    ) -> None:
+        if remaining == 1:
+            # Only the break round has to carry keys this loop does not read:
+            # it is the assignment :func:`expand_task` gives the rest of this
+            # task and every partner task.  A retry round speaks for nothing
+            # outside its own iteration of the loop body.
+            for brk, _after in rounds(break_assignments, cursors, pinned_keys):
+                sequences.append(prefix + [brk])
+            return
+        for retry, after in rounds(retry_assignments, cursors, set()):
+            extend(prefix + [retry], after, remaining - 1)
+
+    extend([], entering, count)
+    return sequences
+
+
+def keys_read_outside(tasks: List[Task], loop: WhileTrueLoop) -> Set[Hashable]:
+    """Collect the opaque keys read anywhere other than inside ``loop``.
+
+    A round of ``loop`` is reduced to the guards it reads
+    (:func:`_replay_round`), which is only sound for keys whose *only* reader
+    is that loop.  A key a partner task branches on, or one this task reads
+    before the loop, has to survive: the break round doubles as the
+    ``default_assignment`` every non-while task expands with.
+    """
+    outside: Set[Hashable] = set()
+
+    def walk(nodes: list, inside: bool) -> None:
+        for node in nodes:
+            if isinstance(node, Step):
+                continue
+            if isinstance(node, LoopBreak):
+                if not inside:
+                    for condition in node.conditions:
+                        outside.update(_guard_keys(condition))
+                continue
+            if isinstance(node, StateAdvance):
+                continue
+            if isinstance(node, ConditionalBlock):
+                if not inside and node.condition is not SKIPPABLE:
+                    outside.update(_guard_keys(node.condition))
+                walk(node.body, inside)
+                continue
+            walk(node.body, inside or node is loop)
+
+    for task in tasks:
+        walk(task.schedule.body, False)
+    return outside
+
+
+def _while_true_loop_task_sequences(
+    task: Task,
+    loop: WhileTrueLoop,
+    keys: list[object],
+    guard_observations: list[tuple[BlockGuard, int, int]] | None = None,
+    pinned_keys: Set[Hashable] | None = None,
+) -> list[OpaqueAssignmentSequence]:
+    """Build ``retry^(N-1) + break`` sequences for one while-loop task.
+
+    Two author-supplied constraints prune the result, and a sequence has to
+    pass both:
+
+    * ``verify_model`` replicas (:func:`collect_cursor_models`) are checked
+      round by round while the sequence is built, so a round whose enumerated
+      value contradicts the cursor is never extended.  This is the exact
+      constraint of the two -- the verifier recomputes the value rather than
+      counting occurrences.
+    * ``verify_num_fires`` hints (:func:`collect_fire_count_hints`) are
+      checked on the finished sequence: it survives only when every hinted
+      block fires on exactly as many rounds as declared.  A modeled count too
+      small to meet the hints contributes nothing instead of failing, so an
+      author can offer several counts to explore how many unproductive rounds
+      to model.
+
+    Each round is also reduced to the guards it reads, so the result grows
+    with the branching of one phase of the loop rather than with all of them
+    at once (:func:`_replay_round`).
+
+    Raises ``ValueError`` when no assignment satisfies a break clause, when
+    ``N > 1`` but every assignment is a break assignment (no retry class), or
+    when no count in ``verify_num_iters`` can meet the constraints.
+    """
+    all_assignments = _opaque_assignments(keys, guard_observations)
+    break_assignments = [
+        assignment
+        for assignment in all_assignments
+        if _is_break_assignment(loop, assignment)
+    ]
+    retry_assignments = [
+        assignment
+        for assignment in all_assignments
+        if not _is_break_assignment(loop, assignment)
+    ]
+    task_name = getattr(task, "name", "?")
+    if not break_assignments:
+        raise ValueError(
+            f"Task {task_name!r}: while_true_loop() has no assignment that "
+            "satisfies a break_loop() clause; the loop cannot be verified."
+        )
+    fire_hints = collect_fire_count_hints(loop)
+    models = collect_cursor_models(task, loop)
+    entering = _cursors_entering_loop(task, loop, models)
+    sequences: list[OpaqueAssignmentSequence] = []
+    # Whether the models alone admitted anything, which is what tells the two
+    # "nothing survived" diagnoses apart: an unreachable round count and an
+    # unreachable fire count need different fixes.
+    model_admitted = False
+    widest = max(loop.verify_num_iters)
+    # The widest count's model-consistent sequences, kept for the fire-count
+    # diagnostic: with models in play the reachable range has to be measured
+    # on the rounds the models admit, not on the raw assignment classes.
+    admitted_widest: list[OpaqueAssignmentSequence] = []
+    for count in loop.verify_num_iters:
+        if count > 1 and not retry_assignments:
+            raise ValueError(
+                f"Task {task_name!r}: while_true_loop() "
+                f"verify_num_iters={count} requires a retry assignment, "
+                "but every opaque assignment satisfies a break_loop() "
+                "clause."
+            )
+        for_count = _model_consistent_sequences(
+            loop,
+            models,
+            retry_assignments,
+            break_assignments,
+            count,
+            entering,
+            keys,
+            pinned_keys or set(),
+        )
+        model_admitted = model_admitted or bool(for_count)
+        if count == widest:
+            admitted_widest = list(for_count)
+        for guard, declared in fire_hints:
+            for_count = [
+                seq for seq in for_count if _fire_count(guard, seq) == declared
+            ]
+        # A modeled count that cannot meet the hints is dropped rather than
+        # rejected: offering several counts alongside a hint is how an author
+        # asks for "these many productive rounds plus zero, one or two
+        # unproductive ones", and the counts below that floor are simply not
+        # models of this kernel.  Only an empty result is an error.
+        sequences.extend(for_count)
+    if models and not model_admitted:
+        modelled = ", ".join(
+            f"{model.resource.name}.{model.method_label}()" for model in models
+        )
+        raise ValueError(
+            f"Task {task_name!r}: no while_true_loop() round sequence agrees "
+            f"with the verify_model= of {modelled} over verify_num_iters="
+            f"{tuple(loop.verify_num_iters)}.  The loop cannot run for any of "
+            "the modeled round counts: pick a count the cursor can reach, or "
+            "correct the model."
+        )
+    if fire_hints and not sequences:
+        details: list[str] = []
+        for guard, declared in fire_hints:
+            if models:
+                counts = [_fire_count(guard, seq) for seq in admitted_widest]
+                low, high = (min(counts), max(counts)) if counts else (0, 0)
+            else:
+                low, high = _reachable_fire_counts(
+                    guard, retry_assignments, break_assignments, widest
+                )
+            reach = f"exactly {low}" if low == high else f"between {low} and {high}"
+            details.append(
+                f"{_format_block_guard(guard)} declares "
+                f"verify_num_fires={declared} but fires on {reach} of the "
+                f"{widest} modeled rounds"
+            )
+        raise ValueError(
+            f"Task {task_name!r}: no while_true_loop() round sequence satisfies "
+            f"verify_num_fires over verify_num_iters="
+            f"{tuple(loop.verify_num_iters)}: {'; '.join(details)}.  Raise "
+            "verify_num_iters to model more rounds, or correct the hint."
+        )
+    return sequences
+
+
+def opaque_assignment_sequences(
+    tasks: List[Task], keys: list[object]
+) -> list[OpaqueAssignment | OpaqueAssignmentScenario]:
+    """Enumerate opaque assignments, using while-loop sequences when present.
+
+    With no ``while_true_loop``, this is the cartesian product of boolean
+    assignments over ``keys`` (same as ``_opaque_assignments``).
+
+    When one or more tasks contain a while loop, each scenario carries a
+    per-task sequence for those tasks and uses the last (break) assignment of
+    the first while-loop task as ``default_assignment`` for partners.
+
+    """
+    while_tasks: list[tuple[Task, WhileTrueLoop]] = []
+    for task in tasks:
+        loop = find_while_true_loop(task)
+        if loop is not None:
+            while_tasks.append((task, loop))
+    guard_observations = collect_guard_observations(tasks)
+    if not while_tasks:
+        return cast(
+            list[OpaqueAssignment | OpaqueAssignmentScenario],
+            _opaque_assignments(keys, guard_observations),
+        )
+
+    per_task_sequences = [
+        _while_true_loop_task_sequences(
+            task,
+            loop,
+            keys,
+            guard_observations,
+            pinned_keys=keys_read_outside(tasks, loop),
+        )
+        for task, loop in while_tasks
+    ]
+    scenarios: list[OpaqueAssignment | OpaqueAssignmentScenario] = []
+    for combo in itertools.product(*per_task_sequences):
+        task_assignments: dict[int, OpaqueAssignment | OpaqueAssignmentSequence] = {
+            id(task): sequence for (task, _loop), sequence in zip(while_tasks, combo)
+        }
+        task_names = {id(task): task.name for task, _loop in while_tasks}
+        first_sequence = combo[0]
+        default = first_sequence[-1] if first_sequence else {}
+        scenarios.append(
+            OpaqueAssignmentScenario(
+                default_assignment=default,
+                task_assignments=task_assignments,
+                task_names=task_names,
+            )
+        )
+    return scenarios
+
+
+def dynamic_domain_fallback_for(tasks: List[Task]) -> int:
+    """Representative end bound for unfoldable domain-loop bounds in a kernel.
+
+    One past the largest ``domain_loop`` start across ``tasks``, where a start
+    folds from a literal or from a callable probed on a representative work
+    tile.  The value is kernel-wide so trip counts stay comparable between
+    tasks: a loop peeled to start at N models one iteration fewer than the loop
+    it consumes from, keeping producer commits balanced against consumer waits.
+    A start that does not fold contributes nothing; expansion warns about it.
+    """
+    starts: list[int] = []
+    for task in tasks:
+        for node in _iter_nodes(task.schedule.body):
+            if isinstance(node, DomainLoop):
+                start = _fold_domain_bound(node.start, task, "start", warn=False)
+                if start is not None:
+                    starts.append(start)
+    return (max(starts) if starts else 0) + 1
 
 
 # ── Result data classes ──────────────────────────────────────────────────
@@ -303,34 +1812,53 @@ def _expand_task_for_check(
 
 @dataclass(slots=True)
 class BlockedTaskInfo:
-    """Detailed reason one task is blocked in a deadlock state."""
+    """Detailed reason one task is blocked in a deadlock state.
+
+    ``barrier_kind`` names which barrier field the step compares against:
+    ``"conditional phase"`` for a ``ConsumerWait``, ``"empty"`` for a
+    ``ProducerAcquire``, or ``"primary phase"`` for a ``test_wait_valid``
+    whose enumerated outcome claims a completion that has not happened.
+    ``expected_phase`` is the phase the step's own software cursor names and
+    ``observed_phase`` the phase the barrier is in; the compare succeeds when
+    they differ, so equal values are the block.  ``window_state``, when set,
+    says how far the stage's V1 arm/land window got, which is what
+    distinguishes "nobody armed this stage" from "armed but never landed".
+    """
 
     task_name: str
     resource_name: str
     stage_name: str
-    credit_kind: str
+    barrier_kind: str
     physical_stage: int
-    available_stage_counts: Tuple[Tuple[int, int], ...]
+    expected_phase: int
+    observed_phase: int
+    window_state: str
+    pending_arrivals: int
+    expected_arrivals: int
     domain_interleaved: bool
+    available_stage_counts: Tuple[Tuple[int, int], ...]
 
     def format(self) -> str:
         """Return a human-readable one-line deadlock explanation."""
-        base = (
-            f"{self.task_name} blocked on {self.resource_name}.{self.stage_name} "
-            f"waiting for {self.credit_kind}"
+        base = f"{self.task_name} blocked on {self.resource_name}.{self.stage_name}"
+        detail = (
+            f"{base}: {self.barrier_kind}[{self.resource_name}, physical stage "
+            f"{self.physical_stage}] expecting phase {self.expected_phase}, "
+            f"barrier is in phase {self.observed_phase} with "
+            f"{self.pending_arrivals} of {self.expected_arrivals} arrival"
+            f"{'' if self.expected_arrivals == 1 else 's'}"
         )
+        if self.window_state:
+            detail += f", {self.window_state}"
         if self.domain_interleaved:
-            base += f" at physical stage {self.physical_stage}"
-        if not self.available_stage_counts:
-            return f"{base}; no matching credit is available for this resource"
-
-        stage_text = ", ".join(
-            f"physical stage {stage} ({count} credit{'s' if count != 1 else ''})"
-            for stage, count in self.available_stage_counts
-        )
-        if self.domain_interleaved:
-            return f"{base}; available credits are on {stage_text}"
-        return f"{base}; available credits: {stage_text}"
+            detail += "; this resource is tracked per domain-interleave lane"
+        if self.available_stage_counts:
+            available = ", ".join(
+                f"physical stage {stage} ({count} available)"
+                for stage, count in self.available_stage_counts
+            )
+            detail += f"; matching phase is available on {available}"
+        return detail
 
 
 @dataclass(slots=True)
@@ -352,18 +1880,6 @@ class DeadlockInfo:
                 for task, resource, stage in self.blocked_tasks
             )
         return lines
-
-
-def _available_stage_counts(
-    credits: Dict[CreditKey, int],
-    resource_id: int,
-) -> Tuple[Tuple[int, int], ...]:
-    """Positive credit counts for one resource, grouped by physical stage."""
-    return tuple(
-        (stage, count)
-        for (rid, stage), count in sorted(credits.items())
-        if rid == resource_id and count > 0
-    )
 
 
 @dataclass(slots=True)
@@ -389,6 +1905,16 @@ class PdlOrderInfo:
 
 
 @dataclass(slots=True)
+class ProtocolErrorInfo:
+    """A barrier protocol violation found during exhaustive exploration."""
+
+    cursors: tuple
+    task_name: str
+    resource_name: str
+    message: str
+
+
+@dataclass(slots=True)
 class CheckResult:
     """Aggregated results from ``check_all_interleavings``."""
 
@@ -398,25 +1924,33 @@ class CheckResult:
     complete_count: int
     is_safe: bool
     pdl_order_states: List[PdlOrderInfo] = field(default_factory=list)
+    protocol_states: List[ProtocolErrorInfo] = field(default_factory=list)
     hit_state_limit: bool = False
 
 
 @dataclass(slots=True)
 class _BfsState:
-    """One queued BFS state."""
+    """One queued BFS state.
+
+    ``barriers`` is the flat barrier vector described by :data:`_BARRIER_FIELDS`
+    — the only synchronization state the checker carries, since software cursor
+    values are a pure function of a task's own position and are resolved
+    statically by :func:`~.task_manager._simulate_cursors`.
+    """
 
     cursors: tuple
     cursor_key: int
-    prod_credits: CreditTuple
-    cons_credits: CreditTuple
+    barriers: BarrierTuple
     held: HeldMap
-    total_counts: TotalCounts
     path: Optional[List[Tuple[str, str]]]
     has_executed_pdl_wait: bool
 
 
 # ── Stage classifications ────────────────────────────────────────────────
 
+# Barrier-protocol stages whose ownership transition the held-state tracker
+# has to see.  Which steps can *block* is decided per step from the barrier it
+# compares against (``_StepInfo.gate_kind``), not from this set.
 _BLOCKING = frozenset({ScheduleStage.ConsumerWait, ScheduleStage.ProducerAcquire})
 _POINT_WRITE = frozenset({ScheduleStage.ProducerWork})
 _POINT_READ = frozenset({ScheduleStage.ConsumerWork})
@@ -425,28 +1959,30 @@ _POINT_READ = frozenset({ScheduleStage.ConsumerWork})
 # ── Helper functions ─────────────────────────────────────────────────────
 
 
-def _is_pdl_wait_entry(entry: tuple) -> bool:
+def _is_pdl_wait_entry(entry: FlatScheduleOp) -> bool:
     """Return True when a schedule entry emits PDL wait."""
     return (
-        isinstance(entry[0], PdlWaitBarrier) and entry[1] == ScheduleStage.ConsumerWork
+        isinstance(entry.resource, PdlWaitBarrier)
+        and entry.schedule_stage == ScheduleStage.ConsumerWork
     )
 
 
-def _is_pdl_launch_entry(entry: tuple) -> bool:
+def _is_pdl_launch_entry(entry: FlatScheduleOp) -> bool:
     """Return True when a schedule entry emits PDL launch-dependents."""
     return (
-        isinstance(entry[0], PdlLaunchBarrier)
-        and entry[1] == ScheduleStage.ProducerWork
+        isinstance(entry.resource, PdlLaunchBarrier)
+        and entry.schedule_stage == ScheduleStage.ProducerWork
     )
 
 
 def _is_tracked(res: MemoryResource) -> bool:
-    """WorkQueue resources are exempt from credit tracking.
+    """WorkQueue resources are exempt from barrier tracking.
 
-    PipelineGroups are credit-tracked (they carry a merged pipeline_config).
-    Member resources whose barrier ops go through a group are NOT
-    independently credit-tracked for barrier stages; their Work ops use
-    the member's held-state but not credit tracking.
+    A ``WorkQueue`` manages its own CLC pipeline internally, so its steps
+    never gate on a barrier the checker models.  ``PipelineGroup`` objects are
+    tracked (they carry a merged ``pipeline_config``); a member whose barrier
+    ops go through a group still uses its own held-state for race detection
+    but does not own the barrier those ops signal.
     """
     return not isinstance(res, WorkQueue)
 
@@ -467,43 +2003,10 @@ def _collect_resources(tasks: List[Task]) -> List[MemoryResource]:
     return resources
 
 
-def _build_initial_cons_credits(
-    resources: List[MemoryResource],
-    domain_rids: Set[int],
-) -> Dict[CreditKey, int]:
-    """Each pipelined resource starts with ``num_stages`` empty-slot credits.
-
-    Group members get their own independent credits (``PipelineGroup``
-    objects themselves are skipped since they are not in schedules).
-
-    Credits are keyed ``(id(res), stage)`` to match
-    ``_precompute_stage_credit_keys``.  A domain-interleaved resource is
-    split into one credit *per physical stage* (each ring slot starts with
-    a single empty credit); every other resource keeps a single pool at
-    stage ``0`` with ``num_stages`` credits.  The total empty count is
-    unchanged either way.
-    """
-    credits: Dict[CreditKey, int] = {}
-    for res in resources:
-        if (
-            res.pipeline_config is not None
-            and not isinstance(res, WorkQueue)
-            and not isinstance(res, PipelineGroup)
-        ):
-            rid = id(res)
-            num_stages = res.pipeline_config.num_stages
-            if rid in domain_rids:
-                for stage in range(num_stages):
-                    credits.setdefault((rid, stage), 1)
-            else:
-                credits.setdefault((rid, 0), num_stages)
-    return credits
-
-
 def _allocs_to_ranges(allocs: list) -> list:
     """Convert ``SmemAllocation`` / ``TmemAllocation`` objects to ranges.
 
-    Returns a list of ``(space, start, end)`` tuples.
+        Returns a list of ``(space, start, end)`` tuples.
     """
     ranges: list = []
     for a in allocs:
@@ -803,15 +2306,6 @@ def _find_races_at_state(
     return races
 
 
-def _freeze_credits(credits: Dict[CreditKey, int]) -> tuple:
-    """Canonicalize credit maps for visited-state keys.
-
-    Keys are ``(id(resource), physical_stage)`` tuples, so a plain sort
-    yields a stable canonical order.
-    """
-    return tuple(sorted((key, val) for key, val in credits.items() if val != 0))
-
-
 def _freeze_held(held: HeldMap) -> tuple:
     """Canonicalize held map for visited-state keys.
 
@@ -827,24 +2321,18 @@ def _freeze_held(held: HeldMap) -> tuple:
 
 def _make_state_key(
     cursors: tuple,
-    prod_credits: Dict[CreditKey, int],
-    cons_credits: Dict[CreditKey, int],
+    barriers: BarrierTuple,
     held: HeldMap,
 ) -> tuple:
-    """Build visited-state key for BFS deduplication.
+    """Build the ``cursor_only_visited=False`` visited-state key.
 
-    Credits, held state, and event totals are all deterministic
-    functions of the cursor positions, so ``cursors`` alone would
-    suffice.  We keep credits and held in the key as a defensive
-    measure — if a bug makes them diverge from the cursors the BFS
-    will still explore both branches instead of silently dropping one.
+    Barrier state and held state are both deterministic functions of the
+    cursor positions — every arrival sits at a fixed offset in some task's
+    schedule — so the default key uses the cursors alone.  Spelling them out
+    here can only split states, never merge them, so a run whose
+    ``states_explored`` grows under this key has found a divergence.
     """
-    return (
-        cursors,
-        _freeze_credits(prod_credits),
-        _freeze_credits(cons_credits),
-        _freeze_held(held),
-    )
+    return (cursors, barriers, _freeze_held(held))
 
 
 # ── Optimized BFS metadata ──────────────────────────────────────────────
@@ -852,18 +2340,32 @@ def _make_state_key(
 
 @dataclass(frozen=True, slots=True)
 class _StepInfo:
-    """Precomputed metadata for one schedule position."""
+    """Precomputed metadata for one schedule position.
+
+    Barrier-related fields resolve, statically, which barrier record a step
+    touches and how:
+
+    - ``physical_stage`` is the ring slot the step's software cursor names,
+      and is what diagnostics report.
+    - ``full_slot`` / ``empty_slot`` index into the barrier vector.  They are
+      equal except on a ``FusedMerge`` member, whose transfer arrives on the
+      group's shared full barrier while its empty barrier stays its own.
+    - ``gate_kind`` is which phase compare (if any) can block the step;
+      ``gate_slot`` is the barrier record it reads and ``gate_phase`` the
+      phase the step's own software cursor names.
+    - ``arrives_on_full`` / ``arrives_on_empty`` mark the step that increments
+      an arrival count, and ``full_expected`` / ``empty_expected`` how many
+      arrivals flip that barrier.
+    """
 
     res: MemoryResource
-    stage: ScheduleStage
+    stage: Optional[ScheduleStage]
     rid: int
-    track: bool
     in_alias: bool
     is_pdl_wait: bool
     is_pdl_launch: bool
     cons_work_phase: Optional[str]
     consecutive_same_work: bool
-    is_blocking: bool
     is_point_write: bool
     is_point_read: bool
     is_producer_commit: bool
@@ -872,23 +2374,28 @@ class _StepInfo:
     is_producer_acquire: bool
     is_producer_work: bool
     is_consumer_work: bool
-    has_credit_transition: bool
+    has_barrier_transition: bool
     needs_held_update: bool
-    is_fork_group: bool
     is_merge_group: bool
     is_fused_merge_group: bool
-    group_member_rids: Tuple[int, ...]
-    credit_idx: int
-    producer_count: int
-    consumer_count: int
-    group_member_prod_counts: Tuple[Tuple[int, int], ...]
-    group_member_cons_counts: Tuple[Tuple[int, int], ...]
     producer_slot: int
     consumer_slot: int
     group_member_release_slots: Tuple[Tuple[int, int], ...]
     group_member_wait_slots: Tuple[Tuple[int, int], ...]
     completion_wait_rids: Tuple[int, ...]
     commit_wait_gen: int
+    physical_stage: int
+    full_slot: int
+    empty_slot: int
+    gate_kind: int
+    gate_slot: int
+    gate_phase: int
+    arrives_on_full: bool
+    arrives_on_empty: bool
+    full_expected: int
+    empty_expected: int
+    group_full_arrivals: Tuple[Tuple[int, int], ...]
+    group_empty_arrivals: Tuple[Tuple[int, int], ...]
 
 
 @dataclass(slots=True)
@@ -907,7 +2414,6 @@ class _CheckerContext:
     n_tasks: int
     schedule_lens: List[int]
     cursor_strides: List[int]
-    credit_key_order: List[CreditKey]
     schedule_steps: List[List[Optional[_StepInfo]]]
     id_to_res: Dict[int, MemoryResource]
     alias_map: Dict[int, Set[int]]
@@ -955,176 +2461,77 @@ def _build_consumer_completion_metadata(
     return _ConsumerCompletionMetadata(dma_consumer_rids, completion_wait_rids)
 
 
-def _initial_interleave_lane(task: Task, stride: int) -> int:
-    """Return the static pipeline lane represented by this task in the checker."""
-    if stride <= 1:
-        return 0
-    if task._uses_domain_interleave_lane(stride) and isinstance(task.domain_start, int):
-        return task.domain_start % stride
-    # The checker models one logical task, not each participating warp.
-    # Warp-local interleave lanes therefore use lane 0 as the representative
-    # slot for held-state race tracking.
-    return 0
-
-
 def _precompute_schedule_steps(
-    tasks: List[Task],
     schedules: List[list],
     alias_map: Dict[int, Set[int]],
     num_producers: Dict[int, int],
     num_consumers: Dict[int, int],
     completion_wait_rids: Dict[int, Set[int]],
-    credit_keys: List[List[CreditKey]],
-    credit_idx_by_key: Dict[CreditKey, int],
+    barrier_offsets: Dict[int, int],
 ) -> List[List[Optional[_StepInfo]]]:
-    """Build per-(task, cursor) metadata to avoid hot-loop unpacking."""
+    """Build per-(task, cursor) metadata to avoid hot-loop unpacking.
+
+    All slot and phase values come from ``entry.cursor_state``, which
+    :func:`~.task_manager._simulate_cursors` resolved by walking the task's own
+    explicit cursor IR.  ``ensure_explicit_state_ir`` guarantees every
+    pipelined step carries a binding, so a pipelined step always has a
+    simulated ``(index, phase, count)``.
+    """
     out: List[List[Optional[_StepInfo]]] = []
-    for task_idx, sched in enumerate(schedules):
-        task = tasks[task_idx]
-        producer_acquire_next: Dict[int, int] = {}
-        producer_commit_next: Dict[int, int] = {}
-        producer_current: Dict[int, int] = {}
-        consumer_wait_next: Dict[int, int] = {}
-        consumer_release_next: Dict[int, int] = {}
-        consumer_current: Dict[int, int] = {}
+    for sched in schedules:
         commit_gen: Dict[int, int] = {}
         wait_gen: Dict[int, int] = {}
-
-        def _index_for(
-            next_by_rid: Dict[int, int],
-            resource: MemoryResource,
-            stride: int,
-        ) -> int:
-            rid = id(resource)
-            if rid not in next_by_rid:
-                next_by_rid[rid] = _initial_interleave_lane(task, stride)
-            return next_by_rid[rid]
-
-        def _producer_acquire_slot(resource: MemoryResource) -> int:
-            cfg = resource.pipeline_config
-            if cfg is None:
-                return _SLOTLESS
-            idx = _index_for(
-                producer_acquire_next,
-                resource,
-                cfg.producer_acquire_interleave_stride,
-            )
-            return idx % cfg.num_stages
-
-        def _producer_commit_slot(resource: MemoryResource) -> int:
-            cfg = resource.pipeline_config
-            if cfg is None:
-                return _SLOTLESS
-            idx = _index_for(
-                producer_commit_next,
-                resource,
-                cfg.producer_commit_interleave_stride,
-            )
-            return idx % cfg.num_stages
-
-        def _consumer_wait_slot(resource: MemoryResource) -> int:
-            cfg = resource.pipeline_config
-            if cfg is None:
-                return _SLOTLESS
-            idx = _index_for(
-                consumer_wait_next,
-                resource,
-                cfg.consumer_wait_interleave_stride,
-            )
-            return idx % cfg.num_stages
-
-        def _consumer_release_slot(resource: MemoryResource) -> int:
-            cfg = resource.pipeline_config
-            if cfg is None:
-                return _SLOTLESS
-            idx = _index_for(
-                consumer_release_next,
-                resource,
-                cfg.consumer_release_interleave_stride,
-            )
-            return idx % cfg.num_stages
-
-        def _advance_producer_after_acquire(resource: MemoryResource) -> None:
-            cfg = resource.pipeline_config
-            if cfg is None or not cfg.advance_on_acquire:
-                return
-            rid = id(resource)
-            producer_acquire_next[rid] = (
-                _index_for(
-                    producer_acquire_next,
-                    resource,
-                    cfg.producer_acquire_interleave_stride,
-                )
-                + cfg.producer_acquire_interleave_stride
-            )
-
-        def _advance_producer_after_commit(resource: MemoryResource) -> None:
-            cfg = resource.pipeline_config
-            if cfg is None:
-                return
-            if cfg.advance_on_acquire:
-                rid = id(resource)
-                producer_commit_next[rid] = (
-                    _index_for(
-                        producer_commit_next,
-                        resource,
-                        cfg.producer_commit_interleave_stride,
-                    )
-                    + cfg.producer_commit_interleave_stride
-                )
-            else:
-                rid = id(resource)
-                producer_acquire_next[rid] = (
-                    _index_for(
-                        producer_acquire_next,
-                        resource,
-                        cfg.producer_acquire_interleave_stride,
-                    )
-                    + cfg.producer_acquire_interleave_stride
-                )
-
-        def _advance_consumer_after_wait(resource: MemoryResource) -> None:
-            cfg = resource.pipeline_config
-            if cfg is None or not cfg.advance_on_wait:
-                return
-            rid = id(resource)
-            consumer_wait_next[rid] = (
-                _index_for(
-                    consumer_wait_next,
-                    resource,
-                    cfg.consumer_wait_interleave_stride,
-                )
-                + cfg.consumer_wait_interleave_stride
-            )
-
-        def _advance_consumer_after_release(resource: MemoryResource) -> None:
-            cfg = resource.pipeline_config
-            if cfg is None:
-                return
-            if cfg.advance_on_wait:
-                rid = id(resource)
-                consumer_release_next[rid] = (
-                    _index_for(
-                        consumer_release_next,
-                        resource,
-                        cfg.consumer_release_interleave_stride,
-                    )
-                    + cfg.consumer_release_interleave_stride
-                )
-            else:
-                rid = id(resource)
-                consumer_wait_next[rid] = (
-                    _index_for(
-                        consumer_wait_next,
-                        resource,
-                        cfg.consumer_wait_interleave_stride,
-                    )
-                    + cfg.consumer_wait_interleave_stride
-                )
+        # Per (rid, stage) the index of the last ProducerWork of the transfer
+        # group currently open on that stage.  A transfer-completing pipeline
+        # attributes the arrival to the last transfer of the group, because on
+        # hardware the barrier's transaction count spans every transfer issued
+        # into the stage and only completes when the last one lands.  A group
+        # is closed by the ProducerCommit that ends the round or by the next op
+        # that arms the stage, whichever comes first.
+        pending_work: Dict[Tuple[int, int], int] = {}
+        arrives_at: Set[int] = set()
+        commit_without_work: Set[int] = set()
 
         steps: List[Optional[_StepInfo]] = []
         for c, entry in enumerate(sched):
-            res, stage = entry[0], entry[1]
+            res, stage = entry.resource, entry.schedule_stage
+            rid = id(res)
+            cfg = res.pipeline_config
+            simulated = _step_cursor_state(entry)
+            slot = simulated[0] if simulated is not None else _SLOTLESS
+            if cfg is not None and not _is_tracked(res):
+                slot = _SLOTLESS
+            if (
+                cfg is not None
+                and slot != _SLOTLESS
+                and cfg.pipeline_type in _TRANSFER_COMPLETES_FULL
+                and not _commits_at_group_level(res)
+            ):
+                key = (rid, slot)
+                if stage is ScheduleStage.ProducerWork:
+                    pending_work[key] = c
+                elif stage is ScheduleStage.ProducerCommit:
+                    work_c = pending_work.pop(key, None)
+                    if work_c is None:
+                        # A group-level commit can cover transfers issued on
+                        # the members. Keeping the arrival on the commit leaves
+                        # that round verifiable instead of reporting a false
+                        # deadlock.
+                        commit_without_work.add(c)
+                    else:
+                        arrives_at.add(work_c)
+                elif stage in _ARMS_FULL_BARRIER:
+                    # Arming the stage again closes the previous transfer
+                    # group: whatever it issued has landed by the time the
+                    # stage can be re-armed.
+                    work_c = pending_work.pop(key, None)
+                    if work_c is not None:
+                        arrives_at.add(work_c)
+        # A transfer with no commit behind it still completes the barrier.
+        arrives_at.update(pending_work.values())
+
+        for c, entry in enumerate(sched):
+            res, stage = entry.resource, entry.schedule_stage
             rid = id(res)
             is_producer_work = stage == ScheduleStage.ProducerWork
             is_consumer_work = stage == ScheduleStage.ConsumerWork
@@ -1138,8 +2545,8 @@ def _precompute_schedule_steps(
                 next_c = c + 1
                 consecutive = (
                     next_c < len(sched)
-                    and id(sched[next_c][0]) == rid
-                    and sched[next_c][1] == stage
+                    and id(sched[next_c].resource) == rid
+                    and sched[next_c].schedule_stage == stage
                 )
             group_member_rids: Tuple[int, ...] = ()
             is_fork_group = False
@@ -1154,10 +2561,7 @@ def _precompute_schedule_steps(
                     PipelineGroupMode.FusedMerge,
                 )
             pg = getattr(res, "pipeline_group", None)
-            is_fused_merge_producer = (
-                pg is not None and pg.mode == PipelineGroupMode.FusedMerge
-            )
-            is_blocking = stage in _BLOCKING
+            protocol_blocking = stage in _BLOCKING
             is_point_write = stage in _POINT_WRITE
             is_point_read = stage in _POINT_READ
             in_alias = rid in alias_map
@@ -1180,7 +2584,7 @@ def _precompute_schedule_steps(
                 or (
                     in_alias
                     and (
-                        is_blocking
+                        protocol_blocking
                         or is_point_write
                         or is_point_read
                         or is_consumer_release
@@ -1189,64 +2593,23 @@ def _precompute_schedule_steps(
                 or is_completion_wait
                 or is_completion_commit
             )
-            group_member_prod_counts = tuple(
-                (credit_idx_by_key[(mid, 0)], num_producers.get(mid, 1))
-                for mid in group_member_rids
-            )
-            group_member_cons_counts = tuple(
-                (credit_idx_by_key[(mid, 0)], num_consumers.get(mid, 1))
-                for mid in group_member_rids
-            )
-
             producer_slot = _SLOTLESS
             consumer_slot = _SLOTLESS
             group_member_release_slots: Tuple[Tuple[int, int], ...] = ()
             group_member_wait_slots: Tuple[Tuple[int, int], ...] = ()
-            if res.pipeline_config is not None:
-                if is_producer_acquire:
-                    producer_slot = _producer_acquire_slot(res)
-                    producer_current[rid] = producer_slot
-                elif is_producer_work:
-                    producer_slot = producer_current.get(
-                        rid,
-                        (
-                            _producer_commit_slot(res)
-                            if res.pipeline_config.advance_on_acquire
-                            else _producer_acquire_slot(res)
-                        ),
-                    )
-                elif is_producer_commit:
-                    producer_slot = (
-                        _producer_commit_slot(res)
-                        if res.pipeline_config.advance_on_acquire
-                        else producer_current.get(rid, _producer_acquire_slot(res))
-                    )
-
-                if is_consumer_wait:
-                    consumer_slot = _consumer_wait_slot(res)
-                    consumer_current[rid] = consumer_slot
-                elif is_consumer_work:
-                    consumer_slot = consumer_current.get(rid, _consumer_wait_slot(res))
-                elif is_consumer_release:
-                    consumer_slot = (
-                        _consumer_release_slot(res)
-                        if res.pipeline_config.advance_on_wait
-                        else consumer_current.get(rid, _consumer_wait_slot(res))
-                    )
+            cfg = res.pipeline_config
+            simulated = _step_cursor_state(entry)
+            if cfg is not None and simulated is not None:
+                if is_producer_acquire or is_producer_work or is_producer_commit:
+                    producer_slot = simulated[0]
+                if is_consumer_wait or is_consumer_work or is_consumer_release:
+                    consumer_slot = simulated[0]
 
             if is_merge_group and is_consumer_release:
                 group_member_release_slots = tuple(
                     (
                         id(member),
-                        (
-                            _consumer_release_slot(member)
-                            if member.pipeline_config is not None
-                            and member.pipeline_config.advance_on_wait
-                            else consumer_current.get(
-                                id(member),
-                                _consumer_wait_slot(member),
-                            )
-                        ),
+                        (simulated[0] if simulated is not None else _SLOTLESS),
                     )
                     for member in res.members
                 )
@@ -1255,34 +2618,99 @@ def _precompute_schedule_steps(
                 group_member_wait_slots = tuple(
                     (
                         id(member),
-                        (
-                            _consumer_release_slot(member)
-                            if member.pipeline_config.advance_on_wait
-                            else _consumer_wait_slot(member)
-                        ),
+                        (simulated[0] if simulated is not None else _SLOTLESS),
                     )
                     for member in res.members
                     if id(member) in alias_map
                 )
 
-            producer_count = num_producers.get(rid, 1)
-            # FusedMerge: acquire counts the res, commit counts the group.
-            if is_fused_merge_producer and is_producer_commit:
-                assert pg is not None
-                producer_count = len(pg.members)
+            # ── Barrier resolution ──────────────────────────────────────
+            physical_stage = _SLOTLESS
+            full_slot = _SLOTLESS
+            empty_slot = _SLOTLESS
+            gate_kind = _GATE_NONE
+            gate_slot = _SLOTLESS
+            gate_phase = 0
+            arrives_on_full = False
+            arrives_on_empty = False
+            full_expected = 1
+            empty_expected = 1
+            group_full_arrivals: Tuple[Tuple[int, int], ...] = ()
+            group_empty_arrivals: Tuple[Tuple[int, int], ...] = ()
+            transfer_completes = (
+                cfg is not None and cfg.pipeline_type in _TRANSFER_COMPLETES_FULL
+            )
+
+            if track and cfg is not None and simulated is not None:
+                physical_stage = simulated[0]
+                base = barrier_offsets.get(rid)
+                if base is not None:
+                    empty_slot = base + simulated[0]
+                    empty_expected = num_consumers.get(rid, 1)
+                owner = _full_barrier_owner(res)
+                owner_base = barrier_offsets.get(owner)
+                if owner_base is not None:
+                    full_slot = owner_base + simulated[0]
+                if owner != rid:
+                    # FusedMerge: one shared full barrier that every member's
+                    # transfer arrives on.
+                    assert pg is not None
+                    full_expected = len(pg.members)
+                else:
+                    full_expected = num_producers.get(rid, 1)
+                # Every gate is the same compare against a different field, and
+                # ``simulated[1]`` is the phase this step's own cursor names.
+                if is_consumer_wait:
+                    gate_kind, gate_slot = _GATE_FULL, full_slot
+                elif is_producer_acquire:
+                    gate_kind, gate_slot = _GATE_EMPTY, empty_slot
+                if gate_kind != _GATE_NONE:
+                    gate_phase = simulated[1]
+
+                arrives_on_empty = is_consumer_release
+                if transfer_completes:
+                    arrives_on_full = (is_producer_work and c in arrives_at) or (
+                        is_producer_commit and c in commit_without_work
+                    )
+                else:
+                    arrives_on_full = is_producer_commit
+
+            if group_member_rids and simulated is not None:
+                # Fork commits fan out onto the members' full barriers and
+                # merge releases onto the members' empty barriers, both at the
+                # group cursor's stage: the group owns the cursor, so its
+                # position is what names the members' ring slot.
+                if is_fork_group and is_producer_commit:
+                    group_full_arrivals = tuple(
+                        (
+                            barrier_offsets[mid] + simulated[0],
+                            num_producers.get(mid, 1),
+                        )
+                        for mid in group_member_rids
+                        if mid in barrier_offsets
+                    )
+                    arrives_on_full = False
+                if is_merge_group and is_consumer_release:
+                    group_empty_arrivals = tuple(
+                        (
+                            barrier_offsets[mid] + simulated[0],
+                            num_consumers.get(mid, 1),
+                        )
+                        for mid in group_member_rids
+                        if mid in barrier_offsets
+                    )
+                    arrives_on_empty = False
 
             steps.append(
                 _StepInfo(
                     res=res,
                     stage=stage,
                     rid=rid,
-                    track=track,
                     in_alias=in_alias,
                     is_pdl_wait=_is_pdl_wait_entry(entry),
                     is_pdl_launch=_is_pdl_launch_entry(entry),
                     cons_work_phase=_entry_consumer_work_phase(entry),
                     consecutive_same_work=consecutive,
-                    is_blocking=is_blocking,
                     is_point_write=is_point_write,
                     is_point_read=is_point_read,
                     is_producer_commit=is_producer_commit,
@@ -1291,61 +2719,37 @@ def _precompute_schedule_steps(
                     is_producer_acquire=is_producer_acquire,
                     is_producer_work=is_producer_work,
                     is_consumer_work=is_consumer_work,
-                    has_credit_transition=track
-                    and (
-                        is_producer_commit
-                        or is_consumer_release
-                        or is_consumer_wait
-                        or is_producer_acquire
+                    has_barrier_transition=(
+                        arrives_on_full
+                        or arrives_on_empty
+                        or bool(group_full_arrivals)
+                        or bool(group_empty_arrivals)
                     ),
                     needs_held_update=needs_held_update,
-                    is_fork_group=is_fork_group,
                     is_merge_group=is_merge_group,
                     is_fused_merge_group=is_fused_merge_group,
-                    group_member_rids=group_member_rids,
-                    credit_idx=credit_idx_by_key.get(credit_keys[task_idx][c], -1),
-                    producer_count=producer_count,
-                    consumer_count=num_consumers.get(rid, 1),
-                    group_member_prod_counts=group_member_prod_counts,
-                    group_member_cons_counts=group_member_cons_counts,
                     producer_slot=producer_slot,
                     consumer_slot=consumer_slot,
                     group_member_release_slots=group_member_release_slots,
                     group_member_wait_slots=group_member_wait_slots,
                     completion_wait_rids=tuple(completion_wait_rids.get(rid, ())),
                     commit_wait_gen=commit_wait_gen,
+                    physical_stage=physical_stage,
+                    full_slot=full_slot,
+                    empty_slot=empty_slot,
+                    gate_kind=gate_kind,
+                    gate_slot=gate_slot,
+                    gate_phase=gate_phase,
+                    arrives_on_full=arrives_on_full,
+                    arrives_on_empty=arrives_on_empty,
+                    full_expected=full_expected,
+                    empty_expected=empty_expected,
+                    group_full_arrivals=group_full_arrivals,
+                    group_empty_arrivals=group_empty_arrivals,
                 )
             )
-            if is_producer_acquire:
-                _advance_producer_after_acquire(res)
-            elif is_producer_commit:
-                if is_fork_group:
-                    for member in res.members:
-                        _advance_producer_after_commit(member)
-                else:
-                    _advance_producer_after_commit(res)
-
-            if is_consumer_wait:
-                _advance_consumer_after_wait(res)
-            elif is_consumer_release:
-                if is_merge_group:
-                    for member in res.members:
-                        _advance_consumer_after_release(member)
-                else:
-                    _advance_consumer_after_release(res)
         out.append(steps)
     return out
-
-
-def _cow_total_bucket(
-    totals: Dict[str, Dict[int, int]],
-    bucket_name: str,
-) -> Tuple[Dict[str, Dict[int, int]], Dict[int, int]]:
-    """Copy only one total-count bucket for multi-lane credit accounting."""
-    new_totals = dict(totals)
-    bucket = dict(totals[bucket_name])
-    new_totals[bucket_name] = bucket
-    return new_totals, bucket
 
 
 def _cow_held(
@@ -1361,97 +2765,74 @@ def _cow_held(
     return new_held
 
 
-def _apply_credit_transition(
+def _arrive(
+    record: List[int],
+    phase_field: int,
+    count_field: int,
+    expected: int,
+) -> bool:
+    """Count one arrival on a barrier; flip and report when it completes."""
+    record[count_field] += 1
+    if record[count_field] < expected:
+        return False
+    record[count_field] = 0
+    record[phase_field] ^= 1
+    return True
+
+
+def _apply_barrier_transition(
     step: _StepInfo,
-    prod_credits: CreditTuple,
-    cons_credits: CreditTuple,
-    total_counts: TotalCounts,
-) -> Tuple[CreditTuple, CreditTuple, TotalCounts]:
-    """Apply producer/consumer credit effects for one schedule step."""
-    if not step.track:
-        return prod_credits, cons_credits, total_counts
+    barriers: BarrierTuple,
+) -> Tuple[BarrierTuple, Optional[str]]:
+    """Apply one step's barrier effects.
 
-    new_prod = prod_credits
-    new_cons = cons_credits
-    new_totals = total_counts
-    if step.is_producer_commit:
-        new_prod_list = list(prod_credits)
-        if step.is_fork_group:
-            commit_counts: Optional[Dict[int, int]] = None
-            for midx, n_prod in step.group_member_prod_counts:
-                if n_prod == 1:
-                    new_prod_list[midx] += 1
-                else:
-                    if commit_counts is None:
-                        new_totals, commit_counts = _cow_total_bucket(
-                            total_counts, "commits"
-                        )
-                    commit_counts[midx] = commit_counts.get(midx, 0) + 1
-                    if commit_counts[midx] % n_prod == 0:
-                        new_prod_list[midx] += 1
-        else:
-            n_prod = step.producer_count
-            cidx = step.credit_idx
-            if n_prod == 1:
-                new_prod_list[cidx] += 1
-            else:
-                new_totals, commit_counts = _cow_total_bucket(total_counts, "commits")
-                commit_counts[cidx] = commit_counts.get(cidx, 0) + 1
-                if commit_counts[cidx] % n_prod == 0:
-                    new_prod_list[cidx] += 1
-        new_prod = tuple(new_prod_list)
-    elif step.is_consumer_release:
-        new_cons_list = list(cons_credits)
-        if step.is_merge_group:
-            release_counts: Optional[Dict[int, int]] = None
-            for midx, n_cons in step.group_member_cons_counts:
-                if n_cons == 1:
-                    new_cons_list[midx] += 1
-                else:
-                    if release_counts is None:
-                        new_totals, release_counts = _cow_total_bucket(
-                            total_counts, "releases"
-                        )
-                    release_counts[midx] = release_counts.get(midx, 0) + 1
-                    if release_counts[midx] % n_cons == 0:
-                        new_cons_list[midx] += 1
-        else:
-            n_cons = step.consumer_count
-            cidx = step.credit_idx
-            if n_cons == 1:
-                new_cons_list[cidx] += 1
-            else:
-                new_totals, release_counts = _cow_total_bucket(total_counts, "releases")
-                release_counts[cidx] = release_counts.get(cidx, 0) + 1
-                if release_counts[cidx] % n_cons == 0:
-                    new_cons_list[cidx] += 1
-        new_cons = tuple(new_cons_list)
-    elif step.is_consumer_wait:
-        new_prod_list = list(prod_credits)
-        n_cons = step.consumer_count
-        cidx = step.credit_idx
-        if n_cons == 1:
-            new_prod_list[cidx] -= 1
-        else:
-            new_totals, wait_counts = _cow_total_bucket(total_counts, "waits")
-            wait_counts[cidx] = wait_counts.get(cidx, 0) + 1
-            if wait_counts[cidx] % n_cons == 0:
-                new_prod_list[cidx] -= 1
-        new_prod = tuple(new_prod_list)
-    elif step.is_producer_acquire:
-        new_cons_list = list(cons_credits)
-        n_prod = step.producer_count
-        cidx = step.credit_idx
-        if n_prod == 1:
-            new_cons_list[cidx] -= 1
-        else:
-            new_totals, acquire_counts = _cow_total_bucket(total_counts, "acquires")
-            acquire_counts[cidx] = acquire_counts.get(cidx, 0) + 1
-            if acquire_counts[cidx] % n_prod == 0:
-                new_cons_list[cidx] -= 1
-        new_cons = tuple(new_cons_list)
+    Returns the successor barrier vector. The optional error result is reserved
+    for protocol extensions that impose rules beyond ordinary ring barriers.
 
-    return new_prod, new_cons, new_totals
+    Barrier effects, by side:
+
+    - **Empty barrier** — ``ConsumerRelease`` arrives (fanning out to every
+      member for a merge group).  It flips once ``num_consumers`` releases
+      land, which is the point the ring slot is genuinely free again.
+    - **Full barrier** — the arrival sits on ``ProducerCommit`` for pipeline
+      types whose commit really arrives, and on the transfer for producer
+      types whose commit is a no-op.  A fork group's commit fans out onto the
+      members' full barriers.
+    """
+    full = step.full_slot
+    empty = step.empty_slot
+
+    if (
+        full == _SLOTLESS
+        and empty == _SLOTLESS
+        and not step.group_full_arrivals
+        and not step.group_empty_arrivals
+    ):
+        return barriers, None
+
+    values = list(barriers)
+
+    if step.arrives_on_full and full != _SLOTLESS:
+        record = values[full * _BARRIER_FIELDS : (full + 1) * _BARRIER_FIELDS]
+        _arrive(record, _B_FULL_PHASE, _B_FULL_ARRIVALS, step.full_expected)
+        values[full * _BARRIER_FIELDS : (full + 1) * _BARRIER_FIELDS] = record
+
+    for slot, expected in step.group_full_arrivals:
+        record = values[slot * _BARRIER_FIELDS : (slot + 1) * _BARRIER_FIELDS]
+        _arrive(record, _B_FULL_PHASE, _B_FULL_ARRIVALS, expected)
+        values[slot * _BARRIER_FIELDS : (slot + 1) * _BARRIER_FIELDS] = record
+
+    if step.arrives_on_empty and empty != _SLOTLESS:
+        record = values[empty * _BARRIER_FIELDS : (empty + 1) * _BARRIER_FIELDS]
+        _arrive(record, _B_EMPTY_PHASE, _B_EMPTY_ARRIVALS, step.empty_expected)
+        values[empty * _BARRIER_FIELDS : (empty + 1) * _BARRIER_FIELDS] = record
+
+    for slot, expected in step.group_empty_arrivals:
+        record = values[slot * _BARRIER_FIELDS : (slot + 1) * _BARRIER_FIELDS]
+        _arrive(record, _B_EMPTY_PHASE, _B_EMPTY_ARRIVALS, expected)
+        values[slot * _BARRIER_FIELDS : (slot + 1) * _BARRIER_FIELDS] = record
+
+    return tuple(values), None
 
 
 class _HeldStateTracker:
@@ -1500,27 +2881,6 @@ class _HeldStateTracker:
 
     def __init__(self, completion: _ConsumerCompletionMetadata):
         self.completion = completion
-
-    @staticmethod
-    def _needs_update(step: _StepInfo) -> bool:
-        """Return whether one step can mutate held-resource state."""
-        return (
-            (step.is_consumer_release and step.is_merge_group)
-            or (step.is_consumer_release and step.is_fused_merge_group)
-            or (
-                step.in_alias
-                and (
-                    step.is_blocking
-                    or step.is_point_write
-                    or step.is_point_read
-                    or step.is_consumer_release
-                )
-            )
-            or (
-                (step.is_consumer_wait or step.is_producer_commit)
-                and bool(step.completion_wait_rids)
-            )
-        )
 
     @staticmethod
     def _copy_entries_if_shared(
@@ -1749,8 +3109,7 @@ class _HeldStateTracker:
         new_held: HeldMap,
         step: _StepInfo,
     ) -> HeldMap:
-        """Tag paired reads preceding this commit with its generation.
-        """
+        """Tag paired reads preceding this commit with its generation."""
         gen = step.commit_wait_gen
         for dma_rid in step.completion_wait_rids:
             entries = new_held.get(dma_rid)
@@ -1771,8 +3130,7 @@ class _HeldStateTracker:
         new_held: HeldMap,
         step: _StepInfo,
     ) -> HeldMap:
-        """Clear paired reads tagged with the generation this wait observes.
-        """
+        """Clear paired reads tagged with the generation this wait observes."""
         gen = step.commit_wait_gen
         for completed_rid in step.completion_wait_rids:
             entries = new_held.get(completed_rid)
@@ -1790,29 +3148,48 @@ class _HeldStateTracker:
         return new_held
 
 
-def _credit_tuple_to_dict(
-    credits: CreditTuple,
-    context: _CheckerContext,
-) -> Dict[CreditKey, int]:
-    """Convert dense credit tuples back to sparse credit-key maps."""
-    return {
-        key: credits[idx]
-        for idx, key in enumerate(context.credit_key_order)
-        if credits[idx] != 0
-    }
+def _visited_key(state: _BfsState, context: _CheckerContext) -> int | tuple:
+    """Visited-set key for one BFS state.
+
+    The cursor tuple, packed into one int, is the whole logical state: barrier
+    and held state are deterministic functions of it.  ``cursor_only_visited``
+    switches to a key that spells them out, which turns that claim into
+    something a test can check (see :func:`check_all_interleavings`).
+    """
+    if context.cursor_only_visited:
+        return state.cursor_key
+    return _make_state_key(state.cursors, state.barriers, state.held)
 
 
-def _available_stage_counts_from_tuple(
-    credits: CreditTuple,
-    context: _CheckerContext,
-    resource_id: int,
-) -> Tuple[Tuple[int, int], ...]:
-    """Positive dense credit counts for one resource, grouped by stage."""
-    return tuple(
-        (key[1], credits[idx])
-        for idx, key in enumerate(context.credit_key_order)
-        if key[0] == resource_id and credits[idx] > 0
-    )
+def _step_op_desc(step: _StepInfo) -> str:
+    """Return a ``Op(resource)`` label for traces and diagnostics."""
+    assert step.stage is not None
+    return f"{step.stage.name}({step.res.name})"
+
+
+def _flat_op_label(entry: FlatScheduleOp) -> str:
+    """Return the schedule-stage or state-op name for a flattened entry."""
+    if entry.schedule_stage is not None:
+        return entry.schedule_stage.name
+    advance = entry.state_advance
+    if advance is not None:
+        return "StateAdvance"
+    return "?"
+
+
+def _step_is_enabled(state: _BfsState, step: _StepInfo) -> bool:
+    """Return whether ``step`` can execute in ``state``.
+
+    Two shapes can block, and both compare a barrier phase against the phase
+    the step's own software cursor names:
+
+    - ``ConsumerWait`` reads the full barrier phase.
+    - ``ProducerAcquire`` reads the empty barrier's phase.
+    """
+    if step.gate_kind == _GATE_NONE or step.gate_slot == _SLOTLESS:
+        return True
+    base = step.gate_slot * _BARRIER_FIELDS
+    return state.barriers[base + _GATE_FIELD[step.gate_kind]] != step.gate_phase
 
 
 def _compute_enabled_tasks(
@@ -1829,13 +3206,7 @@ def _compute_enabled_tasks(
         all_done = False
         step = context.schedule_steps[task_idx][cursor]
         assert step is not None
-        if step.is_blocking and step.track:
-            if step.is_consumer_wait:
-                if step.credit_idx >= 0 and state.prod_credits[step.credit_idx] > 0:
-                    enabled_mask |= 1 << task_idx
-            elif step.credit_idx >= 0 and state.cons_credits[step.credit_idx] > 0:
-                enabled_mask |= 1 << task_idx
-        else:
+        if _step_is_enabled(state, step):
             enabled_mask |= 1 << task_idx
     return _EnabledTasks(enabled_mask, all_done)
 
@@ -1844,7 +3215,7 @@ def _blocked_tasks_for_deadlock(
     state: _BfsState,
     context: _CheckerContext,
 ) -> Tuple[List[Tuple[str, str, str]], List[BlockedTaskInfo]]:
-    """Describe tasks blocked on unavailable protocol credits."""
+    """Describe every task whose next step fails its phase or window compare."""
     blocked_info: List[Tuple[str, str, str]] = []
     blocked_details: List[BlockedTaskInfo] = []
     for task_idx in range(context.n_tasks):
@@ -1853,58 +3224,54 @@ def _blocked_tasks_for_deadlock(
             continue
         step = context.schedule_steps[task_idx][cursor]
         assert step is not None
-        if not (step.is_blocking and step.track):
+        if _step_is_enabled(state, step):
             continue
-        credit_rid = _credit_key(step.res, step.stage)
-        if step.is_consumer_wait:
-            if step.credit_idx < 0 or state.prod_credits[step.credit_idx] <= 0:
-                blocked_info.append(
-                    (
-                        context.task_names[task_idx],
-                        step.res.name,
-                        step.stage.name,
-                    )
+        assert step.stage is not None
+        base = step.gate_slot * _BARRIER_FIELDS
+        expected = step.gate_phase
+        observed = state.barriers[base + _GATE_FIELD[step.gate_kind]]
+        if step.gate_kind == _GATE_EMPTY:
+            kind = "empty"
+            pending = state.barriers[base + _B_EMPTY_ARRIVALS]
+            expected_arrivals = step.empty_expected
+        else:
+            kind = "full"
+            pending = state.barriers[base + _B_FULL_ARRIVALS]
+            expected_arrivals = step.full_expected
+        blocked_info.append(
+            (context.task_names[task_idx], step.res.name, step.stage.name)
+        )
+        blocked_details.append(
+            BlockedTaskInfo(
+                task_name=context.task_names[task_idx],
+                resource_name=step.res.name,
+                stage_name=step.stage.name,
+                barrier_kind=kind,
+                physical_stage=step.physical_stage,
+                expected_phase=expected,
+                observed_phase=observed,
+                window_state="",
+                pending_arrivals=pending,
+                expected_arrivals=expected_arrivals,
+                domain_interleaved=step.rid in context.domain_rids,
+                available_stage_counts=tuple(
+                    (stage, 1)
+                    for stage in range(step.res.pipeline_config.num_stages)
+                    if state.barriers[
+                        (
+                            context.schedule_steps[task_idx][cursor].gate_slot
+                            - step.physical_stage
+                            + stage
+                        )
+                        * _BARRIER_FIELDS
+                        + _GATE_FIELD[step.gate_kind]
+                    ]
+                    != expected
                 )
-                physical_stage = (
-                    context.credit_key_order[step.credit_idx][1]
-                    if step.credit_idx >= 0
-                    else 0
-                )
-                blocked_details.append(
-                    BlockedTaskInfo(
-                        task_name=context.task_names[task_idx],
-                        resource_name=step.res.name,
-                        stage_name=step.stage.name,
-                        credit_kind="producer commit credit",
-                        physical_stage=physical_stage,
-                        available_stage_counts=_available_stage_counts_from_tuple(
-                            state.prod_credits, context, credit_rid
-                        ),
-                        domain_interleaved=credit_rid in context.domain_rids,
-                    )
-                )
-        elif step.credit_idx < 0 or state.cons_credits[step.credit_idx] <= 0:
-            blocked_info.append(
-                (context.task_names[task_idx], step.res.name, step.stage.name)
+                if step.res.pipeline_config is not None
+                else (),
             )
-            physical_stage = (
-                context.credit_key_order[step.credit_idx][1]
-                if step.credit_idx >= 0
-                else 0
-            )
-            blocked_details.append(
-                BlockedTaskInfo(
-                    task_name=context.task_names[task_idx],
-                    resource_name=step.res.name,
-                    stage_name=step.stage.name,
-                    credit_kind="empty-slot credit",
-                    physical_stage=physical_stage,
-                    available_stage_counts=_available_stage_counts_from_tuple(
-                        state.cons_credits, context, credit_rid
-                    ),
-                    domain_interleaved=credit_rid in context.domain_rids,
-                )
-            )
+        )
     return blocked_info, blocked_details
 
 
@@ -1937,23 +3304,20 @@ def _advance_one_task(
     context: _CheckerContext,
     held_tracker: _HeldStateTracker,
     verbose: bool,
-) -> _BfsState:
-    """Build the successor reached by executing one enabled task step."""
+) -> Tuple[_BfsState, Optional[str]]:
+    """Build the successor reached by executing one enabled task step.
+
+    Returns the successor and any barrier-protocol error the step raised.
+    """
     cursor = state.cursors[task_idx]
     step = context.schedule_steps[task_idx][cursor]
     assert step is not None
 
-    if step.has_credit_transition:
-        new_prod, new_cons, new_totals = _apply_credit_transition(
-            step,
-            state.prod_credits,
-            state.cons_credits,
-            state.total_counts,
-        )
+    error: Optional[str] = None
+    if step.has_barrier_transition:
+        new_barriers, error = _apply_barrier_transition(step, state.barriers)
     else:
-        new_prod = state.prod_credits
-        new_cons = state.cons_credits
-        new_totals = state.total_counts
+        new_barriers = state.barriers
 
     if step.needs_held_update:
         new_held = held_tracker.apply(state.held, step, task_idx)
@@ -1970,20 +3334,21 @@ def _advance_one_task(
     new_cursors_t = tuple(new_cursors)
 
     if verbose:
-        op_desc = f"{step.stage.name}({step.res.name})"
+        op_desc = _step_op_desc(step)
         new_path = (state.path or []) + [(context.task_names[task_idx], op_desc)]
     else:
         new_path = None
 
-    return _BfsState(
-        cursors=new_cursors_t,
-        cursor_key=state.cursor_key + context.cursor_strides[task_idx],
-        prod_credits=new_prod,
-        cons_credits=new_cons,
-        held=new_held,
-        total_counts=new_totals,
-        path=new_path,
-        has_executed_pdl_wait=new_pdl,
+    return (
+        _BfsState(
+            cursors=new_cursors_t,
+            cursor_key=state.cursor_key + context.cursor_strides[task_idx],
+            barriers=new_barriers,
+            held=new_held,
+            path=new_path,
+            has_executed_pdl_wait=new_pdl,
+        ),
+        error,
     )
 
 
@@ -2004,17 +3369,12 @@ class _VerboseReporter:
             return "{}"
         parts = []
         for rid, entries in held.items():
-            rname = (
-                self.id_to_res[rid].name
-                if rid in self.id_to_res
-                else f"?{rid}"
-            )
+            rname = self.id_to_res[rid].name if rid in self.id_to_res else f"?{rid}"
             for access, tid, slot, gen in sorted(entries):
                 slot_suffix = "" if slot == _SLOTLESS else f"[s{slot}]"
                 gen_suffix = "" if gen == _UNTAGGED else f"(g{gen})"
                 parts.append(
-                    f"{rname}{slot_suffix}:{access}{gen_suffix}"
-                    f"@{self.task_names[tid]}"
+                    f"{rname}{slot_suffix}:{access}{gen_suffix}@{self.task_names[tid]}"
                 )
         return "{" + ", ".join(parts) + "}"
 
@@ -2075,7 +3435,7 @@ class _VerboseReporter:
         print("=" * 72)
         for task_idx, task_name in enumerate(self.task_names):
             sched_desc = ", ".join(
-                f"{e[1].name}({e[0].name})" for e in schedules[task_idx]
+                f"{_flat_op_label(e)}({e.resource.name})" for e in schedules[task_idx]
             )
             print(f"  Task {task_idx} ({task_name}): [{sched_desc}]")
         if alias_map:
@@ -2156,6 +3516,18 @@ class _VerboseReporter:
         )
         print()
 
+    def print_protocol(
+        self,
+        state_no: int,
+        cursors: tuple,
+        held: HeldMap,
+        path: Optional[List[Tuple[str, str]]],
+        message: str,
+    ) -> None:
+        print(f"State #{state_no}  cursors={cursors}  held={self.format_held(held)}")
+        self.print_timeline(path or [], suffix_label=f"*** PROTOCOL: {message}")
+        print()
+
     def print_summary(
         self,
         states_explored: int,
@@ -2163,16 +3535,19 @@ class _VerboseReporter:
         deadlock_count: int,
         race_count: int,
         pdl_order_count: int,
+        protocol_count: int,
         hit_state_limit: bool,
         max_states: int,
         is_safe: bool,
+        exit_caveat: str | None = None,
     ) -> None:
         print("=" * 72)
         print(
             f"BFS complete: {states_explored} states explored, "
             f"{complete_count} complete, "
             f"{deadlock_count} deadlock(s), {race_count} race(s), "
-            f"{pdl_order_count} PDL order violation(s)"
+            f"{pdl_order_count} PDL order violation(s), "
+            f"{protocol_count} V1 protocol error(s)"
         )
         if hit_state_limit:
             print(
@@ -2185,6 +3560,8 @@ class _VerboseReporter:
             print("Result: SAFE")
         else:
             print("Result: UNSAFE")
+            if exit_caveat is not None:
+                print(exit_caveat)
         print("=" * 72)
 
 
@@ -2199,25 +3576,55 @@ def check_all_interleavings(
     skipped_tile: bool = False,
     assume_pdl_wait_completed: bool = False,
     verbose: bool = False,
-    opaque_assignment: dict | None = None,
+    opaque_assignment: OpaqueAssignmentLike = None,
     early_exit: bool = True,
-    cursor_only_visited: bool = True,
+    cursor_only_visited: bool = False,
 ) -> CheckResult:
     """Explore all valid schedule interleavings via optimized BFS.
 
-    ``cursor_only_visited`` keeps the default visited key compact.  Set it
-    to ``False`` only when debugging checker state divergence, as this
-    falls back to the slower full-state key.
+    ``opaque_assignment`` may be a single dict, a while-loop assignment
+    sequence, or an :class:`OpaqueAssignmentScenario`.  Partner tasks
+    without a while loop observe that scenario's ``default_assignment``.
+
+    ``cursor_only_visited`` selects the visited-set key, and exists to make one
+    modelling claim testable.  The claim is that the tuple of per-task cursor
+    positions *is* the state: barrier phases, arrival counts and held-resource
+    ownership are all determined by it, because every arrival and every
+    ownership transfer sits at a fixed offset in some task's schedule.  The
+    default packs those positions into one int, which is the cheapest possible
+    key.  Passing ``False`` builds a key that also contains the barrier vector
+    and the held map, which can only *split* states the compact key merged.  So
+    the two keys agreeing on ``states_explored`` is evidence the claim holds,
+    and a schedule where ``False`` explores more states has found a place where
+    the checker's shared state drifted out of step with the cursors — a bug in
+    the checker, not in the schedule.  ``test_merge_overlapping_members_race``
+    asserts that agreement; keep it that way and this parameter stays honest.
     """
     if not tasks:
         return CheckResult([], [], 0, 0, True)
 
+    # A verify_model is evaluated from the cursor the first tile enters with.
+    # Replaying the work-tile body again would reuse that answer, so the
+    # persistent two-tile check drops to one tile instead of refusing to run.
+    if num_tiles > 1 and any(
+        (loop := find_while_true_loop(task)) is not None
+        and collect_cursor_models(task, loop)
+        for task in tasks
+    ):
+        num_tiles = 1
+
     resources = _collect_resources(tasks)
+    dynamic_domain_fallback = dynamic_domain_fallback_for(tasks)
     schedules = [
-        _expand_task_for_check(t, skipped_tile, opaque_assignment) for t in tasks
+        expand_task(
+            t,
+            skipped_tile=skipped_tile,
+            opaque_assignment=opaque_assignment,
+            num_tiles=num_tiles,
+            dynamic_domain_fallback=dynamic_domain_fallback,
+        )
+        for t in tasks
     ]
-    if num_tiles > 1:
-        schedules = [s * num_tiles for s in schedules]
 
     if alias_map is None:
         alias_map, prod_alias_map, cons_alias_map, overlap_descs = build_alias_info(
@@ -2242,12 +3649,21 @@ def check_all_interleavings(
 
     schedules = _explode_sync_work(schedules)
 
-    # Domain-interleaved resources track credits per *physical stage* so a
-    # lane-0 commit cannot release a lane-1 wait (on hardware they are
-    # different mbarriers).  Non-domain resources use the fixed stage 0
-    # key and keep their existing fungible credit pool.
+    # Domain-interleaved resources are those whose ring slot is a function of
+    # the lane a task drives, so two lanes touching the same resource are on
+    # different physical stages and must not be treated as racing.
     domain_rids = _domain_interleaved_resource_ids(tasks)
-    credit_keys = _precompute_stage_credit_keys(tasks, schedules, domain_rids)
+    filtered_schedules: List[List[FlatScheduleOp]] = []
+    for task, schedule_entries in zip(tasks, schedules):
+        simulated, _ = _simulate_cursors(task, schedule_entries)
+        schedule_entries = [
+            replace(entry, cursor_state=state)
+            for entry, state in zip(schedule_entries, simulated)
+        ]
+        filtered_schedules.append(
+            [entry for entry in schedule_entries if _keep_bfs_entry(entry)]
+        )
+    schedules = filtered_schedules
 
     task_names = [t.name for t in tasks]
     n_tasks = len(tasks)
@@ -2258,12 +3674,15 @@ def check_all_interleavings(
         cursor_strides.append(cursor_stride)
         cursor_stride *= schedule_len + 1
 
-    initial_cons = _build_initial_cons_credits(resources, domain_rids)
     initial_cursors = tuple(0 for _ in range(n_tasks))
 
+    # Expected arrival counts per barrier: how many tasks have to arrive before
+    # a phase flips.  Domain-lane tasks are the exception and are pinned to one
+    # rather than summed, because each lane owns a strided subset of the ring
+    # and so meets its partners on its own barrier records.
     _num_producers: Dict[int, int] = {}
     _num_consumers: Dict[int, int] = {}
-    for task in tasks:
+    for task, sched in zip(tasks, schedules):
         for res in task.dst_resources:
             if _is_tracked(res) and res.pipeline_config is not None:
                 rid = id(res)
@@ -2275,66 +3694,45 @@ def check_all_interleavings(
                     ScheduleStage.ProducerCommit,
                 ):
                     _num_producers[rid] = _num_producers.get(rid, 0) + 1
-        for res in task.src_resources:
+
+        releasing_resources: list[MemoryResource] = []
+        for entry in sched:
+            if entry.schedule_stage is not ScheduleStage.ConsumerRelease:
+                continue
+            if isinstance(entry.resource, PipelineGroup):
+                releasing_resources.extend(entry.resource.members)
+            else:
+                releasing_resources.append(entry.resource)
+        seen_releasers: Set[int] = set()
+        for res in releasing_resources:
             if _is_tracked(res) and res.pipeline_config is not None:
                 rid = id(res)
+                if rid in seen_releasers:
+                    continue
+                seen_releasers.add(rid)
                 if not _count_independent_interleave_lane(
                     _num_consumers,
                     rid,
                     task,
                     res,
-                    ScheduleStage.ConsumerWait,
+                    ScheduleStage.ConsumerRelease,
                 ):
                     _num_consumers[rid] = _num_consumers.get(rid, 0) + 1
 
-    credit_key_set: Set[CreditKey] = set(initial_cons)
-    for task_keys in credit_keys:
-        credit_key_set.update(task_keys)
-    credit_key_set.update((rid, 0) for rid in _num_producers)
-    credit_key_set.update((rid, 0) for rid in _num_consumers)
-    for sched in schedules:
-        for entry in sched:
-            res = entry[0]
-            if isinstance(res, PipelineGroup):
-                credit_key_set.update((id(member), 0) for member in res.members)
-
-    credit_key_order: List[CreditKey] = []
-    seen_credit_keys: Set[CreditKey] = set()
-    for res in resources:
-        rid = id(res)
-        for key in sorted(key for key in credit_key_set if key[0] == rid):
-            seen_credit_keys.add(key)
-            credit_key_order.append(key)
-    for key in sorted(credit_key_set):
-        if key not in seen_credit_keys:
-            seen_credit_keys.add(key)
-            credit_key_order.append(key)
-
-    credit_idx_by_key = {key: idx for idx, key in enumerate(credit_key_order)}
-    zero_credits = tuple(0 for _ in credit_key_order)
-    initial_cons_dense_list = [0 for _ in credit_key_order]
-    for key, value in initial_cons.items():
-        idx = credit_idx_by_key.get(key)
-        if idx is not None:
-            initial_cons_dense_list[idx] = value
-    initial_cons_dense = tuple(initial_cons_dense_list)
-
+    barrier_offsets, initial_barriers = _barrier_layout(resources, schedules)
     schedule_steps = _precompute_schedule_steps(
-        tasks,
         schedules,
         alias_map,
         _num_producers,
         _num_consumers,
         completion.completion_wait_rids,
-        credit_keys,
-        credit_idx_by_key,
+        barrier_offsets,
     )
     context = _CheckerContext(
         task_names=task_names,
         n_tasks=n_tasks,
         schedule_lens=schedule_lens,
         cursor_strides=cursor_strides,
-        credit_key_order=credit_key_order,
         schedule_steps=schedule_steps,
         id_to_res=id_to_res,
         alias_map=alias_map,
@@ -2351,41 +3749,29 @@ def check_all_interleavings(
     if reporter is not None:
         reporter.print_header(schedules, skipped_tile, alias_map)
 
-    empty_totals: Dict[str, Dict[int, int]] = {
-        "commits": {},
-        "waits": {},
-        "releases": {},
-        "acquires": {},
-    }
     empty_held: HeldMap = {}
 
     initial_pdl = assume_pdl_wait_completed
     initial_cursor_key = 0
-    if cursor_only_visited:
-        visited: Set[int | tuple] = {initial_cursor_key}
-    else:
-        visited = {_make_state_key(initial_cursors, {}, dict(initial_cons), empty_held)}
+    initial_state = _BfsState(
+        cursors=initial_cursors,
+        cursor_key=initial_cursor_key,
+        barriers=initial_barriers,
+        held=empty_held,
+        path=[] if verbose else None,
+        has_executed_pdl_wait=initial_pdl,
+    )
+    visited: Set[int | tuple] = {_visited_key(initial_state, context)}
 
     queue: deque[_BfsState] = deque()
-    queue.append(
-        _BfsState(
-            cursors=initial_cursors,
-            cursor_key=initial_cursor_key,
-            prod_credits=zero_credits,
-            cons_credits=initial_cons_dense,
-            held=empty_held,
-            total_counts=empty_totals,
-            path=[] if verbose else None,
-            has_executed_pdl_wait=initial_pdl,
-        )
-    )
+    queue.append(initial_state)
 
     deadlocks: List[DeadlockInfo] = []
     races: List[RaceInfo] = []
     pdl_order_states: List[PdlOrderInfo] = []
+    protocol_states: List[ProtocolErrorInfo] = []
     states_explored = 0
     complete_count = 0
-    cursor_only = context.cursor_only_visited
     visited_add = visited.add
     enabled_indices_by_mask: Optional[List[Tuple[int, ...]]] = None
     if n_tasks <= 16:
@@ -2484,33 +3870,46 @@ def check_all_interleavings(
                     break
                 continue
 
-            successor = _advance_one_task(
+            successor, protocol_error = _advance_one_task(
                 state,
                 task_idx,
                 context,
                 held_tracker,
                 verbose,
             )
-            state_key: int | tuple
-            if cursor_only:
-                state_key = successor.cursor_key
-            else:
-                state_key = _make_state_key(
-                    successor.cursors,
-                    _credit_tuple_to_dict(successor.prod_credits, context),
-                    _credit_tuple_to_dict(successor.cons_credits, context),
-                    successor.held,
+            if protocol_error is not None:
+                protocol_states.append(
+                    ProtocolErrorInfo(
+                        cursors=cursors,
+                        task_name=task_names[task_idx],
+                        resource_name=step.res.name,
+                        message=protocol_error,
+                    )
                 )
+                if reporter is not None:
+                    reporter.print_protocol(
+                        states_explored, cursors, held, path, protocol_error
+                    )
+                if early_exit:
+                    stop_branching = True
+                    break
+                continue
+
+            state_key = _visited_key(successor, context)
             if state_key in visited:
                 continue
             visited_add(state_key)
             queue.append(successor)
 
-        if stop_branching or (early_exit and (pdl_order_states or deadlocks or races)):
+        if stop_branching or (
+            early_exit and (pdl_order_states or deadlocks or races or protocol_states)
+        ):
             break
 
     hit_state_limit = bool(queue and states_explored >= max_states)
-    is_safe = not deadlocks and not races and not pdl_order_states
+    is_safe = (
+        not deadlocks and not races and not pdl_order_states and not protocol_states
+    )
 
     if reporter is not None:
         reporter.print_summary(
@@ -2519,9 +3918,11 @@ def check_all_interleavings(
             len(deadlocks),
             len(races),
             len(pdl_order_states),
+            len(protocol_states),
             hit_state_limit,
             max_states,
             is_safe,
+            exit_caveat=None if is_safe else while_loop_exit_caveat(tasks),
         )
 
     return CheckResult(
@@ -2531,5 +3932,6 @@ def check_all_interleavings(
         complete_count=complete_count,
         is_safe=is_safe,
         pdl_order_states=pdl_order_states,
+        protocol_states=protocol_states,
         hit_state_limit=hit_state_limit,
     )

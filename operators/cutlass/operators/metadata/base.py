@@ -32,13 +32,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cutlass.operators.arch import TargetSm
+from cutlass.operators.metadata.operand_constraints import OperandConstraints
 from cutlass.operators.status import Status
 
 if TYPE_CHECKING:
     from cutlass.operators.arguments import RuntimeArguments
     from cutlass.operators.base import Operator
     from cutlass.operators.metadata.design import DesignMetadata
-    from cutlass.operators.metadata.epilogue import EpilogueMetadata
+    from cutlass.operators.metadata.epilogue import EpilogueMetadataBase
     from cutlass.operators.metadata.operands import OperandsMetadata
     from cutlass.operators.providers import Provider
 
@@ -103,8 +104,28 @@ class OperatorMetadata:
     design: DesignMetadata | None = None
     """Describes characteristics of the design & implementation of the Operator"""
 
-    epilogue: EpilogueMetadata | None = None
+    epilogue: EpilogueMetadataBase | None = None
     """Describes the custom epilogue of the Operator."""
+
+    def __post_init__(self) -> None:
+        """Validate metadata relationships that require the complete schema."""
+        # validate PDL independent operands is subset of declared operands
+        pdl = getattr(self.design, "pdl", None)
+        if pdl is None or pdl.early_start is None:
+            return
+
+        invalid = {
+            name
+            for name in pdl.early_start.independent_operands
+            if not hasattr(self.operands, name)
+            or not isinstance(getattr(self.operands, name), OperandConstraints)
+        }
+        if invalid:
+            raise ValueError(
+                f"Invalid PDL independent_operands {sorted(invalid)} for "
+                f"{type(self.operands).__name__}; independent_operands must "
+                "name declared operands"
+            )
 
     @property
     def provider(self) -> Provider:
@@ -144,20 +165,25 @@ class OperatorMetadata:
 
         # check args
 
-        def supports_or_none(member, corresponding_arg, name: str) -> Status:
-            # If metadata is absent, accept only when the corresponding argument is also absent.
+        def supports_or_none(member, corresponding_arg, name: str, **kwargs) -> Status:
+            # If metadata is absent, accept only when the corresponding argument is
+            # also absent, either unset (...) or explicitly None.
             if member is None:
-                if corresponding_arg is None:
+                if corresponding_arg is None or corresponding_arg is ...:
                     return Status.success()
                 return Status.fail(
                     f"{name} metadata is absent but argument is provided"
                 )
-            return member.supports(args)
+            return member.supports(args, **kwargs)
 
         if not (status := self.operands.supports(args)):
             return status
 
-        if not (status := supports_or_none(self.design, args.performance, "design")):
+        if not (
+            status := supports_or_none(
+                self.design, args.performance, "design", target_sm=target_sm
+            )
+        ):
             return status
 
         if not (

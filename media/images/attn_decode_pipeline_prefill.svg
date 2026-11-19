@@ -1,0 +1,139 @@
+<svg width="1200" height="450" viewBox="0 0 1200 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="70%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef3f8"/>
+    </linearGradient>
+    <linearGradient id="laneFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f4f4"/>
+      <stop offset="100%" stop-color="#e3e3e3"/>
+    </linearGradient>
+    <linearGradient id="gemmFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff0e5"/>
+      <stop offset="100%" stop-color="#f7d6c5"/>
+    </linearGradient>
+    <linearGradient id="mufuFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8f7df"/>
+      <stop offset="100%" stop-color="#cfeac3"/>
+    </linearGradient>
+    <linearGradient id="correctionFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e7f6ff"/>
+      <stop offset="100%" stop-color="#c7e6f6"/>
+    </linearGradient>
+    <filter id="shadow" x="-8%" y="-12%" width="116%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <marker id="dep" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d21f3c"/>
+    </marker>
+    <style>
+      .subtitle { font: 500 18px Arial, sans-serif; fill: #5f6b76; }
+      .lane-label { font: 700 20px Arial, sans-serif; fill: #1f2933; text-anchor: middle; dominant-baseline: middle; }
+      .block-title { font: 700 20px Arial, sans-serif; fill: #101820; text-anchor: middle; dominant-baseline: middle; }
+      .block-sub { font: 600 16px Arial, sans-serif; fill: #34414d; text-anchor: middle; dominant-baseline: middle; }
+      .small { font: 600 15px Arial, sans-serif; fill: #64717e; text-anchor: middle; }
+      .grid { stroke: #d7dde3; stroke-width: 1; stroke-dasharray: 4 6; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="450" fill="url(#bg)"/>
+
+  <g transform="translate(30 30)">
+    <rect x="0" y="0" width="1140" height="360" rx="22" fill="#ffffff" stroke="#d8e0e8" stroke-width="2"/>
+
+    <g opacity="0.75">
+      <line class="grid" x1="250" y1="18" x2="250" y2="320"/>
+      <line class="grid" x1="390" y1="18" x2="390" y2="320"/>
+      <line class="grid" x1="530" y1="18" x2="530" y2="320"/>
+      <line class="grid" x1="670" y1="18" x2="670" y2="320"/>
+      <line class="grid" x1="810" y1="18" x2="810" y2="320"/>
+      <line class="grid" x1="950" y1="18" x2="950" y2="320"/>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="28" y="24" width="136" height="70" rx="12" fill="url(#laneFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="28" y="112" width="136" height="70" rx="12" fill="url(#laneFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="28" y="200" width="136" height="70" rx="12" fill="url(#laneFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="28" y="288" width="136" height="70" rx="12" fill="url(#laneFill)" stroke="#111827" stroke-width="2"/>
+    </g>
+    <text class="lane-label" x="96" y="50">Tensor Cores</text>
+    <text class="lane-label" x="96" y="74">(Q0)</text>
+    <text class="lane-label" x="96" y="138">Tensor Cores</text>
+    <text class="lane-label" x="96" y="162">(Q1)</text>
+    <text class="lane-label" x="96" y="235">Softmax</text>
+    <text class="small" x="96" y="256">(2 WGs)</text>
+    <text class="lane-label" x="96" y="314">Correction</text>
+    <text class="small" x="96" y="335">(1 WG)</text>
+
+    <g filter="url(#shadow)">
+      <rect x="196" y="18" width="100" height="72" rx="14" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="496" y="18" width="100" height="72" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="600" y="18" width="100" height="72" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="912" y="18" width="100" height="72" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="1016" y="18" width="100" height="72" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+
+      <rect x="290" y="194" width="202" height="76" rx="14" fill="url(#mufuFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="498" y="194" width="202" height="76" rx="14" fill="url(#mufuFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="706" y="194" width="202" height="76" rx="14" fill="url(#mufuFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="914" y="194" width="202" height="76" rx="14" fill="url(#mufuFill)" stroke="#111827" stroke-width="2"/>
+
+      <rect x="290" y="106" width="100" height="76" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="704" y="106" width="100" height="76" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="808" y="106" width="100" height="76" rx="12" fill="url(#gemmFill)" stroke="#111827" stroke-width="2"/>
+
+      <rect x="740" y="282" width="150" height="76" rx="14" fill="url(#correctionFill)" stroke="#111827" stroke-width="2"/>
+      <rect x="940" y="282" width="150" height="76" rx="14" fill="url(#correctionFill)" stroke="#111827" stroke-width="2"/>
+    </g>
+
+    <text class="block-title" x="246" y="47">S0 =</text>
+    <text class="block-sub" x="246" y="69">Q0 * K0</text>
+    <text class="block-title" x="546" y="47">O0 =</text>
+    <text class="block-sub" x="546" y="69">P0 * V0</text>
+    <text class="block-title" x="650" y="47">S0 =</text>
+    <text class="block-sub" x="650" y="69">Q0 * K1</text>
+    <text class="block-title" x="962" y="47">O0 =</text>
+    <text class="block-sub" x="962" y="69">P0 * V1</text>
+    <text class="block-title" x="1066" y="47">S0 =</text>
+    <text class="block-sub" x="1066" y="69">Q0 * K2</text>
+
+    <text class="block-title" x="391" y="232">P0 = Softmax(S0)</text>
+    <text class="block-title" x="599" y="232">P1 = Softmax(S1)</text>
+    <text class="block-title" x="807" y="232">P0 = Softmax(S0)</text>
+    <text class="block-title" x="1015" y="232">P1 = Softmax(S1)</text>
+
+    <text class="block-title" x="340" y="136">S1 =</text>
+    <text class="block-sub" x="340" y="158">Q1 * K0</text>
+    <text class="block-title" x="754" y="136">O1 =</text>
+    <text class="block-sub" x="754" y="158">P1 * V0</text>
+    <text class="block-title" x="858" y="136">S1 =</text>
+    <text class="block-sub" x="858" y="158">Q1 * K1</text>
+
+    <text class="block-title" x="815" y="312">O0 =</text>
+    <text class="block-sub" x="815" y="334">Correction(O0)</text>
+    <text class="block-title" x="1015" y="312">O1 =</text>
+    <text class="block-sub" x="1015" y="334">Correction(O1)</text>
+
+    <text class="subtitle" x="990" y="234">...</text>
+
+    <g fill="none" stroke="#d21f3c" stroke-width="2.5" marker-end="url(#dep)" opacity="0.9">
+      <!-- S0 (MMA) must finish before P0 = Softmax(S0) -->
+      <line x1="208" y1="90" x2="298" y2="192"/>
+      <!-- S1 (MMA) must finish before P1 = Softmax(S1) -->
+      <line x1="382" y1="182" x2="540" y2="192"/>
+      <!-- P0 (Softmax) must finish before O0 = P0 * V0 -->
+      <line x1="470" y1="194" x2="520" y2="92"/>
+      <!-- P1 (Softmax) must finish before O1 = P1 * V0 -->
+      <line x1="680" y1="194" x2="728" y2="184"/>
+    </g>
+  </g>
+
+  <g transform="translate(40 420)">
+    <rect x="0" y="-18" width="18" height="18" rx="4" fill="url(#gemmFill)" stroke="#111827"/>
+    <text class="subtitle" x="26" y="-4">Tensor Core MMA</text>
+    <rect x="190" y="-18" width="18" height="18" rx="4" fill="url(#mufuFill)" stroke="#111827"/>
+    <text class="subtitle" x="216" y="-4">SFU softmax</text>
+    <rect x="360" y="-18" width="18" height="18" rx="4" fill="url(#correctionFill)" stroke="#111827"/>
+    <text class="subtitle" x="386" y="-4">Rescale / correction</text>
+  </g>
+</svg>

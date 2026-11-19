@@ -30,6 +30,9 @@ class HardwareInfo:
     device_id: CUDA device ID to get the hardware info.
     """
 
+    # Shared across instances on purpose.
+    _device_function_cache: dict[int, tuple[driver.CUcontext, driver.CUfunction]] = {}
+
     def __init__(self, device_id: int = 0):
         count = self._checkCudaErrors(driver.cuDeviceGetCount())
         if device_id >= count:
@@ -198,7 +201,15 @@ class HardwareInfo:
     def _get_device_function(self) -> driver.CUfunction:
         """
         Get a device function by compiling a dummy kernel using cuteDSL pipeline.
+
+        The compiled function is cached per device: the dummy kernel never varies,
+        but a CUfunction is only valid in the context that loaded it, so a cached
+        entry is reused only while the current context still matches.
         """
+        context = self._checkCudaErrors(driver.cuCtxGetCurrent())
+        cached = HardwareInfo._device_function_cache.get(self.device_id)
+        if cached is not None and cached[0] == context:
+            return cached[1]
         # Create a temporary directory for dumping artifacts
         with tempfile.TemporaryDirectory() as temp_dir:
             # keep-cubin will keep the cubin in the artifacts
@@ -215,4 +226,6 @@ class HardwareInfo:
                 driver.cuLibraryEnumerateKernels(1, cuda_library)
             )
             # Get the function from the kernel
-            return self._checkCudaErrors(driver.cuKernelGetFunction(kernels[0]))
+            func = self._checkCudaErrors(driver.cuKernelGetFunction(kernels[0]))
+        HardwareInfo._device_function_cache[self.device_id] = (context, func)
+        return func

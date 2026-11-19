@@ -50,7 +50,6 @@ from typing import (
     Optional,
     TypeVar,
     Any,
-    Callable,
     TYPE_CHECKING,
     TypeAlias,
     cast,
@@ -1075,12 +1074,10 @@ def _addrspacecast_base(
 
 
 # =============================================================================
-# Factory hooks
+# Pointer construction
 # =============================================================================
-# The ``_Array_factory_dispatch`` allocator lives in a layer above ``base_dsl``,
-# which therefore cannot import it at load time; that layer registers it via the
-# array-factory hook below. The concrete ``Pointer`` now lives in base_dsl itself
-# (``base_dsl.typing.Pointer``), so ``data_ptr`` builds it directly.
+# The concrete ``Pointer`` lives in base_dsl itself (``base_dsl.typing.Pointer``),
+# so ``data_ptr`` builds it directly.
 
 
 def _make_pointer_from_raw(value: ir.Value, dtype: type[Numeric] | None) -> "Pointer":
@@ -1103,18 +1100,6 @@ def _compute_row_major_strides(shape: tuple[int, ...]) -> tuple[int, ...]:
     for i in range(len(shape) - 2, -1, -1):
         strides[i] = strides[i + 1] * shape[i + 1]
     return tuple(strides)
-
-
-_array_factory = None
-
-
-def register_array_factory(fn: Callable[..., Any]) -> None:
-    """Register the ``_Array_factory_dispatch`` allocator.
-
-    Called by the owning DSL's typing module at import time.
-    """
-    global _array_factory
-    _array_factory = fn
 
 
 def _allocate_memory_shared(
@@ -1612,17 +1597,41 @@ _GLOBAL_CONSTANT_VALID_KWARGS = frozenset(
 )
 
 
-def _make_array_via_factory(
+def _allocate_for_space(
     dtype: object,
     shape: Tuple[int, ...] | int | None,
     space: AddressSpace | int,
     kwargs: dict[str, Any],
 ) -> "Array | _GlobalVariable":
-    """Allocate an Array through cutlass-owned or registered backends.
+    """Route ``cutlass.Array(dtype, shape, space=...)`` to the right allocator.
 
-    Host-side rmem/generic scratch is owned directly by this module because
-    ``Array`` is a cutlass type. Other allocation spaces still route through
-    the registered backend.
+    Called from :meth:`Array.__new__` whenever the user passes ``space=``.
+    The dispatch table is intentionally explicit: each (space, scope) pair
+    either resolves to one downstream call or is rejected with a message
+    naming the right alternative.
+
+    Scope comes from the tracing context, not from an argument:
+
+    - inside ``@cute.kernel``  -> ``in_gpu_ctx``
+    - inside ``@cute.jit``     -> ``in_mlir_ctx`` only
+    - module scope             -> neither
+
+    +----------------+------------------------------------------------------+
+    | ``space=``     | resolves to                                          |
+    +================+======================================================+
+    | rmem, generic  | :func:`_allocate_memory_local` when traced; rejected  |
+    |                | at module scope                                       |
+    +----------------+------------------------------------------------------+
+    | smem           | :func:`_allocate_memory_shared`; rejected untraced    |
+    +----------------+------------------------------------------------------+
+    | gmem, cmem     | :class:`_GlobalVariable` cubin static, any scope      |
+    +----------------+------------------------------------------------------+
+    | tmem, cluster  | rejected -- use tcgen05 / the cluster SMEM allocator  |
+    +----------------+------------------------------------------------------+
+
+    Valid kwargs are space-dependent and validated up front so that typos
+    (e.g. ``alignement=128``) fail with a clear error instead of a confusing
+    ``TypeError`` from a downstream call.
     """
     space = _normalize_address_space(space)
     if not isinstance(dtype, type) or not issubclass(dtype, Numeric):
@@ -1631,10 +1640,15 @@ def _make_array_via_factory(
             f"numeric type, got {dtype!r}."
         )
 
+    # Detect whether we are inside a live MLIR tracing context.
+    # - in_mlir_ctx=True, in_gpu_ctx=True:  inside @cute.kernel
+    # - in_mlir_ctx=True, in_gpu_ctx=False: inside @cute.jit (host code)
+    # - in_mlir_ctx=False:                  module scope (no active tracing)
     try:
-        _is_gpu_context()
+        in_gpu_ctx = _is_gpu_context()
         in_mlir_ctx = True
     except Exception:
+        in_gpu_ctx = False
         in_mlir_ctx = False
 
     if in_mlir_ctx and space in (
@@ -1703,12 +1717,31 @@ def _make_array_via_factory(
             dtype, () if shape is None else shape, addrspace=space, **gv_kwargs
         )
 
-    if _array_factory is None:
-        raise RuntimeError(
-            "no array allocation backend registered for this cutlass.Array "
-            "space and context."
+    # ---- No allocator for this (space, scope) pair -------------------------
+    # Every remaining combination is rejected with a message naming the right
+    # alternative.  rmem/generic only get here at module scope (the traced
+    # cases are handled above); tmem and shared_cluster are valid AddressSpace
+    # values with no ``cutlass.Array(...)`` path at all.
+    if space is AddressSpace.rmem:
+        raise ValueError(
+            f"space={space.name} is only valid inside @cute.kernel. "
+            f"Move this allocation into the kernel body."
         )
-    return _array_factory(dtype, shape, space, kwargs)
+
+    if in_gpu_ctx:
+        raise ValueError(
+            f"space={space.name} not supported via cutlass.Array(). "
+            f"Use the dedicated API (tcgen05 / cluster SMEM)."
+        )
+
+    if in_mlir_ctx:
+        raise ValueError(
+            f"space={space.name} not supported via cutlass.Array() in host context."
+        )
+
+    raise ValueError(
+        f"space={space.name} not supported via cutlass.Array() at module scope."
+    )
 
 
 # =============================================================================
@@ -2842,6 +2875,10 @@ class _ArrayImpl(Generic[DSLGenericType]):
             is_invariant_group: Whether to group invariant loads.
             ordering: Atomic memory ordering semantics.
             syncscope: Synchronization scope for atomic operations.
+
+        Returns:
+            A scalar of the element dtype, as ``arr[idx]`` returns, or the loaded
+            vector when ``vector_size`` is given.
         """
         # Get pointer to the element at idx (supports multi-dim tuple)
         ptr = self._ptr_impl_at(idx)._base
@@ -2868,6 +2905,9 @@ class _ArrayImpl(Generic[DSLGenericType]):
             loc=loc,
             ip=ip,
         )
+        if vector_size is None:
+            assert self._dtype is not None
+            return cast("DSLGenericType", self._dtype(result, loc=loc, ip=ip))
         return result
 
     def store(
@@ -3389,7 +3429,8 @@ class Array(Generic[DSLGenericType]):
         3. **Raw MLIR mode** — ``Array(mlir_value, shape=..., dtype=...,
            addrspace=...)``: wraps a raw MLIR pointer value into a new
            ``_ArrayImpl``.  Used by the internal allocator implementations
-           (``_allocate_memory_smem``, ``_allocate_memory_rmem`` etc.).
+           (``_allocate_memory_shared``, ``_allocate_memory_local``,
+           ``_allocate_named_global``).
 
         :param base: Raw MLIR pointer for raw-MLIR mode, DSL dtype class for
             factory mode when ``space=`` is passed, or ``None`` for internal
@@ -3426,7 +3467,7 @@ class Array(Generic[DSLGenericType]):
             # inside a kernel.  Every other space returns an ``Array`` outright.
             return cast(
                 "Array[DSLGenericType]",
-                _make_array_via_factory(factory_dtype, factory_shape, space, kwargs),
+                _allocate_for_space(factory_dtype, factory_shape, space, kwargs),
             )
 
         # ---- Mode 2: _impl is provided directly ----------------------------

@@ -26,7 +26,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, cast
 
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import (
@@ -215,6 +215,11 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
     """A scheduler for static persistent group-based tile execution in CUTLASS/CuTe
     kernels.
 
+    Group search, persistent stride, and CTA coordinates all use the logical
+    cluster shape defining the launch grid, even on physical fallback clusters.
+    ``cluster_tile_shape_mnk`` must be the CTA tile shape multiplied by that
+    logical cluster shape, not by the runtime physical cluster dimensions.
+
     :ivar params: Tile schedule related params, including cluster shape and
                   problem_layout_ncluster_mnl
     :type params: PersistentTileSchedulerParams
@@ -249,6 +254,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         problem_shape_mnkl: cute.Tensor,
         cached_problem_shape_0: Tuple[Int32, Int32, Int32, Int32],
         cached_problem_shape_1: Tuple[Int32, Int32, Int32, Int32],
+        use_cached_problem_shapes: bool = False,
     ):
         StaticPersistentTileScheduler.__init__(
             self,
@@ -263,6 +269,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         self.cluster_tile_shape_mnk = cluster_tile_shape_mnk
         self.search_state = search_state
         self.problem_shape_mnkl = problem_shape_mnkl
+        self.use_cached_problem_shapes = use_cached_problem_shapes
 
         self.cached_problem_shape_0 = cached_problem_shape_0
         self.cached_problem_shape_1 = cached_problem_shape_1
@@ -337,6 +344,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         initial_search_state: GroupedGemmGroupSearchState,
         group_count: int,
         problem_shape_mnkl: cute.Tensor,
+        use_cached_problem_shapes: bool = False,
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
@@ -350,7 +358,8 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         :type block_idx: Tuple[Integer, Integer, Integer]
         :param grid_dim: The 3d grid dimensions for kernel launch.
         :type grid_dim: Tuple[Integer, Integer, Integer]
-        :param cluster_tile_shape_mnk: The shape of cluster tile as (m, n, k)
+        :param cluster_tile_shape_mnk: The logical cluster tile shape (m, n, k),
+            using the primary cluster shape from params, including on fallback.
         :type cluster_tile_shape_mnk: tuple[int, int, int]
         :param initial_search_state: The initial search state
         :type initial_search_state: GroupedGemmGroupSearchState
@@ -358,39 +367,29 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         :type group_count: int
         :param problem_shape_mnkl: Problem shape tensor for groups
         :type problem_shape_mnkl: cute.Tensor
+        :param use_cached_problem_shapes: Enable double-buffered caching of problem
+            shapes. When False, loads problem shapes on-demand. Evaluated at
+            compile-time via const_expr(). (default: False) When set to True, always
+            couple with prefetch_problem_shapes() function.
+        :type use_cached_problem_shapes: bool
 
         :return: A StaticPersistentGroupTileScheduler object.
         :rtype: StaticPersistentGroupTileScheduler
         """
 
-        has_distinct_fallback = getattr(params, "_has_distinct_fallback", False)
-        if const_expr(has_distinct_fallback):
-            active = params._select_active_params(params)
-        else:
-            active = params
-
         bidx, bidy, bidz = block_idx
 
-        # Mixed-cluster bodies share the same grid but have different numbers of
-        # CTAs per cluster. Use the runtime cluster dimensions in each cloned body
-        # so its persistent-loop stride and CTA coordinates match the active shape.
-        if const_expr(has_distinct_fallback):
-            cdx, cdy, _ = params.runtime_cluster_dims()
-            num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // (cdx * cdy)
-            cta_id_in_cluster = (
-                Int32(bidx % cdx),
-                Int32(bidy % cdy),
-                Int32(0),
-            )
-        else:
-            num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // cute.size(
-                active.cluster_shape_mn, loc=loc, ip=ip
-            )
-            cta_id_in_cluster = (
-                Int32(bidx % active.cluster_shape_mn[0]),
-                Int32(bidy % active.cluster_shape_mn[1]),
-                Int32(0),
-            )
+        # As in the static scheduler, blockIdx.z counts logical workers and
+        # x/y are offsets in a primary-shaped cluster. Group search must use
+        # that same coordinate space, regardless of physical fallback clusters.
+        num_persistent_clusters = cute.size(grid_dim, loc=loc, ip=ip) // cute.size(
+            params.cluster_shape_mn, loc=loc, ip=ip
+        )
+        cta_id_in_cluster = (
+            Int32(bidx % params.cluster_shape_mn[0]),
+            Int32(bidy % params.cluster_shape_mn[1]),
+            Int32(0),
+        )
 
         # Initialize workload index equals to the cluster index in the grid
         current_work_linear_idx = Int32(bidz)
@@ -411,7 +410,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         # Initialize number of tiles executed to zero
         num_tiles_executed = Int32(0)
         return StaticPersistentGroupTileScheduler(
-            active,
+            params,
             num_persistent_clusters,
             current_work_linear_idx,
             cta_id_in_cluster,
@@ -422,6 +421,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             problem_shape_mnkl,
             cached_problem_shape_0,
             cached_problem_shape_1,
+            use_cached_problem_shapes,
         )
 
     @property
@@ -475,21 +475,28 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         Load gemm problem (m,n,k,l) for the specified group from global memory to
         register.
 
-        :param problem_shape_mnkl: Tensor in global memory with layout
+        :param problem_shape_mnkl: Tensor in global memory holding one problem shape
+                                   per group, either (group_count, 4) as (m,n,k,l) or
+                                   (group_count, 3) as (m,n,k). The rank-3 form
+                                   implies l == 1.
         :return: The problem shape tensor for the specified group
         :rtype: Tuple[Int32, Int32, Int32, Int32]
         """
-        cur_problem_mnkl = cute.make_rmem_tensor(
-            cute.make_layout(4), problem_shape_mnkl.element_type, loc=loc, ip=ip
-        )
-        cute.autovec_copy(
-            problem_shape_mnkl[(group_idx, None)], cur_problem_mnkl, loc=loc, ip=ip
-        )
-        return (
-            cur_problem_mnkl[0],
-            cur_problem_mnkl[1],
-            cur_problem_mnkl[2],
-            cur_problem_mnkl[3],
+        # Slicing a `None` mode always yields a tensor view of the group's row.
+        cur_problem = cast(cute.Tensor, problem_shape_mnkl[(group_idx, None)])
+        cur_problem_rmem = cute.make_rmem_tensor_like(cur_problem, loc=loc, ip=ip)
+        cute.autovec_copy(cur_problem, cur_problem_rmem, loc=loc, ip=ip)
+
+        # This scheduler only supports L == 1. Copy the complete source row so
+        # four-mode inputs retain their vectorized load, then canonicalize L.
+        return cast(
+            Tuple[Int32, Int32, Int32, Int32],
+            (
+                cur_problem_rmem[0],
+                cur_problem_rmem[1],
+                cur_problem_rmem[2],
+                Int32(1),
+            ),
         )
 
     @dsl_user_op
@@ -500,11 +507,12 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> None:
-        if self.lane_idx < self.group_count:
-            cur_problem_mnkl = self._get_problem_for_group(
-                self.problem_shape_mnkl, self.lane_idx, loc=loc, ip=ip
-            )
-            self.cached_problem_shape_1 = cur_problem_mnkl
+        if const_expr(self.use_cached_problem_shapes):
+            if self.lane_idx < self.group_count:
+                cur_problem_mnkl = self._get_problem_for_group(
+                    self.problem_shape_mnkl, self.lane_idx, loc=loc, ip=ip
+                )
+                self.cached_problem_shape_1 = cur_problem_mnkl
 
     @dsl_user_op
     def _get_cluster_tile_count_mn(
@@ -523,13 +531,13 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         :rtype: Int32
         """
         cur_ntile_m = (
-            problem_shape[0] + self.cluster_tile_shape_mnk[0] - 1  # type: ignore[operator]
+            problem_shape[0] + self.cluster_tile_shape_mnk[0] - 1
         ) // self.cluster_tile_shape_mnk[0]
         cur_ntile_n = (
-            problem_shape[1] + self.cluster_tile_shape_mnk[1] - 1  # type: ignore[operator]
+            problem_shape[1] + self.cluster_tile_shape_mnk[1] - 1
         ) // self.cluster_tile_shape_mnk[1]
         cur_ntile_mn = cur_ntile_m * cur_ntile_n
-        return cur_ntile_mn  # type: ignore[return-value]
+        return cur_ntile_mn
 
     @dsl_user_op
     def _compute_cta_tile_coord(
@@ -566,12 +574,11 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             (cluster_tile_count_m, cluster_tile_count_n), loc=loc, ip=ip
         )
         (mi, ni) = cluster_layout_mn.get_hier_coord(cluster_tile_idx)
-        cta_tile_idx_m = (
-            mi * self.params.cluster_shape_mn[0] + cta_tile_coord_in_cluster[0]
-        )
-        cta_tile_idx_n = (
-            ni * self.params.cluster_shape_mn[1] + cta_tile_coord_in_cluster[1]
-        )
+        # Group tile counts and CTA offsets are both in logical cluster units.
+        cluster_shape_m = Int32(self.params.cluster_shape_mn[0])
+        cluster_shape_n = Int32(self.params.cluster_shape_mn[1])
+        cta_tile_idx_m = mi * cluster_shape_m + cta_tile_coord_in_cluster[0]
+        cta_tile_idx_n = ni * cluster_shape_n + cta_tile_coord_in_cluster[1]
         return (cta_tile_idx_m, cta_tile_idx_n)
 
     @dsl_user_op
@@ -616,25 +623,37 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
             # check if the group to be checked is out of range
             inside_group_bound = cur_group_idx < self.group_count
 
-            # Rotate cache
-            self.cached_problem_shape_0 = self.cached_problem_shape_1
+            if const_expr(self.use_cached_problem_shapes):
+                # Cached path: rotate cache and prefetch
+                self.cached_problem_shape_0 = self.cached_problem_shape_1
 
-            # Prefetch problem shape for next while iteration
-            next_prefetch_group_idx = (
-                start_group_idx + cute.arch.WARP_SIZE + self.lane_idx
-            )
-            if next_prefetch_group_idx < self.group_count:
-                self.cached_problem_shape_1 = self._get_problem_for_group(
-                    problem_shape_mnkl, next_prefetch_group_idx, loc=loc, ip=ip
+                # Prefetch problem shape for next while iteration
+                next_prefetch_group_idx = (
+                    start_group_idx + cute.arch.WARP_SIZE + self.lane_idx
                 )
+                if next_prefetch_group_idx < self.group_count:
+                    self.cached_problem_shape_1 = self._get_problem_for_group(
+                        problem_shape_mnkl, next_prefetch_group_idx, loc=loc, ip=ip
+                    )
 
-            cur_ntile_mn = c_0
-            if inside_group_bound:
-                # get problem size of current group
-                cur_problem_mnkl = self.cached_problem_shape_0
-                cur_ntile_mn = self._get_cluster_tile_count_mn(
-                    cur_problem_mnkl, loc=loc, ip=ip
-                )
+                cur_ntile_mn = c_0
+                if inside_group_bound:
+                    # get problem size of current group from cache
+                    cur_problem_mnkl = self.cached_problem_shape_0
+                    cur_ntile_mn = self._get_cluster_tile_count_mn(
+                        cur_problem_mnkl, loc=loc, ip=ip
+                    )
+            else:
+                # On-demand path: load problem shape directly
+                cur_ntile_mn = c_0
+                if inside_group_bound:
+                    # Load problem shape directly without caching
+                    cur_problem_mnkl = self._get_problem_for_group(
+                        problem_shape_mnkl, cur_group_idx, loc=loc, ip=ip
+                    )
+                    cur_ntile_mn = self._get_cluster_tile_count_mn(
+                        cur_problem_mnkl, loc=loc, ip=ip
+                    )
 
             # compute tile count from beginning to current group(included)
             total_cluster_tile_count_ps_per_thread = self._prefix_sum(
@@ -672,12 +691,13 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
                 lane_idx_for_cluster_tile_count_end,
             )
 
-            # Prefetch problem shape for next wave
-            if not not_found:  # noqa: SIM102
-                if start_group_idx + self.lane_idx < self.group_count:
-                    self.cached_problem_shape_1 = self._get_problem_for_group(
-                        problem_shape_mnkl, start_group_idx + self.lane_idx
-                    )
+            # Prefetch problem shape for next wave (only when caching enabled)
+            if const_expr(self.use_cached_problem_shapes):
+                if not not_found:  # noqa: SIM102
+                    if start_group_idx + self.lane_idx < self.group_count:
+                        self.cached_problem_shape_1 = self._get_problem_for_group(
+                            problem_shape_mnkl, start_group_idx + self.lane_idx
+                        )
 
         # The tile is invalid if not_found doesn't change before and after the while
         # loop.
@@ -826,9 +846,7 @@ class StaticPersistentGroupTileScheduler(StaticPersistentTileScheduler):
         return grouped_work_tile
 
 
-@deprecated(
-    "API is deprecated, use StaticPersistentGroupTileScheduler from this module instead."
-)
+@deprecated("API is deprecated, use StaticPersistentGroupTileScheduler instead.")
 class GroupedGemmTileSchedulerHelper:
     """
     A helper to translate the raw block index (x, y, z) from tile scheduler to real CTA
@@ -1066,14 +1084,16 @@ class GroupedGemmTileSchedulerHelper:
             (cluster_tile_count_m, cluster_tile_count_n)
         )
         (mi, ni) = cluster_layout_mn.get_hier_coord(cluster_tile_idx)
-        cta_tile_idx_m = (
-            mi * self.tile_sched_params.cluster_shape_mn[0]
-            + cta_tile_coord_in_cluster[0]
-        )
-        cta_tile_idx_n = (
-            ni * self.tile_sched_params.cluster_shape_mn[1]
-            + cta_tile_coord_in_cluster[1]
-        )
+        # Mixed-cluster: use runtime cluster dims (see ``MixedClusterParamsMixin``).
+        if const_expr(self.tile_sched_params._has_distinct_fallback):
+            cdx, cdy, _ = self.tile_sched_params.runtime_cluster_dims()
+            cluster_shape_m = cdx
+            cluster_shape_n = cdy
+        else:
+            cluster_shape_m = Int32(self.tile_sched_params.cluster_shape_mn[0])
+            cluster_shape_n = Int32(self.tile_sched_params.cluster_shape_mn[1])
+        cta_tile_idx_m = mi * cluster_shape_m + cta_tile_coord_in_cluster[0]
+        cta_tile_idx_n = ni * cluster_shape_n + cta_tile_coord_in_cluster[1]
         return (cta_tile_idx_m, cta_tile_idx_n)
 
     @cute.jit

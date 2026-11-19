@@ -32,6 +32,31 @@ from pathlib import Path
 import pytest
 
 import test_utils  # isort: skip
+import cutlass.operators as ops
+
+
+def _print_notebook_outputs(notebook) -> None:
+    """Print every executed code cell's outputs, in cell order.
+
+    ``ExecutePreprocessor.preprocess`` runs each cell in a separate kernel
+    subprocess and writes its outputs back into ``cell.outputs`` in memory;
+    nothing prints them by default, so on failure only the failing cell's
+    traceback is visible and everything before it is silently discarded.
+    """
+    for i, cell in enumerate(notebook.cells):
+        if cell.get("cell_type") != "code" or not cell.get("outputs"):
+            continue
+        print(f"\n----- cell {i} ({cell.get('id', '?')}) -----")
+        for output in cell.outputs:
+            output_type = output.get("output_type")
+            if output_type == "stream":
+                print(output.get("text", ""), end="")
+            elif output_type in ("execute_result", "display_data"):
+                text = output.get("data", {}).get("text/plain")
+                if text:
+                    print(text)
+            elif output_type == "error":
+                print("\n".join(output.get("traceback", [])))
 
 
 @pytest.mark.parametrize(
@@ -45,14 +70,25 @@ import test_utils  # isort: skip
         ("005_grouped_gemm_contiguous_offset.ipynb", ["100a"]),
         ("006_block_scaled_gemm.ipynb", ["100f"]),
         ("007_heuristics.ipynb", ["100a"]),
+        ("008_performance_controls.ipynb", ["100f"]),
+        ("009_programmatic_dependent_launch.ipynb", ["100a"]),
+        ("010_moe_grouped_gemm.ipynb", ["100f"]),
+        ("011_data_driven_sync.ipynb", ["107a"]),
     ],
 )
-def test_notebooks(notebook_name, operator_targets, monkeypatch):
+def test_notebooks(notebook_name, operator_targets, monkeypatch, tmp_path):
     test_utils.skip_if_unsupported_target(operator_targets)
 
     notebook_dir = Path(__file__).parent / ".." / ".." / "examples"
     full_notebook_path = notebook_dir / notebook_name
 
+    if (
+        ops.utils.device.device_or_env_target_sm() == ops.TargetSm("107a")
+        and notebook_name == "006_block_scaled_gemm.ipynb"
+    ):
+        pytest.skip(
+            "SM107 does not support block scaled gemm notebook because of lack of pytorch support"
+        )
     import os
     import subprocess
 
@@ -79,7 +115,13 @@ def test_notebooks(notebook_name, operator_targets, monkeypatch):
             value = ":".join(([existing] if existing else []) + preload_libs)
             monkeypatch.setenv("LD_PRELOAD", value)
 
-    # Register the current Python interpreter as the python3 kernel
+    # Register the current Python interpreter as the python3 kernel.
+    # `--user` targets one directory shared by every pytest-xdist worker, and the
+    # install is a non-atomic rmtree-then-copytree, so concurrent workers race and
+    # the loser dies with FileExistsError. Point each test at a private data dir:
+    # it keeps the same position in the kernel search path, so which kernelspec
+    # wins is unchanged, but the shared write target is gone.
+    monkeypatch.setenv("JUPYTER_DATA_DIR", str(tmp_path / "jupyter"))
     subprocess.run(
         [sys.executable, "-m", "ipykernel", "install", "--user", "--name", "python3"],
         check=True,
@@ -92,4 +134,11 @@ def test_notebooks(notebook_name, operator_targets, monkeypatch):
 
     # Execute the notebook. This call will error out on any assertions or errors in the
     # notebook itself. Allow these to propagate up so the test will fail on notebook failure.
-    ep.preprocess(notebook, {"metadata": {"path": notebook_dir}})
+    # ep.preprocess mutates `notebook` cell-by-cell, so cells that ran before a
+    # failure still have their outputs populated -- print them in `finally` so
+    # they show up (via pytest's captured-stdout-on-failure) regardless of
+    # whether the notebook ultimately passes or fails partway through.
+    try:
+        ep.preprocess(notebook, {"metadata": {"path": notebook_dir}})
+    finally:
+        _print_notebook_outputs(notebook)

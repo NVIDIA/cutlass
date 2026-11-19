@@ -24,7 +24,7 @@ from cutlass.cutlass_dsl import (
 )
 from cutlass._mlir import ir
 from cutlass.utils.mixed_cluster_params import MixedClusterParamsMixin
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 import cutlass.cute as cute
 
 _DEPRECATION_MSG = (
@@ -95,7 +95,7 @@ class WorkTileInfo:
         return self._tile_idx
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class PersistentTileSchedulerParams(MixedClusterParamsMixin):
     """A class to represent parameters for a persistent tile scheduler.
 
@@ -684,7 +684,7 @@ class StaticPersistentTileScheduler:
         return self._num_tiles_executed
 
 
-@deprecated(_DEPRECATION_MSG)
+@_deprecated(_DEPRECATION_MSG)
 class StaticPersistentRuntimeTileScheduler(StaticPersistentTileScheduler):
     """A scheduler for static persistent runtime tile execution in CUTLASS/CuTe kernels.
     This scheduler will always launch all the SMs and the scheduler will generate the real tile info for each SM.

@@ -47,6 +47,7 @@
 #include <cute/container/alignment.hpp>
 #include <cute/container/bit_field.hpp>
 #include <cute/container/array.hpp>
+#include <cute/numeric/integral_constant.hpp>
 #include <cute/numeric/numeric_types.hpp>
 
 namespace cute
@@ -84,6 +85,25 @@ set_barrier_transaction_bytes(uint64_t& smem_barrier,      // 64 bits user-mange
     :: "r"(smem_int_ptr),
        "r"(bytes));
 #endif
+}
+
+// Set the number of 16-byte chunks transferred per transaction and perform an arrive operation as
+// well (for .mbarrier::complete_tx::16B ops)
+template <auto Bytes>
+CUTE_HOST_DEVICE
+void
+set_barrier_transaction_16_bytes(uint64_t& smem_barrier, C<Bytes>)
+{
+  static_assert(Bytes % 16 == 0, "The transaction byte count must be a multiple of 16.");
+  set_barrier_transaction_bytes(smem_barrier, uint32_t(Bytes / 16));
+}
+
+// Dynamic bytes, divisibility is unchecked
+CUTE_HOST_DEVICE
+void
+set_barrier_transaction_16_bytes(uint64_t& smem_barrier, uint32_t bytes)
+{
+  set_barrier_transaction_bytes(smem_barrier, bytes / 16);
 }
 
 // Barrier wait
@@ -289,8 +309,17 @@ to_CUtensorMapL2promotion(L2Promotion const& t) {
 } // end namespace TMA
 
 #if (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
+#if defined(_MSC_VER) && (CUDA_VERSION >= 13040)
+  struct alignas(64) TmaDescriptor {
+    cuuint64_t opaque[CU_TENSOR_MAP_NUM_QWORDS];
+  };
+  static_assert(sizeof(TmaDescriptor) == sizeof(CUtensorMap),
+                "TmaDescriptor must have the same size as CUtensorMap");
+  using Im2ColTmaDescriptor = TmaDescriptor;
+#else
   using TmaDescriptor = CUtensorMap;
   using Im2ColTmaDescriptor = CUtensorMap;
+#endif
 #else
   using TmaDescriptor = struct alignas(64) { char bytes[128]; };
   using Im2ColTmaDescriptor = struct alignas(64) { char bytes[128]; };

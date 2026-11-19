@@ -234,6 +234,23 @@ def _get_ir_type(val: Any) -> Any:
         return None
 
 
+def _is_dsl_type_upgrade(old_value: object, new_value: object) -> bool:
+    """Whether rebinding *old_value*'s place to *new_value* only ADDS DSL type
+    information: the old binding is a bare MLIR value (an ``ArithValue`` from a
+    value caster, say) and the new one is a ``Numeric`` that names its dtype.
+
+    Rule 4 re-types a rebind to the OLD class so the join keeps one type. That
+    is right for two wrappers that both name a dtype (``Int32`` over
+    ``Uint32``), but backwards here: the old class knows no dtype, so the
+    re-type would discard the wrapper the program produced.
+    """
+    try:
+        from .typing import Numeric
+    except ImportError:  # pragma: no cover - typing always resolves at runtime
+        return False
+    return isinstance(new_value, Numeric) and not isinstance(old_value, Numeric)
+
+
 def _lift_scalar_to_staged_like(old_value: Any, new_value: Any) -> Any:
     """Lift a Python scalar *new_value* to a staged value matching the staged
     *old_value*'s type, or return ``None`` when no lifting applies.
@@ -497,6 +514,13 @@ def assign_meta_staged_check(
             old_ir = _get_ir_type(old_value)
             new_ir = _get_ir_type(new_value)
             if old_ir is not None and new_ir is not None and old_ir == new_ir:
+                if _is_dsl_type_upgrade(old_value, new_value):
+                    # The join's MLIR type is already stable (the two agree),
+                    # and the new binding is the one that carries the DSL type:
+                    # re-typing it to the old class would DROP that (a bare
+                    # ``ir.Value`` has no dtype), so the program would see a
+                    # different Python class than it wrote.
+                    return None
                 try:
                     return old_type(new_value.ir_value())
                 except (TypeError, ValueError, AttributeError):
@@ -513,7 +537,7 @@ def assign_meta_staged_check(
 
     # 4th case: M->S promotion (old is meta, new is staged)
     if not old_is_staged and new_is_staged:
-        from .common import get_current_env_manager
+        from .common import _warn_deprecated, get_current_env_manager
 
         auto_m2s = False
         env_manager = get_current_env_manager()
@@ -521,21 +545,18 @@ def assign_meta_staged_check(
             auto_m2s = getattr(env_manager, "auto_m2s", False)
 
         if auto_m2s:
-            import warnings
-
             # The constructor-suggestion prefix is per-DSL (declared on the env
             # manager), so base_dsl names no dialect; empty means no namespace.
             ns = getattr(env_manager, "dsl_constructor_namespace", "")
             ctor_prefix = f"{ns}." if ns else ""
-            warnings.warn(
+            _warn_deprecated(
                 f"Implicit Meta-to-Staged promotion of `{target_name}` "
                 f"(from {type(old_value).__name__} to "
                 f"{type(new_value).__name__}) is deprecated. "
                 f"Initialize as: {target_name} = "
                 f"{ctor_prefix}{type(new_value).__name__}({old_value!r})\n"
                 f"  at {filename}:{lineno}",
-                DeprecationWarning,
-                stacklevel=3,
+                user_input=True,
             )
             return None  # Allow -- pyir_assign handles promotion
 

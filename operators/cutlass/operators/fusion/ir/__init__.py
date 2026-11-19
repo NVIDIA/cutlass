@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -30,7 +29,11 @@
 #
 
 
-from cutlass.operators.fusion.ir.compute_nodes import ComputeNode, ComputeImpl
+from cutlass.operators.fusion.ir.compute_nodes import (
+    ComputeNode,
+    ComputeImpl,
+    GatedComputeNode,
+)
 from cutlass.operators.fusion.ir.dag_ir import DAGIR
 from cutlass.operators.fusion.ir.layout_nodes import LayoutNode
 from cutlass.operators.fusion.ir.load_nodes import (
@@ -54,6 +57,7 @@ from cutlass.operators.fusion.ir.store_nodes import (
 
 __all__ = [
     "ComputeNode",
+    "GatedComputeNode",
     "ComputeImpl",
     "DAGIR",
     "LayoutNode",

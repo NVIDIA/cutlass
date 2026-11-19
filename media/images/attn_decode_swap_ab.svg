@@ -1,0 +1,108 @@
+<svg width="1024" height="830" viewBox="0 40 1024 830" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="background" cx="52%" cy="52%" r="78%">
+      <stop offset="0%" stop-color="#f2f2f2"/>
+      <stop offset="72%" stop-color="#fbfbfb"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </radialGradient>
+    <filter id="softShadow" x="-12%" y="-12%" width="130%" height="140%">
+      <feDropShadow dx="4" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+
+    <linearGradient id="qFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6b6b" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#ff6b6b" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="kFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8fd0ff" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#8fd0ff" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="vFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c7a7ff" stop-opacity="0.34"/>
+      <stop offset="100%" stop-color="#c7a7ff" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="sFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a7f2d3" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#a7f2d3" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="oFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd38b" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffd38b" stop-opacity="0.09"/>
+    </linearGradient>
+
+    <pattern id="qGrid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0V44" fill="none" stroke="#ff3755" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="kGrid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#0b78ff" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="vGrid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0V44" fill="none" stroke="#7b4dff" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="sGrid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#10a66b" stroke-width="1" opacity="0.3"/>
+    </pattern>
+    <pattern id="oGrid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0V44" fill="none" stroke="#ff8a16" stroke-width="1" opacity="0.3"/>
+    </pattern>
+
+    <clipPath id="qClip"><rect x="743" y="115" width="110" height="143" rx="8"/></clipPath>
+    <clipPath id="kClip"><rect x="528" y="282" width="181" height="398" rx="8"/></clipPath>
+    <clipPath id="sClip"><rect x="742" y="280" width="111" height="399" rx="8"/></clipPath>
+    <clipPath id="vClip"><rect x="198" y="729" width="511" height="101" rx="8"/></clipPath>
+    <clipPath id="oClip"><rect x="742" y="729" width="111" height="101" rx="8"/></clipPath>
+
+    <style>
+      svg { font-family: "DejaVu Sans", Arial, sans-serif; }
+      .label { font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .dim-label { fill: #465364; font-size: 22px; font-style: italic; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .mma-axis { font-style: normal; font-size: 17px; font-weight: 700; fill: #8a94a3; }
+      .eqn { fill: #465364; font-size: 24px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+      .guide { stroke: #68717a; stroke-width: 1.4; stroke-linecap: square; fill: none; }
+    </style>
+  </defs>
+
+  <rect y="40" width="1024" height="830" fill="url(#background)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="743" y="115" width="110" height="143" rx="8" fill="url(#qFill)" stroke="#ff3755" stroke-width="2"/>
+    <rect x="528" y="282" width="181" height="398" rx="8" fill="url(#kFill)" stroke="#0b78ff" stroke-width="2"/>
+    <rect x="742" y="280" width="111" height="399" rx="8" fill="url(#sFill)" stroke="#10a66b" stroke-width="2"/>
+    <rect x="198" y="729" width="511" height="101" rx="8" fill="url(#vFill)" stroke="#7b4dff" stroke-width="2"/>
+    <rect x="742" y="729" width="111" height="101" rx="8" fill="url(#oFill)" stroke="#ff8a16" stroke-width="2"/>
+  </g>
+
+  <g clip-path="url(#qClip)"><rect x="743" y="115" width="110" height="143" fill="url(#qGrid)"/></g>
+  <g clip-path="url(#kClip)"><rect x="528" y="282" width="181" height="398" fill="url(#kGrid)"/></g>
+  <g clip-path="url(#sClip)"><rect x="742" y="280" width="111" height="399" fill="url(#sGrid)"/></g>
+  <g clip-path="url(#vClip)"><rect x="198" y="729" width="511" height="101" fill="url(#vGrid)"/></g>
+  <g clip-path="url(#oClip)"><rect x="742" y="729" width="111" height="101" fill="url(#oGrid)"/></g>
+
+  <text class="label" x="798" y="186" font-size="40" fill="#8f1424">Q<tspan font-size="20" baseline-shift="super">T</tspan></text>
+  <text class="label" x="618" y="481" font-size="40" fill="#062f87">K</text>
+  <text class="label" x="797" y="460" font-size="40" fill="#075f3d">S<tspan font-size="20" baseline-shift="super">T</tspan>/</text>
+  <text class="label" x="797" y="502" font-size="40" fill="#075f3d">P<tspan font-size="20" baseline-shift="super">T</tspan></text>
+  <text class="label" x="453" y="780" font-size="40" fill="#25126d">V<tspan font-size="20" baseline-shift="super">T</tspan></text>
+  <text class="label" x="797" y="780" font-size="40" fill="#b74400">O<tspan font-size="20" baseline-shift="super">T</tspan></text>
+
+  <text class="eqn" x="320" y="352">BMM1:  S<tspan font-size="15" baseline-shift="super">T</tspan> = K · Q<tspan font-size="15" baseline-shift="super">T</tspan></text>
+  <text class="eqn" x="320" y="394">BMM2:  O<tspan font-size="15" baseline-shift="super">T</tspan> = V<tspan font-size="15" baseline-shift="super">T</tspan> · P<tspan font-size="15" baseline-shift="super">T</tspan></text>
+
+  <path class="guide" d="M744 84H852M744 80V88M852 80V88"/>
+  <text class="dim-label" x="798" y="66">Group Size <tspan class="mma-axis">(N)</tspan></text>
+
+  <path class="guide" d="M541 259H696M541 255V263M696 255V263"/>
+  <text class="dim-label" x="618" y="241">D <tspan class="mma-axis">(K)</tspan></text>
+
+  <path class="guide" d="M469 296V662M465 296H473M465 662H473"/>
+  <text class="dim-label" x="428" y="479">S <tspan class="mma-axis">(M)</tspan></text>
+
+  <path class="guide" d="M727 115V258M723 115H731M723 258H731"/>
+  <text class="dim-label" x="686" y="186">D <tspan class="mma-axis">(K)</tspan></text>
+
+  <path class="guide" d="M166 744V815M162 744H170M162 815H170"/>
+  <text class="dim-label" x="124" y="779">D <tspan class="mma-axis">(M)</tspan></text>
+
+  <path class="guide" d="M198 702H709M198 698V706M709 698V706"/>
+  <text class="dim-label" x="453" y="684">S <tspan class="mma-axis">(K)</tspan></text>
+</svg>

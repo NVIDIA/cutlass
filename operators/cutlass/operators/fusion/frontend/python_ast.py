@@ -47,6 +47,9 @@ from cutlass.operators.fusion.activation import (
     silu,
     hardswish,
     gelu,
+    swiglu,
+    geglu,
+    reglu,
 )
 from cutlass.operators.fusion.frontend.frontend_base import EVTFrontendBase
 from cutlass.operators.fusion.library import DataType, FunctionalOp
@@ -85,6 +88,9 @@ class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
             "silu": silu.binding_type,
             "hardswish": hardswish.binding_type,
             "gelu": gelu.binding_type,
+            "swiglu": swiglu.binding_type,
+            "geglu": geglu.binding_type,
+            "reglu": reglu.binding_type,
             "multiply_add": FunctionalOp.MultiplyAdd,
             "sum": (FunctionalOp.Plus, FunctionalOp.AtomicAdd),
             "max": (FunctionalOp.Maximum, FunctionalOp.AtomicMaximum),

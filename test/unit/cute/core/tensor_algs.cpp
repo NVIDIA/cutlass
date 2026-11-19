@@ -76,7 +76,7 @@ TEST(CuTe_algorithm, TensorLogicalReduce) {
     Tensor src_tensor = make_tensor(counting_iterator<int>{0},
                                     Layout<Shape <_32, Shape <_12,_6>>,
                                            Stride< _1, Stride<_64,_1>>>{});
-    auto slicer = make_coord(0_c, _);
+    auto slicer = make_coord(_0{}, _);
     Tensor dst_tensor = make_tensor_like(src_tensor(slicer));
 
     logical_reduce(src_tensor, dst_tensor, slicer);
@@ -90,7 +90,7 @@ TEST(CuTe_algorithm, TensorLogicalReduce) {
     Tensor src_tensor = make_tensor(counting_iterator<int>{0},
                                     Layout<Shape <_32, Shape <_12,_6>>,
                                            Stride< _1, Stride<_64,_1>>>{});
-    auto slicer = make_coord(_, 0_c);
+    auto slicer = make_coord(_, _0{});
     Tensor dst_tensor = make_tensor_like(src_tensor(slicer));
 
     logical_reduce(src_tensor, dst_tensor, slicer);

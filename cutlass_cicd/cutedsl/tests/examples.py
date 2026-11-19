@@ -40,6 +40,7 @@ EXTRA_EXAMPLES_BY_SM = {
 }
 
 EXAMPLE_SUPPORTED_SMS = {
+    "dsl_tutorials/cuda_graph_pdl.py": frozenset({"100", "103"}),
     "dsl_tutorials/fp16_gemm_4_iket.py": frozenset({"100", "103"}),
 }
 

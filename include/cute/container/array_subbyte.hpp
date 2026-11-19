@@ -588,16 +588,13 @@ T&& get(array_subbyte<T,N>&& a)
   return cute::move(a[I]);
 }
 
+template <class T>
+struct is_reference<subbyte_reference<T>> : true_type {};
+
 } // end namespace cute
 
 namespace CUTE_STL_NAMESPACE
 {
-
-template <class T>
-struct is_reference<cute::subbyte_reference<T>>
-    : CUTE_STL_NAMESPACE::true_type
-{};
-
 
 template <class T, size_t N>
 struct tuple_size<cute::array_subbyte<T,N>>

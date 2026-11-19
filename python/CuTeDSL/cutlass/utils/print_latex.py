@@ -10,10 +10,9 @@
 # is strictly prohibited.
 
 import functools
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 from typing import Any
 
-from typing_extensions import deprecated
 
 from cutlass.cute.viz import print_latex as _print_latex
 from cutlass.cute.viz import print_latex_tv as _print_latex_tv
@@ -24,7 +23,7 @@ from cutlass.cute.viz import tikz_color_white as _tikz_color_white
 from cutlass.cute.viz import tikz_escape as _tikz_escape
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.print_latex is deprecated; use "
     "cutlass.cute.viz.print_latex instead. It will be removed in a future release."
 )
@@ -33,7 +32,7 @@ def print_latex(*args: Any, **kwargs: Any) -> Any:
     return _print_latex(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.print_latex_tv is deprecated; use "
     "cutlass.cute.viz.print_latex_tv instead. It will be removed in a future "
     "release."
@@ -43,7 +42,7 @@ def print_latex_tv(*args: Any, **kwargs: Any) -> Any:
     return _print_latex_tv(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.tikz_color_bwx8 is deprecated; use "
     "cutlass.cute.viz.tikz_color_bwx8 instead. It will be removed in a future "
     "release."
@@ -53,7 +52,7 @@ def tikz_color_bwx8(*args: Any, **kwargs: Any) -> Any:
     return _tikz_color_bwx8(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.tikz_color_rainbow is deprecated; use "
     "cutlass.cute.viz.tikz_color_rainbow instead. It will be removed in a future "
     "release."
@@ -63,7 +62,7 @@ def tikz_color_rainbow(*args: Any, **kwargs: Any) -> Any:
     return _tikz_color_rainbow(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.tikz_color_tv is deprecated; use "
     "cutlass.cute.viz.tikz_color_tv instead. It will be removed in a future release."
 )
@@ -72,7 +71,7 @@ def tikz_color_tv(*args: Any, **kwargs: Any) -> Any:
     return _tikz_color_tv(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.tikz_color_white is deprecated; use "
     "cutlass.cute.viz.tikz_color_white instead. It will be removed in a future "
     "release."
@@ -82,7 +81,7 @@ def tikz_color_white(*args: Any, **kwargs: Any) -> Any:
     return _tikz_color_white(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.print_latex.tikz_escape is deprecated; use "
     "cutlass.cute.viz.tikz_escape instead. It will be removed in a future release."
 )
@@ -96,12 +95,10 @@ def tikz_escape(*args: Any, **kwargs: Any) -> Any:
 # module-level __getattr__ (PEP 562) adds the deprecation warning instead.
 def __getattr__(name: str) -> Any:
     if name in ("PALETTES", "Band"):
-        warnings.warn(
+        _warn_deprecated(
             f"cutlass.utils.print_latex.{name} is deprecated; use "
             f"cutlass.cute.viz.{name} instead. It will be removed in a future "
-            "release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "release."
         )
         import cutlass.cute.viz as _viz
 

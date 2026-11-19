@@ -32,6 +32,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import cutlass
+
 import cutlass.operators.utils as utils
 from cutlass.operators.arguments import (
     DenseTensor,

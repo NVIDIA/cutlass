@@ -536,7 +536,9 @@ public:
     epi_load_pipeline_params.consumer_arv_count = NumEpilogueThreads;
     epi_load_pipeline_params.transaction_bytes = CollectiveEpilogue::TmaTransactionBytes;
     epi_load_pipeline_params.initializing_warp = 4;
-    EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params);
+    // The no-smem epilogue has a 0-stage load pipeline, so there are no barriers to initialize.
+    EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params,
+                                      cute::bool_constant<!IsNoSmemEpilogue>{});
 
     // Epilogue Store pipeline
     typename EpiStorePipeline::Params epi_store_pipeline_params;
