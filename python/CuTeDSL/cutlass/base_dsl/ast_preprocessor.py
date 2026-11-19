@@ -1284,29 +1284,18 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
 
     def visit_BoolOp(self, node: ast.BoolOp) -> ast.expr:
-        # Visit child nodes first
+        """Lower to (start < term(None, a) < term(combine, b) < ...).value.
+
+        Python evaluates each comparator at most once, in the original scope,
+        and tests only intermediate results. Emit the Compare *after* visiting
+        the operands: this is interpreter control flow, not a DSL comparison.
+        """
         self.generic_visit(node)
 
         if isinstance(node.op, ast.And):
-            short_circuit_value = ast.Constant(value=False)
-            helper_func = _create_module_attribute(
-                "and_",
-                use_base_dsl=False,
-                submodule_name=None,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-            self.session_data.import_top_module = True
+            start_name, helper_name = "_and_start", "and_"
         elif isinstance(node.op, ast.Or):
-            short_circuit_value = ast.Constant(value=True)
-            helper_func = _create_module_attribute(
-                "or_",
-                use_base_dsl=False,
-                submodule_name=None,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-            self.session_data.import_top_module = True
+            start_name, helper_name = "_or_start", "or_"
         else:
             # BoolOp should be either And or Or -- reaching here is a compiler
             # bug (the AST grammar only produces And/Or), not an author mistake.
@@ -1316,41 +1305,44 @@ class DSLPreprocessor(ast.NodeTransformer):
                 snippet=ast.unparse(node),
             )
 
-        lhs = node.values[0]
-        for rhs in node.values[1:]:
-            temp = ".boolop_lhs"
-            value = ast.Name(id=temp, ctx=ast.Load())
-            target = ast.Name(id=temp, ctx=ast.Store())
-            binding = ast.NamedExpr(target=target, value=lhs)
-            in_iterable = getattr(node, "_dsl_comprehension_iterable", False)
-            result = ast.IfExp(
-                test=ast.Compare(
-                    left=value if in_iterable else binding,
-                    ops=[ast.Is()],
-                    comparators=[short_circuit_value],
-                ),
-                body=short_circuit_value,
-                orelse=ast.Call(func=helper_func, args=[value, rhs], keywords=[]),
-            )
-            if in_iterable:
-                result = ast.Subscript(
-                    value=ast.ListComp(
-                        elt=result,
-                        generators=[
-                            ast.comprehension(
-                                target=target,
-                                iter=ast.Tuple(elts=[lhs], ctx=ast.Load()),
-                                ifs=[],
-                                is_async=0,
-                            )
-                        ],
-                    ),
-                    slice=ast.Constant(value=0),
-                    ctx=ast.Load(),
+        self.session_data.import_top_module = True
+        terms: list[ast.expr] = []
+        for index, operand in enumerate(node.values):
+            combine = (
+                _create_module_attribute(
+                    helper_name,
+                    use_base_dsl=False,
+                    submodule_name=None,
+                    lineno=operand.lineno,
+                    col_offset=operand.col_offset,
                 )
-            lhs = ast.copy_location(result, node)
-
-        return lhs
+                if index
+                else ast.Constant(value=None)
+            )
+            terms.append(
+                ast.copy_location(
+                    ast.Call(
+                        func=_create_module_attribute(
+                            "_BoolOpTerm",
+                            lineno=operand.lineno,
+                            col_offset=operand.col_offset,
+                        ),
+                        args=[combine, operand],
+                        keywords=[],
+                    ),
+                    operand,
+                )
+            )
+        chain = ast.Compare(
+            left=_create_module_attribute(
+                start_name, lineno=node.lineno, col_offset=node.col_offset
+            ),
+            ops=[ast.Lt() for _ in terms],
+            comparators=terms,
+        )
+        return ast.copy_location(
+            ast.Attribute(value=chain, attr="value", ctx=ast.Load()), node
+        )
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.expr:
         # Visit child nodes first
@@ -2684,10 +2676,6 @@ class DSLPreprocessor(ast.NodeTransformer):
     def _visit_Comprehension(
         self, node: _ComprehensionT, ele_visitor: Callable[..., Any]
     ) -> _ComprehensionT:
-        for generator in node.generators:
-            for child in ast.walk(generator.iter):
-                if isinstance(child, ast.BoolOp):
-                    child._dsl_comprehension_iterable = True
         node.generators = [self.visit(generator) for generator in node.generators]
         # The filter runs in Python while the comprehension is built: a
         # runtime condition is refused as a built-in's truth test would be.
