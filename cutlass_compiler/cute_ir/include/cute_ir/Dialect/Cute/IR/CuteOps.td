@@ -3331,24 +3331,28 @@ def Cute_RightInverseOp : Cute_Op<"right_inverse", [
     DeclareOpInterfaceMethods<InferTypeOpInterface>
 ]> {
   let cuteSpecGroup = "LayoutAlgebra";
-  let summary = "Right inverse of a static layout";
+  let summary = "Right inverse of a layout";
   let description = [{
-    Computes the right inverse of a fully-static layout. The right
-    inverse ``R`` satisfies ``layout ∘ R = identity`` on the codomain of
-    ``layout``, making it useful for deriving inverse index mappings.
+    Computes the right inverse of a layout. The right inverse ``R`` satisfies
+    ``layout(R(i)) = i`` for every ``i`` in the domain of ``R``, making it
+    useful for deriving inverse index mappings.
 
     **Preconditions**
 
     - ``$input`` is ``!cute.layout``.
-    - ``$input`` is fully static (no ``?`` dynamic extents or strides).
-    - ``$input``'s strides are either all plain integer or all
-      scaled-basis (``@``); mixing the two within a single layout is
-      rejected.
+    - A dynamic shape is supported only with fully static plain-integer
+      strides. Static-shape inputs retain the supported integer,
+      non-ratio scaled-basis, and dynamic-stride behavior.
+    - Mixing plain-integer and scaled-basis strides is rejected unless every
+      plain-integer leaf is the static value zero, matching the existing
+      static-shape contract.
 
     **Postconditions**
 
-    - Result is ``!cute.layout`` and equals the right inverse ``R`` such
-      that ``$input ∘ R`` is the identity on ``$input``'s codomain.
+    - Result is ``!cute.layout`` and equals a right inverse ``R`` such that
+      ``$input ∘ R = make_layout(shape(R))``. For a dynamic shape, continuity
+      that cannot be proven statically conservatively limits ``R`` to the
+      maximal provable prefix.
 
     Worked example — column-major ``L = (2,3):(1,2)``
 
@@ -3453,23 +3457,22 @@ def Cute_RightInverseOp : Cute_Op<"right_inverse", [
     // Scaled-basis strides → flattened to plain scalar strides
     %r = cute.right_inverse(%src)
            : (!cute.layout<"(4,3):(1@0,1@1)">) -> !cute.layout<"(4,3):(1,4)">
+
+    // Dynamic shape → the maximal inverse prefix whose stride continuity is
+    // statically provable. Dynamic coalescing is a separate operation.
+    %r = cute.right_inverse(%src)
+           : (!cute.layout<"(16,?):(1,16)">) -> !cute.layout<"(16,?):(1,16)">
     ```
 
     **Errors**
 
-    - dynamic shape (right inverse not computable at compile time)
+    - dynamic shape combined with dynamic or scaled-basis strides
 
       ```mlir
-      %r = cute.right_inverse(%src) : (!cute.layout<"(?,3):(1,4)">) -> ...
+      %r = cute.right_inverse(%src) : (!cute.layout<"(?,3):(?,4)">) -> ...
       ```
 
-    - dynamic stride
-
-      ```mlir
-      %r = cute.right_inverse(%src) : (!cute.layout<"(4,3):(?,4)">) -> ...
-      ```
-
-    - mix of plain-integer and scaled-basis strides
+    - mix of nonzero plain-integer and scaled-basis strides
 
       ```mlir
       %r = cute.right_inverse(%src) : (!cute.layout<"(4,3):(1@0,4)">) -> ...
@@ -3484,7 +3487,7 @@ def Cute_RightInverseOp : Cute_Op<"right_inverse", [
   }];
 
   let arguments = (ins
-    Cute_Arg<Cute_LayoutType, "static input layout">:$input
+    Cute_Arg<Cute_LayoutType, "input layout">:$input
   );
   let results = (outs
     Cute_Arg<Cute_LayoutType, "right inverse layout">:$result

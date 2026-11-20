@@ -44,12 +44,23 @@ func.func @bad_operand_composed_layout(
 
 // -----
 
-// Dynamic shape: pre-check rejects before computing the inverse.
-func.func @dynamic_shape(
-    %src: !cute.layout<"(?,3):(1,4)">) {
-  // expected-error@+2 {{expects a static-shape input layout, but got '!cute.layout<"(?,3):(1,4)">'}}
+// Dynamic shape combined with dynamic stride remains unsupported.
+func.func @dynamic_shape_dynamic_stride(
+    %src: !cute.layout<"(?,3):(?,4)">) {
+  // expected-error@+2 {{expects a dynamic-shape input layout to have fully static integer strides, but got '!cute.layout<"(?,3):(?,4)">'}}
   // expected-error@+1 {{'cute.right_inverse' op failed to infer returned types}}
-  %r = cute.right_inverse(%src) : (!cute.layout<"(?,3):(1,4)">) -> !cute.layout<"12:1">
+  %r = cute.right_inverse(%src) : (!cute.layout<"(?,3):(?,4)">) -> !cute.layout<"12:1">
+  return
+}
+
+// -----
+
+// Dynamic shape combined with scaled-basis stride remains unsupported.
+func.func @dynamic_shape_scaled_basis_stride(
+    %src: !cute.layout<"(?,3):(1@0,1@1)">) {
+  // expected-error@+2 {{expects a dynamic-shape input layout to have fully static integer strides, but got '!cute.layout<"(?,3):(1@0,1@1)">'}}
+  // expected-error@+1 {{'cute.right_inverse' op failed to infer returned types}}
+  %r = cute.right_inverse(%src) : (!cute.layout<"(?,3):(1@0,1@1)">) -> !cute.layout<"12:1">
   return
 }
 
