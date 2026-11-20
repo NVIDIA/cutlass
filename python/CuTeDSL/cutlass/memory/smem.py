@@ -409,7 +409,7 @@ class SmemAllocator:
             raise ValueError("invalid allocation that is not byte-aligned")
         byte_alignment = max(byte_alignment, element_width // 8)
         ptr = self.allocate(
-            element_width * num_elems // 8,
+            cute.ceil_div(element_width * num_elems, 8),
             byte_alignment,
             partition=partition,
             loc=loc,
