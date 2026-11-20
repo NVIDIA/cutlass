@@ -954,7 +954,7 @@ For example:
 Header files such as
 [cutlass/cutlass.h](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/cutlass.h)
 and
-[cute/config.hpp](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/cutlass.h)
+[cute/config.hpp](https://github.com/NVIDIA/cutlass/blob/main/include/cute/config.hpp)
 offer macros for expressing compiler-dependent behavior.
 These include
 
