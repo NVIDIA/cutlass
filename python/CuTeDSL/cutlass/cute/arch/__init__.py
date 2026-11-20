@@ -202,6 +202,7 @@ __all__ = [
     "alloc_smem",
     "get_dyn_smem",
     "get_dyn_smem_size",
+    "map_dsmem_ptr",
     "store_async_dsmem",
     #
     # tmem.py
