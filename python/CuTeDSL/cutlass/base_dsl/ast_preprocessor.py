@@ -1284,44 +1284,18 @@ class DSLPreprocessor(ast.NodeTransformer):
         )
 
     def visit_BoolOp(self, node: ast.BoolOp) -> ast.expr:
-        # Visit child nodes first
+        """Lower to (start < term(None, a) < term(combine, b) < ...).value.
+
+        Python evaluates each comparator at most once, in the original scope,
+        and tests only intermediate results. Emit the Compare *after* visiting
+        the operands: this is interpreter control flow, not a DSL comparison.
+        """
         self.generic_visit(node)
 
-        # It is necessary to expand short circuit evaluation explicit here
-        # Although we do not support inline if-else for IR generation, this is actually evaluated in Python
-        # So it's fine here
-        # Transform "and" to "and_"
         if isinstance(node.op, ast.And):
-            # Create an if-else statement in AST form
-            # if type(lhs) == bool and lhs == False:
-            #     return lhs
-            # else
-            #     return and_(lhs, rhs)
-            short_circuit_value = ast.Constant(value=False)
-            helper_func = _create_module_attribute(
-                "and_",
-                use_base_dsl=False,
-                submodule_name=None,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-            self.session_data.import_top_module = True
-        # Transform "or" to "or_"
+            start_name, helper_name = "_and_start", "and_"
         elif isinstance(node.op, ast.Or):
-            # Create an if-else statement in AST form
-            # if type(lhs) == bool and lhs == True:
-            #     return lhs
-            # else
-            #     return or_(lhs, rhs)
-            short_circuit_value = ast.Constant(value=True)
-            helper_func = _create_module_attribute(
-                "or_",
-                use_base_dsl=False,
-                submodule_name=None,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-            self.session_data.import_top_module = True
+            start_name, helper_name = "_or_start", "or_"
         else:
             # BoolOp should be either And or Or -- reaching here is a compiler
             # bug (the AST grammar only produces And/Or), not an author mistake.
@@ -1331,50 +1305,44 @@ class DSLPreprocessor(ast.NodeTransformer):
                 snippet=ast.unparse(node),
             )
 
-        def short_circuit_eval(
-            value: ast.expr, short_circuit_value: ast.Constant
-        ) -> ast.BoolOp:
-            return ast.copy_location(
-                ast.BoolOp(
-                    op=ast.And(),
-                    values=[
-                        ast.Compare(
-                            left=ast.Call(
-                                func=ast.Name(id="type", ctx=ast.Load()),
-                                args=[value],
-                                keywords=[],
-                            ),
-                            ops=[ast.Eq()],
-                            comparators=[ast.Name(id="bool", ctx=ast.Load())],
-                        ),
-                        ast.Compare(
-                            left=value,
-                            ops=[ast.Eq()],
-                            comparators=[short_circuit_value],
-                        ),
-                    ],
-                ),
-                node,
+        self.session_data.import_top_module = True
+        terms: list[ast.expr] = []
+        for index, operand in enumerate(node.values):
+            combine = (
+                _create_module_attribute(
+                    helper_name,
+                    use_base_dsl=False,
+                    submodule_name=None,
+                    lineno=operand.lineno,
+                    col_offset=operand.col_offset,
+                )
+                if index
+                else ast.Constant(value=None)
             )
-
-        lhs = node.values[0]
-
-        for i in range(1, len(node.values)):
-            test = short_circuit_eval(lhs, short_circuit_value)
-            lhs = ast.copy_location(
-                ast.IfExp(
-                    test=test,
-                    body=lhs,
-                    orelse=ast.Call(
-                        func=helper_func,
-                        args=[lhs, node.values[i]],
+            terms.append(
+                ast.copy_location(
+                    ast.Call(
+                        func=_create_module_attribute(
+                            "_BoolOpTerm",
+                            lineno=operand.lineno,
+                            col_offset=operand.col_offset,
+                        ),
+                        args=[combine, operand],
                         keywords=[],
                     ),
-                ),
-                node,
+                    operand,
+                )
             )
-
-        return lhs
+        chain = ast.Compare(
+            left=_create_module_attribute(
+                start_name, lineno=node.lineno, col_offset=node.col_offset
+            ),
+            ops=[ast.Lt() for _ in terms],
+            comparators=terms,
+        )
+        return ast.copy_location(
+            ast.Attribute(value=chain, attr="value", ctx=ast.Load()), node
+        )
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.expr:
         # Visit child nodes first

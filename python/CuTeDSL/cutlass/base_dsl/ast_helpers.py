@@ -50,6 +50,42 @@ _DSL_CONDITION_ATTR = "_dsl_condition"
 _DSL_BRANCH_WEIGHTS_ATTR = "_dsl_branch_weights"
 
 
+class _BoolOpTerm:
+    """One reached operand in the base preprocessor's comparison chain."""
+
+    __slots__ = ("combine", "value", "stop")
+    stop: bool
+
+    def __init__(self, combine: Callable[[Any, Any], Any] | None, value: Any) -> None:
+        self.combine = combine
+        self.value = value
+
+    def __bool__(self) -> bool:
+        return self.value is not self.stop
+
+    def __lt__(self, rhs: "_BoolOpTerm") -> "_BoolOpTerm":
+        """Python retains rhs as the left operand of the next comparison."""
+        assert rhs.combine is not None
+        rhs.value = rhs.combine(self.value, rhs.value)
+        rhs.stop = self.stop
+        return rhs
+
+
+class _BoolOpStart:
+    __slots__ = ("stop",)
+
+    def __init__(self, stop: bool) -> None:
+        self.stop = stop
+
+    def __lt__(self, first: _BoolOpTerm) -> _BoolOpTerm:
+        first.stop = self.stop
+        return first
+
+
+_and_start = _BoolOpStart(False)
+_or_start = _BoolOpStart(True)
+
+
 def _extract_condition_branch_weights(
     pred: Any,
 ) -> tuple[Any, Optional[tuple[int, int]]]:
