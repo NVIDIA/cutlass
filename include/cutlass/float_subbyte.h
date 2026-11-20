@@ -627,7 +627,7 @@ template <>
 struct numeric_limits<cutlass::float_e2m3_t> : public float_subbyte_base_numeric_limits<cutlass::float_e2m3_t>
 {
   /// Minimum finite value
-  static cutlass::float_e2m3_t lowest() { return cutlass::float_e2m3_t::bitcast(0x2f); }
+  static cutlass::float_e2m3_t lowest() { return cutlass::float_e2m3_t::bitcast(0x3f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
   static cutlass::float_e2m3_t epsilon() { return cutlass::float_e2m3_t::bitcast(0x1); }   
@@ -639,7 +639,7 @@ template <>
 struct numeric_limits<cutlass::float_e3m2_t> : public float_subbyte_base_numeric_limits<cutlass::float_e3m2_t>
 {
   /// Minimum finite value
-  static cutlass::float_e3m2_t lowest() { return cutlass::float_e3m2_t::bitcast(0x2f); }
+  static cutlass::float_e3m2_t lowest() { return cutlass::float_e3m2_t::bitcast(0x3f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
   static cutlass::float_e3m2_t epsilon() { return cutlass::float_e3m2_t::bitcast(0x4); }
@@ -714,7 +714,7 @@ template <>
 struct numeric_limits<cutlass::float_e2m3_t> : public float_subbyte_base_numeric_limits<cutlass::float_e2m3_t>
 {
   /// Minimum finite value
-  static cutlass::float_e2m3_t lowest() { return cutlass::float_e2m3_t::bitcast(0x2f); }
+  static cutlass::float_e2m3_t lowest() { return cutlass::float_e2m3_t::bitcast(0x3f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
   static cutlass::float_e2m3_t epsilon() { return cutlass::float_e2m3_t::bitcast(0x1); }   
@@ -726,7 +726,7 @@ template <>
 struct numeric_limits<cutlass::float_e3m2_t> : public float_subbyte_base_numeric_limits<cutlass::float_e3m2_t>
 {
   /// Minimum finite value
-  static cutlass::float_e3m2_t lowest() { return cutlass::float_e3m2_t::bitcast(0x2f); }
+  static cutlass::float_e3m2_t lowest() { return cutlass::float_e3m2_t::bitcast(0x3f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
   static cutlass::float_e3m2_t epsilon() { return cutlass::float_e3m2_t::bitcast(0x4); }
@@ -737,7 +737,7 @@ template <>
 struct numeric_limits<cutlass::detail::float_e2m3_unpack8bits_t> : public float_subbyte_base_numeric_limits<cutlass::detail::float_e2m3_unpack8bits_t>
 {
   /// Minimum finite value
-  static cutlass::detail::float_e2m3_unpack8bits_t lowest() { return cutlass::detail::float_e2m3_unpack8bits_t::bitcast(0x2f); }
+  static cutlass::detail::float_e2m3_unpack8bits_t lowest() { return cutlass::detail::float_e2m3_unpack8bits_t::bitcast(0x3f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
   static cutlass::detail::float_e2m3_unpack8bits_t epsilon() { return cutlass::detail::float_e2m3_unpack8bits_t::bitcast(0x1); }   
@@ -749,7 +749,7 @@ template <>
 struct numeric_limits<cutlass::detail::float_e3m2_unpack8bits_t> : public float_subbyte_base_numeric_limits<cutlass::detail::float_e3m2_unpack8bits_t>
 {
   /// Minimum finite value
-  static cutlass::detail::float_e3m2_unpack8bits_t lowest() { return cutlass::detail::float_e3m2_unpack8bits_t::bitcast(0x2f); }
+  static cutlass::detail::float_e3m2_unpack8bits_t lowest() { return cutlass::detail::float_e3m2_unpack8bits_t::bitcast(0x3f); }
 
   /// Returns machine epsilon, that is, the difference between 1.0 and the next value representable by the floating-point
   static cutlass::detail::float_e3m2_unpack8bits_t epsilon() { return cutlass::detail::float_e3m2_unpack8bits_t::bitcast(0x4); }
