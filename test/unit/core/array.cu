@@ -258,4 +258,54 @@ TEST(Array, Bin1x128) {
   TestArray<cutlass::bin1_t, 128>().run();
 }
 
+TEST(Array, SubbyteBackUsesLogicalLastElement) {
+  cutlass::Array<cutlass::int4b_t, 5> array;
+  array.clear();
+
+  for (int i = 0; i < int(array.size()); ++i) {
+    array[i] = cutlass::int4b_t(i + 1);
+  }
+
+  EXPECT_EQ(int(array.back()), int(array[4]));
+
+  cutlass::Array<cutlass::int4b_t, 5> const &const_array = array;
+  EXPECT_EQ(int(const_array.back()), int(const_array[4]));
+}
+
+TEST(Array, SubbyteIteratorsUseLogicalElementRange) {
+  cutlass::Array<cutlass::int4b_t, 5> array;
+  array.clear();
+
+  int count = 0;
+  for (auto mutable_it = array.begin(); mutable_it != array.end(); ++mutable_it) {
+    *mutable_it = cutlass::int4b_t(++count);
+  }
+  EXPECT_EQ(count, 5);
+
+  cutlass::Array<cutlass::int4b_t, 5> const &const_array = array;
+  auto it = const_array.cbegin();
+  auto first = it++;
+  EXPECT_EQ(int(*first), 1);
+  EXPECT_EQ(int(*it), 2);
+
+  ++it;
+  EXPECT_EQ(int(*it), 3);
+  --it;
+  EXPECT_EQ(int(*it), 2);
+
+  auto second = it--;
+  EXPECT_EQ(int(*second), 2);
+  EXPECT_TRUE(it == const_array.cbegin());
+  EXPECT_TRUE(it != const_array.cend());
+
+  count = 0;
+  int sum = 0;
+  for (auto value : const_array) {
+    ++count;
+    sum += int(value);
+  }
+  EXPECT_EQ(count, 5);
+  EXPECT_EQ(sum, 15);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
