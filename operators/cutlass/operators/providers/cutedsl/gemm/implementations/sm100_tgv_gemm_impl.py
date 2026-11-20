@@ -900,10 +900,15 @@ class TgvGemmKernel:
             )
 
         # ---- TMEM dealloc protocol (matches C++ MMA_warp lines 581-591) ----
+        # Wait for phase 0 (TMEM allocated: this warp's arrive above plus the
+        # epilog warps' first arrive) before arriving on phase 1. Without it a
+        # slow epilog warp leaves phase 0 open, the wait on parity 1 below
+        # returns at once and TMEM is deallocated under the epilog's tcgen05.ld.
+        cute.arch.mbarrier_wait(tmem_alloc_result_bar, 0)
         # Wait for tmem deallocation signal from epilog warp
         # C++: arrive_barrier(shared_storage.tmem_allocation_result_barrier)
         cute.arch.mbarrier_arrive(tmem_alloc_result_bar)
-        # Initial phase bit = 1 since it's already flipped once for TMEM allocation
+        # Phase bit is now 1 (flipped once for TMEM allocation)
         # It will flip to 0 when TMEM can be deallocated, so we wait for old phase of 1
         # C++: wait_barrier(shared_storage.tmem_allocation_result_barrier, 1)
         cute.arch.mbarrier_wait(tmem_alloc_result_bar, 1)
