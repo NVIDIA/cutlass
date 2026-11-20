@@ -172,9 +172,10 @@ class gen_test:
 
             code_this += "    " + helper.var_idx("typename Gemm", i) + helper.var_idx("::Arguments arguments_", i) + "{\n"
             code_this += "    " + "    " + helper.var_idx("problem_size_", i) + ",\n"
-            ldmA = str(self.fuse_gemm_info[i]['mnk'][2])
+            k_str = str(self.fuse_gemm_info[i]['mnk'][2])
             if i == 0:
-                ldmA = "K0"
+                k_str = "K0"
+            ldmA = k_str
             ldmB = str(self.fuse_gemm_info[i]['mnk'][2])
             if i == 0:
                 ldmB = "K0"
@@ -182,24 +183,24 @@ class gen_test:
 
             ldmBias = str(helper.get_epilogue_bias_ldm(self.fuse_gemm_info[i]))
 
-            if self.fuse_gemm_info[i]['A_format'] is 'Col':
+            if self.fuse_gemm_info[i]['A_format'] == 'Col':
                 ldmA = "M"
-            if self.fuse_gemm_info[i]['B_format'] is 'Row':
+            if self.fuse_gemm_info[i]['B_format'] == 'Row':
                 ldmB = str(self.fuse_gemm_info[i]['mnk'][1])
-            if self.fuse_gemm_info[i]['C_format'] is 'Col':
+            if self.fuse_gemm_info[i]['C_format'] == 'Col':
                 ldmC = "M"
 
             if i == 0:
-                code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['A_tp']) + "*>(" + helper.var_idx("Mat_A", i) + ".device_ptr), " + ldmA + "}, " + "M * " + ldmA + ",\n"
+                code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['A_tp']) + "*>(" + helper.var_idx("Mat_A", i) + ".device_ptr), " + ldmA + "}, " + "M * " + k_str + ",\n"
             else:
-                code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['A_tp']) + "*>(" + helper.var_idx("Mat_D_cutlass_ref", i - 1) + ".device_ptr), " + ldmA + "}, " + "M * " + ldmA + ",\n"
+                code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['A_tp']) + "*>(" + helper.var_idx("Mat_D_cutlass_ref", i - 1) + ".device_ptr), " + ldmA + "}, " + "M * " + k_str + ",\n"
 
-            code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['B_tp']) + "*>(" + helper.var_idx("Mat_B", i) + ".device_ptr), " + ldmB + "}, " + N_str + " * " + ldmB + ",\n"
+            code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['B_tp']) + "*>(" + helper.var_idx("Mat_B", i) + ".device_ptr), " + ldmB + "}, " + N_str + " * " + k_str + ",\n"
             
             M_bias = str(helper.get_epilogue_bias_shape(self.fuse_gemm_info[i])[0])
 
             code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['C_tp']) + "*>(" + helper.var_idx("Mat_C", i) + ".device_ptr), " + ldmBias + "}, " + M_bias + " * " + N_str + ",\n"
-            code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['C_tp']) + "*>(" + helper.var_idx("Mat_D_cutlass_ref", i) + ".device_ptr), " + ldmC + "}, " + "M * " + ldmC + ",\n"
+            code_this += "    " + "    " + "{reinterpret_cast<" + helper.type_2_cutlass_type(self.fuse_gemm_info[i]['C_tp']) + "*>(" + helper.var_idx("Mat_D_cutlass_ref", i) + ".device_ptr), " + ldmC + "}, " + "M * " + N_str + ",\n"
             code_this += "    " + "    " + "{ " + helper.var_idx("alpha", i) + ", " + helper.var_idx("beta", i) 
             for epilogue_arg in  helper.get_epilogue_args(self.fuse_gemm_info[i]):
                 arg_value = str(epilogue_arg[2])
