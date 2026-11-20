@@ -83,6 +83,7 @@ private:
   static constexpr bool is_storage_unaligned = ((sizeof_bits_v<storage_type> % sizeof_bits_v<element_type>) != 0);
 
   friend struct subbyte_iterator<T>;
+  template <class> friend struct subbyte_reference;
 
   // Pointer to storage element
   storage_type* ptr_ = nullptr;
@@ -99,15 +100,13 @@ private:
 public:
 
   // Copy Ctor
-  CUTE_HOST_DEVICE constexpr
-  subbyte_reference(subbyte_reference<value_type> const& other) {
-    *this = other.get();
-  }
+  constexpr
+  subbyte_reference(subbyte_reference const&) = default;
 
+  template <class U, __CUTE_REQUIRES(is_same_v<T, U const>)>
   CUTE_HOST_DEVICE constexpr
-  subbyte_reference(subbyte_reference<value_type const> const& other) {
-    *this = other.get();
-  }
+  subbyte_reference(subbyte_reference<U> const& other)
+      : ptr_(other.ptr_), idx_(other.idx_) {}
 
   // Copy Assignment
   CUTE_HOST_DEVICE constexpr
