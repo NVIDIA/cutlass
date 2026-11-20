@@ -726,6 +726,11 @@ struct CollectiveMma<
 
     clear(accum);
 
+    // With no k-tiles (K = 0) the producer loads nothing, so don't wait on the pipeline.
+    if (k_tile_count <= 0) {
+      return;
+    }
+
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});         // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});         // (BLK_N,BLK_K,PIPE)
     Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), SmemLayoutSFA{});  // (BLK_M,BLK_K,PIPE)
