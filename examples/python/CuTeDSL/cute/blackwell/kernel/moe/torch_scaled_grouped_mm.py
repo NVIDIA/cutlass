@@ -102,6 +102,11 @@ class ScaledGroupedGemmKernel:
     Runtime dtypes (a_dtype, b_dtype, sf_dtype, c_dtype) and layout modes
     (a_major_mode, b_major_mode, c_layout) are inferred from input tensors
     in __call__.
+
+    Requirement on offs: besides being a multiple of the block size, each group
+    must start on a 16-byte boundary of every tensor whose stride-1 mode is the
+    token mode, as in GroupedGemmKernel (torch_grouped_mm.py). For NVFP4 in
+    2Dx2D that is a multiple of 32 tokens.
     """
 
     def __init__(
@@ -2203,6 +2208,7 @@ class ScaledGroupedGemmKernel:
 # =============================================================================
 
 from dataclasses import dataclass, field
+import math
 import re
 
 import numpy as np
@@ -2701,24 +2707,48 @@ class ScaledGroupedGemmTester:
             )
 
     # -----------------------------------------------------------------
-    # Offs generation (aligned to blocksize)
+    # Offs generation (aligned to blocksize and to 16 bytes)
     # -----------------------------------------------------------------
+
+    def _token_alignment(self) -> int:
+        """Group size step (in tokens): blocksize, and 16-byte aligned experts.
+
+        TMA needs each expert to start on a 16-byte boundary in every tensor
+        whose stride-1 mode is the token mode (see torch_grouped_mm.py). For
+        NVFP4 in 2Dx2D, A and B are K (token) stride-1 and 16 tokens are only
+        8 bytes, so groups must be a multiple of 32 tokens.
+        """
+        is_fp4 = self.cfg["data_dtype"] == torch.float4_e2m1fn_x2
+        data_tokens_per_16b = 32 if is_fp4 else 16
+        steps = [self.cfg["blocksize"]]
+        if self.problem.scenario == "2Dx3D":
+            if not is_fp4 and self.problem.a_layout == "m_major":
+                steps.append(data_tokens_per_16b)
+            if self.problem.c_layout == "m_major":
+                steps.append(16 // self.problem.out_dtype.itemsize)
+        else:  # 2Dx2D; FP4 A and B are always K stride-1
+            if is_fp4 or self.problem.a_layout == "k_major":
+                steps.append(data_tokens_per_16b)
+            if is_fp4 or self.problem.b_layout == "k_major":
+                steps.append(data_tokens_per_16b)
+        return math.lcm(*steps)
 
     def _generate_offs(self) -> torch.Tensor:
         """Generate group-end offsets aligned to blocksize.
 
         Some experts may receive 0 tokens (valid in real MoE routing).
-        Each non-empty group's size is a multiple of blocksize.
+        Each non-empty group's size is a multiple of ``_token_alignment()``,
+        which is itself a multiple of blocksize.
         """
-        blocksize = self.cfg["blocksize"]
+        step = self._token_alignment()
         total = self.tokens_after_repeat
         expert_cnt = self.expert_cnt
 
-        assert total % blocksize == 0, (
+        assert total % step == 0, (
             f"tokens_after_repeat ({total}) must be divisible by "
-            f"blocksize ({blocksize})"
+            f"{step} (blocksize, and 16-byte aligned experts)"
         )
-        n_slots = total // blocksize
+        n_slots = total // step
 
         if self.problem.balance_route:
             # Distribute as evenly as possible; some experts get 0 if n_slots < expert_cnt
@@ -2753,7 +2783,7 @@ class ScaledGroupedGemmTester:
         cum = 0
         offsets = []
         for s in slots:
-            cum += s * blocksize
+            cum += s * step
             offsets.append(cum)
         return torch.tensor(offsets, dtype=torch.int32, device="cuda")
 

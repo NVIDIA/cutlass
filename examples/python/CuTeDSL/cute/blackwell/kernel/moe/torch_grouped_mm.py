@@ -83,6 +83,13 @@ class GroupedGemmKernel:
     The scheduler handles the fake dimensions by:
     - For fake_m/fake_k: Computing token_offset from offs and adjusting tensor coord
     - For fake_l: Selecting expert slice via L coordinate
+
+    Requirement on offs: when tokens are the stride-1 mode of A, B or C (2Dx3D:
+    M-major A or C; 2Dx2D: K-major A or B), every expert must start on a 16-byte
+    boundary of that tensor, i.e. each group size is a multiple of
+    16 / sizeof(element). TMA cannot start a copy inside a 16-byte chunk; such
+    offs fault or give wrong results. 2Dx3D with K-major A and N-major C, and
+    2Dx2D with M-major A and N-major B, take any offs.
     """
 
     def __init__(
@@ -1499,37 +1506,68 @@ class GroupedGemmTester:
             torch.float16: cutlass.Float16,
         }
 
+    def _token_alignment(self) -> int:
+        """Group size step (in tokens) that keeps every expert 16-byte aligned.
+
+        TMA needs each expert to start on a 16-byte boundary in every tensor
+        whose stride-1 mode is the token mode: A or C when M-major (2Dx3D), A or B
+        when K-major (2Dx2D). Otherwise the TMA copy faults, or the expert-wise
+        C/A/B descriptor reads and writes data shifted by the misaligned bytes.
+        torch.nn.functional.grouped_mm checks the same rule for its A and B.
+        """
+        token_major_dtypes = []
+        if self.problem.scenario == "2Dx3D":
+            if self.problem.a_layout == "m_major":
+                token_major_dtypes.append(self.problem.ab_dtype)
+            if self.problem.c_layout == "m_major":
+                token_major_dtypes.append(self.problem.out_dtype)
+        else:  # 2Dx2D
+            if self.problem.a_layout == "k_major":
+                token_major_dtypes.append(self.problem.ab_dtype)
+            if self.problem.b_layout == "k_major":
+                token_major_dtypes.append(self.problem.ab_dtype)
+        return max((16 // dtype.itemsize for dtype in token_major_dtypes), default=1)
+
     def _generate_offs(self) -> torch.Tensor:
         """Generate group-end offsets.
 
         Some experts may receive 0 tokens (valid in real MoE routing).
+        Each group's size is a multiple of ``_token_alignment()``.
         """
+        align = self._token_alignment()
         total = self.tokens_after_repeat
         expert_cnt = self.expert_cnt
 
+        assert total % align == 0, (
+            f"tokens_after_repeat ({total}) must be a multiple of {align} for this "
+            f"layout, so that every expert starts on a 16-byte boundary"
+        )
+        n_slots = total // align
+
         if self.problem.balance_route:
-            base = total // expert_cnt
-            remainder = total % expert_cnt
-            sizes = [base + (1 if i < remainder else 0) for i in range(expert_cnt)]
+            base = n_slots // expert_cnt
+            remainder = n_slots % expert_cnt
+            slots = [base + (1 if i < remainder else 0) for i in range(expert_cnt)]
         else:
             proportions = np.random.dirichlet([0.5] * expert_cnt)
-            raw = np.floor(proportions * total).astype(int)
-            deficit = total - raw.sum()
+            raw = np.floor(proportions * n_slots).astype(int)
+            deficit = n_slots - raw.sum()
             while deficit > 0:
-                idx = int(np.argmin(raw / (proportions * total + 1e-12)))
+                idx = int(np.argmin(raw / (proportions * n_slots + 1e-12)))
                 raw[idx] += 1
                 deficit -= 1
             while deficit < 0:
                 ratios = np.where(
                     raw > 0,
-                    raw / (proportions * total + 1e-12),
+                    raw / (proportions * n_slots + 1e-12),
                     -np.inf,
                 )
                 idx = int(np.argmax(ratios))
                 raw[idx] -= 1
                 deficit += 1
-            sizes = raw.tolist()
+            slots = raw.tolist()
 
+        sizes = [s * align for s in slots]
         assert sum(sizes) == total
 
         cum = 0
