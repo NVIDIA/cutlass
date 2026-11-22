@@ -2789,6 +2789,9 @@ class TensorSSA(Vector):
         if src_dtype == dtype:
             return self
 
+        if dtype is Boolean:
+            return self.__ne__(0, loc=loc, ip=ip)
+
         # maybe downcast can lose signedness
         src = self.maybe_downcast().with_signedness(self.signed)
         if src_dtype.is_float and dtype.is_float:

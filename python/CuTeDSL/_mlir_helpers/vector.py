@@ -577,7 +577,7 @@ class Vector(ArithValue):
             vec_f16 = vec_f32.to(cutlass.Float16)  # fp32 → fp16 narrowing
         """
         from inspect import isclass
-        from ..base_dsl.typing import Numeric, Integer
+        from ..base_dsl.typing import Numeric, Integer, Boolean
 
         if dtype is ir.Value:
             return self
@@ -588,6 +588,9 @@ class Vector(ArithValue):
         src_dtype = self._dtype
         if src_dtype == dtype:
             return self
+
+        if dtype is Boolean:
+            return self.__ne__(0, loc=loc, ip=ip)
 
         # maybe_downcast handles narrow precision types, with_signedness sets signedness
         src = self.maybe_downcast().with_signedness(self.signed)
