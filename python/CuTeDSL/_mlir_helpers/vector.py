@@ -761,9 +761,12 @@ class Vector(ArithValue):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Vector":
+        from ..base_dsl.typing import Float32
+
         other = self._broadcast_scalar_operand(other, loc=loc, ip=ip)
         result = super().__truediv__(other, loc=loc, ip=ip)
-        return self._wrap_like(result)
+        result_dtype = self._dtype if self._dtype.is_float else Float32
+        return self._wrap_result(result, dtype=result_dtype, loc=loc, ip=ip)
 
     @dsl_user_op
     def __rtruediv__(
@@ -773,9 +776,12 @@ class Vector(ArithValue):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "Vector":
+        from ..base_dsl.typing import Float32
+
         other = self._broadcast_scalar_operand(other, loc=loc, ip=ip)
         result = super().__rtruediv__(other, loc=loc, ip=ip)
-        return self._wrap_like(result)
+        result_dtype = self._dtype if self._dtype.is_float else Float32
+        return self._wrap_result(result, dtype=result_dtype, loc=loc, ip=ip)
 
     # =========================================================================
     # Reduction — vector.reduction wrapper
