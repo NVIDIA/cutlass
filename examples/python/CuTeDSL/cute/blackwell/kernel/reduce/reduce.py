@@ -330,6 +330,7 @@ def cluster_reduce(
     mbar_ptr: cute.Pointer,
     cluster_n: cutlass.Constexpr[int],
     init_val: Float32,
+    phase: cutlass.Int32 = 0,
 ) -> Float32:
     """
     Reduce values across all CTAs within a cluster using distributed shared memory.
@@ -349,6 +350,8 @@ def cluster_reduce(
         mbar_ptr: Pointer to an initialized mbarrier in shared memory
         cluster_n: Number of CTAs in the cluster (compile-time constant)
         init_val: Identity element for the reduction (0 for sum, -inf for max)
+        phase: Current mbarrier phase. For consecutive uses of the same barrier,
+               pass 0 for the first reduction and alternate 1, 0, ... thereafter.
 
     Returns:
         The cluster-reduced result (same value across all threads in all CTAs)
@@ -363,6 +366,7 @@ def cluster_reduce(
     Requirements:
         - SM90+ with cluster support
         - Mbarrier must be initialized before calling
+        - All threads in the cluster must call this function in the same order
         - Kernel must be launched with appropriate cluster dimensions
 
     Example:
@@ -415,7 +419,7 @@ def cluster_reduce(
         )
 
     # Wait for all cross-CTA stores to complete
-    cute.arch.mbarrier_wait(mbar_ptr, phase=0)
+    cute.arch.mbarrier_wait(mbar_ptr, phase=phase)
 
     # Now each CTA has all values from all CTAs in the cluster
     # Reduce across all collected values
@@ -428,6 +432,9 @@ def cluster_reduce(
         if idx < num_total:
             block_reduce_val = op(block_reduce_val, reduction_buffer[row_idx, idx])
 
+    # Every CTA must finish reading before any CTA can reuse the buffer.
+    cute.arch.cluster_arrive()
+    cute.arch.cluster_wait()
     return cute.arch.warp_reduction(block_reduce_val, op)
 
 
@@ -445,6 +452,7 @@ def row_reduce(
     mbar_ptr,
     cluster_n: cutlass.Constexpr[int],
     init_val: Float32,
+    phase: cutlass.Int32 = 0,
 ):
     """
     Perform hierarchical row reduction with automatic selection of reduction strategy.
@@ -466,6 +474,8 @@ def row_reduce(
         mbar_ptr: Mbarrier pointer (only used if cluster_n > 1)
         cluster_n: Number of CTAs in cluster (1 for single-CTA reduction)
         init_val: Identity element for the reduction
+        phase: Current mbarrier phase for cluster reduction; alternate it on
+               consecutive calls using the same barrier.
 
     Returns:
         The fully reduced result for each row
@@ -525,7 +535,13 @@ def row_reduce(
         else:
             # Multiple CTAs: use cluster reduction
             return cluster_reduce(
-                warp_val, warp_op, reduction_buffer, mbar_ptr, cluster_n, init_val
+                warp_val,
+                warp_op,
+                reduction_buffer,
+                mbar_ptr,
+                cluster_n,
+                init_val,
+                phase,
             )
     else:
         # Single warp handles entire row: warp reduction is sufficient
