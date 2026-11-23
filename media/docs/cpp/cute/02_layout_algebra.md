@@ -581,6 +581,11 @@ tiled_product   : ((M,N), TileM, TileN, L, ...)
 flat_product    : (M, N, TileM, TileN, L, ...)
 ```
 
+The tiler here is a tuple of per-mode tile shapes, as in `<TileM, TileN>`; passing a
+single `Layout` as the tiler instead selects the tensor-product form, e.g.
+`logical_product(layout_a, make_layout(TileM, TileN))` produces
+`((M, N, L, ...), (TileM, TileN))`.
+
 ## Copyright
 
 Copyright (c) 2017 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
