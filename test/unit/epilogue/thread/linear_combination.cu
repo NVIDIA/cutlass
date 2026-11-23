@@ -38,6 +38,8 @@
 #include "cutlass/epilogue/thread/linear_combination_gelu.h"
 #include "cutlass/epilogue/thread/activation.h"
 
+#include <limits>
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(Epilogue_thread_linear_combination, device_side_f16_f32_value) {
@@ -128,6 +130,81 @@ TEST(Epilogue_thread_linear_combination, device_side_f16_f32_ptr) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+TEST(Epilogue_thread_linear_combination, alpha_zero_does_not_propagate_nan) {
+
+  using Element = float;
+  int const kCount = 4;
+
+  using LinearCombination = cutlass::epilogue::thread::LinearCombination<
+    Element,
+    kCount,
+    Element,
+    Element>;
+
+  Element const alpha = Element(0);
+  Element const beta = Element(1);
+  Element const quiet_nan = std::numeric_limits<Element>::quiet_NaN();
+
+  LinearCombination linear_combination_op(typename LinearCombination::Params(alpha, beta));
+
+  typename LinearCombination::FragmentAccumulator accum;
+  typename LinearCombination::FragmentSource source;
+
+  for (int i = 0; i < kCount; ++i) {
+    accum[i] = quiet_nan;
+    source[i] = Element(i + 1);
+  }
+
+  typename LinearCombination::FragmentOutput destination = linear_combination_op(accum, source);
+
+  for (int i = 0; i < kCount; ++i) {
+    EXPECT_EQ(destination[i], source[i]);
+  }
+
+  EXPECT_EQ(linear_combination_op(quiet_nan, Element(7)), Element(7));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Epilogue_thread_linear_combination, alpha_beta_zero_do_not_propagate_nan) {
+
+  using Element = float;
+  int const kCount = 4;
+
+  using LinearCombination = cutlass::epilogue::thread::LinearCombination<
+    Element,
+    kCount,
+    Element,
+    Element>;
+
+  Element const alpha = Element(0);
+  Element const beta = Element(0);
+  Element const quiet_nan = std::numeric_limits<Element>::quiet_NaN();
+
+  LinearCombination linear_combination_op(typename LinearCombination::Params(alpha, beta));
+
+  typename LinearCombination::FragmentAccumulator accum;
+  typename LinearCombination::FragmentSource source;
+
+  for (int i = 0; i < kCount; ++i) {
+    accum[i] = quiet_nan;
+    source[i] = quiet_nan;
+  }
+
+  typename LinearCombination::FragmentOutput destination_with_source = linear_combination_op(accum, source);
+  typename LinearCombination::FragmentOutput destination_without_source = linear_combination_op(accum);
+
+  for (int i = 0; i < kCount; ++i) {
+    EXPECT_EQ(destination_with_source[i], Element(0));
+    EXPECT_EQ(destination_without_source[i], Element(0));
+  }
+
+  EXPECT_EQ(linear_combination_op(quiet_nan, quiet_nan), Element(0));
+  EXPECT_EQ(linear_combination_op(quiet_nan), Element(0));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
 
@@ -202,4 +279,3 @@ TEST(Epilogue_thread_linear_combination_gelu_taylor, device_side_f16_f16_ptr) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
