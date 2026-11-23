@@ -67,6 +67,7 @@ from cutlass.operators.utils.tensor import (
     strides_to_layout_string,
 )
 
+from ...cutedsl.integration_utils.blockscaled import validate_blockscaled_factors
 from .implementations.sm100_blockscaled_static_persistent_impl import (
     PersistentBlockScaledGemmKernel,
 )
@@ -100,35 +101,7 @@ class Sm100BlockscaledStaticPersistentOperator(CuteDslOperator):
     def _supports(
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> Status:
-        M, N = args.out.shape[-2:]
-        K = args.A.shape[-1]
-        L = args.A.shape[0] if len(args.A.shape) == 3 else 1
-
-        # Shapes of scale factor tensors are not enforced. It is expected that the
-        # data underlying the passed in scale factor tensor is in the layout named
-        # by the operand's swizzle. We check only that the number of elements is
-        # correct for that layout, given the operand's logical shape.
-        expected_sfa_elements = ScaledOperand.numel_scale(
-            (L, M, K), args.A.mode, args.A.swizzle
-        )
-        expected_sfb_elements = ScaledOperand.numel_scale(
-            (L, N, K), args.B.mode, args.B.swizzle
-        )
-
-        if args.A.scale.numel() != expected_sfa_elements:
-            return Status.fail(
-                f"Scale factor A for tensor A of shape {args.A.shape} must have "
-                f"{expected_sfa_elements} elements. Scale factor A is of shape {args.A.scale.shape} "
-                f"and has {args.A.scale.numel()} elements."
-            )
-        if args.B.scale.numel() != expected_sfb_elements:
-            return Status.fail(
-                f"Scale factor B for tensor B of shape {args.B.shape} must have "
-                f"{expected_sfb_elements} elements. Scale factor B is of shape {args.B.scale.shape} "
-                f"and has {args.B.scale.numel()} elements."
-            )
-
-        return Status.success()
+        return validate_blockscaled_factors(args)
 
     def _construct_pointers(
         self, args: GemmArguments, nullptr: bool = False
