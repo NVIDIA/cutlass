@@ -3807,10 +3807,11 @@ def run(
     )
 
     print("Compiling kernel with cute.compile ...")
-    cutlass_major_minor = tuple(
-        map(int, cutlass.__version__.split(".")[:2])
+    compile_options = (
+        "--opt-level=2"
+        if cutlass.target_version(kind="dsl", min_version="4.6")
+        else ""
     )
-    compile_options = "--opt-level=2" if cutlass_major_minor >= (4, 6) else ""
     start_time = time.time()
     # compile fmha kernel
     compiled_fmha = cute.compile(
