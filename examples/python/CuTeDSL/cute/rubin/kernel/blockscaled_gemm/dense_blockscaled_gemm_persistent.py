@@ -2552,6 +2552,8 @@ def create_and_init_tensors_emulated(
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
     c_as_f32: bool = False,
+    stream_ab: bool = False,
+    allocate_c: bool = True,
 ):
     m, n, k, l = mnkl
     sf_k = ceil_div(k, sf_vec_size)
@@ -2560,37 +2562,60 @@ def create_and_init_tensors_emulated(
     sfa = torch.randint(0, 3, (l, m, sf_k), dtype=torch.float32).permute(1, 2, 0)
     sfb = torch.randint(0, 3, (l, n, sf_k), dtype=torch.float32).permute(1, 2, 0)
 
-    # Create tensor A/B
-    if a_major == "k":
-        a = torch.empty((l, m, k), dtype=torch.float32, device="cuda").permute(1, 2, 0)
+    # Create tensor A/B.
+    # stream_ab skips the full-tensor FP32 staging entirely (A/B come back as
+    # None): the caller then builds the kernel operands batch-slice by
+    # batch-slice via construct_ab_cute_pointers_emulated_streamed.  This is
+    # what perf-only runs (skip_ref_check=True) of huge shapes need: staging
+    # FP32 A alone costs m * k * l * 4 device bytes (105 GiB for a
+    # 61440x14336x32 case) which OOMs cards with less free device memory, and
+    # the FP32 references are never consumed there.
+    if stream_ab:
+        a = None
+        b = None
     else:
-        a = torch.empty((l, k, m), dtype=torch.float32, device="cuda").permute(2, 1, 0)
-    if b_major == "k":
-        b = torch.empty((l, n, k), dtype=torch.float32, device="cuda").permute(1, 2, 0)
-    else:
-        b = torch.empty((l, k, n), dtype=torch.float32, device="cuda").permute(2, 1, 0)
-
-    # Initialize A/B tensors with either normal distribution or random integers
-    for tensor in [a, b]:
-        if init_normal:
-            tensor.normal_(mean=normal_mean, std=normal_std)
+        if a_major == "k":
+            a = torch.empty((l, m, k), dtype=torch.float32, device="cuda").permute(1, 2, 0)
         else:
-            tensor.copy_(
-                torch.randint(-2, 2, tensor.shape, dtype=torch.float32, device="cuda")
-            )
+            a = torch.empty((l, k, m), dtype=torch.float32, device="cuda").permute(2, 1, 0)
+        if b_major == "k":
+            b = torch.empty((l, n, k), dtype=torch.float32, device="cuda").permute(1, 2, 0)
+        else:
+            b = torch.empty((l, k, n), dtype=torch.float32, device="cuda").permute(2, 1, 0)
+
+        # Initialize A/B tensors with either normal distribution or random integers
+        for tensor in [a, b]:
+            if init_normal:
+                tensor.normal_(mean=normal_mean, std=normal_std)
+            else:
+                tensor.copy_(
+                    torch.randint(-2, 2, tensor.shape, dtype=torch.float32, device="cuda")
+                )
 
     # Narrow output types (e.g. Float4E2M1FN) have no torch dtype; the caller
     # stages C in f32 and packs it via cutlass_torch.cute_tensor_like instead.
-    c_torch_dtype = torch.float32 if c_as_f32 else cutlass_torch.dtype(c_dtype)
-    if c_major == "n":
-        c = torch.zeros((l, m, n), dtype=c_torch_dtype, device="cuda").permute(1, 2, 0)
+    # allocate_c=False defers the (possibly huge, e.g. 32 GiB of fp16 at
+    # 61440x8192x32) zero buffer: perf-only callers build C inside the
+    # benchmark workspace generator instead.
+    if allocate_c:
+        c_torch_dtype = torch.float32 if c_as_f32 else cutlass_torch.dtype(c_dtype)
+        if c_major == "n":
+            c = torch.zeros((l, m, n), dtype=c_torch_dtype, device="cuda").permute(1, 2, 0)
+        else:
+            c = torch.zeros((l, n, m), dtype=c_torch_dtype, device="cuda").permute(2, 1, 0)
     else:
-        c = torch.zeros((l, n, m), dtype=c_torch_dtype, device="cuda").permute(2, 1, 0)
+        c = None
     return a, b, c, sfa, sfb
 
 
-# Create scale factor tensor SFA/SFB
-def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype, torch_tensor_f32):
+# Create scale factor tensor SFA/SFB.
+# include_ref=False skips building the dense device FP32 scale-factor
+# reference (an operand-sized mn * k * l * 4 byte tensor -- 105 GiB for SFA at
+# 61440x14336x32).  Perf-only callers (skip_ref_check=True) never consume the
+# reference, so they pass include_ref=False and get None instead.
+def create_scale_factor_tensor(
+    l, mn, k, sf_vec_size, dtype, torch_tensor_f32, include_ref: bool = True
+):
     sf_k = ceil_div(k, sf_vec_size)
 
     atom_m = (32, 4)
@@ -2618,16 +2643,23 @@ def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype, torch_tensor_f32):
     )
     cute_f32_torch_tensor = cute_f32_torch_tensor_cpu.cuda()
 
-    # reshape makes memory contiguous
-    ref_f32_torch_tensor_cpu = (
-        torch_tensor_f32.permute(2, 0, 1)
-        .unsqueeze(-1)
-        .expand(l, mn, sf_k, sf_vec_size)
-        .reshape(l, mn, sf_k * sf_vec_size)
-        .permute(1, 2, 0)
-    )
-    # prune to mkl for reference check.
-    ref_f32_torch_tensor_cpu = ref_f32_torch_tensor_cpu[:, :k, :]
+    # Perf-only runs (skip_ref_check=True) never read the dense reference, so
+    # skip materializing it entirely — it is operand-sized (105 GiB for SFA at
+    # 61440x8192x14336x32). The expansion stays host-side (CPU) when reference
+    # checks are enabled.
+    if include_ref:
+        # reshape makes memory contiguous
+        ref_f32_torch_tensor_cpu = (
+            torch_tensor_f32.permute(2, 0, 1)
+            .unsqueeze(-1)
+            .expand(l, mn, sf_k, sf_vec_size)
+            .reshape(l, mn, sf_k * sf_vec_size)
+            .permute(1, 2, 0)
+        )
+        # prune to mkl for reference check.
+        ref_f32_torch_tensor_cpu = ref_f32_torch_tensor_cpu[:, :k, :]
+    else:
+        ref_f32_torch_tensor_cpu = None
 
     # Create dtype cute torch tensor (cpu)
     cute_tensor, torch_tensor = cutlass_torch.cute_tensor_like(
@@ -2759,6 +2791,105 @@ def construct_abc_cute_pointers_emulated(
 
     c_ptr = make_ptr(c_dtype, c.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=16)
     return a_ptr, b_ptr, c_ptr, a_cute, b_cute
+
+
+def construct_ab_cute_pointers_emulated_streamed(
+    mnkl: Tuple[int, int, int, int],
+    a_dtype: Type[cutlass.Numeric],
+    b_dtype: Type[cutlass.Numeric],
+    a_major: Literal["m", "k"],
+    b_major: Literal["n", "k"],
+    init_normal: bool = False,
+    normal_mean: float = 0.0,
+    normal_std: float = 1.0,
+):
+    """Build the kernel A/B cute tensors one batch slice at a time.
+
+    Structurally identical to create_and_init_tensors_emulated(...) followed by
+    construct_abc_cute_pointers_emulated(...): the destination buffers get the
+    same shape/strides/storage dtype cutlass.torch.cute_tensor_like would
+    allocate for the full operand, and are filled through the same
+    cute_tensor_like + convert_cute_tensor path with the same i.i.d.
+    randint(-2, 2) / normal_() value distribution.  The only difference is
+    that no full-tensor FP32 staging buffer ever exists: at
+    MNKL=(61440, 8192, 14336, 32) staging FP32 A alone is ~105 GiB and OOMs
+    cards with less free device memory, whereas one batch slice needs
+    rows * cols * 4 bytes (3.3 GiB for a 61440x14336 A slice).
+
+    :return: (a_cute, a_torch, b_cute, b_torch); the cute tensors manage the
+        torch buffers (same lifetime rule as cute_tensor_like).  The caller
+        must keep them alive through JitArguments.add_to_scope.
+    """
+    m, n, k, l = mnkl
+
+    def _storage_dtype(cutlass_dtype: Type[cutlass.Numeric]):
+        # Mirror cutlass.torch.cute_tensor_like's destination dtype rule.
+        if (cutlass_dtype.is_float and cutlass_dtype.width <= 8) or (
+            cutlass_dtype.is_integer and cutlass_dtype.width == 4
+        ):
+            return torch.uint8
+        return cutlass_torch.dtype(cutlass_dtype)
+
+    def _make_and_fill(rows: int, cols: int, cutlass_dtype, mn_major: bool):
+        # Logical (rows, cols, batch) view over one contiguous device buffer,
+        # with the exact strides create_and_init_tensors_emulated produces for
+        # the FP32 tensor: k-major -> contiguous (l, rows, cols) storage;
+        # mn-major -> contiguous (l, cols, rows) storage.  Batch slices are
+        # contiguous chunks in both layouts, which the per-slice fill relies on.
+        if mn_major:
+            strides = (1, rows, rows * cols)
+        else:
+            strides = (cols, 1, rows * cols)
+        dst_torch = torch.empty_strided(
+            (rows, cols, l),
+            strides,
+            dtype=_storage_dtype(cutlass_dtype),
+            device="cuda",
+        )
+        batch_bytes = rows * cols * dst_torch.element_size()
+        if batch_bytes % 16 != 0:
+            raise RuntimeError(
+                "streamed A/B construction needs 16B-aligned batch slices; got "
+                f"{batch_bytes} bytes per slice -- use the non-streamed "
+                "construct_abc_cute_pointers_emulated path instead"
+            )
+        for li in range(l):
+            # Generate one FP32 slice at a time: staging is rows*cols*4B
+            # instead of l*rows*cols*4B.
+            if mn_major:
+                src = torch.empty(
+                    (cols, rows), dtype=torch.float32, device="cuda"
+                ).permute(1, 0)
+            else:
+                src = torch.empty(
+                    (rows, cols), dtype=torch.float32, device="cuda"
+                )
+            if init_normal:
+                src.normal_(mean=normal_mean, std=normal_std)
+            else:
+                src.copy_(
+                    torch.randint(
+                        -2, 2, tuple(src.shape), dtype=torch.float32, device="cuda"
+                    )
+                )
+            dst_slice_cute, dst_slice_torch = cutlass_torch.cute_tensor_like(
+                src, cutlass_dtype, is_dynamic_layout=True, assumed_align=16
+            )
+            cutlass_torch.convert_cute_tensor(
+                src, dst_slice_cute, cutlass_dtype, is_dynamic_layout=True
+            )
+            dst_torch[:, :, li].copy_(dst_slice_torch)
+            del src, dst_slice_cute, dst_slice_torch
+        full_cute = from_dlpack(dst_torch, assumed_align=16)
+        full_cute.element_type = cutlass_dtype
+        full_cute = full_cute.mark_layout_dynamic(
+            leading_dim=cutlass_torch.get_leading_dim(dst_torch)
+        )
+        return full_cute, dst_torch
+
+    a_cute, a_torch = _make_and_fill(m, k, a_dtype, a_major == "m")
+    b_cute, b_torch = _make_and_fill(n, k, b_dtype, b_major == "n")
+    return a_cute, a_torch, b_cute, b_torch
 
 
 # Compile wrapper. Extends the Blackwell `scaled_mm` with optional block-scaled
@@ -2966,6 +3097,21 @@ def run_scaled_mm_with_emulated_dtype(
         norm_const_tensor=norm_const_cute,
     )
 
+    # Full-tensor FP32 staging of A/B costs [(m+n)*k + max(m,n)*k] * l * 4
+    # device bytes at peak (224 GiB at 61440x8192x14336x32).  Perf-only runs
+    # (skip_ref_check=True) never consume the FP32 references, so when the
+    # staging peak cannot fit into the currently-free device memory the
+    # operands are generated and converted one batch slice at a time instead.
+    # (generate_sfd keeps the classic path: its f32 C staging already assumes
+    # the full budget.)
+    free_bytes = torch.cuda.mem_get_info()[0]
+    staging_peak_bytes = ((m + n) * k + max(m, n) * k) * l * 4
+    stream_ab = (
+        skip_ref_check
+        and not generate_sfd
+        and staging_peak_bytes > int(free_bytes * 0.8)
+    )
+
     # Create Torch Tensors for A, scale factor A, B, scale factor B, C
     a_f32_ref, b_f32_ref, c, sfa_f32, sfb_f32 = create_and_init_tensors_emulated(
         mnkl,
@@ -2978,26 +3124,35 @@ def run_scaled_mm_with_emulated_dtype(
         normal_mean=normal_mean,
         normal_std=normal_std,
         c_as_f32=generate_sfd,
+        stream_ab=stream_ab,
+        allocate_c=not stream_ab,
     )
     sfa_f32_ref, sfa_reordered, sfa_torch = create_scale_factor_tensor(
-        l, m, k, sf_vec_size, sf_dtype, sfa_f32
+        l, m, k, sf_vec_size, sf_dtype, sfa_f32, include_ref=not skip_ref_check
     )
     sfb_f32_ref, sfb_reordered, sfb_torch = create_scale_factor_tensor(
-        l, n, k, sf_vec_size, sf_dtype, sfb_f32
+        l, n, k, sf_vec_size, sf_dtype, sfb_f32, include_ref=not skip_ref_check
     )
-    # Construct CuTe Pointers
-
-    # Keep a_cute/b_cute alive: they own the converted A/B device buffers the
-    # kernel reads from. Discarding them frees the storage, and any later
-    # device allocation (e.g. the packed C tensor) may reuse and clobber it.
-    a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
-        a_f32_ref,
-        b_f32_ref,
-        c,
-        a_dtype,
-        b_dtype,
-        c_dtype,
-    )
+    # Construct CuTe Pointers.
+    # In streamed perf-only mode the benchmark loop rebuilds a full operand set
+    # per workspace; building another set here would double the residency for
+    # no use (the main-path pointers only feed the skipped reference check), so
+    # skip it and size the cold-L2 accounting arithmetically below.
+    if stream_ab:
+        a_cute = a_torch = b_cute = b_torch = None
+        a_ptr = b_ptr = c_ptr = None
+    else:
+        # Keep a_cute/b_cute alive: they own the converted A/B device buffers the
+        # kernel reads from. Discarding them frees the storage, and any later
+        # device allocation (e.g. the packed C tensor) may reuse and clobber it.
+        a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
+            a_f32_ref,
+            b_f32_ref,
+            c,
+            a_dtype,
+            b_dtype,
+            c_dtype,
+        )
 
     sfd_torch = None
     sfd_ptr = None
@@ -3146,33 +3301,61 @@ def run_scaled_mm_with_emulated_dtype(
             normal_mean=normal_mean,
             normal_std=normal_std,
             c_as_f32=generate_sfd,
+            stream_ab=stream_ab,
         )
         _, sfa_reordered, sfa_torch = create_scale_factor_tensor(
-            l, m, k, sf_vec_size, sf_dtype, sfa_f32
+            l, m, k, sf_vec_size, sf_dtype, sfa_f32, include_ref=not skip_ref_check
         )
         _, sfb_reordered, sfb_torch = create_scale_factor_tensor(
-            l, n, k, sf_vec_size, sf_dtype, sfb_f32
+            l, n, k, sf_vec_size, sf_dtype, sfb_f32, include_ref=not skip_ref_check
         )
         # Construct CuTe Pointers
+        if stream_ab:
+            a_cute, a_torch, b_cute, b_torch = (
+                construct_ab_cute_pointers_emulated_streamed(
+                    mnkl,
+                    a_dtype,
+                    b_dtype,
+                    a_major,
+                    b_major,
+                    init_normal=init_normal,
+                    normal_mean=normal_mean,
+                    normal_std=normal_std,
+                )
+            )
+            a_ptr = a_cute.iterator
+            b_ptr = b_cute.iterator
+            c_ptr = make_ptr(
+                c_dtype, c.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=16
+            )
+            scope_tensors = [
+                a_cute,
+                b_cute,
+                a_torch,
+                b_torch,
+                sfa_reordered,
+                sfb_reordered,
+                c,
+            ]
+        else:
+            a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
+                a_f32_ref,
+                b_f32_ref,
+                c,
+                a_dtype,
+                b_dtype,
+                c_dtype,
+            )
 
-        a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
-            a_f32_ref,
-            b_f32_ref,
-            c,
-            a_dtype,
-            b_dtype,
-            c_dtype,
-        )
-
-        scope_tensors = [
-            a_f32_ref,
-            b_f32_ref,
-            sfa_reordered,
-            sfb_reordered,
-            c,
-            a_cute,
-            b_cute,
-        ]
+            scope_tensors = [
+                a_f32_ref,
+                b_f32_ref,
+                sfa_reordered,
+                sfb_reordered,
+                c,
+                a_cute,
+                b_cute,
+            ]
         if generate_sfd:
             c_cute_ws, c_cute_ws_torch = cutlass_torch.cute_tensor_like(
                 c.cpu(),
@@ -3222,12 +3405,32 @@ def run_scaled_mm_with_emulated_dtype(
 
     workspace_count = 1
     if use_cold_l2:
+        if stream_ab:
+            # The outer reference tensors do not exist in streamed perf mode;
+            # size the workspace arithmetically (uint8 for width<=8 floats and
+            # int4, matching cute_tensor_like's storage rule).
+            def _storage_elem_bytes(dt):
+                if (dt.is_float and dt.width <= 8) or (
+                    dt.is_integer and dt.width == 4
+                ):
+                    return 1
+                return dt.width // 8
+
+            compute_workspace_bytes = (
+                m * k * l * _storage_elem_bytes(a_dtype)
+                + n * k * l * _storage_elem_bytes(b_dtype)
+                + m * n * l * _storage_elem_bytes(c_dtype)
+            )
+        else:
+            compute_workspace_bytes = (
+                a_f32_ref.numel() * a_f32_ref.element_size()
+                + b_f32_ref.numel() * b_f32_ref.element_size()
+                + c.numel() * c.element_size()
+            )
         one_workspace_bytes = (
-            a_f32_ref.numel() * a_f32_ref.element_size()
-            + b_f32_ref.numel() * b_f32_ref.element_size()
+            compute_workspace_bytes
             + sfa_torch.numel() * sfa_torch.element_size()
             + sfb_torch.numel() * sfb_torch.element_size()
-            + c.numel() * c.element_size()
         )
         workspace_count = cutlass.testing.get_workspace_count(
             one_workspace_bytes, warmup_iterations, iterations
