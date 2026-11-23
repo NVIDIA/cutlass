@@ -92,7 +92,9 @@ class CtaNorm:
         heu_warps = max(heu_warps, 1) # at least one warp
         heu_warps = (heu_warps + 1) // 2 * 2 # be multiple of 2
         heu_threads = heu_warps * 32
-        return heu_threads
+        # A CTA cannot exceed 1024 threads; larger rows use more iterations
+        # per thread instead of generating an invalid launch configuration.
+        return min(heu_threads, 1024)
 
     @cute.jit
     def __call__(
