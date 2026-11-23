@@ -1340,6 +1340,7 @@ class GroupedGemmKernel:
 
                 # Release accumulator buffer
                 if k_tile_cnt > 0:
+                    cute.arch.fence_view_async_tmem_load()
                     acc_pipeline.consumer_release(acc_consumer_state)
                     acc_consumer_state.advance()
                 num_tiles_executed += cutlass.Int32(1)

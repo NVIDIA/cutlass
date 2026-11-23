@@ -285,6 +285,7 @@ def kernel(
         cute.copy(tmem_tiled_copy, tDtC[None, None, i], tCrAcc)
         tCrC.store(tCrAcc.load().to(io_dtype))
         cute.autovec_copy(tCrC, tDgC[None, None, i])
+    cute.arch.fence_view_async_tmem_load()
     acc_full.release()
 
     # Deallocate TMEM

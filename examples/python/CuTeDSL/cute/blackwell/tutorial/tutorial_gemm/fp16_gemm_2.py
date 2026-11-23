@@ -459,6 +459,8 @@ def kernel(
 
             # Memory fence and barrier to ensure shared memory stores are visible to TMA stores
             cute.arch.fence_view_async_shared()
+            if subtile_idx == subtile_cnt - 1:
+                cute.arch.fence_view_async_tmem_load()
             epilogue_sync_barrier.arrive_and_wait()
             # SMEM -> GMEM
             if warp_idx == epilogue_warp_ids[0]:
