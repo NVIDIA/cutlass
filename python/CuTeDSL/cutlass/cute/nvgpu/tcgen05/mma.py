@@ -657,6 +657,7 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
         base_dsl.Arch.sm_100a,
         base_dsl.Arch.sm_100f,
         base_dsl.Arch.sm_103a,
+        base_dsl.Arch.sm_103f,
         base_dsl.Arch.sm_107a,
         base_dsl.Arch.sm_110a,
     ]
