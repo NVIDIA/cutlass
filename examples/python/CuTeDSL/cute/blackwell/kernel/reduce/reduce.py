@@ -314,6 +314,8 @@ def block_reduce(
     block_reduce_val = init_val
     if lane_idx < warps_per_row:
         block_reduce_val = reduction_buffer[row_idx, lane_idx]
+    # Every warp must finish reading before the buffer can be reused.
+    cute.arch.barrier()
     return cute.arch.warp_reduction(block_reduce_val, op)
 
 
