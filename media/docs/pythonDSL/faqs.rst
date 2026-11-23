@@ -113,7 +113,7 @@ Technical
 
     Exactly the same way you would in C++ but in a Python-native syntax instead.
     Consult our :doc:`cute_dsl_general/dsl_control_flow` and
-    `"Blackwell kernel example" <https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/blackwell/dense_gemm_persistent.py>`__
+    `"Blackwell kernel example" <https://github.com/NVIDIA/cutlass/tree/main/examples/python/CuTeDSL/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py>`__
     for a detailed how-to guide.
 
 **Can I call functions from other functions or use OOP?**
