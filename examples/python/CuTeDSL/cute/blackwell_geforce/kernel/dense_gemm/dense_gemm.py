@@ -28,7 +28,7 @@
 
 import argparse
 import os
-from typing import Tuple, Type
+from typing import Optional, Tuple, Type
 
 import cuda.bindings.driver as cuda
 
@@ -50,6 +50,8 @@ This GEMM kernel supports the following features:
     - Utilizes Tensor Memory Access (TMA) for efficient memory operations
     - Utilizes Blackwell MMA for matrix multiply-accumulate (MMA) operations
     - Supports multi-stage pipeline to overlap computation and memory access
+    - Supports a compile-time elementwise epilogue_op on the fp32 accumulators,
+      before conversion to the output type (identity by default)
 
 This GEMM works as follows:
 1. Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
@@ -75,6 +77,17 @@ The above example command compute batched gemm with M=8192, N=8192, K=8192,
 batch_count=1. The tile shape is 128x256x64 and the cluster shape is (1,1).
 The input, mma accumulator and output data type are set as fp16, fp32
 and fp16, respectively.
+
+Add ``--activation gelu`` to fuse GELU into the epilogue. Programmatic callers
+can pass an elementwise ``epilogue_op`` to ``cute.compile``; the callable
+receives an fp32 TensorSSA and must preserve its shape.
+
+Add ``--use_bias`` to fuse a per-column bias before the activation. Programmatic
+callers can pass ``bias`` to both ``cute.compile`` and the compiled callable.
+The bias must be a contiguous length-N vector with the same dtype as C, shared
+across M rows and L batches. With fp32 accumulation, the result is
+``C[m,n,l] = cast(epilogue_op(acc[m,n,l] + float32(bias[n])))``.
+The default ``bias=None`` compiles out the bias path.
 
 To collect performance with NCU profiler:
 
@@ -162,6 +175,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--b_major", choices=["k", "n"], type=str, default="k")
     parser.add_argument("--c_major", choices=["n", "m"], type=str, default="n")
     parser.add_argument(
+        "--activation",
+        choices=["identity", "gelu"],
+        default="identity",
+        help="Elementwise activation applied before output conversion",
+    )
+    parser.add_argument(
+        "--use_bias",
+        action="store_true",
+        help="Add a per-column bias before activation (requires fp32 accumulation)",
+    )
+    parser.add_argument(
         "--epi_stage",
         type=int,
         default=4,
@@ -206,6 +230,11 @@ def parse_arguments() -> argparse.Namespace:
 # /////////////////////////////////////////////////////////////////////////////
 #  Host setup and device kernel launch
 # /////////////////////////////////////////////////////////////////////////////
+
+
+@cute.jit
+def gelu(x):
+    return 0.5 * x * (1.0 + cute.math.erf(x * 0.7071067811865476))
 
 
 class Sm120GemmKernel:
@@ -335,6 +364,8 @@ class Sm120GemmKernel:
         c: cute.Tensor,
         max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        epilogue_op: cutlass.Constexpr = lambda x: x,
+        bias: Optional[cute.Tensor] = None,
     ):
         """Execute the GEMM operation in steps:
         - Setup static attributes
@@ -351,6 +382,11 @@ class Sm120GemmKernel:
         :type c: cute.Tensor
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
+        :param epilogue_op: Shape-preserving elementwise operation on fp32 accumulators
+        :type epilogue_op: cutlass.Constexpr
+        :param bias: Optional contiguous length-N vector matching C's dtype,
+            broadcast across M and L and added in fp32 before epilogue_op
+        :type bias: Optional[cute.Tensor]
         """
 
         # setup static attributes before smem/grid/tma computation
@@ -372,6 +408,16 @@ class Sm120GemmKernel:
             raise TypeError("a_dtype should be float16 or float8")
         if cutlass.const_expr(self.b_dtype.width != 16 and self.b_dtype.width != 8):
             raise TypeError("b_dtype should be float16 or float8")
+
+        if cutlass.const_expr(bias is not None):
+            if cutlass.const_expr(cute.rank(bias) != 1):
+                raise ValueError("bias must be a one-dimensional vector")
+            if cutlass.const_expr(bias.stride[0] != 1):
+                raise ValueError("bias must be contiguous")
+            if cutlass.const_expr(bias.element_type != self.c_dtype):
+                raise TypeError("bias dtype must match the output dtype")
+            if cutlass.const_expr(self.acc_dtype != cutlass.Float32):
+                raise TypeError("bias requires fp32 accumulation")
 
         self._setup_attributes()
 
@@ -441,6 +487,8 @@ class Sm120GemmKernel:
             self.b_smem_layout_staged,
             self.epi_smem_layout_staged,
             tile_sched_params,
+            epilogue_op,
+            bias,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -467,6 +515,8 @@ class Sm120GemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         epi_smem_layout_staged: cute.ComposedLayout,
         tile_sched_params: utils.PersistentTileSchedulerParams,
+        epilogue_op: cutlass.Constexpr,
+        bias: Optional[cute.Tensor],
     ):
         """
         GPU device kernel performing the batched GEMM computation.
@@ -641,6 +691,9 @@ class Sm120GemmKernel:
         tCgC = thr_mma.partition_C(gC_mnl)
         acc_shape = tCgC.shape[:3]
         accumulators = cute.make_rmem_tensor(acc_shape, self.acc_dtype)
+        if cutlass.const_expr(bias is not None):
+            cC = cute.make_identity_tensor(self.tile_shape_mnk[:2])
+            tCcC = thr_mma.partition_C(cC)
 
         # cluster wait for barrier init
         if cute.size(self.cluster_shape_mnk) > 1:
@@ -842,6 +895,12 @@ class Sm120GemmKernel:
                 #  EPILOG
                 # /////////////////////////////////////////////////////////////////////////////
 
+                if cutlass.const_expr(bias is not None):
+                    for i in cutlass.range_constexpr(cute.size(accumulators)):
+                        n = tile_coord_mnl[1] * self.tile_shape_mnk[1] + tCcC[i][1]
+                        if n < mC_mnl.shape[1]:
+                            accumulators[i] += bias[n].to(cutlass.Float32)
+
                 copy_atom_r2s = sm90_utils.sm90_get_smem_store_op(
                     self.c_layout,
                     elem_ty_d=self.c_dtype,
@@ -906,12 +965,13 @@ class Sm120GemmKernel:
                                     (None, mma_m_in_epi, mma_n_in_epi)
                                 ]
                                 tRS_rAcc_slice = tRS_rAcc[(None, mma_m, mma_n)]
+                                acc_vec = epilogue_op(tRS_rAcc_slice.load())
                                 for elem_idx in cutlass.range_constexpr(
                                     cute.size(tRS_rD_slice)
                                 ):
-                                    tRS_rD_slice[elem_idx] = tRS_rAcc_slice[
-                                        elem_idx
-                                    ].to(self.c_dtype)
+                                    tRS_rD_slice[elem_idx] = acc_vec[elem_idx].to(
+                                        self.c_dtype
+                                    )
 
                         # Register to shared memory
                         cute.copy(
@@ -1228,10 +1288,15 @@ def run(
     skip_ref_check: bool,
     use_cold_l2: bool = False,
     epi_stage: int = 4,
+    activation: str = "identity",
+    use_bias: bool = False,
     **kwargs,
 ):
     import torch
     import cutlass.torch as cutlass_torch
+
+    if activation not in ("identity", "gelu"):
+        raise ValueError(f"Unsupported activation: {activation}")
 
     print("Running GeForce Dense GEMM with:")
     print(f"Target arch (CUTE_DSL_ARCH): {os.environ.get('CUTE_DSL_ARCH', 'not set')}")
@@ -1247,6 +1312,8 @@ def run(
     print(f"Skip reference checking: {skip_ref_check}")
     print(f"Use cold L2: {use_cold_l2}")
     print(f"Epi stage: {epi_stage}")
+    print(f"Activation: {activation}")
+    print(f"Use bias: {use_bias}")
 
     a_dtype = getattr(cutlass, a_dtype) if isinstance(a_dtype, str) else a_dtype
     b_dtype = getattr(cutlass, b_dtype) if isinstance(b_dtype, str) else b_dtype
@@ -1283,6 +1350,9 @@ def run(
     a_tensor, a_torch_gpu = create_cute_tensor(a_torch_cpu, a_dtype)
     b_tensor, b_torch_gpu = create_cute_tensor(b_torch_cpu, b_dtype)
     c_tensor, c_torch_gpu = create_cute_tensor(c_torch_cpu, c_dtype)
+    bias_tensor = None
+    if use_bias:
+        bias_tensor, bias_torch_gpu = create_cute_tensor(torch.randn(n), c_dtype)
 
     gemm = Sm120GemmKernel(
         acc_dtype,
@@ -1300,13 +1370,20 @@ def run(
     stream = cutlass_torch.default_stream()
     # compile gemm kernel
     compiled_gemm = cute.compile(
-        gemm, a_tensor, b_tensor, c_tensor, max_active_clusters, stream
+        gemm,
+        a_tensor,
+        b_tensor,
+        c_tensor,
+        max_active_clusters,
+        stream,
+        epilogue_op=gelu if activation == "gelu" else lambda x: x,
+        bias=bias_tensor,
     )
 
     if not skip_ref_check:
         print("Reference checking ...")
         # execution
-        compiled_gemm(a_tensor, b_tensor, c_tensor, stream)
+        compiled_gemm(a_tensor, b_tensor, c_tensor, stream, bias=bias_tensor)
         torch.cuda.synchronize()
 
         # Ref check
@@ -1315,6 +1392,10 @@ def run(
             a_torch_cpu.to(dtype=torch.float32),
             b_torch_cpu.to(dtype=torch.float32),
         )
+        if use_bias:
+            ref += bias_torch_gpu.cpu().float()[None, :, None]
+        if activation == "gelu":
+            ref = torch.nn.functional.gelu(ref, approximate="none")
 
         # Copy gpu tensor to cpu
         kernel_result = c_torch_gpu.cpu()
@@ -1335,7 +1416,12 @@ def run(
         mA_workspace, _ = create_cute_tensor(a_torch_cpu, a_dtype)
         mB_workspace, _ = create_cute_tensor(b_torch_cpu, b_dtype)
         mC_workspace, _ = create_cute_tensor(c_torch_cpu, c_dtype)
-        return testing.JitArguments(mA_workspace, mB_workspace, mC_workspace, stream)
+        bias_workspace = None
+        if use_bias:
+            bias_workspace, _ = create_cute_tensor(torch.randn(n), c_dtype)
+        return testing.JitArguments(
+            mA_workspace, mB_workspace, mC_workspace, stream, bias=bias_workspace
+        )
 
     workspace_count = 1
     if use_cold_l2:
@@ -1344,6 +1430,8 @@ def run(
             + b_torch_gpu.numel() * b_torch_gpu.element_size()
             + c_torch_gpu.numel() * c_torch_gpu.element_size()
         )
+        if use_bias:
+            one_workspace_bytes += bias_torch_gpu.numel() * bias_torch_gpu.element_size()
         workspace_count = testing.get_workspace_count(
             one_workspace_bytes, warmup_iterations, iterations
         )
@@ -1380,5 +1468,7 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_cold_l2,
         args.epi_stage,
+        args.activation,
+        args.use_bias,
     )
     print("PASS")
