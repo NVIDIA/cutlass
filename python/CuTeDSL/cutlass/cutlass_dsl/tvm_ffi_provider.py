@@ -470,6 +470,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
     def __init__(self, target_func: str, has_gpu_module: bool = True):
         super().__init__(target_func, struct_call=True)
         self.cuda_global_state_symbol = f"__{target_func}_cuda_state"
+        # Bit d is set once the library is set up for device d (see
+        # ensure_cuda_loaded_to_device).
+        self.cuda_loaded_devices_symbol = f"__{target_func}_cuda_loaded_devices"
         self.cuda_device_index = None
         self.cuda_error_handle_block = None
         self.has_gpu_module = has_gpu_module
@@ -570,24 +573,44 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         """Declare the CUDA library handle shared by all TVM-FFI entries."""
         assert context.builder is not None
         with ir.InsertionPoint(context.module.body):
-            parsed_op = ir.Operation.parse(
-                f"llvm.mlir.global private @{self.cuda_global_state_symbol}(0 : i64) : i64"
-            )
-            context.module.body.append(parsed_op)
+            for symbol in (
+                self.cuda_global_state_symbol,
+                self.cuda_loaded_devices_symbol,
+            ):
+                parsed_op = ir.Operation.parse(
+                    f"llvm.mlir.global private @{symbol}(0 : i64) : i64"
+                )
+                context.module.body.append(parsed_op)
 
     def call_cuda_module_initializer(
-        self, current_block: ir.Block, context: CallContext
+        self,
+        current_block: ir.Block,
+        context: CallContext,
+        *,
+        all_devices: bool,
     ) -> ir.Block:
-        """Initialize the shared CUDA library state, returning the success block."""
+        """Initialize the shared CUDA library state, returning the success block.
+
+        With ``all_devices`` the library is also set up for every visible device
+        (the explicit, eager ``module_init``). Without it only the library handle
+        is created and each entry sets up the device it is about to run on
+        (``ensure_cuda_loaded_to_device``): setting a device up waits for the work
+        already running on it, so a call must not do it for other devices.
+        """
         assert context.builder is not None
         with ir.InsertionPoint(current_block):
             cuda_global_state_ptr = self.address_of(
                 self.cuda_global_state_symbol, self.ptr_type
             )
             cuda_init_ptr = self.address_of("cuda_init", self.ptr_type)
-            cuda_load_to_device_ptr = self.address_of(
-                "cuda_load_to_device", self.ptr_type
-            )
+            if all_devices:
+                cuda_load_to_device_ptr = self.address_of(
+                    "cuda_load_to_device", self.ptr_type
+                )
+            else:
+                # No per-device callback: cuda_dialect_init_library_once then
+                # only loads the library.
+                cuda_load_to_device_ptr = llvm.inttoptr(self.ptr_type, self.i64(0))
             set_error_ptr = self.address_of(
                 "TVMFFIErrorSetRaisedFromCStr", self.ptr_type
             )
@@ -617,6 +640,16 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             # cuda_dialect_init_library_once has already populated the TVM error.
             llvm.return_(arg=self.i32(-1))
 
+        if all_devices:
+            # Every device is set up now: the entries have nothing left to do.
+            with ir.InsertionPoint(success_block):
+                llvm.atomicrmw(
+                    llvm.AtomicBinOp._or,
+                    self.address_of(self.cuda_loaded_devices_symbol, self.ptr_type),
+                    self.i64(-1),
+                    llvm.AtomicOrdering.seq_cst,
+                )
+
         return success_block
 
     def insert_lazy_init_cuda(
@@ -624,7 +657,60 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
     ) -> ir.Block:
         """Declare and lazily initialize the shared CUDA library state."""
         self.declare_cuda_module_state(context)
-        return self.call_cuda_module_initializer(current_block, context)
+        return self.call_cuda_module_initializer(
+            current_block, context, all_devices=False
+        )
+
+    def ensure_cuda_loaded_to_device(
+        self, current_block: ir.Block, context: CallContext, device: ir.Value
+    ) -> ir.Block:
+        """Set the library up for ``device`` (an i32 index) unless already done.
+
+        ``cuda_load_to_device`` resolves the kernels and applies the device scoped
+        attributes; it is idempotent, so two threads racing here only repeat it.
+        Devices past bit 63 are not recorded and are set up on every call.
+        """
+        with ir.InsertionPoint(current_block):
+            loaded_ptr = self.address_of(self.cuda_loaded_devices_symbol, self.ptr_type)
+            loaded = llvm.load(self.i64_type, loaded_ptr)
+            device_i64 = llvm.zext(self.i64_type, device)
+            in_range = llvm.icmp(llvm.ICmpPredicate.ult, device_i64, self.i64(64))
+            device_bit = llvm.select(
+                in_range,
+                llvm.shl(self.i64(1), self.and_(device_i64, self.i64(63)), 0),
+                self.i64(0),
+            )
+            load_block = current_block.create_after()
+            continuation_block = load_block.create_after()
+            self.cond_br(
+                cond=self.not_equal(self.and_(loaded, device_bit), self.i64(0)),
+                true_block=continuation_block,
+                false_block=load_block,
+                branch_weights=self.BRANCH_WEIGHTS_LIKELY,
+            )
+
+        with ir.InsertionPoint(load_block):
+            result = llvm.call(
+                result=self.i32_type,
+                callee="cuda_load_to_device",
+                callee_operands=[
+                    self.address_of(self.cuda_global_state_symbol, self.ptr_type),
+                    device,
+                ],
+                op_bundle_sizes=[],
+                op_bundle_operands=[],
+            )
+        load_block = self.check_cuda_error(result, load_block, context)
+        with ir.InsertionPoint(load_block):
+            llvm.atomicrmw(
+                llvm.AtomicBinOp._or,
+                loaded_ptr,
+                device_bit,
+                llvm.AtomicOrdering.seq_cst,
+            )
+            self.br(continuation_block)
+
+        return continuation_block
 
     def attach_module_initializer(self, module: ir.Module) -> None:
         """Expose controlled eager initialization through a TVM-FFI safe call."""
@@ -669,7 +755,9 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
             "TypeError",
             ["Expects 0 parameters when calling: `module_init()`"],
         )
-        current_block = self.call_cuda_module_initializer(current_block, context)
+        current_block = self.call_cuda_module_initializer(
+            current_block, context, all_devices=True
+        )
 
         with ir.InsertionPoint(current_block):
             fields = (
@@ -834,9 +922,11 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
         """Generate the LLVM call operation and check if the call is successful."""
         assert context.builder is not None
         old_cuda_device_index: Optional[ir.Value] = None
+        current_cuda_device_index: Optional[ir.Value] = None
 
-        # If we need to manage CUDA device context
-        if self.cuda_device_index is not None:
+        # The current device is needed to manage the CUDA device context, and to
+        # know which device the kernels are about to run on.
+        if self.cuda_device_index is not None or self.has_gpu_module:
             # Create an alloca in the entry block to store the current device index
             device_index_alloca = context.builder.create_alloca(
                 context.entry_block, self.i32_type, array_size=1
@@ -857,7 +947,26 @@ class TVMFFICuteCallProvider(DynamicParamPackCallProvider):
 
             # Load the current device index from the alloca
             with ir.InsertionPoint(current_block):
-                old_cuda_device_index = llvm.load(self.i32_type, device_index_alloca)
+                current_cuda_device_index = llvm.load(
+                    self.i32_type, device_index_alloca
+                )
+
+        # Set the library up for the device the call runs on, and only for it.
+        # Done before the device switch so that an error leaves nothing to restore.
+        if self.has_gpu_module:
+            target_device = (
+                self.cuda_device_index
+                if self.cuda_device_index is not None
+                else current_cuda_device_index
+            )
+            assert target_device is not None
+            current_block = self.ensure_cuda_loaded_to_device(
+                current_block, context, target_device
+            )
+
+        # If we need to manage CUDA device context
+        if self.cuda_device_index is not None:
+            old_cuda_device_index = current_cuda_device_index
 
             # Switch to target device if different
             current_block = self.set_cuda_device_if_mismatch(
