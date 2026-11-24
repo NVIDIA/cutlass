@@ -123,6 +123,13 @@ def elementwise_apply_kernel(
     thrC = tidfrgC[thr_crd]  # (V)
     thrCrd = tidfrgCrd[thr_crd]
 
+    # `cute.copy` expects tensors of profile ((AtomV, AtomRest), Rest...). The copy atom
+    # used below moves one element at a time, so prepend a unit mode as AtomV: (V) -> ((1, V))
+    thrInputs = [
+        cute.group_modes(cute.prepend_ones(t, up_to_rank=2), 0, 2) for t in thrInputs
+    ]
+    thrC = cute.group_modes(cute.prepend_ones(thrC, up_to_rank=2), 0, 2)
+
     print("[DSL INFO] Sliced Tensors per thread:")
     for i in cutlass.range_constexpr(len(thrInputs)):
         print(f"[DSL INFO]   thrInputs{i} = {thrInputs[i].type}")
@@ -132,7 +139,7 @@ def elementwise_apply_kernel(
     ###############################################################################
     # Compute predicate for out of boundary checks
     ###############################################################################
-    frgPred = cute.make_rmem_tensor(thrCrd.shape, cutlass.Boolean)
+    frgPred = cute.make_rmem_tensor(thrC.shape, cutlass.Boolean)
     print(f"[DSL INFO]   frgPred = {frgPred.type}")
 
     for i in cutlass.range_constexpr(cute.size(frgPred)):
@@ -145,10 +152,26 @@ def elementwise_apply_kernel(
     # Load data and compute result
     ##########################################################
 
+    # Predicated copies skip the elements outside of the tensor, so tensors whose shape
+    # is not a multiple of the tile size are neither read nor written out of bounds.
+    copy_atom_load = cute.make_copy_atom(
+        cute.nvgpu.CopyUniversalOp(), mInputs[0].element_type
+    )
+    copy_atom_store = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), mC.element_type)
+
+    # Move data to reg address space
+    frgInputs = [cute.make_fragment_like(t) for t in thrInputs]
+    for i in cutlass.range_constexpr(len(thrInputs)):
+        cute.copy(copy_atom_load, thrInputs[i], frgInputs[i], pred=frgPred)
+
     # Load data before use. The compiler will optimize the copy and load
     # operations to convert some memory ld/st into register uses.
-    result = op(*[thrInput.load() for thrInput in thrInputs])
-    thrC.store(result)
+    result = op(*[frgInput.load() for frgInput in frgInputs])
+
+    # Save the results to registers, then copy them back to global memory
+    frgC = cute.make_fragment_like(thrC)
+    frgC.store(result)
+    cute.copy(copy_atom_store, frgC, thrC, pred=frgPred)
 
 
 @cute.jit
@@ -254,6 +277,8 @@ def elementwise_apply(
 
     idC = cute.make_identity_tensor(result.shape)
     cC = cute.zipped_divide(idC, tiler=tiler_mn)
+    # Remap the blocks of the coordinate tensor the same way as the data tensors
+    cC = cute.composition(cC, (None, remap_block))
     print(f"[DSL INFO]   coord tensor = {cC}")
 
     # Launch the kernel asynchronously
