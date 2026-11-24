@@ -118,17 +118,15 @@ def elementwise_apply_kernel(
     ###############################################################################
     # Slice to local tile of thread
     ###############################################################################
-    # vid -> address
-    thrInputs = [t[thr_crd] for t in tidfrgInputs]  # (V)
-    thrC = tidfrgC[thr_crd]  # (V)
-    thrCrd = tidfrgCrd[thr_crd]
-
     # `cute.copy` expects tensors of profile ((AtomV, AtomRest), Rest...). The copy atom
     # used below moves one element at a time, so prepend a unit mode as AtomV: (V) -> ((1, V))
-    thrInputs = [
-        cute.group_modes(cute.prepend_ones(t, up_to_rank=2), 0, 2) for t in thrInputs
-    ]
-    thrC = cute.group_modes(cute.prepend_ones(thrC, up_to_rank=2), 0, 2)
+    def thr_slice(t):
+        return cute.group_modes(cute.prepend_ones(t[thr_crd], up_to_rank=2), 0, 2)
+
+    # vid -> address
+    thrInputs = [thr_slice(t) for t in tidfrgInputs]  # ((1, V))
+    thrC = thr_slice(tidfrgC)  # ((1, V))
+    thrCrd = tidfrgCrd[thr_crd]  # (V)
 
     print("[DSL INFO] Sliced Tensors per thread:")
     for i in cutlass.range_constexpr(len(thrInputs)):
