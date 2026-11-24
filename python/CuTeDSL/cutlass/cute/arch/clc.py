@@ -11,10 +11,10 @@
 
 from typing import Optional, Tuple
 
-from cutlass.cutlass_dsl import dsl_user_op
+from cutlass.cutlass_dsl import T, dsl_user_op
 
 from cutlass._mlir import ir
-from cutlass._mlir.dialects import nvvm as _nvvm, vector
+from cutlass._mlir.dialects import llvm, nvvm as _nvvm, vector
 
 from ..typing import Int32, Pointer, Int128
 
@@ -76,8 +76,14 @@ def clc_response(
     returns a .v4 vector whose first three elements are the x, y and z coordinate of first CTA
     in canceled cluster.
 
+    PTX leaves get_first_ctaid undefined when the request failed, so it is issued only under
+    the is_canceled predicate, and the returned coordinates are 0 when the request failed.
+
     :param result_addr: A pointer to the cluster launch control response address in SMEM
     :type result_addr:  Pointer
+    :return: The x, y and z coordinates of the first CTA in the canceled cluster (0 if the
+        request failed), and 1 if the request succeeded, 0 otherwise
+    :rtype: Tuple[Int32, Int32, Int32, Int32]
     """
     from cutlass.cute import recast_ptr, make_tensor, make_layout
 
@@ -95,42 +101,40 @@ def clc_response(
         [],
         [0],
     )
-    # Query if the cluster was canceled
-    pred = _nvvm.clusterlaunchcontrol_query_cancel(
-        query_type="is_canceled",
-        try_cancel_response=clc_result_i128,
+    # Split it into two 64-bit halves for the inline PTX below
+    clc_result_v2i64 = llvm.bitcast(
+        ir.VectorType.get([2], T.i64()), clc_result_i128, loc=loc, ip=ip
+    )
+    clc_result_lo = vector.extract(clc_result_v2i64, [], [0], loc=loc, ip=ip)
+    clc_result_hi = vector.extract(clc_result_v2i64, [], [1], loc=loc, ip=ip)
+
+    # Query the response in one PTX block so that get_first_ctaid stays predicated on
+    # is_canceled; LLVM treats the NVVM query intrinsics as speculatable and may hoist
+    # them above a branch on is_canceled.
+    result = llvm.inline_asm(
+        llvm.StructType.get_literal([T.i32(), T.i32(), T.i32(), T.i32()]),
+        [clc_result_lo, clc_result_hi],
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        ".reg .b128 clc_result;\n\t"
+        "mov.b128 clc_result, {$4, $5};\n\t"
+        "mov.b32 $0, 0;\n\t"
+        "mov.b32 $1, 0;\n\t"
+        "mov.b32 $2, 0;\n\t"
+        "clusterlaunchcontrol.query_cancel.is_canceled.pred.b128 p, clc_result;\n\t"
+        "selp.b32 $3, 1, 0, p;\n\t"
+        "@p clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, _}, clc_result;\n\t"
+        "}",
+        "=r,=r,=r,=r,l,l",
+        has_side_effects=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
         ip=ip,
     )
-    is_valid = Int32(pred)
-
-    # Get first CTA ID x component
-    m_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
-        query_type="get_first_cta_id_x",
-        try_cancel_response=clc_result_i128,
-        loc=loc,
-        ip=ip,
-    )
-
-    # Get first CTA ID y component
-    n_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
-        query_type="get_first_cta_id_y",
-        try_cancel_response=clc_result_i128,
-        loc=loc,
-        ip=ip,
-    )
-
-    # Get first CTA ID z component
-    l_idx_i32 = _nvvm.clusterlaunchcontrol_query_cancel(
-        query_type="get_first_cta_id_z",
-        try_cancel_response=clc_result_i128,
-        loc=loc,
-        ip=ip,
-    )
-
-    m_idx = Int32(m_idx_i32)
-    n_idx = Int32(n_idx_i32)
-    l_idx = Int32(l_idx_i32)
+    m_idx, n_idx, l_idx, is_valid = [
+        Int32(llvm.extractvalue(T.i32(), result, [i], loc=loc, ip=ip))
+        for i in range(4)
+    ]
 
     return m_idx, n_idx, l_idx, is_valid
 
