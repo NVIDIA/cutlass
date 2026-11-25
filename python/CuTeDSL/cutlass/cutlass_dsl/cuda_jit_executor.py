@@ -19,7 +19,7 @@ import inspect
 import sys
 import weakref
 import threading
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import cuda.bindings.runtime as cuda_runtime
 import cuda.bindings.driver as cuda_driver
@@ -45,6 +45,10 @@ from ..base_dsl.runtime.jit_arg_adapters import JitArgAdapterRegistry
 from .._mlir import ir, execution_engine
 
 
+_cudaGetDevice = cuda_runtime.cudaGetDevice
+_CUDA_SUCCESS = cuda_runtime.cudaError_t.cudaSuccess
+
+
 class CudaDialectJitModule:
     """Holds the execution engine and cuda libraries."""
 
@@ -54,12 +58,40 @@ class CudaDialectJitModule:
         capi_func: Any,
         execution_args: ExecutionArgs,
         cuda_library: list["cuda_runtime.cudaLibrary_t"],
+        load_to_device: Optional[Callable[[int], None]] = None,
     ) -> None:
         self.engine = engine
         self.capi_func = capi_func
         self.execution_args = execution_args
         self.cuda_library = cuda_library
         self._unloaded = False
+        # Per-device kernel setup (kernel lookup + device scoped attributes) is
+        # done lazily, only for the devices this module actually runs on.
+        self._load_to_device = load_to_device
+        self._loaded_devices: set[int] = set()
+        self._device_lock = threading.Lock()
+
+    def load_to_device(self, device: int) -> None:
+        """Resolves the kernels and applies device scoped attributes for ``device``.
+
+        Idempotent and thread safe. Only ``device`` is touched: setting a
+        device scoped attribute makes the driver load the module into that
+        device's context, which waits for work already running there, so it
+        must not be done for devices this module is not about to run on.
+        """
+        if self._load_to_device is None or device in self._loaded_devices:
+            return
+        with self._device_lock:
+            if device in self._loaded_devices:
+                return
+            self._load_to_device(device)
+            self._loaded_devices.add(device)
+
+    def load_to_current_device(self) -> None:
+        """Calls :meth:`load_to_device` for the calling thread's current device."""
+        if self._load_to_device is None:
+            return
+        self.load_to_device(checkCudaErrors(cuda_runtime.cudaGetDevice()))
 
     def is_unloaded(self) -> bool:
         return self._unloaded
@@ -83,6 +115,30 @@ class CudaDialectJitModule:
         # callbacks and driver calls are not safe during teardown.
         if not sys.is_finalizing():
             self.unload()
+
+
+class CudaDialectJitExecutor(JitExecutor):
+    """A :class:`JitExecutor` for a CUDA library, which is context free.
+
+    The same executor may be called under any device. The device scoped part of
+    the library setup is done on the first call under each device.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Host only modules have nothing to set up per device.
+        self._per_device_setup = (
+            getattr(self.jit_module, "_load_to_device", None) is not None
+        )
+
+    def run_compiled_program(self, exe_args: list[Any]) -> int | None:
+        # This is on the launch path: one cudaGetDevice and one set lookup when
+        # the device is already set up.
+        if self._per_device_setup:
+            err, device = _cudaGetDevice()
+            if err != _CUDA_SUCCESS or device not in self.jit_module._loaded_devices:
+                self.jit_module.load_to_current_device()
+        return super().run_compiled_program(exe_args)
 
 
 class CudaDialectJitCompiledFunction(JitCompiledFunction):
@@ -253,8 +309,16 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
 
         return cuda_init, cuda_load_to_device
 
-    def _load_cuda_library(self) -> List["cuda_runtime.cudaLibrary_t"]:
-        """Loads the CUDA library from the engine."""
+    def _load_cuda_library(
+        self,
+    ) -> Tuple[List["cuda_runtime.cudaLibrary_t"], Callable[[int], None]]:
+        """Loads the CUDA library from the engine.
+
+        Returns the library and a function that finishes the setup for one
+        device (see :meth:`CudaDialectJitModule.load_to_device`). No device is
+        set up here: with several visible devices, doing so for all of them
+        makes the first call wait for the work running on every other device.
+        """
 
         cuda_init, cuda_load_to_device = self._get_cuda_init_and_load()
 
@@ -284,14 +348,14 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         for i, arg in enumerate(cuda_load_args):
             packed_args[i] = ctypes.cast(arg, ctypes.c_void_p)
 
-        for dev in range(self.num_devices):
+        # The closure keeps the argument storage and the engine function alive.
+        def load_to_device(dev: int) -> None:
             device_id.value = dev
+            err.value = 0
             cuda_load_to_device(packed_args)
             checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
 
-        checkCudaErrors((cuda_runtime.cudaError_t(err.value),))
-
-        return [cuda_runtime.cudaLibrary_t(library.value)]
+        return [cuda_runtime.cudaLibrary_t(library.value)], load_to_device
 
     def to(self, device: Optional[int] = None) -> JitExecutor:
         """Returns an executable function bound to the given device.
@@ -300,10 +364,13 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
         the kernel will run.
 
         Since CudaJitCompiledFunction uses CUDA libraries, which are context free,
-        binding to a device is not necessary and the device is ignored. Device is
-        kept in for compatibility with the JitCompiledFunction.
+        the returned executor is not bound to a device. The device scoped part of
+        the library setup is done once per device: here for ``device`` when it is
+        given as an index, otherwise on the first call under each device. Pass the
+        index to pay that cost ahead of the first launch on that device.
 
-        :param device: Specifies the device for the executor. If None the current device is used.
+        :param device: Device index to set the library up for now. If None, each
+            device is set up on the first call under it.
         :type device: Optional[Union[int, CUdevice]]
         :return: A callable executor function.
         :rtype: JitExecutor
@@ -315,17 +382,25 @@ class CudaDialectJitCompiledFunction(JitCompiledFunction):
                 isinstance(self.jit_module, CudaDialectJitModule)
                 and self.jit_module.is_unloaded()
             ):
-                cuda_library = self._load_cuda_library() if self.has_gpu_module else []
+                cuda_library, load_to_device = (
+                    self._load_cuda_library() if self.has_gpu_module else ([], None)
+                )
                 self.jit_module = CudaDialectJitModule(
                     self.engine,
                     self.capi_func,
                     self.execution_args,
                     cuda_library,
+                    load_to_device,
                 )
+
+            if isinstance(device, int) and isinstance(
+                self.jit_module, CudaDialectJitModule
+            ):
+                self.jit_module.load_to_device(device)
 
             # F-SPEC: the derived executor validates re-entries against the
             # same sealed record as the handle it came from.
-            return JitExecutor(
+            return CudaDialectJitExecutor(
                 self.jit_module, None, self.jit_time_profiling, spec=self._pyir_spec
             )
 
