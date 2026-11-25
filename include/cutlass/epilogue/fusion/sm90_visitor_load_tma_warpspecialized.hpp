@@ -1061,8 +1061,8 @@ struct Sm90ScalarBroadcast {
   CUTLASS_DEVICE bool
   is_zero() const {
     if (get<2>(params_ptr->dScalar[0]) == 0) {
-      // Only 1 batch
-      return scalar == Element(0);
+      // Only 1 batch. A scalar in device memory is unknown until the callbacks read it.
+      return valid_scalar && scalar == Element(0);
     }
     else {
       // multiple batch
@@ -1083,10 +1083,22 @@ struct Sm90ScalarBroadcast {
   CUTLASS_HOST_DEVICE
   Sm90ScalarBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params_ptr(&params) {
-    // Get the scalar for non-batched broadcast
-    if (size<2>(params_ptr->dScalar[0]) == 0) {
+    // Get the scalar for non-batched broadcast, unless it is in device memory
+    if (size<2>(params_ptr->dScalar[0]) == 0 && not is_device_scalar()) {
       update_scalar();
     }
+  }
+
+  // Under PDL the previous grid may still be writing a scalar in device memory, so it is read
+  // in the callbacks, which run after the producer waits on the previous grid.
+  CUTLASS_HOST_DEVICE bool
+  is_device_scalar() const {
+    bool is_device = false;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < BroadcastCount; ++i) {
+      is_device |= params_ptr->scalar_ptrs[i] != nullptr;
+    }
+    return is_device;
   }
 
   Element scalar;
@@ -1100,6 +1112,9 @@ struct Sm90ScalarBroadcast {
     if (size<2>(params_ptr->dScalar[0]) != 0) {
       auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
       update_scalar(l_coord);
+    }
+    else if (is_device_scalar()) {
+      update_scalar();
     }
 
     return EmptyProducerLoadCallbacks{};
@@ -1134,6 +1149,9 @@ struct Sm90ScalarBroadcast {
     if (get<2>(params_ptr->dScalar[0]) != 0) {
       auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
       update_scalar(l_coord);
+    }
+    else if (is_device_scalar()) {
+      update_scalar();
     }
 
     return ConsumerStoreCallbacks(scalar);
@@ -1418,17 +1436,12 @@ struct Sm90RowBroadcast {
   Sm90RowBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params(params), is_zero_(false),
         smem(const_cast<ElementInput*>(shared_storage.smem.data())) {
-    auto const& [stride_M, stride_N, stride_L] = params.dRow;
     // Nullptr default
     if (EnableNullptr && params.ptr_row == nullptr) {
       is_zero_ = params.null_default == ElementCompute(0);
     }
-    // Dynamic non-batched scalar broadcast
-    else if (IsDynamicBroadcast && stride_N == bool(0) && stride_L == repeat_like(stride_L, 0)) {
-       if constexpr (!IsArrayOfPointers) {
-         is_zero_ = params.ptr_row[0] == ElementInput(0);
-       }
-    }
+    // A dynamic scalar is in device memory, which the previous grid may still be writing under
+    // PDL, so it is not read here. It stays not-zero, and the source is loaded.
   }
 
   Params params;
@@ -1699,17 +1712,12 @@ struct Sm90ColBroadcast {
   CUTLASS_HOST_DEVICE
   Sm90ColBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params(params), is_zero_(false) {
-    auto const& [stride_M, stride_N, stride_L] = params.dCol;
     // Nullptr default
     if (EnableNullptr && params.ptr_col == nullptr) {
       is_zero_ = params.null_default == ElementCompute(0);
     }
-    // Dynamic non-batched scalar broadcast
-    else if (IsDynamicBroadcast && stride_M == bool(0) && stride_L == repeat_like(stride_L, 0)) {
-       if constexpr (!IsArrayOfPointers) {
-         is_zero_ = params.ptr_col[0] == ElementInput(0);
-       }
-    }
+    // A dynamic scalar is in device memory, which the previous grid may still be writing under
+    // PDL, so it is not read here. It stays not-zero, and the source is loaded.
   }
 
   Params params;
