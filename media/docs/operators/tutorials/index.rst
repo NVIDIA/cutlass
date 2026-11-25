@@ -17,3 +17,7 @@ examples. The same notebooks are runnable from `operators/examples/ <https://git
    Grouped GEMM with contiguous offset <005_grouped_gemm_contiguous_offset>
    Block-scaled GEMM (MXFP8) <006_block_scaled_gemm>
    Heuristics to rank operators <007_heuristics>
+   Requesting performance controls <008_performance_controls>
+   Programmatic Dependent Launch <009_programmatic_dependent_launch>
+   Block-scaled grouped GEMM for MoE <010_moe_grouped_gemm>
+   Data-driven Synchronization <011_data_driven_sync>

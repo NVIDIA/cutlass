@@ -618,16 +618,13 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
                                        datatypes_regex + ")_" + sf_tuple + "(" +
                                        datatypes_regex + ")x(" + datatypes_regex + ")";
 
-  if (std::string(operation_desc.gemm.name).find("bstensor") != std::string::npos) {
-    is_block_scaled = true;
-    gemm_workspace_.block_scales = BlockScalingWorkspace{};
-  }
-  else if (std::regex_search(operation_desc.gemm.name, std::regex(blockwise_regex_string))) {
-    is_blockwise = true;
+  is_block_scaled = std::string(operation_desc.gemm.name).find("bstensor") != std::string::npos;
+  is_blockwise = !is_block_scaled &&
+                std::regex_search(operation_desc.gemm.name, std::regex(blockwise_regex_string));
+  if (is_block_scaled || is_blockwise) {
     gemm_workspace_.block_scales = BlockScalingWorkspace{};
   }
   else {
-    is_block_scaled = false;
     gemm_workspace_.block_scales = std::nullopt;
   }
   is_moe = operation_desc.is_moe;

@@ -1,0 +1,132 @@
+<svg width="1024" height="320" viewBox="0 0 1024 320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="75%" stop-color="#fbfbfb"/>
+      <stop offset="100%" stop-color="#f3f6f8"/>
+    </linearGradient>
+    <linearGradient id="laneFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2f2f2"/>
+      <stop offset="100%" stop-color="#e4e4e4"/>
+    </linearGradient>
+    <linearGradient id="tensorFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff2e9"/>
+      <stop offset="100%" stop-color="#f6ddcf"/>
+    </linearGradient>
+    <linearGradient id="softmaxFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecf8e4"/>
+      <stop offset="100%" stop-color="#d4ebc9"/>
+    </linearGradient>
+    <linearGradient id="correctionFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e9f7ff"/>
+      <stop offset="100%" stop-color="#c8e7f7"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-12%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#000000" flood-opacity="0.13"/>
+    </filter>
+    <marker id="dep" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d21f3c"/>
+    </marker>
+    <style>
+      .lane-label {
+        font: 700 20px Arial, sans-serif;
+        fill: #101820;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .block-title {
+        font: 700 16px Arial, sans-serif;
+        fill: #111827;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .block-sub {
+        font: 600 14px Arial, sans-serif;
+        fill: #111827;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .ellipsis {
+        font: 700 28px Arial, sans-serif;
+        fill: #111827;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+    </style>
+  </defs>
+
+  <rect width="1024" height="320" fill="url(#background)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="21" y="22" width="114" height="73" rx="12" fill="url(#laneFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="21" y="113" width="114" height="73" rx="12" fill="url(#laneFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="21" y="207" width="114" height="73" rx="12" fill="url(#laneFill)" stroke="#111111" stroke-width="2"/>
+  </g>
+  <text class="lane-label" x="78" y="36">Tensor</text>
+  <text class="lane-label" x="78" y="60">Cores</text>
+  <text class="lane-label" x="78" y="84">(Q0)</text>
+  <text class="lane-label" x="78" y="150">Softmax</text>
+  <text class="lane-label" x="78" y="244">Correction</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="162" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="255" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="416" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="506" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="591" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="677" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="763" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="848" y="22" width="77" height="77" rx="12" fill="url(#tensorFill)" stroke="#111111" stroke-width="2"/>
+
+    <rect x="242" y="113" width="164" height="73" rx="12" fill="url(#softmaxFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="416" y="113" width="164" height="73" rx="12" fill="url(#softmaxFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="590" y="113" width="164" height="73" rx="12" fill="url(#softmaxFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="764" y="113" width="164" height="73" rx="12" fill="url(#softmaxFill)" stroke="#111111" stroke-width="2"/>
+
+    <rect x="446" y="202" width="135" height="72" rx="12" fill="url(#correctionFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="621" y="202" width="135" height="72" rx="12" fill="url(#correctionFill)" stroke="#111111" stroke-width="2"/>
+    <rect x="785" y="202" width="135" height="72" rx="12" fill="url(#correctionFill)" stroke="#111111" stroke-width="2"/>
+  </g>
+
+  <text class="block-title" x="200.5" y="50">S0=</text>
+  <text class="block-sub" x="200.5" y="70">Q0*K0</text>
+  <text class="block-title" x="293.5" y="50">S1=</text>
+  <text class="block-sub" x="293.5" y="70">Q0*K1</text>
+  <text class="block-title" x="454.5" y="50">O0=</text>
+  <text class="block-sub" x="454.5" y="70">P0*V0</text>
+  <text class="block-title" x="544.5" y="50">S0=</text>
+  <text class="block-sub" x="544.5" y="70">Q0*K2</text>
+  <text class="block-title" x="629.5" y="50">O0=</text>
+  <text class="block-sub" x="629.5" y="70">P1*V1</text>
+  <text class="block-title" x="715.5" y="50">S1=</text>
+  <text class="block-sub" x="715.5" y="70">Q0*K3</text>
+  <text class="block-title" x="801.5" y="50">O0=</text>
+  <text class="block-sub" x="801.5" y="70">P0*V2</text>
+  <text class="block-title" x="886.5" y="50">S0=</text>
+  <text class="block-sub" x="886.5" y="70">Q0*K4</text>
+
+  <text class="block-title" x="324" y="150">P0=Softmax(S0)</text>
+  <text class="block-title" x="498" y="150">P1=Softmax(S1)</text>
+  <text class="block-title" x="672" y="150">P0=Softmax(S0)</text>
+  <text class="block-title" x="846" y="150">P1=Softmax(S1)</text>
+
+  <text class="block-title" x="513.5" y="231">O0=</text>
+  <text class="block-sub" x="513.5" y="251">Correction(O0)</text>
+  <text class="block-title" x="688.5" y="231">O0=</text>
+  <text class="block-sub" x="688.5" y="251">Correction(O0)</text>
+  <text class="block-title" x="852.5" y="231">O0=</text>
+  <text class="block-sub" x="852.5" y="251">Correction(O0)</text>
+
+  <text class="ellipsis" x="973" y="229">...</text>
+
+  <g fill="none" stroke="#d21f3c" stroke-width="2.5" marker-end="url(#dep)" opacity="0.9">
+    <!-- S0 (MMA) must finish before P0 = Softmax(S0) -->
+    <line x1="205" y1="99" x2="292" y2="112"/>
+    <!-- S1 (MMA) must finish before P1 = Softmax(S1) -->
+    <line x1="300" y1="99" x2="470" y2="112"/>
+    <!-- P0 (Softmax) must finish before O0 = P0 * V0 -->
+    <line x1="380" y1="113" x2="452" y2="100"/>
+    <!-- P1 (Softmax) must finish before O0 = P1 * V1 -->
+    <line x1="552" y1="113" x2="624" y2="100"/>
+  </g>
+</svg>

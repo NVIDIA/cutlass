@@ -36,7 +36,7 @@ import torch
 
 import cutlass.operators as ops
 
-from test_utils.common import _TEST_LEVEL_ENV_VAR
+from test_utils.common import _TEST_LEVEL_ENV_VAR, get_cuda_device_id
 
 
 # The ``--test-level`` CLI option is provided by the ``test_sharding``
@@ -59,6 +59,20 @@ def pytest_configure(config):
     )
     os.environ[_TEST_LEVEL_ENV_VAR] = test_level
     config.option.test_level = test_level
+
+
+@pytest.fixture(autouse=True)
+def fixture_pinned_cuda_device():
+    """Run each test with the session's CUDA device current, where there is a choice.
+
+    Operators never select a device, so the harness must. Scoped, so the
+    previous device is restored even when a test raises.
+    """
+    if not torch.cuda.is_available() or torch.cuda.device_count() <= 1:
+        yield
+        return
+    with torch.cuda.device(get_cuda_device_id()):
+        yield
 
 
 #

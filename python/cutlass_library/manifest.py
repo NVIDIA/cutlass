@@ -76,7 +76,7 @@ class EmitOperationKindAll:
   That file declares several functions in namespace cutlass::library.
   The functions all have this form,
 
-  void initialize_{configuration_name}(Manifest& manifest);
+  void initialize_all_sm{min_cc}_{subclass_name}_{operation_kind}_operations(Manifest& manifest);
 
   The file also _defines_ the following function in that namespace.
 
@@ -157,8 +157,12 @@ void initialize_all_${operation_name}_operations(Manifest &manifest) {
     for min_cc, configurations in sorted(operations.items()):
       _LOGGER.debug(f"***   min_cc={min_cc}")
 
-      for configuration_name, _ in configurations.items():
-        _LOGGER.debug(f"***     configuration_name={configuration_name}")
+      # Each generated library owns one extended-name subclass. Call its
+      # registration entry point instead of exposing every configuration.
+      subclasses = dict.fromkeys(operations[0].extended_name()
+                                 for operations in configurations.values())
+      for subclass in subclasses:
+        configuration_name = f"all_sm{min_cc}_{subclass}_{OperationKindNames[self.kind]}_operations"
         self.configurations.append(configuration_name)
         self.top_level_file.write(SubstituteTemplate(self.configuration_prototype_template, {'configuration_name': configuration_name} ))
 
@@ -242,6 +246,9 @@ namespace library {
 //
 // Entry point to construct operations
 //
+#if defined(CUTLASS_LIBRARY_EXPORT_INITIALIZERS)
+__declspec(dllexport)
+#endif
 void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Manifest &manifest) {
 """
     self.configuration_prototype_template = "void initialize_${configuration_name}(Manifest &manifest);\n"

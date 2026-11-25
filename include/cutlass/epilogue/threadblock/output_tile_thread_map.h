@@ -209,6 +209,10 @@ struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, fal
 
   static int const kAccessWidth = kWarpSize;
   static int const kAccessRows = 1;
+  // Same warp-tiling invariant as the 2D arrangement (trivially satisfied here,
+  // 32 % 32 == 0). Guards a future edit of these constants from silently breaking warp coverage.
+  static_assert( kWarpSize % kAccessWidth == 0,
+    "OutputTileOptimalThreadMap (1D): kAccessWidth must divide the 32-lane warp." );
   static int const kWarpPartitionsRow = 1;
   static int const kWarpPartitionsColumn = WarpsRemaining;
 };
@@ -260,6 +264,20 @@ struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, tru
   static_assert( kAccessWidth * kElementsPerAccess <= Shape::kColumn, "Accessing too many elements per access");
   static_assert( kIterationsColumn > 0, "Iteration Count Column must be > 0" );
   static_assert( kIterationsRow > 0, "Iteration Count Row must be > 0" );
+
+  // initial_offset lays each warp's 32 lanes out as a kAccessRows x kAccessWidth
+  // grid (lane_idx / kAccessWidth selects the row, lane_idx % kAccessWidth the column). If
+  // kAccessWidth does not divide the warp, the surplus lanes spill into a row that the
+  // iteration stride (kDeltaRow == kAccessRows) re-covers on a later iteration, so two lanes
+  // write the SAME output coordinate -> silently incorrect epilogue stores. (E.g.
+  // ThreadblockShape::kN = 96, ElementsPerAccess = 8 -> kAccessWidth = 12 and 32 % 12 != 0:
+  // lanes 24-31 collide with lanes 0-7.) Reject the unsupported configuration at compile time.
+  static_assert( kWarpSize % kAccessWidth == 0,
+    "OutputTileOptimalThreadMap: kAccessWidth must divide the 32-lane warp so the per-warp lane "
+    "grid tiles it exactly; otherwise the epilogue produces overlapping (silently incorrect) "
+    "output stores. This ThreadblockShape::kN / ElementsPerAccess combination is unsupported. "
+    "Use a ThreadblockShape::kN that is a power-of-two multiple of ElementsPerAccess, or reduce "
+    "ElementsPerAccess." );
 
   static int const kWarpPartitionsRow = 1;
   static int const kWarpPartitionsColumn = 1;

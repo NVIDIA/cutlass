@@ -17,7 +17,7 @@ from .._mlir import ir
 from .._mlir.dialects import gpu, arith, scf
 from .._mlir.extras import types as _T
 
-from ..base_dsl.common import *
+from ..base_dsl.common import DSLNotImplemented
 
 # =============================================================================
 # GPU Dialect Helper functions

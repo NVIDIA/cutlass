@@ -14,16 +14,21 @@
 import ctypes
 from typing import Any
 
-from cutlass.base_dsl.jit_executor import AuxRuntimeFunc, DSLRuntimeError, ExecutionArgs
+from cutlass.base_dsl.jit_executor import (
+    AuxRuntimeFunc,
+    DSLRuntimeError,
+    ExecutionArgs,
+)
 
 __all__ = [
     "AllocationRequirement",
     "QueryDeviceWorkspaceFunc",
+    "QueryWorkspaceRequirementsFunc",
 ]
 
 
 class AllocationRequirement(ctypes.Structure):
-    """Mirrors the ``AllocationRequirement`` struct produced by ``queryDeviceWorkspace``.
+    """Mirrors the allocation requirement returned by workspace query functions.
 
     .. code-block:: c
 
@@ -95,3 +100,78 @@ class QueryDeviceWorkspaceFunc(AuxRuntimeFunc):
 
         del adapted_args  # keep alive until after the call
         return req
+
+
+class QueryWorkspaceRequirementsFunc(AuxRuntimeFunc):
+    """Queries all compiler-managed workspace requirements for a host function.
+
+    Usage::
+
+        query = compiled_fn.get_aux_func(QueryWorkspaceRequirementsFunc)
+        requirements = query(*logical_runtime_args)
+
+    Requirements are returned in the order of the trailing workspace arguments
+    appended to the compiled host function.
+    """
+
+    name = "QueryWorkspaceRequirements"
+
+    def __init__(self, func_ptr: int, args_spec: ExecutionArgs) -> None:
+        self._raw_fn = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(func_ptr)
+        self._args_spec = args_spec
+
+    def _invoke(
+        self,
+        logical_args_address: int | None,
+        requirements_address: int | None,
+    ) -> int:
+        logical_args = ctypes.c_void_p(logical_args_address)
+        requirements = ctypes.c_void_p(requirements_address)
+        result = ctypes.c_int64(0)
+        packed_args = (ctypes.c_void_p * 3)(
+            ctypes.addressof(logical_args),
+            ctypes.addressof(requirements),
+            ctypes.addressof(result),
+        )
+        self._raw_fn(packed_args)
+        return result.value
+
+    def get_workspace_argument_count(self) -> int:
+        """Returns the number of trailing workspace arguments."""
+        requirement_count = self._invoke(None, None)
+        if requirement_count < 0:
+            raise DSLRuntimeError(
+                "QueryWorkspaceRequirements failed while querying workspace count"
+            )
+        return requirement_count
+
+    def __call__(self, *args: Any, **kwargs: Any) -> tuple[AllocationRequirement, ...]:
+        """Returns workspace requirements in compiled host argument order."""
+        requirement_count = self.get_workspace_argument_count()
+        if requirement_count == 0:
+            return ()
+
+        exe_args, adapted_args = self._args_spec.generate_execution_args(args, kwargs)
+        logical_args = (ctypes.c_void_p * len(exe_args))(*exe_args)
+        requirements = (AllocationRequirement * requirement_count)()
+        result = self._invoke(
+            ctypes.addressof(logical_args), ctypes.addressof(requirements)
+        )
+        if result < 0:
+            raise DSLRuntimeError(
+                "QueryWorkspaceRequirements failed while querying requirements"
+            )
+        if result != requirement_count:
+            raise DSLRuntimeError(
+                "QueryWorkspaceRequirements returned "
+                f"{result} requirements after reporting {requirement_count}"
+            )
+
+        del adapted_args  # keep alive until after the call
+        return tuple(
+            AllocationRequirement(
+                size_in_bytes=requirement.size_in_bytes,
+                alignment=requirement.alignment,
+            )
+            for requirement in requirements
+        )

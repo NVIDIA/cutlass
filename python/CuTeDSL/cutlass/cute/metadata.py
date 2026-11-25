@@ -44,18 +44,27 @@ from typing import (
 )
 
 import cuda.bindings.driver as cuda
+import cuda.bindings.runtime as cuda_runtime
 
 import cutlass.compiler as md
+from cutlass._mlir._mlir_libs._cutlass_ir import (
+    _assign_canonical_argument_indices,
+)
+
+JIT_ARGUMENT_CUSTOM_TYPE_ID: int = 1
 from cutlass._mlir.dialects import cute as _cute_ir
 from cutlass.base_dsl.common import DSLRuntimeError
 from cutlass.base_dsl.runtime.jit_arg_adapters import is_arg_annotation_constexpr
-from cutlass.base_dsl.typing import Constexpr
+from cutlass.base_dsl.typing import Constexpr, implements_jit_argument
 from cutlass.compiler import DType, DTypeCode
 from cutlass.cutlass_dsl import is_cute_algebra_type
+from cutlass.experimental.cuda.graph.runtime import _FakeGraph, _FakeGraphNode
 from .runtime import _FakeStream
 from .typing import (
     Numeric,
+    Integer,
     Pointer,
+    SymBool,
     SymInt,
     Tensor,
     Boolean,
@@ -178,6 +187,20 @@ def _numeric_to_dtype(dtype: Type[Numeric]) -> DType:
             "update _NUMERIC_TO_DTYPE_FACTORY."
         )
     return result
+
+
+def _numeric_to_element_dtype(dtype: Type[Numeric]) -> Optional[DType]:
+    """Map a CuTe ``Numeric`` subclass to the element_dtype that should be used for it."""
+
+    # TFloat32 does not have a storage format separate from float32.
+    # However, in MLIR, it is passed as an i32, with the bit pattern
+    # being interpreted as that of a tf32.
+    if dtype is TFloat32:
+        return DType.int32()
+
+    # Any type not listed above should not have an element_dtype (meaning
+    # it uses the dtype itself).
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -416,31 +439,54 @@ def _tensor_binding(arg: "Tensor", name: str, table: _DimSymbolTable) -> "md.Ten
 
 
 def _cute_shape_binding(arg: Any, name: str, table: _DimSymbolTable) -> "md.Shape":
-    """Convert a flat CuTe shape/stride/coord argument to a metadata ``Shape``.
+    """Convert a CuTe shape/stride/coord argument to a metadata ``Shape``.
 
-    A metadata ``Shape`` is a flat list of ``Dim``s, so a hierarchical
-    (nested-tuple) shape has no representation here and is rejected.
+    Every tuple/list becomes an interior node of the Shape tree and every
+    scalar becomes a ``Dim`` leaf.  The compiler flattens the leaves in
+    depth-first, left-to-right order only at the ABI boundary; retaining the
+    tree here lets direct callers validate the same hierarchical profile the
+    kernel was traced with.
     """
-    dims: List["md.Dim"] = []
-    for elem in arg:
-        if isinstance(elem, bool):
-            raise DSLRuntimeError(f"Unexpected bool in cute shape arg {name!r}.")
-        if isinstance(elem, int):
-            dims.append(md.Dim(int(elem)))
-        elif isinstance(elem, SymInt):
-            dims.append(table.dim_for_symint(elem, is_stride=False))
-        elif isinstance(elem, Numeric):
-            dims.append(table.dim_for_anonymous(bits=elem.dtype.width, is_stride=False))
-        elif isinstance(elem, tuple):
+
+    def convert_sequence(value: object, path: str) -> List["md._ShapeInputNode"]:
+        if not isinstance(value, (tuple, list)):
             raise DSLRuntimeError(
-                f"Nested cute shape arguments are not supported in metadata "
-                f"for {name!r}."
+                f"Expected tuple/list for cute shape arg {name!r} at {path}, "
+                f"got {type(value).__name__}."
             )
-        else:
-            raise DSLRuntimeError(
-                f"Unexpected cute shape element {type(elem).__name__} in {name!r}."
-            )
-    return md.Shape(name=name, dims=dims)
+
+        nodes: List["md._ShapeInputNode"] = []
+        for index, elem in enumerate(value):
+            elem_path = f"{path}[{index}]"
+            if isinstance(elem, (bool, Boolean)):
+                raise DSLRuntimeError(
+                    f"Unexpected bool in cute shape arg {name!r} at {elem_path}."
+                )
+            if isinstance(elem, int):
+                nodes.append(md.Dim(int(elem)))
+            elif isinstance(elem, SymInt):
+                nodes.append(table.dim_for_symint(elem, is_stride=False))
+            elif isinstance(elem, Integer):
+                elem_type = type(elem)
+                if elem_type.width not in (32, 64) or not elem_type.signed:
+                    raise DSLRuntimeError(
+                        f"Expected a signed 32- or 64-bit integer for cute "
+                        f"shape arg {name!r} at {elem_path}, got "
+                        f"{type(elem).__name__}."
+                    )
+                nodes.append(
+                    table.dim_for_anonymous(bits=elem_type.width, is_stride=False)
+                )
+            elif isinstance(elem, (tuple, list)):
+                nodes.append(convert_sequence(elem, elem_path))
+            else:
+                raise DSLRuntimeError(
+                    f"Unexpected cute shape element {type(elem).__name__} in "
+                    f"{name!r} at {elem_path}."
+                )
+        return nodes
+
+    return md.Shape(name=name, dims=convert_sequence(arg, name))
 
 
 def _to_binding(
@@ -450,6 +496,7 @@ def _to_binding(
     table: _DimSymbolTable,
     *,
     is_constexpr: bool = False,
+    adapted: Any = None,
 ) -> "md.Binding":
     """Convert one live argument to a metadata ``Binding``.
 
@@ -464,9 +511,17 @@ def _to_binding(
 
     # Scalar Numeric, classified by runtime value then by annotation.
     if isinstance(arg, Numeric) and arg.dtype in _ACCEPTABLE_SCALAR_NUMERICS:
-        return md.Var(name=name, dtype=_numeric_to_dtype(arg.dtype))
+        return md.Var(
+            name=name,
+            dtype=_numeric_to_dtype(arg.dtype),
+            element_dtype=_numeric_to_element_dtype(arg.dtype),
+        )
     if arg_type in _ACCEPTABLE_SCALAR_NUMERICS:
-        return md.Var(name=name, dtype=_numeric_to_dtype(arg_type))
+        return md.Var(
+            name=name,
+            dtype=_numeric_to_dtype(arg_type),
+            element_dtype=_numeric_to_element_dtype(arg_type),
+        )
 
     # native_struct: an opaque handle passed by pointer.
     if (
@@ -487,6 +542,12 @@ def _to_binding(
             divisibility=_normalize_divisibility(arg.divisibility),
         )
 
+    if isinstance(arg, SymBool):
+        return md.Var(
+            name=name,
+            dtype=DType.bool_(),
+        )
+
     if isinstance(arg, Tensor):
         return _tensor_binding(arg, name, table)
 
@@ -501,8 +562,19 @@ def _to_binding(
             return md.EnvStream(name=name)
         return md.Stream(name=name)
 
+    if isinstance(arg, (_FakeGraph, cuda.CUgraph, cuda_runtime.cudaGraph_t)):
+        return md.Var(name=name, dtype=DType.handle())
+
+    if isinstance(
+        arg, (_FakeGraphNode, cuda.CUgraphNode, cuda_runtime.cudaGraphNode_t)
+    ):
+        return md.Var(name=name, dtype=DType.handle())
+
     if isinstance(arg, cuda.CUstream):
         return md.Stream(name=name)
+
+    if isinstance(arg, cuda.CUevent):
+        return md.Var(name=name, dtype=DType.handle())
 
     # NamedTuple: normalize to a Tuple by field order.
     if arg_type is not inspect.Parameter.empty and hasattr(arg_type, "_fields"):
@@ -525,6 +597,20 @@ def _to_binding(
         return md.Var(name=name, dtype=DType.int32())
     if isinstance(arg, float):
         return md.Var(name=name, dtype=DType.float32())
+
+    # call time __c_pointers__() supplies the corresponding runtime pointers.
+    if arg is not inspect.Parameter.empty and implements_jit_argument(arg):
+        # The tracing has already taken care of analyzing the types of the
+        # arguments. Here, we just need the count since they'll be passed
+        # as pointer from __c_pointers__().
+        mlir_types = arg.__get_mlir_types__()
+        jit_values = [
+            md.Var(name=f"{name}[{i}]", dtype=DType.handle())
+            for i in range(len(mlir_types))
+        ]
+        return md.CustomType(
+            id=JIT_ARGUMENT_CUSTOM_TYPE_ID, name=name, values=jit_values
+        )
 
     # Dataclass: each field becomes a tuple element; constexpr fields are pinned.
     if (
@@ -554,7 +640,7 @@ def _to_binding(
             field_types = get_type_hints(dc_type)
         except Exception:
             field_types = {}
-        values = []
+        values: list[md.Binding] = []
         for f in dataclass_fields(dc_type):
             field_type = field_types.get(f.name, f.type)
             # Mirror is_constexpr_field's check, but on the resolved type (its
@@ -584,6 +670,11 @@ def _to_binding(
         raise DSLRuntimeError(
             f"Unsupported argument {name!r} of type {type(arg)} for union "
             f"{arg_type}: no member matched."
+        )
+
+    if arg is not inspect.Parameter.empty and adapted is not None:
+        return _to_binding(
+            adapted, name, type(adapted), table, is_constexpr=is_constexpr
         )
 
     raise DSLRuntimeError(
@@ -628,6 +719,14 @@ def _native_struct_type(value: Any) -> Optional[type]:
 # ---------------------------------------------------------------------------
 
 
+def _is_implicity_constexpr(value: Any) -> bool:
+    """Check whether a given value is implicity a constexpr.
+
+    As defined by the DSL, nulls and types are implicitly constexpr.
+    """
+    return value is None or isinstance(value, type)
+
+
 def _rectify_runtime_params(
     signature: inspect.Signature, args: Any, kwonlyargs: Any
 ) -> Iterator[Tuple[inspect.Parameter, Any, bool]]:
@@ -649,10 +748,11 @@ def _rectify_runtime_params(
     bound = signature.bind_partial(*args, **kwonlyargs)
     bound.apply_defaults()
     for index, (name, parameter) in enumerate(signature.parameters.items()):
+        value = bound.arguments[name]
         is_constexpr = is_arg_annotation_constexpr(
             parameter.annotation, name, index, None
-        )
-        value = bound.arguments[name]
+        ) or _is_implicity_constexpr(value)
+
         if is_constexpr and not _is_const_representable(value):
             continue
         yield parameter, value, is_constexpr
@@ -692,16 +792,22 @@ def _return_binding(return_annotation: Any, table: _DimSymbolTable) -> "md.Bindi
     return _to_binding(inspect.Parameter.empty, "", return_annotation, table)
 
 
-def _assign_arg_indices(params: list) -> None:
+def _assign_arg_indices(params: list["md.Binding"]) -> None:
     """Assign each binding's two argument indices from the user's signature.
-    Both are the *generator's* to produce; the compiler only consumes them and
-    must never re-derive or hardcode them.
+
+    The shared C++ metadata helper resets any stale mappings and produces both
+    maps in place on the live Python-owned bindings. The private nanobind bridge
+    borrows the bindings for this call and does not clone them.
 
     ``ir_arg_index`` -- the IR-function (kernel C-interface) argument index.
     Walks in declaration order (recursing into tuples) handing a running index
     to every forwarded leaf (Var / Tensor / Stream / Pointer / EnvStream).
     Stays ``None`` for what feeds no kernel arg: a baked ``Constexpr`` (-> Const),
-    a void Unit, a Shape (binds symbols), and the structural tuple itself.
+    a void Unit, and the structural tuple itself. A ``Shape`` binding feeds no
+    kernel arg itself (``ir_arg_index`` stays ``None``), but the frontend
+    lowers each of its *dynamic* leaves to its own scalar kernel argument, so
+    every symbol leaf takes the next running index in the Shape's private leaf
+    wiring map (constant leaves are baked into the kernel and take none).
 
     ``abi_arg_index`` -- the slot index in the ABI call surface. TOP-LEVEL
     params only: each occupies one slot (a Tuple is a single slot; its elements
@@ -710,43 +816,7 @@ def _assign_arg_indices(params: list) -> None:
     baked value), and a top-level ``Unit`` (a baked void / absent optional) --
     none occupy an ABI slot.
     """
-    ir = 0
-    abi = 0
-
-    def visit_ir(binding: Any) -> None:
-        nonlocal ir
-        if isinstance(binding, md.Tuple):
-            for elem in binding.values:
-                visit_ir(elem)
-        elif isinstance(
-            binding, (md.Var, md.Tensor, md.Stream, md.Pointer, md.EnvStream)
-        ):
-            binding.ir_arg_index = ir
-            ir += 1
-        elif isinstance(binding, (md.Const, md.Shape, md.Unit)):
-            # Const / Shape / Unit forward no kernel argument -- a baked
-            # constant, a symbol-binding shape, or void -- so they get no
-            # ir_arg_index and do not advance the counter.
-            pass
-        else:
-            # Fail loudly on a binding type added later but not classified here,
-            # rather than silently dropping its ir_arg_index.
-            raise ValueError(
-                f"_assign_arg_indices: unexpected binding type {type(binding).__name__}"
-            )
-
-    for param in params:
-        visit_ir(param)
-        # These three top-level bindings occupy NO ABI slot -- they stay
-        # abi_arg_index=None, and the data-driven wrapper/Executor skip any param
-        # lacking one, so the ABI surface is exactly the abi-bearing params:
-        #   * EnvStream -- its stream is fetched out-of-band.
-        #   * Const     -- a baked compile-time value (recorded, not forwarded).
-        #   * Unit      -- a baked void / absent optional (Unit is just a Const
-        #                  whose value is "nothing"), so it is treated the same.
-        if not isinstance(param, (md.EnvStream, md.Const, md.Unit)):
-            param.abi_arg_index = abi
-            abi += 1
+    _assign_canonical_argument_indices(params)
 
 
 # ---------------------------------------------------------------------------
@@ -762,6 +832,7 @@ def populate_function_metadata(
     args: Any,
     kwonlyargs: Any,
     display_name: Optional[str] = None,
+    adapted_args: list[Any] | None = None,
 ) -> None:
     """Populate ``fn`` in place from a live CuTe DSL kernel signature.
 
@@ -775,6 +846,7 @@ def populate_function_metadata(
     # conversion raises, ``fn`` stays in its prior state rather than being left
     # half-converted (e.g. a populated ``dim_symbol_table`` with stale ``params``).
     table = _DimSymbolTable()
+    param_index = {name: i for i, name in enumerate(signature.parameters)}
     new_params = [
         _to_binding(
             value,
@@ -782,14 +854,19 @@ def populate_function_metadata(
             parameter.annotation,
             table,
             is_constexpr=is_constexpr,
+            adapted=(
+                adapted_args[param_index[parameter.name]]
+                if adapted_args is not None
+                else None
+            ),
         )
         for parameter, value, is_constexpr in _rectify_runtime_params(
             signature, args, kwonlyargs
         )
     ]
-    # The generator produces both argument-index maps (metadata -> IR and
-    # metadata -> ABI slot) from the user's signature. The compiler only
-    # consumes `ir_arg_index` / `abi_arg_index`; it never re-derives them.
+    # Keep the new bindings detached from `fn` until the shared canonical
+    # mapper succeeds. A conversion or mapping failure therefore leaves the
+    # destination metadata untouched.
     _assign_arg_indices(new_params)
     new_symbols = table.symbols
     # The function's logical return type, taken from the signature: void (no
@@ -816,6 +893,7 @@ def build_function_metadata(
     args: Any,
     kwonlyargs: Any,
     display_name: Optional[str] = None,
+    adapted_args: list[Any] | None = None,
 ) -> "md.FunctionMetadata":
     """Build a fresh ``FunctionMetadata`` from a live CuTe DSL kernel signature.
 
@@ -830,5 +908,6 @@ def build_function_metadata(
         args=args,
         kwonlyargs=kwonlyargs,
         display_name=display_name,
+        adapted_args=adapted_args,
     )
     return fn

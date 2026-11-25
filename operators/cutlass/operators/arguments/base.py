@@ -31,15 +31,16 @@ from __future__ import annotations
 import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Any, final, get_type_hints
+from types import EllipsisType  # noqa: TC003
+from typing import Any, final
 
-from cutlass.operators.typing import NumericLike, TensorLike
+from cutlass.operators.typing import SupportsConversionToInternalTypes
 from cutlass.operators.utils.dtype import to_cutlass_type
 from cutlass.operators.utils.tensor import TensorWrapper
 
 
 @dataclass
-class RuntimeArguments:
+class RuntimeArguments(SupportsConversionToInternalTypes):
     """Describes the operands and all other arguments passed to an Operator at runtime.
 
     It contains runtime operands (usually tensors) passed to the operation, as well as
@@ -50,8 +51,34 @@ class RuntimeArguments:
     operation type accept the same RuntimeArguments subclass.
     """
 
-    performance: PerformanceControls | None = field(default=None, kw_only=True)
-    """Optional runtime performance controls passed to the Operator"""
+    performance: PerformanceControls | None | EllipsisType = field(
+        default=..., kw_only=True
+    )
+    """Optional runtime performance controls passed to the Operator.
+
+    ``...`` (the default) expresses no opinion, and every operator matches.
+    ``None`` asks for an operator that exposes no performance controls at all.
+    """
+
+    @classmethod
+    def _tensor_like_field_names(cls) -> tuple[str, ...]:
+        """Names of fields holding a ``TensorLike`` value that must be wrapped in a ``TensorWrapper``.
+
+        Declared explicitly per subclass, rather than inferred from the field's type
+        annotation via ``typing.get_type_hints``, to avoid the cost of resolving
+        postponed annotations (this module uses ``from __future__ import
+        annotations``) on every construction. Override in subclasses that have such
+        fields; the default is none.
+        """
+        return ()
+
+    @classmethod
+    def _numeric_like_field_names(cls) -> tuple[str, ...]:
+        """Names of fields holding a ``NumericLike`` value that must be converted to ``cutlass.Numeric``.
+
+        See :meth:`_tensor_like_field_names` for why this is declared explicitly.
+        """
+        return ()
 
     def _validate(self):
         """Checks that the arguments are valid.
@@ -72,7 +99,7 @@ class PerformanceControls:
     """
 
 
-class Operand(ABC):
+class Operand(ABC, SupportsConversionToInternalTypes):
     """Base class for all operands to Operators, which encapsulates one or more TensorLike objects.
 
     In the most basic case, an Operand enacapsulates a single tensor.
@@ -92,11 +119,31 @@ class Operand(ABC):
         """Returns a copy of the operand. Does not copy the underlying tensor."""
         raise NotImplementedError
 
+    @classmethod
+    def _tensor_like_field_names(cls) -> tuple[str, ...]:
+        """Names of fields holding a ``TensorLike`` value that must be wrapped in a ``TensorWrapper``.
+
+        See :meth:`RuntimeArguments._tensor_like_field_names` for why this is
+        declared explicitly rather than inferred from the field's type annotation.
+        """
+        return ()
+
+    @classmethod
+    def _numeric_like_field_names(cls) -> tuple[str, ...]:
+        """Names of fields holding a ``NumericLike`` value that must be converted to ``cutlass.Numeric``.
+
+        See :meth:`RuntimeArguments._tensor_like_field_names` for why this is
+        declared explicitly rather than inferred from the field's type annotation.
+        """
+        return ()
+
     def _convert_to_internal_types(self, metadata: dict[str, Any] = None):
         _convert_to_internal_types(self, metadata=metadata)
 
 
-def _convert_to_internal_types(caller, metadata: dict[str, Any] = None):
+def _convert_to_internal_types(
+    caller: SupportsConversionToInternalTypes, metadata: dict[str, Any] = None
+):
     """Converts fields of the caller to internal types.
 
     Current fields that are converted:
@@ -104,13 +151,20 @@ def _convert_to_internal_types(caller, metadata: dict[str, Any] = None):
     * ``NumericLike`` -> ``cutlass.Numeric``
     * Classes that implement ``_convert_to_internal_types`` -> their internal types
 
+    Which fields are ``TensorLike``/``NumericLike`` is determined by
+    ``type(caller)._tensor_like_field_names()``/``_numeric_like_field_names()``
+    rather than by inspecting the field's type annotation, since resolving
+    postponed annotations via ``typing.get_type_hints`` on every call is expensive
+    and depends only on the (statically known) class.
+
     Args:
-        caller (Any): The caller object to convert the fields of
+        caller (Any): The caller object to convert the fields of.
         metadata (dict[str, Any] | None): Additional metadata to be used for conversion
     """
-    type_hints = get_type_hints(type(caller))
+    cls = type(caller)
+    tensor_like_fields = cls._tensor_like_field_names()
+    numeric_like_fields = cls._numeric_like_field_names()
     for f in fields(caller):
-        hint = type_hints.get(f.name)
         value = getattr(caller, f.name)
 
         global_metadata = {} if metadata is None else copy.deepcopy(metadata)
@@ -119,13 +173,11 @@ def _convert_to_internal_types(caller, metadata: dict[str, Any] = None):
         if isinstance(value, TensorWrapper):
             # No conversion needed
             setattr(caller, f.name, value)
-        elif hint is TensorLike:
-            # Find all fields that are annotated as TensorLike,
-            # and wrap them in TensorWrapper
+        elif f.name in tensor_like_fields:
+            # Wrap fields declared as TensorLike in TensorWrapper
             setattr(caller, f.name, TensorWrapper(value, **global_metadata))
-        elif hint is NumericLike:
-            # Find all fields that are annotated as NumericLike,
-            # and convert them to cutlass.Numeric
+        elif f.name in numeric_like_fields:
+            # Convert fields declared as NumericLike to cutlass.Numeric
             setattr(caller, f.name, to_cutlass_type(value))
         elif hasattr(value, "_convert_to_internal_types"):
             # If the field is an instance of a class that implements

@@ -52,6 +52,7 @@ class CompileContext:
     sig: inspect.Signature
     cache_enabled: bool
     no_jit_engine: bool
+    extra_link_libs: tuple[str, ...]
     func_type: Callable[..., JitCompiledFunction]
     full_args: Any = None
     full_kwargs: Any = None
@@ -59,6 +60,7 @@ class CompileContext:
     dynamic_kwargs: Any = None
     original_function_name: str | None = None
     funcBody: Callable[..., Any] | None = None
+    adapted_args: list[Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -248,7 +250,7 @@ class LegacyCompilerBackend(CompilerBackend):
             compile_gpu_arch,  # type: ignore[arg-type]
         )
 
-        shared_libs = dsl.get_shared_libs()
+        shared_libs = dsl.get_shared_libs(ctx.extra_link_libs)
 
         if not cache_state.cache_hit:
             # Compile and JIT MLIR module
@@ -262,7 +264,12 @@ class LegacyCompilerBackend(CompilerBackend):
                 else None
             )
 
-        capi_func = dsl._lookup_jit_entry(engine, ctx.function_name) if engine else None
+        # TVM-FFI resolves its own packed entry; the C API entry is unused.
+        capi_func = (
+            dsl._lookup_jit_entry(engine, ctx.function_name)
+            if engine and not dsl.compile_options.enable_tvm_ffi
+            else None
+        )
 
         return dsl._build_jit_function(
             ctx.func_type,

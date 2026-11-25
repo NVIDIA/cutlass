@@ -31,6 +31,22 @@ Each chapter is a self-contained notebook that runs end-to-end on a CUDA GPU.
 | `03_blackwell_mma.ipynb` | minimal Blackwell `tcgen05` GEMM (sm_100a) |
 | `04_blackwell_mma_contextvar.ipynb` | the same `tcgen05` GEMM driven by Python `contextvars` (sm_100a) |
 
+### 4. Profiling with IKET — [`4_profiling_with_iket/`](4_profiling_with_iket)
+| notebook | topic |
+|---|---|
+| `00_what_is_iket.ipynb` | what IKET is, and your first `run-iket` profile |
+| `01_pipeline_basics.ipynb` | prologue / mainloop / epilogue ranges — and which one actually dominates |
+| `02_prefetch_stages.ipynb` | prefetch stages: the stall that moves instead of disappearing |
+| `03_2cta_multicast.ipynb` | 2-CTA MMA and multicast — where the crossover is |
+| `04_warp_specialization.ipynb` | warp roles as concurrent bands; where the win really comes from |
+| `05_persistent_scheduling.ipynb` | static persistent vs CLC scheduling on balanced load |
+| `06_cluster_shapes.ipynb` | preferred and fallback cluster shapes |
+| `07_tma_prefetch.ipynb` | TMA prefetch into L2 — does it land early enough |
+| `08_pdl.ipynb` | PDL: a hypothesis the profiler disproved |
+| `09_optimization_ladder.ipynb` | the tutorial GEMM ladder, step by step |
+| `10_fmha_multirole.ipynb` | FMHA roles: softmax dominates, the matmuls are noise |
+| `11_profile_your_own_kernel.ipynb` | the transferable method, and the traps |
+
 ## Related notebooks
 
 The long-standing CuTe-layout and CUDA-runtime series — CuTe layout algebra, async
@@ -43,4 +59,6 @@ state-of-the-art GEMM — live alongside this course under
 Open any notebook in Jupyter on a CUDA host. A few chapters target Blackwell
 (`sm_100a`) tensor cores (`3_kernels/03`, `04`) and need a B100/B200-class GPU; the
 rest run on any recent CUDA GPU. The course chapters are also executed end-to-end in
-CI via `nbconvert`.
+CI via `nbconvert`. Chapter 4 needs an IKET-capable Blackwell GPU and `run-iket` to
+collect traces, but is committed with its outputs and reads without one; see its
+[README](4_profiling_with_iket/README.md).

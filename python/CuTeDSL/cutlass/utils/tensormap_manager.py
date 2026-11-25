@@ -9,15 +9,14 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 from typing import Any
 
-from typing_extensions import deprecated
 
 from cutlass.tensor_utils.tensormap import TensorMapManager as _TensorMapManager
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.tensormap_manager.TensorMapManager is deprecated; use "
     "cutlass.tensor_utils.TensorMapManager instead. It will be removed in a future "
     "release."
@@ -31,12 +30,10 @@ class TensorMapManager(_TensorMapManager):
 # __getattr__ (PEP 562) adds the deprecation warning a wrapper class cannot.
 def __getattr__(name: str) -> Any:
     if name == "TensorMapUpdateMode":
-        warnings.warn(
+        _warn_deprecated(
             "cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; "
             "use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be "
-            "removed in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "removed in a future release."
         )
         from cutlass.tensor_utils.tensormap import TensorMapUpdateMode
 

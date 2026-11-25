@@ -32,39 +32,30 @@ import itertools
 from typing import TYPE_CHECKING
 
 import cutlass
+from cutlass.cutlass_dsl import Int32
 
 import cutlass.operators.utils.generate as generate
-from cutlass.operators.arch import TargetSm
 from cutlass.operators.arguments import (
     DenseTensor,
     EpilogueArguments,
     GemmArguments,
 )
+from cutlass.operators.arguments.tile_scheduler_settings import RasterOrder
 from cutlass.operators.metadata import (
     GemmOperandsMetadata,
     OperatorMetadata,
     Sm100DesignMetadata,
 )
 from cutlass.operators.metadata.design.tile_scheduler import (
-    CLCDynamicPersistentTileSchedulerMetadata,
-    StaticPersistentTileSchedulerMetadata,
-)
-from cutlass.operators.mma import BlackwellTcgen05Mma
-from cutlass.operators.providers.cutedsl import CuTeDSLProvider
-from cutlass.operators.providers.cutedsl.integration_utils.mma import (
-    get_max_active_clusters,
+    NoRasterizationMetadata,
+    TileSwizzleRasterizationMetadata,
 )
 from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
-from cutlass.operators.utils.common import tuple_to_string
 from cutlass.operators.utils.device import to_cuda_stream
 from cutlass.operators.utils.tensor import (
     normalized_major_stride,
-    strides_to_layout_string,
 )
 
-from .implementations.operator_helpers import (
-    scheduler_metadata_to_enum,
-)
 from .implementations.sm100_persistent_impl import (
     PersistentDenseGemmKernel,
 )
@@ -72,13 +63,20 @@ from .implementations.sm100_persistent_impl import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
+    from cutlass.operators.arch import TargetSm
     from cutlass.operators.artifact import CompiledArtifact
+    from cutlass.operators.device_properties import DeviceProperties
 
 
-@CuTeDSLProvider.register
-class PersistentDenseGemmOperator(CuteDslOperator):
+class Sm100PersistentDenseGemmOperator(CuteDslOperator):
     """This class implements batched matrix multiplication (C = A @ B) with support for various data types
     and architectural features specific to Blackwell GPUs with persistent tile scheduling and warp specialization.
+
+    .. deprecated::
+        Superseded by
+        :class:`~cutlass.operators.providers.cutedsl.gemm.sm100_dense_gemm_universal.Sm100DenseGemmUniversalOperator`.
+        This class is not registered with ``CuTeDSLProvider``, so
+        ``get_operators`` does not return it.
 
     :note: In current version, A and B tensor must have the same data type
         - i.e., Float8E4M3FN for A and Float8E5M2 for B is not supported
@@ -122,32 +120,47 @@ class PersistentDenseGemmOperator(CuteDslOperator):
             metadata.design.cluster_shape[1],
         )
 
+        compile_swizzle_size = 1
+        compile_raster_along_m = True
+        rasterization = self.metadata.design.tile_scheduler.rasterization
+        if isinstance(rasterization, TileSwizzleRasterizationMetadata):
+            swizzle_size = rasterization.swizzle_size
+            if isinstance(swizzle_size, tuple) and len(swizzle_size) == 1:
+                # Compile-time settings are stored as a length-1 tuple.
+                # Runtime domains are rejected in _valid_metadata.
+                compile_swizzle_size = swizzle_size[0]
+            raster_order = rasterization.raster_order
+            if isinstance(raster_order, tuple) and len(raster_order) == 1:
+                compile_raster_along_m = raster_order[0] == RasterOrder.ALONG_M
+        elif isinstance(rasterization, NoRasterizationMetadata):
+            pass  # use kernel defaults (raster_along_m=True, swizzle_size=1)
+        else:
+            raise ValueError(f"Unsupported rasterization strategy: {rasterization!r}")
+
         self.impl = PersistentDenseGemmKernel(
             metadata.operands.accumulator_type,
             metadata.design.use_2cta_mma,
             mma_tiler_mn,
             cluster_shape_mn,
             metadata.design.use_tma_store,
-            scheduler_metadata_to_enum(metadata.design.tile_scheduler),
+            metadata.design.tile_scheduler.persistence.arg_name(),
             epilogue_op,
+            compile_swizzle_size,
+            compile_raster_along_m,
         )
 
     def _compile(
         self, args: GemmArguments, target_sm: TargetSm | None = None
     ) -> CompiledArtifact:
         stream = cutlass.cute.runtime.make_fake_stream()
-        if self.impl.use_static_persistent_scheduler:
-            max_active_clusters = get_max_active_clusters(self.impl.cluster_shape_mn)
-        else:
-            max_active_clusters = None
-
         return self.cute_compile(
             self.impl,
             args.A.tensor,
             args.B.tensor,
             args.out.tensor,
             stream,
-            max_active_clusters,
+            # Placeholder: querying real occupancy would need a GPU to compile.
+            Int32(0),
             self.impl.epilogue_op,
             target_sm=target_sm,
         )
@@ -158,11 +171,18 @@ class PersistentDenseGemmOperator(CuteDslOperator):
         compiled_artifact: CompiledArtifact,
         stream,
         workspace=None,
+        *,
+        device_properties: DeviceProperties,
     ) -> None:
         stream = to_cuda_stream(stream)
         compiled_gemm = compiled_artifact.compiled_obj
         self.cute_run(
-            compiled_gemm, args.A.tensor, args.B.tensor, args.out.tensor, stream
+            compiled_gemm,
+            args.A.tensor,
+            args.B.tensor,
+            args.out.tensor,
+            stream,
+            device_properties.max_active_clusters(self.impl.cluster_shape_mn),
         )
 
     @staticmethod
@@ -290,7 +310,7 @@ class PersistentDenseGemmOperator(CuteDslOperator):
             alignment_bytes=16,
         )
 
-        if not PersistentDenseGemmOperator._valid_operands(operands):
+        if not Sm100PersistentDenseGemmOperator._valid_operands(operands):
             return
 
         yield operands
@@ -368,7 +388,7 @@ class PersistentDenseGemmOperator(CuteDslOperator):
 
     @staticmethod
     def _valid_metadata(metadata: OperatorMetadata) -> bool:
-        if not PersistentDenseGemmOperator._valid_operands(metadata.operands):
+        if not Sm100PersistentDenseGemmOperator._valid_operands(metadata.operands):
             return False
 
         design = metadata.design
@@ -407,6 +427,22 @@ class PersistentDenseGemmOperator(CuteDslOperator):
         if metadata.epilogue is not None:
             return False
 
+        rasterization = design.tile_scheduler.rasterization
+        if isinstance(rasterization, TileSwizzleRasterizationMetadata):
+            swizzle_size = rasterization.swizzle_size
+            # Only compile-time (length-1 tuple) or unset settings are supported.
+            if swizzle_size is not None and not (
+                isinstance(swizzle_size, tuple) and len(swizzle_size) == 1
+            ):
+                return False
+            raster_order = rasterization.raster_order
+            if raster_order is not None and not (
+                isinstance(raster_order, tuple) and len(raster_order) == 1
+            ):
+                return False
+        elif not isinstance(rasterization, NoRasterizationMetadata):
+            return False
+
         return True
 
     @classmethod
@@ -416,80 +452,10 @@ class PersistentDenseGemmOperator(CuteDslOperator):
         epilogue_args: EpilogueArguments = None,
         target_sm: TargetSm | None = None,
         args: GemmArguments = None,
-    ) -> list[PersistentDenseGemmOperator]:
-        """Returns a list of all possible configurations of PersistentDenseGemmOperator that
+    ) -> list[Sm100PersistentDenseGemmOperator]:
+        """Returns a list of all possible configurations of Sm100PersistentDenseGemmOperator that
         adhere to constraints passed in under kwargs.
         """
-        design_params = {
-            "mma_instruction_type": [BlackwellTcgen05Mma],
-            "use_2cta_mma": [True, False],
-            # Fill in tile shape K based on data type
-            "tile_shape": [
-                (M, N, None) for M in [64, 128, 256] for N in [32, 64, 128, 256]
-            ],
-            "cluster_shape": [
-                (m, n, 1)
-                for m in [1, 2, 4, 8, 16]
-                for n in [1, 2, 4, 8, 16]
-                if m * n <= Sm100DesignMetadata.max_cluster_size
-            ],
-            "use_tma_store": [True],
-            "tile_scheduler": [
-                CLCDynamicPersistentTileSchedulerMetadata(),
-                StaticPersistentTileSchedulerMetadata(),
-            ],
-        }
 
-        if epilogue_args is not None:
-            return []
-
-        from itertools import product
-
-        # Get the list of tunable parameter names and their possible values
-        param_names = list(design_params.keys())
-
-        operator_list = []
-
-        if args is not None:
-            operands_generator = cls._metadata_operands_from_args(args)
-        else:
-            operands_generator = cls._metadata_operand_combinations()
-
-        for operands in operands_generator:
-            tile_k = BlackwellTcgen05Mma.shape_k(operands) * 4  # kphase=4
-            design_params["tile_shape"] = [
-                (M, N, tile_k) for M, N, _ in design_params["tile_shape"]
-            ]
-            param_values = [design_params[name] for name in param_names]
-            for values in product(*param_values):
-                design = Sm100DesignMetadata(**dict(zip(param_names, values)))
-                operator_name = "cutedsl.PersistentDenseGemmOperator_sm100_{layout}_A{A}_B{B}_out{out}_acc{acc}_{num_cta}cta_cluster{cluster}_tile{tile}_scheduler{scheduler}{_tma_store}".format(
-                    layout=strides_to_layout_string(
-                        operands.A.stride, operands.B.stride, operands.out.stride
-                    ),
-                    A=operands.A.dtype,
-                    B=operands.B.dtype,
-                    out=operands.out.dtype,
-                    acc=operands.accumulator_type,
-                    num_cta=("2" if design.use_2cta_mma else "1"),
-                    cluster=tuple_to_string(design.cluster_shape),
-                    tile=tuple_to_string(design.tile_shape),
-                    scheduler=scheduler_metadata_to_enum(design.tile_scheduler).name,
-                    _tma_store="_tma_store" if design.use_tma_store else "",
-                )
-
-                metadata = OperatorMetadata(
-                    operands=operands,
-                    design=design,
-                    operator_name=operator_name,
-                    operator_class=cls,
-                    supported_targets=TargetSm.get_supported_targets(design, operands),
-                    epilogue=None,
-                )
-
-                if PersistentDenseGemmOperator._valid_metadata(
-                    metadata
-                ) and metadata_filter(metadata):
-                    operator_list.append(PersistentDenseGemmOperator(metadata))
-
-        return operator_list
+        # Will be deprecated in favor of the Sm100DenseGemmUniversalOperator
+        return []

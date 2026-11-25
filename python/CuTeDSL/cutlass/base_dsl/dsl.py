@@ -39,6 +39,7 @@ from typing import (
     Any,
     ClassVar,
     Generator,
+    Literal,
     NamedTuple,
     TYPE_CHECKING,
     Union,
@@ -57,7 +58,7 @@ import warnings
 import threading
 
 from . import typing as t
-from .env_manager import EnvironmentVarManager, dump_sass, is_cutlass_family_dsl_prefix
+from .env_manager import EnvironmentVarManager, dump_sass
 from .compiler import (
     CompileOptions,
     CompilerDiagnosticError,
@@ -67,9 +68,11 @@ from .compiler import (
     KeepCUBIN,
 )
 from .ast_helpers import DSLOptimizationWarning
+from .dsl_lock import with_dsl_lock
 from .common import (
     DSLRuntimeError,
     DSLUserCodeError,
+    active_compile_options,
     active_env_manager,
     target_version,
 )
@@ -92,14 +95,16 @@ from .runtime.jit_arg_adapters import (
 
 from .ast_preprocessor import DSLPreprocessor
 from .pyir_class_facts import configure_facts_cache, record_jit_decoration
+from .pyir_state import _pyir_note_preprocessed_code
 from .pyir_preprocessor import PyIRDSLPreprocessor
 from .preprocess_mode import _PreprocessModeState
 from .common import *
-from .diagnostics import DiagId
+from .diagnostics import DiagId, WarnId, report_warning
 from .typing import (
     get_c_pointers,
     get_mlir_types,
     Integer,
+    Numeric,
     implements_dynamic_expression,
     implements_jit_argument,
 )
@@ -117,6 +122,25 @@ from .._mlir_helpers.op import (
 from .._mlir import ir
 from .._mlir.dialects import func
 
+
+def _normalize_shared_library_paths(paths: Iterable[str]) -> tuple[str, ...]:
+    """Return existing, canonical shared-library paths without duplicates."""
+    normalized_paths: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if not path:
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
+        normalized_path = os.path.realpath(os.path.abspath(path))
+        if not os.path.exists(normalized_path):
+            raise FileNotFoundError(
+                errno.ENOENT, os.strerror(errno.ENOENT), normalized_path
+            )
+        if normalized_path not in seen:
+            seen.add(normalized_path)
+            normalized_paths.append(normalized_path)
+    return tuple(normalized_paths)
+
+
 # The MLIR value-tree helpers and dynamic-debug utilities live in dedicated
 # modules. They are re-exported here so existing ``from .dsl import ...`` (and
 # ``from ...base_dsl.dsl import ...``) call sites keep working unchanged.
@@ -127,6 +151,8 @@ from .utils.mlir_value_tree import (  # noqa: F401
     extract_mlir_attributes,
     new_from_mlir_values,
 )
+
+
 from .dynamic_debug import (  # noqa: F401
     set_dynamic_debug,
     get_dynamic_debug,
@@ -136,6 +162,33 @@ from .dynamic_debug import (  # noqa: F401
     reset_dynamic_debug_depth,
     debug_print_mlir_values,
 )
+
+
+def _holds_ir_value_payload(obj: object, _seen: "set[int] | None" = None) -> bool:
+    """Does *obj* -- through tuples, lists, dict values and instance storage --
+    carry an ``ir.Value``?  A Numeric answers from its own payload, so a Meta
+    ``Int32(5)`` is a Python value.  Bounded and cycle-safe."""
+    if isinstance(obj, ir.Value):
+        return True
+    if isinstance(obj, Numeric):
+        return isinstance(obj.__dict__.get("value"), ir.Value)
+    if obj is None or type(obj) in (bool, int, float, str, bytes):
+        return False
+    if _seen is None:
+        _seen = set()
+    if id(obj) in _seen or len(_seen) > 4096:
+        return False
+    _seen.add(id(obj))
+    if isinstance(obj, (tuple, list)):
+        children: "Iterable[object]" = obj
+    elif isinstance(obj, dict):
+        children = obj.values()
+    else:
+        from .pyir_runtime import _instance_storage_items
+
+        children = (_instance_storage_items(obj) or {}).values()
+    return any(_holds_ir_value_payload(x, _seen) for x in children)
+
 
 # =============================================================================
 # Global Variables
@@ -285,34 +338,44 @@ class DSLLocation:
     caller_locs: tuple = ()
 
 
+@dataclass(frozen=True)
+class JitFuncArgs:
+    """Arguments related to a compiled function.
+
+    Attributes:
+        values (list[Any]): The runtime values to pass to the function.
+        types (list[Any]): The MLIR types of the arguments.
+        attributes (list[Any]): The MLIR attributes of the arguments.
+        adapted_python_args (list[Any]): For each Python argument passed
+          during compilation (in order of the signature parameters), either
+          'None' if the argument could be processed directly, or the adapted
+          argument if it was converted by a JitArgAdapter.
+    """
+
+    values: list[Any]
+    types: list[Any]
+    attributes: list[Any]
+    adapted_python_args: list[Any]
+
+
+def _unbound_local_name(exc: NameError) -> "str | None":
+    """The variable an ``UnboundLocalError`` is about: CPython sets ``.name``
+    on a plain ``NameError`` only, so a local read before its assignment
+    (``cannot access local variable 'x' ...``) names it in the message."""
+    match = re.search(r"'([^']+)'", str(exc))
+    return match.group(1) if match else None
+
+
 class BaseDSL(metaclass=DSLSingletonMeta):
     gpu_module: Any = None
     _env_class: type[EnvironmentVarManager] = EnvironmentVarManager
-    _is_experimental_dsl: bool = False
     _jit_arg_adapter_scope: ClassVar[str] = JitArgAdapterRegistry.GPU_DIALECT_SCOPE
     # Optional compiler-recognized component inserted by a DSL's name mangler.
     _name_mangling_prefix: ClassVar[str] = ""
     _arch_checked: bool = False
 
     def _is_supported_arch(self) -> None:
-        # Avoid duplicated arch check in one compilation
-        if self._arch_checked:
-            return
-
-        from .version_info import CUDA_VERSION
-        from .enums import Arch
-
-        arch = self.get_arch_enum()
-        target_unsupported_archs = False
-
-        if target_version(max_version="13.3"):
-            target_unsupported_archs = arch in Arch.RubinArchs()
-        if target_unsupported_archs:
-            raise DSLRuntimeError(
-                f"Unsupported GPU architecture '{arch}' with CUDA toolkit version '{CUDA_VERSION}'.",
-                suggestion="Install DSL with a higher CUDA toolkit version.",
-            )
-        self._arch_checked = True
+        return
 
     def __init__(
         self,
@@ -355,7 +418,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         self.device_compilation_only: bool = device_compilation_only
         self.num_kernels: int = 0
         # Read environment variables
-        self.envar: EnvironmentVarManager = self._env_class(self.name)
+        self.envar: EnvironmentVarManager = self._create_environment_manager()
         self.enable_preprocessor: bool = preprocess
         # This cache uses hash of original ir and env as key, allows dump/load to/from file. Enabled by default
         self.jit_cache: JitCacheDict = JitCacheDict(
@@ -415,11 +478,15 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         ] = ContextVar(f"{self.name}_trace_finalize_hooks", default=())
 
         if preprocess:
-            preprocessor: DSLPreprocessor = DSLPreprocessor(dsl_package_name)
+            preprocessor: DSLPreprocessor = DSLPreprocessor(
+                dsl_package_name, warnings_ignore=self.envar.warnings_ignore
+            )
             self.package_name = dsl_package_name
             # Use PyIRDSLPreprocessor when PyIR is enabled for SSA form and scope isolation
             if self.envar.enable_pyir:
-                preprocessor = PyIRDSLPreprocessor(dsl_package_name)
+                preprocessor = PyIRDSLPreprocessor(
+                    dsl_package_name, warnings_ignore=self.envar.warnings_ignore
+                )
             self.preprocessor: DSLPreprocessor = preprocessor
 
         self._preprocess_mode = _PreprocessModeState(self)
@@ -467,12 +534,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
             atexit.register(restore_excepthook, origin_excepthook)
 
+    def _create_environment_manager(self) -> EnvironmentVarManager:
+        """Create the environment manager for this DSL's prefix."""
+        return self._env_class(self.name)
+
     @lru_cache(maxsize=1)
     def print_warning_once(self, message: str) -> None:
+        if self.envar.warnings_ignore:
+            return
         log().warning(f"Warning: {message}")
         warnings.warn(message, UserWarning)
 
     def print_warning(self, message: str) -> None:
+        if self.envar.warnings_ignore:
+            return
         log().warning(f"Warning: {message}")
         warnings.warn(message, UserWarning)
 
@@ -575,6 +650,27 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             )
 
     @staticmethod
+    @with_dsl_lock
+    def _call_jit_target(
+        func: Any,
+        executor_name: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> Any:
+        """Preprocess ``func`` and dispatch it to ``executor_name`` under the DSL lock.
+
+        The lock is held for the whole call: cache lookup, tracing, compilation
+        and, on a first call, the launch that follows it. This lives outside
+        ``jit_wrapper`` so the wrapper's closure exposes only ``BaseDSL``,
+        ``func`` and ``executor_name`` to tools that introspect decorated
+        functions.
+        """
+        BaseDSL._preprocess_and_replace_code(func)
+
+        with active_env_manager(func._dsl_object.envar):
+            return getattr(func._dsl_object, executor_name)(func, *args, **kwargs)
+
+    @staticmethod
     def jit_runner(
         cls: type["BaseDSL"],
         executor_name: str,
@@ -613,12 +709,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
             @wraps(func)
             def jit_wrapper(*args: Any, **kwargs: Any) -> Any:
-                BaseDSL._preprocess_and_replace_code(func)
-
-                with active_env_manager(func._dsl_object.envar):
-                    return getattr(func._dsl_object, executor_name)(
-                        func, *args, **kwargs
-                    )
+                return BaseDSL._call_jit_target(func, executor_name, args, kwargs)
 
             def set_name_prefix(
                 name: str,
@@ -746,6 +837,36 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             return pipeline
         return None
 
+    def _validate_compile_pipeline_options(
+        self,
+        pipeline: str | None,
+        *,
+        compile_to_precompiled_mlir: bool,
+    ) -> None:
+        """Reject scoped pass options unless a DSL declares how to route them.
+
+        This hook runs in the shared compilation setup before any route can
+        return early. DSLs that support scoped pass options must override it
+        and validate both the selected custom pipeline and the active stages.
+        """
+        if not self.compile_options.has_pipeline_options:
+            return
+        custom_pipeline = BaseDSL._get_pipeline(self, pipeline)
+        if custom_pipeline is not None:
+            raise DSLUserCodeError(
+                "Scoped pipeline options cannot be combined with a custom "
+                "pass pipeline."
+            )
+        if compile_to_precompiled_mlir:
+            raise DSLUserCodeError(
+                "Scoped pipeline options cannot be used with "
+                "compile_to(PreCompiledMlir) because no compiler pass "
+                "pipeline runs for that artifact."
+            )
+        raise DSLUserCodeError(
+            f"Scoped pipeline options are not supported by {type(self).__name__}."
+        )
+
     def mangle_name(
         self, function_name: str, args: tuple[Any, ...], sig: inspect.Signature
     ) -> str:
@@ -862,8 +983,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         ) -> tuple[Any, int]:
             arg_name = parameter.name
             arg_spec = parameter.annotation
-            log().debug("Processing [%d] Argument [%s : %s]", idx, arg_name, arg_spec)
-
             ir_arg, iv_block_args = self._generate_execution_arguments_for_known_types(
                 arg, arg_spec, arg_name, idx, fop_args, iv_block_args
             )
@@ -1123,7 +1242,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         *,
         is_host: bool = True,
         compile_only: bool = False,
-    ) -> tuple[list[Any], list[Any], list[Any], list[Any]]:
+    ) -> JitFuncArgs:
         """Generate JIT function arguments."""
         positional_names = []
         kwonly_names = []
@@ -1143,18 +1262,21 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         jit_arg_types: list[Any] = []
         jit_arg_attrs: list[Any] = []
         jit_exec_args: list[Any] = []
-        jit_adapted_args = []
         default_attr = ir.DictAttr.get({})
 
         input_args = [*args, *kwonlyargs.values()]
         input_arg_names = [*positional_names, *kwonly_names]
+        jit_adapted_args: list[Any] = [None] * len(input_args)
         for i, (arg_name, arg) in enumerate(zip(input_arg_names, input_args)):
             spec_ty = sig.parameters[arg_name].annotation
 
             # Retrieve markers from the annotated type that matches the arg
             annotation_markers = self._extract_annotation_markers(spec_ty, arg)
 
-            log().debug("Processing [%d] Argument [%s : %s]", i, arg_name, spec_ty)
+            # A wrapper whose IR died with an earlier compilation has nothing
+            # to marshal: refuse it before the conversion below reads it or
+            # ctypes rejects the dead payload with a raw TypeError.
+            t._refuse_stale_staged(arg)
 
             # Implicitly convert into Numeric type if possible
             if isinstance(spec_ty, t.NumericMeta) and not isinstance(arg, spec_ty):
@@ -1186,7 +1308,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     adapter = JitArgAdapterRegistry.get_registered_adapter(arg)
                     if adapter:
                         arg = adapter(arg)
-                        jit_adapted_args.append(arg)
+                        jit_adapted_args[i] = arg
 
                     if is_host:
                         if self.envar.enable_tvm_ffi:
@@ -1236,7 +1358,9 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 jit_arg_types.extend(jit_arg_type)
                 jit_arg_attrs.extend(jit_arg_attr)
 
-        return jit_exec_args, jit_arg_types, jit_arg_attrs, jit_adapted_args
+        return JitFuncArgs(
+            jit_exec_args, jit_arg_types, jit_arg_attrs, jit_adapted_args
+        )
 
     def generate_mlir_function_types(
         self,
@@ -1246,10 +1370,10 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         kwonlyargs: dict[str, Any],
         sig: inspect.Signature,
         compile_only: bool = False,
-    ) -> tuple[list[Any], list[Any], list[Any]]:
+    ) -> JitFuncArgs:
         """Convert input arguments to MLIR function signature also convert numpy arrays to memref."""
 
-        exe_args, types, attrs, adapted_args = self._generate_jit_func_args(
+        result = self._generate_jit_func_args(
             func,
             function_name,
             args,
@@ -1260,10 +1384,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         )
 
         assert (
-            compile_only or self.envar.enable_tvm_ffi or len(exe_args) == len(types)
+            compile_only
+            or self.envar.enable_tvm_ffi
+            or len(result.values) == len(result.types)
         ), "expects the same number of arguments and function parameters"
 
-        return exe_args, types, adapted_args
+        return result
 
     @dataclass
     class LaunchConfig:
@@ -1286,6 +1412,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         programmatic_event_trigger_at_block_start: int | None = None
 
         smem_merge_branch_allocs: bool = False
+        oversized_smem: Literal["auto", "allow", "disable"] = "allow"
         preferred_smem_carveout: int | None = None
         hint_smem_base_uniform: bool | None = True
 
@@ -1313,6 +1440,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             return list(dim) + [1] * (3 - len(dim))
 
         def __post_init__(self) -> None:
+            if self.oversized_smem not in ("auto", "allow", "disable"):
+                raise ValueError(
+                    "oversized_smem must be 'auto', 'allow', or 'disable', "
+                    f"got {self.oversized_smem!r}"
+                )
             self.grid = self._check_and_canonicalize_dim(self.grid, "grid")
             self.block = self._check_and_canonicalize_dim(self.block, "block")
 
@@ -1352,17 +1484,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         ):
             return
 
-        def callback(d: Any) -> None:
+        def callback(d: Any) -> bool:
             if self.compile_options.collect_compiler_diagnostics:
-                return
+                return False
             try:
                 message = d.message
             except BaseException:
                 try:
                     message = str(d)
                 except BaseException:
-                    return
+                    return False
             print(f"  [{self.name} Diagnostic] : {message}")
+            # Returning None makes the nanobind diagnostic trampoline cast
+            # None to bool, which throws std::bad_cast and hides the original
+            # compiler diagnostic. False leaves it unconsumed so MLIR can also
+            # report it through its normal error path.
+            return False
 
         ctx.attach_diagnostic_handler(callback)
 
@@ -1500,6 +1637,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     "collect_compiler_diagnostics": (
                         self.compile_options.collect_compiler_diagnostics
                     ),
+                    "warnings_as_errors": self.compile_options.warnings_as_errors,
                     "enable_debug_info": enable_debug_info,
                 }
                 supports_return_module = self._callable_accepts_return_module(
@@ -1578,8 +1716,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 pipeline = pipeline.rstrip(")") + f"{{{opt_str}}})"
         return pipeline
 
-    def get_shared_libs(self) -> list:
-        shared_libs = []
+    def get_shared_libs(self, extra_link_libs: tuple[str, ...] = ()) -> list[str]:
+        shared_libs: list[str] = []
         support_libs = self.envar.shared_libs
         if support_libs is not None:
             if os.name == "nt":
@@ -1589,28 +1727,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 _libs = [p for p in re.split(r";|:(?![\\/])", support_libs) if p]
             else:
                 _libs = support_libs.split(os.pathsep)
-            for lib in _libs:
-                if not os.path.exists(lib):
-                    raise FileNotFoundError(
-                        errno.ENOENT, os.strerror(errno.ENOENT), lib
-                    )
-                shared_libs.append(lib)
+            shared_libs.extend(_libs)
         else:
-            if is_cutlass_family_dsl_prefix(self.name):
-                self.print_warning(
-                    f"{self.name}_LIBS environment variable is not set and "
-                    "CuTe-family auto-discovery failed. Set "
-                    f"{self.name}_LIBS to the path of libcute_dsl_runtime.so "
-                    "(e.g. <build_dir>/lib/libcute_dsl_runtime.so)."
-                )
-            else:
-                self.print_warning(
-                    f"{self.name}_LIBS environment variable is not set and "
-                    f"auto-discovery failed. Set {self.name}_LIBS explicitly "
-                    "for this DSL runtime."
-                )
+            self.print_warning(self.envar.missing_shared_libs_message)
 
-        return shared_libs
+        shared_libs.extend(extra_link_libs)
+        return list(_normalize_shared_library_paths(shared_libs))
 
     @lru_cache(maxsize=1)
     def get_version(self) -> "hashlib._Hash":
@@ -1618,12 +1740,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
         return version_hash
 
-    def get_module_hash(self, module: ir.Module, function_name: str) -> str:
+    def get_module_hash(
+        self,
+        module: ir.Module,
+        function_name: str,
+        *,
+        extra_link_libs: tuple[str, ...] = (),
+    ) -> str:
         s = io.BytesIO()
         module.operation.write_bytecode(s)
         s.write(self.envar.cache_key_str().encode())
         # Add compile options to the hash
         s.write(self.compile_options.to_str().encode())
+        s.write(self.compile_options.pipeline_options_cache_key().encode())
+        for lib in extra_link_libs:
+            s.write(b"\0extra_link_lib\0")
+            s.write(os.fsencode(lib))
         hash_obj = self.get_version().copy()
         hash_obj.update(s.getvalue())
         module_hash = hash_obj.hexdigest()
@@ -1831,6 +1963,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         location: DSLLocation | None = None,
         *,
         no_cache: bool = False,
+        extra_link_libs: tuple[str, ...] = (),
     ) -> tuple[ir.Module, str | None, Any]:
         def build_ir_module() -> tuple[ir.Module, Any]:
             loc = self.get_ir_location(location)
@@ -1845,7 +1978,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 ret_types = self.get_return_types()
                 fop = func.FuncOp(function_name, (func_types, ret_types), loc=loc)
                 fop.attributes["llvm.emit_c_interface"] = ir.UnitAttr.get()
-                log().debug("Generated Function OP [%s]", fop)
                 # Attach per-argument source locations if supported by the FuncOp binding.
                 arg_locs = [loc for _ in range(len(func_types))]
                 entry_block = fop.add_entry_block(arg_locs=arg_locs)
@@ -1878,6 +2010,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             except Exception:
                                 pass
                             result = funcBody(*ir_args, **ir_kwargs)
+                        if _holds_ir_value_payload(result):
+                            # The wrapper reaching the caller is dead once the
+                            # context closes; every host use of it is refused
+                            # (PHASE_STAGED_VALUE_OUTLIVED_COMPILATION), so the
+                            # return itself is a warning until the discard
+                            # idiom is gone from the tree.
+                            code = getattr(funcBody, "__code__", None)
+                            report_warning(
+                                WarnId.HOST_JIT_RETURNS_STAGED,
+                                filename=getattr(code, "co_filename", None),
+                                lineno=getattr(code, "co_firstlineno", None),
+                                func=funcBody.__name__,
+                                what=type(result).__name__,
+                            )
                         default_ret_values = self.generate_default_return_values(
                             ir.InsertionPoint.current
                         )
@@ -1914,6 +2060,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                             lineno=err_lineno,
                             cause=name_error,
                             var=getattr(name_error, "name", None)
+                            or _unbound_local_name(name_error)
                             or f"<in {funcBody.__name__}>",
                         ) from name_error
                     except (DSLRuntimeError, DSLUserCodeError):
@@ -1924,14 +2071,22 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
             return module, result
 
-        # Build IR module
-        module, result = self._maybe_profile(build_ir_module)()
-        self._run_trace_finalize_hooks(module, function_name)
-        module_hash = None if no_cache else self.get_module_hash(module, function_name)
+        # Build IR module, then finalize it (hooks, hash, verify). The whole
+        # closure is one unit so the profiler's build phase covers the finalize
+        # steps too, not just the trace.
+        def build_and_finalize() -> tuple[ir.Module, str | None, Any]:
+            module, result = self._maybe_profile(build_ir_module)()
+            self._run_trace_finalize_hooks(module, function_name)
+            module_hash = None
+            if not no_cache:
+                module_hash = self.get_module_hash(
+                    module,
+                    function_name,
+                    extra_link_libs=extra_link_libs,
+                )
+            return self.build_module(module, function_name), module_hash, result
 
-        module = self.build_module(module, function_name)
-
-        return module, module_hash, result
+        return build_and_finalize()
 
     def _runtime_can_run_compiled(
         self, runtime_arch: str | None, compiled_arch: str | None
@@ -1957,7 +2112,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         variable.
         """
         lookup = self._maybe_profile(engine.lookup)
-
         sys.stderr.flush()
         saved_stderr_fd = os.dup(2)
         with tempfile.TemporaryFile() as capture:
@@ -2041,6 +2195,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 "collect_compiler_diagnostics": (
                     self.compile_options.collect_compiler_diagnostics
                 ),
+                "warnings_as_errors": self.compile_options.warnings_as_errors,
             }
             compiled_module = self._maybe_profile(self.compiler_provider.compile)(
                 module,
@@ -2103,12 +2258,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         no_jit_engine: bool,
         func_type: Callable[..., JitCompiledFunction] = JitCompiledFunction,
         *,
+        extra_link_libs: tuple[str, ...] = (),
         full_args: Any = None,
         full_kwargs: Any = None,
         dynamic_args: Any = None,
         dynamic_kwargs: Any = None,
         original_function_name: str | None = None,
         funcBody: Callable[..., Any] | None = None,
+        adapted_args: list[Any] | None = None,
     ) -> JitCompiledFunction:
         """Compile ``module`` and cache the resulting :class:`JitCompiledFunction`.
 
@@ -2118,6 +2275,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         TVM-FFI spec converter and ``attach_ffi_func``) but are unused by this
         base implementation.  Kept on the base signature so subclasses receive
         them through the normal ``super()`` call without a separate channel.
+
+        :param adapted_args: Adapted version of the original Python arguments.
+          Elements are in signature order, with None values for arguments that
+          did not need to be adapted to be processed which creating
+          the MLIR arguments.
         """
         ctx = CompileContext(
             module=module,
@@ -2127,6 +2289,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             sig=sig,
             cache_enabled=not no_cache,
             no_jit_engine=no_jit_engine,
+            extra_link_libs=extra_link_libs,
             func_type=func_type,
             full_args=full_args,
             full_kwargs=full_kwargs,
@@ -2134,6 +2297,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             dynamic_kwargs=dynamic_kwargs,
             original_function_name=original_function_name,
             funcBody=funcBody,
+            adapted_args=adapted_args,
         )
 
         return get_compiler_backend(self).compile(ctx)
@@ -2241,13 +2405,27 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         args: tuple[Any, ...],
         kwonlyargs: dict[str, Any],
         funcBody: Callable[..., Any],
+        *,
+        adapted_args: list[Any] | None = None,
+        target_kind: Any | None = None,
     ) -> Any:
-        """Serialize ``module`` to a PreCompiledMlirArtifact with function metadata."""
-        from .._mlir._mlir_libs import _cutlass_ir
+        """Serialize ``module`` to a PreCompiledMlirArtifact with function metadata.
+
+
+        :param adapted_args: Adapted version of the original Python arguments.
+          Elements are in signature order, with None values for arguments that
+          did not need to be adapted to be processed which creating
+          the MLIR arguments.
+        """
+        import cutlass.compiler
 
         buf = io.BytesIO()
         module.operation.write_bytecode(buf)
-        artifact = _cutlass_ir.PreCompiledMlirArtifact.from_bitcode(buf.getvalue())
+        if target_kind is None:
+            target_kind = cutlass.compiler.TargetKind.Heterogeneous
+        artifact = cutlass.compiler.PreCompiledMlirArtifact.from_bitcode(
+            buf.getvalue(), target_kind=target_kind
+        )
 
         # Metadata is the whole point of the precompiled-MLIR artifact (it is the
         # calling-convention contract the cutlass_compiler ABI wrappers are
@@ -2264,6 +2442,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 args=args,
                 kwonlyargs=kwonlyargs,
                 display_name=funcBody.__name__,
+                adapted_args=adapted_args,
             )
         )
         return artifact
@@ -2282,6 +2461,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         compile_only: bool,
         location: DSLLocation | None = None,
         compile_to_precompiled_mlir: bool = False,
+        extra_link_libs: tuple[str, ...] = (),
     ) -> Any:
         # Check current DSL build supports target arch
         self._is_supported_arch()
@@ -2296,10 +2476,17 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             _loc_tb_ctx = self._enter_loc_tracebacks()
 
             try:
+                self._validate_compile_pipeline_options(
+                    pipeline,
+                    compile_to_precompiled_mlir=compile_to_precompiled_mlir,
+                )
                 # Convert input arguments to MLIR arguments
-                exe_args, func_types, adapted_args = self.generate_mlir_function_types(
+                mlir_func_args = self.generate_mlir_function_types(
                     funcBody, function_name, args, kwonlyargs, sig, compile_only
                 )
+                exe_args = mlir_func_args.values
+                func_types = mlir_func_args.types
+                adapted_args = mlir_func_args.adapted_python_args
                 dynamic_args, dynamic_kwargs = self.extract_dynamic_args(
                     funcBody, args, kwonlyargs, sig
                 )
@@ -2318,6 +2505,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     sig,
                     location=location,
                     no_cache=no_cache,
+                    extra_link_libs=extra_link_libs,
                 )
 
                 # add ffi bitcode sources to link options
@@ -2325,7 +2513,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
 
                 if compile_to_precompiled_mlir:
                     return self._emit_precompiled_artifact(
-                        module, function_name, sig, args, kwonlyargs, funcBody
+                        module,
+                        function_name,
+                        sig,
+                        args,
+                        kwonlyargs,
+                        funcBody,
+                        adapted_args=adapted_args,
                     )
 
                 # dryrun is used to only generate IR
@@ -2337,10 +2531,11 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 # tracing re-ran before the hash was computed (self-curing).
                 cached_jit_func = None if no_cache else self.jit_cache.get(module_hash)
 
+                # Executable entries are cached after entry-point initialization succeeds.
                 if (
                     no_cache
                     or cached_jit_func is None
-                    or cached_jit_func.capi_func is None
+                    or cached_jit_func.engine is None  # TVM-FFI leaves capi_func unset.
                 ):
                     # no cache or cache miss, do ir generation/compilation/jit engine
                     jit_function = self.compile_and_cache(
@@ -2351,12 +2546,14 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                         sig,
                         no_cache,
                         no_jit_engine,
+                        extra_link_libs=extra_link_libs,
                         full_args=args,
                         full_kwargs=kwonlyargs,
                         dynamic_args=dynamic_args,
                         dynamic_kwargs=dynamic_kwargs,
                         original_function_name=original_function_name,
                         funcBody=funcBody,
+                        adapted_args=adapted_args,
                     )
                     # F-SPEC: the fresh handle adopts the specialization
                     # record its producing trace sealed (V-11 validates
@@ -2380,7 +2577,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     except Exception:
                         pass
                 self.post_compilation_cleanup()
-
         # If compile_only is set, bypass execution return the jit_executor directly
         if compile_only:
             return jit_function
@@ -2468,6 +2664,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 filename=file_name or "<unknown>",
                 mode="exec",
             )
+            _pyir_note_preprocessed_code(code_object)
 
             original_function._preprocessed = True
             original_function._preprocessed_signature = (
@@ -2649,6 +2846,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         gpu_module_attrs: dict[str, Any]
         no_cache: bool
         no_jit_engine: bool
+        extra_link_libs: tuple[str, ...]
         compile_only: bool
         canonicalized_args: tuple[Any, ...]
         canonicalized_kwargs: dict[str, Any]
@@ -2670,6 +2868,13 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         gpu_module_attrs = kwargs.pop("gpu_module_attrs", {})
         no_cache = kwargs.pop("no_cache", False) or self.envar.no_cache
         no_jit_engine = kwargs.pop("no_jit_engine", False)
+        extra_link_libs_arg = kwargs.pop("extra_link_libs", ())
+        if isinstance(extra_link_libs_arg, (str, bytes, os.PathLike)):
+            raise TypeError("extra_link_libs must be a sequence of paths")
+        extra_link_libs = tuple(os.fspath(lib) for lib in extra_link_libs_arg)
+        if not all(isinstance(lib, str) for lib in extra_link_libs):
+            raise TypeError("extra_link_libs must contain filesystem paths")
+        extra_link_libs = _normalize_shared_library_paths(extra_link_libs)
         compile_only = kwargs.pop("compile_only", False)
 
         compile_to_precompiled_mlir = kwargs.pop("compile_to_precompiled_mlir", False)
@@ -2726,7 +2931,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         )
         if not track_source_locations:
             self.decorator_location = None
-        # Enable frame filtering when diagnostics or line info need user frames.
+        # Exact backend-error attribution relies on the same opt-in source
+        # locations as line info and compiler diagnostics.
         _set_enable_frame_filtering(track_source_locations)
         # Debug mode: attribute ops to the closest (library) frame and turn on
         # trace-time MLIR op verification so malformed ops fail at the call
@@ -2740,6 +2946,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
             gpu_module_attrs=gpu_module_attrs,
             no_cache=no_cache,
             no_jit_engine=no_jit_engine,
+            extra_link_libs=extra_link_libs,
             compile_only=compile_only,
             canonicalized_args=canonicalized_args,
             canonicalized_kwargs=canonicalized_kwargs,
@@ -2811,20 +3018,23 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         setup = self._prepare_compilation(funcBody, *args, **kwargs)
 
         log().debug(f"Generating MLIR for function '{setup.function_name}'")
-        result = self.generate_mlir(
-            funcBody,
-            setup.function_name,
-            setup.gpu_module_attrs,
-            setup.canonicalized_args,
-            setup.canonicalized_kwargs,
-            setup.sig,
-            setup.pipeline,
-            setup.no_cache,
-            setup.no_jit_engine,
-            setup.compile_only,
-            location=setup.location,
-            compile_to_precompiled_mlir=setup.compile_to_precompiled_mlir,
-        )
+        # Nested jit calls take the inline branch above and keep these options.
+        with active_compile_options(self.compile_options):
+            result = self.generate_mlir(
+                funcBody,
+                setup.function_name,
+                setup.gpu_module_attrs,
+                setup.canonicalized_args,
+                setup.canonicalized_kwargs,
+                setup.sig,
+                setup.pipeline,
+                setup.no_cache,
+                setup.no_jit_engine,
+                setup.compile_only,
+                location=setup.location,
+                compile_to_precompiled_mlir=setup.compile_to_precompiled_mlir,
+                extra_link_libs=setup.extra_link_libs,
+            )
         return result
 
     class _KernelGenHelper(ABC):
@@ -2995,11 +3205,12 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         if self.device_compilation_only:
             return kernel_operands, kernel_arg_types, kernel_arg_attrs
 
-        kernel_operands, kernel_arg_types, kernel_arg_attrs, _ = (
-            self._generate_jit_func_args(
-                kernel_func, kernel_name, args, kwargs, signature, is_host=False
-            )
+        _kernel_args = self._generate_jit_func_args(
+            kernel_func, kernel_name, args, kwargs, signature, is_host=False
         )
+        kernel_operands = _kernel_args.values
+        kernel_arg_types = _kernel_args.types
+        kernel_arg_attrs = _kernel_args.attributes
 
         assert len(kernel_operands) == len(kernel_arg_types) == len(kernel_arg_attrs), (
             "Size of kernel_operands, kernel_arg_types and kernel_arg_attrs must be equal"
@@ -3065,6 +3276,8 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                   - unitAttrNames <[]>:     specifies the name(s) of ir.UnitAttr to be set for kernel function op
                   - valueAttrDict <{}>:     specifies the name(s) and value(s) of ir.Attribute to be set for kernel function op
                   - kernelGenHelper <None>: specifies the mandatory customized kernel generation helper class (derived from _KernelGenHelper)
+                  - _launch_emitter <None>: callable(kernel_sym, kernel_operands, *, loc) that emits the call site
+                                            instead of `generate_launch_op`; its return becomes `launch_op_ret`
 
                 Return value:
                   A namedtuple "KernelReturns" is returned with following fields:
@@ -3078,6 +3291,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                 valueAttrDict = dkwargs.get("valueAttrDict", {})
                 kernelGenHelper = dkwargs.get("kernelGenHelper", None)
                 launch_loc = kwargs.pop("_launch_loc", None)
+                launch_emitter = kwargs.pop("_launch_emitter", None)
                 name_options = dkwargs.get("_name_options") or self._get_name_options(
                     funcBody
                 )
@@ -3155,21 +3369,20 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     if self.device_compilation_only:
                         log().debug("Generating cuda-python arguments")
                         # Convert input arguments to MLIR arguments
-                        self.exe_args, kernel_types, _ = (
-                            self.generate_mlir_function_types(
-                                funcBody,
-                                kernel_name,
-                                canonicalized_args,
-                                canonicalized_kwargs,
-                                signature,
-                            )
+                        _kernel_mlir_args = self.generate_mlir_function_types(
+                            funcBody,
+                            kernel_name,
+                            canonicalized_args,
+                            canonicalized_kwargs,
+                            signature,
                         )
+                        self.exe_args = _kernel_mlir_args.values
+                        kernel_types = _kernel_mlir_args.types
 
                     helper = kernelGenHelper()
                     fop = helper.generate_func_op(
                         kernel_types, kernel_arg_attrs, kernel_name, loc
                     )
-                    log().debug(f"Kernel function op: {fop}")
                     for attr in unitAttrNames:
                         fop.attributes[attr] = ir.UnitAttr.get()
                     for key, val in valueAttrDict.items():
@@ -3179,9 +3392,6 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                     with ir.InsertionPoint(helper.get_func_body_start()):
                         ir_args, ir_kwargs = self.generate_execution_arguments(
                             canonicalized_args, canonicalized_kwargs, fop, signature
-                        )
-                        log().debug(
-                            f"IR arguments - args: {ir_args} ; kwargs: {ir_kwargs}"
                         )
                         # Kernel body is IsolatedFromAbove -- reset
                         # staged-CF depth so host-level CF does not
@@ -3209,18 +3419,23 @@ class BaseDSL(metaclass=DSLSingletonMeta):
                                 helper.set_kernel_ret(kernel_ret)
                             helper.generate_func_ret_op()
 
-                # Step 3. Generate call site `launch_func`
+                # Step 3. Generate call site `launch_func`, or hand it to `_launch_emitter`
                 kernel_sym = ir.SymbolRefAttr.get(["kernels", kernel_name])
                 setattr(funcBody, "_dsl_kernel_sym", kernel_sym)
                 setattr(funcBody, "_dsl_kernel_name", kernel_name)
-                launch_ret = helper.generate_launch_op(
-                    kernelSym=kernel_sym,
-                    kernelOperands=kernel_operands,
-                    requiredArgs=req_args,
-                    optionalArgs=opt_args,
-                    loc=loc,
-                    launch_loc=launch_loc or loc,
-                )
+                if launch_emitter is not None:
+                    launch_ret = launch_emitter(
+                        kernel_sym, kernel_operands, loc=launch_loc or loc
+                    )
+                else:
+                    launch_ret = helper.generate_launch_op(
+                        kernelSym=kernel_sym,
+                        kernelOperands=kernel_operands,
+                        requiredArgs=req_args,
+                        optionalArgs=opt_args,
+                        loc=loc,
+                        launch_loc=launch_loc or loc,
+                    )
 
                 result = KernelReturns(
                     kernel_func_ret=kernel_ret, launch_op_ret=launch_ret

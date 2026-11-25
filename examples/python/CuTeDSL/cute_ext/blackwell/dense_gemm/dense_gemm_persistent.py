@@ -26,6 +26,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+"""Persistent SM100 GEMM using higher-level CuTe extension APIs.
+
+This example intentionally combines ordinary ``@cute.jit`` / ``@cute.kernel``
+decorators with CuTe extension APIs and pins the extension compiler explicitly.
+Environment settings therefore use the ``CUTE_DSL_*`` prefix.
+"""
+
 import argparse
 import os
 import sys
@@ -48,6 +55,10 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.join(current_dir, "../../../"))
 
 from helpers import cli_helper as cli
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 
 class PersistentDenseGemmKernel:
@@ -67,7 +78,14 @@ class PersistentDenseGemmKernel:
         tma_store_stage: int = 2,
         swizzle_size: int = 1,
         raster_along_m: bool = True,
+        epilogue_unroll: bool = True,
     ):
+        """Configure persistent GEMM with a callable epilogue (identity by default).
+
+        epilogue_unroll=True requests full subtile unrolling for light epilogues;
+        False leaves the choice to the compiler. Tune for nontrivial epilogues,
+        register pressure, available ILP and instruction footprint.
+        """
         self.mn_tiler = mn_tiler
         self.ab_dtype, self.acc_dtype = mma_dtype
         self.tmem_output_dtype = tmem_output_dtype
@@ -76,6 +94,7 @@ class PersistentDenseGemmKernel:
         self.acc_stage = acc_stage
         self.TMA_STORE_STAGE = tma_store_stage
         self.epilogue_op = epilogue_op
+        self.epilogue_unroll = epilogue_unroll
         self.swizzle_size = swizzle_size
         self.raster_along_m = raster_along_m
         # Validate tuning inputs up front so invalid values fail with a clear
@@ -120,7 +139,7 @@ class PersistentDenseGemmKernel:
                 else max_active_clusters
             )
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         cta_tile_mnk = (
             self.mn_tiler[0] // 2 if self.use_2cta_instrs else self.mn_tiler[0],
@@ -128,14 +147,14 @@ class PersistentDenseGemmKernel:
             1,
         )
         num_ctas_mnl = cute.ceil_div(mD.shape, cta_tile_mnk)
-        sched_params = utils.PersistentTileSchedulerParams(
+        sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl,
             self.cluster_shape,
             swizzle_size=self.swizzle_size,
             raster_along_m=self.raster_along_m,
             fallback_cluster_shape_mnk=self.fallback_cluster_shape,
         )
-        grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        grid = StaticPersistentTileScheduler.get_grid_shape(
             sched_params, self.max_active_clusters
         )
         self.kernel(mA, mB, mD, sched_params).launch(
@@ -143,16 +162,15 @@ class PersistentDenseGemmKernel:
             block=(192, 1, 1),
             cluster=self.cluster_shape,
             fallback_cluster=self.fallback_cluster_shape,
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA: cute.Tensor,
         mB: cute.Tensor,
         mD: cute.Tensor,
-        sched_params: utils.PersistentTileSchedulerParams,
+        sched_params: PersistentTileSchedulerParams,
     ):
         # Determine CTA group based on 2-CTA mode
         if cutlass.const_expr(self.use_2cta_instrs):
@@ -198,7 +216,9 @@ class PersistentDenseGemmKernel:
 
         cta_m, cta_n, cta_l = cute.arch.block_idx()
 
-        cluster_shape = cute.arch.block_in_cluster_dim()
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
             cute.make_layout(cluster_shape),
             (tiled_mma.thr_id.shape,),
@@ -285,14 +305,13 @@ class PersistentDenseGemmKernel:
         )
 
         # UMMA -> Load to tensor memory pipeline
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         warp_idx = cute.arch.warp_idx()
@@ -318,7 +337,7 @@ class PersistentDenseGemmKernel:
         #
         # Persistent tile scheduling loop
         #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
+        tile_sched = StaticPersistentTileScheduler.create(
             sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
         )
         work_tile = tile_sched.initial_work_tile_info()
@@ -378,6 +397,8 @@ class PersistentDenseGemmKernel:
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
 
+            mainloop_pipe.producer_tail()
+
         if is_mma_thr and is_leader_cta:
             while work_tile.is_valid_tile:
                 _, idx = acc_pipe.producer_acquire_and_get_stage()
@@ -415,6 +436,7 @@ class PersistentDenseGemmKernel:
                     tma_store_pipe,
                     tma_store_warp_id,
                     self.epilogue_op,
+                    unroll_full=self.epilogue_unroll,
                 )
 
                 acc_pipe.consumer_release_and_advance()
@@ -422,6 +444,10 @@ class PersistentDenseGemmKernel:
                 # Advance to next tile
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
+
+            # Stage reuse across CTA tiles is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per CTA tile.
+            tma_store_pipe.tail()
 
 
 def create_tensors(l, m, n, k, a_major, b_major, c_major, ab_dtype, c_dtype):
@@ -574,7 +600,7 @@ def run(
         raster_along_m=(raster_along == "m"),
     )
 
-    compiled_dense_gemm = cute_ext.compile(dense_gemm, a_tensor, b_tensor, c_tensor)
+    compiled_dense_gemm = cute.compile(dense_gemm, a_tensor, b_tensor, c_tensor)
     compiled_dense_gemm.engine.initialize()
 
     compiled_dense_gemm(a_tensor, b_tensor, c_tensor)

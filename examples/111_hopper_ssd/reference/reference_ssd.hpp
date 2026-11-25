@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "cute/tensor.hpp"
 
 // training or inference phase (not used yet)
@@ -71,9 +73,10 @@ void mma(
 
 template<
   class Element,
-  class Tensor
+  class Tensor,
+  class TensorOut
 >
-auto segsum(Tensor tensor) {
+void segsum(Tensor tensor, TensorOut seg_sum_out) {
   using namespace cute;
   auto C = shape<0>(tensor);
   auto L = shape<1>(tensor);
@@ -89,7 +92,6 @@ auto segsum(Tensor tensor) {
       }
     }
   }
-  auto seg_sum_out = make_tensor<float>(make_shape(C, L, L));
   // seg_sum
   // [      1,   0, 0]
   // [    e^y,   1, 0]
@@ -111,8 +113,6 @@ auto segsum(Tensor tensor) {
       }
     }
   }
-
-  return seg_sum_out;
 }
 
 template<
@@ -206,7 +206,8 @@ void ssd_reference_impl(
       // B: [n, c, l]
       // C: [n, c, l]
       // O: [c, l, l]
-      auto tIntraBMM1_out = make_tensor<float>(make_shape(C,L,L));
+      std::vector<float> intra_bmm1_out(size_t(C * L * L));
+      auto tIntraBMM1_out = make_tensor(intra_bmm1_out.data(), make_shape(C,L,L));
       for (int ci = 0; ci < C; ++ci) {
         mma<true,true,Element>(tC(_,ci,_), tB(_,ci,_), tIntraBMM1_out(ci,_,_)); 
       }
@@ -214,8 +215,11 @@ void ssd_reference_impl(
       // DeltaA_xxx   : [c, l, l]
       // Delta        : [c, l, _]
       // IntraBMM1_out: [c, l, l]
-      auto tDeltaA_IntraBMM2 = segsum<Element>(tDeltaA);
-      auto tIntraBMM2_inp    = make_tensor<float>(make_shape(C, L, L));
+      std::vector<float> deltaA_intra_bmm2(size_t(C * L * L));
+      auto tDeltaA_IntraBMM2 = make_tensor(deltaA_intra_bmm2.data(), make_shape(C,L,L));
+      segsum<Element>(tDeltaA, tDeltaA_IntraBMM2);
+      std::vector<float> intra_bmm2_inp(size_t(C * L * L));
+      auto tIntraBMM2_inp    = make_tensor(intra_bmm2_inp.data(), make_shape(C, L, L));
       for (int ci = 0; ci < C; ++ci) {
         for (int i = 0; i < L; ++i) {
           for (int j = 0; j < L; ++j) {
@@ -227,7 +231,8 @@ void ssd_reference_impl(
       // IntraBMM2_inp: [c, l, l]
       // X            : [d, c, l]
       // IntraBMM2_out: [c, l, d]
-      auto tIntraBMM2_out = make_tensor<float>(make_shape(C,L,D));
+      std::vector<float> intra_bmm2_out(size_t(C * L * D));
+      auto tIntraBMM2_out = make_tensor(intra_bmm2_out.data(), make_shape(C,L,D));
       for (int ci = 0; ci < C; ++ci) {
         mma<false,false,Element>(tIntraBMM2_inp(ci,_,_), tX(_,ci,_), tIntraBMM2_out(ci,_,_)); 
       }
@@ -236,7 +241,8 @@ void ssd_reference_impl(
       // Delta        : [c, l]
       // IntraBMM1_out: [c, n, l]
       auto [tDeltaA_InterBMM1, tLast, tCumsum_exp] = cumsum<Element>(tDeltaA); 
-      auto tInterBMM1_inp    = make_tensor<float>(make_shape(C, N, L));
+      std::vector<float> inter_bmm1_inp(size_t(C * N * L));
+      auto tInterBMM1_inp    = make_tensor(inter_bmm1_inp.data(), make_shape(C, N, L));
       for (int ci = 0; ci < C; ++ci) {
         for (int i = 0; i < N; ++i) {
           for (int j = 0; j < L; ++j) {
@@ -248,7 +254,8 @@ void ssd_reference_impl(
       // InterBMM1_inp: [c, n, l]
       // X            : [d, c, l]
       // InterBMM1_out: [c, n, d]
-      auto tInterBMM1_out = make_tensor<float>(make_shape(C,N,D));
+      std::vector<float> inter_bmm1_out(size_t(C * N * D));
+      auto tInterBMM1_out = make_tensor(inter_bmm1_out.data(), make_shape(C,N,D));
       for (int ci = 0; ci < C; ++ci) {
         mma<false,false,Element>(tInterBMM1_inp(ci,_,_), tX(_,ci,_), tInterBMM1_out(ci,_,_));
       }
@@ -256,7 +263,8 @@ void ssd_reference_impl(
       // PreInterBMM2 
       // InterBMM1_out: [c, n, d]
       // Last         : [c] 
-      auto tInterBMM2_inp      = make_tensor<float>(make_shape(C, N, D));
+      std::vector<float> inter_bmm2_inp(size_t(C * N * D));
+      auto tInterBMM2_inp      = make_tensor(inter_bmm2_inp.data(), make_shape(C, N, D));
       for (int ci = 0; ci < C; ++ci) {
         for (int ni = 0; ni < N; ++ ni){
           for (int di = 0; di < D; ++di) {
@@ -273,7 +281,8 @@ void ssd_reference_impl(
       // C            : [n, c, l]
       // InterBMM2_inp: [c, n, d]
       // InterBMM2_out: [c, l, d]
-      auto tInterBMM2_out = make_tensor<float>(make_shape(C,L,D));
+      std::vector<float> inter_bmm2_out(size_t(C * L * D));
+      auto tInterBMM2_out = make_tensor(inter_bmm2_out.data(), make_shape(C,L,D));
       for (int ci = 0; ci < C; ++ci) {
         mma<true,true,Element>(tC(_,ci,_), tInterBMM2_inp(ci,_,_), tInterBMM2_out(ci,_,_));
       }

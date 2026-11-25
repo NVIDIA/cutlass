@@ -234,7 +234,11 @@ template <typename FusionArgs>
 
       auto mapping = [](RuntimeDatatype type) {
         if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF8F6F4Format>) {
-          if (type == RuntimeDatatype::kE3M2) {
+          if (type == RuntimeDatatype::kE5M2) {
+            return cute::UMMA::MXF8F6F4Format::E5M2;
+          } else if (type == RuntimeDatatype::kE4M3) {
+            return cute::UMMA::MXF8F6F4Format::E4M3;
+          } else if (type == RuntimeDatatype::kE3M2) {
             return cute::UMMA::MXF8F6F4Format::E3M2;
           } else if (type == RuntimeDatatype::kE2M3) {
             return cute::UMMA::MXF8F6F4Format::E2M3;
@@ -254,6 +258,28 @@ template <typename FusionArgs>
         // BlockScaled kernels receive either MXF4Format or MXF8F6F4Format runtime datatype
         CUTE_GCC_UNREACHABLE;
       };
+
+      auto is_supported = [](RuntimeDatatype type) {
+        if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF8F6F4Format>) {
+          return type == RuntimeDatatype::kE5M2 ||
+                 type == RuntimeDatatype::kE4M3 ||
+                 type == RuntimeDatatype::kE3M2 ||
+                 type == RuntimeDatatype::kE2M3 ||
+                 type == RuntimeDatatype::kE2M1;
+        }
+        else if constexpr (cute::is_same_v<RuntimeDatatypeArg, cute::UMMA::MXF4Format>) {
+          return type == RuntimeDatatype::kE2M1;
+        }
+        // BlockScaled kernels receive either MXF4Format or MXF8F6F4Format runtime datatype
+        CUTE_GCC_UNREACHABLE;
+      };
+
+      // Reject a runtime datatype the kernel cannot represent (including the kStatic default when the
+      // flag is not given) instead of reaching the unreachable path with an undefined format.
+      if (!is_supported(arguments->runtime_input_datatype_a) ||
+          !is_supported(arguments->runtime_input_datatype_b)) {
+        return Status::kErrorInvalidProblem;
+      }
 
       operator_args.mainloop.runtime_data_type_a = mapping(arguments->runtime_input_datatype_a);
       operator_args.mainloop.runtime_data_type_b = mapping(arguments->runtime_input_datatype_b);

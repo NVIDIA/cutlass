@@ -57,6 +57,9 @@ class TSPipelineTmaAsync(cutlass_pipeline.PipelineTmaAsync):
         cta_layout_vmnk: Optional[cute.Layout] = None,
         mcast_mode_mn: tuple[int, int] = (1, 1),
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
     ) -> "TSPipelineTmaAsync":
         """Create an TS TMA async pipeline.
 
@@ -78,6 +81,12 @@ class TSPipelineTmaAsync(cutlass_pipeline.PipelineTmaAsync):
             TMA multicast mode.
         defer_sync : bool, optional
             Defer pipeline initialization synchronization.
+        defer_init: bool, optional
+            Defer pipeline initialization.
+        storage_offset_full: int, optional
+            Offset of the first full barrier within ``barrier_storage``
+        storage_offset_empty: int, optional
+            Offset of the first empty barrier within ``barrier_storage``
 
         Returns
         -------
@@ -93,6 +102,9 @@ class TSPipelineTmaAsync(cutlass_pipeline.PipelineTmaAsync):
             cta_layout_vmnk=cta_layout_vmnk,
             mcast_mode_mn=mcast_mode_mn,
             defer_sync=defer_sync,
+            defer_init=defer_init,
+            storage_offset_full=storage_offset_full,
+            storage_offset_empty=storage_offset_empty,
         )
         return TSPipelineTmaAsync(
             base.sync_object_full,
@@ -155,6 +167,9 @@ class TSPipelineUmmaUmma(cutlass_pipeline.PipelineAsync):
         barrier_storage: cute.Pointer,
         cta_layout_vmnk: Optional[cute.Layout] = None,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
     ) -> "TSPipelineUmmaUmma":
         """Create an async pipeline with TCGen05 arrivals on both sides.
 
@@ -170,21 +185,35 @@ class TSPipelineUmmaUmma(cutlass_pipeline.PipelineAsync):
             Cluster layout used to select CTA group and peer masks.
         defer_sync : bool, optional
             Defer pipeline initialization synchronization.
+        defer_init : bool, optional
+            Defer pipeline initialization.
+        storage_offset_full: int, optional
+            Offset of the first full barrier within ``barrier_storage``
+        storage_offset_empty: int, optional
+            Offset of the first empty barrier within ``barrier_storage``
 
         Returns
         -------
         TSPipelineUmmaUmma
             Pipeline with UMMA-style full and empty barrier arrivals.
         """
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         sync_object_full = cutlass_pipeline.PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             (cutlass_pipeline.PipelineOp.TCGen05Mma, producer_group),
+            defer_init=defer_init,
         )
         sync_object_empty = cutlass_pipeline.PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             (cutlass_pipeline.PipelineOp.TCGen05Mma, consumer_group),
+            defer_init=defer_init,
         )
 
         if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, mode=[0]) == 1:
@@ -280,6 +309,9 @@ class TSPipelineAsyncUmma(cutlass_pipeline.PipelineAsyncUmma):
         cta_layout_vmnk: Optional[cute.Layout] = None,
         producer_op: cutlass_pipeline.PipelineOp = cutlass_pipeline.PipelineOp.AsyncThread,
         defer_sync: bool = False,
+        defer_init: bool = False,
+        storage_offset_full: Optional[int] = None,
+        storage_offset_empty: Optional[int] = None,
     ) -> "TSPipelineAsyncUmma":
         """Create an TS async-producer to UMMA-consumer pipeline.
 
@@ -297,6 +329,12 @@ class TSPipelineAsyncUmma(cutlass_pipeline.PipelineAsyncUmma):
             Producer-side operation, either ``AsyncThread`` or ``AsyncLoad``.
         defer_sync : bool, optional
             Defer pipeline initialization synchronization.
+        defer_init : bool, optional
+            Defer pipeline initialization.
+        storage_offset_full: int, optional
+            Offset of the first full barrier within ``barrier_storage``
+        storage_offset_empty: int, optional
+            Offset of the first empty barrier within ``barrier_storage``
 
         Returns
         -------
@@ -311,6 +349,9 @@ class TSPipelineAsyncUmma(cutlass_pipeline.PipelineAsyncUmma):
                 barrier_storage=barrier_storage,
                 cta_layout_vmnk=cta_layout_vmnk,
                 defer_sync=defer_sync,
+                defer_init=defer_init,
+                storage_offset_full=storage_offset_full,
+                storage_offset_empty=storage_offset_empty,
             )
             return TSPipelineAsyncUmma(
                 base.sync_object_full,
@@ -328,15 +369,23 @@ class TSPipelineAsyncUmma(cutlass_pipeline.PipelineAsyncUmma):
                 f"AsyncLoad, got {producer_op}."
             )
 
+        if defer_init and not defer_sync:
+            raise ValueError("Error: deferred mbarrier init requires deferred sync.")
+        offset_full = 0 if storage_offset_full is None else storage_offset_full
+        offset_empty = (
+            num_stages if storage_offset_empty is None else storage_offset_empty
+        )
         sync_object_full = cutlass_pipeline.PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8),
+            barrier_storage.align(min_align=8) + offset_full,
             num_stages,
             (cutlass_pipeline.PipelineOp.AsyncLoad, producer_group),
+            defer_init=defer_init,
         )
         sync_object_empty = cutlass_pipeline.PipelineTmaUmma._make_sync_object(
-            barrier_storage.align(min_align=8) + num_stages,
+            barrier_storage.align(min_align=8) + offset_empty,
             num_stages,
             (cutlass_pipeline.PipelineOp.TCGen05Mma, consumer_group),
+            defer_init=defer_init,
         )
         cta_group = (
             cute.nvgpu.tcgen05.CtaGroup.ONE

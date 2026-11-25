@@ -33,8 +33,8 @@ import cutlass
 
 import cutlass.operators as ops
 from cutlass.operators.metadata import Sm100DesignMetadata
-from cutlass.operators.providers.cutedsl.gemm.sm100_dense_blockscaled_static_persistent import (
-    PersistentDenseBlockScaledGemmOperator,
+from cutlass.operators.providers.cutedsl.gemm.sm100_blockscaled_static_persistent import (
+    Sm100BlockscaledStaticPersistentOperator,
 )
 from cutlass.operators.utils.device import device_or_env_target_sm
 
@@ -336,7 +336,7 @@ def test_mxfp8_reshaped_scale_factors(fixture_enable_tvm_ffi):
 
     # Only test operators for which we know there will be an error if the scale factors are invalid
     def metadata_filter(metadata: ops.OperatorMetadata):
-        return metadata.operator_class is PersistentDenseBlockScaledGemmOperator
+        return metadata.operator_class is Sm100BlockscaledStaticPersistentOperator
 
     operators = ops.get_operators(
         args, target_sm=device_or_env_target_sm(), metadata_filter=metadata_filter
@@ -414,7 +414,7 @@ def test_mxfp8_tuple_scale_mode(
 
     # Only test operators for which we know there will be an error if the scale factors are invalid
     def metadata_filter(metadata: ops.OperatorMetadata):
-        return metadata.operator_class is PersistentDenseBlockScaledGemmOperator
+        return metadata.operator_class is Sm100BlockscaledStaticPersistentOperator
 
     operators = ops.get_operators(
         discovery_args,
@@ -500,7 +500,7 @@ def test_mxfp8_incompatible_mode_or_swizzle(fixture_enable_tvm_ffi):
 
     # Only test operators for which the swizzle mode is incompatible
     def metadata_filter(metadata: ops.OperatorMetadata):
-        return metadata.operator_class is PersistentDenseBlockScaledGemmOperator
+        return metadata.operator_class is Sm100BlockscaledStaticPersistentOperator
 
     operators = ops.get_operators(
         args_bad, target_sm=device_or_env_target_sm(), metadata_filter=metadata_filter
@@ -642,7 +642,7 @@ def test_mxfp8_invalid_scale_factors(fixture_enable_tvm_ffi):
 
     # Only test operators for which we know there will be an error if the scale factors are invalid
     def metadata_filter(metadata: ops.OperatorMetadata):
-        return metadata.operator_class is PersistentDenseBlockScaledGemmOperator
+        return metadata.operator_class is Sm100BlockscaledStaticPersistentOperator
 
     operators = ops.get_operators(
         args, target_sm=device_or_env_target_sm(), metadata_filter=metadata_filter
@@ -681,10 +681,11 @@ def test_mxfp8_invalid_scale_factors(fixture_enable_tvm_ffi):
 
 
 @pytest.mark.arch(sms=["100f"])
-def test_mxfp8_gemm_sm100_invalid_epilogue(fixture_enable_tvm_ffi):
+def test_mxfp8_gemm_sm100_epilogue_routes_to_efc(fixture_enable_tvm_ffi):
     """
-    Tests for correct flagging of invalid epilogues: currently, no MXFP8 operators support
-    epilogue fusions.
+    An MXFP8 GEMM with an epilogue resolves to the block-scaled EFC operators only:
+    the plain block-scaled operator accepts no epilogue, and discovery offers the
+    EFC family in its place.
     """
     M, N, K, L = 256, 512, 1024, 1
 
@@ -736,7 +737,16 @@ def test_mxfp8_gemm_sm100_invalid_epilogue(fixture_enable_tvm_ffi):
     )
     operators = ops.get_operators(args, target_sm=device_or_env_target_sm())
 
-    assert len(operators) == 0
+    assert len(operators) > 0
+    assert all("BlockScaledGemmEFC" in op.metadata.operator_name for op in operators)
+    # The plain block-scaled operator still declines the epilogue.
+    plain = Sm100BlockscaledStaticPersistentOperator.generate_operators(
+        metadata_filter=lambda metadata: True, args=args
+    )
+    assert len(plain) > 0
+    assert not any(
+        op.supports(args, target_sm=device_or_env_target_sm()) for op in plain
+    )
 
 
 @pytest.mark.arch(sms=["100f"])
@@ -822,7 +832,7 @@ def test_nvfp4_gemm_sm100(
     fixture_enable_tvm_ffi,
 ):
     """
-    Tests NVFP4 GEMM using the PersistentDenseBlockScaledGemmOperator.
+    Tests NVFP4 GEMM using the Sm100BlockscaledStaticPersistentOperator.
     Float4E2M1FN requires K-major layout for both A and B.
     PyTorch stores FP4 as float4_e2m1fn_x2 (2 values packed per byte).
     """

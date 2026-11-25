@@ -266,7 +266,7 @@ def extract_dataclass_members(x: Any) -> tuple[list[str], list[Any], list[str]]:
     fields = [field.name for field in dataclasses.fields(x)]
 
     # If the dataclass has extra fields, raise an error
-    for k in x.__dict__.keys():
+    for k in getattr(x, "__dict__", {}):
         if k not in fields:
             raise DSLTreeFlattenError(
                 f"`{x}` has extra field `{k}`",
@@ -343,10 +343,15 @@ def set_dataclass_attributes(
         return instance
 
     if is_frozen:
-        kwargs = dict(zip(fields, values))
+        # Rebuild already computed fields without replaying __init__ or
+        # __post_init__. replace() also rejects init=False fields and may
+        # require InitVar arguments that are not stored on the instance.
+        rebuilt = object.__new__(type(instance))
+        for field, value in zip(fields, values):
+            object.__setattr__(rebuilt, field, value)
         for field in constexpr_fields:
-            kwargs[field] = getattr(instance, field)
-        return dataclasses.replace(instance, **kwargs)
+            object.__setattr__(rebuilt, field, getattr(instance, field))
+        return rebuilt
     else:
         for field, value in zip(fields, values):
             setattr(instance, field, value)

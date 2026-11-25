@@ -69,7 +69,8 @@ There are three categories of entries in this module:
 
 import inspect
 import sys
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias
+from enum import IntEnum
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias, Union
 
 # ``enum.StrEnum`` landed in Python 3.11; use the no-op ``backports``
 # shim on 3.10 (declared as a conditional dependency in pyproject.toml).
@@ -90,6 +91,8 @@ else:
     from backports.strenum import StrEnum
 
 import cutlass.base_dsl.typing as _cutlass
+
+import cutlass as _cutlass_package
 from cutlass import Pointer, dsl_user_op
 from cutlass.base_dsl.version_info import CUDA_VERSION
 from cutlass.cutlass_dsl import T
@@ -142,6 +145,11 @@ from cutlass.base_dsl.typing import (
 )
 from cutlass.base_dsl.typing import Array, Vector
 
+_TensorMapDescriptor: TypeAlias = Union[
+    Array,
+    Pointer,
+]
+
 # Wrapper-owned StrEnums shared with typed-memref / atomics API.
 from cutlass.base_dsl.array import (
     EvictPriority,
@@ -175,6 +183,8 @@ from cutlass._mlir.dialects.nvvm import (
     LoadCacheModifierKind as _LoadCacheModifierKindDialect,
     LoadShape as _LoadShapeDialect,
     LoadSrcFormat as _LoadSrcFormatDialect,
+    MBarrierLayout as _MBarrierLayoutDialect,
+    MBarrierPhase as _MBarrierPhaseDialect,
     MBarrierScopeKind as _MBarrierScopeKindDialect,
     MBarrierWaitKind as _MBarrierWaitKindDialect,
     MMAB1Op as _MMAB1OpDialect,
@@ -221,6 +231,7 @@ from cutlass._mlir.dialects.nvvm import (
     Tcgen05WaitKind as _Tcgen05WaitKindDialect,
     TensormapField as _TensormapFieldDialect,
     TmemLayout,
+    ValidatePattern as _ValidatePatternDialect,
     VoteSyncKind as _VoteSyncKindDialect,
     WGMMAScaleIn as _WGMMAScaleInDialect,
     WGMMAScaleOut as _WGMMAScaleOutDialect,
@@ -302,7 +313,9 @@ _BARRIER_REDUX_TO_DIALECT = {
 #: from ``cutlass.base_dsl.array`` so the same enum is shared with the
 #: typed-memref copy primitives.  Members are the bare PTX modifiers
 #: (``"first"``, ``"last"``, ``"normal"``, ...) with the ``evict_``
-#: prefix dropped.
+#: prefix dropped.  Members newer than the pinned LLVM's NVVM enum
+#: (e.g. ``EvictNormalDemote``) are added only when the dialect defines them,
+#: so importing this module never fails on an older drop.
 def _cache_eviction_priority_to_dialect() -> dict[str, Any]:
     mapping = {
         "first": _CacheEvictionPriorityDialect.EvictFirst,
@@ -489,6 +502,31 @@ _MEMORDER_TO_DIALECT = {
 }
 
 
+#: ``mbarrier`` payload layout (PTX ``.layout::v0`` / ``.layout::v1``).
+#: ``.layout::v1`` is the Rubin (sm_107f+) payload barrier used by TMA
+#: validity reporting.
+class MBarrierLayout(StrEnum):
+    V0 = "v0"
+    V1 = "v1"
+
+
+_MBARRIER_LAYOUT_TO_DIALECT = {
+    "v0": _MBarrierLayoutDialect.V0,
+    "v1": _MBarrierLayoutDialect.V1,
+}
+
+
+#: ``mbarrier`` phase selector (PTX ``.phase_type``) for ``.layout::v1``
+#: barriers (Rubin, sm_107f+).
+class MBarrierPhase(StrEnum):
+    PRIMARY = "primary"
+    CONDITIONAL = "conditional"
+
+
+_MBARRIER_PHASE_TO_DIALECT = {
+    "primary": _MBarrierPhaseDialect.PRIMARY,
+    "conditional": _MBarrierPhaseDialect.CONDITIONAL,
+}
 
 
 #: ``mbarrier`` scope (PTX ``.cta`` / ``.cluster``).
@@ -1222,6 +1260,34 @@ _TMA_REDUX_TO_DIALECT = {
 }
 
 
+#: ``cvt.rs`` validate pattern.  Dialect's ``NONE`` is dropped; callers
+#: pass ``None``.
+class ValidatePattern(StrEnum):
+    PER_16BYTES_80000000 = "per_16bytes_80000000"
+    PER_16BYTES_8000 = "per_16bytes_8000"
+    PER_16BYTES_80 = "per_16bytes_80"
+    PER_16BYTES_8 = "per_16bytes_8"
+    PER_ELEMENT_FF = "per_element_ff"
+    PER_ELEMENT_80000000 = "per_element_80000000"
+    PER_ELEMENT_8000 = "per_element_8000"
+    PER_ELEMENT_80 = "per_element_80"
+    PER_ELEMENT_8 = "per_element_8"
+    PER_16BYTES_80000000_PAIRED = "per_16bytes_80000000_paired"
+
+
+_VALIDATE_PATTERN_TO_DIALECT = {
+    "per_16bytes_80000000": _ValidatePatternDialect.PER_16BYTES_80000000,
+    "per_16bytes_8000": _ValidatePatternDialect.PER_16BYTES_8000,
+    "per_16bytes_80": _ValidatePatternDialect.PER_16BYTES_80,
+    "per_16bytes_8": _ValidatePatternDialect.PER_16BYTES_8,
+    "per_element_ff": _ValidatePatternDialect.PER_ELEMENT_FF,
+    "per_element_80000000": _ValidatePatternDialect.PER_ELEMENT_80000000,
+    "per_element_8000": _ValidatePatternDialect.PER_ELEMENT_8000,
+    "per_element_80": _ValidatePatternDialect.PER_ELEMENT_80,
+    "per_element_8": _ValidatePatternDialect.PER_ELEMENT_8,
+    "per_16bytes_80000000_paired": _ValidatePatternDialect.PER_16BYTES_80000000_PAIRED,
+}
+
 
 #: ``vote.sync`` mode.
 class VoteSync(StrEnum):
@@ -1241,9 +1307,9 @@ _VOTE_SYNC_TO_DIALECT = {
 
 #: AtomicRMW operation (PTX-unified).  Members match the PTX modifier on
 #: ``atom.{op}`` exactly.  The wrapper selects the dialect-level
-#: ``FADD`` / ``UMIN`` / ``UMAX`` variant from the operand dtype at trace
-#: time, so callers pass ``"add"`` / ``"min"`` / ``"max"`` whether the
-#: operand is integer or floating-point.
+#: matching integer, floating-point, or unsigned operation from the operand
+#: dtype at trace time, so callers pass ``"add"`` / ``"min"`` / ``"max"``
+#: without encoding signedness in the operation name.
 class AtomicOp(StrEnum):
     AND = "and"
     OR = "or"
@@ -1268,8 +1334,7 @@ _ATOMIC_OP_SIMPLE_TO_DIALECT = {
     "dec": _AtomicOpKindDialect.DEC,
 }
 
-#: Floating-point types that pick the FADD / signless MIN / signless MAX
-#: dialect enum variants.
+#: Floating-point types that select FADD or LLVM floating min/max operations.
 _ATOMIC_OP_FLOAT_TYPES = (
     _cutlass.Float16,
     _cutlass.BFloat16,
@@ -1287,7 +1352,7 @@ _ATOMIC_OP_UNSIGNED_TYPES = (
 
 
 def _atomic_op_to_dialect(op: AtomicOp, operand: object) -> _AtomicOpKindDialect:
-    """Resolve an :data:`AtomicOp` string to the matching dialect enum.
+    """Resolve an :data:`AtomicOp` string for the NVVM operation path.
 
     For ``"add"`` / ``"min"`` / ``"max"`` the dialect distinguishes by
     operand dtype:
@@ -1295,6 +1360,10 @@ def _atomic_op_to_dialect(op: AtomicOp, operand: object) -> _AtomicOpKindDialect
       * floating-point operand  -> ``FADD`` / ``MIN``  / ``MAX``
       * unsigned integer operand -> ``ADD``  / ``UMIN`` / ``UMAX``
       * signed   integer operand -> ``ADD``  / ``MIN``  / ``MAX``
+
+    Floating min/max bypass this helper because NVVM only accepts floating
+    add. :func:`atomicrmw` emits those operations with LLVM's ``fmin`` and
+    ``fmax`` forms instead.
 
     Caller passes the *coerced* operand (after the wrapper has run
     ``Int32(a)`` / ``Float32(a)``); this function inspects its type to
@@ -1315,6 +1384,61 @@ def _atomic_op_to_dialect(op: AtomicOp, operand: object) -> _AtomicOpKindDialect
             return _AtomicOpKindDialect.MAX
         return _AtomicOpKindDialect.UMAX if is_unsigned else _AtomicOpKindDialect.MAX
     raise ValueError(f"atomicrmw: unknown op {op!r}")
+
+
+_LLVM_ATOMIC_ORDERING = {
+    "weak": _llvm.AtomicOrdering.monotonic,
+    "relaxed": _llvm.AtomicOrdering.monotonic,
+    "acquire": _llvm.AtomicOrdering.acquire,
+    "release": _llvm.AtomicOrdering.release,
+    "acq_rel": _llvm.AtomicOrdering.acq_rel,
+    "sc": _llvm.AtomicOrdering.seq_cst,
+}
+
+_LLVM_ATOMIC_SYNC_SCOPE = {
+    MemScope.CTA: "block",
+    MemScope.CLUSTER: "cluster",
+    MemScope.GPU: "device",
+    MemScope.SYS: None,
+}
+
+
+def _llvm_float_atomic_minmax(
+    op: AtomicOp,
+    ptr: Array | Pointer,
+    val: Float16 | BFloat16 | Float32 | Float64,
+    mem_order: MemOrder | None,
+    syncscope: MemScope | None,
+    results: list | None,
+    *,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
+) -> Float16 | BFloat16 | Float32 | Float64:
+    """Emit floating min/max through LLVM, which models these operations."""
+    order = MemOrder.WEAK if mem_order is None else MemOrder(mem_order)
+    if order.value not in _LLVM_ATOMIC_ORDERING:
+        raise ValueError(
+            f"atomicrmw: floating min/max does not support mem_order={order.value!r}"
+        )
+    ptr_ir = ptr.llvm_ptr if hasattr(ptr, "llvm_ptr") else ptr
+    if hasattr(ptr_ir, "ir_value"):
+        try:
+            ptr_ir = ptr_ir.ir_value(loc=loc, ip=ip)
+        except TypeError:
+            ptr_ir = ptr_ir.ir_value()
+    result = _llvm.atomicrmw(
+        _llvm.AtomicBinOp.fmin if op == AtomicOp.MIN else _llvm.AtomicBinOp.fmax,
+        ptr_ir,
+        val.ir_value(loc=loc, ip=ip),
+        _LLVM_ATOMIC_ORDERING[order.value],
+        syncscope=(
+            None if syncscope is None else _LLVM_ATOMIC_SYNC_SCOPE[MemScope(syncscope)]
+        ),
+        results=results,
+        loc=loc,
+        ip=ip,
+    )
+    return type(val)(result)
 
 
 # Type aliases for narrow-float destination types (used in convert op annotations).
@@ -1500,8 +1624,8 @@ def _assert_coords(
     """Validate a TMA coordinate tuple length (1-5D), mode-specific.
 
     The PTX ISA constrains the coordinate count by TMA mode: tile uses 1-5
-    dimensions, im2col forms 3-5, and gather4/scatter4 exactly 2 (the dialect
-    packs the remaining hardware values internally).
+    dimensions, im2col forms 3-5, and gather4/scatter4 use the fixed hardware
+    vector ``(column, row0, row1, row2, row3)``.
     """
     if not isinstance(coords, (tuple, list)):
         raise TypeError(
@@ -1518,9 +1642,9 @@ def _assert_coords(
     # StrEnum members compare by value, so listing the TMALoadMode members
     # also matches the equivalent TMAStoreMode variants.
     if mode in (TMALoadMode.TILE_GATHER4, TMAStoreMode.TILE_SCATTER4):
-        if n != 2:
+        if n != 5:
             raise ValueError(
-                f"{instruction}: gather4/scatter4 mode requires exactly 2 "
+                f"{instruction}: gather4/scatter4 mode requires exactly 5 "
                 f"coordinate elements, got {n}"
             )
     elif mode in (TMALoadMode.IM2COL, TMALoadMode.IM2COL_W, TMALoadMode.IM2COL_W_128):
@@ -1529,6 +1653,8 @@ def _assert_coords(
                 f"{instruction}: im2col mode requires 3-{_TMA_MAX_DIMS} "
                 f"coordinate elements, got {n}"
             )
+
+
 
 
 #: Minimum toolkit that ships any PTX ISA newer than 8.8.  We support exactly
@@ -1567,6 +1693,21 @@ def _assert_ptx_9_3(feature: str, instruction: str) -> None:
     cannot encode 9.3 qualifiers.
     """
     _assert_min_ptx(feature, instruction, "9.3")
+
+
+def _multicast_mask_operand(
+    mask: int | Int16 | Int32 | Uint32,
+    instruction: str,
+) -> Int16 | Int32:
+    """Coerce a CTA multicast mask to the ``.multicast::cluster`` operand.
+
+    A static ``int`` is validated at trace time to fit in 16 bits (the dialect
+    mask of the 16-bit form is ``i16``, so a larger literal would be silently
+    truncated); runtime values pass through the ``Int16`` coercion.
+
+    """
+    _assert_mask16(mask, instruction)
+    return _cutlass.Int16(mask)
 
 
 def _assert_mask16(mask: int | Int16 | Int32 | Uint32, instruction: str) -> None:
@@ -2331,6 +2472,7 @@ fabs = _nvvm.fabs
 fmin = _nvvm.fmin
 register_attribute_builder = _nvvm.register_attribute_builder
 
+
 #: Field selector for :func:`tensormap_replace`.  Values match the NVVM
 #: dialect ``tensormap_field`` keywords.  Fields split into two groups: the
 #: integer-valued fields (set via ``new_value``) and the enum-valued fields
@@ -2418,13 +2560,9 @@ _TENSORMAP_ORD_FIELDS = frozenset(
     {"box_dim", "global_dim", "global_stride", "element_stride"}
 )
 # Valid range for the ``ord`` dimension ordinal (zero-based; [0, 4] for TMA's
-# max rank of 5).  The public dialect currently constrains it to [1, 5], an
-# off-by-one being fixed upstream (llvm/llvm-project#202853, now that PTX ISA
-# 9.3 documents the zero-based range).  Until that fix reaches the pinned
-# solid we mirror the dialect verifier for the target build; afterwards both
-# branches collapse to [0, 4] and this guard can be removed.
-_TENSORMAP_ORD_MIN = 1
-_TENSORMAP_ORD_MAX = 5
+# max rank of 5), matching the pinned dialect verifier in both release variants.
+_TENSORMAP_ORD_MIN = 0
+_TENSORMAP_ORD_MAX = 4
 # Fields whose value is a 64-bit integer (the rest of the integer fields are
 # 32-bit).
 _TENSORMAP_B64_FIELDS = frozenset({"global_address", "global_stride"})
@@ -2457,6 +2595,29 @@ def _tensormap_value_str(value: object, enum_ty: Any, field: str) -> str:
     )
 
 
+_TENSORMAP_FIXUP_FIELDS = frozenset({"global_dim", "global_stride"})
+_TENSORMAP_FIXUP_WORD = 2
+_TENSORMAP_FIXUP_MASK = ~(1 << 21) & 0xFFFFFFFF
+
+
+def _apply_tensormap_fixup(
+    addr: Array | Pointer,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> None:
+    """Reset a descriptor copy to the always-safe out-of-bounds fetch mode."""
+    ptr = addr.data_ptr() if hasattr(addr, "data_ptr") else addr
+    word_ptr = (
+        Pointer(ptr, dtype=_cutlass.Uint32, loc=loc, ip=ip) + _TENSORMAP_FIXUP_WORD
+    )
+    word_ptr.store(
+        word_ptr.load(loc=loc, ip=ip) & _cutlass.Uint32(_TENSORMAP_FIXUP_MASK),
+        loc=loc,
+        ip=ip,
+    )
+
+
 @dsl_user_op
 def tensormap_replace(
     field: TensormapField,
@@ -2472,6 +2633,7 @@ def tensormap_replace(
         | TensormapFillMode
         | None
     ) = None,
+    keep_oob_fetch_window: bool = False,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> None:
@@ -2509,6 +2671,14 @@ def tensormap_replace(
         verifier for the target build.
     :param new_value_attr: New value for an enum-valued field, as the matching
         enum (or its string).  Mutually exclusive with ``new_value``.
+    :param keep_oob_fetch_window: Replacing ``global_dim`` or ``global_stride``
+        normally resets the descriptor to the always-safe out-of-bounds fetch
+        mode (the host-side encode already applies the matching fix-up for
+        small tensors). Pass ``True`` to keep the mode
+        encoded in the template; only legal when at least 128 KiB of mapped
+        memory follows the descriptor's global address after the replacement
+        (for example a group that is not the last one in a packed buffer).
+    :type keep_oob_fetch_window: bool
     :raises ValueError: if ``field`` is not a :class:`TensormapField` (raw NVVM
         dialect enums are rejected); if the wrong one of
         ``new_value`` / ``new_value_attr`` is supplied for the field; if
@@ -2580,9 +2750,12 @@ def tensormap_replace(
     if new_value is None:
         raise ValueError(f"tensormap.replace: field '{field}' requires 'new_value'")
     coerce = Int64 if field in _TENSORMAP_B64_FIELDS else Int32
-    return _nvvm.tensormap_replace(
+    result = _nvvm.tensormap_replace(
         dialect_field, addr, new_value=coerce(new_value), ord=ord, loc=loc, ip=ip
     )
+    if field in _TENSORMAP_FIXUP_FIELDS and not keep_oob_fetch_window:
+        _apply_tensormap_fixup(addr, loc=loc, ip=ip)
+    return result
 
 
 @dsl_user_op
@@ -2715,10 +2888,12 @@ def read_ptx_sreg_total_smem_size(
 
     .. code-block:: python
 
-        total = nvvm.read_ptx_sreg_total_smem_size()
+        total = nvvm.read_ptx_sreg_total_smem_size(ir.IntegerType.get_signless(32))
     """
     return _cutlass.Int32(
-        _nvvm.read_ptx_sreg_total_smem_size(_cutlass.Int32.mlir_type, loc=loc, ip=ip)
+        _nvvm.read_ptx_sreg_total_smem_size(
+            ir.IntegerType.get_signless(32), loc=loc, ip=ip
+        )
     )
 
 
@@ -2735,10 +2910,12 @@ def read_ptx_sreg_dynamic_smem_size(
 
     .. code-block:: python
 
-        dyn = nvvm.read_ptx_sreg_dynamic_smem_size()
+        dyn = nvvm.read_ptx_sreg_dynamic_smem_size(ir.IntegerType.get_signless(32))
     """
     return _cutlass.Int32(
-        _nvvm.read_ptx_sreg_dynamic_smem_size(_cutlass.Int32.mlir_type, loc=loc, ip=ip)
+        _nvvm.read_ptx_sreg_dynamic_smem_size(
+            ir.IntegerType.get_signless(32), loc=loc, ip=ip
+        )
     )
 
 
@@ -2755,10 +2932,12 @@ def read_ptx_sreg_aggr_smem_size(
 
     .. code-block:: python
 
-        aggr = nvvm.read_ptx_sreg_aggr_smem_size()
+        aggr = nvvm.read_ptx_sreg_aggr_smem_size(ir.IntegerType.get_signless(32))
     """
     return _cutlass.Int32(
-        _nvvm.read_ptx_sreg_aggr_smem_size(_cutlass.Int32.mlir_type, loc=loc, ip=ip)
+        _nvvm.read_ptx_sreg_aggr_smem_size(
+            ir.IntegerType.get_signless(32), loc=loc, ip=ip
+        )
     )
 
 
@@ -3433,6 +3612,39 @@ def _assert_tcgen05_swizzle(swizzle: int | Int8 | Uint8, instruction: str) -> No
         )
 
 
+# Rubin TMA uninitialized data detection related helpers
+def _assert_tma_report_valid_supported(instruction: str) -> None:
+    """Whether ``arch`` supports Rubin TMA uninitialized data detection"""
+    from cutlass.base_dsl import Arch
+    from cutlass.cutlass_dsl import CuTeDSL
+
+    arch = CuTeDSL._get_dsl().get_arch_enum()
+    res = arch.is_family_of(Arch.sm_107f)
+    if not res:
+        raise ValueError(
+            f"{instruction} for tma_report_valid requires an sm_107+ target; got {arch}"
+        )
+
+
+def _assert_tcgen05_commit_smem_a_read_supported() -> None:
+    """``tcgen05.commit ... .sync_restrict::shared::read::mma::a`` is sm_107+.
+
+    Blackwell (sm_100 / sm_103) ptxas rejects the qualifier late with an
+    opaque backend error; catch the common mistake at trace time instead.
+    Newer families are left to ptxas.
+    """
+    from cutlass.base_dsl import Arch
+    from cutlass.cutlass_dsl import CuTeDSL
+
+    arch = CuTeDSL._get_dsl().get_arch_enum()
+    sm_107 = getattr(Arch, "sm_107", None)
+    if sm_107 is None or arch < sm_107:
+        raise ValueError(
+            "tcgen05.commit: smem_a_read (.sync_restrict::shared::read::mma::a) "
+            f"requires an sm_107+ target; got {arch}"
+        )
+
+
 # =============================================================================
 # @dsl_user_op wrapper functions
 # =============================================================================
@@ -3476,20 +3688,43 @@ def add_packed_f16x2_f32x2_f32x2(
 
 
 def _packed_f32x2_to_vec(
-    x: tuple | Vector,
+    x: tuple | list | Vector,
     *,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Vector:
-    """Accept a 2-tuple of f32 scalars OR a ``Vector``; return a ``Vector``."""
-    if isinstance(x, tuple):
+    """Accept a sequence of f32 scalars OR a ``Vector``; return a rank-1 ``Vector``.
+
+    Lists are accepted as well as tuples: callers of the equivalent
+    ``cute.arch`` helpers pass both.
+
+    A higher-rank ``Vector`` is flattened to rank 1. The op's ODS type is
+    ``VectorOfNonZeroRankOf<[F32]>`` so a ``vector<2x4xf32>`` passes its
+    verifier, but the LLVM dialect has no multi-dim vector type, so such an
+    operand cannot be translated. Flattening keeps the op rank-1 -- the only
+    shape it can carry -- while letting callers hold whatever shape suits them;
+    :func:`_unpack_packed_f32x2` restores it.
+    """
+    if isinstance(x, (tuple, list)):
         return Vector.from_elements(x, _cutlass.Float32, loc=loc, ip=ip)
+    if len(x.shape) != 1:
+        return Vector.from_elements(
+            x.to_elements(loc=loc, ip=ip), _cutlass.Float32, loc=loc, ip=ip
+        )
     return x
 
 
 def _unpack_packed_f32x2(vec: Vector) -> tuple:
-    """Extract a 2-element f32x2 ``Vector`` result into a ``(Float32, Float32)``."""
-    return _cutlass.Float32(vec[0]), _cutlass.Float32(vec[1])
+    """Extract an ``<N x f32>`` ``Vector`` result into a tuple of ``Float32``.
+
+    Unpacks the vector's actual width rather than a fixed 2. The NVVM ops are
+    ``<N x f32>`` for any N, so hardcoding two lanes would silently discard the
+    top half of a wider operand.
+
+    Only reached on the sequence path, where the vector is rank-1 by
+    construction.
+    """
+    return tuple(_cutlass.Float32(vec[i]) for i in range(vec.shape[0]))
 
 
 @dsl_user_op
@@ -3497,7 +3732,7 @@ def add_packed_f32x2(
     src_a: tuple | Vector,
     src_b: tuple | Vector,
     *,
-    rnd: FPRoundingMode | None = None,
+    rnd: FPRoundingMode = FPRoundingMode.RN,
     ftz: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -3506,6 +3741,10 @@ def add_packed_f32x2(
 
     Accepts a 2-tuple of f32 scalars or a ``Vector`` for each operand and
     returns a tuple when called with tuples, else a ``Vector``
+
+    ``rnd`` defaults to round-to-nearest-even. It cannot default to NONE: the
+    op's verifier rejects that, so the wrapper would not be callable without an
+    explicit argument.
     """
     returns_tuple = isinstance(src_a, tuple)
     vec_a = _packed_f32x2_to_vec(src_a, loc=loc, ip=ip)
@@ -4139,6 +4378,7 @@ def cp_async_bulk_shared_cluster_global(
     size: int | Int32 | Uint32,
     *,
     multicast_mask: Int16 | Int32 | None = None,
+    validate_pattern: ValidatePattern | None = None,
     l2_cache_hint: int | Int64 | Uint64 | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -4155,9 +4395,9 @@ def cp_async_bulk_shared_cluster_global(
     issuing CTA.  The tensor-descriptor variant
     :func:`cp_async_bulk_tensor_shared_cluster_global` follows the same rule.
 
-    :param dst_mem: Cluster-scope SMEM destination pointer/array; must be
-        16-byte aligned.  A ``shared::cta`` pointer is auto-cast to
-        ``shared::cluster`` (the cluster bulk-copy intrinsic requires it).
+    :param dst_mem: Shared-memory destination pointer/array; must be 16-byte
+        aligned. A ``shared::cta`` pointer is preserved for a per-CTA copy and
+        cast to ``shared::cluster`` only when ``multicast_mask`` is present.
     :type dst_mem: cutlass.Array or cutlass.Pointer
     :param src_mem: GMEM source pointer/array; must be 16-byte aligned.
     :type src_mem: cutlass.Array or cutlass.Pointer
@@ -4175,6 +4415,8 @@ def cp_async_bulk_shared_cluster_global(
         (``0b11``) on a 2-CTA cluster delivers identical bytes to both CTAs
         from one issuer.
     :type multicast_mask: cutlass.Int16 or cutlass.Int32, optional
+    :param validate_pattern: Optional report/validation pattern.
+    :type validate_pattern: ValidatePattern, optional
     :param l2_cache_hint: Optional 64-bit L2 cache-eviction policy descriptor.
     :type l2_cache_hint: int or cutlass.Int64 or cutlass.Uint64, optional
     :raises TypeError: if ``dst_mem`` is not shared or cluster-shared memory,
@@ -4182,6 +4424,8 @@ def cp_async_bulk_shared_cluster_global(
     :raises ValueError: if a statically known ``size`` is not a positive
         multiple of 16, or a statically known ``multicast_mask`` does not fit
         in 32 bits.
+    :raises ValueError: if ``validate_pattern`` is set without a ``multicast_mask``.
+
 
     .. code-block:: python
 
@@ -4193,12 +4437,20 @@ def cp_async_bulk_shared_cluster_global(
     _assert_shared_or_generic(mbar, "cp.async.bulk.shared::cluster.global")
     _assert_bulk_size(size, "cp.async.bulk.shared::cluster.global")
     _assert_mask32(multicast_mask, "cp.async.bulk.shared::cluster.global")
+    if validate_pattern is not None:
+        _assert_ptx_9_3(
+            ".report_mechanism (validate_pattern)",
+            "cp.async.bulk.shared::cluster.global",
+        )
     if l2_cache_hint is not None:
         l2_cache_hint = _cutlass.Int64(l2_cache_hint)
     # LLVM's cluster bulk-copy intrinsic requires the destination as
-    # shared::cluster even though the NVVM op also accepts shared::cta.
+    # shared::cluster when multicast_mask is set.
     dst_mem_ir = _to_ir(dst_mem, loc, ip)
-    if _llvm.PointerType(dst_mem_ir.type).address_space == _cutlass.AddressSpace.smem:
+    if (
+        _llvm.PointerType(dst_mem_ir.type).address_space == _cutlass.AddressSpace.smem
+        and multicast_mask is not None
+    ):
         dst_mem = _llvm.addrspacecast(
             _llvm.PointerType.get(_cutlass.AddressSpace.dsmem),
             dst_mem_ir,
@@ -4211,6 +4463,7 @@ def cp_async_bulk_shared_cluster_global(
         mbar,
         _cutlass.Int32(size),
         multicast_mask=multicast_mask,
+        validate_pattern=_to_dialect(validate_pattern, _VALIDATE_PATTERN_TO_DIALECT),
         l2_cache_hint=l2_cache_hint,
         loc=loc,
         ip=ip,
@@ -4276,7 +4529,7 @@ def cp_async_bulk_shared_cluster_shared_cta(
 
 @dsl_user_op
 def cp_async_bulk_tensor_global_shared_cta(
-    tma_descriptor: Array | Pointer,
+    tma_descriptor: _TensorMapDescriptor,
     src_mem: Array | Pointer,
     coordinates: list[int | Int32 | Uint32],
     *,
@@ -4308,7 +4561,7 @@ def cp_async_bulk_tensor_global_shared_cta(
     :type mode: TMAStoreMode, optional
     :raises TypeError: if ``src_mem`` does not reside in shared memory.
     :raises ValueError: if the ``coordinates`` count is invalid for ``mode``
-        (1-5 for tile, 3-5 for im2col, exactly 2 for scatter4).
+        (1-5 for tile, 3-5 for im2col, exactly 5 for scatter4).
 
     Reverse of :func:`cp_async_bulk_tensor_shared_cta_global` (load).
     TMA hardware reads SMEM and writes the tile to the global tensor
@@ -4349,7 +4602,7 @@ def cp_async_bulk_tensor_global_shared_cta(
 
 @dsl_user_op
 def cp_async_bulk_tensor_prefetch(
-    tma_descriptor: Array | Pointer,
+    tma_descriptor: _TensorMapDescriptor,
     coordinates: list[int | Int32 | Uint32],
     im2col_offsets: list[int | Int16 | Uint16],
     *,
@@ -4395,7 +4648,7 @@ def cp_async_bulk_tensor_prefetch(
 
 @dsl_user_op
 def cp_async_bulk_tensor_reduce(
-    tma_descriptor: Array | Pointer,
+    tma_descriptor: _TensorMapDescriptor,
     src_mem: Array | Pointer,
     red_kind: TMARedux,
     coordinates: list[int | Int32 | Uint32],
@@ -4481,12 +4734,13 @@ def cp_async_bulk_tensor_reduce(
 @dsl_user_op
 def cp_async_bulk_tensor_shared_cluster_global(
     dst_mem: Array | Pointer,
-    tma_descriptor: Array | Pointer,
+    tma_descriptor: _TensorMapDescriptor,
     coordinates: list[int | Int32 | Uint32],
     mbar: Array | Pointer,
     im2col_offsets: list[int | Int16 | Uint16],
     *,
     multicast_mask: Int16 | Int32 | None = None,
+    validate_pattern: ValidatePattern | None = None,
     l2_cache_hint: int | Int64 | Uint64 | None = None,
     mode: TMALoadMode | None = None,
     group: CTAGroup | None = None,
@@ -4497,6 +4751,9 @@ def cp_async_bulk_tensor_shared_cluster_global(
 
     Like ``cp_async_bulk_tensor_shared_cta_global`` but supports multicast
     across all CTAs in a cluster (``group="cta_2"``).
+
+    This wrapper normalizes an AS3 destination to AS7 and always uses cluster
+    mode. Use ``cp_async_bulk_tensor_shared_cta_global`` for CTA-only loads.
 
     **Arg order**: ``(dst_smem, tma_desc, coords, mbar, im2col_offsets, ...)``
     — coords come **before** mbar.  This is the opposite of
@@ -4613,6 +4870,8 @@ def cp_async_bulk_tensor_shared_cluster_global(
     :param multicast_mask: Optional per-bit CTA-rank mask for cluster
         multicast (omit for per-CTA unicast).
     :type multicast_mask: cutlass.Int16 or cutlass.Int32, optional
+    :param validate_pattern: Optional report/validation pattern.
+    :type validate_pattern: ValidatePattern, optional
     :param l2_cache_hint: Optional 64-bit L2 cache-eviction policy descriptor.
     :type l2_cache_hint: int or cutlass.Int64 or cutlass.Uint64, optional
     :param mode: Optional TMA load mode (tile default, or im2col).
@@ -4630,11 +4889,13 @@ def cp_async_bulk_tensor_shared_cluster_global(
     _assert_shared_or_generic(mbar, _instr)
     _assert_coords(coordinates, _instr, mode=mode)
     _assert_mask32(multicast_mask, _instr)
-    if multicast_mask is not None:
-        # The TMA-tensor multicast intrinsic takes a 16-bit CTA mask; emitting
-        # an i32 operand matches no libNVVM ISel pattern ("Cannot select
-        # cp.async.bulk.tensor.g2s.tile.Nd").  Coerce to Int16.
-        multicast_mask = _cutlass.Int16(multicast_mask)
+    override_uses_mask32 = False
+    if validate_pattern is not None:
+        _assert_ptx_9_3(".report_mechanism (validate_pattern)", _instr)
+    # The plain TMA-tensor multicast takes the 16-bit ``ctaMask`` operand, so
+    # a wider static mask is an error.
+    if multicast_mask is not None and not override_uses_mask32:
+        _assert_mask16(multicast_mask, _instr)
     if l2_cache_hint is not None:
         l2_cache_hint = _cutlass.Int64(l2_cache_hint)
     # CTA_2 cluster mbar routing: clear bit 24 so all CTAs address CTA-0's mbar.
@@ -4650,6 +4911,11 @@ def cp_async_bulk_tensor_shared_cluster_global(
             loc=loc,
             ip=ip,
         )
+    if multicast_mask is not None:
+        # The base TMA-tensor multicast intrinsic takes a 16-bit CTA mask;
+        # emitting an i32 operand matches no libNVVM ISel pattern ("Cannot
+        # select cp.async.bulk.tensor.g2s.tile.Nd").
+        multicast_mask = _cutlass.Int16(multicast_mask)
     _nvvm.cp_async_bulk_tensor_shared_cluster_global(
         dst_mem,
         tma_descriptor,
@@ -4657,11 +4923,11 @@ def cp_async_bulk_tensor_shared_cluster_global(
         mbar,
         [_cutlass.Int16(x) for x in im2col_offsets],
         multicast_mask=multicast_mask,
+        validate_pattern=_to_dialect(validate_pattern, _VALIDATE_PATTERN_TO_DIALECT),
         l2_cache_hint=l2_cache_hint,
         mode=_to_load_mode(mode),
-        # Omit the attr (None) for the cluster path, matching the dst
-        # addrspacecast above; an explicit False mis-lowers (serialization ICE).
-        is_cta_only=None,
+        # set the attr (False) for the cluster path, matching the dst addressspace
+        is_cta_only=False,
         group=_to_dialect(group, _CTAGROUP_TO_DIALECT),
         loc=loc,
         ip=ip,
@@ -4672,7 +4938,7 @@ def cp_async_bulk_tensor_shared_cluster_global(
 @dsl_user_op
 def cp_async_bulk_tensor_shared_cta_global(
     dst_mem: Array | Pointer,
-    tma_descriptor: Array | Pointer,
+    tma_descriptor: _TensorMapDescriptor,
     coordinates: list[int | Int32 | Uint32],
     mbar: Array | Pointer,
     im2col_offsets: list[int | Int16 | Uint16] | None = None,
@@ -5329,7 +5595,7 @@ def fma_packed_f32x2(
     src_b: tuple | Vector,
     src_c: tuple | Vector,
     *,
-    rnd: FPRoundingMode | None = None,
+    rnd: FPRoundingMode = FPRoundingMode.RN,
     ftz: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -5338,6 +5604,10 @@ def fma_packed_f32x2(
 
     Accepts a 2-tuple of f32 scalars or a ``Vector`` for each operand and
     returns a tuple when called with tuples, else a ``Vector``.
+
+    ``rnd`` defaults to round-to-nearest-even. It cannot default to NONE: the
+    op's verifier rejects that, so the wrapper would not be callable without an
+    explicit argument.
     """
     returns_tuple = isinstance(src_a, tuple)
     vec_a = _packed_f32x2_to_vec(src_a, loc=loc, ip=ip)
@@ -6183,6 +6453,7 @@ def mbarrier_complete_tx(
     addr: Array | Pointer,
     txcount: int | Int32 | Uint32,
     *,
+    report: int | Int32 | Uint32 | None = None,
     scope: MemScope | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -6202,6 +6473,8 @@ def mbarrier_complete_tx(
     :param addr: Pointer/Array to the 64-bit SMEM mbarrier.
     :param txcount: Number of bytes to report as completed.  Must equal the
         total bytes delivered by the corresponding async copies.
+    :param report: Optional additional byte count for a combined
+        arrive+complete_tx (rarely needed; omit for standard usage).
     :param scope: Memory scope (default: ``cta``).
     :raises ValueError: ``txcount`` is a negative Python ``int``.
     :raises TypeError: ``addr`` is not in shared, shared::cluster, or generic
@@ -6225,6 +6498,19 @@ def mbarrier_complete_tx(
             f"(address space {int(_AddressSpace.dsmem)}) memory; "
             f"got address space {addr_space}."
         )
+
+    _report = _cutlass.Int32(report) if report is not None else None
+    _mc = None
+    if _report is not None or _mc is not None:
+        _nvvm.mbarrier_complete_tx(
+            addr,
+            _cutlass.Int32(txcount),
+            report=_report,
+            scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
+            loc=loc,
+            ip=ip,
+        )
+        return
 
     _nvvm.mbarrier_complete_tx(
         addr,
@@ -6261,6 +6547,7 @@ def mbarrier_init(
     addr: Array | Pointer,
     count: int | Int32 | Uint32,
     *,
+    layout: MBarrierLayout | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> None:
@@ -6287,11 +6574,18 @@ def mbarrier_init(
         check.  For TMA pipelines use ``1``: one elected thread calls
         ``arrive_expect_tx`` and TMA hardware delivers ``complete_tx``.
     :type count: int or cutlass.Int32 or cutlass.Uint32
+    :param layout: Optional mbarrier payload layout. ``None`` (default) emits
+        the classic ``.layout::v0`` layout. ``MBarrierLayout.V1`` selects the
+        ``.layout::v1`` layout, which narrows the valid ``count`` range to
+    :type layout: MBarrierLayout or None
     :raises TypeError: ``addr`` is in an address space other than
         ``SHARED`` or ``GENERIC`` (e.g. global, local, tensor memory, or
         ``SHARED_CLUSTER``: the PTX ISA does not define ``mbarrier.init``
         for these).
     :raises ValueError: ``count`` is a Python ``int`` outside ``[1, 2**20 - 1]``.
+    :raises ValueError: ``layout`` is set on a toolkit older than CTK 13.3
+        (the ``.layout`` qualifier was introduced in PTX ISA 9.3).
+    :raises ValueError: ``layout=MBarrierLayout.V1`` is used on a target that
 
     .. code-block:: python
 
@@ -6353,6 +6647,9 @@ def mbarrier_init(
         )
 
     count_max = 2**20 - 1
+    # The .layout::v1 payload narrows the arrival-count field from 20 to 9 bits.
+    if layout == MBarrierLayout.V1:
+        count_max = (2**9) - 1
     if isinstance(count, int):
         if not (1 <= count <= count_max):
             raise ValueError(
@@ -6367,6 +6664,23 @@ def mbarrier_init(
             _cutlass.Int32(count) <= _cutlass.Int32(count_max),
             f"mbarrier_init: count must be <= {count_max}",
         )
+
+    if layout is not None:
+        # The .layout qualifier was introduced in PTX ISA 9.3 (CTK 13.3);
+        _assert_ptx_9_3(".layout::*", "mbarrier.init")
+
+        if layout == MBarrierLayout.V1:
+            # The .layout::v1 payload intrinsic is Rubin-only (sm_107+).
+            _assert_tma_report_valid_supported("mbarrier.init.layout::v1")
+
+        _nvvm.mbarrier_init(
+            addr,
+            _cutlass.Int32(count),
+            layout=_to_dialect(layout, _MBARRIER_LAYOUT_TO_DIALECT),
+            loc=loc,
+            ip=ip,
+        )
+        return
 
     _nvvm.mbarrier_init(
         addr,
@@ -6412,15 +6726,15 @@ def mbarrier_test_wait(
     *,
     scope: MemScope | None = None,
     relaxed: bool | None = None,
+    mbarrier_phase: MBarrierPhase | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
-) -> Boolean:
+) -> (
+    Boolean  # fmt: skip
+):
     """Test whether an mbarrier phase has completed.
 
     Returns the PTX ``waitComplete`` predicate for ``mbarrier.test_wait``.
-    The PTX ISA 9.3 primary-phase form can also produce ``reportPredicate`` and
-    ``reportValue`` operands; this wrapper intentionally exposes only the
-    completion boolean.
 
     :param addr: Pointer/Array to the 64-bit mbarrier object.
     :param state_or_phase: State token returned by ``mbarrier_arrive`` or a
@@ -6429,20 +6743,72 @@ def mbarrier_test_wait(
         semantics.
     :param relaxed: Emit relaxed ordering when ``True``; omit for default
         acquire semantics.
+    :param mbarrier_phase: Optional PTX ``.phase_type`` selector for ``v1``
     :return: ``True`` when the requested phase has completed.
 
     """
+    if isinstance(state_or_phase, int):
+        if state_or_phase not in (0, 1):
+            raise ValueError(
+                f"mbarrier_test_wait: phase (parity) must be 0 or 1, got {state_or_phase}"
+            )
+        _state_or_phase = _cutlass.Int32(state_or_phase).ir_value(loc=loc, ip=ip)
+    else:
+        _state_or_phase = _to_ir(state_or_phase, loc, ip)
+
+    kargs = {
+        "scope": _to_dialect(scope, _MEMSCOPE_TO_DIALECT),
+        "relaxed": relaxed,
+        "loc": loc,
+        "ip": ip,
+    }
+    # Rubin TMA uninitialized data detection
+    if mbarrier_phase is not None:
+        # The .phase_type::primary and .phase_type::conditional qualifier
+        # was introduced in PTX ISA 9.3 (CTK 13.3);
+        _assert_ptx_9_3(
+            ".phase_type::*",
+            "mbarrier.test_wait",
+        )
+        # The .phase_type::primary and .phase_type::conditional qualifier
+        # is (sm_107+).
+        _assert_tma_report_valid_supported("mbarrier.test_wait.phase_type::*")
+
+        kargs["mbarrier_phase"] = _to_dialect(
+            mbarrier_phase, _MBARRIER_PHASE_TO_DIALECT
+        )
+
+        if mbarrier_phase == MBarrierPhase.CONDITIONAL:
+            return _cutlass.Boolean(
+                _nvvm.mbarrier_test_wait(
+                    addr,
+                    _state_or_phase,
+                    **kargs,
+                )
+            )
+
+        elif mbarrier_phase == MBarrierPhase.PRIMARY:
+            result = _nvvm.mbarrier_test_wait(
+                addr,
+                _state_or_phase,
+                **kargs,
+                results=[_llvm.StructType.get_literal([T.bool(), T.bool()])],
+            )
+
+            wait_complete = _cutlass.Boolean(
+                _llvm.extractvalue(T.bool(), result, [0], loc=loc, ip=ip)
+            )
+            report_seen = _cutlass.Boolean(
+                _llvm.extractvalue(T.bool(), result, [1], loc=loc, ip=ip)
+            )
+
+            return wait_complete, report_seen
+
     return _cutlass.Boolean(
         _nvvm.mbarrier_test_wait(
-            _cutlass.Boolean.mlir_type,
-            None,
-            None,
             addr,
-            state_or_phase,
-            scope=_to_dialect(scope, _MEMSCOPE_TO_DIALECT),
-            relaxed=relaxed,
-            loc=loc,
-            ip=ip,
+            _state_or_phase,
+            **kargs,
         )
     )
 
@@ -6455,16 +6821,18 @@ def mbarrier_try_wait(
     ticks: int | Int32 | Uint32 | None = None,
     scope: MemScope | None = None,
     relaxed: bool | None = None,
+    mbarrier_phase: MBarrierPhase | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
-) -> Boolean:
+) -> (
+    Boolean  # fmt: skip
+):
     """Try to wait for an mbarrier phase, optionally with a time hint.
 
     Returns the PTX ``waitComplete`` predicate for ``mbarrier.try_wait``.  If the
     phase has not completed, the executing thread may suspend for up to
     ``ticks`` nanoseconds, or for an implementation-defined time when ``ticks``
-    is omitted.  PTX ISA 9.3 primary-phase report operands are not exposed by
-    this wrapper.
+    is omitted.
 
     :param addr: Pointer/Array to the 64-bit mbarrier object.
     :param state_or_phase: State token returned by ``mbarrier_arrive`` or a
@@ -6474,35 +6842,75 @@ def mbarrier_try_wait(
         semantics.
     :param relaxed: Emit relaxed ordering when ``True``; omit for default
         acquire semantics.
+    :param mbarrier_phase: Optional PTX ``.phase_type`` selector for ``v1``
     :return: ``True`` when the requested phase has completed.
 
     """
-    if ticks is not None:
-        ticks = _cutlass.Int32(ticks)
-    _addr = _to_ir(addr, loc, ip)
-    _state = _to_ir(state_or_phase, loc, ip)
-    operands = [_addr, _state]
-    if ticks is not None:
-        operands.append(_to_ir(ticks, loc, ip))
-    attrs: dict[str, ir.Attribute] = {
-        "resultSegmentSizes": ir.DenseI32ArrayAttr.get([1, 0, 0]),
+    if isinstance(state_or_phase, int):
+        if state_or_phase not in (0, 1):
+            raise ValueError(
+                f"mbarrier_try_wait: phase (parity) must be 0 or 1, got {state_or_phase}"
+            )
+        _state_or_phase = _cutlass.Int32(state_or_phase).ir_value(loc=loc, ip=ip)
+    else:
+        _state_or_phase = _to_ir(state_or_phase, loc, ip)
+
+    kargs = {
+        "ticks": _cutlass.Int32(ticks) if ticks is not None else None,
+        "scope": _to_dialect(scope, _MEMSCOPE_TO_DIALECT),
+        "relaxed": relaxed,
+        "loc": loc,
+        "ip": ip,
     }
-    _ctx = ir.Context.current
-    if scope is not None:
-        attrs["scope"] = ir.AttrBuilder.get("MemScopeKindAttr")(
-            _MEMSCOPE_TO_DIALECT[scope], context=_ctx
+    # Rubin TMA uninitialized data detection
+    if mbarrier_phase is not None:
+        # The .phase_type::primary and .phase_type::conditional qualifier
+        # was introduced in PTX ISA 9.3 (CTK 13.3);
+        _assert_ptx_9_3(
+            ".phase_type::*",
+            "mbarrier.try_wait",
         )
-    if relaxed is not None:
-        attrs["relaxed"] = ir.AttrBuilder.get("BoolAttr")(relaxed, context=_ctx)
-    op = ir.Operation.create(
-        "nvvm.mbarrier.try_wait",
-        results=[_cutlass.Boolean.mlir_type],
-        operands=operands,
-        attributes=attrs,
-        loc=loc,
-        ip=ip,
+        # The .phase_type::primary and .phase_type::conditional qualifier
+        # is (sm_107+).
+        _assert_tma_report_valid_supported("mbarrier.try_wait.phase_type::*")
+
+        kargs["mbarrier_phase"] = _to_dialect(
+            mbarrier_phase, _MBARRIER_PHASE_TO_DIALECT
+        )
+
+        if mbarrier_phase == MBarrierPhase.CONDITIONAL:
+            return _cutlass.Boolean(
+                _nvvm.mbarrier_try_wait(
+                    addr,
+                    _state_or_phase,
+                    **kargs,
+                )
+            )
+
+        elif mbarrier_phase == MBarrierPhase.PRIMARY:
+            result = _nvvm.mbarrier_try_wait(
+                addr,
+                _state_or_phase,
+                **kargs,
+                results=[_llvm.StructType.get_literal([T.bool(), T.bool()])],
+            )
+
+            wait_complete = _cutlass.Boolean(
+                _llvm.extractvalue(T.bool(), result, [0], loc=loc, ip=ip)
+            )
+            report_seen = _cutlass.Boolean(
+                _llvm.extractvalue(T.bool(), result, [1], loc=loc, ip=ip)
+            )
+
+            return wait_complete, report_seen
+
+    return _cutlass.Boolean(
+        _nvvm.mbarrier_try_wait(
+            addr,
+            _state_or_phase,
+            **kargs,
+        )
     )
-    return _cutlass.Boolean(op.result)
 
 
 @dsl_user_op
@@ -6516,55 +6924,39 @@ def mbarrier_try_wait_parity(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Boolean:
-    """Attempt a parity try-wait on an mbarrier phase.
+    """Try to acquire a completed mbarrier phase with a suspend-time hint.
 
-    This issues one ``mbarrier.try_wait.parity`` attempt. If the phase has not
-    completed, the executing thread may be hardware-suspended for up to
-    ``time_limit`` nanoseconds before returning ``False``. The caller is
-    responsible for retrying when a blocking wait is needed.
+    Issue one ``mbarrier.try_wait.parity`` with an explicit time hint. The
+    thread may suspend while the phase is incomplete and may return ``False``
+    before completion. Retry until ``True`` when the protected data is needed.
+    The hint is not a guaranteed timeout or an end-to-end wait deadline.
 
-    :param addr: Pointer/Array to the 64-bit SMEM mbarrier object.
-    :param phase: Parity value to wait **against**.  Returns ``True`` once the
-        barrier's internal parity differs from ``phase`` (i.e. the barrier
-        fired and advanced its phase).  Returns ``False`` on timeout.
+    For non-blocking look-ahead use :func:`mbarrier_wait_parity` with
+    ``MBarrierWait.TEST``. That API owns the phase, ordering, and cached-result
+    contract; neither ``TRY`` spelling guarantees a non-blocking probe.
 
-        * Fresh barrier starts at parity **0**.
-        * Pass ``phase=0`` to block until the first arrival: waits because
-          current parity (0) equals ``phase`` (0).
-        * Pass ``phase=1`` on a fresh barrier to pass immediately: current
-          parity (0) ≠ ``phase`` (1), so no waiting needed.
-
-    :param time_limit: Hardware suspend timeout in nanoseconds.  Defaults to
-        ``10_000_000`` (10 ms). Omit it unless you need a different suspend
-        window. The warp may be hardware-suspended for up to this many
-        nanoseconds on each call.
-
-    :return: ``True`` when the barrier phase has advanced past ``phase``;
-        ``False`` if ``time_limit`` expired without completion.
-    :raises ValueError: ``phase`` is a Python ``int`` other than 0 or 1.
-    :raises ValueError: ``time_limit`` is a negative Python ``int``.
-    :raises TypeError: ``addr`` is not in shared or generic memory.
-
-    **Always wrap in a while loop** — the retry is the caller's responsibility:
+    :param addr: Pointer/Array to an aligned 64-bit shared-memory mbarrier.
+    :type addr: cutlass.Array or cutlass.Pointer
+    :param phase: Tracked parity of the current or immediately preceding phase.
+    :type phase: int or cutlass.Int32 or cutlass.Uint32
+    :param time_limit: Unsigned 32-bit suspend-time hint in nanoseconds,
+        default ``10_000_000``. The hardware may use this instead of its
+        system-dependent limit; it is not a precise delay or hard upper bound.
+    :type time_limit: int or cutlass.Int32 or cutlass.Uint32, optional
+    :param scope: Synchronization scope, default CTA.
+    :type scope: MBarrierScope, optional
+    :param order: Memory ordering, default acquire. Relaxed gives no visibility
+        guarantee and cannot replace an acquire before reading protected data.
+    :type order: MemOrder, optional
+    :return: True on phase completion; False when the attempt ends incomplete.
+    :rtype: cutlass.Boolean
+    :raises ValueError: Python integer phase is not 0/1 or time_limit is negative.
+    :raises TypeError: addr is not in shared or generic memory.
 
     .. code-block:: python
 
-        while not nvvm.mbarrier_try_wait_parity(bar + s, parity):
+        while not prims.mbarrier_try_wait_parity(bar + stage, phase):
             pass
-
-    This lowers to ``mbarrier.try_wait.parity.acquire.cta.shared::cta.b64``
-    with explicit ``.acquire.cta`` ordering (ensures TMA writes are visible
-    after the wait).  The same intrinsic without the ``.acquire.cta``
-    qualifier has weaker ordering and benchmarks ~5% slower, so avoid it.
-
-    **Phase formula for a circular N-stage pipeline at iteration k:**
-
-    .. code-block:: python
-
-        cons_parity = (k // cutlass.Int32(NUM_STAGES)) & cutlass.Int32(1)
-        while not nvvm.mbarrier_try_wait_parity(full_bar + s, cons_parity):
-            pass
-
     """
     # Trace-time-only checks (this is a hot inner-loop op, so no runtime
     # asserts): catch constexpr misuse and a wrong address space cheaply.
@@ -6609,7 +7001,7 @@ def mbarrier_try_wait_timelimit(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Boolean:
-    """Try to wait for a state-token mbarrier phase with an explicit time limit.
+    """Try to wait for a state-token mbarrier phase with an explicit suspend-time hint.
 
     This is the non-parity time-limited ``mbarrier.try_wait`` form.  It returns
     only the PTX ``waitComplete`` predicate; PTX ISA 9.3
@@ -6622,7 +7014,7 @@ def mbarrier_try_wait_timelimit(
     :param scope: Optional memory scope for the wait.
     :param order: Optional memory-order qualifier.
     :return: ``True`` when the state-token phase has completed; ``False`` when
-        the time limit expires first.
+        the attempt ends before completion. The time hint is not a deadline.
 
     """
     return _cutlass.Boolean(
@@ -6674,37 +7066,65 @@ def mbarrier_wait_parity(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Boolean:
-    """Test- or try-wait on an mbarrier's parity (no time-limit form).
+    """Test or try to acquire completion of a tracked mbarrier phase.
 
-    Returns the ``waitComplete`` predicate: ``True`` once the barrier's phase
-    has advanced past ``phase`` (its internal parity differs), else ``False``.
+    ``TEST`` emits ``mbarrier.test_wait.parity``: a non-blocking check.
+    ``TRY`` emits ``mbarrier.try_wait.parity`` without a time hint: it may
+    suspend the thread until completion or a system-dependent limit. Both
+    return a completion predicate; neither starts an asynchronous wait.
+    The :func:`mbarrier_try_wait_parity` API is the TRY form with an explicit hint,
+    not a different non-blocking operation.
 
-    :param addr: Pointer/Array to the 64-bit mbarrier, in shared or generic
-        memory.
-    :param phase: Parity to wait against (``0`` or ``1``).  Completes when the
-        barrier's internal parity differs from ``phase``; a fresh barrier
-        starts at parity 0.
-    :param kind: ``MBarrierWait.TEST`` selects ``mbarrier.test_wait.parity``
-        (a non-blocking check that never suspends); ``MBarrierWait.TRY``
-        selects ``mbarrier.try_wait.parity`` (may hardware-suspend the thread
-        until the phase completes or an implementation-defined limit).  Both
-        return the ``waitComplete`` predicate, so a ``TRY`` wait is wrapped in
-        a retry loop.
-    :param scope: Memory-ordering scope (default CTA).
-    :param order: Memory ordering; the underlying op supports only ``acquire``
-        (the effective default) or ``relaxed``.
-    :raises ValueError: ``phase`` is a Python ``int`` other than 0 or 1.
-    :return: ``True`` when the barrier phase has advanced past ``phase``;
-        ``False`` otherwise.
+    Track the barrier's phase throughout its lifetime. A fresh barrier's
+    current phase is 0. Check only the current incomplete phase (False) or
+    immediately preceding completed phase (True). A parity bit is not a
+    generation counter: never use it to query an unstarted future phase or
+    infer readiness of a stage that has already been recycled.
+
+    **Cached look-ahead:** use ``TEST`` with acquire ordering to check the
+    next iteration's exact barrier and phase once they are valid to query.
+    A cached True is a completed acquire, so this thread may omit the later
+    wait if the producer cannot overwrite/reuse the protected stage before
+    consumption. A cached False establishes no readiness; retry the current
+    target with :func:`mbarrier_try_wait_parity` when it is needed. Do not
+    share a readiness boolean between lanes as a substitute for synchronization.
+    Guard the next-iteration query, preserve the pipeline's phase formula,
+    and place independent work after the query where useful. An end-of-loop
+    query immediately followed by its use does not by itself hide latency.
+    One-shot waits or phases that are not yet valid are ineligible. Short-work
+    loops are candidates, not evidence of a speedup; measure the extra probe
+    and control-flow cost before adopting the optimization.
+
+    PTX ISA: `mbarrier.test_wait / mbarrier.try_wait
+    <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-test-wait-try-wait>`_.
+    Executable semantics and cached-hit/miss example:
+    ``CuTeDSL/experimental/primitives/mbarrier_wait_peek.py``.
+
+    :param addr: Pointer/Array to an 8-byte-aligned mbarrier in shared memory;
+        a generic pointer must address shared memory.
+    :type addr: cutlass.Array or cutlass.Pointer
+    :param phase: Parity (0/1) of the tracked current or preceding phase.
+    :type phase: int or cutlass.Int32 or cutlass.Uint32
+    :param kind: TEST never suspends; TRY may suspend with a system-dependent limit.
+    :type kind: MBarrierWait
+    :param scope: Synchronization scope, default CTA.
+    :type scope: MBarrierScope, optional
+    :param order: Default acquire orders protected reads on True. Relaxed
+        supplies no memory ordering or visibility guarantee.
+    :type order: MemOrder, optional
+    :return: True for completion of the queried phase, otherwise False.
+    :rtype: cutlass.Boolean
+    :raises ValueError: phase is a Python integer other than 0 or 1.
 
     .. code-block:: python
 
-        # Blocking consumer wait (TRY): retry until the phase flips.
-        while not nvvm.mbarrier_wait_parity(bar, parity, nvvm.MBarrierWait.TRY):
-            pass
-
-        # Non-blocking probe (TEST): single check, never suspends.
-        done = nvvm.mbarrier_wait_parity(bar, parity, nvvm.MBarrierWait.TEST)
+        # Pipeline guarantees the target is valid and remains owned until use.
+        ready = prims.mbarrier_wait_parity(bar + stage, phase, prims.MBarrierWait.TEST)
+        # ... independent work; do not recycle this stage ...
+        if not ready:
+            while not prims.mbarrier_try_wait_parity(bar + stage, phase):
+                pass
+        # Read the protected data after this thread's successful acquire.
     """
     # Trace-time-only check (hot inner-loop op): catch constexpr parity misuse.
     if isinstance(phase, int) and phase not in (0, 1):
@@ -6795,6 +7215,25 @@ def mma_sp_sync(
         kind=_to_dialect(kind, _MMA_KIND_TO_DIALECT),
         loc=loc,
         ip=ip,
+    )
+
+
+@dsl_user_op
+def movmatrix_trans(
+    src: int | Int32 | Uint32,
+    *,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> Int32:
+    """Wrapper over ``nvvm.movmatrix`` for ``movmatrix.sync.aligned.m8n8.trans.b16``."""
+    return _cutlass.Int32(
+        _nvvm.movmatrix(
+            _cutlass.Int32(src),
+            ir.Attribute.parse("#nvvm.ld_st_matrix_shape<m = 8, n = 8>"),
+            LdStMatrixEltType.B16,
+            loc=loc,
+            ip=ip,
+        )
     )
 
 
@@ -6905,7 +7344,7 @@ def mul_packed_f32x2(
     src_a: tuple | Vector,
     src_b: tuple | Vector,
     *,
-    rnd: FPRoundingMode | None = None,
+    rnd: FPRoundingMode = FPRoundingMode.RN,
     ftz: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
@@ -6914,6 +7353,10 @@ def mul_packed_f32x2(
 
     Accepts a 2-tuple of f32 scalars or a ``Vector`` for each operand and
     returns a tuple when called with tuples, else a ``Vector``.
+
+    ``rnd`` defaults to round-to-nearest-even. It cannot default to NONE: the
+    op's verifier rejects that, so the wrapper would not be callable without an
+    explicit argument.
     """
     returns_tuple = isinstance(src_a, tuple)
     vec_a = _packed_f32x2_to_vec(src_a, loc=loc, ip=ip)
@@ -7612,12 +8055,17 @@ def sub_packed_f32x2(
     src_a: Vector,
     src_b: Vector,
     *,
-    rnd: FPRoundingMode | None = None,
+    rnd: FPRoundingMode = FPRoundingMode.RN,
     ftz: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Vector:
-    """Wrapper over ``nvvm.sub_packed_f32x2``."""
+    """Wrapper over ``nvvm.sub_packed_f32x2``.
+
+    ``rnd`` defaults to round-to-nearest-even. It cannot default to NONE: the
+    op's verifier rejects that, so the wrapper would not be callable without an
+    explicit argument.
+    """
     return _nvvm.sub_packed_f32x2(
         src_a,
         src_b,
@@ -7695,19 +8143,28 @@ def tcgen05_alloc(
         also requires the number of columns allocated not to increase between
         any two allocations in CTA execution order.  Standard values:
 
-        * **CTA_1**: ``n_cols = (N_TILE // 8) * 32`` where ``N_TILE`` is the
-          per-CTA accumulator N.  ``N_TILE=128`` → ``512`` columns (fills
-          entire TMEM); ``N_TILE=64`` → ``256`` columns (two accumulators
-          fit: 256 + 256 = 512).
+        * **CTA_1**: the footprint of one FP32 accumulator with
+          ``M_TILE <= 128`` is ``N_TILE`` columns, where ``N_TILE`` is the
+          per-CTA accumulator N (TMEM supplies the 128 row lanes; N maps to
+          columns, one 32-bit cell per FP32 element).  Request
+          ``n_cols = round_up_pow2(max(32, sum of all live TMEM tenants))``.
+          ``N_TILE=128`` → ``128`` columns (four such accumulators fit in
+          512); ``N_TILE=256`` → ``256`` columns (two fit).  Allocating more
+          than the footprint is legal and harmless but wastes TMEM;
+          ``(N_TILE // 8) * 32`` is a 4x over-request (it is bytes per row,
+          not columns), not the footprint.
         * **CTA_2**: each CTA in the 2-SM group still allocates from its own
           512-column TMEM bank, but the accumulator is split M-wise (Layout
           A: leader holds top M-half × full pair-N, peer holds bot M-half
-          × full pair-N).  The CTA_1 formula applied to the **per-CTA**
-          half (``N_TILE = N_PER_GROUP / 2``) gives the minimum, but the
-          simpler safe default is to **always allocate 512** for any CTA_2
-          GEMM (over-allocation is harmless).  Applying the CTA_1 formula
-          with ``N_TILE = N_PER_GROUP`` (collective N) instead of per-CTA
-          N over-allocates beyond 512 and faults with
+          × full pair-N).  Size from the **per-CTA** N, not the collective
+          N: per ``cutlass.utils.blackwell_helpers``
+          ``compute_acc_tmem_cols_per_stage``, a 2CTA accumulator stage
+          costs ``N_TILE`` columns for per-CTA ``M > 64``, ``N_TILE // 2``
+          for ``M <= 64`` and ``N_TILE // 4`` for ``M <= 32``.  The simpler
+          safe default is to **always allocate 512** for any CTA_2 GEMM
+          (over-allocation is harmless).  Beware the legacy
+          ``(N // 8) * 32`` expression still present in some examples:
+          applied to a collective N it exceeds 512 and faults with
           ``cudaErrorIllegalInstruction``.
     :param group: ``'CTA_1'`` (default) or ``'CTA_2'``.  See :data:`CTAGroup`.
         All ``tcgen05`` instructions within a kernel must use the same group.
@@ -7760,8 +8217,19 @@ def tcgen05_commit(
 
     :param addr: Pointer/Array to the 64-bit mbarrier to signal (typically
         ``empty_bar + stage``).
-    :param smem_a_read: When ``True``, tells the hardware that this commit
-        releases the A-operand SMEM buffer (default ``None`` = both A and B).
+    :param smem_a_read: When ``True``, emits the
+        ``.sync_restrict::shared::read::mma::a`` qualifier: the mbarrier
+        arrive happens once the prior ``tcgen05.mma`` operations of this
+        thread have finished *reading* their A operand from shared memory,
+        instead of when they complete, so the A stage can be refilled while
+        the last MMA is still computing. It covers only A read from SMEM
+        through a descriptor -- B, the accumulator, A read from TMEM and
+        ``tcgen05.cp`` are not tracked and still need an ordinary commit on
+        their own barrier. Issue it from the thread that issued the MMAs,
+        after the last MMA of the stage. Requires an sm_107 (Rubin) or newer
+        target; validated at trace time. See
+        ``examples/CuTeDSL/experimental/primitives/tcgen05/sm107_commit_smem_a_read.py``.
+        Default ``None`` emits the ordinary completion commit.
     :param multicast_mask: CTA participation mask for CTA_2 multicast —
         a per-bit mask **over cluster ranks** (not pair-internal).  Bit
         ``i`` set means the arrive lands on the mbar copy at the same SMEM
@@ -7809,9 +8277,10 @@ def tcgen05_commit(
             if nvvm.elect_sync():
                 nvvm.tcgen05_commit(acc_mbar, group="cta_1")
     """
-    _assert_mask16(multicast_mask, "tcgen05.commit")
     if multicast_mask is not None:
-        multicast_mask = _cutlass.Int16(multicast_mask)
+        multicast_mask = _multicast_mask_operand(multicast_mask, "tcgen05.commit")
+    if smem_a_read:
+        _assert_tcgen05_commit_smem_a_read_supported()
     kwargs = {
         "multicast_mask": multicast_mask,
         "group": _to_dialect(group, _CTAGROUP_TO_DIALECT),
@@ -8253,6 +8722,7 @@ def tcgen05_ld_red(
 
 
 
+
 @dsl_user_op
 def tcgen05_mma(
     mma_kind: Tcgen05MMAKind,
@@ -8318,8 +8788,8 @@ def tcgen05_mma(
           where ``tmem_addr = (row << 16) | col`` is the packed 32-bit
           TMEM address.  Pointer arithmetic on TMEM pointers applies raw
           packed-token offsets; it does not interpret row/col fields.
-        * A's columns advance by the K-granule per K-step (e.g. 64 TMEM
-          columns per BF16 K-step, not per K element).
+        * A advances by one K-granule per K-step, not by one K element
+          (the f16/bf16 K-granule is 16 elements — see ``mma_kind`` above).
         * Load A into TMEM beforehand via :func:`tcgen05_cp` (SMEM→TMEM
           copy) or :func:`tcgen05_st` (register→TMEM store), or produce it
           as the output of a prior :func:`tcgen05_mma` accumulator.
@@ -8655,6 +9125,9 @@ def tcgen05_mma_block_scale(
         scale_b,
         scale_vec_size=scale_vec_size,
         collector_op=_to_dialect(collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT),
+        collector_op_b=_to_dialect(
+            b_collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+        ),
         a_shift=a_shift,
         loc=loc,
         ip=ip,
@@ -8681,13 +9154,15 @@ def _tcgen05_mma_smem_desc(
     units of **16 bytes** (the descriptor granule).
 
     .. warning::
-        ``swizzle_mode=0`` (no swizzle) produces **silently wrong
-        results** on SM100 for ``tcgen05.mma kind::f16``.  Always use
-        ``swizzle_mode=2`` (128B XOR).  The SMEM data layout must
-        match: if the tile was loaded via TMA with
+        ``swizzle_mode`` must match the swizzle the producer actually
+        wrote.  A mismatch produces **silently wrong results** on SM100 —
+        no error, no NaN.  If the tile was loaded via TMA with
         ``TensorMapSwizzle.s128b``, the hardware applied the XOR
-        automatically and ``swizzle_mode=2`` is the correct
-        descriptor value.
+        automatically and ``swizzle_mode=2`` is the correct descriptor
+        value; a linearly-written tile needs ``swizzle_mode=0``.
+        ``swizzle_mode=0`` is itself legal — it is wrong only when the
+        producer disagrees.  Prefer ``swizzle_mode=2`` (128B XOR) as the
+        performance default, and set the producer to match.
 
     :param start_addr: Base SMEM address of the tile **divided by 16**
         (i.e. ``smem_ptr >> 4``).  The descriptor unit is 16 bytes.
@@ -8704,9 +9179,11 @@ def _tcgen05_mma_smem_desc(
         ============  =======  ============================================
         Value         Name     Meaning
         ============  =======  ============================================
-        ``0``         NONE     No swizzle — **wrong on SM100, do not use**
-        ``2``         128B XOR 128-byte XOR swizzle — **required** for
-                               ``tcgen05.mma kind::f16`` on SM100
+        ``0``         NONE     No swizzle — legal; use when the producer
+                               wrote the tile linearly
+        ``1``         128B/32B 128-byte swizzle with 32-byte atomicity
+        ``2``         128B XOR 128-byte XOR swizzle — performance default;
+                               requires the producer to swizzle to match
         ``4``         64B XOR  64-byte XOR swizzle
         ``6``         32B XOR  32-byte XOR swizzle
         ============  =======  ============================================
@@ -8724,7 +9201,7 @@ def _tcgen05_mma_smem_desc(
             cutlass.Int32(64),     # stride_dim_offset:  8 × 128B / 16 = 64
             cutlass.Int8(0),       # base_offset: 0
             cutlass.Boolean(0),    # leading_dim_mode: False
-            cutlass.Int8(2),       # swizzle_mode: 2 = 128B XOR  ← REQUIRED on SM100
+            cutlass.Int8(2),       # swizzle_mode: 2 = 128B XOR  ← must match the producer's swizzle
         )
 
     See also :func:`_tcgen05_mma_smem_desc_v2` for the extended descriptor form.
@@ -8792,6 +9269,7 @@ def tcgen05_mma_sp(
     sparse_metadata: Array | Pointer,
     *,
     collector_op: Tcgen05MMACollectorOp | None = None,
+    b_collector_op: Tcgen05MMACollectorOp | None = None,
     a_shift: bool | None = None,
     scale_input_d: int | Int64 | Uint64 | None = None,
     write_disable_mask: Vector | None = None,
@@ -8849,6 +9327,9 @@ def tcgen05_mma_sp(
         _cutlass.Boolean(enable_input_d),
         sparse_metadata,
         collector_op=_to_dialect(collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT),
+        collector_op_b=_to_dialect(
+            b_collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+        ),
         a_shift=a_shift,
         scale_input_d=scale_input_d,
         disable_output_lane=write_disable_mask,
@@ -8952,6 +9433,9 @@ def tcgen05_mma_sp_block_scale(
         scale_b,
         scale_vec_size=scale_vec_size,
         collector_op=_to_dialect(collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT),
+        collector_op_b=_to_dialect(
+            b_collector_op, _TCGEN05_MMA_COLLECTOR_OP_TO_DIALECT
+        ),
         a_shift=a_shift,
         loc=loc,
         ip=ip,
@@ -9738,8 +10222,9 @@ def convert(
     :param scale_factor_kind: Scale-factor kind paired with ``scale_factor``.
     :param random_bits: Stochastic-rounding bits; required for ``f32x4``
         narrowing and optional for ``f32x2 -> f16 / bf16``.
-    :param result_type: Packed return-shape override (``Int16`` /
-        ``Vector[Int8, 2]``) for the narrowing converts that support it.
+    :param result_type: Packed return-shape override (for example ``Int16`` /
+        ``Vector[Int8, 2]`` or ``Int32`` / ``Vector[Int8, 4]``) for the
+        narrowing converts that support it.
     :raises ValueError: the (source dtype, lane count, destination dtype)
         triple is not a supported float<->float conversion, an argument is not
         accepted by the matched convert, or ``random_bits`` is missing for an
@@ -9893,8 +10378,9 @@ def convert(
     raise ValueError(
         f"convert: unsupported conversion {src.dtype} x{lanes} -> {dst_dtype}. "
         "Supported: f32x2->{f16,bf16,f8,f6,f4}, f32x4->{f8,f6,f4}, "
-        "f16x2/bf16x2->{f8,f6,f4}, f8x2/f6x2/f4x2->f16. Use the explicit "
-        "nvvm.convert_* wrapper for s2f6 / scaled bf16 / integer / tf32."
+        "f16x2/bf16x2->{f8,f6,f4}, "
+        "f8x2/f6x2/f4x2->f16. Use the explicit nvvm.convert_* wrapper for "
+        "s2f6 / scaled bf16 / integer / tf32."
     )
 
 
@@ -10363,7 +10849,18 @@ def _convert_f32x4_to_f4x4(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Int16:
-    """1:1 wrapper over ``nvvm.convert_f32x4_to_f4x4``."""
+    """1:1 wrapper over ``nvvm.convert_f32x4_to_f4x4``.
+
+    STOCHASTIC ROUNDING ONLY. This is PTX ``cvt.rs.satfinite.f4x4.f32`` — it
+    takes a mandatory ``rbits`` (random-bits) operand and exposes NO ``rnd`` /
+    ``sat``. The discarded mantissa bits are compared against ``rbits`` to choose
+    the rounding direction, so a fixed ``rbits`` does NOT reproduce
+    round-to-nearest-even and the result varies with ``rbits``. For a
+    DETERMINISTIC / byte-exact RNE conversion use the x2 form
+    (``cvt_f32x2_to_f4x2`` / ``cvt_f32x2_to_f8x2`` with ``rnd=RN``). The same
+    caveat applies to ``_convert_f32x4_to_f6x4`` and ``_convert_f32x4_to_f8x4``
+    — every x4 pack is stochastic-only.
+    """
     if hasattr(dst_ty, "mlir_type"):
         dst_ty = dst_ty.mlir_type
     if isinstance(dst_ty, ir.Type):
@@ -10389,7 +10886,13 @@ def _convert_f32x4_to_f6x4(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Vector:
-    """1:1 wrapper over ``nvvm.convert_f32x4_to_f6x4``."""
+    """1:1 wrapper over ``nvvm.convert_f32x4_to_f6x4``.
+
+    STOCHASTIC ROUNDING ONLY. PTX ``cvt.rs.satfinite.f6x4.f32`` — mandatory
+    ``rbits`` (random-bits) operand, NO ``rnd`` / ``sat``. Cannot reproduce
+    round-to-nearest-even; for a deterministic / byte-exact RNE conversion use
+    an x2 form with ``rnd=RN``. All x4 packs (f4x4/f6x4/f8x4) are stochastic-only.
+    """
     if hasattr(dst_ty, "mlir_type"):
         dst_ty = dst_ty.mlir_type
     if isinstance(dst_ty, ir.Type):
@@ -10416,7 +10919,16 @@ def _convert_f32x4_to_f8x4(
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
 ) -> Vector:
-    """1:1 wrapper over ``nvvm.convert_f32x4_to_f8x4``."""
+    """1:1 wrapper over ``nvvm.convert_f32x4_to_f8x4``.
+
+    STOCHASTIC ROUNDING ONLY. PTX ``cvt.rs.satfinite.f8x4.f32`` — mandatory
+    ``rbits`` (random-bits) operand, NO ``rnd`` / ``sat``. The discarded mantissa
+    bits are compared against ``rbits`` to choose the rounding direction, so a
+    fixed ``rbits`` does NOT give round-to-nearest-even (the result varies with
+    ``rbits``). For a DETERMINISTIC / byte-exact RNE f32->f8 conversion use the
+    x2 form ``cvt_f32x2_to_f8x2`` with ``rnd=RN`` + ``sat=SATFINITE``. All x4
+    packs (f4x4/f6x4/f8x4) are stochastic-only.
+    """
     if hasattr(dst_ty, "mlir_type"):
         dst_ty = dst_ty.mlir_type
     if isinstance(dst_ty, ir.Type):
@@ -10432,6 +10944,7 @@ def _convert_f32x4_to_f8x4(
             ip=ip,
         )
     )
+
 
 
 def convert_float_to_integer(
@@ -10547,7 +11060,10 @@ def match_sync(
 
 @dsl_user_op
 def redux_sync(
-    val: Int32 | Float32,
+    val: (
+        Int32
+        | Float32
+    ),
     kind: ReductionKind,
     mask_and_clamp: int | Int32 | Uint32,
     *,
@@ -10555,7 +11071,10 @@ def redux_sync(
     nan: bool | None = None,
     loc: ir.Location | None = None,
     ip: ir.InsertionPoint | None = None,
-) -> Int32 | Float32:
+) -> (
+    Int32
+    | Float32
+):
     """Reduce ``val`` across warp lanes selected by ``mask_and_clamp``.
 
     Low-level NVVM dialect wrapper for ``redux.sync``.  All participating lanes
@@ -10583,7 +11102,7 @@ def redux_sync(
 
     .. code-block:: python
 
-        # Per-block abs-max for MXFP8 quantization (sm_100a/sm_103a/sm_107a only):
+        # Per-block abs-max for MXFP8 quantization (sm_100a/sm_103a only):
         amax = nvvm.redux_sync(gv, ReductionKind.FMAX, 0xFFFFFFFF, abs=True)
     """
     if kind in (ReductionKind.FMIN, ReductionKind.FMAX):
@@ -10643,17 +11162,17 @@ def atomicrmw(
 ) -> Int32 | Uint32 | Int64 | Uint64 | Float32 | Float64:
     """Atomic read-modify-write on a memory location.
 
-    Emits ``atom.{op}.{mem_order}.{scope}``.  The
-    op is performed atomically on ``*ptr``: the prior value is
+    Emits the atomic operation supported by the target IR. Floating min/max
+    use LLVM ``atomicrmw fmin/fmax`` because NVVM atomic RMW only models
+    floating add. The op is performed atomically on ``*ptr``: the prior value is
     returned, and the new value (a function of the old value, ``a``,
     and optionally ``b``) is written back.  No data race is observable
     by other threads in ``syncscope``.
 
-    :param op: One of :data:`AtomicOp`.  For ``"add"`` / ``"min"`` /
-        ``"max"`` the wrapper picks the dialect-level FADD / UMIN / UMAX
-        variant from the operand dtype: float operands pick FADD;
-        unsigned-integer operands pick UMIN / UMAX; signed-integer
-        operands pick the signed variant.
+    :param op: One of :data:`AtomicOp`. For ``"add"`` / ``"min"`` /
+        ``"max"`` the wrapper selects from the operand dtype. Floating values
+        use FADD / FMIN / FMAX, unsigned integers use ADD / UMIN / UMAX, and
+        signed integers use ADD / MIN / MAX.
     :param ptr: Pointer/Array to the target memory cell.
     :param a: First operand — for ``"cas"`` this is the *expected* old
         value; for everything else the value combined with ``*ptr``.
@@ -10664,8 +11183,9 @@ def atomicrmw(
         ``"cta"`` / ``"cluster"`` / ``"gpu"`` / ``"sys"``.
     :param results: Optional preallocated result list (advanced).
     :return: The old value at ``*ptr`` before the op was applied.
-    :raises ValueError: if *op* is not a valid :data:`AtomicOp`, or if
-        ``op="cas"`` is used without the second operand *b* (the new value).
+    :raises ValueError: if *op* is not a valid :data:`AtomicOp`, if
+        ``op="cas"`` is used without the second operand *b* (the new value),
+        or if floating min/max is given a memory order LLVM cannot represent.
     """
     if op == AtomicOp.CAS and b is None:
         raise ValueError(
@@ -10680,6 +11200,20 @@ def atomicrmw(
     elif isinstance(b, float):
         b = _cutlass.Float32(b)
     if space is None:
+        if isinstance(a, _ATOMIC_OP_FLOAT_TYPES) and op in (
+            AtomicOp.MIN,
+            AtomicOp.MAX,
+        ):
+            return _llvm_float_atomic_minmax(
+                op,
+                ptr,
+                a,
+                mem_order,
+                syncscope,
+                results,
+                loc=loc,
+                ip=ip,
+            )
         # Fast path: NVVM op (global memory; unchanged behaviour).
         return _nvvm.atomicrmw(
             _atomic_op_to_dialect(op, a),
@@ -10808,11 +11342,6 @@ def red(
     each scalar element, not for the whole vector as one transaction.  When
     ``mem_order`` is omitted PTX assumes ``.relaxed``; when ``mem_scope`` is
     omitted PTX assumes ``.gpu``.
-
-    .. note::
-
-        ``shared_space`` was removed from the NVVM dialect's ``RedOp``.
-        Shared-cluster is now detected via the pointer address space (addrspace 7) instead.
 
     :param op: Reduction operation: ``AND``, ``OR``, ``XOR``, ``ADD``,
         ``INC``, ``DEC``, ``MIN``, or ``MAX``.
@@ -10997,7 +11526,9 @@ def cluster_ctarank(
         rank = prims.cluster_ctarank()
     """
     return _cutlass.Int32(
-        _nvvm.read_ptx_sreg_cluster_ctarank(_cutlass.Int32.mlir_type, loc=loc, ip=ip)
+        _nvvm.read_ptx_sreg_cluster_ctarank(
+            ir.IntegerType.get_signless(32), loc=loc, ip=ip
+        )
     )
 
 
@@ -11514,6 +12045,13 @@ def cvt_f32x2_to_f8x2(
     """``cvt.{rnd}.{f8x2}.f32`` — convert an ``f32`` pair to packed ``f8x2``.
 
     Returns the two f8 lanes packed into an :class:`Int16`.
+
+    ARGUMENT ORDER: ``a`` becomes the HIGH byte (bits [15:8]) and ``b`` the LOW
+    byte (bits [7:0]) of the returned Int16. So for little-endian memory order
+    ``[valN, valN+1]`` (valN at the lower address) pass
+    ``cvt_f32x2_to_f8x2(valN+1, valN, ...)``. Pass ``rnd=RN`` + ``sat=SATFINITE``
+    for deterministic RNE (the x4 f32->f8 pack is stochastic-only, so this x2
+    form is the one to use for a byte-exact conversion).
     """
     return _convert_f32x2_to_f8x2(
         a,
@@ -11683,6 +12221,7 @@ __all__ = [
     "mma_sp_sync",
     "mma_sync",
     "mov_b32",
+    "movmatrix_trans",
     "mul",
     "mul_bf16x2",
     "mul_packed_bf16x2_bf16x2_f16x2",
@@ -11794,6 +12333,8 @@ __all__ += [
     "LoadCacheModifier",
     "LoadShape",
     "LoadSrcFormat",
+    "MBarrierLayout",
+    "MBarrierPhase",
     "MBarrierScope",
     "MBarrierWait",
     "MMAB1Op",
@@ -11829,6 +12370,7 @@ __all__ += [
     "Tcgen05MMAKind",
     "Tcgen05Wait",
     "TensormapSpace",
+    "ValidatePattern",
     "VoteSync",
     "WGMMAScaleIn",
     "WGMMAScaleOut",

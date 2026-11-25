@@ -65,6 +65,10 @@ class BlackwellTcgen05Mma(MmaInstruction):
     # Most tcgen05.mma instructions are supported on the full family; the
     # exceptions are picked out in supported_targets below.
     _SUPPORTED_TARGETS = (TargetSm("100f"), TargetSm("110f"))
+    # Only 100a, 110a support int types with tcgen05.mma.
+    _INT8_SUPPORTED_TARGETS = (TargetSm("100a"), TargetSm("110a"))
+    # tile K == 96 is only supported on sm103a.
+    _TILE_K96_SUPPORTED_TARGETS = (TargetSm("103a"),)
 
     @classmethod
     def supported_targets(
@@ -81,23 +85,32 @@ class BlackwellTcgen05Mma(MmaInstruction):
             return default_targets
 
         A = getattr(operands, "A", None)
+        B = getattr(operands, "B", None)
         tile_shape = getattr(design, "tile_shape", None)
         if A is None:
             raise NotImplementedError(
                 f"Could not determine MMA operand A for {type(operands)}"
+            )
+        if B is None:
+            raise NotImplementedError(
+                f"Could not determine MMA operand B for {type(operands)}"
             )
         if tile_shape is None:
             raise NotImplementedError(
                 f"Could not determine MMA tile shape for {type(design)}"
             )
 
-        if A.dtype in [cutlass.Int8, cutlass.Uint8]:
+        if A.dtype in [cutlass.Int8, cutlass.Uint8] and B.dtype in [
+            cutlass.Int8,
+            cutlass.Uint8,
+        ]:
             # Only 100a, 110a support int types with tcgen05.mma
-            return [TargetSm("100a"), TargetSm("110a")]
+            # We assume that int MMA is only used when A and B are ints.
+            # For mixed-input, we assume that they'll quantize to the larger type and it'll be supported on sm103.
+            return [*cls._INT8_SUPPORTED_TARGETS]
 
-        # tile K == 96 is only supported on sm103a
         if tile_shape[2] == 96:
-            return [TargetSm("103a")]
+            return [*cls._TILE_K96_SUPPORTED_TARGETS]
 
         return default_targets
 
@@ -135,7 +148,7 @@ class BlackwellTcgen05Mma(MmaInstruction):
 
 
 class RubinTcgen05Mma(MmaInstruction):
-    """Models the Rubin-only FP8 ``tcgen05`` MMA instruction subset."""
+    """Models the ``tcgen05`` MMA instruction for the Rubin architecture."""
 
     _SUPPORTED_TARGETS = (TargetSm("107f"),)
 
@@ -148,9 +161,34 @@ class RubinTcgen05Mma(MmaInstruction):
         """See :meth:`MmaInstruction.supported_targets`."""
         return [*cls._SUPPORTED_TARGETS]
 
-    @staticmethod
-    def shape_k(operands: OperandsMetadata) -> int:
-        """Return the K dimension of Rubin's FP8 MMA instruction."""
+    @classmethod
+    def shape_k_for_dtypes(
+        cls,
+        a_dtype: type[cutlass.Numeric],
+        b_dtype: type[cutlass.Numeric],
+    ) -> int:
+        """Return the instruction K for an A/B operand dtype pair.
+
+        Provided alongside :meth:`shape_k` for callers that carry bare dtypes
+        rather than an ``OperandsMetadata``: 128 for FP4 pairs, 64 for FP8 pairs,
+        8 for F32/TF32 and 16 for F16/BF16.
+        """
+        if a_dtype is cutlass.Float4E2M1FN and b_dtype is cutlass.Float4E2M1FN:
+            return 128
+        fp8_dtypes = {cutlass.Float8E4M3FN, cutlass.Float8E5M2}
+        if a_dtype in fp8_dtypes and b_dtype in fp8_dtypes:
+            return 64
+        if a_dtype in (cutlass.Float32, cutlass.TFloat32) and b_dtype is a_dtype:
+            return 8
+        if a_dtype in (cutlass.Float16, cutlass.BFloat16) and b_dtype is a_dtype:
+            return 16
+        raise NotImplementedError(
+            f"Unsupported Rubin MMA operand dtypes: {a_dtype} and {b_dtype}"
+        )
+
+    @classmethod
+    def shape_k(cls, operands: OperandsMetadata) -> int:
+        """See :meth:`MmaInstruction.shape_k`."""
         try:
             a_dtype = operands.A.dtype
             b_dtype = operands.B.dtype
@@ -158,13 +196,7 @@ class RubinTcgen05Mma(MmaInstruction):
             raise AttributeError(
                 f"{type(operands)} does not have GEMM operands `A` and `B`"
             ) from err
-
-        fp8_dtypes = {cutlass.Float8E4M3FN, cutlass.Float8E5M2}
-        if a_dtype in fp8_dtypes and b_dtype in fp8_dtypes:
-            return 64
-        raise NotImplementedError(
-            f"Unsupported Rubin MMA operand dtypes: {a_dtype} and {b_dtype}"
-        )
+        return cls.shape_k_for_dtypes(a_dtype, b_dtype)
 
 
 class BlackwellTcgen05MmaSparse(MmaInstruction):

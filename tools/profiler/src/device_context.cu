@@ -144,8 +144,15 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
   if (options.initialization.enabled) {
     Distribution data_distribution = options.initialization.data_distribution;
 
+    auto tensor_distribution = options.initialization.tensor_distributions.find(name);
+    bool const has_tensor_distribution =
+      tensor_distribution != options.initialization.tensor_distributions.end();
+    if (has_tensor_distribution) {
+      data_distribution = tensor_distribution->second;
+    }
+
     // check if data distribution is allowed to change
-    if(!options.initialization.fix_data_distribution) {
+    if(!has_tensor_distribution && !options.initialization.fix_data_distribution) {
       // change data distribution based on bit width
       switch(type) {
         case library::NumericTypeID::kFE4M3:

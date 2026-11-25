@@ -12,7 +12,7 @@
 import functools
 from typing import Any
 
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
 from cutlass.memory import TmemAllocator as _TmemAllocator
 from cutlass.memory import TmemBufferPool as _TmemBufferPool
@@ -24,7 +24,7 @@ from cutlass.memory import (
 )
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.tmem_allocator.TmemAllocator is deprecated; use "
     "cutlass.memory.TmemAllocator instead. It will be removed in a future release."
 )
@@ -32,7 +32,7 @@ class TmemAllocator(_TmemAllocator):
     """Deprecated alias for `cutlass.memory.tmem.TmemAllocator`."""
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.tmem_allocator.TmemBufferPool is deprecated; use "
     "cutlass.memory.TmemBufferPool instead. It will be removed in a future release."
 )
@@ -40,7 +40,7 @@ class TmemBufferPool(_TmemBufferPool):
     """Deprecated alias for `cutlass.memory.tmem.TmemBufferPool`."""
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.tmem_allocator.compute_tmem_cols_from_layout is deprecated; use "
     "cutlass.memory.compute_tmem_cols_from_layout instead. It will be removed in a "
     "future release."
@@ -50,7 +50,7 @@ def compute_tmem_cols_from_layout(*args: Any, **kwargs: Any) -> Any:
     return _compute_tmem_cols_from_layout(*args, **kwargs)
 
 
-@deprecated(
+@_deprecated(
     "cutlass.utils.tmem_allocator.get_num_tmem_alloc_cols is deprecated; use "
     "cutlass.memory.get_num_tmem_alloc_cols instead. It will be removed in a future "
     "release."

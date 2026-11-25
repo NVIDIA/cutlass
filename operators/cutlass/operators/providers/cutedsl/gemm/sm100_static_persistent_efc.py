@@ -28,17 +28,11 @@
 
 """Operator-API wrapper for the SM100 persistent dense GEMM with EFC epilogues.
 
-``PersistentDenseGemmEFCOperator`` is the discovery / compile / run entry point
-that the manifest offers for ``GemmArguments``.  It owns the user-facing
-plumbing -- enumerating kernel configurations, validating operands and design
-parameters, converting the traced epilogue into an EFC epilogue function via
-``EFCConverter``, and packing/unpacking arguments around ``cute_compile`` /
-``cute_run``.
-
-The actual GPU kernel is ``PersistentDenseGemmEFCKernel`` (a thin batch-layout
-adapter over the verbatim example ``DenseGemmEFC``); this wrapper never touches
-GPU details, and the kernel never touches user-facing types such as
-``GemmArguments`` or ``TensorWrapper``.
+``Sm100PersistentDenseGemmEFCOperator`` adds the dense-operand rules (dtype
+menus including fp8 mixing, majors, alignment) and the SM100 design menus to
+the shared ``_PersistentDenseGemmEFCOperatorBase``
+(``static_persistent_efc_base``).  Its kernel, ``PersistentDenseGemmEFCKernel``,
+is a batch-layout adapter over the example ``DenseGemmEFC``.
 """
 
 from __future__ import annotations
@@ -49,70 +43,55 @@ from typing import TYPE_CHECKING
 import cutlass
 
 import cutlass.operators.utils.generate as generate
-from cutlass.operators.arch import TargetSm
 from cutlass.operators.arguments import (
     DenseTensor,
-    EpilogueArguments,
     GemmArguments,
-    Operand,
 )
 from cutlass.operators.metadata import (
-    EpilogueMetadata,
     GemmOperandsMetadata,
-    OperatorMetadata,
-    Sm100DesignMetadata,
 )
-from cutlass.operators.mma import BlackwellTcgen05Mma
 from cutlass.operators.providers.cutedsl import CuTeDSLProvider
-from cutlass.operators.providers.cutedsl.evt.converter import EFCConverter
-from cutlass.operators.providers.cutedsl.integration_utils.mma import (
-    get_max_active_clusters,
-)
-from cutlass.operators.providers.cutedsl.operator import CuteDslOperator
-from cutlass.operators.status import Status
-from cutlass.operators.utils.common import tuple_to_string
-from cutlass.operators.utils.device import to_cuda_stream
+from cutlass.operators.utils.deprecation import deprecated_module_attributes
 from cutlass.operators.utils.tensor import (
-    TensorWrapper,
     normalized_major_stride,
-    strides_to_layout_string,
 )
 
 from .implementations.sm100_static_persistent_efc_impl import (
     PersistentDenseGemmEFCKernel,
 )
+from .static_persistent_efc_base import _PersistentDenseGemmEFCOperatorBase
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
-
-    from cutlass.operators.artifact import CompiledArtifact
+    from collections.abc import Generator
 
 
 @CuTeDSLProvider.register
-class PersistentDenseGemmEFCOperator(CuteDslOperator):
+class Sm100PersistentDenseGemmEFCOperator(_PersistentDenseGemmEFCOperatorBase):
     """SM100 persistent dense GEMM with custom epilogue fusion via EFC.
 
     Discovery / compile / run wrapper registered with the CuTe DSL provider for
-    ``GemmArguments``.  Each instance is built from an ``OperatorMetadata``
-    describing one kernel configuration; ``__init__`` converts the traced
-    epilogue (if any) into an EFC epilogue function via ``EFCConverter`` and
-    instantiates a ``PersistentDenseGemmEFCKernel`` to run it.  The kernel
-    provides the GEMM mainloop, TMA memory operations, warp specialization, and
-    persistent tile scheduling; this class adds operator discovery, metadata
-    validation, and argument packing around ``cute_compile`` / ``cute_run``.
+    ``GemmArguments`` with dense A/B.  Each instance is built from an
+    ``OperatorMetadata`` describing one kernel configuration; the shared base
+    converts the traced epilogue (if any) into an EFC epilogue function via
+    ``EFCConverter`` and instantiates a ``PersistentDenseGemmEFCKernel`` to run
+    it.  The kernel provides the GEMM mainloop, TMA memory operations, warp
+    specialization, and persistent tile scheduling; this class adds the dense
+    operand rules.
 
     Args:
         metadata (OperatorMetadata): One validated kernel configuration
             (operands, design, and optional epilogue) to instantiate.
 
     Note:
-        Supported A/B data types (A and B must share a dtype): Float16,
-        BFloat16, Int8, Uint8, Float8E4M3FN, Float8E5M2.
+        Supported A/B data types: Float16, BFloat16, Int8, Uint8,
+        Float8E4M3FN, Float8E5M2.  A and B must share a dtype, except that
+        the two fp8 formats may mix (the f8f6f4 MMA kind decodes each
+        operand's format independently).
 
     Note:
-        Supported accumulator data types: Float32 (all floating-point A/B
-        types), Float16 (fp16 and fp8 A/B only), Int32 (uint8/int8 A/B only).
-        See ``_valid_ab_acc_combinations`` for the exact mapping.
+        Supported accumulator dtypes per A/B dtype: see
+        ``_valid_ab_acc_combinations``.  Supported output dtypes per
+        accumulator: see ``_valid_acc_out_combinations``.
 
     Note:
         Design constraints (see ``_valid_design``): MMA tiler M is 64/128
@@ -123,6 +102,7 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
 
     supported_args_type = GemmArguments
     designed_for_min_cc = 100
+    _shim_kernel_type = PersistentDenseGemmEFCKernel
 
     _valid_ab_acc_combinations = {
         cutlass.Float16: [cutlass.Float16, cutlass.Float32],
@@ -133,123 +113,67 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
         cutlass.Float8E5M2: [cutlass.Float16, cutlass.Float32],
     }
 
-    def __init__(self, metadata: OperatorMetadata):
-        super().__init__(metadata)
+    _mixable_ab_dtypes = (cutlass.Float8E4M3FN, cutlass.Float8E5M2)
 
-        if metadata.epilogue is not None:
-            epilogue_op = EFCConverter.convert(
-                metadata.epilogue.traced_epilogue.dag_ir,
-                metadata.epilogue.parameter_names,
-                parameter_tensors=metadata.epilogue.tensors,
-                transports=metadata.epilogue.transports,
-            )
-        else:
-            epilogue_op = EFCConverter.identity_efc
+    # Operator names keep the stem of the class name before the rename.  Treat
+    # ``operator_name`` as an opaque identifier; select operators of this class
+    # with ``metadata.operator_class``.
+    _operator_name_stem = "PersistentDenseGemmEFCOperator"
 
-        mma_tiler_mn = (metadata.design.tile_shape[0], metadata.design.tile_shape[1])
-        cluster_shape_mn = (
-            metadata.design.cluster_shape[0],
-            metadata.design.cluster_shape[1],
-        )
-
-        self.impl = PersistentDenseGemmEFCKernel(
-            metadata.operands.accumulator_type,
-            metadata.operands.out.dtype,
-            metadata.design.use_2cta_mma,
-            mma_tiler_mn,
-            cluster_shape_mn,
-            epilogue_op,
-        )
-
-    @staticmethod
-    def _valid_fusion(fusion: EpilogueMetadata) -> Status:
-        if not isinstance(fusion, EpilogueMetadata):
-            return Status.fail("Unsupported epilogue argument type.")
-        if not (status := EFCConverter.supports(fusion.traced_epilogue.dag_ir)):
-            return status
-        return Status.success()
-
-    @staticmethod
-    def _valid_operands(operands: GemmOperandsMetadata) -> Status:
+    @classmethod
+    def _valid_operands(cls, operands: GemmOperandsMetadata) -> bool:
         if not isinstance(operands, GemmOperandsMetadata):
             return False
 
-        if operands.A.dtype != operands.B.dtype:
+        a_dtype = operands.A.dtype
+        b_dtype = operands.B.dtype
+        if a_dtype != b_dtype and not (
+            a_dtype in cls._mixable_ab_dtypes and b_dtype in cls._mixable_ab_dtypes
+        ):
             return False
 
-        ab_dtype = operands.A.dtype
+        if a_dtype not in cls._valid_ab_acc_combinations:
+            return False
+
         acc_dtype = operands.accumulator_type
-
-        if ab_dtype not in PersistentDenseGemmEFCOperator._valid_ab_acc_combinations:
+        if acc_dtype not in cls._valid_ab_acc_combinations[a_dtype]:
             return False
 
-        # Check compatibility between accumulator type and AB type
-        if (
-            acc_dtype
-            not in PersistentDenseGemmEFCOperator._valid_ab_acc_combinations[ab_dtype]
-        ):
+        if operands.out.dtype not in cls._valid_acc_out_combinations.get(acc_dtype, ()):
             return False
 
-        return True
+        valid_major_strides = {(0, 0, 1), (0, 1, 0)}
+        return all(
+            operand.stride in valid_major_strides
+            for operand in (operands.A, operands.B, operands.out)
+        )
 
-    @staticmethod
-    def _valid_design(design: Sm100DesignMetadata) -> bool:
-        """Check if the design metadata is valid.
+    @classmethod
+    def _valid_tile_shape(cls, design) -> bool:
+        """SM100 tile-M law: the full MMA tiler M is one instruction M."""
+        use_2cta = design.use_2cta_mma
+        return (not use_2cta and design.tile_shape[0] in (64, 128)) or (
+            use_2cta and design.tile_shape[0] in (128, 256)
+        )
 
-        :param design: The design metadata
-        :type design: Sm100DesignMetadata
+    @classmethod
+    def _tile_n_menu(cls) -> tuple[int, ...]:
+        return tuple(range(32, 257, 32))
 
-        :return: True if the design is valid, False otherwise
-        :rtype: bool
-        """
-        if not isinstance(design, Sm100DesignMetadata):
-            return False
+    @classmethod
+    def _tile_m_candidates(cls, use_2cta_mma: bool) -> tuple[int, ...]:
+        # The instruction M values of each CTA mode (see _valid_tile_shape).
+        return (128, 256) if use_2cta_mma else (64, 128)
 
-        use_2cta_instrs = design.use_2cta_mma
-        mma_tiler_mn = design.tile_shape
-        cluster_shape_mn = design.cluster_shape
+    @classmethod
+    def _tile_n_candidates(cls) -> tuple[int, ...]:
+        # Enumerates the power-of-two N tiles; _valid_design accepts every
+        # multiple of 32 for designs supplied explicitly.
+        return (32, 64, 128, 256)
 
-        # Check invalid mma tile shape M dimension
-        if not (
-            (not use_2cta_instrs and mma_tiler_mn[0] in [64, 128])
-            or (use_2cta_instrs and mma_tiler_mn[0] in [128, 256])
-        ):
-            return False
-
-        # Check invalid mma tile shape N dimension
-        if mma_tiler_mn[1] not in range(32, 257, 32):
-            return False
-        # Check illegal cluster shape M dimension
-        if cluster_shape_mn[0] % (2 if use_2cta_instrs else 1) != 0:
-            return False
-
-        def is_power_of_2(x):
-            return x > 0 and (x & (x - 1)) == 0
-
-        # Check invalid cluster shape constraints
-        if cluster_shape_mn[0] * cluster_shape_mn[1] > 16:
-            return False
-        if cluster_shape_mn[0] <= 0 or cluster_shape_mn[1] <= 0:
-            return False
-        if not is_power_of_2(cluster_shape_mn[0]) or not is_power_of_2(
-            cluster_shape_mn[1]
-        ):
-            return False
-
-        return True
-
-    @staticmethod
-    def _valid_metadata(metadata: OperatorMetadata) -> bool:
-        if not PersistentDenseGemmEFCOperator._valid_operands(metadata.operands):
-            return False
-
-        if not PersistentDenseGemmEFCOperator._valid_design(metadata.design):
-            return False
-
-        return True
-
-    @staticmethod
+    @classmethod
     def _metadata_operands_from_args(
+        cls,
         args: GemmArguments,
     ) -> Generator[GemmOperandsMetadata, None, None]:
         """Generator that yields all valid GemmOperandsMetadata that correspond to `args` and
@@ -265,11 +189,6 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
         if any(not isinstance(arg, DenseTensor) for arg in [args.A, args.B, args.out]):
             return
 
-        if args.A.dtype != args.B.dtype:
-            return
-
-        valid_major_strides = {(0, 0, 1), (0, 1, 0)}
-
         A_stride = normalized_major_stride(
             args.A.shape, args.A.stride, prepend_zeros_to_rank=3
         )
@@ -279,9 +198,6 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
         out_stride = normalized_major_stride(
             args.out.shape, args.out.stride, prepend_zeros_to_rank=3
         )
-
-        if any(x not in valid_major_strides for x in [A_stride, B_stride, out_stride]):
-            return
 
         operands = generate.construct_dense_gemm_operands(
             args.A.dtype,
@@ -294,52 +210,36 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
             alignment_bytes=16,
         )
 
-        if not PersistentDenseGemmEFCOperator._valid_operands(operands):
+        if not cls._valid_operands(operands):
             return
 
         yield operands
 
-    @staticmethod
-    def _metadata_operand_combinations() -> Generator[GemmOperandsMetadata, None, None]:
+    @classmethod
+    def _metadata_operand_combinations(
+        cls,
+    ) -> Generator[GemmOperandsMetadata, None, None]:
         """Generator that yields all valid GemmOperandsMetadata combinations
         based on the validation rules in _valid_operands.
         """
         row_major_stride = (0, 0, 1)
         col_major_stride = (0, 1, 0)
+        strides = (row_major_stride, col_major_stride)
 
-        for (
-            ab_dtype,
-            valid_acc_dtypes,
-        ) in PersistentDenseGemmEFCOperator._valid_ab_acc_combinations.items():
-            for acc_dtype in valid_acc_dtypes:
-                # Determine valid output types for this accumulator type
-                valid_out_dtypes = []
-
-                if acc_dtype == cutlass.Float32:
-                    valid_out_dtypes.extend(
-                        [
-                            cutlass.Float32,
-                            cutlass.Int32,
-                            cutlass.Float16,
-                            cutlass.BFloat16,
-                        ]
-                    )
-                    # Float8 output types only valid with Float32 accumulator
-                    valid_out_dtypes.extend([cutlass.Float8E4M3FN, cutlass.Float8E5M2])
-                elif acc_dtype == cutlass.Int32:
-                    valid_out_dtypes.extend([cutlass.Float32, cutlass.Int32])
-                    # Integer output types only valid with Int32 accumulator
-                    valid_out_dtypes.extend([cutlass.Int8, cutlass.Uint8])
-                elif acc_dtype == cutlass.Float16:
-                    valid_out_dtypes.extend([cutlass.Float16, cutlass.BFloat16])
-
-                for out_dtype in valid_out_dtypes:
+        for a_dtype, valid_acc_dtypes in cls._valid_ab_acc_combinations.items():
+            b_dtypes = (
+                cls._mixable_ab_dtypes
+                if a_dtype in cls._mixable_ab_dtypes
+                else (a_dtype,)
+            )
+            for b_dtype, acc_dtype in itertools.product(b_dtypes, valid_acc_dtypes):
+                for out_dtype in cls._valid_acc_out_combinations[acc_dtype]:
                     for stride_A, stride_B, stride_out in itertools.product(
-                        [row_major_stride, col_major_stride], repeat=3
+                        strides, repeat=3
                     ):
                         yield generate.construct_dense_gemm_operands(
-                            ab_dtype,
-                            ab_dtype,
+                            a_dtype,
+                            b_dtype,
                             out_dtype,
                             acc_dtype,
                             stride_A,
@@ -348,154 +248,32 @@ class PersistentDenseGemmEFCOperator(CuteDslOperator):
                             alignment_bytes=16,
                         )
 
-    def _supports(
-        self, args: GemmArguments, target_sm: TargetSm | None = None
-    ) -> Status:
-        if args.epilogue is not None:
-            fusion_metadata = EpilogueMetadata.from_args(args.epilogue)
-            if not self._valid_fusion(fusion_metadata):
-                return Status.fail(
-                    "Provided epilogue fusion is not supported by this Operator"
-                )
 
-        return Status.success()
+__getattr__ = deprecated_module_attributes(
+    __name__,
+    {
+        "PersistentDenseGemmEFCOperator": f"{__name__}.Sm100PersistentDenseGemmEFCOperator",
+        "Operand": "cutlass.operators.Operand",
+        "TensorWrapper": "cutlass.operators.utils.tensor.TensorWrapper",
+    },
+)
 
-    def _compile(
-        self, args: GemmArguments, target_sm: TargetSm | None = None
-    ) -> CompiledArtifact:
-        stream = cutlass.cute.runtime.make_fake_stream()
-        max_active_clusters = get_max_active_clusters(self.impl.cluster_shape_mn)
+if TYPE_CHECKING:
+    # Type-checker view of the moved names above (PEP 702), so pyrefly, mypy and
+    # pyright can flag their use.  Runtime access goes through ``__getattr__``.
+    from typing_extensions import deprecated
 
-        if args.epilogue is not None:
-            epilogue_params = [
-                e.compile_time_tensor if isinstance(e, TensorWrapper) else e
-                for e in args.epilogue.parameters
-            ]
-        else:
-            epilogue_params = [args.out.tensor.compile_time_tensor]
+    from cutlass.operators import Operand as _Operand
+    from cutlass.operators.utils.tensor import TensorWrapper as _TensorWrapper
 
-        # EFC needs special handling for supplemental arguments.
-        self.impl.efc.compile(*epilogue_params)
-        compiled_artifact = self.cute_compile(
-            self.impl,
-            args.A.tensor,
-            args.B.tensor,
-            max_active_clusters,
-            stream,
-            *epilogue_params,
-            target_sm=target_sm,
-        )
+    @deprecated(
+        "Use cutlass.operators.providers.cutedsl.gemm.sm100_static_persistent_efc."
+        "Sm100PersistentDenseGemmEFCOperator instead."
+    )
+    class PersistentDenseGemmEFCOperator(Sm100PersistentDenseGemmEFCOperator): ...
 
-        return compiled_artifact
+    @deprecated("Use cutlass.operators.Operand instead.")
+    class Operand(_Operand): ...
 
-    def _run(
-        self,
-        args: GemmArguments,
-        compiled_artifact: CompiledArtifact,
-        stream,
-        workspace=None,
-    ) -> None:
-        stream = to_cuda_stream(stream)
-
-        epilogue_params = (
-            args.epilogue.parameters if args.epilogue is not None else [args.out]
-        )
-
-        # Unwrap Operand wrappers (e.g. DenseTensor) to their
-        # underlying TensorWrapper so that cute_run can extract the
-        # runtime tensor for TVM FFI.
-        epilogue_params = [
-            e.tensor if isinstance(e, Operand) else e for e in epilogue_params
-        ]
-
-        compiled_gemm = compiled_artifact.compiled_obj
-        self.cute_run(
-            compiled_gemm, args.A.tensor, args.B.tensor, stream, *epilogue_params
-        )
-
-    @classmethod
-    def _generate_operators(
-        cls,
-        metadata_filter: Callable[[OperatorMetadata], bool],
-        epilogue_args: EpilogueArguments = None,
-        target_sm: TargetSm | None = None,
-        args: GemmArguments = None,
-    ) -> list[PersistentDenseGemmEFCOperator]:
-        """Returns a list of all possible configurations of PersistentDenseGemmEFCOperator that
-        adhere to constraints passed in under kwargs.
-        """
-        design_params = {
-            "mma_instruction_type": [BlackwellTcgen05Mma],
-            "use_2cta_mma": [True, False],
-            # Fill in tile shape K based on data type
-            "tile_shape": [
-                (M, N, None) for M in [64, 128, 256] for N in [32, 64, 128, 256]
-            ],
-            "cluster_shape": [
-                (m, n, 1) for m in [1, 2, 4, 8, 16] for n in [1, 2, 4, 8, 16]
-                if m * n <= Sm100DesignMetadata.max_cluster_size
-            ],
-            "use_tma_store": [True],
-        }
-
-        if epilogue_args is not None:
-            if not isinstance(epilogue_args, EpilogueArguments):
-                return []
-
-            epilogue_metadata = EpilogueMetadata.from_args(epilogue_args)
-            if not PersistentDenseGemmEFCOperator._valid_fusion(epilogue_metadata):
-                return []
-        else:
-            epilogue_metadata = None
-
-        from itertools import product
-
-        param_names = list(design_params.keys())
-
-        operator_list = []
-
-        if args is not None:
-            operands_generator = cls._metadata_operands_from_args(args)
-        else:
-            operands_generator = cls._metadata_operand_combinations()
-
-        for operands in operands_generator:
-            if not cls._valid_operands(operands):
-                continue
-
-            tile_k = BlackwellTcgen05Mma.shape_k(operands) * 4
-            design_params["tile_shape"] = [
-                (M, N, tile_k) for M, N, _ in design_params["tile_shape"]
-            ]
-            param_values = [design_params[name] for name in param_names]
-            for values in product(*param_values):
-                design = Sm100DesignMetadata(**dict(zip(param_names, values)))
-                operator_name = "cutedsl.PersistentDenseGemmEFCOperator_sm100_{layout}_A{A}_B{B}_out{out}_acc{acc}_{num_cta}cta_cluster{cluster}_tile{tile}{_tma_store}".format(
-                    layout=strides_to_layout_string(
-                        operands.A.stride, operands.B.stride, operands.out.stride
-                    ),
-                    A=operands.A.dtype,
-                    B=operands.B.dtype,
-                    out=operands.out.dtype,
-                    acc=operands.accumulator_type,
-                    num_cta=("2" if design.use_2cta_mma else "1"),
-                    cluster=tuple_to_string(design.cluster_shape),
-                    tile=tuple_to_string(design.tile_shape),
-                    _tma_store="_tma_store" if design.use_tma_store else "",
-                )
-
-                metadata = OperatorMetadata(
-                    operands=operands,
-                    design=design,
-                    operator_name=operator_name,
-                    operator_class=cls,
-                    supported_targets=TargetSm.get_supported_targets(design, operands),
-                    epilogue=epilogue_metadata,
-                )
-
-                if PersistentDenseGemmEFCOperator._valid_metadata(
-                    metadata
-                ) and metadata_filter(metadata):
-                    operator_list.append(PersistentDenseGemmEFCOperator(metadata))
-
-        return operator_list
+    @deprecated("Use cutlass.operators.utils.tensor.TensorWrapper instead.")
+    class TensorWrapper(_TensorWrapper): ...

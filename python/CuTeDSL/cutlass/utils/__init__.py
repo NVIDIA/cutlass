@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 import importlib
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated
 from typing import Any
 
 from .static_persistent_tile_scheduler import (
@@ -216,11 +216,9 @@ _MOVED_ALIASES = {
 def __getattr__(name: str) -> Any:
     if name in _MOVED_ALIASES:
         home = _MOVED_ALIASES[name]
-        warnings.warn(
+        _warn_deprecated(
             f"cutlass.utils.{name} is deprecated; use {home}.{name} instead. "
-            "It will be removed in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "It will be removed in a future release."
         )
         return getattr(importlib.import_module(home), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

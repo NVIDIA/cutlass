@@ -13,7 +13,7 @@ from .copy import *
 from .mma import *
 from .helpers import *
 
-import warnings as _warnings
+from cutlass.base_dsl.common import _warn_deprecated
 from typing import Any
 
 _deprecated_names = {
@@ -28,7 +28,7 @@ del OperandMajorMode
 def __getattr__(name: str) -> Any:
     if name in _deprecated_names:
         obj, msg = _deprecated_names[name]
-        _warnings.warn(msg, DeprecationWarning, stacklevel=2)
+        _warn_deprecated(msg)
         return obj
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -60,17 +60,19 @@ __all__ = [
     "CtaGroup",
     "Field",
     "CollectorOp",
-    "CollectorBBuffer",
     "MmaTF32Op",
     "MmaF16BF16Op",
     "MmaF16BF16SparseOp",
     "MmaFP8SparseOp",
+    "MmaTF32SparseOp",
     "MmaI8Op",
     "MmaFP8Op",
     "MmaF8F6F4Op",
     "SM107MmaFP8Op",
+    "SM107BlockScaledMmaMXF8F6F4Op",
     "SM107MmaF16BF16SparseOp",
     "SM107MmaFP8SparseOp",
+    "SM107MmaMXF4NVF4BlockScaledSparseOp",
     "MmaMXF8Op",
     "MmaMXF8F6F4Op",
     "MmaMXF4Op",
@@ -87,6 +89,7 @@ __all__ = [
     "get_tmem_copy_properties",
     "find_tmem_tensor_col_offset",
     "make_tmem_copy",
+    "print_tmem_tensor",
     "make_s2t_copy",
     "append_s2t_broadcast_mode",
     "get_s2t_smem_desc_tensor",

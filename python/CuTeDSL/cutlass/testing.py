@@ -14,7 +14,7 @@ import argparse
 import logging
 import os
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, wraps
 from itertools import product
 from time import time
 from typing import Any, Callable, Dict, List, Optional, Type, Union
@@ -53,10 +53,13 @@ class CuptiProfiler:
             from cupti import cupti
 
             self._cupti = cupti
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as exc:
+            if exc.name != "cupti":
+                raise
             raise ModuleNotFoundError(
-                "CUPTI is not available. Install the 'cupti-python' package to use CuptiProfiler."
-            )
+                "CUPTI is not available. Install the 'cupti-python' package to use CuptiProfiler.",
+                name="cupti",
+            ) from exc
         self.buffer_size = buffer_size
         self.timings: list[tuple[str, float]] = []
         self._is_active = False
@@ -137,6 +140,19 @@ class CuptiProfiler:
             Total duration in milliseconds. Returns 0.0 if no activities were recorded.
         """
         return sum(timing[1] for timing in self.timings)
+
+
+def _create_cupti_profiler_or_none() -> CuptiProfiler | None:
+    """Create a CUPTI profiler when its optional Python binding is available."""
+    try:
+        return CuptiProfiler()
+    except ModuleNotFoundError as exc:
+        if exc.name != "cupti":
+            raise
+        logging.getLogger(__name__).warning(
+            "cupti-python is unavailable; falling back to CUDA event timing"
+        )
+        return None
 
 
 #########################################
@@ -229,6 +245,45 @@ def _cuda_success(
         )
 
 
+def _create_timing_events(
+    stream: cuda_driver.CUstream,
+) -> tuple[cuda_driver.CUevent, cuda_driver.CUevent]:
+    """Create timing events in the CUDA context that owns ``stream``.
+
+    CUDA events belong to the context that is current when they are created.
+    Recording an event created in a different context on ``stream`` fails with
+    ``CUDA_ERROR_INVALID_HANDLE``. Preserve the caller's current context while
+    creating both events in the stream's context.
+    """
+    err, caller_context = cuda_driver.cuCtxGetCurrent()
+    _cuda_success(err, "Error on querying current context")
+    err, stream_context = cuda_driver.cuStreamGetCtx(stream)
+    _cuda_success(err, "Error on querying stream context")
+
+    context_changed = int(caller_context) != int(stream_context)
+    if context_changed:
+        err = cuda_driver.cuCtxSetCurrent(stream_context)
+        _cuda_success(err, "Error on setting stream context")
+
+    try:
+        err, start_event = cuda_driver.cuEventCreate(
+            cuda_driver.CUevent_flags.CU_EVENT_DEFAULT
+        )
+        _cuda_success(err, "Error on creating event")
+        err, end_event = cuda_driver.cuEventCreate(
+            cuda_driver.CUevent_flags.CU_EVENT_DEFAULT
+        )
+        if err != cuda_driver.CUresult.CUDA_SUCCESS:
+            destroy_err = cuda_driver.cuEventDestroy(start_event)
+            _cuda_success(destroy_err, "Error on destroying event")
+        _cuda_success(err, "Error on creating event")
+        return start_event, end_event
+    finally:
+        if context_changed:
+            err = cuda_driver.cuCtxSetCurrent(caller_context)
+            _cuda_success(err, "Error on restoring current context")
+
+
 def _does_kernel_use_stream(
     kernel: Callable[..., Any],
     stream: cuda_driver.CUstream,
@@ -262,32 +317,51 @@ def _does_kernel_use_stream(
         "Stream must be a non-default stream"
     )
 
-    err = cuda_runtime.cudaStreamBeginCapture(
-        stream, cuda_runtime.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
-    )
-    _cuda_success(err, "Error on stream capture")
+    err, caller_context = cuda_driver.cuCtxGetCurrent()
+    _cuda_success(err, "Error on querying current context")
+    err, stream_context = cuda_driver.cuStreamGetCtx(stream)
+    _cuda_success(err, "Error on querying stream context")
 
-    launch_error = None
+    context_changed = int(caller_context) != int(stream_context)
+    if context_changed:
+        err = cuda_driver.cuCtxSetCurrent(stream_context)
+        _cuda_success(err, "Error on setting stream context")
+
     try:
-        kernel(*args, **kwargs)
-    except Exception as exc:
-        launch_error = exc
-
-    err, graph = cuda_runtime.cudaStreamEndCapture(stream)
-    if err != cuda_runtime.cudaError_t.cudaSuccess:
-        if launch_error is not None:
-            raise launch_error
+        err = cuda_runtime.cudaStreamBeginCapture(
+            stream, cuda_runtime.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
+        )
         _cuda_success(err, "Error on stream capture")
 
-    err, _, num_nodes = cuda_runtime.cudaGraphGetNodes(graph)
-    _cuda_success(err, "Error on querying graph")
+        launch_error = None
+        try:
+            kernel(*args, **kwargs)
+        except Exception as exc:
+            launch_error = exc
 
-    if num_nodes > 0:
-        if launch_error is not None:
-            raise launch_error
-        return True
+        err, graph = cuda_runtime.cudaStreamEndCapture(stream)
+        if err != cuda_runtime.cudaError_t.cudaSuccess:
+            if launch_error is not None:
+                raise launch_error
+            _cuda_success(err, "Error on stream capture")
 
-    return False
+        try:
+            err, _, num_nodes = cuda_runtime.cudaGraphGetNodes(graph)
+            _cuda_success(err, "Error on querying graph")
+
+            if num_nodes > 0:
+                if launch_error is not None:
+                    raise launch_error
+                return True
+
+            return False
+        finally:
+            err = cuda_runtime.cudaGraphDestroy(graph)
+            _cuda_success(err, "Error on destroying graph")
+    finally:
+        if context_changed:
+            err = cuda_driver.cuCtxSetCurrent(caller_context)
+            _cuda_success(err, "Error on restoring current context")
 
 
 def _does_kernel_use_stream_with_jit_retry(
@@ -306,6 +380,36 @@ def _does_kernel_use_stream_with_jit_retry(
     return _does_kernel_use_stream(kernel, stream, args, kwargs)
 
 
+def _in_stream_context(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Run a benchmark in the CUDA context that owns its ``stream`` argument."""
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        stream = kwargs.get("stream")
+        if stream is None:
+            return func(*args, **kwargs)
+
+        err, caller_context = cuda_driver.cuCtxGetCurrent()
+        _cuda_success(err, "Error on querying current context")
+        err, stream_context = cuda_driver.cuStreamGetCtx(stream)
+        _cuda_success(err, "Error on querying stream context")
+
+        context_changed = int(caller_context) != int(stream_context)
+        if context_changed:
+            err = cuda_driver.cuCtxSetCurrent(stream_context)
+            _cuda_success(err, "Error on setting stream context")
+
+        try:
+            return func(*args, **kwargs)
+        finally:
+            if context_changed:
+                err = cuda_driver.cuCtxSetCurrent(caller_context)
+                _cuda_success(err, "Error on restoring current context")
+
+    return wrapper
+
+
+@_in_stream_context
 def benchmark(
     callable: Callable,
     *,
@@ -318,6 +422,7 @@ def benchmark(
     use_cuda_graphs: bool = False,
     use_cupti: bool = False,
     nvtx_tag: Optional[str] = None,
+    includes_graph_exec: bool = False,
 ) -> float:
     """Benchmarks a callable function with the specified parameters.
 
@@ -381,6 +486,13 @@ def benchmark(
     :type workspace_count: int, optional
     :param use_cuda_graphs: Whether to use cuda graphs, defaults to False
     :type use_cuda_graphs: bool, optional
+    :param use_cupti: Whether to prefer CUPTI kernel-activity timing. If the
+        optional cupti-python binding is unavailable, CUDA event timing is used.
+    :type use_cupti: bool, optional
+    :param includes_graph_exec: Whether the callable launches a pre-built CUDA graph
+        (``cudaGraphLaunch``). Graph launches cannot be stream-captured, so the stream check
+        is skipped and ``use_cuda_graphs`` cannot be enabled together with it, defaults to False
+    :type includes_graph_exec: bool, optional
 
     :return: The benchmark time in microseconds
     :rtype: float
@@ -398,6 +510,11 @@ def benchmark(
 
     if workspace_count < 1:
         raise ValueError("workspace_count must be at least 1")
+
+    if includes_graph_exec and use_cuda_graphs:
+        raise ValueError(
+            "includes_graph_exec and use_cuda_graphs cannot be enabled together."
+        )
 
     _time_us = float("nan")
     if workspace_generator == None:
@@ -421,7 +538,8 @@ def benchmark(
             )
 
     if (
-        not use_cuda_graphs
+        not includes_graph_exec
+        and not use_cuda_graphs
         and int(stream) != int(cuda_driver.CUstream_flags.CU_STREAM_DEFAULT)
         and not _does_kernel_use_stream_with_jit_retry(
             callable, stream, workspaces[0].args, workspaces[0].kwargs
@@ -456,15 +574,7 @@ def benchmark(
             workspace_index = (workspace_index + 1) % workspace_count
         return workspace_index
 
-    # Create CUDA events for timing
-    err, start_event = cuda_driver.cuEventCreate(
-        cuda_driver.CUevent_flags.CU_EVENT_DEFAULT
-    )
-    _cuda_success(err, "Error on creating event")
-    err, end_event = cuda_driver.cuEventCreate(
-        cuda_driver.CUevent_flags.CU_EVENT_DEFAULT
-    )
-    _cuda_success(err, "Error on creating event")
+    start_event, end_event = _create_timing_events(stream)
 
     elapsed_time = float("nan")
 
@@ -484,7 +594,9 @@ def benchmark(
                 f"kernel_launcher must be callable, got {type(kernel_launcher).__name__}"
             )
 
-        cupti_profiler = CuptiProfiler()
+        cupti_profiler = _create_cupti_profiler_or_none()
+        if cupti_profiler is None:
+            return _measure_with_cuda_event(kernel_launcher)
 
         cupti_profiler.start()
         kernel_launcher()
@@ -773,15 +885,7 @@ def _benchmark_for_autotune(
         err, cache_ptr = cuda_driver.cuMemAlloc(int(num_l2_cache_bytes))
         _cuda_success(err, "Error on allocating memory")
 
-    # Create CUDA events for timing
-    err, start_event = cuda_driver.cuEventCreate(
-        cuda_driver.CUevent_flags.CU_EVENT_DEFAULT
-    )
-    _cuda_success(err, "Error on creating event")
-    err, end_event = cuda_driver.cuEventCreate(
-        cuda_driver.CUevent_flags.CU_EVENT_DEFAULT
-    )
-    _cuda_success(err, "Error on creating event")
+    start_event, end_event = _create_timing_events(current_stream)
     try:
         # warmup
         for _ in range(warmup_iterations):

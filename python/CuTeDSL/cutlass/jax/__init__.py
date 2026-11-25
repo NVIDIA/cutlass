@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # See the following pages for details on JAX versioning:
 #   - https://docs.jax.dev/en/latest/jep/25516-effver.html
 #   - https://docs.jax.dev/en/latest/jep/9419-jax-versioning.html
-CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 6, 0)
+CUTE_DSL_MIN_SUPPORTED_JAX_VERSION = (0, 7, 1)
 
 # This is the minimum Python version officially supported by the CuTeDSL JAX
 # integration. Earlier versions may continue to work, but users are warned to
@@ -85,6 +85,7 @@ def _warn_on_unsupported_python() -> None:
 _LAZY_ATTRS = {
     "cutlass_call": (".primitive", "cutlass_call"),
     "jax_to_cutlass_dtype": (".types", "jax_to_cutlass_dtype"),
+    "jax_to_cutlass_memory_space": (".types", "jax_to_cutlass_memory_space"),
     "cutlass_to_jax_dtype": (".types", "cutlass_to_jax_dtype"),
     "jax_to_cutlass_layout_order": (".types", "jax_to_cutlass_layout_order"),
     "cutlass_to_jax_layout_order": (".types", "cutlass_to_jax_layout_order"),
@@ -105,6 +106,7 @@ _LAZY_ATTRS = {
     "is_ffi_registered": (".ffi", "is_ffi_registered"),
     "get_cutlass_call_ffi_name": (".ffi", "get_cutlass_call_ffi_name"),
     "get_cutlass_call_ffi_version": (".ffi", "get_cutlass_call_ffi_version"),
+    "set_cutlass_call_ffi_version": (".ffi", "set_cutlass_call_ffi_version"),
     "testing": (".testing", None),
 }
 
@@ -119,6 +121,7 @@ _ALL_WITH_JAX = [
     "CUTE_DSL_JAX_MIN_SUPPORTED_PYTHON_VERSION",
     "cutlass_call",
     "jax_to_cutlass_dtype",
+    "jax_to_cutlass_memory_space",
     "cutlass_to_jax_dtype",
     "jax_to_cutlass_layout_order",
     "cutlass_to_jax_layout_order",
@@ -134,6 +137,7 @@ _ALL_WITH_JAX = [
     "disable_automatic_ffi_registration",
     "get_cutlass_call_ffi_name",
     "get_cutlass_call_ffi_version",
+    "set_cutlass_call_ffi_version",
     "is_available",
     "testing",
 ]

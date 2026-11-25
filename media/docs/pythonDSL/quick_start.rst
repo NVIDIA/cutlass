@@ -6,11 +6,16 @@ Quick Start Guide
 Compatibility Requirements
 ---------------------------------
 
-The CUTLASS DSL 4.8 release currently supports **Linux** / **Windows** and **Python 3.10 - 3.14t** only.
+CUTLASS DSL 4.9 supports **Linux** (x86_64 and aarch64) and
+**Windows** (x86_64 and ARM64).
 
-Both Linux and Windows x86_64 are supported. aarch64 is only supported on Linux. Additional platform support will be added in future releases.
+Supported Python versions are **3.10 - 3.14t**, excluding Python 3.10
+on Windows ARM64.
 
-CUTLASS DSL supports the same NVIDIA driver version as the corresponding `CUDA Toolkit <https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html>`_
+The free-threaded build of Python 3.14 (``python3.14t``) is supported on an
+experimental basis; see :ref:`dsl_threading` for what works and what does not.
+
+CUTLASS DSL supports the same NVIDIA driver version as the corresponding `CUDA Toolkit <https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html>`_ 
 (CUDA Toolkit 12.9 or CUDA Toolkit 13.4). Specifically, for 12.9, the driver version must be 575.51.03 or later.
 
 Installation
@@ -40,8 +45,22 @@ If you just want to try out the last known stable release of the CUTLASS DSL (ma
    # For CUDA Toolkit 13.x:
    pip install "nvidia-cutlass-dsl[cu13]"
 
+.. note::
 
-The ``nvidia-cutlass-dsl`` wheel includes everything needed to generate GPU kernels.
+   Windows on ARM does not support CUDA 12. Use the ``cu13`` extra
+   in the command above to install the CUDA 13 libraries, which
+   are not installed by default.
+
+
+The ``nvidia-cutlass-dsl`` package and its CUDA libraries provide everything
+needed to generate GPU kernels.
+IKET profiling tools, including the ``run-iket`` command, are optional and
+available on Linux x86_64 and aarch64 only. Install
+``nvidia-cutlass-dsl[tools]`` (or ``nvidia-cutlass-dsl[cu13,tools]`` for CUDA 13)
+to add the matching ``nvidia-cutlass-dsl-tools`` wheel. Device-side IKET
+annotations remain available in the default DSL installation.
+
+On Windows, omit the ``tools`` extra.
 
 To install a preview release, install from `pypi.nvidia.com <https://pypi.nvidia.com>`_:
 
@@ -61,6 +80,11 @@ To run examples and begin development, we recommend installing:
 .. code-block:: bash
 
    pip install torch jupyter mypy==1.19.1
+
+.. note::
+
+   To install PyTorch on Windows on ARM, follow the
+   `official installation instructions <https://pytorch.org/get-started/additional-platforms/>`_.
 
 Recommended Python environment variables for jupyter notebooks
 --------------------------------------------------------------
