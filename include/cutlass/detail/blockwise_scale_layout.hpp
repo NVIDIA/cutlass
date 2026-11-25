@@ -107,7 +107,7 @@ struct Sm1xxBlockwiseScaleConfig {
   smem_atom_layoutSFB(CtaShape_MNK cta_shape_mnk) {
     static_assert(cute::is_static_v<CtaShape_MNK>, "Expect static CTA shape");
     auto strides = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
-      if constexpr (majorSFA == UMMA::Major::MN) {
+      if constexpr (majorSFB == UMMA::Major::MN) {
         return make_stride(make_stride(_0{}, _1{}), make_stride(_0{}, Int<cute::ceil_div(size<1>(CtaShape_MNK{}), SFVecSizeN)>{}));
       }
       else {
