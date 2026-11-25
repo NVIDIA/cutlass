@@ -2619,6 +2619,9 @@ class RubinSparseFusedMultiHeadAttentionForward(RubinFusedMultiHeadAttentionForw
 
         # TMEM load STAT+SPARSIFY returns compressed values, metadata, and row max.
         cute.copy(sp_tiled_copy, tSP_src[None, None, 0, 0], (rData, rMeta, rStat))
+        # The tcgen05.ld is asynchronous: wait for it before the S stage is
+        # released, or the MMA warp may overwrite it while the load is in flight.
+        cute.arch.fence_view_async_tmem_load()
         si_handle.release()
         # S0 -> P1 / S1 -> P0
         inplace_producer.commit()
