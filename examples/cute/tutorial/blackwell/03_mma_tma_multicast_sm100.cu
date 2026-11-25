@@ -372,6 +372,10 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
     // Wait MMAs to complete to avoid overwriting the A and B SMEM.
     cute::wait_barrier(shared_storage.mma_barrier, mma_barrier_phase_bit);
     mma_barrier_phase_bit ^= 1;
+
+    // The barrier waits above only test the parity of the phase, so a thread that is two phases late
+    // would wait forever. Ensure every thread has seen this k_tile's phases before warp 0 starts the next.
+    __syncthreads();
   }
 
   // Step 3: The Epilogue.
