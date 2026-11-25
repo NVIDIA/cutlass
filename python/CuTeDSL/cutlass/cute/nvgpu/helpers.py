@@ -41,7 +41,7 @@ from .cpasync.copy import (
     CopyBulkTensorIm2ColG2SMulticastOp,
     CopyBulkTensorIm2ColG2SMulticastNonExecTrait,
 )
-from .cpasync.helpers import TmaInfo
+from .cpasync.helpers import TmaInfo, _check_tma_gmem_strides
 
 
 __all__ = [
@@ -131,6 +131,8 @@ def make_tiled_tma_atom_A(
     # Slice the smem_layout if it is staged
     if smem_rank == 4:
         smem_layout = core.select(smem_layout, mode=[0, 1, 2])
+
+    _check_tma_gmem_strides(gmem_tensor)
 
     ident = core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
     mma_mnk: Any = mma_tiler_mnk
@@ -280,6 +282,8 @@ def make_tiled_tma_atom_B(
     if smem_rank == 4:
         smem_layout = core.select(smem_layout, mode=[0, 1, 2])
 
+    _check_tma_gmem_strides(gmem_tensor)
+
     ident = core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
     mma_mnk: Any = mma_tiler_mnk
     mma_tiler_nk = (mma_mnk[1], *mma_mnk[2:])
@@ -422,6 +426,8 @@ def make_tiled_tma_atom_C(
     # Slice the smem_layout if it is staged
     if smem_rank == 4:
         smem_layout = core.select(smem_layout, mode=[0, 1, 2])
+
+    _check_tma_gmem_strides(gmem_tensor)
 
     ident = core.make_identity_layout(gmem_tensor.shape, loc=loc, ip=ip)
     mma_mnk: Any = mma_tiler_mnk
