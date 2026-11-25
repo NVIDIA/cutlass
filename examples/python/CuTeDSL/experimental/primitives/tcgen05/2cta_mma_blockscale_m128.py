@@ -688,9 +688,11 @@ def kernel(
                 NUM_AB_STAGE,
             )
 
-    # Warp 7: wait local SFA-copy completion, then
-    # cross-CTA arrive on the leader's ab_full[stage]. SFB has its own
-    # TMA -> UTCCP path in the MMA warp and does not participate here.
+    # Warp 7: wait for this CTA's SFA copy and SFB TMA to land, then
+    # cross-CTA arrive on the leader's ab_full[stage]. The leader's
+    # cta_group::2 UTCCP reads both CTAs' sSFA and sSFB, so the peer's SFB
+    # completion has to be relayed here as well; the leader only waits on
+    # its own sfb_smem_full.
     if warp_idx == sync_warp_id:
         for k_tile_idx in cutlass.range(k_tile_cnt, unroll=1):
             stage = k_tile_idx % NUM_AB_STAGE
@@ -699,9 +701,16 @@ def kernel(
                 a_local_mbar_ptr.subview(stage), phase_local, time_limit=10_000_000
             ):
                 pass
+            while not prims.mbarrier_try_wait_parity(
+                sfb_smem_full_mbar_ptr.subview(stage), phase_local, time_limit=10_000_000
+            ):
+                pass
+            # SFA landed via cp.async (generic proxy); the leader's UTCCP reads
+            # it through the async proxy, so order the proxies before relaying.
+            prims.fence_proxy(prims.Proxy.ASYNC_SHARED, space=prims.SharedSpace.shared_cta)
             if prims.elect_sync():
                 leader_ab_full = prims.mapa(ab_full_mbar_ptr.subview(stage), 0)
-                prims.mbarrier_arrive(leader_ab_full, count=1, scope=prims.MemScope.CTA)
+                prims.mbarrier_arrive(leader_ab_full, count=1, scope=prims.MemScope.CLUSTER)
 
     # Warp 4: TMEM alloc, S2T copy, tcgen05.mma.block_scale (CTA_2).
     # Both CTAs cooperatively allocate; only the leader does the MMA body.
@@ -1000,7 +1009,7 @@ def kernel(
             prims.tcgen05_relinquish_alloc_permit(group=prims.CTAGroup.CTA_2)
             peer_cta_rank = cta_rank ^ 1
             peer_mbar = prims.mapa(tmem_dealloc_mbar_ptr, peer_cta_rank)
-            prims.mbarrier_arrive(peer_mbar, count=1, scope=prims.MemScope.CTA)
+            prims.mbarrier_arrive(peer_mbar, count=1, scope=prims.MemScope.CLUSTER)
             while not prims.mbarrier_try_wait_parity(
                 tmem_dealloc_mbar_ptr, 0, time_limit=10_000_000
             ):
