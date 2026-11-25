@@ -92,6 +92,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static constexpr unsigned long long kWarpAssignment = 0x12'3333'3333'4444ull;
   static constexpr int kNumComputeWarps = 8;
   static constexpr int kNumReduceWarps = 4;
+  // Warps that use Tensor Memory: Mma, Compute and Reduce. All of them meet at EpilogueBarrier before it is freed.
+  static constexpr int kNumTmemWarps = 1 + kNumComputeWarps + kNumReduceWarps;
   CUTLASS_DEVICE WarpRole warp_idx_to_role(int warp_idx) {
     return static_cast<WarpRole>((kWarpAssignment >> (4 * warp_idx)) & 0xF);
   }
@@ -1782,6 +1784,12 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
           pipeline_mma_compute_dkdv, pipeline_mma_compute_dkdv_producer_state
       );
 
+      // All MMAs are issued
+      cutlass::arch::NamedBarrier(
+          kNumTmemWarps * NumThreadsPerWarp,
+          cutlass::arch::ReservedNamedBarriers::EpilogueBarrier
+      ).arrive();
+
     }
     else if (role == WarpRole::Compute) {
       warpgroup_reg_set<RegisterAllocation::kCompute>();
@@ -1805,8 +1813,9 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
           pipeline_mma_compute_dkdv, pipeline_mma_compute_dkdv_consumer_state
       );
 
+      // Wait for the Mma and Reduce warps as well: they use Tensor Memory until their last dQ tile
       cutlass::arch::NamedBarrier(
-          kNumComputeWarps * NumThreadsPerWarp,
+          kNumTmemWarps * NumThreadsPerWarp,
           cutlass::arch::ReservedNamedBarriers::EpilogueBarrier
       ).arrive_and_wait();
 
@@ -1833,6 +1842,12 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       );
 
       pipeline_reduce_tma_store.producer_tail(pipeline_reduce_tma_store_producer_state);
+
+      // The last load of dQ from Tensor Memory is done
+      cutlass::arch::NamedBarrier(
+          kNumTmemWarps * NumThreadsPerWarp,
+          cutlass::arch::ReservedNamedBarriers::EpilogueBarrier
+      ).arrive();
     }
     else {
       warpgroup_reg_set<RegisterAllocation::kEmpty>();
