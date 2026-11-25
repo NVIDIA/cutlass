@@ -375,7 +375,7 @@ class DenseGemmKernel:
         a_op = sm100_utils.cluster_shape_to_tma_atom_A(
             self.cluster_shape_mn, tiled_mma.thr_id
         )
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
+        a_smem_layout = cute.select(self.a_smem_layout_staged, mode=[0, 1, 2])
         tma_atom_a, tma_tensor_a = cute.nvgpu.make_tiled_tma_atom_A(
             a_op,
             a,
@@ -392,7 +392,7 @@ class DenseGemmKernel:
         b_op = sm100_utils.cluster_shape_to_tma_atom_B(
             self.cluster_shape_mn, tiled_mma.thr_id
         )
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        b_smem_layout = cute.select(self.b_smem_layout_staged, mode=[0, 1, 2])
         tma_atom_b, tma_tensor_b = cute.nvgpu.make_tiled_tma_atom_B(
             b_op,
             b,
@@ -413,7 +413,7 @@ class DenseGemmKernel:
         tma_atom_c = None
         tma_tensor_c = None
         if cutlass.const_expr(self.use_tma_store):
-            epi_smem_layout = cute.slice_(self.c_smem_layout_staged, (None, None, 0))
+            epi_smem_layout = cute.select(self.c_smem_layout_staged, mode=[0, 1])
             tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
                 cpasync.CopyBulkTensorTileS2GOp(),
                 c,
