@@ -600,7 +600,7 @@ def _causal_mask_32_regs_setp_selp(
         reg_values + [Int32(last_valid_k).ir_value(loc=loc, ip=ip)],
         asm,
         ",".join(["=f"] * reg_count + [str(i) for i in range(reg_count)] + ["r"]),
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
@@ -662,7 +662,7 @@ def _band_mask_32_regs_setp_selp(
         ],
         asm,
         ",".join(["=f"] * reg_count + [str(i) for i in range(reg_count)] + ["r", "r"]),
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
         loc=loc,
@@ -1651,7 +1651,7 @@ def mul_packed_f16x2(src_a, src_b, *, loc=None, ip=None):
         [a_i32, b_i32],
         "mul.f16x2 $0, $1, $2;",
         "=r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -1684,7 +1684,7 @@ def ex2_packed_f16x2(src_a, *, loc=None, ip=None):
         [a_i32],
         "ex2.approx.f16x2 $0, $1;",
         "=r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -1703,7 +1703,7 @@ def add_packed_f32x2_f16x2_f32x2(src_a, src_b, *, loc=None, ip=None):
         [a_i32, b_i64],
         "add.f32x2.f16x2.f32x2 $0, $1, $2;",
         "=l,r,l",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -1743,7 +1743,7 @@ def fma_packed_f32x2_f16x2_f32x2_f32x2(src_a, src_b, src_c, *, loc=None, ip=None
         [a_i32, b_i64, c_i64],
         "fma.rn.f32x2.f16x2.f32x2.f32x2 $0, $1, $2, $3;",
         "=l,r,l,l",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -1784,7 +1784,7 @@ def cvt_f16x4_to_f8x4_pack_i32(fp16x4_tensor, fp8_type, *, loc=None, ip=None):
         [lo_i32, hi_i32],
         asm_tmpl,
         "=r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
