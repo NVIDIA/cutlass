@@ -45,6 +45,7 @@ Example:
 ```c++
 #include <iostream>
 #include <cutlass/numeric_types.h>
+#include <cutlass/core_io.h>
 
 __global__ void kernel(cutlass::half_t x) {
   printf("Device: %f\n", float(x * 2.0_hf));
@@ -223,7 +224,7 @@ int const kN = 16;
 Array<int8_t, kN> destination;
 Array<int,    kN> source;
 
-NumericConverter<descltype(destination), decltype(source)> convert;
+NumericArrayConverter<int8_t, int, kN> convert;
 
 destination = convert(source);
 ```
