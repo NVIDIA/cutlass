@@ -527,7 +527,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
           pointer_ += Shape::kContiguous * tile_offset.contiguous() * sizeof_bits<Element>::value / 8;
         } else {
           pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
-          pointer_ += Shape::kStrided * tile_offset.strided() * sizeof_bits<Element>::value / 8;
+          add_pointer_offset(LongIndex(Shape::kStrided) * tile_offset.strided() * params_.stride_);
         }
       } else {
         coord_offset_.strided() = the_predicates.thread_offset_.strided() + Shape::kStrided * (tile_offset.strided() - kAdvanceRank);
@@ -542,10 +542,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       if (!Gather && !Permute) {
         if (kAdvanceRank) {
           pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
-          pointer_ += Shape::kContiguous * tile_offset.contiguous();
+          add_pointer_offset(LongIndex(Shape::kContiguous) * tile_offset.contiguous());
         } else {
           pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
-          pointer_ += Shape::kStrided * tile_offset.strided();
+          add_pointer_offset(LongIndex(Shape::kStrided) * tile_offset.strided() * params_.stride_);
         }
       } else {
         coord_offset_.strided() += Shape::kStrided * tile_offset.strided();
