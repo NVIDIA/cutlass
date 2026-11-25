@@ -539,7 +539,7 @@ private:
     }
 
     // Most likely you have elected more than one leader
-    if (params_.is_leader && (threadIdx.x % 32 != 0)) {
+    if (__popc(__ballot_sync(__activemask(), params_.is_leader)) > 1) {
       asm volatile ("brkpt;\n" ::);
     }
     #endif
@@ -561,7 +561,7 @@ private:
     }
 
     // Most likely you have elected more than one leader
-    if (params_.is_leader && (threadIdx.x % 32 != 0)) {
+    if (__popc(__ballot_sync(__activemask(), params_.is_leader)) > 1) {
       asm volatile ("brkpt;\n" ::);
     }
     #endif
