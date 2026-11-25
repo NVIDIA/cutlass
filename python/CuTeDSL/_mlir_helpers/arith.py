@@ -15,19 +15,27 @@ This module provides MLIR Arith Dialect helper functions
 
 import array
 import sys
+import warnings
 from typing import Any, Callable, Optional, Union, TYPE_CHECKING
 
 from ..base_dsl.common import *
-from ..base_dsl.common import DSLRuntimeError, DSLNotImplemented
+from ..base_dsl.common import (
+    DSLFutureWarning,
+    DSLRuntimeError,
+    DSLNotImplemented,
+    get_current_compile_options,
+    get_current_env_manager,
+)
 from .._mlir import ir
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith, math, builtin
-from .op import dsl_user_op
+from .op import dsl_user_op, _get_user_warning_stacklevel
 
 from .lru_cache_ir import lru_cache_ir
 
 if TYPE_CHECKING:
     import numpy as np
+
     from ..base_dsl.typing import Numeric
 
 
@@ -359,6 +367,29 @@ def _cast(
         )
 
 
+def _watched_materializes_requested_type(
+    payload: Any,
+    ty: Union[ir.Type, "NumericMeta"],  # type: ignore[name-defined]
+) -> bool:
+    """True when *ty* is exactly the type a watched wrapper's own
+    materialization already emits for *payload* (bool -> i1, int -> the
+    narrowest of i32/i64 that preserves the value, float -> f32), so
+    ``ir_value()`` can serve the request with its retargetable constant."""
+    from ..base_dsl.typing import NumericMeta
+
+    if isinstance(ty, NumericMeta):
+        ty = ty.mlir_type
+    if isinstance(payload, bool):
+        return ty == T.bool()
+    if isinstance(payload, int):
+        if -(2**31) <= payload < 2**31:
+            return ty == T.i32()
+        return -(2**63) <= payload < 2**63 and ty == T.i64()
+    if isinstance(payload, float):
+        return ty == T.f32()
+    return False
+
+
 def const(
     value: Union[int, float, bool, "np.ndarray", "Numeric", "ArithValue"],
     ty: Optional[Union[ir.Type, "NumericMeta"]] = None,  # type: ignore[name-defined]
@@ -380,7 +411,26 @@ def const(
             raise
         _WatchedM = None  # type: ignore[misc,assignment]
     if _WatchedM is not None and isinstance(value, _WatchedM):
-        return value.ir_value()
+        _payload = value._pyir_raw_payload
+        # A bool keeps its own ``i1`` materialization even when the consumer
+        # asks for a wider integer -- ``cute.print``'s varargs do, and the
+        # pre-existing bake they check for is ``arith.constant true``.  Only an
+        # out-of-range INT payload needs the re-encode below.
+        if (
+            ty is None
+            or isinstance(_payload, bool)
+            or _watched_materializes_requested_type(_payload, ty)
+        ):
+            return value.ir_value()
+        # The caller requested an element type the wrapper's own
+        # materialization would not produce (e.g. an Int32 constant from a
+        # payload that only fits i64): build the constant AT that type through
+        # the plain-payload path below, exactly like the eager frontend
+        # (two's-complement re-encoding for out-of-range ints).  Reading
+        # ``python_value`` records the structural consumption: a re-encoded
+        # bake has no retargetable constant, so a later promotion of the slot
+        # refuses loudly instead of silently keeping this literal stale.
+        return _const_cached(value.python_value, ty, signed=signed, loc=loc, ip=ip)
 
     return _const_cached(value, ty, signed=signed, loc=loc, ip=ip)
 
@@ -665,7 +715,32 @@ class ArithValue(ir.Value):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "ArithValue":
+        divmod_semantics = get_current_compile_options().divmod_semantics
+        if divmod_semantics == "python":
+            from .math import floordiv
+
+            result = floordiv(self, other, loc=loc, ip=ip)
+            return result.ir_value(loc=loc, ip=ip).with_signedness(self.signed)
+
+        if divmod_semantics == "legacy":
+            if self.is_float:
+                q = arith.divf(self, other, loc=loc, ip=ip)
+                return math.floor(q, loc=loc, ip=ip)
+            elif self.signed != False:  # noqa: E712
+                return arith.floordivsi(self, other, loc=loc, ip=ip)
+            else:
+                return arith.divui(self, other, loc=loc, ip=ip)
+
+        # Unspecified: same as legacy, with the migration warning.
         if self.is_float:
+            warnings.warn(
+                "The // operator on floating-point values "
+                "will adopt Python floor-division semantics in a future release. "
+                'Compile with options="--divmod-semantics=python" to opt in now, '
+                'or options="--divmod-semantics=legacy" to keep the current behavior.',
+                DSLFutureWarning,
+                stacklevel=_get_user_warning_stacklevel(stacklevel=8),
+            )
             q = arith.divf(self, other, loc=loc, ip=ip)
             return math.floor(q, loc=loc, ip=ip)
         elif self.signed != False:  # noqa: E712
@@ -683,10 +758,46 @@ class ArithValue(ir.Value):
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "ArithValue":
+        divmod_semantics = get_current_compile_options().divmod_semantics
+        if divmod_semantics == "python":
+            from .math import mod
+
+            result = mod(self, other, loc=loc, ip=ip)
+            return result.ir_value(loc=loc, ip=ip).with_signedness(self.signed)
+
+        if divmod_semantics == "legacy":
+            if self.is_float:
+                return arith.remf(self, other, loc=loc, ip=ip)
+            elif self.signed != False:  # noqa: E712
+                return arith.remsi(self, other, loc=loc, ip=ip)
+            else:
+                return arith.remui(self, other, loc=loc, ip=ip)
+
+        # Unspecified: same as legacy, with the migration warning.
+        # TODO: when the default switches to Python semantics, delete this
+        # branch (unspecified then behaves as "python"), the temporary
+        # divmod_migration attribute and its analysis pass.
         if self.is_float:
+            warnings.warn(
+                "The % operator on floating-point values "
+                "will adopt Python modulo semantics in a future release, "
+                "with the result taking the sign of the divisor. "
+                'Compile with options="--divmod-semantics=python" to opt in now, '
+                'or options="--divmod-semantics=legacy" to keep the current behavior.',
+                DSLFutureWarning,
+                stacklevel=_get_user_warning_stacklevel(stacklevel=8),
+            )
             return arith.remf(self, other, loc=loc, ip=ip)
         elif self.signed != False:  # noqa: E712
-            return arith.remsi(self, other, loc=loc, ip=ip)
+            # Mark signed `%` for best-effort range and use analysis after
+            # IR generation, suppressing migration warnings where behavior
+            # is proven unchanged. Analyze and remove the temporary marker
+            # before optimizations can fold or replace this operation.
+            result = arith.remsi(self, other, loc=loc, ip=ip)
+            env_manager = get_current_env_manager()
+            if env_manager is None or not env_manager.warnings_ignore:
+                result.owner.attributes["divmod_migration"] = ir.UnitAttr.get()
+            return result
         else:
             return arith.remui(self, other, loc=loc, ip=ip)
 

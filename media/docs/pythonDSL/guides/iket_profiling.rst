@@ -19,8 +19,8 @@ output. ``run-iket`` is a purpose-built standalone profiler for collecting IKET
 traces in this experimental workflow. Conceptually, IKET is similar to CPU-side
 NVTX ranges and markers, but the events are emitted from device code inside the
 kernel. IKET supports Hopper and newer GPU architectures, including SM90,
-SM100, SM103, SM110, and SM120. The ``run-iket`` profiler is released with the
-``nvidia-cutlass-dsl`` package.
+SM100, SM103, SM110, and SM120. Install the optional ``tools`` extra to obtain
+the ``run-iket`` profiler from the matching ``nvidia-cutlass-dsl-tools`` wheel.
 
 IKET records device-side events at instrumentation points. The figure below is
 a conceptual illustration, not a ``run-iket`` output format. It shows the kind
@@ -38,11 +38,29 @@ described later in this guide.
 Requirements
 ------------
 
-Use a ``nvidia-cutlass-dsl`` installation that includes ``run-iket``. A quick
-first check is:
+IKET profiling is supported only on Linux x86_64 and aarch64.
+On Windows, install CuTe DSL without the ``tools`` extra.
+
+Install CuTe DSL with profiling tools:
 
 .. code-block:: bash
 
+   # For CUDA Toolkit 12.9:
+   pip install "nvidia-cutlass-dsl[tools]"
+
+   # For CUDA Toolkit 13.x:
+   pip install "nvidia-cutlass-dsl[cu13,tools]"
+
+When extending an existing installation, use the same DSL version and package
+index (for example, ``nvidia-cutlass-dsl[tools]==4.9.0``). Device-side
+``cutlass.cute.experimental.iket`` annotations remain part of the DSL;
+the separate tools wheel provides the host profiler and ``import iket``.
+
+A quick check after installation is:
+
+.. code-block:: bash
+
+   python -c "import iket; print(iket.__file__)"
    run-iket --help
 
 The profiled workload must run on a supported GPU architecture and must
@@ -135,10 +153,14 @@ A runnable example of both activation paths is available at
 API Reference
 -------------
 
+
+
 IKET APIs are available under ``cutlass.cute.experimental.iket``. The table
 below uses ``iket`` as shorthand for that module. IKET API calls should be
 placed inside ``@cute.kernel`` code. Instrumentation in host-side Python code
 does not create in-kernel events.
+
+
 
 IKET has three basic concepts:
 
@@ -156,6 +178,7 @@ IKET has three basic concepts:
    * - API
      - Purpose
      - Notes
+
    * - ``iket.mark(name)``
      - Emit a single timestamped marker.
      - Use for point events.
@@ -493,7 +516,6 @@ or even cause the profiler to fail when postprocessing the data.
 Profiling with the ``run-iket`` Tool
 ------------------------------------
 
-The ``run-iket`` tool is installed with the ``nvidia-cutlass-dsl`` package.
 During profiling, ``run-iket`` automatically enables IKET lowering for
 JIT-compiled kernels so that the final kernel contains instrumentation code.
 The application command must appear after ``--`` so that workload arguments are
@@ -706,6 +728,7 @@ Important fields include:
   ``locationTable[locIdx]`` for the warp location.
 * ``warpLifetimes[]``: active spans for warps observed during the profiled
   launch. Use ``locationTable[locIdx]`` to recover the warp location.
+
 * ``graphLaunches``: CUDA Graph launches, when present. It is an object keyed
   by strings such as ``graph_exec_1:0``. Each value is an array of launch
   objects with the same shape as entries in ``launches[]``.

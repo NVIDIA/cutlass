@@ -24,8 +24,11 @@ from typing import (
     TypeVar,
     overload,
 )
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 
+from cutlass import base_dsl
+from cutlass.base_dsl.common import DSLRuntimeError, DSLUserCodeError
+from cutlass.base_dsl.diagnostics import DiagId
 from cutlass.cutlass_dsl import T, dsl_user_op
 
 import cutlass.cutlass_dsl as cutlass_dsl
@@ -56,6 +59,7 @@ from ..typing import (
     Uint64,
     Pointer,
     Array,
+    Tensor,
     as_numeric,
 )
 
@@ -347,6 +351,21 @@ def lane_idx(
 
 
 @dsl_user_op
+def linear_thread_idx(
+    *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
+) -> Int32:
+    """
+    Returns the linear thread index within the CTA.
+    """
+    tid_x = Int32(nvvm.read_ptx_sreg_tid_x(T.i32(), loc=loc, ip=ip))
+    tid_y = Int32(nvvm.read_ptx_sreg_tid_y(T.i32(), loc=loc, ip=ip))
+    tid_z = Int32(nvvm.read_ptx_sreg_tid_z(T.i32(), loc=loc, ip=ip))
+    ntid_x = Int32(nvvm.read_ptx_sreg_ntid_x(T.i32(), loc=loc, ip=ip))
+    ntid_y = Int32(nvvm.read_ptx_sreg_ntid_y(T.i32(), loc=loc, ip=ip))
+    return tid_x + tid_y * ntid_x + tid_z * ntid_x * ntid_y
+
+
+@dsl_user_op
 def warp_idx(
     *, loc: Optional[ir.Location] = None, ip: Optional[ir.InsertionPoint] = None
 ) -> Int32:
@@ -354,12 +373,7 @@ def warp_idx(
     Returns the logical warp index within a CTA, computed from the CTA thread
     index registers.
     """
-    tid_x = Int32(nvvm.read_ptx_sreg_tid_x(T.i32(), loc=loc, ip=ip))
-    tid_y = Int32(nvvm.read_ptx_sreg_tid_y(T.i32(), loc=loc, ip=ip))
-    tid_z = Int32(nvvm.read_ptx_sreg_tid_z(T.i32(), loc=loc, ip=ip))
-    ntid_x = Int32(nvvm.read_ptx_sreg_ntid_x(T.i32(), loc=loc, ip=ip))
-    ntid_y = Int32(nvvm.read_ptx_sreg_ntid_y(T.i32(), loc=loc, ip=ip))
-    tid = tid_x + tid_y * ntid_x + tid_z * ntid_x * ntid_y
+    tid = linear_thread_idx(loc=loc, ip=ip)
     return make_warp_uniform(tid // WARP_SIZE, loc=loc, ip=ip)
 
 
@@ -790,6 +804,34 @@ shuffle_sync_bfly = partial(shuffle_sync_op, kind=nvvm.ShflKind.bfly)
 
 
 @dsl_user_op
+def movmatrix_trans(
+    src: Int32,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int32:
+    """
+    Transposes an 8x8 matrix of 16-bit elements held across a warp, with
+    ``movmatrix.sync.aligned.m8n8.trans.b16``.
+
+    Before and after, lane ``4 * g + t`` holds row ``g``, columns ``2 * t`` (low
+    16 bits) and ``2 * t + 1`` (high 16 bits). This is the layout of an 8x8 tile
+    of an ``mma.sync`` fragment, so the result is the transposed tile's fragment
+    with no trip through shared memory. Every lane of the warp must execute it.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-movmatrix-instruction
+
+    :param src: this lane's two elements, packed in an Int32
+    :type src: Int32
+    :return: this lane's two elements of the transposed matrix
+    :rtype: Int32
+    """
+    from cutlass.experimental.primitives import movmatrix_trans as _movmatrix_trans
+
+    return _movmatrix_trans(src, loc=loc, ip=ip)
+
+
+@dsl_user_op
 def warp_reduction(
     val: Numeric,
     op: Callable,
@@ -837,11 +879,16 @@ def barrier(
     *,
     barrier_id: Optional[Int] = None,
     number_of_threads: Optional[Int] = None,
+    aligned: bool = True,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
     """
-    Creates a barrier, optionally named.
+    Arrive at and wait on a barrier, optionally named.
+
+    ``aligned=True`` preserves the legacy ``bar.sync`` form, which requires
+    threads in the CTA to execute the same instruction. Use ``aligned=False``
+    when specialized warps rendezvous through separate control-flow paths.
     """
     if barrier_id is not None:
         barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
@@ -850,12 +897,23 @@ def barrier(
         number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
 
     # TODO: support barrier with reduction result
-    nvvm.barrier(
-        barrier_id=barrier_id,
-        number_of_threads=number_of_threads,
-        loc=loc,
-        ip=ip,
-    )
+    if aligned:
+        nvvm.barrier(
+            barrier_id=barrier_id,
+            number_of_threads=number_of_threads,
+            loc=loc,
+            ip=ip,
+        )
+    else:
+        if barrier_id is None:
+            barrier_id = Int32(0).ir_value(loc=loc, ip=ip)
+        nvvm.barrier_cta_sync(
+            barrier_id=barrier_id,
+            thread_count=number_of_threads,
+            aligned=False,
+            loc=loc,
+            ip=ip,
+        )
 
 
 @dsl_user_op
@@ -1358,7 +1416,7 @@ def setmaxregister_decrease(
 
 
 @dsl_user_op
-@deprecated("API is deprecated, use setmaxregister_increase instead")
+@_deprecated("API is deprecated, use setmaxregister_increase instead")
 def warpgroup_reg_alloc(
     reg_count: int,
     *,
@@ -1371,7 +1429,7 @@ def warpgroup_reg_alloc(
 
 
 @dsl_user_op
-@deprecated("API is deprecated, use setmaxregister_decrease instead")
+@_deprecated("API is deprecated, use setmaxregister_decrease instead")
 def warpgroup_reg_dealloc(
     reg_count: int,
     *,
@@ -1383,11 +1441,79 @@ def warpgroup_reg_dealloc(
     nvvm.setmaxregister(reg_count, SetMaxRegisterAction.decrease, loc=loc, ip=ip)
 
 
+def _packed_f32x2_operand_to_vec(
+    x: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    """Pack a sequence of f32 scalars into a vector; pass a vector through as-is.
+
+    The NVVM ops take ``<N x f32>`` for any N, not just 2 -- the hardware
+    instruction is 2-wide and the backend splits wider vectors into one
+    ``fma.rn.f32x2`` per pair. Accepting a vector directly lets a caller keep
+    an accumulator in vector form across iterations instead of packing and
+    unpacking it on every call.
+
+    Both tuples and lists are accepted: existing callers pass either.
+
+    A higher-rank vector is flattened to rank 1. The op's ODS type is
+    ``VectorOfNonZeroRankOf<[F32]>`` so a ``vector<2x4xf32>`` passes its
+    verifier, but the LLVM dialect has no multi-dim vector type and such an
+    operand cannot be translated. Flattening keeps the op at the only rank it
+    can carry; :func:`_packed_f32x2_restore_shape` puts the result back.
+    """
+    if not isinstance(x, (tuple, list)):
+        value = x if isinstance(x, ir.Value) else x.ir_value(loc=loc)
+        vec_ty = ir.VectorType(value.type)
+        if len(vec_ty.shape) == 1:
+            return x
+        flat_ty = ir.VectorType.get(
+            [_packed_f32x2_numel(vec_ty)], vec_ty.element_type, loc=loc
+        )
+        return vector.shape_cast(flat_ty, value, loc=loc, ip=ip)
+    vec_type = ir.VectorType.get([len(x)], Float32.mlir_type, loc=loc)
+    return vector.from_elements(
+        vec_type,
+        tuple(as_numeric(e).ir_value(loc=loc, ip=ip) for e in x),
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _packed_f32x2_numel(vec_ty: ir.VectorType) -> int:
+    """Total lane count of a vector type, across all dimensions."""
+    count = 1
+    for dim in vec_ty.shape:
+        count *= dim
+    return count
+
+
+def _packed_f32x2_restore_shape(
+    res: Any,
+    original_type: Optional[ir.Type],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Any:
+    """Reshape a rank-1 result back to the operand's original shape."""
+    vec_ty = ir.VectorType(original_type)
+    if len(vec_ty.shape) == 1:
+        return res
+    return vector.shape_cast(vec_ty, res, loc=loc, ip=ip)
+
+
+def _packed_f32x2_vec_type(v: Any, *, loc: Optional[ir.Location] = None) -> ir.Type:
+    """MLIR vector type of an operand accepted by the packed-f32x2 ops."""
+    value = v if isinstance(v, ir.Value) else v.ir_value(loc=loc)
+    return value.type
+
+
 @dsl_user_op
 def calc_packed_f32x2_op(
-    src_a: Tuple[Float32, Float32],
-    src_b: Tuple[Float32, Float32],
-    src_c: Optional[Tuple[Float32, Float32]],
+    src_a: Union[Tuple[Float32, ...], ir.Value],
+    src_b: Union[Tuple[Float32, ...], ir.Value],
+    src_c: Optional[Union[Tuple[Float32, ...], ir.Value]],
     calc_func: Callable,
     *,
     result_type_inferred: bool = False,
@@ -1395,7 +1521,14 @@ def calc_packed_f32x2_op(
     ftz: Optional[bool] = None,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> Tuple[Float32, Float32]:
+) -> Union[Tuple[Float32, ...], ir.Value]:
+    """Apply a packed-f32x2 NVVM op to scalar tuples or to vectors.
+
+    Operands may be tuples of ``Float32`` -- in which case a tuple of the same
+    width comes back -- or ``<N x f32>`` vectors, in which case a vector comes
+    back and no pack/unpack is emitted. All operands must agree in width; the
+    op carries ``SameOperandsAndResultType``.
+    """
     from cutlass._mlir.dialects.nvvm import FPRoundingMode
 
     # Enhance enum and convert string literal to enum type
@@ -1404,26 +1537,13 @@ def calc_packed_f32x2_op(
     if calc_func in _RESULT_TYPE_INFERRED_PACKED_F32X2_OPS:
         result_type_inferred = True
 
-    vec_type = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
-    vec_src_a = vector.from_elements(
-        vec_type,
-        tuple(as_numeric(a).ir_value(loc=loc, ip=ip) for a in src_a),
-        loc=loc,
-        ip=ip,
-    )
-    vec_src_b = vector.from_elements(
-        vec_type,
-        tuple(as_numeric(b).ir_value(loc=loc, ip=ip) for b in src_b),
-        loc=loc,
-        ip=ip,
-    )
+    returns_sequence = isinstance(src_a, (tuple, list))
+    original_type = None if returns_sequence else _packed_f32x2_vec_type(src_a, loc=loc)
+    vec_src_a = _packed_f32x2_operand_to_vec(src_a, loc=loc, ip=ip)
+    vec_src_b = _packed_f32x2_operand_to_vec(src_b, loc=loc, ip=ip)
+    vec_type = _packed_f32x2_vec_type(vec_src_a, loc=loc)
     if src_c is not None:
-        vec_src_c = vector.from_elements(
-            vec_type,
-            tuple(as_numeric(c).ir_value(loc=loc, ip=ip) for c in src_c),
-            loc=loc,
-            ip=ip,
-        )
+        vec_src_c = _packed_f32x2_operand_to_vec(src_c, loc=loc, ip=ip)
         if result_type_inferred:
             vec_res = calc_func(
                 vec_src_a, vec_src_b, vec_src_c, rnd=rnd, ftz=ftz, loc=loc, ip=ip
@@ -1446,17 +1566,30 @@ def calc_packed_f32x2_op(
             vec_type, vec_src_a, vec_src_b, rnd=rnd, ftz=ftz, loc=loc, ip=ip
         )
 
-    res0 = Float32(
-        vector.extract(
-            vec_res, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    if not returns_sequence:
+        result = _packed_f32x2_restore_shape(vec_res, original_type, loc=loc, ip=ip)
+        # Preserve the operand's Python type. A TensorSSA carries a CuTe shape
+        # that a bare vector does not, so returning the raw value would quietly
+        # downgrade it and give callers a different API than cute.fma hands
+        # back for the same operand.
+        from ..tensor import TensorSSA
+
+        if isinstance(src_a, TensorSSA) and not isinstance(result, TensorSSA):
+            return TensorSSA(result, src_a.shape, src_a.dtype, loc=loc, ip=ip)
+        return result
+
+    # Unpack by the operand's actual width, not a hardcoded 2 -- a caller that
+    # passes a 4-tuple must get four results back, not the first two. The
+    # sequence path is always rank-1, having just been built by from_elements.
+    width = ir.VectorType(vec_type).shape[0]
+    return tuple(
+        Float32(
+            vector.extract(
+                vec_res, dynamic_position=[], static_position=[i], loc=loc, ip=ip
+            )
         )
+        for i in range(width)
     )
-    res1 = Float32(
-        vector.extract(
-            vec_res, dynamic_position=[], static_position=[1], loc=loc, ip=ip
-        )
-    )
-    return res0, res1
 
 
 fma_packed_f32x2 = partial(
@@ -2469,6 +2602,7 @@ def sub_packed_bf16x2(
 def fmax(
     a: Union[float, Float32],
     b: Union[float, Float32],
+    c: Optional[Union[float, Float32]] = None,
     *,
     abs: bool = False,
     nan: bool = False,
@@ -2478,6 +2612,7 @@ def fmax(
 ) -> Float32:
     """Floating-point max via ``nvvm.fmax`` (FMNMX, not ``arith.max``/SEL).
 
+    :param c: Optional third input to the maximum operation.
     :param abs: When True, lower to the xorsign-abs form
         ``sign(a ^ b) * max(|a|, |b|)`` (FMNMX.XORSIGN.ABS); default False is a
         plain max.
@@ -2491,6 +2626,7 @@ def fmax(
         nvvm.fmax(
             Float32(a).ir_value(loc=loc, ip=ip),
             Float32(b).ir_value(loc=loc, ip=ip),
+            c=Float32(c).ir_value(loc=loc, ip=ip) if c is not None else None,
             abs=abs,
             nan=nan,
             ftz=ftz,
@@ -2547,16 +2683,18 @@ def rcp_approx(
     )
 
 
-@dsl_user_op
-@deprecated(
-    "cute.arch.exp2 is deprecated, use cute.math.exp2 with `fastmath=True` instead"
-)
-def exp2(
+def _ex2_approx_ftz_f32(
     a: Union[float, Float32],
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
+    """Emit ``ex2.approx.ftz.f32``, the body of the deprecated ``exp2``.
+
+    The deprecated ``exp`` and ``exp_packed_f32x2`` emit the same instruction
+    through this helper rather than by calling ``exp2``, so using them does
+    not also report ``exp2``.
+    """
     return Float32(
         llvm.inline_asm(
             T.f32(),
@@ -2568,6 +2706,19 @@ def exp2(
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
     )
+
+
+@dsl_user_op
+@_deprecated(
+    "cute.arch.exp2 is deprecated, use cute.math.exp2 with `fastmath=True` instead"
+)
+def exp2(
+    a: Union[float, Float32],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Float32:
+    return _ex2_approx_ftz_f32(a, loc=loc, ip=ip)
 
 
 # Convert 1 int8 value to 1 bfloat16 value
@@ -2729,21 +2880,26 @@ def cvt_f32_tf32(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> ir.Value:
-    """Convert one f32 value to a TF32 MMA operand register."""
+) -> Int32:
+    """Convert one f32 value to a TF32 MMA operand register.
+
+    :return: The TF32 bit pattern as an ``Int32`` register value
+    """
     src_val = (
         src_f32
         if isinstance(src_f32, ir.Value)
         else Float32(src_f32).ir_value(loc=loc, ip=ip)
     )
-    return llvm.inline_asm(
-        Int32.mlir_type,
-        [src_val],
-        "cvt.rna.tf32.f32 $0, $1;",
-        "=r,f",
-        has_side_effects=False,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
+    return Int32(
+        llvm.inline_asm(
+            Int32.mlir_type,
+            [src_val],
+            "cvt.rna.tf32.f32 $0, $1;",
+            "=r,f",
+            has_side_effects=False,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+        )
     )
 
 
@@ -2943,19 +3099,26 @@ def prmt(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> ir.Value:
-    return llvm.inline_asm(
-        T.i32(),
-        [
-            Int32(src).ir_value(loc=loc, ip=ip),
-            Int32(src_reg_shifted).ir_value(loc=loc, ip=ip),
-            Int32(prmt_indices).ir_value(loc=loc, ip=ip),
-        ],
-        "prmt.b32 $0, $1, $2, $3;",
-        "=r,r,r,r",
-        has_side_effects=False,
-        is_align_stack=False,
-        asm_dialect=llvm.AsmDialect.AD_ATT,
+) -> Union[Int32, Uint32]:
+    """Permute the bytes of two 32-bit registers with ``prmt.b32``.
+
+    :return: The permuted word: ``Uint32`` when ``src`` is ``Uint32``, else ``Int32``
+    """
+    result_type = Uint32 if isinstance(src, Uint32) else Int32
+    return result_type(
+        llvm.inline_asm(
+            T.i32(),
+            [
+                Int32(src).ir_value(loc=loc, ip=ip),
+                Int32(src_reg_shifted).ir_value(loc=loc, ip=ip),
+                Int32(prmt_indices).ir_value(loc=loc, ip=ip),
+            ],
+            "prmt.b32 $0, $1, $2, $3;",
+            "=r,r,r,r",
+            has_side_effects=False,
+            is_align_stack=False,
+            asm_dialect=llvm.AsmDialect.AD_ATT,
+        )
     )
 
 
@@ -3371,7 +3534,7 @@ def log2_of_pow2_int(
 
 
 @dsl_user_op
-@deprecated(
+@_deprecated(
     "cute.arch.exp is deprecated, use cute.math.exp with `fastmath=True` instead"
 )
 def exp(
@@ -3381,11 +3544,11 @@ def exp(
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Float32:
     LOG2_E = 1.4426950408889634
-    return exp2(a * LOG2_E, loc=loc, ip=ip)
+    return _ex2_approx_ftz_f32(a * LOG2_E, loc=loc, ip=ip)
 
 
 @dsl_user_op
-@deprecated(
+@_deprecated(
     "cute.arch.exp_packed_f32x2 is deprecated, use cute.arch.mul_packed_f32x2 and cute.math.exp2 with `fastmath=True` instead"
 )
 def exp_packed_f32x2(
@@ -3396,7 +3559,10 @@ def exp_packed_f32x2(
 ) -> Tuple[Float32, Float32]:
     LOG2_E = Float32(1.4426950408889634)
     b = mul_packed_f32x2(a, (LOG2_E, LOG2_E), loc=loc, ip=ip)
-    return exp2(b[0], loc=loc, ip=ip), exp2(b[1], loc=loc, ip=ip)
+    return (
+        _ex2_approx_ftz_f32(b[0], loc=loc, ip=ip),
+        _ex2_approx_ftz_f32(b[1], loc=loc, ip=ip),
+    )
 
 
 @dsl_user_op
@@ -3443,6 +3609,70 @@ def griddepcontrol_launch_dependents(
     )
 
 
+@dsl_user_op
+def nanosleep(
+    *,
+    sleep_time: int = 1000,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """Suspend the thread for approximately ``sleep_time`` nanoseconds.
+
+    Requires sm_70 or later. The sleep duration is approximate, but guaranteed
+    to be in the interval [0, 2*t]. The maximum duration is 1 millisecond.
+    """
+    return llvm.inline_asm(
+        res=None,
+        operands_=[Int32(sleep_time).ir_value(loc=loc, ip=ip)],
+        asm_string="nanosleep.u32 $0;",
+        constraints="r",
+        has_side_effects=True,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
+def _redux_sync_f32_const_partial_mask(
+    value_ir: ir.Value,
+    op: Literal["max", "min"],
+    mask: int,
+    abs: Optional[bool],
+    nan: Optional[bool],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Emit an f32 ``redux.sync`` whose compile-time partial membermask is a PTX immediate.
+
+    Partial-warp reductions are written as calls with different constant masks in the
+    arms of a lane-dependent branch, e.g. ``0x0000FFFF`` / ``0xFFFF0000`` for a half-warp
+    amax. As an SSA operand (the NVVM redux op) the mask lets MLIR block merging fold
+    both arms into one reduction whose mask is a per-lane select. ptxas compiles such a
+    warp-divergent mask with a uniformity test guarding a whole-warp fast path, and can
+    schedule that test into the collective region of a preceding reduction, where only
+    the lanes sharing one mask value are active. The test then sees a uniform mask and
+    the reductions after it combine all 32 lanes.
+
+    The mask is spelled in the instruction text, not passed as an operand, so the
+    branch arms stay distinct, never merge, and every reduction reaches ptxas with a
+    warp-uniform immediate mask. The asm is side-effecting so it is not hoisted out of
+    its branch. An "i" or "n" operand constraint is not an option: once the arms
+    merge, the operand becomes a phi that no immediate constraint accepts.
+    """
+    modifiers = ("abs." if abs else "") + ("NaN." if nan else "")
+    return llvm.inline_asm(
+        T.f32(),
+        [value_ir],
+        f"redux.sync.{op}.{modifiers}f32 $0, $1, {mask:#010x};",
+        "=f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
 
 @dsl_user_op
 def _warp_redux_sync_nvvm(
@@ -3460,7 +3690,7 @@ def _warp_redux_sync_nvvm(
         "and",
     ],
     mask_and_clamp: Int = FULL_MASK,
-    abs: bool = False,
+    abs: Optional[bool] = None,
     nan: Optional[bool] = None,
     *,
     loc: Optional[ir.Location] = None,
@@ -3470,9 +3700,26 @@ def _warp_redux_sync_nvvm(
 
     # Enhance enum and convert string literal to enum type
     ReductionKind = _enhance_enum_with_str_mapping(ReductionKind)
-    kind = ReductionKind.from_str(kind)
 
     value_type = type(value)
+    is_float = value_type.mlir_type == T.f32()
+    if is_float:
+        # "max" / "min" on a float operand spell the floating-point reduction.
+        if kind == "max":
+            kind = "fmax"
+        elif kind == "min":
+            kind = "fmin"
+        if kind not in ("fmax", "fmin"):
+            raise ValueError(
+                f"warp_redux_sync: kind {kind!r} is not defined for {value_type.__name__}; "
+                "float reductions are 'fmax' / 'fmin' (or 'max' / 'min')"
+            )
+    elif kind in ("fmax", "fmin"):
+        raise ValueError(
+            f"warp_redux_sync: kind {kind!r} needs a Float32 operand, got {value_type.__name__}"
+        )
+    kind = ReductionKind.from_str(kind)
+
     if issubclass(value_type, Integer) and not value_type.signed:
         if kind == ReductionKind.MAX:
             kind = ReductionKind.UMAX
@@ -3480,6 +3727,23 @@ def _warp_redux_sync_nvvm(
             kind = ReductionKind.UMIN
 
     value_ir = value.ir_value(loc=loc, ip=ip)
+
+    if (
+        value_type.mlir_type == T.f32()
+        and isinstance(mask_and_clamp, int)
+        and (mask_and_clamp & FULL_MASK) != FULL_MASK
+    ):
+        return value_type(
+            _redux_sync_f32_const_partial_mask(
+                value_ir,
+                "max" if kind == ReductionKind.FMAX else "min",
+                mask_and_clamp & FULL_MASK,
+                abs,
+                nan,
+                loc=loc,
+                ip=ip,
+            )
+        )
 
     return value_type(
         nvvm.redux_sync(
@@ -3490,55 +3754,6 @@ def _warp_redux_sync_nvvm(
             nan=nan,
             loc=loc,
             ip=ip,
-        )
-    )
-
-
-@dsl_user_op
-def _warp_redux_sync_ptx(
-    value: Numeric,
-    kind: Literal[
-        "fmax",
-        "fmin",
-        "max",
-        "min",
-    ],
-    mask_and_clamp: Int = FULL_MASK,
-    abs: Optional[bool] = None,
-    nan: Optional[bool] = None,
-    *,
-    loc: Optional[ir.Location] = None,
-    ip: Optional[ir.InsertionPoint] = None,
-) -> Numeric:
-    value_type = type(value)
-    value_ir = value.ir_value(loc=loc, ip=ip)
-    mlir_type = value_type.mlir_type
-    mask_ir = Int32(mask_and_clamp).ir_value(loc=loc, ip=ip)
-
-    kind_ptx_str = kind
-    if kind == "fmax":
-        kind_ptx_str = "max"
-    elif kind == "fmin":
-        kind_ptx_str = "min"
-
-    modifiers = []
-    if nan is True:
-        modifiers.append("NaN")
-    if abs is True:
-        modifiers.append("abs")
-
-    modifier_str = "." + ".".join(modifiers) if modifiers else ""
-    ptx_instr = f"redux.sync.{kind_ptx_str}{modifier_str}.f32 $0, $1, $2;"
-
-    return value_type(
-        llvm.inline_asm(
-            mlir_type,
-            [value_ir, mask_ir],
-            f"{ptx_instr}",
-            "=f,f,i",
-            has_side_effects=True,
-            is_align_stack=False,
-            asm_dialect=llvm.AsmDialect.AD_ATT,
         )
     )
 
@@ -3592,24 +3807,31 @@ def warp_redux_sync(
     if not isinstance(value, Numeric):
         value = as_numeric(value)
 
-    # Determine value type and choose appropriate implementation
-    value_type = type(value)
-    mlir_type = value_type.mlir_type
+    # Every other type, Float32 included, is the NVVM redux op (the same op
+    # `primitives.redux_sync` emits); it lowers to the llvm.nvvm.redux.sync.*
+    # intrinsic with the membermask as a register operand.
+    return _warp_redux_sync_nvvm(value, kind, mask_and_clamp, abs, nan, loc=loc, ip=ip)
 
-    # Use inline PTX for float types, NVVM for integer types
-    if mlir_type == T.f32():
-        return _warp_redux_sync_ptx(
-            value, kind, mask_and_clamp, abs, nan, loc=loc, ip=ip
-        )
-    else:
-        return _warp_redux_sync_nvvm(
-            value, kind, mask_and_clamp, abs, nan, loc=loc, ip=ip
-        )
+
+def _is_llvm_ptr_type(ty: ir.Type) -> bool:
+    """True for `!llvm.ptr` in any address space.
+
+    Probes with the type constructor rather than ``llvm.PointerType.isinstance``:
+    when the bindings do not expose a native ``isinstance`` for a dialect type
+    the compatibility shim installed on ``ir.Type`` answers True for any type.
+    """
+    try:
+        llvm.PointerType(ty)
+    except ValueError:
+        return False
+    return True
 
 
 def _normalize_ptr(
     addr: Union[ir.Value, Pointer],
     *,
+    op: str,
+    param: str = "ptr",
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> ir.Value:
@@ -3617,24 +3839,38 @@ def _normalize_ptr(
     Helper function to normalize pointer types to MLIR ir.Value.
 
     Supports:
-    - ir.Value (LLVM pointer): returned as-is
+    - ir.Value of `!llvm.ptr` type (any address space): returned as-is
     - cute.ptr (_Pointer instance): converted via to_llvm_ptr()
 
+    Anything else is an author mistake and is rejected up front with
+    ``ARG_POINTER_REQUIRED``: a cute.Tensor (whose ``ir_value()`` is the backing
+    `!cute.memref`, which the NVVM op would otherwise only reject in the IR
+    verifier), a cute.TensorSSA (a loaded value), a Numeric, a non-pointer
+    ir.Value, ...  The address space is not checked here; the op verifier still
+    rejects an address space the op does not accept.
+
     :param addr: Address in various pointer formats
+    :param op: Name of the public ``cute.arch`` entry point, for the diagnostic
+    :param param: Name of that entry point's pointer parameter
     :return: Normalized MLIR pointer value
     :rtype: ir.Value
     """
-    # If it's already an MLIR ir.Value, return as-is
     if isinstance(addr, ir.Value):
-        return addr
+        if _is_llvm_ptr_type(addr.type):
+            return addr
+        from ..tensor import TensorSSA
 
-    # If it has to_llvm_ptr method (cute._Pointer instances)
-    if hasattr(addr, "to_llvm_ptr") and callable(addr.to_llvm_ptr):
+        if isinstance(addr, TensorSSA):
+            got = "a cute.TensorSSA (the loaded value, not the tensor's address)"
+        else:
+            got = f"an MLIR value of type `{addr.type}`"
+    elif hasattr(addr, "to_llvm_ptr") and callable(addr.to_llvm_ptr):
         return addr.to_llvm_ptr(loc=loc, ip=ip)
-
-    # If none of the above, return as-is and let NVVM handle it
-    # This allows for future pointer types without breaking existing code
-    return addr
+    elif isinstance(addr, Tensor):
+        got = "a cute.Tensor"
+    else:
+        got = f"`{type(addr).__name__}`"
+    raise DSLUserCodeError(DiagId.ARG_POINTER_REQUIRED, op=op, param=param, got=got)
 
 
 def _atomic(
@@ -3666,6 +3902,7 @@ def _atomic(
     :param ptr: Pointer to memory location. Supports:
         - ir.Value (LLVM pointer)
         - cute.ptr (_Pointer instance)
+        Anything else (e.g. a cute.Tensor) is rejected with ``ARG_POINTER_REQUIRED``.
     :param val: Value to add (scalar Numeric or vector ir.Value)
     :type val: Union[Numeric, ir.Value]
     :param sem: Memory semantic ("relaxed", "release", "acquire", "acq_rel")
@@ -3685,12 +3922,13 @@ def _atomic(
     MemOrderKind = _enhance_enum_with_str_mapping(MemOrderKind)
     MemScopeKind = _enhance_enum_with_str_mapping(MemScopeKind)
 
+    op_name = f"atomic_{op}"
     op = AtomicOpKind.from_str(op)
     sem = MemOrderKind.from_str(sem)
     scope = MemScopeKind.from_str(scope)
 
     # Normalize pointer type to MLIR ir.Value
-    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+    ptr = _normalize_ptr(ptr, op=op_name, loc=loc, ip=ip)
 
     # * Handle `val` Type - scalar Numeric or vector ir.Value
     is_vector = isinstance(val, ir.Value) and isinstance(val.type, ir.VectorType)
@@ -3964,6 +4202,7 @@ def atomic_fmax(
     :return: Old value at ``ptr``.
     :rtype: Float32
     """
+    ptr = _normalize_ptr(ptr, op="atomic_fmax", loc=loc, ip=ip)
     intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
     then_body = lambda: atomic_min(
         ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
@@ -4025,6 +4264,7 @@ def atomic_fmin(
     :return: Old value at ``ptr``.
     :rtype: Float32
     """
+    ptr = _normalize_ptr(ptr, op="atomic_fmin", loc=loc, ip=ip)
     intval = llvm.bitcast(T.i32(), val.ir_value(loc=loc, ip=ip), loc=loc, ip=ip)
     then_body = lambda: atomic_max(
         ptr, Uint32(intval), sem=sem, scope=scope, loc=loc, ip=ip
@@ -4054,7 +4294,7 @@ def atomic_fmin(
     )
 
 
-@deprecated("atomic_max_float32 is deprecated, use atomic_fmax instead")
+@_deprecated("atomic_max_float32 is deprecated, use atomic_fmax instead")
 def atomic_max_float32(
     ptr: Union[ir.Value, Pointer],
     value: Float32,
@@ -4110,7 +4350,7 @@ def atomic_cas(
     scope = MemScopeKind.from_str(scope)
 
     # Normalize pointer type to MLIR ir.Value
-    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+    ptr = _normalize_ptr(ptr, op="atomic_cas", loc=loc, ip=ip)
 
     # * Hanldle `val`, `cmp` Numeric Type
     if not isinstance(cmp, Numeric):
@@ -4201,7 +4441,7 @@ def store(
     ss = SharedSpace.from_str(ss)
 
     # Normalize pointer type to MLIR ir.Value
-    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+    ptr = _normalize_ptr(ptr, op="store", loc=loc, ip=ip)
 
     # Handle both scalar Numeric and vector ir.Value
     is_vector = isinstance(val, ir.Value) and isinstance(val.type, ir.VectorType)
@@ -4305,7 +4545,7 @@ def load(
     level_prefetch_size = L2PrefetchSize.from_str(level_prefetch_size)
 
     # Normalize pointer type to MLIR ir.Value
-    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+    ptr = _normalize_ptr(ptr, op="load", loc=loc, ip=ip)
 
     # Determine if dtype is a vector type or scalar type
     is_vector = isinstance(dtype, ir.VectorType) and isinstance(dtype, ir.VectorType)
@@ -4465,7 +4705,7 @@ def red(
     scope = MemScopeKind.from_str(scope)
 
     # Normalize pointer type to MLIR ir.Value
-    ptr = _normalize_ptr(ptr, loc=loc, ip=ip)
+    ptr = _normalize_ptr(ptr, op="red", loc=loc, ip=ip)
 
     # Determine if val is a vector type or scalar type
     is_vector = isinstance(val, ir.Value) and isinstance(val.type, ir.VectorType)
@@ -4603,6 +4843,135 @@ def cvt_f4e2m1x8_to_f16x8(
 
 
 @dsl_user_op
+def cvt_f32x4_to_fp4x4(
+    src_vec_f32: ir.Value,
+    rbits: Union[int, Int32, Uint32],
+    dst_ty: Union[ir.TypeAttr, ir.Type],
+    *,
+    relu: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Int16:
+    """Convert ``vector<4xf32>`` to packed FP4x4 with stochastic rounding.
+
+    This CuTe API wraps ``nvvm.convert.f32x4.to.f4x4`` and always uses
+    stochastic rounding with finite saturation.
+
+    :param src_vec_f32: Input ``vector<4xf32>``.
+    :param rbits: Random bits used for stochastic rounding.
+    :param dst_ty: Target FP4 element type.
+    :param relu: Whether to clamp negative values to zero.
+    :return: Four packed FP4 values represented as ``Int16``.
+    """
+    arch = cutlass_dsl.BaseDSL._get_dsl().get_arch_enum()
+    if arch not in cvt_f32x4_to_fp4x4.supported_archs:  # type: ignore[attr-defined]
+        raise DSLRuntimeError(f"cvt_f32x4_to_fp4x4 is not supported on {arch}")
+    if not isinstance(dst_ty, ir.TypeAttr):
+        dst_ty = ir.TypeAttr.get(dst_ty)
+    return Int16(
+        nvvm.convert_f32x4_to_f4x4(
+            src_vec_f32,
+            Int32(rbits),
+            dst_ty,
+            relu=relu,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def cvt_f32x4_to_fp6x4(
+    src_vec_f32: ir.Value,
+    rbits: Union[int, Int32, Uint32],
+    dst_ty: Union[ir.TypeAttr, ir.Type],
+    *,
+    relu: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert ``vector<4xf32>`` to packed FP6x4 with stochastic rounding.
+
+    This CuTe API wraps ``nvvm.convert.f32x4.to.f6x4`` and always uses
+    stochastic rounding with finite saturation.
+
+    :param src_vec_f32: Input ``vector<4xf32>``.
+    :param rbits: Random bits used for stochastic rounding.
+    :param dst_ty: Target FP6 element type.
+    :param relu: Whether to clamp negative values to zero.
+    :return: Four packed FP6 values represented as ``vector<4xi8>``.
+    """
+    arch = cutlass_dsl.BaseDSL._get_dsl().get_arch_enum()
+    if arch not in cvt_f32x4_to_fp6x4.supported_archs:  # type: ignore[attr-defined]
+        raise DSLRuntimeError(f"cvt_f32x4_to_fp6x4 is not supported on {arch}")
+    vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
+    if not isinstance(dst_ty, ir.TypeAttr):
+        dst_ty = ir.TypeAttr.get(dst_ty)
+    return nvvm.convert_f32x4_to_f6x4(
+        vec_i8x4_type,
+        src_vec_f32,
+        Int32(rbits),
+        dst_ty,
+        relu=relu,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
+def cvt_f32x4_to_fp8x4(
+    src_vec_f32: ir.Value,
+    rbits: Union[int, Int32, Uint32],
+    dst_ty: Union[ir.TypeAttr, ir.Type],
+    *,
+    relu: bool = False,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """Convert ``vector<4xf32>`` to packed FP8x4 with stochastic rounding.
+
+    This CuTe API wraps ``nvvm.convert.f32x4.to.f8x4`` and always uses
+    stochastic rounding with finite saturation.
+
+    :param src_vec_f32: Input ``vector<4xf32>``.
+    :param rbits: Random bits used for stochastic rounding.
+    :param dst_ty: Target FP8 element type.
+    :param relu: Whether to clamp negative values to zero.
+    :return: Four packed FP8 values represented as ``vector<4xi8>``.
+    """
+    arch = cutlass_dsl.BaseDSL._get_dsl().get_arch_enum()
+    if arch not in cvt_f32x4_to_fp8x4.supported_archs:  # type: ignore[attr-defined]
+        raise DSLRuntimeError(f"cvt_f32x4_to_fp8x4 is not supported on {arch}")
+    vec_i8x4_type = ir.VectorType.get([4], Int8.mlir_type, loc=loc)
+    if not isinstance(dst_ty, ir.TypeAttr):
+        dst_ty = ir.TypeAttr.get(dst_ty)
+    return nvvm.convert_f32x4_to_f8x4(
+        vec_i8x4_type,
+        src_vec_f32,
+        Int32(rbits),
+        dst_ty,
+        relu=relu,
+        loc=loc,
+        ip=ip,
+    )
+
+
+cvt_f32x4_to_fp4x4.supported_archs = (  # type: ignore[attr-defined]
+    base_dsl.Arch.sm_100a,
+    base_dsl.Arch.sm_103a,
+)
+cvt_f32x4_to_fp6x4.supported_archs = (  # type: ignore[attr-defined]
+    base_dsl.Arch.sm_100a,
+    base_dsl.Arch.sm_103a,
+)
+cvt_f32x4_to_fp8x4.supported_archs = (  # type: ignore[attr-defined]
+    base_dsl.Arch.sm_100a,
+    base_dsl.Arch.sm_103a,
+)
+
+
+
+@dsl_user_op
 def cvt_f32x4_to_fnv8e5m3x4(
     src_vec_f32: ir.Value,
     *,
@@ -4682,6 +5051,99 @@ def cvt_f32x4_to_fnv8e5m3x4(
         [res_fnv8e5m3fnux4_type], [res_i8x4], loc=loc, ip=ip
     )
     return res_fnv8e5m3fnux4
+
+
+@dsl_user_op
+def cvt_f32x2_f16x2_pzo(
+    src_vec2: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """f32x2 -> f16x2 .pzo convert (-0.0 -> +0.0). sm_107+."""
+    src0 = vector.extract(
+        src_vec2, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    )
+    src1 = vector.extract(
+        src_vec2, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+    )
+    rst = llvm.inline_asm(
+        T.i32(),
+        [
+            Float32(src1).ir_value(loc=loc, ip=ip),
+            Float32(src0).ir_value(loc=loc, ip=ip),
+        ],
+        "cvt.rn.pzo.f16x2.f32 $0, $1, $2;",
+        "=r,f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+    return llvm.bitcast(
+        ir.VectorType.get([2], Float16.mlir_type, loc=loc), rst, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def cvt_f32x2_bf16x2_pzo(
+    src_vec2: ir.Value,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """f32x2 -> bf16x2 .pzo convert (-0.0 -> +0.0). sm_107+."""
+    src0 = vector.extract(
+        src_vec2, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    )
+    src1 = vector.extract(
+        src_vec2, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+    )
+    rst = llvm.inline_asm(
+        T.i32(),
+        [
+            Float32(src1).ir_value(loc=loc, ip=ip),
+            Float32(src0).ir_value(loc=loc, ip=ip),
+        ],
+        "cvt.rn.pzo.bf16x2.f32 $0, $1, $2;",
+        "=r,f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+    return llvm.bitcast(
+        ir.VectorType.get([2], BFloat16.mlir_type, loc=loc), rst, loc=loc, ip=ip
+    )
+
+
+@dsl_user_op
+def cvt_f32x2_f8x2_pzo(
+    src_vec2: ir.Value,
+    dst_dtype: Type[Numeric],
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> ir.Value:
+    """f32x2 -> f8x2 (e4m3/e5m2) .pzo convert (-0.0->+0.0). sm107+."""
+    src0 = vector.extract(
+        src_vec2, dynamic_position=[], static_position=[0], loc=loc, ip=ip
+    )
+    src1 = vector.extract(
+        src_vec2, dynamic_position=[], static_position=[1], loc=loc, ip=ip
+    )
+    res_i16 = nvvm.convert_f32x2_to_f8x2(
+        T.i16(),
+        Float32(src1),
+        Float32(src0),
+        ir.TypeAttr.get(dst_dtype.mlir_type),
+        is_pzo=True,
+        rnd=nvvm.FPRoundingMode.RN,
+        sat=nvvm.SaturationMode.SATFINITE,
+        loc=loc,
+        ip=ip,
+    )
+    return llvm.bitcast(
+        ir.VectorType.get([2], dst_dtype.mlir_type, loc=loc), res_i16, loc=loc, ip=ip
+    )
 
 
 # Type alias for inline_ptx argument types
@@ -6803,7 +7265,7 @@ def prefetch(
     """
     Prefetch data or TMA descriptor to cache.
 
-    :param addr: LLVM pointer to prefetch.
+    :param addr: Pointer to prefetch (cute.Pointer or `!llvm.ptr` value).
     :param cache_level: Prefetch cache level string ("L1", "L2"). Mutually exclusive with tensormap.
     :param evict_priority: Cache eviction priority.
     :param predicate: Optional predicate for conditional execution.
@@ -6822,6 +7284,7 @@ def prefetch(
         PrefetchCacheLevel = _enhance_enum_with_str_mapping(nvvm.PrefetchCacheLevel)
         cache_level = PrefetchCacheLevel.from_str(cache_level)
 
+    addr = _normalize_ptr(addr, op="prefetch", param="addr", loc=loc, ip=ip)
     nvvm.prefetch(
         addr,
         cache_level=cache_level,

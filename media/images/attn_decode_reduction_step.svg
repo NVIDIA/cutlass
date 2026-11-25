@@ -1,0 +1,67 @@
+<svg width="1024" height="540" viewBox="0 0 1024 540" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="52%" cy="52%" r="78%">
+      <stop offset="0%" stop-color="#f2f2f2"/>
+      <stop offset="72%" stop-color="#fbfbfb"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </radialGradient>
+    <linearGradient id="warpFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f5f7e"/>
+      <stop offset="100%" stop-color="#1c6d90"/>
+    </linearGradient>
+    <linearGradient id="sFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a7f2d3" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#a7f2d3" stop-opacity="0.08"/>
+    </linearGradient>
+    <filter id="shadow" x="-12%" y="-12%" width="130%" height="140%">
+      <feDropShadow dx="3" dy="6" stdDeviation="4" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 10 5, 0 10" fill="#1f2933"/>
+    </marker>
+    <style>
+      svg { font-family: "DejaVu Sans", Arial, sans-serif; }
+      .step-label { font-weight: 700; font-size: 22px; fill: #1f2933; }
+      .step-sub { font-weight: 500; font-size: 16px; fill: #5f6b76; }
+      .warp-label { font-weight: 800; font-size: 28px; fill: #ffffff; text-anchor: middle; dominant-baseline: middle; }
+      .tile-label { font-weight: 800; font-size: 38px; fill: #62aa3f; text-anchor: middle; dominant-baseline: middle; }
+      .bracket { stroke: #1f2933; stroke-width: 2; fill: none; }
+      .bracket-thick { stroke: #1f2933; stroke-width: 2.6; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1024" height="540" fill="url(#bg)"/>
+
+  <rect x="700" y="80" width="240" height="400" rx="14" fill="url(#sFill)" stroke="#62aa3f" stroke-width="2"/>
+
+  <g filter="url(#shadow)">
+    <rect x="720" y="100" width="200" height="80" rx="8" fill="url(#warpFill)" stroke="#0f5f7e" stroke-width="2"/>
+    <rect x="720" y="190" width="200" height="80" rx="8" fill="url(#warpFill)" stroke="#0f5f7e" stroke-width="2"/>
+    <rect x="720" y="280" width="200" height="80" rx="8" fill="url(#warpFill)" stroke="#0f5f7e" stroke-width="2"/>
+    <rect x="720" y="370" width="200" height="80" rx="8" fill="url(#warpFill)" stroke="#0f5f7e" stroke-width="2"/>
+  </g>
+
+  <text class="warp-label" x="820" y="140">W0</text>
+  <text class="warp-label" x="820" y="230">W1</text>
+  <text class="warp-label" x="820" y="320">W2</text>
+  <text class="warp-label" x="820" y="410">W3</text>
+
+  <text class="tile-label" x="820" y="510">S<tspan font-size="22" baseline-shift="super">T</tspan></text>
+
+  <path class="bracket" d="M 715 100 L 700 100 L 700 180 L 715 180"/>
+  <path class="bracket" d="M 715 190 L 700 190 L 700 270 L 715 270"/>
+  <path class="bracket" d="M 715 280 L 700 280 L 700 360 L 715 360"/>
+  <path class="bracket" d="M 715 370 L 700 370 L 700 450 L 715 450"/>
+
+  <path class="bracket-thick" d="M 680 100 L 660 100 L 660 450 L 680 450"/>
+
+  <text class="step-label" x="100" y="185">Step 1: intra-warp reduction</text>
+  <text class="step-sub" x="100" y="212">(32 lanes → 1 value per warp)</text>
+
+  <line x1="490" y1="200" x2="695" y2="200" stroke="#1f2933" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <text class="step-label" x="100" y="325">Step 2: inter-warp reduction</text>
+  <text class="step-sub" x="100" y="352">(4 partials → 1 final via SMEM)</text>
+
+  <line x1="490" y1="340" x2="655" y2="340" stroke="#1f2933" stroke-width="2" marker-end="url(#arrowhead)"/>
+</svg>

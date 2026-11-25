@@ -291,6 +291,14 @@ Options::Initialization::Initialization(cutlass::CommandLine const &cmdline) {
     data_distribution.set_uniform(-4, 4, 0);
   }
 
+  // per-tensor data distributions: --dist-A=..., --dist-SFA=..., ...
+  std::string const tensor_dist_prefix = "dist-";
+  for (std::string const &key : cmdline.keys) {
+    if (key.compare(0, tensor_dist_prefix.size(), tensor_dist_prefix) == 0) {
+      get_distribution(cmdline, key, tensor_distributions[key.substr(tensor_dist_prefix.size())]);
+    }
+  }
+
 
 }
 
@@ -308,6 +316,7 @@ void Options::Initialization::get_distribution(
     {"gaussian", cutlass::Distribution::Gaussian},
     {"identity", cutlass::Distribution::Identity},
     {"sequential", cutlass::Distribution::Sequential},
+    {"uniform_bits", cutlass::Distribution::UniformBits},
     {0, cutlass::Distribution::Invalid}
   };
 
@@ -358,6 +367,9 @@ void Options::Initialization::get_distribution(
     case cutlass::Distribution::Sequential:
       dist.set_sequential(0/*start*/, 4/*delta*/);
       break;
+    case cutlass::Distribution::UniformBits:
+      dist.set_uniform_bits();
+      break;
     default:
       dist.set_uniform(-4/*min*/, 4/*max*/);
       return;
@@ -402,11 +414,20 @@ void Options::Initialization::print_usage(std::ostream &out) const {
     << "    Selects initialization provider {host, device*}. (default: '*')\n\n"
 
     << "  --dist=<distribution>                        "
-    << "    Data distribution of input tensors {uniform*, gaussian, identity, sequential}"  << end_of_line
+    << "    Data distribution of input tensors {uniform*, gaussian, identity, sequential, uniform_bits}"  << end_of_line
     << "       --dist=uniform,min:<double>,max:<double>,scale:<integer>"  << end_of_line
     << "       --dist=gaussian,mean:<double>,stddev:<double>,scale:<integer>,pnzA:<double>,pnzB:<double>,pnzC:<double>"  << end_of_line
     << "       --dist=sequential,start:<double>,delta:<double>,scale:<integer>"  << end_of_line
-    << "       --dist=identity\n\n"
+    << "       --dist=identity"  << end_of_line
+    << "       --dist=uniform_bits"  << end_of_line
+    << "      uniform_bits draws random bits instead of random values, so every" << end_of_line
+    << "      bit pattern of the element type is equally likely (each e2m1 code is" << end_of_line
+    << "      1/16 of the elements).\n\n"
+
+    << "  --dist-<tensor>=<distribution>               "
+    << "    Data distribution of one input tensor, named as the operation names it (A, B, C, SFA, SFB, ...)." << end_of_line
+    << "      Overrides --dist and the element type defaults for that tensor only." << end_of_line
+    << "       --dist-SFA=uniform,min:0.1,max:10,scale:-1\n\n"
 
     << "  --seed=<int>                                 "
     << "    Random number generator seed. Used to enforce deterministic" << end_of_line
@@ -642,12 +663,15 @@ void Options::Verification::print_usage(std::ostream &out) const {
     << "    Whether to perform verification checks.\n\n"
 
     << "  --epsilon=<error>                            "
-    << "    Error threshold. Setting to zero (default) requires" << end_of_line
-    << "      bit-level equivalence.\n\n"
+    << "    Floating-point error threshold (default: 0.05)." << end_of_line
+    << "      Set --epsilon=0 to require element-wise equality (==).\n\n"
 
     << "  --nonzero-floor=<floor>                      "
-    << "    Results whose absolute value is less than this quantity" << end_of_line
-    << "      are treated as zero for comparisons.\n\n"
+    << "    Near-zero comparison scale (default: 1/256)." << end_of_line
+    << "      For floating-point comparisons with nonzero epsilon, a == b passes." << end_of_line
+    << "      Otherwise, if either value is zero or abs(a)+abs(b) < floor," << end_of_line
+    << "      require abs(a-b) < epsilon * floor; else require" << end_of_line
+    << "      abs(a-b) < epsilon * (abs(a)+abs(b)).\n\n"
 
     << "  --save-workspace=<string>                    "
     << "    Specifies when to save the GEMM inputs and results to the filesystem." << end_of_line

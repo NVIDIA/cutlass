@@ -1194,6 +1194,22 @@ void BlockFillRandomUniform(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Fills a block of memory with uniform random bits.
+inline void BlockFillRandomUniformBits(
+  void *ptr,
+  size_t bytes,
+  uint64_t seed) {                        ///< seed for RNG
+
+  std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+
+  uint8_t *byte_ptr = reinterpret_cast<uint8_t *>(ptr);
+  for (size_t i = 0; i < bytes; ++i) {
+    byte_ptr[i] = uint8_t(rng());
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace detail {
 
 template <
@@ -1574,6 +1590,12 @@ void BlockFillRandom(
       dist.uniform.min, 
       dist.int_scale,
       dist.uniform.pnan);
+  }
+  else if (dist.kind == Distribution::UniformBits) {
+    BlockFillRandomUniformBits(
+      ptr,
+      (sizeof_bits<Element>::value * capacity + 7) / 8,
+      seed);
   }
 }
 

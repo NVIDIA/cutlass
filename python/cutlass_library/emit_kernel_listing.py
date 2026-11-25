@@ -385,8 +385,8 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     sm103_block_scaled_filter_regex_2sm = "cutlass3x_sm103_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm103_block_scaled_data_type, sm103_block_scaled_tile_k, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*(" + "|".join(sm103_block_scaled_prefetch_policy) + ").*"
 
     sm107_mma_bs_data_type_general = [
-      "gemm_ue8m0xf8_ue8m0xf8_f32_f16_f16",
       "gemm_ue8m0xf8_ue8m0xf8_f32_bf16_e5m2",
+      "gemm_ue8m0xf8_ue8m0xf8_f32_f16_ue8m0xe4m3",
     ]
 
     sm107_mma_bs_filter_regex_1sm = "cutlass3x_sm107_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [sm107_mma_bs_data_type_general, sm107_mma_cluster_size, block_scaled_layouts]]) + ").*_breuse_1sm.*"
@@ -601,7 +601,8 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       # Only test f16 I/O void C kernels in void C kernel set
       # Exception: Use void C kernels for more accurate perf testing
       if '_void_' in kernel_name and  'perf_' not in mode:
-        if 'f16_f16_f16_void_f16' not in kernel_name :
+        keep_void_c = 'f16_f16_f16_void_f16' in kernel_name
+        if not keep_void_c:
           continue
 
       kernels_emitted += 1
@@ -831,8 +832,8 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                     }
                   }
 
-                  # Fallback cluster shape cannot differ from preferred cluster shape in stream-K kernels.
-                  enable_fallback_cluster = dynamic_cluster and 'stream_k' not in kernel_name
+                  # Fallback cluster shape cannot differ from preferred cluster shape in stream-K or TMA-override kernels.
+                  enable_fallback_cluster = dynamic_cluster and 'stream_k' not in kernel_name and '_tma_override' not in kernel_name
                   cluster_m_fallback = ctas_per_mma_instruction if enable_fallback_cluster else cluster_shape_m
                   cluster_n_fallback = 1 if enable_fallback_cluster else cluster_shape_n
                   cluster_k_fallback = 1 if enable_fallback_cluster else cluster_shape_k
@@ -948,7 +949,6 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
   if output_filter_enabled:
     kernel_filter_outfile_name = os.path.join(curr_build_dir, f"FK_{mode}_testlist_SM{arch}_cutlass3x_gemm_kernel_filter.list")
   with open(kernel_filter_outfile_name, "w") as file:
-      kernel_name_set = set(map(lambda x: x.replace("_epi_tma", ""), kernel_name_set))
       for kernel_name in kernel_name_set:
           file.write(kernel_name + "\n")
 

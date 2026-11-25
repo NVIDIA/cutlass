@@ -34,8 +34,6 @@ import cutlass
 import cutlass.cute as cute
 from cutlass import testing
 from cutlass.cute.runtime import from_dlpack
-from cutlass.cutlass_dsl import T
-from cutlass._mlir.dialects import vector
 
 """
 A Distributed One-Shot All-Reduce Example using CuTe DSL and fine-grained memory control. This is a mirrored version of the 
@@ -174,9 +172,8 @@ class AllReduceOneShotLamportKernel:
 
         # clear a next buffer to be all negtive 0
         clear_tensor = frg_clear.load()
-        frg_size = cute.size(clear_tensor.shape)
         neg0_i32_vec = cute.full_like(clear_tensor, 0x80000000, cutlass.Int32)
-        neg0_f32_vec = vector.bitcast(T.vector(frg_size, T.f32()), neg0_i32_vec)
+        neg0_f32_vec = neg0_i32_vec.bitcast(cutlass.Float32)
         neg0_f32_tensor = cute.TensorSSA(
             neg0_f32_vec, clear_tensor.shape, cutlass.Float32
         )
@@ -193,7 +190,6 @@ class AllReduceOneShotLamportKernel:
         frg_in_vector_neg0_i32 = cute.full_like(
             frg_in, cutlass.Int32(0x80000000), cutlass.Int32
         )
-        frg_in_size = cute.size(frg_in.shape)
 
         # loop over each buffer and accumulate the data
         for i in cutlass.range_constexpr(len(buffers)):
@@ -201,7 +197,7 @@ class AllReduceOneShotLamportKernel:
             cute.copy(copy_atom_load, thr_read_buffer[read_coord], frg_in[None, 0, 0])
             frg_vector = frg_in.load()
             frg_vector_i32 = cute.TensorSSA(
-                vector.bitcast(T.vector(frg_in_size, T.i32()), frg_vector),
+                frg_vector.bitcast(cutlass.Int32),
                 frg_in.shape,
                 cutlass.Int32,
             )
@@ -219,7 +215,7 @@ class AllReduceOneShotLamportKernel:
                 )
                 frg_vector = frg_in.load()
                 frg_vector_i32 = cute.TensorSSA(
-                    vector.bitcast(T.vector(frg_in_size, T.i32()), frg_vector),
+                    frg_vector.bitcast(cutlass.Int32),
                     frg_in.shape,
                     cutlass.Int32,
                 )

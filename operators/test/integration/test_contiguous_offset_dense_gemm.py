@@ -34,7 +34,7 @@ import torch
 import cutlass.operators as ops
 from cutlass.operators.utils.device import device_or_env_supports
 
-from test_utils import assert_close_with_reference_conversion
+from test_utils import assert_close_with_reference_conversion, reference_device
 
 torch.manual_seed(2025)
 random.seed(2025)
@@ -162,9 +162,10 @@ def test_contiguous_offset_dense_gemm_2d3d_fake_tensor(fixture_toggle_tvm_ffi):
 
     reference = torch._grouped_mm(A_real, B_real, offsets_real)
 
-    # Move to CPU for comparison
-    out_real = out_real.cpu()
-    reference = reference.cpu()
+    # Compare on the device the reference policy selects.
+    ref_dev = reference_device()
+    out_real = out_real.to(ref_dev)
+    reference = reference.to(ref_dev)
     assert_close_with_reference_conversion(
         out_real,
         reference,

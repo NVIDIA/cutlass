@@ -36,6 +36,7 @@ from ..base_dsl.jit_executor import (
 from ..base_dsl.compiler import HostTarget
 from ..base_dsl.utils.logger import log
 from ..base_dsl.common import DSLRuntimeError, DSLUserCodeError
+from ..base_dsl.dsl_lock import with_dsl_lock
 from ..base_dsl.diagnostics import DiagId
 from ..base_dsl.typing import Int32
 from ..base_dsl.runtime.cuda import checkCudaErrors
@@ -63,6 +64,7 @@ class CudaDialectJitModule:
     def is_unloaded(self) -> bool:
         return self._unloaded
 
+    @with_dsl_lock
     def unload(self) -> None:
         try:
             for library in self.cuda_library:

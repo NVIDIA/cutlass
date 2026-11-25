@@ -133,6 +133,10 @@ public:
     /// Data distribution for input tensors
     Distribution data_distribution;
 
+    /// Data distributions of individual input tensors, keyed by the tensor name the operation uses
+    /// (A, B, C, SFA, ...). A tensor listed here ignores data_distribution and fix_data_distribution.
+    std::map<std::string, Distribution> tensor_distributions;
+
     /// Source of random tensor elements
     library::Provider provider;
 

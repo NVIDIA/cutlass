@@ -29,13 +29,15 @@
 from __future__ import annotations
 
 import logging
+import warnings
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from cutlass.operators.arch import TargetSm
 from cutlass.operators.providers import available_providers
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from cutlass.operators.arguments import RuntimeArguments
     from cutlass.operators.base import Operator
@@ -57,7 +59,7 @@ class Manifest:
         metadata_filter: Callable[[OperatorMetadata], bool] | None = None,
         target_sm: TargetSm | str | None = None,
         providers: list[Provider | type[Provider]] = None,
-    ) -> list[Operator]:
+    ) -> Sequence[Operator]:
         """Get the operators that match the given arguments, metadata filter, compute capability and available providers.
 
         Args:
@@ -68,8 +70,13 @@ class Manifest:
             providers (list[Provider]): Optionally limit the search to the given providers. If None, all available providers are used.
 
         Returns:
-            list[Operator]: The operators that match the given arguments, metadata filter, and compute capability
+            Sequence[Operator]: The operators that match the given arguments, metadata filter, and compute capability
         """
+        warnings.warn(
+            "get_operators will soon return a sequence instead of a list for lazy generation and performance enhancements. Only slicing and indexing will be supported.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         target_sm = TargetSm.ensure(target_sm)
         providers = providers if providers is not None else available_providers.values()
         filter_fn = metadata_filter or (lambda x: True)

@@ -51,7 +51,7 @@ if typing.TYPE_CHECKING:
     # ``import torch`` lives inside the function body so the framework
     # itself does not depend on PyTorch at import time -- only at
     # PyTorch-evaluation phase.
-    import torch  # noqa: F401 — referenced only in annotations.
+    import torch
 
 
 def _validate_source_mode_map(source_mode_map, source_rank, target_rank):

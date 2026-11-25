@@ -27,7 +27,7 @@ Supports FP8/FP4 types with workarounds for DLPack limitations.
 """
 
 import math
-from typing import Tuple, Type
+from typing import Tuple, Type, Optional
 
 import torch
 
@@ -78,10 +78,12 @@ def create_gemm_tensor_torch(
     :rtype: torch.Tensor
     """
 
+    # Generate directly on the device: the function returns a CUDA tensor
+    # either way, and host RNG plus the H2D copy are pure overhead.
     if major_mode == cute.nvgpu.OperandMajorMode.MN:
-        result = torch.empty(L, K_or_N, M_or_N).permute(2, 1, 0)
+        result = torch.empty(L, K_or_N, M_or_N, device="cuda").permute(2, 1, 0)
     elif major_mode == cute.nvgpu.OperandMajorMode.K:
-        result = torch.empty(L, M_or_N, K_or_N).permute(1, 2, 0)
+        result = torch.empty(L, M_or_N, K_or_N, device="cuda").permute(1, 2, 0)
 
     if dtype == torch.float4_e2m1fn_x2:
         values = torch.tensor(
@@ -97,17 +99,20 @@ def create_gemm_tensor_torch(
                 0xAA,  # {-1, -1}
             ],
             dtype=torch.uint8,
+            device="cuda",
         )
 
         # Note [dkb 16 Jan '26] we are consciously over-allocating by 2x
         # because it makes the code much simpler and terser.
         result = result.to(torch.uint8)
-        result[:] = values[torch.randint(0, len(values), result.size())]
+        result[:] = values[
+            torch.randint(0, len(values), result.size(), device="cuda")
+        ]
 
     else:
         result = result.random_(-1, 2).to(dtype)
 
-    return result.cuda()
+    return result
 
 
 def get_gemm_tensor(
@@ -276,7 +281,12 @@ def unpack_scale_factors(
 
 
 def create_scale_factor_tensor(
-    MN: int, K: int, L: int, sf_vec_size: int, sf_dtype: Type[Numeric]
+    MN: int,
+    K: int,
+    L: int,
+    sf_vec_size: int,
+    sf_dtype: Type[Numeric],
+    device: Optional[torch.device] = None,
 ) -> Tuple[torch.Tensor, cute.Tensor, torch.Tensor]:
     """
     Create a random scale-factor tensor in BlockScaledBasicChunk layout.
@@ -317,8 +327,11 @@ def create_scale_factor_tensor(
     m_padded = math.ceil(MN / ATOM_MN) * ATOM_MN
     k_padded = math.ceil(math.ceil(K / sf_vec_size) / ATOM_K) * ATOM_K
 
-    lut = torch.tensor([1.0, 2.0, 4.0])  # subset of numbers supported by all SF dtypes
-    sf_f32 = lut[torch.randint(0, lut.numel(), (L, m_padded, k_padded))]
+    # subset of numbers supported by all SF dtypes; device=None keeps the
+    # documented behaviour (sf_ref on the host), device="cuda" generates and
+    # returns everything device-resident.
+    lut = torch.tensor([1.0, 2.0, 4.0], device=device)
+    sf_f32 = lut[torch.randint(0, lut.numel(), (L, m_padded, k_padded), device=device)]
 
     # Some SF dtypes have no torch storage type, so a direct `.to(torch_dtype)`
     # can't hold them. Build the values in fp32 and convert to the SF dtype on
@@ -327,7 +340,10 @@ def create_scale_factor_tensor(
         sf_f32, sf_dtype, True, assumed_align=16
     )
     sf_cute = cutlass_torch.convert_cute_tensor(
-        sf_f32.cuda(), sf_cute, sf_dtype, is_dynamic_layout=True
+        sf_f32 if sf_f32.is_cuda else sf_f32.cuda(),
+        sf_cute,
+        sf_dtype,
+        is_dynamic_layout=True,
     )
     sf_ref = unpack_scale_factors(sf_f32, sf_vec_size, MN, K, L)
 

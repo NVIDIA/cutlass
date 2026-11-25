@@ -274,6 +274,64 @@ class Stream(Param):
         self.var = Var(name, tvm_ffi.dtype("handle"))
 
 
+# Note: This is only because we don't yet support custom JIT argument
+# adapters in the TVM-FFI case (that's how it is handled in the non-TVM-FFI
+# case). Additionally, TVM-FFI handles streams natively, but not events, so
+# we can't rely and the same mechanism as streams.
+class CudaEvent(Param):
+    """CUDA event parameter."""
+
+    name: str
+    var: Var
+
+    def __init__(self, name: str) -> None:
+        """Initialize a CudaEvent parameter.
+
+        Parameters
+        ----------
+        name : str
+            The parameter name.
+        """
+        self.name = name
+        self.var = Var(name, tvm_ffi.dtype("handle"))
+
+
+class CudaGraph(Param):
+    """CUDA graph parameter."""
+
+    name: str
+    var: Var
+
+    def __init__(self, name: str) -> None:
+        """Initialize a CudaGraph parameter.
+
+        Parameters
+        ----------
+        name : str
+            The parameter name.
+        """
+        self.name = name
+        self.var = Var(name, tvm_ffi.dtype("handle"))
+
+
+class CudaGraphNode(Param):
+    """CUDA graph node parameter."""
+
+    name: str
+    var: Var
+
+    def __init__(self, name: str) -> None:
+        """Initialize a CudaGraphNode parameter.
+
+        Parameters
+        ----------
+        name : str
+            The parameter name.
+        """
+        self.name = name
+        self.var = Var(name, tvm_ffi.dtype("handle"))
+
+
 class EnvStream(Param):
     """EnvStream parameter.
 
@@ -453,6 +511,12 @@ def format_param_type(param: Param) -> str:
         return f"Shape({shape_str})"
     elif isinstance(param, Stream):
         return "Stream"
+    elif isinstance(param, CudaEvent):
+        return "CudaEvent"
+    elif isinstance(param, CudaGraph):
+        return "CudaGraph"
+    elif isinstance(param, CudaGraphNode):
+        return "CudaGraphNode"
     elif isinstance(param, DataPointer):
         return "DataPointer"
     elif isinstance(param, ConstNone):

@@ -65,6 +65,7 @@ from .._mlir.dialects import llvm
 
 # Local modules imports
 from . import typing as t
+from .dsl_lock import with_dsl_lock
 from .common import (
     DSLRuntimeError,
     DSLUserCodeError,
@@ -188,12 +189,7 @@ def load_kernels_from_ir_module(
     # load cuda module/get function pointer from module and cache
     kernel_modules = collections.OrderedDict()
     for sym in kernel_symbols:
-        log().debug(f"Loading CUDA module for symbol: {sym}")
-
         def walk_callback(sym: str, func_sym: str, cubin_data: bytes) -> None:
-            if sym in kernel_modules:
-                log().debug(f"Skipping already loaded symbol: {sym}")
-
             cubin_module = cuda_helpers.load_library_data(cubin_data)
             kernel_modules[sym] = _make_cuda_module_and_kernel(
                 cubin_module, sym, func_sym, kernel_info[sym]
@@ -249,6 +245,7 @@ class _RuntimePointerArg:
 
 
 PointerAddressArgSpec = bool | list[object] | tuple[object, ...] | None
+TvmFfiWrappedArgSpec = bool | list[object] | tuple[object, ...] | None
 
 
 def _is_ctypes_pointer(arg: object) -> bool:
@@ -346,6 +343,91 @@ def _pointer_address_spec_from_compile_arg(
     return None
 
 
+class _CudaEventTvmFFIWrapper:
+    """Wraps a CUDA event handle so TVM FFI accepts it as an opaque pointer."""
+
+    def __init__(self, event: cuda_helpers.cuda.CUevent) -> None:
+        self._event = event
+
+    def __tvm_ffi_opaque_ptr__(self) -> object:
+        return int(self._event)
+
+
+# Python types whose values don't marshal into a TVM-FFI call argument on
+# their own, but that a small wrapper can fix by implementing TVM-FFI's
+# argument protocols (e.g. __tvm_ffi_opaque_ptr__). Keyed by type (not
+# a predicate) so isinstance() -- and therefore subclasses like
+# cuda.bindings.runtime.cudaEvent_t -- are picked up for free.
+_TVM_FFI_ARG_WRAPPERS: dict[type, Callable[[Any], Any]] = {
+    cuda_helpers.cuda.CUevent: _CudaEventTvmFFIWrapper,
+}
+
+
+def _tvm_ffi_arg_wrapper_for(arg: object) -> Callable[[Any], Any] | None:
+    """Return the wrapper factory for ``arg``'s type, if one is registered."""
+    for python_type, wrapper in _TVM_FFI_ARG_WRAPPERS.items():
+        if isinstance(arg, python_type):
+            return wrapper
+    return None
+
+
+def _tvm_ffi_wrapped_arg_spec_from_compile_arg(arg: object) -> TvmFfiWrappedArgSpec:
+    """Mirror ``_pointer_address_spec_from_compile_arg`` for wrapped types.
+
+    Unlike pointer-shapedness, whether an argument needs a TVM FFI wrapper is
+    unambiguous from its runtime type alone (no annotation needed to
+    disambiguate it from a plain scalar), so this only needs to recurse
+    through list/tuple containers and test ``_tvm_ffi_arg_wrapper_for`` at
+    each leaf.
+    """
+    if isinstance(arg, (list, tuple)):
+        child_specs = [_tvm_ffi_wrapped_arg_spec_from_compile_arg(x) for x in arg]
+        if any(spec is not None for spec in child_specs):
+            return cast(
+                TvmFfiWrappedArgSpec,
+                tuple(child_specs) if isinstance(arg, tuple) else child_specs,
+            )
+        return None
+
+    return True if _tvm_ffi_arg_wrapper_for(arg) is not None else None
+
+
+def _convert_python_tvm_ffi_wrapped_arg(
+    arg: object, spec: TvmFfiWrappedArgSpec
+) -> tuple[object, bool]:
+    """Wrap registered-type arguments for TVM FFI calls.
+
+    Only called from the TVM FFI call path (see
+    ``convert_python_pointer_args_for_tvm_ffi``); native execution never
+    consults ``TvmFfiWrappedArgSpec`` at all.
+    """
+    if spec is None:
+        return arg, False
+
+    if spec is True:
+        wrapper = _tvm_ffi_arg_wrapper_for(arg)
+        if wrapper is not None:
+            return wrapper(arg), True
+        return arg, False
+
+    if isinstance(spec, (list, tuple)) and isinstance(arg, (list, tuple)):
+        if len(arg) != len(spec):
+            return arg, False
+        changed = False
+        converted = []
+        for item, item_spec in zip(arg, spec):
+            converted_item, item_changed = _convert_python_tvm_ffi_wrapped_arg(
+                item, cast(TvmFfiWrappedArgSpec, item_spec)
+            )
+            converted.append(converted_item)
+            changed = changed or item_changed
+        if not changed:
+            return arg, False
+        return tuple(converted) if isinstance(arg, tuple) else converted, True
+
+    return arg, False
+
+
 def _convert_python_pointer_arg(
     arg: object, spec: PointerAddressArgSpec, *, for_tvm_ffi: bool = False
 ) -> tuple[object, bool]:
@@ -416,6 +498,10 @@ class ExecutionArgs:
             None
         ] * self._meta.arg_count
         self._has_pointer_address_arg_specs = False
+        self._tvm_ffi_wrapped_arg_specs: list[TvmFfiWrappedArgSpec] = [
+            None
+        ] * self._meta.arg_count
+        self._has_tvm_ffi_wrapped_arg_specs = False
         # Whether the function was compiled with ``None`` in each argument slot,
         # or "unknown" when the compile-time arguments were not recorded.
         self._compiled_with_none: list[Any] = ["unknown"] * self._meta.arg_count
@@ -441,10 +527,21 @@ class ExecutionArgs:
         """Whether this compiled signature has pointer-address conversion slots."""
         return self._has_pointer_address_arg_specs
 
+    @property
+    def args_require_tvm_ffi_conversion(self) -> bool:
+        """Whether any runtime argument needs rewriting before a TVM FFI call.
+
+        When True, clients should call ``convert_python_pointer_args_for_tvm_ffi``
+        to convert the arguments before calling the function.
+        """
+        return (
+            self._has_pointer_address_arg_specs or self._has_tvm_ffi_wrapped_arg_specs
+        )
+
     def record_arg_specs_from_compile_args(
         self, args: tuple[Any, ...], kwargs: dict[str, Any]
     ) -> None:
-        """Record pointer conversion metadata from compile-time arguments.
+        """Record pointer/TVM-FFI-wrapper conversion metadata from compile-time args.
 
         The resulting ``_pointer_address_arg_specs`` list is indexed like the
         filtered runtime signature. Each leaf is ``True`` for an argument slot
@@ -467,6 +564,15 @@ class ExecutionArgs:
         needs to tell them apart from slots the kernel really does expect an
         argument for, which the annotation cannot say.
 
+        The same pass also builds ``_tvm_ffi_wrapped_arg_specs`` (mirroring the
+        same indexed/nested shape, via
+        ``_tvm_ffi_wrapped_arg_spec_from_compile_arg``) for any compile-time
+        argument that is, or contains, an instance of a type registered in
+        ``_TVM_FFI_ARG_WRAPPERS`` (e.g. ``cuda.CUevent``), so
+        ``args_require_tvm_ffi_conversion`` can report signatures needing a
+        wrapper — including ones nested in lists/tuples — without a second
+        walk over the arguments.
+
         ``args``/``kwargs`` are first rectified through the function signature
         unless they already exactly match the positional runtime shape. That
         path may raise the usual argument-binding ``DSLRuntimeError`` cases:
@@ -480,15 +586,29 @@ class ExecutionArgs:
         else:
             input_args = self.get_rectified_args(args, kwargs)
 
-        self._pointer_address_arg_specs = [
-            _pointer_address_spec_from_compile_arg(
-                arg, self._meta.annotated_types[index]
+        pointer_address_arg_specs: list[PointerAddressArgSpec] = []
+        tvm_ffi_wrapped_arg_specs: list[TvmFfiWrappedArgSpec] = []
+        compiled_with_none: list[Any] = []
+        for index, arg in enumerate(input_args):
+            pointer_address_arg_specs.append(
+                _pointer_address_spec_from_compile_arg(
+                    arg, self._meta.annotated_types[index]
+                )
             )
-            for index, arg in enumerate(input_args)
-        ]
-        self._compiled_with_none = [arg is None for arg in input_args]
+            tvm_ffi_wrapped_arg_specs.append(
+                _tvm_ffi_wrapped_arg_spec_from_compile_arg(arg)
+            )
+            compiled_with_none.append(arg is None)
+
+        self._compiled_with_none = compiled_with_none
+        self._pointer_address_arg_specs = pointer_address_arg_specs
         self._has_pointer_address_arg_specs = any(
-            spec is not None for spec in self._pointer_address_arg_specs
+            spec is not None for spec in pointer_address_arg_specs
+        )
+
+        self._tvm_ffi_wrapped_arg_specs = tvm_ffi_wrapped_arg_specs
+        self._has_tvm_ffi_wrapped_arg_specs = any(
+            spec is not None for spec in tvm_ffi_wrapped_arg_specs
         )
 
     def convert_python_pointer_args_for_tvm_ffi(
@@ -501,6 +621,14 @@ class ExecutionArgs:
         keyword arguments using ``_pointer_address_arg_specs`` and
         ``_convert_python_pointer_arg``. ``name_to_index`` maps keyword names
         back to the signature slot whose compile-time spec controls conversion.
+        It also runs ``_tvm_ffi_wrapped_arg_specs`` through
+        ``_convert_python_tvm_ffi_wrapped_arg`` to wrap any argument whose
+        type is registered in ``_TVM_FFI_ARG_WRAPPERS`` (including ones nested
+        in lists/tuples) -- e.g. a CUDA event handle, since TVM FFI's own
+        marshaling has no CUevent support to begin with (unlike ``CUstream``,
+        which it special-cases). A registered type is never pointer-shaped, so
+        running both conversions on the same slot is safe: the pointer pass is
+        always a no-op on it.
 
         Returns the original ``args`` and ``kwargs`` objects when nothing
         changed. If any conversion happens, returns a new positional tuple and,
@@ -509,7 +637,7 @@ class ExecutionArgs:
         a mismatched or unsupported value is left unchanged. Negative pointer
         addresses raise ``DSLRuntimeError``.
         """
-        if not self._has_pointer_address_arg_specs:
+        if not self.args_require_tvm_ffi_conversion:
             return args, kwargs
 
         converted_args = list(args)
@@ -525,6 +653,13 @@ class ExecutionArgs:
                 converted_args[index] = converted
                 changed = True
 
+            converted, did_convert = _convert_python_tvm_ffi_wrapped_arg(
+                converted_args[index], self._tvm_ffi_wrapped_arg_specs[index]
+            )
+            if did_convert:
+                converted_args[index] = converted
+                changed = True
+
         converted_kwargs = kwargs
         for name, value in kwargs.items():
             kw_index = self._meta.name_to_index.get(name)
@@ -534,6 +669,16 @@ class ExecutionArgs:
                 value,
                 self._pointer_address_arg_specs[kw_index],
                 for_tvm_ffi=True,
+            )
+            if did_convert:
+                if converted_kwargs is kwargs:
+                    converted_kwargs = dict(kwargs)
+                converted_kwargs[name] = converted
+                changed = True
+                value = converted
+
+            converted, did_convert = _convert_python_tvm_ffi_wrapped_arg(
+                value, self._tvm_ffi_wrapped_arg_specs[kw_index]
             )
             if did_convert:
                 if converted_kwargs is kwargs:
@@ -1102,6 +1247,7 @@ class JitModule:
         # environment variable.
         return JitExecuteContext(self, kernel_fns, context)
 
+    @with_dsl_lock
     def unload(self) -> None:
         try:
             for m in set([m.cuda_module for m in self.cuda_modules]):
@@ -1162,15 +1308,12 @@ class JitExecutor:
         self.profiler = timer(enable=jit_time_profiling) if jit_time_profiling else None
 
         # Get the cuda result type from the capi function.
-        # This is only set to i32 if CudaDialectJitModule is used.
-        cuda_result_type = self.jit_module.capi_func.restype
-        self.cuda_result = cuda_result_type() if cuda_result_type is not None else None
-
-        # Pre-compute flags
-        self._has_cuda_result = self.cuda_result is not None
-        self._cuda_result_addr = (
-            ctypes.addressof(self.cuda_result) if self._has_cuda_result else None  # type: ignore[arg-type]
-        )
+        # This is only set to i32 if CudaDialectJitModule is used. The status
+        # slot itself is allocated per thread (see ``cuda_result``): its address
+        # is baked into the packed arguments, so a slot shared between threads
+        # would let one launch read the status written by another.
+        self._cuda_result_type = self.jit_module.capi_func.restype
+        self._has_cuda_result = self._cuda_result_type is not None
 
         if jit_time_profiling:
             self._get_invoke_packed_args_func = self.profiler(  # type: ignore[misc]
@@ -1193,6 +1336,24 @@ class JitExecutor:
             self._kernel_ptrs = None
         self._tls = threading.local()
 
+    @property
+    def cuda_result(self) -> Any:
+        """The calling thread's CUDA status slot, or None for host-only modules.
+
+        Each thread owns one slot for the lifetime of the executor. The slot
+        is created on first use and its address is baked into that thread's
+        packed arguments, so concurrent launches from different threads never
+        share a status word.
+        """
+        if not self._has_cuda_result:
+            return None
+        tls = self._tls
+        slot = getattr(tls, "cuda_result", None)
+        if slot is None:
+            slot = self._cuda_result_type()
+            tls.cuda_result = slot
+        return slot
+
     # Assume each execution args has type `c_void_p` to reduce the overhead of `ctypes.cast`.
     def _get_invoke_packed_args(
         self, exe_args: list[Any]
@@ -1213,7 +1374,7 @@ class JitExecutor:
 
             idx = num_base_args
             if self._has_cuda_result:
-                packed_args[idx] = self._cuda_result_addr
+                packed_args[idx] = ctypes.addressof(self.cuda_result)
                 idx += 1
             if self._kernel_ptrs is not None:
                 for ptr in self._kernel_ptrs:
@@ -1239,7 +1400,7 @@ class JitExecutor:
             self.capi_func(packed_args)
             if not self._has_cuda_result:
                 return None
-            error_code = self.cuda_result.value  # type: ignore[union-attr]
+            error_code = self._tls.cuda_result.value
             if error_code == 0:
                 return error_code
             raise cuda_helpers.create_cuda_runtime_error(
@@ -1273,9 +1434,6 @@ class JitFunctionArtifacts:
     # Device compilation artifacts (set when DeviceTarget is enabled)
     device_header: str | None = None
     device_object_path: str | None = None
-    # Raw (pre-pass) IR, set with KEEP=ir-debug. MLIR holds the same IR unless
-    # KEEP=ir is also set, in which case MLIR holds the clean IR.
-    MLIR_RAW: str | None = None
 
     @staticmethod
     def _read_artifact_file(path: str, label: str, *, binary: bool = False) -> Any:
@@ -1293,7 +1451,6 @@ class JitFunctionArtifacts:
             ("CUBIN", "CUBIN", True),
             ("SASS", "SASS", False),
             ("MLIR", "MLIR", False),
-            ("MLIR_RAW", "raw MLIR", False),
         ]
         for attr, label, binary in text_fields:
             path = getattr(self, attr)
@@ -1317,9 +1474,9 @@ class ExportProvider:
 class AuxRuntimeFunc(abc.ABC):
     """Abstract base class for auxiliary runtime host functions compiled by the DSL.
 
-    Subclasses declare a ``name`` class attribute matching the host-function
-    symbol suffix (e.g. ``"queryDeviceWorkspace"``) and implement ``__call__``
-    with the user-facing argument signature.
+    Subclasses declare a ``name`` class attribute matching the complete symbol
+    or a kernel-scoped symbol suffix, and implement ``__call__`` with the
+    user-facing argument signature.
 
     Instances are created by :meth:`JitCompiledFunction.get_aux_func`.
     """
@@ -1327,7 +1484,7 @@ class AuxRuntimeFunc(abc.ABC):
     name: ClassVar[str]  # subclasses must set this
 
     def __init__(self, func_ptr: int, execution_args: ExecutionArgs) -> None:
-        """Declare the constructor contract for :meth:`JitCompiledFunction.get_aux_func`.
+        """Declare the constructor contract for auxiliary-function lookups.
 
         Subclasses replace this with an implementation; they are not required to
         call ``super().__init__``.
@@ -1342,6 +1499,9 @@ class JitCompiledFunction:
 
     export_provider: ExportProvider | None = None
     _jit_arg_adapter_scope = JitArgAdapterRegistry.GPU_DIALECT_SCOPE
+    # Intentionally no default: every compiled-function producer must state
+    # whether absence of the workspace-query helper is valid for its artifact.
+    _requires_workspace_query_func: bool
 
     def __init__(
         self,
@@ -1764,6 +1924,7 @@ class JitCompiledFunction:
                     host_triple=self.host_target.triple,
                     host_cpu=self.host_target.cpu,
                     host_features=self.host_target.features,
+                    no_jit_engine=self.engine is None,
                 )
                 with open(tmp_object_path, "rb") as f:
                     ret = f.read()

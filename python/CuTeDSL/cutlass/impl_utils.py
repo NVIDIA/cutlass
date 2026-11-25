@@ -9,7 +9,9 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-from typing import Any
+from typing import Any, Optional, TypeVar
+
+T = TypeVar('T')
 
 
 def check_value_in(
@@ -34,3 +36,9 @@ def check_type_in(
             err_msg += ": "
         err_msg += f"invalid type for {type_description}, got {ty}, must be one of {possible_types}"
         raise TypeError(err_msg)
+
+
+def resolve_optional(
+    optional_value: Optional[T], default_value: T
+) -> T:
+    return default_value if optional_value is None else optional_value

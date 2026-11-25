@@ -9,10 +9,13 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import os
+import sys
+import weakref
 from dataclasses import dataclass
 from enum import Enum, IntFlag
-from typing import Hashable
-
+from typing import Hashable, Iterator, cast
+from types import FrameType
 
 _INT32_MAX = (1 << 31) - 1
 
@@ -20,9 +23,41 @@ _INT32_MAX = (1 << 31) - 1
 class BlockGuard:
     """Marker base for conditional block guards in captured schedules.
 
-    Subclasses: :class:`IterationPredicate`, :class:`OpaqueCondition`, and the
-    ``SKIPPABLE`` singleton for work-tile skip regions.
+    ``&`` and ``|`` build flattened boolean guard trees. ``~`` converts a guard
+    to negation-normal form, including first-class complements of iteration
+    predicates.
     """
+
+    def __and__(self, other: object) -> "BlockGuard":
+        if not isinstance(other, BlockGuard):
+            return NotImplemented
+        return _combine_guard(GuardAnd, self, other)
+
+    def __rand__(self, other: object) -> "BlockGuard":
+        if not isinstance(other, BlockGuard):
+            return NotImplemented
+        return _combine_guard(GuardAnd, other, self)
+
+    def __or__(self, other: object) -> "BlockGuard":
+        if not isinstance(other, BlockGuard):
+            return NotImplemented
+        return _combine_guard(GuardOr, self, other)
+
+    def __ror__(self, other: object) -> "BlockGuard":
+        if not isinstance(other, BlockGuard):
+            return NotImplemented
+        return _combine_guard(GuardOr, other, self)
+
+    def __invert__(self) -> "BlockGuard":
+        return _negate_guard(self)
+
+    def __bool__(self) -> bool:
+        from .schedule_builder import ScheduleError
+
+        raise ScheduleError(
+            "schedule conditions cannot be converted to bool; use '&', '|', "
+            "and '~'. Python 'and', 'or', and 'not' cannot be overloaded."
+        )
 
 
 class IterationPredicate(BlockGuard):
@@ -31,6 +66,16 @@ class IterationPredicate(BlockGuard):
     def fires(self, iter_idx: int, num_iters: int) -> bool:
         """Return whether the guarded block runs on iteration ``iter_idx``."""
         raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class ComplementedIterationPredicate(IterationPredicate):
+    """Boolean complement of an iteration predicate."""
+
+    predicate: IterationPredicate
+
+    def fires(self, iter_idx: int, num_iters: int) -> bool:
+        return not self.predicate.fires(iter_idx, num_iters)
 
 
 @dataclass(frozen=True)
@@ -109,6 +154,84 @@ class OpaqueCondition(BlockGuard):
     resource: object | None = None
     method_label: str | None = None
     result_name: str | None = None
+
+
+@dataclass(frozen=True)
+class GuardAnd(BlockGuard):
+    """Conjunction of two or more guards, flattened at construction."""
+
+    operands: tuple[BlockGuard, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.operands) < 2:
+            raise ValueError("GuardAnd requires at least two operands.")
+
+
+@dataclass(frozen=True)
+class GuardOr(BlockGuard):
+    """Disjunction of two or more guards, flattened at construction."""
+
+    operands: tuple[BlockGuard, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.operands) < 2:
+            raise ValueError("GuardOr requires at least two operands.")
+
+
+def _combine_guard(
+    operator: type[GuardAnd] | type[GuardOr],
+    left: BlockGuard,
+    right: BlockGuard,
+) -> BlockGuard:
+    """Build one flattened AND/OR node."""
+    operands: list[BlockGuard] = []
+    for operand in (left, right):
+        if isinstance(operand, operator):
+            operands.extend(cast(GuardAnd | GuardOr, operand).operands)
+        else:
+            operands.append(operand)
+    return operator(tuple(operands))
+
+
+def _negate_guard(guard: BlockGuard) -> BlockGuard:
+    """Return ``guard`` in negation-normal form."""
+    if isinstance(guard, OpaqueCondition):
+        return OpaqueCondition(
+            key=guard.key,
+            negated=not guard.negated,
+            resource=guard.resource,
+            method_label=guard.method_label,
+            result_name=guard.result_name,
+        )
+    if isinstance(guard, GuardAnd):
+        operands = tuple(_negate_guard(operand) for operand in guard.operands)
+        result = operands[0] | operands[1]
+        for operand in operands[2:]:
+            result = result | operand
+        return result
+    if isinstance(guard, GuardOr):
+        operands = tuple(_negate_guard(operand) for operand in guard.operands)
+        result = operands[0] & operands[1]
+        for operand in operands[2:]:
+            result = result & operand
+        return result
+    if isinstance(guard, ComplementedIterationPredicate):
+        return guard.predicate
+    if isinstance(guard, IterationPredicate):
+        return ComplementedIterationPredicate(guard)
+    if type(guard).__invert__ is not BlockGuard.__invert__:
+        return guard.__invert__()
+    return NotImplemented
+
+
+def iter_leaves(guard: BlockGuard) -> Iterator[OpaqueCondition | IterationPredicate]:
+    """Yield opaque and iteration leaves from a guard tree."""
+    if isinstance(guard, (OpaqueCondition, IterationPredicate)):
+        yield guard
+        return
+    if isinstance(guard, (GuardAnd, GuardOr)):
+        for operand in guard.operands:
+            yield from iter_leaves(operand)
 
 
 @dataclass(frozen=True)
@@ -291,6 +414,13 @@ class WorkAttr(IntFlag):
         return bool(self & WorkAttr.AUXILIARY)
 
 
+class StateRole(Enum):
+    """Role of an explicit software-pipeline cursor."""
+
+    Producer = "producer"
+    Consumer = "consumer"
+
+
 class ScheduleStage(Enum):
     """Individual pipeline operations that a ``Task`` schedule can reference.
 
@@ -397,7 +527,9 @@ def is_iteration_predicate(guard: object) -> bool:
 
 def is_loop_guard(guard: object) -> bool:
     """Return whether ``guard`` is a supported loop-schedule guard."""
-    return isinstance(guard, (LoopGuard, IterationPredicate, OpaqueCondition))
+    return isinstance(
+        guard, (LoopGuard, IterationPredicate, OpaqueCondition, GuardAnd, GuardOr)
+    )
 
 
 def guard_fires(
@@ -422,4 +554,144 @@ def guard_fires(
         assignment = opaque_assignment or {}
         active = assignment.get(guard.key, False)
         return active != guard.negated
+    if isinstance(guard, GuardAnd):
+        return all(
+            guard_fires(
+                operand,
+                iter_idx,
+                num_iters,
+                opaque_assignment=opaque_assignment,
+            )
+            for operand in guard.operands
+        )
+    if isinstance(guard, GuardOr):
+        return any(
+            guard_fires(
+                operand,
+                iter_idx,
+                num_iters,
+                opaque_assignment=opaque_assignment,
+            )
+            for operand in guard.operands
+        )
     raise TypeError(f"unsupported loop guard type: {type(guard).__name__}")
+
+
+# Directory-boundary prefix for user-frame attribution (plain prefix would
+# also match siblings like .../task_scheduling_x). Fallback for frames whose
+# module name is unavailable (exec'd code without ``__name__``).
+_TS_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+# Module-name prefixes of frames that are never the user's call site. Under
+# the FrontendNext/PyIR frontend every user call (e.g. ``SmemResource(...)``)
+# is routed through ``cutlass.base_dsl.pyir_call_boundary``, so skipping only
+# this package would attribute the construction to the DSL runtime. Matched
+# on ``__name__`` rather than file paths: the installed layout (symlink farm,
+# wheel) and realpath/abspath differences make path prefixes unreliable.
+#
+# Only frameworks this package itself routes calls through are listed here.
+# An out-of-tree observer that sits between the user and the framework adds
+# its own prefix via :func:`add_infrastructure_module_prefix`; enumerating
+# observers here would be a dependency on them (an explicit registration is
+# also exact, unlike a blanket "everything under cutlass.experimental" rule,
+# which would misclassify a user kernel written inside that namespace).
+_INFRASTRUCTURE_MODULE_PREFIXES: list[str] = [
+    "cutlass.experimental.task_scheduling",
+    "cutlass.base_dsl",
+    "cutlass.cutlass_dsl",
+    "cutlass._mlir",
+    "contextlib",
+]
+
+
+def add_infrastructure_module_prefix(prefix: str) -> None:
+    """Treat frames under module ``prefix`` as framework, not user, code.
+
+    For callers that wrap the framework and would otherwise be reported as
+    the user's construction site. Idempotent, so a module may register on
+    import and survive a reload.
+    """
+    if prefix not in _INFRASTRUCTURE_MODULE_PREFIXES:
+        _INFRASTRUCTURE_MODULE_PREFIXES.append(prefix)
+
+
+def _has_module_prefix(module_name: str, prefix: str) -> bool:
+    return module_name == prefix or module_name.startswith(prefix + ".")
+
+
+def is_infrastructure_frame(frame: FrameType) -> bool:
+    """True when ``frame`` belongs to the DSL/TS runtime rather than user code.
+
+    A frame is infrastructure when its module (``f_globals['__name__']``)
+    lives under one of the DSL packages or contextlib, or, when the module
+    name is unavailable, when its code object was loaded from this package.
+    """
+    module_name = frame.f_globals.get("__name__")
+    if isinstance(module_name, str):
+        return any(
+            _has_module_prefix(module_name, prefix)
+            for prefix in _INFRASTRUCTURE_MODULE_PREFIXES
+        )
+    filename = os.path.abspath(frame.f_code.co_filename)
+    return filename.startswith(_TS_PACKAGE_DIR)
+
+
+def capture_user_source_loc() -> "tuple[str, int] | None":
+    """The user's (file, line) call site for the current framework entry.
+
+    Walks up past task_scheduling, DSL-runtime (``cutlass.base_dsl``,
+    ``cutlass.cutlass_dsl``, ``cutlass._mlir``) and contextlib frames to
+    the first user frame (see :func:`is_infrastructure_frame`). Runs once
+    per captured object (schedule node, resource), never at kernel runtime.
+    Returns ``None`` when no user frame is attributable.
+    """
+    frame: FrameType | None
+    try:
+        frame = sys._getframe(1)
+    except ValueError:  # pragma: no cover - no frame support
+        return None
+    for _ in range(64):
+        if frame is None:
+            break
+        if not is_infrastructure_frame(frame):
+            return (frame.f_code.co_filename, frame.f_lineno)
+        frame = frame.f_back
+    return None
+
+
+# Construction-site locations live OUTSIDE the instances: resources are user
+# dataclasses, and the DSL pytree flattener (extract_dataclass_members)
+# rejects any instance __dict__ key that is not a declared field, so an
+# attribute like `_construction_site` breaks every kernel that carries a
+# resource through a staged `if`. Keyed by id() with a liveness weakref
+# because ordinary (eq=True) dataclass instances are unhashable, ruling out
+# WeakKeyDictionary.
+_construction_sites: "dict[int, tuple[weakref.ref, tuple[str, int]]]" = {}
+
+
+def record_construction_site(obj: object) -> None:
+    """Capture and remember the user construction site for ``obj``.
+
+    Never raises: objects that do not support weak references are skipped
+    (their emitted declarations fall back to an unknown location).
+    """
+    loc = capture_user_source_loc()
+    if loc is None:
+        return
+    key = id(obj)
+    try:
+        ref = weakref.ref(obj, lambda _: _construction_sites.pop(key, None))
+    except TypeError:  # pragma: no cover - weakref-less instance
+        return
+    _construction_sites[key] = (ref, loc)
+
+
+def get_construction_site(obj: object) -> "tuple[str, int] | None":
+    """The recorded user construction site of ``obj``, or ``None``."""
+    entry = _construction_sites.get(id(obj))
+    if entry is None:
+        return None
+    ref, loc = entry
+    # id() values recycle after collection; the weakref proves this entry
+    # belongs to this object and not a dead predecessor at the same address.
+    return loc if ref() is obj else None

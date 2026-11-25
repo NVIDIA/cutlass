@@ -27,6 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from collections.abc import Callable
+from typing import Literal
 
 import cuda.bindings.driver as cuda
 
@@ -38,7 +39,6 @@ from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cutlass_dsl import Int32
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 
-from .operator_helpers import PersistentTileSchedulerType
 from .sm100_persistent_impl import PersistentDenseGemmKernel
 
 """
@@ -95,7 +95,7 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         preferred_cluster_shape_mn: tuple[int, int],
         fallback_cluster_shape_mn: tuple[int, int],
         use_tma_store: bool,
-        persistent_tile_scheduler_type: PersistentTileSchedulerType,
+        persistent_tile_scheduler_type: Literal["clc", "static"],
         epilogue_op: Callable,
     ):
         """Initialise a preferred-cluster GEMM kernel with a preferred (larger) and a fallback
@@ -116,8 +116,9 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         :type fallback_cluster_shape_mn: tuple[int, int]
         :param use_tma_store: Whether to use TMA for storing the output C tensor.
         :type use_tma_store: bool
-        :param persistent_tile_scheduler_type: Persistent tile scheduler variant.
-        :type persistent_tile_scheduler_type: PersistentTileSchedulerType
+        :param persistent_tile_scheduler_type: Persistence strategy from
+            ``PersistenceMetadata.arg_name()`` (``"clc"`` or ``"static"``).
+        :type persistent_tile_scheduler_type: Literal["clc", "static"]
         :param epilogue_op: Elementwise function applied to the output after GEMM.
         :type epilogue_op: Callable
         """
@@ -193,8 +194,8 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         a: cute.Tensor,
         b: cute.Tensor,
         c: cute.Tensor,
-        max_active_preferred_clusters: cutlass.Constexpr = None,
-        max_active_fallback_clusters: cutlass.Constexpr = None,
+        max_active_preferred_clusters: Int32,
+        max_active_fallback_clusters: Int32,
         stream: cuda.CUstream = None,
         epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
@@ -210,9 +211,9 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         :param c: Output tensor C (L, M, N) or (M, N), row- or column-major.
         :type c: cute.Tensor
         :param max_active_preferred_clusters: Maximum concurrently active preferred clusters.
-        :type max_active_preferred_clusters: cutlass.Constexpr
+        :type max_active_preferred_clusters: Int32
         :param max_active_fallback_clusters: Maximum concurrently active fallback clusters.
-        :type max_active_fallback_clusters: cutlass.Constexpr
+        :type max_active_fallback_clusters: Int32
         :param stream: CUDA stream.
         :type stream: cuda.CUstream
         :param epilogue_op: Optional elementwise epilogue applied to the accumulator.
@@ -1081,9 +1082,9 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         c: cute.Tensor,
         cta_tile_shape_mnk: tuple[int, int, int],
         preferred_cluster_shape_mn: tuple[int, int],
-        max_active_preferred_clusters: cutlass.Constexpr,
+        max_active_preferred_clusters: Int32,
         fallback_cluster_shape_mn: tuple[int, int],
-        max_active_fallback_clusters: cutlass.Constexpr,
+        max_active_fallback_clusters: Int32,
     ) -> tuple[
         utils.PersistentTileSchedulerParams,
         tuple[int, int, int],
@@ -1104,11 +1105,11 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         :param preferred_cluster_shape_mn: Preferred cluster shape (ClusterM, ClusterN).
         :type preferred_cluster_shape_mn: tuple[int, int]
         :param max_active_preferred_clusters: Maximum active preferred clusters.
-        :type max_active_preferred_clusters: cutlass.Constexpr
+        :type max_active_preferred_clusters: Int32
         :param fallback_cluster_shape_mn: Fallback cluster shape (ClusterM, ClusterN).
         :type fallback_cluster_shape_mn: tuple[int, int]
         :param max_active_fallback_clusters: Maximum active fallback clusters.
-        :type max_active_fallback_clusters: cutlass.Constexpr
+        :type max_active_fallback_clusters: Int32
 
         :returns: (preferred_tile_sched_params, preferred_grid,
                    fallback_tile_sched_params, fallback_grid)
@@ -1153,7 +1154,7 @@ class PersistentDenseGemmPreferredClusterKernel(PersistentDenseGemmKernel):
         # division would yield 0, producing a zero-sized grid Z dim and
         # triggering ``cudaErrorInvalidValue`` at launch. Such problem sizes
         # must be rejected by the caller; see the host-side guard in
-        # ``PersistentDenseGemmPreferredClusterOperator._compile``.
+        # ``Sm100PersistentDenseGemmPreferredClusterOperator._compile``.
         preferred_cluster_size = (
             preferred_cluster_shape_mn[0] * preferred_cluster_shape_mn[1]
         )

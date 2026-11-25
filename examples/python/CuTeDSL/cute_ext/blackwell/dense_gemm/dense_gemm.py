@@ -186,7 +186,9 @@ class DenseGemmKernel:
         epilogue_op=lambda x: x,
         use_2cta_instrs: bool = False,
         cluster_shape_mn: Tuple[int, int] = (2, 1),
+        fallback_cluster_shape_mn: Tuple[int, int] = None,
         use_tma_store: bool = True,
+        epilogue_unroll: bool = True,
     ):
         """
         Initialize the Dense GEMM kernel configuration.
@@ -210,6 +212,11 @@ class DenseGemmKernel:
             use_tma_store: Whether to use TMA store for the epilogue (RMEM→SMEM→TMA→GMEM).
                           When False, uses direct RMEM→GMEM store via SIMT copy.
                           Non-TMA store requires M,N divisible by CTA tile (no OOB predication).
+
+            epilogue_unroll: Fully unroll TMA epilogue subtiles (default: True).
+                             False leaves the unrolling decision to the compiler.
+                             Tune for nontrivial epilogues or configurations where
+                             register pressure, ILP or code size changes.
         """
         self.mn_tiler = mn_tiler
         self.ab_dtype, self.acc_dtype = mma_dtype
@@ -225,20 +232,30 @@ class DenseGemmKernel:
         self.TMA_STORE_STAGE = 2
 
         # Epilogue operation applied in registers before storing output.
+        self.epilogue_unroll = epilogue_unroll
         self.epilogue_op = epilogue_op
 
         # Cluster shape for CTA grouping and TMA multicast coordination.
         # Default is (2, 1) for 2-CTA mode, (1, 1) for 1-CTA mode.
         self.cluster_shape = (cluster_shape_mn[0], cluster_shape_mn[1], 1)
         cluster_shape_mn_selfcast = (2, 1) if use_2cta_instrs else (1, 1)
+        # Multicast selection stays host-static from the preferred shape
         self.use_tma_multicast = cluster_shape_mn != cluster_shape_mn_selfcast
+        # Optional fallback cluster shape for mixed-cluster launches; when it
+        # differs from the preferred shape, the compiler specializes the kernel
+        # per launched cluster shape.
+        self.fallback_cluster_shape = cute_ext.resolve_fallback_cluster_shape(
+            cluster_shape_mn,
+            fallback_cluster_shape_mn,
+            cta_group_m=2 if use_2cta_instrs else 1,
+        )
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         """
         Host-side JIT-compiled launcher function.
 
-        The @cute.experimental.jit decorator indicates this function:
+        The @cute.jit decorator indicates this function:
         - Runs on the HOST (CPU)
         - Is JIT-compiled when first called
         - Computes launch configuration and invokes the GPU kernel
@@ -277,6 +294,8 @@ class DenseGemmKernel:
 
         # Grid dimensions: (num_tiles_M, num_tiles_N, batch_size)
         # Each CTA (Cooperative Thread Array / thread block) processes one tile.
+        # Rounding up to the preferred cluster shape also makes the grid
+        # divisible by the fallback shape.
         grid = cute.round_up(
             (
                 cute.ceil_div(mD.layout.shape[0], cta_tile_mnk[0]),
@@ -322,16 +341,18 @@ class DenseGemmKernel:
         # Launch the kernel with Blackwell-specific configuration:
         # - block=(192, 1, 1): 6 warps × 32 threads/warp = 192 threads
         #   Warp assignment: warps 0-3 (epilogue), warp 4 (MMA), warp 5 (TMA load)
-        # - cluster=(1, 1, 1): Single-CTA mode (no cluster cooperation)
+        # - cluster: preferred cluster shape; fallback_cluster: shape the
+        #   driver falls back to when a full preferred cluster cannot be
+        #   scheduled
         # - smem: Request maximum shared memory capacity for SM100 (~232KB)
         self.kernel(mA, mB, mD).launch(
             grid=grid,
             block=(192, 1, 1),
             cluster=self.cluster_shape,
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
+            fallback_cluster=self.fallback_cluster_shape,
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA: cute.Tensor,
@@ -341,7 +362,7 @@ class DenseGemmKernel:
         """
         Device-side kernel function - the actual GPU computation.
 
-        The @cute.experimental.kernel decorator indicates this function:
+        The @cute.kernel decorator indicates this function:
         - Runs on the DEVICE (GPU)
         - Contains all SMEM/TMEM/RMEM allocations, pipeline setup, and compute logic
         - Is compiled to PTX and executed by each thread in the grid
@@ -488,9 +509,11 @@ class DenseGemmKernel:
         cta_m, cta_n, cta_l = cute.arch.block_idx()
         tid_x, _, _ = cute.arch.thread_idx()
 
-        # Cluster layout for 2-CTA coordination
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout(self.cluster_shape),
+            cute.make_layout(cluster_shape),
             cute.core._pack_shape((cute.size(tiled_mma.thr_id.shape),)),
         )
         cluster_layout_v_size = cute.size(cluster_layout_vmnk.shape[0])
@@ -796,15 +819,15 @@ class DenseGemmKernel:
         # - num_stages: Accumulator stages (acc_stage)
         # - mma_operation_type: The MMA operation producing data
         # - consumer: The operation consuming data (SM100_COPY_T2R = TMEM→RMEM copy)
-        # - consumer_arv_count: Number of threads participating as consumers (128 = 4 warps)
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer.release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # - consumer_release_threads_per_cta: 128 releasing epilogue threads
+        #   (4 warps); the arrival-count query derives the final count
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         # ========================================================================================
@@ -922,6 +945,8 @@ class DenseGemmKernel:
                 # - Signals that producer work is complete (mbarrier will be triggered by TMA)
                 # - Advances internal pipeline state to the next stage
                 mainloop_pipe.producer_commit_and_advance()
+
+            mainloop_pipe.producer_tail()
 
         # ========================================================================================
         # STEP 19: MMA WARP - COMPUTE PHASE
@@ -1061,7 +1086,7 @@ class DenseGemmKernel:
 
             if cutlass.const_expr(self.use_tma_store):
                 # Iterate over epilogue sub-tiles
-                for mn in range(subtile_cnt):
+                for mn in cutlass.range(subtile_cnt, unroll_full=self.epilogue_unroll):
                     # TMEM → RMEM
                     cute_ext.partition_and_copy(
                         tiled_copy_t2r.get_slice(tid_x),
@@ -1266,8 +1291,11 @@ def run(
     tolerance: float = 1e-02,
     skip_ref_check: bool = False,
     use_2cta_instrs: bool = False,
+    fallback_cluster_shape_mn: Tuple[int, int] = None,
     use_tma_store: bool = True,
     zero_init: bool = False,
+    *,
+    benchmark: str | bool = "default",
     **kwargs,
 ):
     """Execute a batched dense GEMM operation on Blackwell architecture with performance benchmarking.
@@ -1289,13 +1317,15 @@ def run(
 
     CORRECT (compile once, run many times):
         kernel = DenseGemmKernel(...)
-        compiled = cute_ext.compile(kernel, a, b, d)   # Compile once
+        compiled = cute.compile(kernel, a, b, d)   # Compile once
         compiled(a, b, d)                              # Fast execution
 
     Args:
         mnkl: Problem size tuple (M, N, K, L)
         mma_tiler_mn: MMA tile shape (M_tile, N_tile)
         cluster_shape_mn: Cluster shape (currently unused in 1-CTA mode)
+        fallback_cluster_shape_mn: Optional. When provided and different from
+            cluster_shape_mn, the kernel runs in mixed-cluster mode.
         ab_dtype: Input data type
         d_dtype: Output data type
         acc_dtype: Accumulator data type
@@ -1305,6 +1335,8 @@ def run(
         use_cold_l2: Whether to use cold L2 cache (requires fresh tensors)
         tolerance: Tolerance for numerical comparison
         skip_ref_check: Skip reference validation
+        benchmark: Benchmark mode: "default", "cupti", or "none".
+            Boolean values are accepted for compatibility with the old perf flow.
         kwargs: Extra perf-framework forwarded options
 
     Returns:
@@ -1319,6 +1351,8 @@ def run(
         mma_tiler_mn=mma_tiler_mn,
         cluster_shape_mn=cluster_shape_mn,
     )
+    if fallback_cluster_shape_mn is not None:
+        print(f"Fallback Cluster Shape (M, N): {fallback_cluster_shape_mn}")
     print(f"Use 2-CTA instructions: {use_2cta_instrs}")
     print(f"Use TMA store: {use_tma_store}")
     cli.print_benchmark_config(
@@ -1367,10 +1401,11 @@ def run(
         tmem_output_dtype=c_dtype,
         use_2cta_instrs=use_2cta_instrs,
         cluster_shape_mn=cluster_shape_mn,
+        fallback_cluster_shape_mn=fallback_cluster_shape_mn,
         use_tma_store=use_tma_store,
     )
 
-    compiled_dense_gemm = cute_ext.compile(dense_gemm, a_tensor, b_tensor, c_tensor)
+    compiled_dense_gemm = cute.compile(dense_gemm, a_tensor, b_tensor, c_tensor)
     compiled_dense_gemm.engine.initialize()
 
     compiled_dense_gemm(a_tensor, b_tensor, c_tensor)
@@ -1378,6 +1413,9 @@ def run(
     if not skip_ref_check:
         compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance)
         print("check reference: PASS")
+
+    if benchmark is False or benchmark == "none":
+        return 0
 
     def generate_tensors():
         a_tensor, _ = cutlass_torch.cute_tensor_like(
@@ -1408,6 +1446,7 @@ def run(
         workspace_count=workspace_count,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     return exec_time
@@ -1419,6 +1458,7 @@ if __name__ == "__main__":
     cli.add_mnkl_arg(parser)
     cli.add_mma_tiler_arg(parser)
     cli.add_cluster_shape_arg(parser)
+    cli.add_fallback_cluster_shape_arg(parser)
     cli.add_dtype_args(parser, ab=cutlass.Float32, c=cutlass.Float32)
     cli.add_major_args(parser)
     cli.add_benchmark_args(parser, tolerance=1e-02)
@@ -1433,6 +1473,13 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Use TMA store for epilogue (default: True)",
+    )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["cupti", "default", "none"],
+        help="Benchmark the kernel with cupti, default (cutlass.testing.benchmark), or none",
     )
     parser.add_argument(
         "--zero_init",
@@ -1451,23 +1498,25 @@ if __name__ == "__main__":
         parser.error("--mma_tiler_mn must contain exactly 2 values")
 
     exec_time = run(
-        args.mnkl,
-        args.mma_tiler_mn,
-        args.cluster_shape_mn,
-        args.ab_dtype,
-        args.c_dtype,
-        args.acc_dtype,
-        args.a_major,
-        args.b_major,
-        args.c_major,
-        args.warmup_iterations,
-        args.iterations,
-        args.use_cold_l2,
-        args.tolerance,
-        args.skip_ref_check,
-        args.use_2cta_instrs,
-        args.use_tma_store,
-        args.zero_init,
+        mnkl=args.mnkl,
+        mma_tiler_mn=args.mma_tiler_mn,
+        cluster_shape_mn=args.cluster_shape_mn,
+        ab_dtype=args.ab_dtype,
+        c_dtype=args.c_dtype,
+        acc_dtype=args.acc_dtype,
+        a_major=args.a_major,
+        b_major=args.b_major,
+        c_major=args.c_major,
+        warmup_iterations=args.warmup_iterations,
+        iterations=args.iterations,
+        use_cold_l2=args.use_cold_l2,
+        tolerance=args.tolerance,
+        skip_ref_check=args.skip_ref_check,
+        use_2cta_instrs=args.use_2cta_instrs,
+        fallback_cluster_shape_mn=args.fallback_cluster_shape_mn,
+        use_tma_store=args.use_tma_store,
+        benchmark=args.benchmark,
+        zero_init=args.zero_init,
     )
 
     print(f"Execution time: {exec_time} microseconds per iteration")

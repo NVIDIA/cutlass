@@ -271,7 +271,7 @@ class TmemAllocator:
     :ivar _is_two_cta: Whether the allocator is for two cta.
     :type _is_two_cta: bool
     :ivar _num_allocated_columns: The number of columns allocated in the tensor memory.
-    :type _num_allocated_columns: int
+    :type _num_allocated_columns: Int32
     :ivar _two_cta_tmem_dealloc_mbar_ptr: The mbarrier pointer required when deallocating tensor memory for two cta.
     :type _two_cta_tmem_dealloc_mbar_ptr: cute.Pointer
     :ivar _arch: The architecture of the GPU.
@@ -386,18 +386,29 @@ class TmemAllocator:
         self._alloc_result_dst_smem_ptr = alloc_result_dst_smem_ptr
         self._allocator_warp_id = allocator_warp_id
         self._is_two_cta = is_two_cta
-        self._num_allocated_columns = num_allocated_columns
+        self._num_allocated_columns = Int32(num_allocated_columns)
         self._two_cta_tmem_dealloc_mbar_ptr = two_cta_tmem_dealloc_mbar_ptr
         self._barrier_for_retrieve = barrier_for_retrieve
         self._arch = arch
         self._max_tmem_columns = get_max_tmem_alloc_cols(arch)
-
         # Init tmem dealloc mbarrier if two cta
         if const_expr(self._is_two_cta and initialize_mbarrier):
             self._init_dealloc_mbarrier(loc=loc, ip=ip)
 
+    @property
+    def _num_allocated_columns(self) -> Int32:
+        return self._num_allocated_columns_value
+
+    @_num_allocated_columns.setter
+    def _num_allocated_columns(self, value: Union[int, Int32]) -> None:
+        # Existing callers reset this counter with a Python int before free().
+        # Keep it staged so assignments cannot remove a carried value at a
+        # runtime control-flow join.
+        self._num_allocated_columns_value = Int32(value)
+
     def __extract_mlir_values__(self) -> list[ir.Value]:
         values = extract_mlir_values(self._alloc_result_dst_smem_ptr)
+        values.extend(extract_mlir_values(self._num_allocated_columns))
         if self._is_two_cta:
             assert self._two_cta_tmem_dealloc_mbar_ptr is not None, (
                 "2CTA mode requires the dealloc mbarrier"
@@ -408,16 +419,20 @@ class TmemAllocator:
     def __new_from_mlir_values__(self, values: list[ir.Value]) -> "TmemAllocator":
         import cutlass.pipeline as pipeline
 
-        assert len(values) == 2 if self._is_two_cta else 1
+        expected_len = 3 if self._is_two_cta else 2
+        assert len(values) == expected_len
         new_alloc_result_dst_smem_ptr = new_from_mlir_values(
             self._alloc_result_dst_smem_ptr, [values[0]]
         )
+        new_num_allocated_columns = new_from_mlir_values(
+            self._num_allocated_columns, [values[1]]
+        )
         new_two_cta_tmem_dealloc_mbar_ptr = (
-            new_from_mlir_values(self._two_cta_tmem_dealloc_mbar_ptr, [values[1]])
+            new_from_mlir_values(self._two_cta_tmem_dealloc_mbar_ptr, [values[2]])
             if self._is_two_cta
             else None
         )
-        return type(self)(
+        allocator = type(self)(
             alloc_result_dst_smem_ptr=new_alloc_result_dst_smem_ptr,
             barrier_for_retrieve=pipeline.NamedBarrier(
                 barrier_id=self._barrier_for_retrieve.barrier_id,
@@ -425,11 +440,12 @@ class TmemAllocator:
             ),
             allocator_warp_id=self._allocator_warp_id,
             is_two_cta=self._is_two_cta,
-            num_allocated_columns=self._num_allocated_columns,
+            num_allocated_columns=new_num_allocated_columns,
             two_cta_tmem_dealloc_mbar_ptr=new_two_cta_tmem_dealloc_mbar_ptr,
             arch=self._arch,  # Preserve the architecture parameter
             initialize_mbarrier=False,
         )
+        return allocator
 
     @cute.jit
     def check_valid_num_columns(self, num_columns: int) -> bool:
@@ -448,14 +464,13 @@ class TmemAllocator:
         if const_expr(num_columns % 32 != 0):
             return False
         # power of two
+        # This constraint is only needed for architectures with at most 512 columns
+        # For example, it is possible to allocate up to 576 columns for sm_107
         if const_expr(
             (num_columns & (num_columns - 1) != 0)
             and not (
                 num_columns > 512
-                and base_dsl.Arch.from_string(self._arch)
-                in (
-                    base_dsl.Arch.sm_107,
-                )
+                and base_dsl.Arch.from_string(self._arch) == base_dsl.Arch.sm_107
             )
         ):
             return False
@@ -474,6 +489,11 @@ class TmemAllocator:
 
         This method allocates a block of tensor memory from allocator warp and returns a handle to retrieve
         the allocated tensor memory address.
+
+        Call this method from every thread in the CTA. The allocator selects
+        ``allocator_warp_id`` internally and the hardware operation requires
+        every lane of that warp. Do not wrap the call in ``elect_one``.
+
         """
 
         assert self.check_valid_num_columns(num_columns), (
@@ -516,7 +536,8 @@ class TmemAllocator:
 
         This method is used to synchronize the allocator warp with the other warps before retrieving tmem ptr.
         """
-        self._barrier_for_retrieve.arrive_and_wait(loc=loc, ip=ip)
+        # Specialized warps may rendezvous here from separate call sites.
+        self._barrier_for_retrieve.wait_unaligned(loc=loc, ip=ip)
 
     @dsl_user_op
     def retrieve_ptr(
@@ -587,6 +608,12 @@ class TmemAllocator:
 
         This method relinquishes the tensor memory allocation permit for the allocator warp, promising
         the allocator warp will not allocate any more tensor memory.
+
+        Call this method from every thread in the CTA. This wrapper selects
+        ``allocator_warp_id`` internally, then every lane of that warp issues
+        the hardware operation. Do not wrap the call in ``elect_one`` or
+        another condition that selects only part of the allocator warp.
+
         """
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
@@ -609,7 +636,15 @@ class TmemAllocator:
         """Deallocate the tensor memory.
 
         This method sync on mbarrier (for two cta use case) and deallocates the tensor memory from the allocator warp.
-        User can optionally specify the number of columns to deallocate. If not specified, all allocated columns will be deallocated.
+        User can optionally specify the number of columns to deallocate. If not
+        specified, all allocated columns will be deallocated. The release form
+        is paired with the allocation, including when allocator state becomes a
+        runtime value under PyIR or a smaller explicit count is released.
+
+        Call this method from every thread in the CTA. The allocator selects
+        ``allocator_warp_id`` internally and the hardware operation requires
+        every lane of that warp. Do not wrap the call in ``elect_one``.
+
         """
         warp_idx = cute.arch.warp_idx(loc=loc, ip=ip)
         warp_idx = cute.arch.make_warp_uniform(warp_idx, loc=loc, ip=ip)
@@ -628,10 +663,11 @@ class TmemAllocator:
         if const_expr(num_columns != 0):
             assert self.check_valid_num_columns(num_columns), "num_columns is invalid"
 
+        allocated_columns = self._num_allocated_columns
         num_deallocate_columns = (
-            self._num_allocated_columns if num_columns == 0 else num_columns
+            allocated_columns if num_columns == 0 else num_columns
         )  # if num_columns is 0, deallocate all allocated columns
-        self._num_allocated_columns -= num_deallocate_columns
+        self._num_allocated_columns = allocated_columns - num_deallocate_columns
         if _is_allocator_warp:
             if const_expr(self._is_two_cta):
                 bid_in_cluster = cute.arch.block_idx_in_cluster(loc=loc, ip=ip)
@@ -648,15 +684,43 @@ class TmemAllocator:
                 cute.arch.mbarrier_wait(
                     self._two_cta_tmem_dealloc_mbar_ptr, 0, loc=loc, ip=ip
                 )
-            # Deallocate tmem
-            cute.arch.dealloc_tmem(
-                tmem_ptr,
-                num_deallocate_columns,
-                is_two_cta=self._is_two_cta,
-                arch=self._arch,
-                loc=loc,
-                ip=ip,
+            arch = base_dsl.Arch.from_string(self._arch)
+            exclusive_threshold = cute.arch.get_tmem_allocation_exclusive_threshold(
+                arch
             )
+            if const_expr(exclusive_threshold is not None):
+                # Match the allocation mode even when PyIR carries the column
+                # count as a runtime value in a public wheel.
+                staged_num_deallocate_columns = Int32(num_deallocate_columns)
+                if allocated_columns > exclusive_threshold:
+                    cute.arch.dealloc_tmem(
+                        tmem_ptr,
+                        staged_num_deallocate_columns,
+                        is_two_cta=self._is_two_cta,
+                        arch=self._arch,
+                        exclusive=True,
+                        loc=loc,
+                        ip=ip,
+                    )
+                else:
+                    cute.arch.dealloc_tmem(
+                        tmem_ptr,
+                        staged_num_deallocate_columns,
+                        is_two_cta=self._is_two_cta,
+                        arch=self._arch,
+                        exclusive=False,
+                        loc=loc,
+                        ip=ip,
+                    )
+            else:
+                cute.arch.dealloc_tmem(
+                    tmem_ptr,
+                    num_deallocate_columns,
+                    is_two_cta=self._is_two_cta,
+                    arch=self._arch,
+                    loc=loc,
+                    ip=ip,
+                )
 
 
 # Set explicit signature for Sphinx documentation to avoid issues with @dsl_user_op decorator

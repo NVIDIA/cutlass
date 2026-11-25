@@ -168,6 +168,13 @@ function(cutlass_add_cutlass_library)
         DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}"
       )
 
+      if (WIN32 AND __SUFFIX)
+        # Only registration entry points cross the generated DLL boundary.
+        # Exporting all kernel template symbols can overflow the import library.
+        set_target_properties(${__NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS 0)
+        target_compile_definitions(${__NAME}_objs PRIVATE CUTLASS_LIBRARY_EXPORT_INITIALIZERS)
+      endif()
+
       target_link_libraries(${__NAME}
         PUBLIC cutlass_library_includes
         PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>

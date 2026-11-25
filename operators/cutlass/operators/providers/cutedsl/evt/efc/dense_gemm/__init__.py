@@ -38,9 +38,8 @@ Here an "operation" is the per-operation implementation (dense GEMM),
 split into an arch-neutral base in this directory's ``_operation.py`` and
 an arch-specific subclass in each ``<arch>/_operation.py`` (e.g.
 ``sm100/_operation.py``).  Each arch subpackage exposes a concrete operation
-class, for example
-``cutlass.operators.providers.cutedsl.evt.efc.dense_gemm.sm100.DenseGemmEFC``,
-that the user instantiates directly.
+class, for example ``cutlass.operators.providers.cutedsl.evt.efc.dense_gemm.sm100.DenseGemmEFC``, that the
+user instantiates directly.
 """
 
 __all__: list[str] = []
