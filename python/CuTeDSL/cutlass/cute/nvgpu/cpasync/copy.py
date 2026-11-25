@@ -18,7 +18,9 @@ from abc import ABCMeta, abstractmethod
 from cutlass import base_dsl
 from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL
 
+import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
+from cutlass._mlir.dialects import llvm
 from cutlass._mlir.dialects.cute_nvgpu import ReductionKind as ReductionKind
 from cutlass._mlir.dialects.cute import ReductionOp as _CuteReductionOp
 from cutlass._mlir.dialects.nvvm import ReductionOp as _NvvmReductionOp
@@ -35,6 +37,7 @@ from ...typing import (
     Integer,
     Numeric,
 )
+from ...typing import AddressSpace
 from ..cache_policy import CachePolicy as _CachePolicy
 from ..common import (
     CacheEvictionPriority as CacheEvictionPriority_,
@@ -278,6 +281,61 @@ def _normalize_tma_cache_policy(
     return Int64(policy.ir_value())
 
 
+# CUtensorMap objects are always 64B aligned
+TMA_DESC_MIN_ALIGNMENT = 64
+
+
+def _to_tma_desc_ptr(
+    tma_desc_ptr: Any,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Optional[ir.Value]:
+    """
+    Normalizes the ``tma_desc_ptr`` kw argument of TMA copies into the generic-address-space
+    CuTe pointer expected by the lowering, or returns ``None`` if no descriptor is provided.
+
+    Accepts a CuTe pointer in the generic or gmem address space, or a ``cutlass.Pointer`` such as
+    the one returned by ``TensorMap.get_ptr()``. The TMA instructions take the descriptor as a
+    generic address, so gmem pointers are converted to generic.
+    """
+    if tma_desc_ptr is None:
+        return None
+
+    if isinstance(tma_desc_ptr, Pointer):
+        memspace = tma_desc_ptr.memspace
+        if memspace == AddressSpace.generic:
+            return cast(Any, tma_desc_ptr).value
+        align = max(tma_desc_ptr.alignment, TMA_DESC_MIN_ALIGNMENT)
+    elif isinstance(tma_desc_ptr, base_dsl.typing.Pointer):
+        # e.g. cutlass.experimental.cuda.TensorMap.get_ptr()
+        memspace = tma_desc_ptr.space
+        align = TMA_DESC_MIN_ALIGNMENT
+    else:
+        raise TypeError(
+            f"expects a pointer to a TMA descriptor to be provided via the tma_desc_ptr kw "
+            f"argument, but got {type(tma_desc_ptr).__qualname__}"
+        )
+
+    if memspace not in (AddressSpace.generic, AddressSpace.gmem):
+        raise ValueError(
+            f"expects the TMA descriptor pointer provided via the tma_desc_ptr kw argument "
+            f"to be in the generic or gmem address space, but got {memspace}"
+        )
+
+    if isinstance(tma_desc_ptr, Pointer):
+        addr = tma_desc_ptr.toint(loc=loc, ip=ip).ir_value(loc=loc, ip=ip)
+    else:
+        llvm_ptr = tma_desc_ptr.to_llvm_ptr(loc=loc, ip=ip)
+        addr = llvm.ptrtoint(ir.IntegerType.get_signless(64), llvm_ptr, loc=loc, ip=ip)
+    # The generic address of a global memory location is the same as its global address
+    addr = _cute_ir.assume(_cute_ir.ConstrainedIntType.get(align, 64), addr, loc=loc, ip=ip)
+    ptr_ty = _cute_ir.PtrType.get(
+        _cute_nvgpu_ir.TmaDescriptorTiledType.get(), AddressSpace.generic, align
+    )
+    return cast(Any, _cute_ir.inttoptr(ptr_ty, addr, loc=loc, ip=ip)).value
+
+
 class TmaCopyOp(CopyOp):
     """
     Base class for all TMA copy operations.
@@ -412,11 +470,12 @@ class CopyG2STileNonExecBaseTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
@@ -636,11 +695,12 @@ class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
@@ -909,11 +969,12 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
@@ -1051,11 +1112,12 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
@@ -1166,13 +1228,14 @@ class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
         Custom implementation of unpack for non-executable TMAs.
         """
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_DESC_PTR_FIELD_NAME}>"
             )
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
@@ -1340,13 +1403,14 @@ class CopyReduceBulkTensorTileS2GNonExecTrait(TmaTrait):
         Custom implementation of unpack for non-executable TMAs.
         """
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmareduce<{TMA_DESC_PTR_FIELD_NAME}>"
             )
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, cast(Any, tma_desc_ptr).value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
@@ -1727,13 +1791,14 @@ class CopyBulkTensorIm2ColS2GNonExecTrait(TmaTrait):
         Custom implementation of unpack for non-executable TMAs.
         """
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
+        tma_desc_ptr = _to_tma_desc_ptr(tma_desc_ptr, loc=loc, ip=ip)
+        if tma_desc_ptr is not None:
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_DESC_PTR_FIELD_NAME}>"
             )
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
-                exec_value, attr, tma_desc_ptr.value, loc=loc, ip=ip
+                exec_value, attr, tma_desc_ptr, loc=loc, ip=ip
             )
         cache_policy = _normalize_tma_cache_policy(cache_policy, loc=loc, ip=ip)
         if cache_policy is not None:
