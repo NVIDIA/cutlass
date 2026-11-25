@@ -16,6 +16,7 @@ from inspect import Signature
 from cutlass.base_dsl.export import (
     SignatureProcessor,
 )
+from cutlass.base_dsl.export.restricted_unpickler import restricted_loads
 
 cute_algebra_types_dump = {
     IntTuple: "IntTuple",
@@ -47,7 +48,11 @@ class CuteSignatureProcessor(SignatureProcessor):
         return pickle.dumps(signature.replace(parameters=params))
 
     def loads(self, signature_bytes: bytes) -> Signature:
-        signature = pickle.loads(signature_bytes)
+        # Restricted unpickling: see restricted_unpickler module docstring
+        # for the threat model (defense-in-depth, not primary mitigation --
+        # the artifact's native code has already run by the time this is
+        # reached).
+        signature = restricted_loads(signature_bytes)
         params = []
         for param in signature.parameters.values():
             arg_type = param.annotation
