@@ -50,6 +50,16 @@ if TYPE_CHECKING:
 ##############################################################################
 
 
+def _is_single_pair_cluster(cta_layout_vmnk: cute.Layout) -> bool:
+    """
+    Whether the cluster is exactly one 2CTA pair (cluster shape (2, 1, 1, 1)).
+
+    Both CTAs of such a cluster have the same leader rank (0) and the same pair mask (0b11),
+    so the pipelines can use constants instead of deriving them from the CTA rank at runtime.
+    """
+    return cute.size(cta_layout_vmnk) == 2 and cute.size(cta_layout_vmnk, mode=[0]) == 2
+
+
 @dataclass(frozen=True)
 class PipelineTmaUmma(PipelineAsync):
     """
@@ -115,6 +125,10 @@ class PipelineTmaUmma(PipelineAsync):
         """
         Computes a mask for signaling arrivals to multicasting threadblocks.
         """
+        assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
+        if _is_single_pair_cluster(cta_layout_vmnk):
+            # The only multicast targets are the two CTAs of the pair
+            return Int32(0b11)
         cta_rank_in_cluster = cute.arch.make_warp_uniform(
             cute.arch.block_idx_in_cluster(loc=loc, ip=ip), loc=loc, ip=ip
         )
@@ -148,7 +162,6 @@ class PipelineTmaUmma(PipelineAsync):
             ip=ip,
         )
 
-        assert not (mcast_mode_mn[0] == 0 and mcast_mode_mn[1] == 0)
         if mcast_mode_mn[0] == 1 and mcast_mode_mn[1] == 1:
             return (
                 tma_mcast_mask_a
@@ -465,6 +478,9 @@ class PipelineAsyncUmma(PipelineAsync):
         """
         Computes a mask for signaling arrivals to multicasting threadblocks.
         """
+        if _is_single_pair_cluster(cta_layout_vmnk):
+            # Self and peer are the two CTAs of the pair
+            return Int32(0b11)
         cta_rank_in_cluster = cute.arch.make_warp_uniform(
             cute.arch.block_idx_in_cluster(loc=loc, ip=ip),
             loc=loc,
@@ -590,10 +606,13 @@ class PipelineAsyncUmma(PipelineAsync):
             consumer_mask = None
         else:
             # If we're using 2CTA UMMAs, producer will arrive the mbar on leading CTA
-            # We need to get the target cta_rank
-            producer_mask = PipelineAsyncUmma._compute_leading_cta_rank(
-                cta_v_size, loc=loc, ip=ip
-            )
+            # We need to get the target cta_rank (rank 0 when the cluster is one pair)
+            if _is_single_pair_cluster(cta_layout_vmnk):
+                producer_mask = Int32(0)
+            else:
+                producer_mask = PipelineAsyncUmma._compute_leading_cta_rank(
+                    cta_v_size, loc=loc, ip=ip
+                )
             # consumer needs to get the mask to signal
             consumer_mask = PipelineAsyncUmma._compute_peer_cta_mask(
                 cta_layout_vmnk, loc=loc, ip=ip
@@ -650,6 +669,9 @@ class PipelineUmmaAsync(PipelineAsync):
         """
         Computes a mask to signal completion of tmem buffers for 2CTA kernels.
         """
+        if _is_single_pair_cluster(cta_layout_vmnk):
+            # The image of mode 0 is the whole pair
+            return Int32(0b11)
         cta_rank_in_cluster = cute.arch.make_warp_uniform(
             cute.arch.block_idx_in_cluster(loc=loc, ip=ip),
             loc=loc,
@@ -780,7 +802,11 @@ class PipelineUmmaAsync(PipelineAsync):
             # Set mask to None if not using 2CTA instructions
             consumer_mask = None
         else:
-            consumer_mask = PipelineUmmaAsync._compute_peer_cta_rank(loc=loc, ip=ip)
+            # The release targets the leading CTA of the pair (rank 0 when the cluster is one pair)
+            if _is_single_pair_cluster(cta_layout_vmnk):
+                consumer_mask = Int32(0)
+            else:
+                consumer_mask = PipelineUmmaAsync._compute_peer_cta_rank(loc=loc, ip=ip)
 
         cta_group = (
             cute.nvgpu.tcgen05.CtaGroup.ONE
