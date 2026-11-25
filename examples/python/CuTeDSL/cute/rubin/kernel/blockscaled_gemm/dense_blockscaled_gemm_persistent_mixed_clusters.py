@@ -74,6 +74,7 @@ from rubin.kernel.blockscaled_gemm.dense_blockscaled_gemm_persistent import (
     create_and_init_tensors_emulated,
     create_scale_factor_tensor,
     construct_abc_cute_pointers_emulated,
+    construct_ab_cute_pointers_emulated_streamed,
 )
 
 
@@ -1338,6 +1339,17 @@ def run_scaled_mm_with_emulated_dtype(
         lambda x: x,
     )
 
+    # Full-tensor FP32 staging of A/B costs [(m+n)*k + max(m,n)*k] * l * 4
+    # device bytes at peak (224 GiB at 61440x8192x14336x32), which OOMs
+    # cards with less free device memory.  Perf-only runs (skip_ref_check=True)
+    # never consume the FP32 references, so when the staging peak cannot fit
+    # into the currently-free memory, the operands are generated and converted
+    # one batch slice at a time instead (byte-identical destination buffers;
+    # only the staging is streamed).
+    free_bytes = torch.cuda.mem_get_info()[0]
+    staging_peak_bytes = ((m + n) * k + max(m, n) * k) * l * 4
+    stream_ab = skip_ref_check and staging_peak_bytes > int(free_bytes * 0.8)
+
     # Create Torch Tensors for A, scale factor A, B, scale factor B, C
     a_f32_ref, b_f32_ref, c, sfa_f32, sfb_f32 = create_and_init_tensors_emulated(
         mnkl,
@@ -1349,23 +1361,32 @@ def run_scaled_mm_with_emulated_dtype(
         init_normal=init_normal,
         normal_mean=normal_mean,
         normal_std=normal_std,
+        stream_ab=stream_ab,
+        allocate_c=not stream_ab,
     )
 
     sfa_f32_ref, sfa_reordered, sfa_torch = create_scale_factor_tensor(
-        l, m, k, sf_vec_size, sf_dtype, sfa_f32
+        l, m, k, sf_vec_size, sf_dtype, sfa_f32, include_ref=not skip_ref_check
     )
     sfb_f32_ref, sfb_reordered, sfb_torch = create_scale_factor_tensor(
-        l, n, k, sf_vec_size, sf_dtype, sfb_f32
+        l, n, k, sf_vec_size, sf_dtype, sfb_f32, include_ref=not skip_ref_check
     )
-    # Construct CuTe Pointers
-    a_ptr, b_ptr, c_ptr, *_ = construct_abc_cute_pointers_emulated(
-        a_f32_ref,
-        b_f32_ref,
-        c,
-        a_dtype,
-        b_dtype,
-        c_dtype,
-    )
+    # Construct CuTe Pointers.
+    # In streamed perf-only mode build nothing here: the benchmark loop
+    # rebuilds one full operand set per workspace, and the main-path pointers
+    # only feed the (skipped) reference check -- an extra set would double the
+    # residency (see the workspace sizing below).
+    if stream_ab:
+        a_ptr = b_ptr = c_ptr = None
+    else:
+        a_ptr, b_ptr, c_ptr, *_ = construct_abc_cute_pointers_emulated(
+            a_f32_ref,
+            b_f32_ref,
+            c,
+            a_dtype,
+            b_dtype,
+            c_dtype,
+        )
 
     # Compute reference result
     if not skip_ref_check:
@@ -1402,24 +1423,45 @@ def run_scaled_mm_with_emulated_dtype(
             init_normal=init_normal,
             normal_mean=normal_mean,
             normal_std=normal_std,
+            stream_ab=stream_ab,
         )
 
         _, sfa_reordered, sfa_torch = create_scale_factor_tensor(
-            l, m, k, sf_vec_size, sf_dtype, sfa_f32
+            l, m, k, sf_vec_size, sf_dtype, sfa_f32, include_ref=not skip_ref_check
         )
         _, sfb_reordered, sfb_torch = create_scale_factor_tensor(
-            l, n, k, sf_vec_size, sf_dtype, sfb_f32
+            l, n, k, sf_vec_size, sf_dtype, sfb_f32, include_ref=not skip_ref_check
         )
         # Construct CuTe Pointers
-
-        a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
-            a_f32_ref,
-            b_f32_ref,
-            c,
-            a_dtype,
-            b_dtype,
-            c_dtype,
-        )
+        if stream_ab:
+            a_cute, a_torch, b_cute, b_torch = (
+                construct_ab_cute_pointers_emulated_streamed(
+                    mnkl,
+                    a_dtype,
+                    b_dtype,
+                    a_major,
+                    b_major,
+                    init_normal=init_normal,
+                    normal_mean=normal_mean,
+                    normal_std=normal_std,
+                )
+            )
+            a_ptr = a_cute.iterator
+            b_ptr = b_cute.iterator
+            c_ptr = make_ptr(
+                c_dtype, c.data_ptr(), cutlass.AddressSpace.gmem, assumed_align=16
+            )
+            scope_tensors = [a_cute, b_cute, a_torch, b_torch]
+        else:
+            a_ptr, b_ptr, c_ptr, a_cute, b_cute = construct_abc_cute_pointers_emulated(
+                a_f32_ref,
+                b_f32_ref,
+                c,
+                a_dtype,
+                b_dtype,
+                c_dtype,
+            )
+            scope_tensors = [a_f32_ref, b_f32_ref, a_cute, b_cute]
 
         jit_args = cutlass.testing.JitArguments(
             a_ptr,
@@ -1432,18 +1474,38 @@ def run_scaled_mm_with_emulated_dtype(
         )
         # Keep references to external variables (e.g., Torch tensors when taking a view)
         jit_args.add_to_scope(
-            [a_f32_ref, b_f32_ref, sfa_reordered, sfb_reordered, c, a_cute, b_cute]
+            [sfa_reordered, sfb_reordered, c] + scope_tensors
         )
         return jit_args
 
     workspace_count = 1
     if use_cold_l2:
+        if stream_ab:
+            # The outer reference tensors do not exist in streamed perf mode;
+            # size the workspace arithmetically (uint8 for width<=8 floats and
+            # int4, matching cute_tensor_like's storage rule).
+            def _storage_elem_bytes(dt):
+                if (dt.is_float and dt.width <= 8) or (
+                    dt.is_integer and dt.width == 4
+                ):
+                    return 1
+                return dt.width // 8
+
+            compute_workspace_bytes = (
+                m * k * l * _storage_elem_bytes(a_dtype)
+                + n * k * l * _storage_elem_bytes(b_dtype)
+                + m * n * l * _storage_elem_bytes(c_dtype)
+            )
+        else:
+            compute_workspace_bytes = (
+                a_f32_ref.numel() * a_f32_ref.element_size()
+                + b_f32_ref.numel() * b_f32_ref.element_size()
+                + c.numel() * c.element_size()
+            )
         one_workspace_bytes = (
-            a_f32_ref.numel() * a_f32_ref.element_size()
-            + b_f32_ref.numel() * b_f32_ref.element_size()
+            compute_workspace_bytes
             + sfa_torch.numel() * sfa_torch.element_size()
             + sfb_torch.numel() * sfb_torch.element_size()
-            + c.numel() * c.element_size()
         )
         workspace_count = cutlass.testing.get_workspace_count(
             one_workspace_bytes, warmup_iterations, iterations
