@@ -460,10 +460,10 @@ class PersistentDenseGemmKernel:
         atom_thr_size = cute.size(tiled_mma.thr_id.shape)
 
         # Setup TMA load for A
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
+        a_smem_layout = cute.select(self.a_smem_layout_staged, mode=[0, 1, 2])
 
         # Setup TMA load for B
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        b_smem_layout = cute.select(self.b_smem_layout_staged, mode=[0, 1, 2])
 
         a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
         b_copy_size = cute.size_in_bytes(self.b_dtype, b_smem_layout)

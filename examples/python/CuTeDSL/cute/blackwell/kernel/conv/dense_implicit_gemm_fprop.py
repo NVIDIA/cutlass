@@ -391,8 +391,8 @@ class Sm100DenseImplicitGemmFpropKernel:
         # --- TMA transaction bytes and TMEM columns ---
         # Compute the TMA transaction bytes of one A/B stage across the MMA atom's CTAs
         atom_thr_size = cute.size(self.tiled_mma.thr_id.shape)
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        a_smem_layout = cute.select(self.a_smem_layout_staged, mode=[0, 1, 2])
+        b_smem_layout = cute.select(self.b_smem_layout_staged, mode=[0, 1, 2])
         a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
         b_copy_size = cute.size_in_bytes(self.b_dtype, b_smem_layout)
         self.num_tma_load_bytes = (a_copy_size + b_copy_size) * atom_thr_size
@@ -584,7 +584,7 @@ class Sm100DenseImplicitGemmFpropKernel:
         mA = cute.make_tensor(a.iterator, cute.select(a.layout, mode=[3, 2, 1, 0, 4]))
         mA = cute.group_modes(mA, begin=0, end=4)
 
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
+        a_smem_layout = cute.select(self.a_smem_layout_staged, mode=[0, 1, 2])
         a_internal_type = (
             cutlass.TFloat32 if mA.element_type is cutlass.Float32 else None
         )
@@ -661,7 +661,7 @@ class Sm100DenseImplicitGemmFpropKernel:
         :return: (tma_atom_b_preferred, tma_tensor_b_preferred,
                 tma_atom_b_fallback, tma_tensor_b_fallback)
         """
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
+        b_smem_layout = cute.select(self.b_smem_layout_staged, mode=[0, 1, 2])
         # Change view of filter tensor from (K, T, R, S, C) to (K, (C, S, R, T))
         mB = cute.make_tensor(b.iterator, cute.select(b.layout, mode=[0, 4, 3, 2, 1]))
         mB = cute.group_modes(mB, begin=1, end=5)
