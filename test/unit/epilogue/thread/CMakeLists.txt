@@ -31,4 +31,5 @@ cutlass_test_unit_add_executable(
   activation.cu
   linear_combination.cu
   linear_combination_planar_complex.cu
+  sm90_scalar_broadcast.cu
 )
