@@ -417,8 +417,11 @@ class RMSNormKernel:
         # =====================================================================
         idX = cute.make_identity_tensor(mX.shape)
 
-        gX = cute.local_tile(mX, tiler_mn, (bidx, cluster_y))
-        gO = cute.local_tile(mO, tiler_mn, (bidx, cluster_y))
+        # Tile offsets in mX and mO go up to M * N elements, which can pass
+        # 2**31. An Int64 tile coordinate makes local_tile compute them in 64 bits.
+        row_tile = Int64(bidx)
+        gX = cute.local_tile(mX, tiler_mn, (row_tile, cluster_y))
+        gO = cute.local_tile(mO, tiler_mn, (row_tile, cluster_y))
         cX = cute.local_tile(idX, tiler_mn, (bidx, cluster_y))
 
         if cutlass.const_expr(cfg.has_weight and mW is not None):
