@@ -1486,6 +1486,8 @@ def _hl_inline_ptx(
     """
     from cutlass.cute.arch.nvvm_wrappers import inline_ptx as _hl  # noqa: PLC0415
 
+    if pred is not None and not has_side_effects:
+        raise ValueError("inline_ptx with has_side_effects=False takes no pred")
     if pred is not None:
         read_only_args = list(read_only_args) if read_only_args else []
         ptx_code = f"@{{$r{len(read_only_args)}}} {ptx_code}"

@@ -28,6 +28,7 @@ import cutlass.cute as cute
 from cutlass import Boolean, Float32, Int32
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cutlass_dsl import CuTeDSL
+from cutlass.experimental.primitives import nvvm_wrapper as experimental
 
 _EX2 = "ex2.approx.ftz.f32 {$w0}, {$r0};"
 
@@ -86,6 +87,18 @@ def _with_predicate(t: cute.Tensor):
         write_only_types=[Float32],
         read_only_args=[t[tidx]],
         predicate=Boolean(True),
+        has_side_effects=False,
+    )
+
+
+@cute.kernel
+def _with_experimental_pred(t: cute.Tensor):
+    tidx, _, _ = cute.arch.thread_idx()
+    t[tidx] = experimental._hl_inline_ptx(
+        _EX2,
+        write_only_types=[Float32],
+        read_only_args=[t[tidx]],
+        pred=Boolean(True),
         has_side_effects=False,
     )
 
@@ -155,6 +168,10 @@ class TestInlinePtxSideEffects(unittest.TestCase):
     def test_pure_call_rejects_predicate(self):
         with self.assertRaisesRegex(Exception, "takes no predicate"):
             cute.compile(_launch_one, _with_predicate, self.t)
+
+    def test_pure_experimental_call_rejects_pred(self):
+        with self.assertRaisesRegex(Exception, "takes no pred"):
+            cute.compile(_launch_one, _with_experimental_pred, self.t)
 
     def test_pure_call_rejects_read_write_args(self):
         with self.assertRaisesRegex(Exception, "takes no predicate or read_write_args"):
