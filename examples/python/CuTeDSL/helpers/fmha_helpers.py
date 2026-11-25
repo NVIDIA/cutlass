@@ -1118,6 +1118,11 @@ class FusedMask:
                         result = max(trailing_mask_end - leading_mask_end, 0)
                     else:
                         result = max(trailing_mask_end - trailing_mask_begin + 1, 0)
+        elif cutlass.const_expr(mask_type is MaskEnum.RESIDUAL_MASK_BWD):
+            if seqlen_q % tile_shape[0] != 0:
+                result = 1
+            else:
+                result = 0
         else:
             if seqlen_k % tile_shape[1] != 0:
                 result = 1
