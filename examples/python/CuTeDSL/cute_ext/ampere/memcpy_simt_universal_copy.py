@@ -28,15 +28,14 @@
 
 import argparse
 import torch
-import pytest
 
+import cutlass
 from cutlass import cute
 from cutlass.cute import experimental as cute_ext
 from cutlass.cute.runtime import from_dlpack
-import cutlass.utils as utils
 
 
-@cute.experimental.kernel
+@cute.kernel
 def memcpy_simt_universal_copy_kernel(
     mA: cute.Tensor, mD: cute.Tensor, addend: cute.Float16
 ):
@@ -52,7 +51,7 @@ def memcpy_simt_universal_copy_kernel(
 
     buffer = cute_ext.allocate(
         cute.Float16,
-        cute.AddressSpace.rmem,
+        cutlass.AddressSpace.rmem,
         cute.make_layout(((8, 1), (1, 8)), stride=((1, 8), (1, 8))),
         alignment=16,
     )
@@ -72,7 +71,7 @@ def memcpy_simt_universal_copy_kernel(
     )
 
     # cute_ext.copy() automatically computes predicates based on the shape of
-    # the tensor passed to the @cute.experimental.kernel argument
+    # the tensor passed to the @cute.kernel argument
     cute_ext.copy(
         tCgA,
         buffer,
@@ -87,7 +86,7 @@ def memcpy_simt_universal_copy_kernel(
     buffer.store(buffer.load() + addend)
 
     # cute_ext.copy() automatically computes predicates based on the shape of
-    # the tensor passed to the @cute.experimental.kernel argument
+    # the tensor passed to the @cute.kernel argument
     cute_ext.copy(
         buffer,
         tCgD,
@@ -99,7 +98,7 @@ def memcpy_simt_universal_copy_kernel(
     )
 
 
-@cute.experimental.jit
+@cute.jit
 def memcpy_simt_universal_copy(
     src: cute.Tensor, dst: cute.Tensor, addend: cute.Float16
 ):
@@ -109,7 +108,6 @@ def memcpy_simt_universal_copy(
     memcpy_simt_universal_copy_kernel(src, dst, addend).launch(
         grid=grid,
         block=(128, 1, 1),
-        smem=cute.Int64(utils.get_smem_capacity_in_bytes("sm_80")),
     )
 
 

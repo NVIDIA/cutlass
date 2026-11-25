@@ -80,6 +80,7 @@ def _emit_tma_load(
     multicast_mode: Optional[int],
     internal_type: Optional[Type[cute.Numeric]],
     update_expect_tx: bool,
+    report_valid: bool,
     loc: Optional[ir.Location],
     ip: Optional[ir.InsertionPoint],
 ) -> None:
@@ -97,6 +98,14 @@ def _emit_tma_load(
         internal_type,
         update_expect_tx,
     )
+    if report_valid:
+        # lir.tma_load's report_valid is a concrete SentinelPattern; resolve the
+        # bool to the sentinel for the load's element type.
+        from cutlass.cute.nvgpu.cpasync.copy import _sentinel_pattern_from_dtype
+
+        dtype = internal_type if internal_type is not None else src.element_type
+        kwargs["report_valid"] = _sentinel_pattern_from_dtype(dtype)._to_ir()
+
     if multicast:
         if vmnk_layout is None:
             raise ValueError("tma_load multicast requires vmnk_layout")
@@ -111,7 +120,7 @@ def _emit_tma_load(
             vmnk_layout=vmnk_layout, multicast_mode=multicast_mode, loc=loc, ip=ip
         ).result
         cutlass_lir.TmaLoadMulticastOp(
-            src.value, dst.value, mbar, mcast_layout, **kwargs
+            src.value, dst.value, mbar, mcast_layout=mcast_layout, **kwargs
         )
     else:
         cutlass_lir.TmaLoadOp(src.value, dst.value, mbar, **kwargs)
@@ -173,6 +182,50 @@ def allocate(
 
 
 @dsl_user_op
+def tma_update(
+    tensor: cute.Tensor,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Tensor:
+    """Publish a device-dynamic gmem tensor to subsequent TMA operations.
+
+    Call this after constructing (or reconstructing) a tensor whose pointer,
+    shape, or strides are only known on the device — e.g. per-group tensors in
+    grouped GEMM — and thread the *result* into the consuming
+    :func:`tma_load` / :func:`tma_store`. The result is the only association
+    between the publication and its consumers; copies that consume the input
+    tensor directly keep reading stale state (the compiler rejects lineages
+    with no publication at all). It is required on every architecture; how it
+    lowers (a device-side descriptor update, an issue-time mechanism, or no
+    runtime operation at all) is the compiler's decision.
+
+    Warp ownership: this op is the side effect and must execute on the same
+    warp that issues the consuming TMA copies. Construct the view on all
+    warps that need it for partitioning, but guard the publication::
+
+        mD = cute.make_tensor(ptr, layout)     # all warps: pure
+        if warp_idx == tma_store_warp_id:
+            mD = cute_ext.tma_update(mD)       # issuing warp: side effect
+
+    The compiler verifies only that some publication lies on the SSA lineage
+    reaching each TMA copy; that the guard names the issuing warp remains the
+    kernel author's obligation. Workspace allocation, descriptor updates,
+    in-flight-copy draining, and fencing — when emitted — are not
+    user-visible.
+
+    :param tensor: gmem tensor to publish.
+    :return: the tensor carrying the published state.
+    """
+    from cutlass.cute.tensor import _Tensor
+
+    update_op = cutlass_lir.ViewTmaUpdateOp(
+        tensor.value, results=[tensor.value.type], loc=loc, ip=ip
+    )
+    return _Tensor(update_op.updated_view, dtype=tensor.element_type, loc=loc, ip=ip)
+
+
+@dsl_user_op
 def tma_load(
     src: cute.Tensor,
     dst: cute.Tensor,
@@ -184,6 +237,7 @@ def tma_load(
     multicast_mode: Optional[int] = None,
     internal_type: Optional[Type[cute.Numeric]] = None,
     update_expect_tx: bool = True,
+    report_valid: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
@@ -196,9 +250,14 @@ def tma_load(
     Required for multicast loads and for selecting SM100_TMA_LOAD_2SM.
     vmnk_layout: layout describing the cluster configuration. Required when tma_operation_type is multicast.
     multicast_mode (optional): multicast projection mode. Required when tma_operation_type is multicast.
+    report_valid (bool): enables TMA data validity reporting on v1 mbarrier pipelines.
     internal_type (optional): selects the TMA transfer element-format override.
     Does not change src/dst memref types. For structured sparsity, use base storage types:
     Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
+
+    Reconstructing a dynamic source view can update its device-side TMA
+    descriptor. Once TMA operations may be in flight, only the same warp that
+    issues this operation may reconstruct the view.
     """
     if tma_operation_type is None:
         if vmnk_layout is not None or multicast_mode is not None:
@@ -217,9 +276,11 @@ def tma_load(
         multicast_mode=multicast_mode,
         internal_type=internal_type,
         update_expect_tx=update_expect_tx,
+        report_valid=report_valid,
         loc=loc,
         ip=ip,
     )
+
 
 
 @dsl_user_op
@@ -233,6 +294,7 @@ def tma_load_multicast(
     tma_operation_type: OperationTypeEnum,
     multicast_mode: int,
     update_expect_tx: bool = True,
+    report_valid: bool = False,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
@@ -250,6 +312,7 @@ def tma_load_multicast(
     :param tma_operation_type: TMA operation type (e.g., SM90_TMA_LOAD_MULTICAST, SM100_TMA_LOAD_2SM_MULTICAST)
     :param multicast_mode: Multicast projection mode (1=column, 2=row)
     :param update_expect_tx: Whether to update expected transaction bytes
+    :param report_valid: Whether to enable TMA data validity reporting
     """
     if not _is_tma_load_multicast_operation_type(tma_operation_type):
         raise ValueError("tma_load_multicast requires a multicast tma_operation_type")
@@ -264,6 +327,7 @@ def tma_load_multicast(
         multicast_mode=multicast_mode,
         internal_type=None,
         update_expect_tx=update_expect_tx,
+        report_valid=report_valid,
         loc=loc,
         ip=ip,
     )
@@ -285,6 +349,10 @@ def tma_store(
     internal_type (optional): selects the TMA transfer element-format override.
     Does not change src/dst memref types. For structured sparsity, use base storage types:
     Float16 for 2:4 FP16 sparse element type, Uint8 for 8:1 uint8 sparse element type.
+
+    Reconstructing a dynamic destination view can update its device-side TMA
+    descriptor. Once TMA operations may be in flight, only the same warp that
+    issues this operation may reconstruct the view.
     """
 
     kwargs = {
@@ -330,6 +398,10 @@ def tma_reduce_store(
         inferred from the destination GMEM memref.
     :param internal_type: optional override for the TMA transfer element
         format; see :func:`tma_store` for semantics.
+
+    Reconstructing a dynamic destination view can update its device-side TMA
+    descriptor. Once TMA operations may be in flight, only the same warp that
+    issues this operation may reconstruct the view.
     """
     if not isinstance(kind, cute.ReductionKind):
         raise TypeError(

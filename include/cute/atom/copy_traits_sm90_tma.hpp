@@ -1045,7 +1045,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
     TMA::SmemSwizzleBase swizzle_base = get_tma_swizzle_base(swizzle);
     CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(swizzle_bits, swizzle_base);
     CUresult result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeTiled)(
-        &tma_desc,
+        reinterpret_cast<CUtensorMap*>(&tma_desc),
         tma_format,
         tma_dim,
         gmem_address,
@@ -1107,7 +1107,8 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
       if constexpr (decltype(rank<j>(tma_gmem_basis_stride) == Int<1>{})::value) {
         return E<j>{};                 // Return TMA Coord basis -- known scale of Int<1>{}
       } else {
-        int32_t scale = ceil_div(int32_t(di * sizeof_bits_v<TmaInternalType> / cute::max(gmem_prob_stride[j], uint64_t{16})), 8);
+        // 64-bit: di * sizeof_bits overflows int32 once the gmem stride reaches 2^31 bits
+        int32_t scale = int32_t(ceil_div(uint64_t(di) * sizeof_bits_v<TmaInternalType> / cute::max(gmem_prob_stride[j], uint64_t{16}), uint64_t{8}));
         return E<j>{} * scale;         // Return TMA Coord basis -- with a dynamic scale factor
       }
     }

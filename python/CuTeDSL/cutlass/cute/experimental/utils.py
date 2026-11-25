@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 from cutlass import AddressSpace
-from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Optional, Tuple, Type, Union
 
 import cutlass
 from cutlass import cute
@@ -19,6 +19,7 @@ from cutlass._mlir.dialects import cute as _cute_ir
 from cutlass._mlir.dialects import math as math_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 
+# This module is imported before cutlass.cute exports its jit decorator.
 from ... import cutlass_dsl as _dsl
 from ..arch.constants import THREADS_PER_WARPGROUP
 from .accumulator_buffering import AccumulatorDrain
@@ -26,7 +27,6 @@ from .pipeline import GenericPipelineBase, TMAStorePipeline, TMAToUMMAPipeline
 
 if TYPE_CHECKING:
     from cutlass.tensor_utils import LayoutEnum
-
 
 def is_preferred_cluster(
     preferred_shape: Tuple[int, int, int],
@@ -46,6 +46,68 @@ def is_preferred_cluster(
     eq_y = cdy == preferred_shape[1]
     eq_z = cdz == preferred_shape[2]
     return Boolean(eq_x & eq_y & eq_z)
+
+
+def get_cluster_shape(
+    cluster_shape: Tuple[int, int, int],
+    fallback_cluster_shape: Optional[Tuple[int, int, int]] = None,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> cute.Shape:
+    """Return static dimensions unless the launch has a distinct fallback shape.
+
+    The caller supplies validated, static ``(m, n, k)`` launch shapes. An
+    omitted or equal fallback preserves the compile-time ``cluster_shape``;
+    a distinct fallback reads the physical cluster dimensions in the kernel.
+    """
+    if fallback_cluster_shape is not None and fallback_cluster_shape != cluster_shape:
+        return cute.arch.block_in_cluster_dim(loc=loc, ip=ip)
+    return cluster_shape
+
+
+def resolve_fallback_cluster_shape(
+    cluster_shape_mn: Tuple[int, int],
+    fallback_cluster_shape_mn: Optional[Tuple[int, int]],
+    *,
+    cta_group_m: int = 1,
+    error_cls: Type[Exception] = ValueError,
+) -> Tuple[int, int, int]:
+    """The launch's fallback cluster shape as ``(m, n, 1)``.
+
+    ``None`` means no distinct fallback: the preferred shape is returned and
+    the launch collapses to a plain single-cluster launch downstream.
+
+    Validates the rules every mixed launch must satisfy — dims >= 1, fallback
+    cluster M divisible by ``cta_group_m`` (the MMA's CTA-group extent), and
+    the preferred shape a per-dim integer multiple of the fallback.
+    Kernel-specific restrictions (e.g.
+    power-of-two dims or size caps) remain in the caller.
+    """
+    if fallback_cluster_shape_mn is None:
+        return (*cluster_shape_mn, 1)
+    fallback_m, fallback_n = fallback_cluster_shape_mn
+    if fallback_m < 1 or fallback_n < 1:
+        raise error_cls(
+            "fallback_cluster_shape_mn dims must be >= 1, got "
+            f"{fallback_cluster_shape_mn}"
+        )
+    if fallback_m % cta_group_m != 0:
+        raise error_cls(
+            f"fallback_cluster_shape_mn[0] must be a multiple of the "
+            f"CTA group ({cta_group_m}), got {fallback_cluster_shape_mn}"
+        )
+    if cluster_shape_mn[0] % fallback_m != 0 or cluster_shape_mn[1] % fallback_n != 0:
+        raise error_cls(
+            f"Preferred cluster shape {cluster_shape_mn} must be integer "
+            f"multiple of fallback cluster shape {fallback_cluster_shape_mn}"
+        )
+    if cluster_shape_mn[0] % cta_group_m != 0:
+        raise error_cls(
+            f"Unsupported cluster_shape_mn: {cluster_shape_mn}; "
+            "cluster M must be divisible by the MMA CTA group size"
+        )
+    return (fallback_m, fallback_n, 1)
 
 
 def get_cta_v_map_ab(
@@ -183,7 +245,7 @@ def make_t2r_rmem_layout(
     )
 
 
-@_dsl.CuteExperimentalDSL.jit
+@_dsl.CuTeDSL.jit
 def epilogue_tma_store(
     cta_tile_shape_mnk: cute.Shape,
     use_2cta_instrs: bool,
@@ -197,6 +259,7 @@ def epilogue_tma_store(
     tid_x_in_group: Optional[int] = None,
     amax_out: Optional[cute.Tensor] = None,
     accumulator_drain: Optional[AccumulatorDrain] = None,
+    unroll_full: cutlass.Constexpr[bool] = False,
 ) -> Union[TMAStorePipeline, tuple[TMAStorePipeline, GenericPipelineBase]]:
     """
     Epilogue phase: copy accumulator from TMEM to GMEM via RMEM and TMA store.
@@ -210,7 +273,12 @@ def epilogue_tma_store(
     The TMA store pipeline coordinates multiple warps writing to SMEM before a single
     warp (tma_store_warp_id) issues the TMA store. Pipeline protocol per sub-tile:
     acquire_sync() -> RMEM->SMEM copy -> commit_sync() -> TMA store (TMA warp only)
-    -> release_advance(). tail() is called at the end to wait for in-flight TMA stores.
+    -> release_advance(). This helper does NOT drain the pipeline: stage reuse
+    within and across calls is already protected by ``acquire_sync()``, so
+    stores may remain in flight when it returns. The caller owns the pipeline
+    lifecycle and calls ``tail()`` once when done issuing stores — after the
+    tile scheduling loop in persistent kernels, or directly after this call in
+    single-tile kernels.
 
     Args:
         cta_tile_shape_mnk: Effective (M, N, K) tile shape per CTA for epilogue tiling
@@ -241,6 +309,11 @@ def epilogue_tma_store(
             this helper owns exactly one accumulator consumer release/advance,
             reverses the phase-zero overlap traversal, and returns the updated
             accumulator pipeline with the TMA-store pipeline.
+        unroll_full: Fully unroll the epilogue subtiles. Enable for light
+            epilogues when beneficial; expensive activations can increase
+            register pressure and instruction footprint when fully unrolled.
+            False (default) leaves unrolling to the compiler, rather than
+            disabling it.
 
     Returns:
         The updated TMAStorePipeline instance. When ``accumulator_drain`` is
@@ -330,7 +403,7 @@ def epilogue_tma_store(
     if cutlass.const_expr(amax_out is not None):
         thread_amax = cutlass.Float32(0.0)
 
-    for epi_subtile_idx in range(epi_subtile_cnt):
+    for epi_subtile_idx in cutlass.range(epi_subtile_cnt, unroll_full=unroll_full):
         real_subtile_idx = epi_subtile_idx
         if cutlass.const_expr(
             accumulator_drain is not None and accumulator_drain.plan.uses_overlap
@@ -408,14 +481,13 @@ def epilogue_tma_store(
         if cute.arch.lane_idx() == 0:
             cute.arch.atomic_fmax(amax_out.iterator, warp_amax, sign_bit=False)
 
-    tma_store_pipeline.tail()
     if cutlass.const_expr(accumulator_drain is not None):
         assert accumulator_drain is not None
         return tma_store_pipeline, accumulator_drain.pipeline
     return tma_store_pipeline
 
 
-@_dsl.CuteExperimentalDSL.jit
+@_dsl.CuTeDSL.jit
 def mainloop_mma(
     tiled_mma: cute.TiledMma,
     a_buffer: cute.Tensor,
@@ -484,7 +556,7 @@ def mainloop_mma(
     return a_buffer_pipeline, b_buffer_pipeline
 
 
-@_dsl.CuteExperimentalDSL.jit
+@_dsl.CuTeDSL.jit
 def mainloop_mma_sm120(
     tiled_mma: cute.TiledMma,
     tCrA: cute.Tensor,
@@ -527,3 +599,5 @@ def mainloop_mma_sm120(
             tCrSFB[None, None, k_instr_tile],
             acc_buffer,
         )
+
+

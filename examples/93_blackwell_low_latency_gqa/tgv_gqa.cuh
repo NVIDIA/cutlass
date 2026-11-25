@@ -462,6 +462,8 @@ cta_reduce(
     acc = __shfl_sync(0xffffffff, acc, 0, 32);
     out(i) = acc;
   }
+  // Complete all scratch reads before another reduction reuses the storage.
+  warp_reduce_barrier.arrive_and_wait();
 }
 
 // this function acts on the transposed tensor of the above cta_reduce function
@@ -1259,19 +1261,24 @@ EPILOG_warp(
   }*/
 
   static_assert(MaxSplits <= 32, "we can use 1 warp to initialize mailbox");
-  // initialize mailbox tensor for fmax and fsum, when NumSplits < MaxSplits, we need to init those value to -inf and 0
-  // because we do reduction on the full tensor (of size MaxSplits) not just the valid splits
-  if (tid < MaxSplits) {
+  // Initialize only inactive splits: active entries may already contain remote stores.
+  // The reduction still reads all MaxSplits entries.
+  if (tid >= NumSplits && tid < MaxSplits) {
     fill(sFmaxMailbox(tid, _), -cutlass::platform::numeric_limits<TypeAcc>::infinity());
     clear(sFsumMailbox(tid, _));
   }
   // we also need to clear out acc2 mailbox for invalid splits, because acc2 value could be nan
   // nan * 0 (beta) = nan, we still need to clear acc2
   if (tid < CTA_dH) {
-    clear(sAcc2Mailbox(tid, _, _));
+    CUTE_UNROLL
+    for (int split = 0; split < MaxSplits; ++split) {
+      if (split >= NumSplits) {
+        clear(sAcc2Mailbox(tid, _, split));
+      }
+    }
   }
 
-  // ensure initialized smem is visible to the entire cluster
+  // Make inactive entries visible to the reduction threads in this CTA.
   cutlass::arch::fence_view_async_shared();
   epilog_barrier.arrive_and_wait();
 
@@ -1512,6 +1519,12 @@ EPILOG_warp(
     // the rest 16 threads hold bogus data
     // for dH=128, all 32 threads hold valid data
     tmem_load<decltype(bmm2_tmem_load)>(acc2_tmem_addr, tAcc2rAcc2);
+    // tcgen05.ld is asynchronous. For dH=64 only lanes [0, CTA_dH / NumEpilogWarps) consume tAcc2rAcc2
+    // below, so nothing orders the other lanes' TMEM reads before the arrive on
+    // tmem_allocation_result_barrier that lets the MMA warp deallocate this TMEM. Wait for the load in all
+    // lanes first, as the Acc1 path does above (PTX ISA: tcgen05.wait::ld is required to order tcgen05.ld
+    // with respect to other threads' tcgen05 operations).
+    cutlass::arch::fence_view_async_tmem_load();
     int lane_id = cutlass::canonical_lane_idx();
     if (lane_id < (CTA_dH / NumEpilogWarps)) {
       // do the st.async of acc2 to remote, rmem -> dsmem

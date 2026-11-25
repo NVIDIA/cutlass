@@ -455,7 +455,7 @@ make_im2col_tma_copy_desc(
   CUtensorMapSwizzle      tma_swizzle     = TMA::to_CUtensorMapSwizzle(swizzle_bits, swizzle_base);
 
   CUresult encode_result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeIm2col)(
-      &tma_desc,
+      reinterpret_cast<CUtensorMap*>(&tma_desc),
       tma_format,
       num_total_modes,
       gmem_address,

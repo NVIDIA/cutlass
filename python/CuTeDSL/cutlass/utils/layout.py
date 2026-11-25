@@ -9,7 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated
 from typing import Any
 
 
@@ -18,12 +18,10 @@ from typing import Any
 # __getattr__ (PEP 562) adds the deprecation warning a wrapper class cannot.
 def __getattr__(name: str) -> Any:
     if name == "LayoutEnum":
-        warnings.warn(
+        _warn_deprecated(
             "cutlass.utils.layout.LayoutEnum is deprecated; use "
             "cutlass.tensor_utils.LayoutEnum instead. It will be removed in a "
-            "future release.",
-            DeprecationWarning,
-            stacklevel=2,
+            "future release."
         )
         from cutlass.tensor_utils.layout import LayoutEnum
 

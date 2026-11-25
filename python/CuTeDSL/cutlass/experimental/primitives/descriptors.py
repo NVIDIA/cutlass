@@ -341,14 +341,15 @@ class WgmmaSmemDesc(Int64, width=64):  # type: ignore[call-arg]
         [30:32)  (reserved)
         [32:46)  stride_byte_offset   (stored >> 4)
         [46:49)  (reserved)
-        [49:52)  base_offset          (valid for SWIZZLE_128B/64B only)
+        [49:52)  base_offset          (valid for all swizzle modes except
+                                      no-swizzle, i.e. 128B/64B/32B)
         [52:62)  (reserved)
         [62:64)  layout_type          (WgmmaSwizzle, 2-bit)
 
     Compared to :class:`Tcgen05SmemDesc`:
 
     - ``layout_type`` is 2 bits [62:64) vs 3 bits [61:64)
-    - No ``version`` field (SM100 adds this at [46:48))
+    - No ``version`` field (SM100 adds this as 3 bits at [46:49))
     - Swizzle encoding differs: 1=128B here vs 2=128B on SM100
     """
 
@@ -369,7 +370,11 @@ class WgmmaSmemDesc(Int64, width=64):  # type: ignore[call-arg]
 
     @property
     def base_offset(self) -> Int64:
-        """Bits [49:52): base-offset modifier (SWIZZLE_128B/64B only)."""
+        """Bits [49:52): base-offset modifier.
+
+        Valid for all swizzling modes except the no-swizzle
+        (``INTERLEAVE``) mode -- i.e. SWIZZLE_128B / 64B / 32B.
+        """
         return _get_field(self, 49, 3)
 
     @property
@@ -405,31 +410,49 @@ _SPLIT_WORD_START_ADDRESS_ADVANCE: bool = _target_version(max_version="13.0")
 class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
     """SM100 ``tcgen05.mma`` shared-memory descriptor (64-bit).
 
-    Bitfield layout::
+    Bitfield layout (widths of the first two fields are architecture
+    dependent -- see the note below)::
 
-        [0:15)   start_address        (stored >> 4)     [14] reserved in SM100
-        [15:16)  (reserved)
-        [16:31)  leading_byte_offset  (stored >> 4)     [30] reserved in SM100
-        [31:32)  (reserved)
+        [0:14)   start_address        (stored >> 4)
+        [14:16)  (reserved, must be 0)
+        [16:30)  leading_byte_offset  (stored >> 4)
+        [30:32)  (reserved, must be 0)
         [32:46)  stride_byte_offset   (stored >> 4)
-        [46:49)  version
+        [46:49)  version              (3 bits, fixed 0b001 per PTX Table 43)
         [49:52)  base_offset
-        [52:53)  leading dimension mode                 [52] reserved in SM100
-        [53:54)  K_segment start offset                 [53] reserved in SM100
-        [54:61)  (reserved)
-        [61:64)  layout_type          (Tcgen05SmemSwizzle)
+        [52:53)  leading dimension mode
+        [53:61)  (reserved, must be 0)
+        [61:64)  layout_type          (Tcgen05SmemSwizzle, 3-bit)
+
+    Architecture split: on SM100/SM103 ``start_address`` and
+    ``leading_byte_offset`` are **14 bits** each and bits [14:16) / [30:32)
+    are Reserved -- Must be 0 (PTX ISA 9.3 section 9.7.17.4.1, Table 43;
+    ``CuteSmemDescCircularSM103Type`` in ``CuteNvGPUSmemDescTypes.td``).
+    The readers below use a 15-bit form, which is a superset: on
+    SM100/SM103 the extra bit always reads back as the reserved zero.
+    When *building* a descriptor, keep both values within 14 bits so the
+    encoding is valid on every part.
+
     """
 
     # -- bitfield readers (generate MLIR arith ops at trace time) --
 
     @property
     def start_address(self) -> Int64:
-        """Bits [0:15): shared-memory start address (>> 4)."""
+        """Bits [0:15): shared-memory start address (>> 4).
+
+        Reads a 15-bit field; on SM100/SM103 the architectural field is
+        [0:14) and bit 14 is a reserved zero, so the value is the same.
+        """
         return _get_field(self, 0, 15)
 
     @property
     def leading_byte_offset(self) -> Int64:
-        """Bits [16:31): leading dimension byte offset (>> 4)."""
+        """Bits [16:31): leading dimension byte offset (>> 4).
+
+        Reads a 15-bit field; on SM100/SM103 the architectural field is
+        [16:30) and bit 30 is a reserved zero, so the value is the same.
+        """
         return _get_field(self, 16, 15)
 
     @property
@@ -439,7 +462,20 @@ class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
 
     @property
     def version(self) -> Int64:
-        """Bits [46:49): descriptor version."""
+        """Bits [46:49): descriptor version.
+
+        PTX ISA 9.3 Table 43 specifies the *fixed constant value 0b001*, and
+        ``tcgen05.cp`` routes its ``s-desc`` through that same table with no
+        exception, so ``1`` is the documented value for both consumers.  CuTe
+        agrees: ``make_umma_desc`` sets ``version_ = 1`` and the UTCCP
+        (``tcgen05.cp``) source descriptor is built through it.
+
+        Be aware that in-tree Python call sites are *not* consistent with
+        this -- both ``0`` and ``1`` appear, on ``tcgen05.cp`` and on
+        ``tcgen05.mma`` descriptors alike.  What the hardware does with a
+        ``0`` here is not established by any source in this tree; do not
+        infer a cp-versus-mma rule from those call sites.
+        """
         return _get_field(self, 46, 3)
 
     @property
@@ -534,12 +570,34 @@ class Tcgen05SmemDesc(Int64, width=64):  # type: ignore[call-arg]
         :param layout: Swizzle — accepts :class:`Tcgen05SmemSwizzle`, int,
             :class:`cuda.TensorMapSwizzle`, or a canonical ``cutlass.Swizzle`` that
             can be converted to a tcgen05 descriptor encoding.
-        :param leading_dim_mode: 0 for relative byte-offset mode. Use the
-            default unless you explicitly need the SM103+ absolute-address
-            leading-dimension mode.
+        :param leading_dim_mode: Bit [52]. ``0`` (default): the leading
+            dimension field is a byte *offset*, so an instruction whose K
+            step runs off the end of its 128 B swizzle block continues at
+            ``start + leading_byte_offset`` -- the block that follows in
+            memory. ``1`` (requires SM103+): the field is the
+            byte *address* of the next block, so the continuation can sit
+            anywhere, e.g. back at slot 0 of a ring whose depth is not a
+            multiple of the K-tile span. Pass that next block's byte address
+            as ``leading_byte_offset``; it must be 128 B aligned and
+            ``base_offset`` must stay 0, the operand must be K-major, and the
+            swizzle must be a 16 B-atom mode (128B, or 64B for A). Only
+            K steps that straddle a block boundary (48 B packed FP6, 96 B
+            FP4) ever consult it. See
+            ``examples/CuTeDSL/experimental/primitives/tcgen05/sm107_mma_smem_ring_wrap.py``.
 
-        :param version: Descriptor version field.
-        :param k_segment_offset: B K_Segment start offset in K=128 (48B) block.
+        :param version: Descriptor version field (3 bits, [46:49)).
+            PTX ISA 9.3 Table 43 specifies the fixed constant ``0b001``
+            (the default here), and ``tcgen05.cp`` uses the same descriptor
+            format with no documented exception.  In-tree Python call sites
+            nevertheless pass both ``0`` and ``1``, for cp and mma alike;
+            that inconsistency is unexplained by any source in this tree, so
+            it is exposed as a parameter rather than pinned.  Prefer the
+            default unless you are matching an existing kernel.
+        :param k_segment_offset: The 1-bit K-segment selector flag at bit [53].
+            It is a boolean, not a multi-bit offset: set it to select the
+            second B K_Segment of a K=128 (48B) block.  Leave this at the
+            default value unless the target architecture documents support for
+            the selector.
         """
         # A swizzle-descriptor object (Tcgen05SmemSwizzle / cutlass.Swizzle /
         # TensorMapSwizzle) converts to the tcgen05 encoding via .to(); a plain

@@ -64,12 +64,20 @@ class GatedLinearUnitGemmKernel:
         mn_tiler: tuple[int, int],
         mma_dtype: tuple[Type[Numeric], Type[Numeric]],
         gate_activation=lambda x: x,
+        epilogue_unroll: bool = False,
     ):
+        """Configure GLU GEMM with a callable gate (identity by default).
+
+        epilogue_unroll=False leaves unrolling to the compiler for costly gates
+        such as GELU/SiLU. True requests full subtile unrolling, which can help
+        identity/ReLU. Tune for register pressure, ILP and instruction footprint.
+        """
         self.mn_tiler = mn_tiler
         self.ab_dtype, self.acc_dtype = mma_dtype
         self.gate_activation = gate_activation
+        self.epilogue_unroll = epilogue_unroll
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self, mA: cute.Tensor, mB0: cute.Tensor, mB1: cute.Tensor, mD: cute.Tensor
     ):
@@ -80,10 +88,9 @@ class GatedLinearUnitGemmKernel:
             grid=grid,
             block=(192, 1, 1),
             cluster=(1, 1, 1),
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self, mA: cute.Tensor, mB0: cute.Tensor, mB1: cute.Tensor, mD: cute.Tensor
     ):
@@ -259,7 +266,7 @@ class GatedLinearUnitGemmKernel:
             num_stages=acc_stage,
             mma_operation_type=cute_ext.OperationTypeEnum.SM100_MMA_1SM_SS,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=128,
+            consumer_release_threads_per_cta=128,
         )
 
         tma_store_warp_id = 0
@@ -309,6 +316,8 @@ class GatedLinearUnitGemmKernel:
                 )
                 mainloop_pipe.producer_commit_and_advance()
 
+            mainloop_pipe.producer_tail()
+
         if is_mma_warp:
             producer_stage_token, idx = acc_pipe.producer_acquire_and_get_stage()
             accumulators0_sliced = bufferAcc0[None, None, None, 2 * idx]
@@ -351,7 +360,7 @@ class GatedLinearUnitGemmKernel:
             acc_epi_div1_tiled = cute.flat_divide(accumulators1_sliced, epi_tile)
             subtile_cnt = cute.size(acc_epi_div0_tiled.shape, mode=[3])
 
-            for mn in range(subtile_cnt):
+            for mn in cutlass.range(subtile_cnt, unroll_full=self.epilogue_unroll):
                 # TMEM -> RMEM
                 cute_ext.partition_and_copy(
                     tiled_copy_t2r.get_slice(tid_x),
@@ -510,9 +519,7 @@ def run(
         gate_activation=cute_gate,
     )
 
-    compiled_glu_gemm = cute_ext.compile(
-        glu_gemm, a_tensor, b0_tensor, b1_tensor, d_tensor
-    )
+    compiled_glu_gemm = cute.compile(glu_gemm, a_tensor, b0_tensor, b1_tensor, d_tensor)
     compiled_glu_gemm.engine.initialize()
     compiled_glu_gemm(a_tensor, b0_tensor, b1_tensor, d_tensor)
 

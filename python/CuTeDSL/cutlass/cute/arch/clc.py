@@ -24,6 +24,7 @@ def issue_clc_query(
     mbar_ptr: Pointer,
     clc_response_ptr: Pointer,
     multicast: bool = True,
+    *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> None:
@@ -62,6 +63,7 @@ def issue_clc_query(
 @dsl_user_op
 def clc_response(
     result_addr: Pointer,
+    *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Tuple[Int32, Int32, Int32, Int32]:
@@ -131,3 +133,5 @@ def clc_response(
     l_idx = Int32(l_idx_i32)
 
     return m_idx, n_idx, l_idx, is_valid
+
+

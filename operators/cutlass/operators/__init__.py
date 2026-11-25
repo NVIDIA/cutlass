@@ -29,29 +29,48 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from cutlass.operators import mma, workspace
 from cutlass.operators.arch import ArchPortability, TargetSm
 from cutlass.operators.arguments import (
+    DataDrivenSyncConsumer,
+    DataDrivenSyncControls,
+    DataDrivenSyncProducer,
     DenseTensor,
+    EarlyLaunchDependent,
+    EarlyStart,
     EpilogueArguments,
+    EpilogueArgumentsBase,
     GemmArguments,
+    GemmPerformanceControls,
     GroupedGemmArguments,
     IndexPtrGroupedGemmArguments,
     Load,
     Operand,
+    PDLProgrammaticEvent,
     PerformanceControls,
+    PerGroupScaleEpilogueArguments,
+    ProgrammaticDependentLaunchControl,
+    RasterizationStrategy,
+    RasterOrder,
+    ReductionStrategy,
     RuntimeArguments,
     ScaledOperand,
     ScaleMode,
     ScaleSwizzleMode,
     Store,
+    TileSchedulerControls,
     Transport,
 )
 from cutlass.operators.artifact import CompiledArtifact
 from cutlass.operators.base import Operator
 from cutlass.operators.config import GlobalOptions
+from cutlass.operators.device_properties import (
+    DeviceProperties,
+    get_default_device_properties,
+)
 from cutlass.operators.heuristics import (
     Heuristic,
     available_heuristics,
@@ -68,12 +87,13 @@ from cutlass.operators.providers import (
 )
 from cutlass.operators.status import Status
 from cutlass.operators.typing import NumericLike, TensorLike
+from cutlass.operators.utils.layout import normalized_col_major, normalized_row_major
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 
 def get_operators(
@@ -83,7 +103,7 @@ def get_operators(
     providers: list[Provider] | None = None,
     heuristic: Heuristic | None = None,
     limit: int | None = None,
-) -> list[Operator]:
+) -> Sequence[Operator]:
     """Return Operators that match the given arguments, metadata filter, and target.
 
     Args:
@@ -111,7 +131,7 @@ def get_operators(
             the heuristic when ranking.
 
     Returns:
-        list[Operator]: Operators matching all filters. When a ``heuristic``
+        Sequence[Operator]: Operators matching all filters. When a ``heuristic``
         is provided, the list is ranked best-first by the heuristic, and
         may potentially prune some suboptimal but otherwise valid candidates.
 
@@ -125,10 +145,19 @@ def get_operators(
             candidate list, or duplicates one beyond its original count.
         Exception: Any other error raised by the heuristic while ranking.
     """
+    warnings.warn(
+        "get_operators will soon return a sequence instead of a list for lazy generation and performance enhancements. Only slicing and indexing will be supported.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if limit is not None and limit <= 0:
         raise ValueError(f"limit must be a positive integer, got {limit}")
 
-    candidates = Manifest.get_operators(args, metadata_filter, target_sm, providers)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="get_operators will soon return", category=DeprecationWarning
+        )
+        candidates = Manifest.get_operators(args, metadata_filter, target_sm, providers)
 
     if heuristic is None:
         return candidates if limit is None else candidates[:limit]
@@ -164,19 +193,38 @@ __all__ = [
     # Runtime arguments
     "RuntimeArguments",
     "PerformanceControls",
+    "GemmPerformanceControls",
+    "TileSchedulerControls",
+    "ReductionStrategy",
+    "RasterizationStrategy",
+    "RasterOrder",
+    "EpilogueArgumentsBase",
     "EpilogueArguments",
+    "PerGroupScaleEpilogueArguments",
     "GemmArguments",
     "GroupedGemmArguments",
     "IndexPtrGroupedGemmArguments",
     "Load",
     "Store",
     "Transport",
+    # PDL
+    "ProgrammaticDependentLaunchControl",
+    "EarlyLaunchDependent",
+    "EarlyStart",
+    "PDLProgrammaticEvent",
+    # Data-driven synchronization
+    "DataDrivenSyncControls",
+    "DataDrivenSyncProducer",
+    "DataDrivenSyncConsumer",
     # Operands
     "Operand",
     "DenseTensor",
     "ScaledOperand",
     "ScaleMode",
     "ScaleSwizzleMode",
+    # Normalized major-mode markers
+    "normalized_col_major",
+    "normalized_row_major",
     # Operator Discovery
     "get_operators",
     "Manifest",
@@ -192,6 +240,8 @@ __all__ = [
     "NumericLike",
     # Configuration
     "GlobalOptions",
+    "DeviceProperties",  # device values to launch with, overriding the hardware
+    "get_default_device_properties",  # shared DeviceProperties per device
     # Provider management
     "Provider",  # base class for all Providers
     "CuTeDSLProvider",  # CuTeDSLProvider holding registry of kernels written in CuTe DSL
@@ -206,3 +256,4 @@ __all__ = [
     "mma",
     "workspace",
 ]
+

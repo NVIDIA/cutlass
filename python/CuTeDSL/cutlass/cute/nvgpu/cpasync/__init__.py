@@ -31,6 +31,7 @@ __all__ = [
     "CopyBulkS2GByteMaskOp",
     "CopyBulkS2SOp",
     "TmaCopyOp",
+    "SentinelPattern",
     #
     # helpers.py
     #

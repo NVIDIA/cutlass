@@ -92,6 +92,27 @@ You can use the following code to specify compilation options:
    jit_executor_with_nvdisasm_options = cute.compile(add, 1, 2, options="--keep-sass --nvdisasm-options '-c'")
    jit_executor_with_ptxas_options = cute.compile(add, 1, 2, options="--ptxas-options '--opt-level=2'")
 
+
+Advanced compiler-stage forwarding
+----------------------------------
+
+The options string also accepts ``cute{...}`` and ``cute_ext{...}`` groups for
+explicitly forwarding options to a logical compiler stage. ``cute{...}``
+targets CuTe-to-NVVM lowering, while ``cute_ext{...}`` targets the
+compiler-managed extension lowering stage.
+
+Compiler pass options are not a stable public interface unless they are
+separately documented and may change without notice. Prefer the documented
+driver options above unless explicit stage routing is required.
+
+For example, the documented ``opt-level`` option can be explicitly routed to
+CuTe-to-NVVM lowering as follows:
+
+.. code-block:: python
+
+   jit_executor = cute.compile(add, 1, 2, options="cute{opt-level=2}")
+
+
 ``cute.compile`` Compilation Options as separate Python types
 -------------------------------------------------------------
 

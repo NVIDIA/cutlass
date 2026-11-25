@@ -23,7 +23,6 @@ from .helpers import (
     PerStagePipelineState,
     alloc_reserved_mbarrier,
     make_pipeline_state,
-    compute_k_tile,
     pipeline_init_arrive,
     pipeline_init_wait,
     agent_sync,
@@ -53,6 +52,7 @@ from .sm100 import (
     PipelineUmmaAsync,
     PipelineClcFetchAsync,
     PipelineTmaMultiConsumersAsync,
+    PipelineTmaUmmaRetry,
 )
 
 __all__ = [
@@ -67,6 +67,7 @@ __all__ = [
     "TmaStoreFence",
     "PipelineUserType",
     "PipelineState",
+    "PerStagePipelineState",
     "PipelineAsync",
     "PipelineCpAsync",
     "PipelineTmaAsync",
@@ -75,11 +76,11 @@ __all__ = [
     "PipelineUmmaAsync",
     "PipelineClcFetchAsync",
     "PipelineTmaMultiConsumersAsync",
+    "PipelineTmaUmmaRetry",
     "PipelineTmaStore",
     "PipelineProducer",
     "PipelineConsumer",
     "make_pipeline_state",
-    "compute_k_tile",
     "pipeline_init_arrive",
     "pipeline_init_wait",
     "agent_sync",

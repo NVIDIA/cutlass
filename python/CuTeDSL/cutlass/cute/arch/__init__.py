@@ -27,6 +27,8 @@ __all__ = [
     #
     # features.py
     #
+    "supports_report_valid",
+    "supports_pzo_convert",
     #
     # elect.py
     #
@@ -43,11 +45,18 @@ __all__ = [
     "mbarrier_try_wait",
     "mbarrier_conditional_try_wait",
     "mbarrier_arrive",
+    "mbarrier_v1_init",
+    "mbarrier_try_wait_primary",
+    "mbarrier_wait_primary",
+    "mbarrier_test_wait_primary",
+    "mbarrier_try_wait_conditional",
+    "mbarrier_wait_conditional",
     "mbarrier_test_wait",
     #
     # nvvm_wrappers.py
     #
     "lane_idx",
+    "linear_thread_idx",
     "warp_idx",
     "physical_warp_id",
     "thread_idx",
@@ -65,6 +74,7 @@ __all__ = [
     "shuffle_sync_up",
     "shuffle_sync_down",
     "shuffle_sync_bfly",
+    "movmatrix_trans",
     "barrier",
     "barrier_arrive",
     "sync_threads",
@@ -107,6 +117,7 @@ __all__ = [
     "warpgroup_reg_dealloc",
     "setmaxregister_increase",
     "setmaxregister_decrease",
+    "nanosleep",
     "fma_packed_f32x2",
     "fma_f16",
     "fma_bf16",
@@ -213,6 +224,9 @@ __all__ = [
     "cvt_i8x2_to_f32x2",
     "cvt_i8_bf16",
     "cvt_f32x2_bf16x2",
+    "cvt_f32x4_to_fp4x4",
+    "cvt_f32x4_to_fp6x4",
+    "cvt_f32x4_to_fp8x4",
     #
     # clc.py
     #

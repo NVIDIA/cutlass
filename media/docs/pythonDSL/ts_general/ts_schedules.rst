@@ -15,6 +15,9 @@ A schedule must obey these structural rules:
 
 - At most one ``domain_loop`` per schedule (the domain loop).
 - At most one ``work_tile_loop`` per schedule.
+- At most one ``while_true_loop`` per schedule.
+- ``domain_loop`` and ``while_true_loop`` cannot both appear in the same
+  schedule (different tasks in one kernel may mix them).
 
 Declaring a Schedule
 --------------------
@@ -33,6 +36,49 @@ special synchronization methods on those resources to record the schedule.
 
 The arguments passed when calling ``schedule_fn`` are the actual resource
 objects the task operates on.
+
+Manual Pipeline State
+---------------------
+
+``@schedule(manual_state=True)`` exposes pipeline cursors as schedule values.
+Create them with ``resource.producer_state()`` or
+``resource.consumer_state()``, pass ``state=`` to every stage-bearing pipeline
+operation and work call, and record cursor motion with ``state.advance()``.
+
+.. code-block:: python
+
+    @schedule(manual_state=True)
+    def load_schedule(gmem, smem):
+        producer = smem.producer_state()
+        with domain_loop(0, num_tiles, 1):
+            coord = gmem.compute_coords()
+            smem.acquire(state=producer)
+            smem.tma_load(coord=coord, state=producer)
+            smem.commit(state=producer)
+            producer.advance()
+
+``previous()`` creates a read-only view of the preceding ring stage.
+``at(stage_idx)`` selects a physical buffer for work; it is not a wait
+cursor and is rejected on acquire, wait, commit, and release. Multiple
+calls to a state factory create independent cursor slots, which supports
+deferred release.
+
+============================  =============================
+Call kind                     ``state=`` in manual mode
+============================  =============================
+Pipeline operations           Required
+Producer/consumer work         Required
+Auxiliary work                 Required
+Non-pipelined/WorkQueue work   Forbidden
+Barrier resources              Forbidden
+============================  =============================
+
+Manual state cannot be combined with ``advance_on_acquire`` or
+``advance_on_wait``. Spell those configurations with explicit cursor slots,
+``previous()`` views, and ``advance()`` nodes. ``at()`` does not know correct
+phase, so is rejected on barrier operations. Default ``@schedule`` functions remain source-compatible:
+finalization desugars their implicit cursor behavior into the same bindings
+and ``StateAdvance`` IR consumed by lowering and validation.
 
 Domains
 -------
@@ -143,6 +189,114 @@ When one runtime instruction produces multiple guard values, declare one
 The schedule records one work step that stores every returned value, and each
 ``when_true`` / ``when_false`` block reads its selected stored result instead of
 calling the producing method again.
+
+Combining Conditions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A guard often depends on more than one thing at a time.  Conditions can be
+combined with ``&`` (and), ``|`` (or), and ``~`` (not), so the whole test fits
+in one ``when_true`` instead of a nested block per term.  Python's ``and``,
+``or``, and ``not`` cannot be overloaded, so they are rejected with an error
+that points you at the operators.
+
+.. code-block:: python
+
+    with domain_loop(0, num_iters, 1) as d:
+        ready = smem.is_ready()
+        urgent = smem.is_urgent()
+        with when_true((ready & ~urgent) | d.first):
+            smem.handle_tile()
+
+Iteration conditions have two forms.  ``d.first_iter()``, ``d.last_iter()``,
+and ``d.every(...)`` are context managers, which is what you want when the
+guard has a single term.  ``d.first``, ``d.last``, and
+``d.every_pred(period, start=0)`` are the same conditions as plain values, and
+those are the ones the operators accept -- a context manager cannot be an
+operand.  The module-level ``FIRST_ITER`` and ``LAST_ITER`` constants can be
+mixed into an expression as well.
+
+``~`` on an iteration condition means what it says and nothing more:
+``~FIRST_ITER`` is every iteration but the first, ``~LAST_ITER`` is every
+iteration but the last, and ``~d.every_pred(4)`` is the iterations that fall
+off that cadence.  It does not turn "first" into "last".  A loop that runs once
+has an iteration that is both first and last, so ``~FIRST_ITER`` and
+``~LAST_ITER`` are both false there.  ``when_false(expr)`` is the same thing as
+``when_true(~expr)``.
+Nesting ``when_true`` blocks still works and means the same as ``&``.  When two
+guards have to be treated as the same runtime value, pass ``key=``.  On a
+combined expression the key applies to each runtime leaf and leaves the
+iteration conditions alone -- an expression built only from iteration
+conditions has nothing to correlate, so keying it is an error.
+
+
+Dynamic While Loops
+-------------------
+
+``while_true_loop(init=..., advance=..., verify_num_iters=...)`` records a
+dynamic loop whose cursor comes from consumer work hooks rather than a
+compile-time ``range``.  ``init`` and ``advance`` must be named consumer work
+methods that each return one named ``TaskLocalVariable`` (the loop cursor).
+The body repeats until a ``loop.break_loop()`` path fires.
+
+The **exit formula** is not a separate API.  Each ``break_loop()`` records the
+opaque ``when_true`` / ``when_false`` guards that dominate the call (nested
+blocks become a conjunction).  The loop exits iff **any** captured break clause
+holds:
+
+- ``with when_true(exit): loop.break_loop()`` → exit iff ``exit``
+- two breaks under ``when_true(done)`` and ``when_true(error)`` →
+  ``done ∨ error``
+- nested ``when_true(a): when_true(b): loop.break_loop()`` → ``a ∧ b``
+- unconditional ``break_loop()`` → always true (modeled as a single iteration)
+
+Extra flags that wrap ``break_loop()`` **are** part of the exit.  If a
+highlight marker must stay free of the exit formula, put it *after* the
+break in the same guarded block::
+
+    with when_true(exit_now):
+        loop.break_loop()
+        with when_true(is_highlight):
+            trace.mark_highlight()
+
+not::
+
+    with when_true(exit_now):
+        with when_true(is_highlight):
+            loop.break_loop()
+
+``verify_num_iters`` selects the modeled iteration counts the verifier
+explores.  ``None`` defaults to ``(1, 2)``; an ``int N`` checks exactly ``N``;
+a tuple such as ``(1, 2, 3)`` checks each count.  Each count ``N`` is modeled
+as ``retry^(N-1) + break``.  Unconditional ``break_loop()`` with any ``N > 1``
+is rejected because there is no retry assignment.
+
+The current cursor reaches work methods as ``stage_info.loop_offset``.  Bounds
+are ``LOOP_STATE_UNAVAILABLE`` inside a while loop.
+
+.. code-block:: python
+
+    from cutlass.experimental.task_scheduling import when_false, when_true, while_true_loop
+
+    @schedule
+    def store_schedule(smem, output_gmem) -> None:
+        with while_true_loop(
+            init=smem.retry_init,
+            advance=smem.retry_advance,
+            verify_num_iters=2,
+        ) as loop:
+            rows_done = smem.rows_done()
+            with when_true(rows_done):
+                loop.break_loop()
+            with when_false(rows_done):
+                smem.try_wait()
+                smem.wait()
+                val = smem.read_smem()
+                smem.release()
+                output_gmem.store(smem_val=val)
+
+A schedule may contain a ``domain_loop`` or a ``while_true_loop``, not both.
+Nesting either inside the other is rejected.  Inside
+``work_tile_loop(skip_if=...)``, the while loop must sit in ``wtl.skippable()``.
 
 
 Persistent Scheduling

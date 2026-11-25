@@ -34,4 +34,6 @@
 
 #include "cutlass/pipeline/sm90_pipeline.hpp"
 #include "cutlass/pipeline/sm100_pipeline.hpp"
+#include "cutlass/pipeline/sm107_pipeline.hpp"
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////

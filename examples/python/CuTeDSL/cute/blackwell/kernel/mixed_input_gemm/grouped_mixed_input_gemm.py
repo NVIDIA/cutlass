@@ -42,18 +42,30 @@ import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.mixed_input_helpers as mixed_input_utils
 from cutlass.utils.mixed_input_helpers import TransformMode
-import cutlass.cute.testing as testing
-from cutlass.cute.nvgpu import cpasync, tcgen05
+from cutlass import testing
+from cutlass.cute.nvgpu import cpasync, tcgen05, OperandMajorMode
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentRuntimeTileScheduler,
+)
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, os.path.join(current_dir, "../../../.."))
+    sys.path.insert(0, os.path.join(current_dir, "../../.."))
 
-from cute.blackwell.kernel.mixed_input_gemm.mixed_input_host_utils import (
+from blackwell.kernel.mixed_input_gemm.mixed_input_host_utils import (
     create_tensors_for_contiguous_grouped_mixed_input_gemm as create_tensors,
     run_contiguous_grouped_ref_and_compare as run_ref_and_compare,
 )
-from cutlass.cute.runtime import from_dlpack
 
 """
 A mixed-input grouped GEMM example for the NVIDIA Blackwell SM100 architecture using CUTE DSL.
@@ -102,7 +114,7 @@ To run this example:
 
 .. code-block:: bash
 
-    python examples/blackwell/grouped_mixed_input_gemm.py      \
+    python examples/cute/blackwell/kernel/mixed_input_gemm/grouped_mixed_input_gemm.py      \
       --a_dtype Int8 --b_dtype BFloat16                        \
       --scale_granularity_m 0 --scale_granularity_k 0          \
       --c_dtype BFloat16 --acc_dtype Float32                   \
@@ -118,7 +130,7 @@ Here is an example of running convert-scale mode:
 
 .. code-block:: bash
 
-    python examples/blackwell/mixed_input_gemm/grouped_mixed_input_gemm.py    \
+    python examples/cute/blackwell/kernel/mixed_input_gemm/grouped_mixed_input_gemm.py    \
       --a_dtype Int4 --b_dtype BFloat16                                       \
       --scale_granularity_m 1 --scale_granularity_k 256                       \
       --c_dtype BFloat16 --acc_dtype Float32                                  \
@@ -138,7 +150,7 @@ To collect performance with NCU profiler:
 
 .. code-block:: bash
 
-    ncu python examples/blackwell/mixed_input_gemm/grouped_mixed_input_gemm.py    \
+    ncu python examples/cute/blackwell/kernel/mixed_input_gemm/grouped_mixed_input_gemm.py    \
       --a_dtype Int8 --b_dtype BFloat16                                           \
       --scale_granularity_m 0 --scale_granularity_k 0                             \
       --c_dtype BFloat16 --acc_dtype Float32                                      \
@@ -285,6 +297,7 @@ class GroupedMixedInputGemmKernel:
         )
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
             self.mma_dtype,
+            self.mma_dtype,
             self.a_major_mode,
             self.b_major_mode,
             self.acc_dtype,
@@ -414,8 +427,8 @@ class GroupedMixedInputGemmKernel:
         # Validate scale tensor major mode
         if cutlass.const_expr(
             self.scale_mode == TransformMode.ConvertScale
-            and utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
-            != tcgen05.OperandMajorMode.MN
+            and cutlass.tensor_utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
+            != OperandMajorMode.MN
         ):
             raise ValueError("scale_major_mode must be M-major")
 
@@ -468,14 +481,18 @@ class GroupedMixedInputGemmKernel:
         self.c_dtype: type[cutlass.Numeric] = c.element_type
         self.mma_dtype = self.b_dtype
 
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
         self.scale_major_mode = (
-            utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
+            cutlass.tensor_utils.LayoutEnum.from_tensor(a_scale).mma_major_mode()
             if self.scale_mode is TransformMode.ConvertScale
             else None
         )
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
         if cutlass.const_expr(self.scale_mode == TransformMode.ConvertScale):
             # Get gmem layout for scale tensor
             self.gmem_layout_scale = mixed_input_utils.get_gmem_layout_scale(
@@ -492,6 +509,7 @@ class GroupedMixedInputGemmKernel:
         self._setup_attributes()
 
         tiled_mma = sm100_utils.make_trivial_tiled_mma(
+            self.mma_dtype,
             self.mma_dtype,
             self.a_major_mode,
             self.b_major_mode,
@@ -683,7 +701,7 @@ class GroupedMixedInputGemmKernel:
         b_smem_layout: cute.ComposedLayout,
         c_smem_layout_staged: cute.ComposedLayout,
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
     ):
         """
         GPU device kernel performing the Persistent Mixed-Input Grouped GEMM computation.
@@ -714,7 +732,7 @@ class GroupedMixedInputGemmKernel:
         )
         tidx, _, _ = cute.arch.thread_idx()
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
         # Initialize load2transform pipeline, which tracks the dependencies between TMA's loading
@@ -729,13 +747,14 @@ class GroupedMixedInputGemmKernel:
             num_stages=self.num_load2trans_stage,
             producer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),
             consumer_group=pipeline.CooperativeGroup(
-                pipeline.Agent.Thread,
-                self.num_mcast_ctas_a * len(self.transform_warp_id),
+                pipeline.Agent.Warp,
+                len(self.transform_warp_id),
             ),
             tx_count=self.num_tma_load_bytes_a,
             cta_layout_vmnk=cluster_layout_vmnk,
             tidx=transform_thread_idx,
             mcast_mode_mn=(1, 0),  # multicast for A will only happen on the M-mode
+            enable_multicast_signaling=True,
             defer_sync=True,
         )
         # Initialize scale_load2trans pipeline, which tracks the dependencies between TMA's loading
@@ -782,12 +801,11 @@ class GroupedMixedInputGemmKernel:
             barrier_storage=storage.b_load2mma_full_mbar_ptr.data_ptr(),
             num_stages=self.num_load2trans_stage,
             producer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),
-            consumer_group=pipeline.CooperativeGroup(
-                pipeline.Agent.Thread, self.num_mcast_ctas_b
-            ),
+            consumer_group=pipeline.CooperativeGroup(pipeline.Agent.Warp),
             tx_count=self.num_tma_load_bytes_b,
             cta_layout_vmnk=cluster_layout_vmnk,
             mcast_mode_mn=(0, 1),  # multicast for B will only happen on the N-mode
+            enable_multicast_signaling=True,
             defer_sync=True,
         )
         # Initialize accumulator pipeline, which tracks the dependencies between
@@ -823,7 +841,7 @@ class GroupedMixedInputGemmKernel:
         )
 
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=self.tmem_ptr_sync_barrier,
             allocator_warp_id=self.epilog_warp_id[0],
@@ -1012,12 +1030,33 @@ class GroupedMixedInputGemmKernel:
         # TMEM allocation
         tmem.allocate(self.num_tmem_alloc_cols)
         tmem.wait_for_alloc()
+        # Get the pointer to the TMEM buffer
+        tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
+        accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
+
+        tCrA = None
+        if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
+            # TMEM columns are 32-bit wide. For accumulators with element size < 32 bits
+            # (e.g., Float16), we need to scale the column offset to element offset.
+            # num_acc_tmem_cols is in column units, but pointer arithmetic uses element units.
+            column_to_element_scale = 32 // self.acc_dtype.width
+            tmem_ptr_transform = cute.recast_ptr(
+                accumulators.iterator
+                + self.num_acc_tmem_cols * column_to_element_scale,
+                dtype=self.mma_dtype,
+            )
+            tCrA = cute.make_tensor(
+                tmem_ptr_transform,
+                tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
+            )
+        else:
+            tCrA = tiled_mma.make_fragment_A(sA_transform)
 
         # Schedule warp
         if warp_idx == self.schedule_warp_id:
             cute.arch.setmaxregister_decrease(self.num_regs_schedule_warp)
             # Persistent tile scheduling loop
-            tile_sched = utils.StaticPersistentRuntimeTileScheduler.create(
+            tile_sched = StaticPersistentRuntimeTileScheduler.create(
                 tile_sched_params,
                 (bidx, bidy, bidz),
                 cute.arch.grid_dim(),
@@ -1114,9 +1153,7 @@ class GroupedMixedInputGemmKernel:
                 # Apply offset to B tensor based on group search result
                 coord_n_offset = (
                     (work_tile.coord_n, 0, 0)
-                    if cutlass.const_expr(
-                        self.b_major_mode == tcgen05.OperandMajorMode.MN
-                    )
+                    if cutlass.const_expr(self.b_major_mode == OperandMajorMode.MN)
                     else (0, work_tile.coord_n, 0)
                 )
                 tBgB_slice = cute.make_tensor(
@@ -1281,21 +1318,6 @@ class GroupedMixedInputGemmKernel:
         if warp_idx >= self.transform_warp_id[0]:
             cute.arch.setmaxregister_increase(self.num_regs_transform_warps)
             transform_local_tidx = tidx - 32 * self.transform_warp_id[0]
-            # Get the pointer to the TMEM buffer
-            tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-            accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-
-            tCrA = None
-            if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
-                tmem_ptr_transform = cute.recast_ptr(
-                    accumulators.iterator + self.num_acc_tmem_cols, dtype=self.mma_dtype
-                )
-                tCrA = cute.make_tensor(
-                    tmem_ptr_transform,
-                    tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
-                )
-            else:
-                tCrA = tiled_mma.make_fragment_A(sA_transform)
             # Partition tensors for transform input and output and set up the copy atom
             # used for loading and storing transformed A tensor
             src_copy_a, dst_copy_a, tAsA_input, tAsA_transform = (
@@ -1559,20 +1581,6 @@ class GroupedMixedInputGemmKernel:
         # Specialized MMA warp
         if warp_idx == self.mma_warp_id:
             cute.arch.setmaxregister_decrease(self.num_regs_mma_warp)
-             # Get the pointer to the TMEM buffer
-            tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-            accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-            tCrA = None
-            if cutlass.const_expr(self.transform_a_source == tcgen05.OperandSource.TMEM):
-                tmem_ptr_transform = cute.recast_ptr(
-                    accumulators.iterator + self.num_acc_tmem_cols, dtype=self.mma_dtype
-                )
-                tCrA = cute.make_tensor(
-                    tmem_ptr_transform,
-                    tiled_mma.make_fragment_A(a_smem_layout_transform.outer).layout,
-                )
-            else:
-                tCrA = tiled_mma.make_fragment_A(sA_transform)
             tCtAcc_base = accumulators
             # Persistent tile scheduling loop
             tile_info_consumer_state = pipeline.make_pipeline_state(
@@ -1676,9 +1684,6 @@ class GroupedMixedInputGemmKernel:
         if warp_idx < self.mma_warp_id:
             cute.arch.setmaxregister_increase(self.num_regs_epilogue_warps)
             epi_tidx = tidx
-            # Get the pointer to the TMEM buffer
-            tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-            accumulators = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
             tCtAcc_base = accumulators
             # Partition for epilogue
             tiled_copy_t2r, tTR_tAcc_base, tTR_rAcc = (
@@ -1898,7 +1903,7 @@ class GroupedMixedInputGemmKernel:
         a_dtype: type[cutlass.Numeric],
         b_dtype: type[cutlass.Numeric],
         c_dtype: type[cutlass.Numeric],
-        c_layout: utils.LayoutEnum,
+        c_layout: cutlass.tensor_utils.LayoutEnum,
         transform_a_source: tcgen05.OperandSource,
         scale_granularity_m: int,
         scale_granularity_k: int,
@@ -1927,7 +1932,7 @@ class GroupedMixedInputGemmKernel:
         :param c_dtype: Data type of operand C.
         :type c_dtype: type[cutlass.Numeric]
         :param c_layout: Layout enum of operand C.
-        :type c_layout: utils.LayoutEnum
+        :type c_layout: cutlass.tensor_utils.LayoutEnum
         :param transform_a_source: The source of the transformed A tensor.
         :type transform_a_source: tcgen05.OperandSource
         :param scale_granularity_m: The granularity of the scale tensor along the M mode.
@@ -1954,7 +1959,9 @@ class GroupedMixedInputGemmKernel:
         # Compute tmem columns required for accumulator
         acc_shape = tiled_mma.partition_shape_C(mma_tiler_mnk[:2])
         tCtAcc_stage1 = tiled_mma.make_fragment_C(cute.append(acc_shape, 1))
-        num_tmem_acc_col_per_stage = utils.get_num_tmem_alloc_cols(tCtAcc_stage1, True)
+        num_tmem_acc_col_per_stage = cutlass.memory.get_num_tmem_alloc_cols(
+            tCtAcc_stage1, True
+        )
         # Heuristic to decide the number of stages for accumulator
         sm100_tmem_columns = cute.arch.get_max_tmem_alloc_cols("sm_100")
         accumulator_stage_count = sm100_tmem_columns // num_tmem_acc_col_per_stage
@@ -1994,7 +2001,7 @@ class GroupedMixedInputGemmKernel:
         c_bytes_per_stage = cute.size_in_bytes(c_dtype, c_smem_layout_staged_one)
         c_bytes = c_bytes_per_stage * c_stage_count
 
-        smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        smem_capacity = cutlass.memory.get_smem_capacity_in_bytes("sm_100")
         if scale_mode == TransformMode.ConvertOnly:
             scale_load2trans_stage_count = 0
             a_scale_bytes_per_stage = 0
@@ -2123,7 +2130,7 @@ class GroupedMixedInputGemmKernel:
         cta_tile_shape_mnk: tuple[int, int, int],
         cluster_shape_mn: tuple[int, int],
         max_active_clusters: cutlass.Constexpr,
-    ) -> tuple[utils.PersistentTileSchedulerParams, tuple[int, int, int]]:
+    ) -> tuple[PersistentTileSchedulerParams, tuple[int, int, int]]:
         """
         Use persistent tile scheduler to compute the grid size for the output tensor C.
         """
@@ -2132,7 +2139,7 @@ class GroupedMixedInputGemmKernel:
         num_ctas_mnl = gc[(0, (None, None, None))].shape
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
-        tile_sched_params = utils.PersistentTileSchedulerParams(
+        tile_sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl, cluster_shape_mnl
         )
         grid = (cluster_shape_mn[0], cluster_shape_mn[1], max_active_clusters)
@@ -2187,33 +2194,6 @@ class GroupedMixedInputGemmKernel:
         return True
 
 
-def get_advanced_compiler_control_path():
-    """
-    Return the path to the advanced compiler control file of this example. If not found, return None.
-    """
-    import os
-
-    need_advanced_compiler_control = False
-    try:
-        from cutlass import CUDA_VERSION
-
-        if CUDA_VERSION.major == 13 and CUDA_VERSION.minor == 1:
-            need_advanced_compiler_control = True
-    except ImportError:
-        pass
-
-    if not need_advanced_compiler_control:
-        return None
-    # Get the path to the advanced compiler control file
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    target_path = os.path.join(current_dir, "../../advanced_compiler_control/gemm0.bin")
-    if os.path.exists(target_path):
-        print(f"Found advanced compiler control file at {target_path}")
-        return target_path
-    else:
-        return None
-
-
 def run(
     mnkl: tuple[int, int, int, int],
     scale_granularity_m: int,
@@ -2234,6 +2214,8 @@ def run(
     skip_ref_check: bool = False,
     uniform_group_sizes: bool = False,
     use_cold_l2: bool = False,
+    *,
+    benchmark: str = "default",
     **kwargs,
 ) -> None:
     """
@@ -2242,7 +2224,13 @@ def run(
     This function creates tensors, validates parameters, executes the kernel,
     optionally compares results with a reference implementation and reports
     kernel execution time.
+
+    :param benchmark: Benchmark mode: "default", "cupti", or "none" to skip timing
+    :type benchmark: str
     """
+    if benchmark not in ("default", "cupti", "none"):
+        raise ValueError(f"Unsupported benchmark mode: {benchmark}")
+
     m, n, k, l = mnkl
     import torch
 
@@ -2264,7 +2252,7 @@ def run(
         cluster_shape_mn,
         use_2cta_instrs,
     ):
-        raise ValueError("GEMM configuration not supported")
+        raise testing.CantImplementError("GEMM configuration not supported")
 
     # Get current CUDA stream from PyTorch
     torch_stream = torch.cuda.current_stream()
@@ -2275,19 +2263,6 @@ def run(
     shuffle_a = mixed_input_utils.is_shuffle_a(
         a_major, k, a_dtype, b_dtype, scale_granularity_k
     )
-    # shuffle is supported since CUDA 13.1
-    shuffle_supported = False
-    try:
-        from cutlass import CUDA_VERSION
-
-        if CUDA_VERSION.major > 13 or (
-            CUDA_VERSION.major == 13 and CUDA_VERSION.minor >= 1
-        ):
-            shuffle_supported = True
-    except ImportError:
-        pass
-
-    shuffle_a = shuffle_a and shuffle_supported
     mixed_input_gemm = GroupedMixedInputGemmKernel(
         scale_granularity_m,
         scale_granularity_k,
@@ -2330,13 +2305,6 @@ def run(
     max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
         cluster_shape_mn[0] * cluster_shape_mn[1],
     )
-    advanced_compiler_options = None
-    advanced_compiler_control_path = get_advanced_compiler_control_path()
-    if advanced_compiler_control_path:
-        advanced_compiler_options = (
-            f"--ptxas-options '--apply-controls={advanced_compiler_control_path}'"
-        )
-
     compiled_kernel = cute.compile(
         mixed_input_gemm,
         a_tensor,
@@ -2346,7 +2314,6 @@ def run(
         c_tensor,
         max_active_clusters,
         current_stream,
-        options=advanced_compiler_options,
     )
 
     if not skip_ref_check:
@@ -2367,6 +2334,9 @@ def run(
             c_dtype,
             tolerance,
         )
+
+    if benchmark == "none":
+        return 0
 
     # Early return if no performance measurement is needed
     if iterations <= 0:
@@ -2425,6 +2395,7 @@ def run(
         stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
 
     return exec_time  # Return execution time in microseconds
@@ -2502,6 +2473,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--uniform_group_sizes", action="store_true", help="Use uniform group sizes"
     )
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="default",
+        choices=["cupti", "default", "none"],
+        help="Benchmark the kernel with cupti or default (cutlass.testing.benchmark) or none",
+    )
     args = parser.parse_args()
     run(
         args.mnkl,
@@ -2522,5 +2500,6 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.uniform_group_sizes,
+        benchmark=args.benchmark,
     )
     print("PASS")

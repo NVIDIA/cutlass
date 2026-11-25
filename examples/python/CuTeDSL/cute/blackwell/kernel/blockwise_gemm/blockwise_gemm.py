@@ -2707,7 +2707,7 @@ def run(
         current_stream,
         options=(
             "--opt-level=2"
-            if tuple(map(int, cutlass.__version__.split(".")[:2])) >= (4, 6)
+            if cutlass.target_version(kind="dsl", min_version="4.6")
             else ""
         ),
     )

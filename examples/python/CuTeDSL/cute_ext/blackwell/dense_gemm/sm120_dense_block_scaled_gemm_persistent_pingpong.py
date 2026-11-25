@@ -111,7 +111,6 @@ import cutlass.cute as cute
 from cutlass.cute import experimental as cute_ext
 from cutlass.cute.experimental.math import dot_block_scaled
 import cutlass.cute.testing as testing
-from cutlass.utils import PersistentTileSchedulerParams, StaticPersistentTileScheduler
 from cutlass.cute.runtime import from_dlpack
 import cutlass.utils.hopper_helpers as sm90_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
@@ -131,6 +130,10 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.join(current_dir, "../../../"))
 
 from helpers import cli_helper as cli
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 
 def consumer_wait_with_token(pipe, state, token):
@@ -167,10 +170,18 @@ class Sm120BlockScaledGemmKernelPingpong:
         sf_vec_size,
         tile_shape_mnk,
         epi_tile,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
     ):
         self.acc_dtype = acc_dtype
         self.sf_vec_size = sf_vec_size
         self.cluster_shape_mnk = (1, 1, 1)
+        if swizzle_size <= 0:
+            raise ValueError(
+                f"swizzle_size must be a positive integer, got {swizzle_size}"
+            )
+        self.swizzle_size = swizzle_size
+        self.raster_along_m = raster_along_m
         self.tile_shape_mnk = tuple(tile_shape_mnk)
         self.epi_tile = tuple(epi_tile)
         self.tiled_mma = None
@@ -283,7 +294,7 @@ class Sm120BlockScaledGemmKernelPingpong:
             self.tiled_mma,
         )
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         a: cute.Tensor,
@@ -325,7 +336,10 @@ class Sm120BlockScaledGemmKernelPingpong:
         gc = cute.zipped_divide(c, tiler=c_shape)
         num_ctas_mnl = gc[(0, (None, None, None))].shape
         tile_sched_params = PersistentTileSchedulerParams(
-            num_ctas_mnl, self.cluster_shape_mnk
+            num_ctas_mnl,
+            self.cluster_shape_mnk,
+            swizzle_size=self.swizzle_size,
+            raster_along_m=self.raster_along_m,
         )
         grid = StaticPersistentTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters
@@ -354,11 +368,10 @@ class Sm120BlockScaledGemmKernelPingpong:
             stream=stream,
             max_number_threads=[self.threads_per_cta, 1, 1],
             min_blocks_per_mp=1,
-            smem=cute.Int64(self.smem_capacity),
         )
         return
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA: cute.Tensor,
@@ -431,14 +444,14 @@ class Sm120BlockScaledGemmKernelPingpong:
 
         # ///////////////////////////////////////////////////////////////////////////////
         #  TMAToAsyncPipeline (replaces DSL PipelineTmaAsync)
-        #  consumer_arv_count = ONE WG (128 threads) since only one WG consumes
-        #  any given stage at a time (DSL semantics: pipeline.CooperativeGroup(thread,
-        #  num_mma_warps // 2)).
+        #  consumer_release_threads_per_cta = ONE WG (128 threads) since only one
+        #  WG consumes any given stage at a time (DSL semantics:
+        #  pipeline.CooperativeGroup(thread, num_mma_warps // 2)).
         # ///////////////////////////////////////////////////////////////////////////////
         mainloop_pipe = cute_ext.TMAToAsyncPipeline.create(
             num_stages=self.ab_stage,
             consumer=cute_ext.OperationTypeEnum.LD_SHARED,
-            consumer_arv_count=self.num_threads_per_wg,
+            consumer_release_threads_per_cta=self.num_threads_per_wg,
         )
 
         # ///////////////////////////////////////////////////////////////////////////////
@@ -603,6 +616,8 @@ class Sm120BlockScaledGemmKernelPingpong:
 
                     tile_sched.advance_to_next_work()
                     work_tile = tile_sched.get_current_work()
+
+                mainloop_pipe.producer_tail()
 
         # /////////////////////////////////////////////////////////////////////////////
         #  MMA warps: pipelined mainloop (RMEM A/B after explicit ldmatrix) + epilogue.
@@ -1042,19 +1057,17 @@ class Sm120BlockScaledGemmKernelPingpong:
                 work_tile = tile_sched.get_current_work()
 
             # /////////////////////////////////////////////////////////////////////
-            #  Post-loop cleanup arrive.
-            #  Each in-loop tile issues 2 arrives + 2 waits per WG, paired across
-            #  the two WGs (WG0 signals WG1's slots, WG1 signals WG0's slots).
-            #  When both WGs process the same number of tiles, WG1 has issued
-            #  one fewer "effective signal" than WG0 expected (because WG0's
-            #  initial phase=1 lets it pre-consume one arrival). WG1's extra
-            #  post-loop arrive rebalances the counters so a peer wait left
-            #  pending across exit does not livelock the cluster. Harmless
-            #  over-arrive on an unwatched barrier in cases where WG0 has
-            #  already exited.
+            #  NOTE: deliberately NO post-loop order-barrier arrive here (the
+            #  DSL reference kernel has none either). Every in-loop wait is
+            #  satisfied by the partner's in-loop arrives: WG0's j-th
+            #  mainloop/epilogue-turn wait (j >= 1) consumes exactly WG1's j-th
+            #  arrive pair, and WG1 owns >= j tiles whenever WG0 owns j+1, so
+            #  no wait can be left pending at exit. An extra WG1 arrive lands
+            #  on b0 -- a barrier WG0 STILL WAITS ON when WG0 owns more tiles
+            #  than WG1 (odd tile counts, including the idle-WG1 case) -- and
+            #  advances its parity past WG0's tracked phase, deadlocking WG0
+            #  at its mainloop-turn wait if the arrive wins the race.
             # /////////////////////////////////////////////////////////////////////
-            if warp_group_idx == 1:
-                math_wg_order_state = math_wg_order_barrier.arrive(math_wg_order_state)
 
             # Wait for all in-flight TMA stores to complete before kernel exit.
             if warp_group_idx == 0:
@@ -1290,6 +1303,8 @@ def run(
     iterations=1,
     skip_ref_check=False,
     use_cold_l2=False,
+    swizzle_size=1,
+    raster_along="m",
     **kwargs,
 ):
     return run_bs(
@@ -1310,6 +1325,8 @@ def run(
         iterations=iterations,
         skip_ref_check=skip_ref_check,
         use_cold_l2=use_cold_l2,
+        swizzle_size=swizzle_size,
+        raster_along=raster_along,
     )
 
 
@@ -1331,6 +1348,8 @@ def run_bs(
     iterations,
     skip_ref_check,
     use_cold_l2=False,
+    swizzle_size=1,
+    raster_along="m",
     **kwargs,
 ):
     import torch
@@ -1494,6 +1513,8 @@ def run_bs(
         sf_vec_size,
         tile_shape_mnk,
         epi_tile,
+        swizzle_size=swizzle_size,
+        raster_along_m=(raster_along == "m"),
     )
 
     hardware_info = cutlass.utils.HardwareInfo()
@@ -1503,7 +1524,7 @@ def run_bs(
 
     stream = cutlass_torch.default_stream()
 
-    compiled_gemm = cute_ext.compile(
+    compiled_gemm = cute.compile(
         gemm,
         a_tensor,
         b_tensor,
@@ -1640,6 +1661,19 @@ def parse_arguments():
     parser.add_argument("--sf_dtype", type=cutlass.dtype, default=cutlass.Float8E4M3FN)
     parser.add_argument("--sf_vec_size", type=int, choices=[16], default=16)
 
+    parser.add_argument(
+        "--swizzle_size",
+        type=int,
+        default=1,
+        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
+    )
+    parser.add_argument(
+        "--raster_along",
+        type=str,
+        choices=["m", "n"],
+        default="m",
+        help="Rasterization order of clusters",
+    )
     return parser.parse_args()
 
 
@@ -1663,5 +1697,7 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
+        swizzle_size=args.swizzle_size,
+        raster_along=args.raster_along,
     )
     print("PASS")

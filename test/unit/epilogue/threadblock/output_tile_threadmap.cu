@@ -478,6 +478,38 @@ TEST(ThreadMap, f32_volta_tensor_op_128x128_64x64x8) {
   ThreadMapTestbed<Shape, Count, kThreads, kElementsPerAccess, kElementSize>();
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// The Sm80 TensorOp epilogue OutputTileOptimalThreadMap lays each warp's 32 lanes out as a
+// kAccessRows x kAccessWidth grid (lane_idx / kAccessWidth selects the row, lane_idx % kAccessWidth the
+// column). When kAccessWidth does not divide the 32-lane warp -- e.g. ThreadblockShape::kN = 96 with
+// ElementsPerAccess = 8 gives kAccessWidth = 12 and 32 % 12 != 0 -- surplus lanes alias earlier lanes'
+// output rows, so two lanes write the SAME output coordinate: silently incorrect epilogue stores.
+// output_tile_thread_map.h now rejects that combination at compile time via
+// static_assert(kWarpSize % kAccessWidth == 0). This test pins the invariant for a SUPPORTED tile: the
+// good 64x128x64 / warp 32x64 tile from the report (kAccessWidth = 16, kAccessRows = 2). The unsupported
+// 64x96 / warp 32x48 map is intentionally NOT instantiated here because it no longer compiles -- that
+// compile-time rejection is the fix.
+TEST(ThreadMap, tensor_op_warp_tiling_invariant) {
+
+  int const kWarpSize = 32;
+
+  using GoodThreadMap = cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<
+    cutlass::epilogue::threadblock::OutputTileShape<128, 8, 1, 1, 1>,  // ThreadblockShape::kN = 128
+    cutlass::epilogue::threadblock::OutputTileShape<1, 8, 2, 1, 1>,
+    /*Threads=*/128,
+    /*ElementsPerAccess=*/8,
+    /*ElementSize=*/16
+  >;
+
+  // The invariant the guard enforces: the per-warp lane grid tiles the 32-lane warp exactly.
+  EXPECT_EQ(kWarpSize % int(GoodThreadMap::Detail::kAccessWidth), 0)
+    << "kAccessWidth = " << int(GoodThreadMap::Detail::kAccessWidth)
+    << " must divide the 32-lane warp";
+  EXPECT_EQ(int(GoodThreadMap::Detail::kAccessWidth) * int(GoodThreadMap::Detail::kAccessRows), kWarpSize)
+    << "lane grid (kAccessRows x kAccessWidth) must cover all 32 lanes";
+}
+
 TEST(ThreadMap, f32_volta_tensor_op_128x256_64x64x8) {
 
   using Shape = cutlass::epilogue::threadblock::OutputTileShape<256, 2, 4, 2, 1>;

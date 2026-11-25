@@ -230,7 +230,8 @@ struct CollectiveBuilder<
   using StridePairA = decltype(cute::make_tuple(StrideA{}, LayoutSFA{}));
   using StridePairB = decltype(cute::make_tuple(StrideB{}, LayoutSFB{}));
 
-  static constexpr uint32_t AccumulatorPipelineStageCount = 2;
+  static constexpr int MMA_N = cute::size<1>(TileShape_MNK{});
+  static constexpr uint32_t AccumulatorPipelineStageCount = (MMA_N < 256) ? 2 : 1;
   // Calculate scheduler pipeline stages. Having one more stage than the accumulator allows more latency hiding.
   static constexpr uint32_t SchedulerPipelineStageCount = AccumulatorPipelineStageCount + 1;
 

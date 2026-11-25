@@ -48,6 +48,10 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.join(current_dir, "../../../"))
 
 from helpers import cli_helper as cli
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 """
 A high-performance persistent batched dense GEMM (D = alpha * A * B + beta * C) example
@@ -117,6 +121,8 @@ class PersistentDenseGemmAlphaBetaKernel:
         cluster_shape_mn: Tuple[int, int] = (1, 1),
         fallback_cluster_shape_mn: Tuple[int, int] = None,
         max_active_fallback_clusters: int = None,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
     ):
         self.mn_tiler = mn_tiler
         self.ab_dtype, self.acc_dtype = mma_dtype
@@ -126,6 +132,12 @@ class PersistentDenseGemmAlphaBetaKernel:
         self.TMA_STORE_STAGE = 2
         self.C_LOAD_STAGE = 2
         self.epilogue_op = epilogue_op
+        if swizzle_size <= 0:
+            raise ValueError(
+                f"swizzle_size must be a positive integer, got {swizzle_size}"
+            )
+        self.swizzle_size = swizzle_size
+        self.raster_along_m = raster_along_m
         self.cluster_shape = (cluster_shape_mn[0], cluster_shape_mn[1], 1)
         cluster_shape_mn_selfcast = (2, 1) if use_2cta_instrs else (1, 1)
         self.use_tma_multicast = cluster_shape_mn != cluster_shape_mn_selfcast
@@ -221,7 +233,7 @@ class PersistentDenseGemmAlphaBetaKernel:
 
         return num_mainloop_stage, num_tma_store_stage, num_acc_stage
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA: cute.Tensor,
@@ -237,12 +249,14 @@ class PersistentDenseGemmAlphaBetaKernel:
             1,
         )
         num_ctas_mnl = cute.ceil_div(mD.shape, cta_tile_mnk)
-        tile_sched_params = utils.PersistentTileSchedulerParams(
+        tile_sched_params = PersistentTileSchedulerParams(
             num_ctas_mnl,
             self.cluster_shape,
+            swizzle_size=self.swizzle_size,
+            raster_along_m=self.raster_along_m,
             fallback_cluster_shape_mnk=self.fallback_cluster_shape,
         )
-        grid = utils.StaticPersistentTileScheduler.get_grid_shape(
+        grid = StaticPersistentTileScheduler.get_grid_shape(
             tile_sched_params, self.max_active_clusters
         )
         self.kernel(mA, mB, mC, mD, tile_sched_params, alpha, beta).launch(
@@ -250,17 +264,16 @@ class PersistentDenseGemmAlphaBetaKernel:
             block=(224, 1, 1),  # 7 warps
             cluster=self.cluster_shape,
             fallback_cluster=self.fallback_cluster_shape,
-            smem=cute.Int64(cutlass.memory.get_smem_capacity_in_bytes("sm_100")),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA: cute.Tensor,
         mB: cute.Tensor,
         mC: cute.Tensor,
         mD: cute.Tensor,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         alpha: cutlass.Float32,
         beta: cutlass.Float32,
     ):
@@ -338,7 +351,9 @@ class PersistentDenseGemmAlphaBetaKernel:
         tid_x, _, _ = cute.arch.thread_idx()
 
         # Cluster layout for 2-CTA coordination
-        cluster_shape = cute.arch.block_in_cluster_dim()
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
             cute.make_layout(cluster_shape),
             cute.core._pack_shape((cute.size(tiled_mma.thr_id.shape),)),
@@ -471,14 +486,13 @@ class PersistentDenseGemmAlphaBetaKernel:
         )
 
         # UMMA -> Load to tensor memory pipeline
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         warp_idx = cute.arch.warp_idx()
@@ -518,7 +532,7 @@ class PersistentDenseGemmAlphaBetaKernel:
         #
         # Persistent tile scheduling loop
         #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
+        tile_sched = StaticPersistentTileScheduler.create(
             tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
         )
         work_tile = tile_sched.initial_work_tile_info()
@@ -617,6 +631,8 @@ class PersistentDenseGemmAlphaBetaKernel:
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
 
+            mainloop_pipe.producer_tail()
+
         if is_mma_thr and is_leader_cta:
             while work_tile.is_valid_tile:
                 _, idx = acc_pipe.producer_acquire_and_get_stage()
@@ -673,6 +689,8 @@ class PersistentDenseGemmAlphaBetaKernel:
                 # Advance to next tile
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
+
+            c_load_pipe.producer_tail()
 
         if is_epi_thr:
             # S2R copy for reading C from SMEM to RMEM
@@ -924,6 +942,8 @@ def run(
     skip_ref_check: bool = False,
     use_2cta_instrs: bool = False,
     fallback_cluster_shape_mn: Tuple[int, int] = None,
+    swizzle_size: int = 1,
+    raster_along: str = "m",
     **kwargs,
 ):
     """Execute a persistent batched GEMM: D = alpha * A @ B + beta * C."""
@@ -982,14 +1002,14 @@ def run(
         max_active_clusters=max_active_clusters,
         fallback_cluster_shape_mn=fallback_cluster_shape_mn,
         max_active_fallback_clusters=max_active_fallback_clusters,
+        swizzle_size=swizzle_size,
+        raster_along_m=(raster_along == "m"),
     )
 
     alpha = cutlass.Float32(alpha_val)
     beta = cutlass.Float32(beta_val)
 
-    compiled = cute_ext.compile(
-        gemm, a_tensor, b_tensor, c_tensor, d_tensor, alpha, beta
-    )
+    compiled = cute.compile(gemm, a_tensor, b_tensor, c_tensor, d_tensor, alpha, beta)
     if hasattr(compiled.engine, "initialize"):
         compiled.engine.initialize()
 
@@ -1077,6 +1097,19 @@ if __name__ == "__main__":
         action="store_true",
         help="Use 2-CTA (2SM) instructions for larger tile sizes",
     )
+    parser.add_argument(
+        "--swizzle_size",
+        type=int,
+        default=1,
+        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
+    )
+    parser.add_argument(
+        "--raster_along",
+        type=str,
+        choices=["m", "n"],
+        default="m",
+        help="Rasterization order of clusters",
+    )
 
     args = parser.parse_args()
 
@@ -1113,6 +1146,8 @@ if __name__ == "__main__":
         args.skip_ref_check,
         args.use_2cta_instrs,
         fallback_cluster_shape_mn=args.fallback_cluster_shape_mn,
+        swizzle_size=args.swizzle_size,
+        raster_along=args.raster_along,
     )
 
     print(f"Execution time: {exec_time} microseconds per iteration")

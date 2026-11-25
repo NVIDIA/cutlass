@@ -14,31 +14,36 @@ from dataclasses import dataclass, field
 from functools import partial
 import gc
 import hashlib
+import inspect
 import logging
 import operator
 import os
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import cuda.bindings.driver as cuda
 
 import jax
 import jax.numpy as jnp
 
+import cutlass
+import cutlass.compiler as cutlass_compiler
+import cutlass.cute as cute
+from cutlass.cute.experimental.host_runtime import QueryWorkspaceRequirementsFunc
+from cutlass.cutlass_dsl.cutlass import CuTeDSL, CuteExperimentalDSL
+
 from .types import (
-    DEFAULT_CUTLASS_DEVICE_MEMSPACE,
+    _get_memory_space,
+    _validate_cast,
+    DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT,
     JaxArray,
     JaxTracedArray,
     TensorSpec,
     jax_to_cutlass_dtype,
+    jax_to_cutlass_memory_space,
     row_major_layout,
 )
-
-import cutlass
-import cutlass.compiler as cutlass_compiler
-import cutlass.cute as cute
-from cutlass.cutlass_dsl.cutlass import CuTeDSL
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +63,7 @@ class Arg:
     shape: tuple[Any, ...]
     dtype: jnp.dtype
     spec: TensorSpec
+    memory_space: Literal["device", "host"] | None = "device"
 
     def get_static_flag(self, use_static_tensors: bool) -> bool:
         if self.spec.static is None:
@@ -80,6 +86,9 @@ class FunctionSpec:
     compile_options: str | None
     use_static_tensors: bool
     kwargs: tuple[tuple[str, Any], ...]
+    ffi_call_target: str
+    ffi_abi_version: int = 3
+    has_side_effect: bool = False
 
     def get_compile_args(self) -> list[JaxTracedArray]:
         """Return JAX buffer placeholders for ``cute.compile`` or ``compile_to``."""
@@ -88,12 +97,14 @@ class FunctionSpec:
                 JaxArray(
                     jax_to_cutlass_dtype(leaf.dtype),
                     leaf.shape,
-                    DEFAULT_CUTLASS_DEVICE_MEMSPACE,
+                    jax_to_cutlass_memory_space(leaf.memory_space),
                     leaf.spec.ptr_assumed_align,
                     leaf.spec.layout,
                     leaf.spec.mode,
                     leaf.get_static_flag(self.use_static_tensors),
                     leaf.spec.divisibility,
+                    self.ffi_abi_version,
+                    leaf.spec.cast,
                 )
             )
             for leaf in self.in_args + self.out_args
@@ -114,8 +125,7 @@ class _KernelLoweringTarget:
         object.__setattr__(self, "_jax_cache_key", (has_user_key, cache_key))
 
 
-@cute.jit
-def jit_wrapper(
+def _invoke_jit_wrapper(
     stream: cuda.CUstream,
     *args: JaxTracedArray,
     wrapped_fn: cutlass.Constexpr,
@@ -141,11 +151,57 @@ def jit_wrapper(
         args[len(spec.in_args) :],
     )
     outs = _kernel_output_args(outs, spec.input_output_aliases)  # type: ignore[attr-defined]
-    ins = [x.get_tensor() for x in ins]  # type: ignore[assignment, attr-defined]
-    outs = [x.get_tensor() for x in outs]  # type: ignore[assignment, attr-defined]
+    ins = [x.get_value() for x in ins]  # type: ignore[assignment, attr-defined]
+    outs = [x.get_value() for x in outs]  # type: ignore[assignment, attr-defined]
     ins = jax.tree.unflatten(spec.input_tree, ins)  # type: ignore[attr-defined]
     outs = jax.tree.unflatten(spec.output_tree, outs)  # type: ignore[attr-defined]
     wrapped_fn(stream, *ins, *outs, **dict(spec.kwargs))  # type: ignore[operator, attr-defined]
+
+
+@cute.jit
+def jit_wrapper(
+    stream: cuda.CUstream,
+    *args: JaxTracedArray,
+    wrapped_fn: cutlass.Constexpr,
+    spec: cutlass.Constexpr,
+) -> None:
+    _invoke_jit_wrapper(stream, *args, wrapped_fn=wrapped_fn, spec=spec)
+
+
+@cute.experimental.jit
+def _lir_jit_wrapper(
+    stream: cuda.CUstream,
+    *args: JaxTracedArray,
+    wrapped_fn: cutlass.Constexpr,
+    spec: cutlass.Constexpr,
+) -> None:
+    _invoke_jit_wrapper(stream, *args, wrapped_fn=wrapped_fn, spec=spec)
+
+
+def _uses_experimental_dsl(fn: Callable[..., None]) -> bool:
+    callable_fn = fn
+    if not inspect.isfunction(callable_fn) and not inspect.ismethod(callable_fn):
+        callable_fn = callable_fn.__call__
+    function = inspect.unwrap(getattr(callable_fn, "__func__", callable_fn))
+
+    dsl = getattr(function, "_dsl_object", None)
+    if dsl is not None:
+        return isinstance(dsl, CuteExperimentalDSL)
+
+    dsl_type = getattr(function, "_dsl_cls", None)
+    return isinstance(dsl_type, type) and issubclass(dsl_type, CuteExperimentalDSL)
+
+
+def _jit_wrapper_for(fn: Callable[..., None]) -> Callable[..., None]:
+    return _lir_jit_wrapper if _uses_experimental_dsl(fn) else jit_wrapper
+
+
+@dataclass(frozen=True)
+class WorkspaceRequirement:
+    """Allocation requirements for one compiler-managed workspace argument."""
+
+    size_in_bytes: int
+    alignment: int
 
 
 @dataclass
@@ -155,6 +211,7 @@ class CompileResult:
     module: bytes
     fingerprint: bytes
     spec: FunctionSpec
+    workspace_requirements: tuple[WorkspaceRequirement, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -182,13 +239,71 @@ def _generate_precompiled_mlir(
     """
     return cute.compile_to(
         cutlass_compiler.ArtifactType.PreCompiledMlir,
-        jit_wrapper,
+        _jit_wrapper_for(fn),
         cuda.CUstream(0),
         *spec.get_compile_args(),
         wrapped_fn=fn,
         spec=spec,
         options=spec.compile_options,
     )
+
+
+def _query_workspace_requirements(
+    query: QueryWorkspaceRequirementsFunc,
+    spec: FunctionSpec,
+    compile_args: tuple[Any, ...],
+) -> tuple[WorkspaceRequirement, ...]:
+    """Returns workspace requirements in compiled host argument order."""
+    requirement_count = query.get_workspace_argument_count()
+    if requirement_count == 0:
+        return ()
+
+    symbolic_shapes = [
+        arg.shape
+        for arg in spec.in_args + spec.out_args
+        if any(jax.export.is_symbolic_dim(dim) for dim in arg.shape)
+    ]
+    if symbolic_shapes:
+        raise ValueError(
+            "Kernels requiring compiler-managed device workspace require concrete JAX "
+            f"shapes; found symbolic shapes: {symbolic_shapes}"
+        )
+
+    queried_requirements = query(*compile_args)
+    assert len(queried_requirements) == requirement_count
+
+    requirements: list[WorkspaceRequirement] = []
+    for index, queried in enumerate(queried_requirements):
+        size_in_bytes = int(queried.size_in_bytes)
+        alignment = int(queried.alignment)
+        if size_in_bytes < 0:
+            raise ValueError(
+                f"Workspace argument {index} reported a negative size: {size_in_bytes}"
+            )
+        if size_in_bytes == 0 and alignment == 0:
+            alignment = 1
+
+        if alignment <= 0:
+            raise ValueError(
+                f"Workspace argument {index} reported a negative size: {alignment}"
+            )
+        if alignment & (alignment - 1):
+            raise ValueError(
+                f"Workspace argument {index} reported non-power-of-2 alignment: {alignment}"
+            )
+        if alignment > DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT:
+            raise ValueError(
+                f"Workspace argument {index} requires {alignment}-byte alignment, "
+                "exceeding XLA's guaranteed "
+                f"{DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT}-byte alignment"
+            )
+        requirements.append(
+            WorkspaceRequirement(
+                size_in_bytes=size_in_bytes,
+                alignment=alignment,
+            )
+        )
+    return tuple(requirements)
 
 
 def _check_is_valid_type(x: Any, is_input: bool) -> None:
@@ -303,15 +418,24 @@ def build_function_spec(
     compile_options: str | None,
     use_static_tensors: bool,
     kwargs: dict[str, Any],
+    *,
+    ffi_call_target: str,
+    ffi_abi_version: int = 3,
+    has_side_effect: bool = False,
 ) -> FunctionSpec:
     in_args = []
     for idx, (arg, tensor_spec) in enumerate(zip(ins, input_spec)):
         _check_is_valid_type(arg, is_input=True)
-        in_args.append(Arg(idx, arg.shape, arg.dtype, tensor_spec))
+        memory_space = _get_memory_space(arg)
+        _validate_cast(arg.shape, arg.dtype, tensor_spec.cast, memory_space)
+        in_args.append(Arg(idx, arg.shape, arg.dtype, tensor_spec, memory_space))
 
     out_args = []
     for idx, (arg, tensor_spec) in enumerate(zip(outs, output_spec)):
         _check_is_valid_type(arg, is_input=False)
+        _validate_cast(
+            arg.shape, arg.dtype, tensor_spec.cast, "device", is_output=True
+        )
         out_args.append(Arg(idx, arg.shape, arg.dtype, tensor_spec))
 
     # Return the argument specs to the original pytree structure
@@ -326,6 +450,8 @@ def build_function_spec(
     aliased_output_indices: set[int] = set()
 
     def add_alias(input_arg: Arg, output_arg: Arg, label: str) -> None:
+        if input_arg.memory_space == "host":
+            raise ValueError("Host inputs cannot alias device output buffers")
         if input_arg.idx in aliased_input_indices:
             raise ValueError(f"input_output_aliases {label} reuses an input buffer")
         if output_arg.idx in aliased_output_indices:
@@ -453,6 +579,9 @@ def build_function_spec(
         compile_options,
         use_static_tensors,
         tuple((k, kwargs[k]) for k in kwargs),
+        ffi_call_target=ffi_call_target,
+        ffi_abi_version=ffi_abi_version,
+        has_side_effect=has_side_effect,
     )
 
     return spec
@@ -508,17 +637,42 @@ def get_or_compile_kernel(
             if spec.compile_options:
                 cute_compile = partial(cute_compile, options=spec.compile_options)  # type: ignore[assignment]
 
+            compile_args = (cuda.CUstream(0), *spec.get_compile_args())
+            jit_wrapper = _jit_wrapper_for(lowering_target.fn)
             compiled_fn = cute_compile(
                 jit_wrapper,
-                cuda.CUstream(0),
-                *spec.get_compile_args(),
+                *compile_args,
                 wrapped_fn=lowering_target.fn,
                 spec=spec,
             )
 
+            if any(arg.memory_space == "host" for arg in spec.in_args):
+                if compiled_fn.total_added_arguments:
+                    raise NotImplementedError(
+                        f"{spec.ffi_call_target} does not currently support "
+                        "compiler-managed device workspaces with host inputs: "
+                        "querying workspace sizes may require runtime host data, "
+                        "which is unavailable during JAX compilation"
+                    )
+                workspace_requirements = ()
+            else:
+                workspace_query = compiled_fn.get_aux_func(
+                    QueryWorkspaceRequirementsFunc,
+                    required=compiled_fn._requires_workspace_query_func,
+                )
+                workspace_requirements = (
+                    _query_workspace_requirements(workspace_query, spec, compile_args)
+                    if workspace_query is not None
+                    else ()
+                )
             module = compiled_fn.dump_to_object(_EXPORT_PREFIX)
             fingerprint = hashlib.sha256(module).digest()
-            result = CompileResult(module=module, spec=spec, fingerprint=fingerprint)
+            result = CompileResult(
+                module=module,
+                spec=spec,
+                fingerprint=fingerprint,
+                workspace_requirements=workspace_requirements,
+            )
             _CUTLASS_COMPILE_CACHE[cache_key] = result
 
         except Exception:
@@ -538,6 +692,6 @@ def release_compile_cache() -> None:
     """
     with _compile_lock:
         _CUTLASS_COMPILE_CACHE.clear()
-        dsl = CuTeDSL._get_dsl()
-        dsl.jit_cache.clear()
+        CuTeDSL._get_dsl().jit_cache.clear()
+        CuteExperimentalDSL._get_dsl().jit_cache.clear()
     gc.collect()

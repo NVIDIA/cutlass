@@ -9,6 +9,7 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+from . import cache_policy
 from . import warp
 from . import cpasync
 from . import warpgroup
@@ -20,12 +21,16 @@ from .helpers import *
 from . import common
 from . import helpers
 
+from .cpasync import SentinelPattern
+
 
 # __all__ is required here for documentation generation
 __all__ = [
     *common.__all__,
     *helpers.__all__,
+    "SentinelPattern",
     # submodules With namespace
+    "cache_policy",
     "warp",
     "cpasync",
     "warpgroup",

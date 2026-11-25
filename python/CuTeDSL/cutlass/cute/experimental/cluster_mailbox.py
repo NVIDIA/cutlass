@@ -18,8 +18,11 @@ from typing import Any
 
 import cutlass
 from cutlass import cute
+from cutlass._mlir import ir
+from cutlass._mlir.dialects import lir as _lir_ir
+from cutlass._mlir.dialects.core import OperationTypeEnum
 
-from .core import MbarrierOwner, PipelineLocale, get_mbarrier
+from .core import MbarrierOwner, PipelineLocale, _pipeline_type_str, get_mbarrier
 
 
 __all__ = [
@@ -36,19 +39,48 @@ CTA_PAIR_PEER_LOCALE = PipelineLocale.cluster(
 )
 
 
+def _cta_pair_peer_locale_printed(context: ir.Context) -> str:
+    """The mailbox locale text as MLIR prints it inside a pipeline type.
+
+    Derived from the printer rather than hand-copied: parse the canonical
+    mailbox pipeline type built from ``CTA_PAIR_PEER_LOCALE`` through the same
+    ``_pipeline_type_str`` helper the send path's ``create_pipeline`` uses,
+    extract its stored locale, and strip the standalone attribute's
+    ``#lir.pipeline_locale<...>`` wrapper. The pipeline type prints exactly
+    the wrapped text (both delegate to the one C++ locale printer), so the
+    needle tracks the printer by construction.
+    """
+    pipeline_type = ir.Type.parse(
+        _pipeline_type_str(
+            1,
+            OperationTypeEnum.ST_ASYNC_S,
+            OperationTypeEnum.LD_SHARED,
+            CTA_PAIR_PEER_LOCALE,
+        ),
+        context=context,
+    )
+    locale_text = str(_lir_ir.mbarrier_pipeline_get_locale(pipeline_type))
+    prefix = "#lir.pipeline_locale<"
+    if not (locale_text.startswith(prefix) and locale_text.endswith(">")):
+        raise RuntimeError(
+            f"unexpected standalone pipeline locale spelling: {locale_text}"
+        )
+    return locale_text[len(prefix) : -1]
+
+
 def _validate_cta_pair_peer_stage_token(stage_token: Any) -> None:
     token_type = getattr(stage_token, "type", None)
     if token_type is None:
         token_value = getattr(stage_token, "value", None)
         token_type = getattr(token_value, "type", None)
-    if token_type is None:
+    if not isinstance(token_type, ir.Type):
         raise TypeError(
             "ClusterMailbox.send_to_pipeline_stage expects a pipeline stage "
             f"token, got {type(stage_token)}"
         )
 
     token_type_text = str(token_type)
-    locale_text = CTA_PAIR_PEER_LOCALE._to_ir_text()
+    locale_text = _cta_pair_peer_locale_printed(token_type.context)
     if locale_text not in token_type_text:
         raise ValueError(
             "ClusterMailbox.send_to_pipeline_stage requires a stage token "

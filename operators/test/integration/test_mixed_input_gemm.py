@@ -33,10 +33,6 @@ These tests verify the user-facing API for mixed-input GEMM operations where
 tensor A uses narrow precision (Int8/Uint8) and tensor B uses wide precision
 (BFloat16/Float16).
 
-Exhaustive correctness testing across all Operator variants, tile shapes, and
-problem geometries is handled by the implementation tests in
-test/implementation/test_gemm_operator.py, which includes MixedInputGemmOperator.
-
 These integration tests focus on:
 - Basic end-to-end correctness with a representative configuration
 - 2D tensor support

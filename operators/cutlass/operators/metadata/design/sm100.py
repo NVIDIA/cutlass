@@ -32,14 +32,21 @@ from dataclasses import dataclass
 from math import prod
 from typing import TYPE_CHECKING, ClassVar
 
+from cutlass.operators.arguments.performance import (
+    GemmPerformanceControls,
+    TileSchedulerControls,
+)
 from cutlass.operators.metadata.design.base import BLASDesignMetadata
+from cutlass.operators.metadata.design.pdl import ProgrammaticDependentLaunchMetadata
 from cutlass.operators.status import Status
 
 if TYPE_CHECKING:
+    from cutlass.operators.arch import TargetSm
+    from cutlass.operators.arguments.base import RuntimeArguments
     from cutlass.operators.metadata.design.tile_scheduler import TileSchedulerMetadata
 
 
-@dataclass
+@dataclass(slots=True)
 class Sm100DesignMetadata(BLASDesignMetadata):
     """Design metadata for operators in the SM100 architecture family."""
 
@@ -68,13 +75,49 @@ class Sm100DesignMetadata(BLASDesignMetadata):
     max_cluster_size: ClassVar[int] = 16
     """Maximum non-portable cluster size allowed by sm100f architecture."""
 
+    pdl: ProgrammaticDependentLaunchMetadata = ProgrammaticDependentLaunchMetadata()
+    """Programmatic Dependent Launch capabilities for this design."""
+
+    def supports(
+        self, args: RuntimeArguments, target_sm: TargetSm | None = None
+    ) -> Status:
+        """Checks whether the provided args satisfy the properties described by the design in this metadata."""
+        performance = args.performance
+        if isinstance(performance, GemmPerformanceControls):
+            if performance.data_driven_sync.is_enabled():
+                return Status.fail(
+                    "Data-driven synchronization is not supported on SM100"
+                )
+
+            pdl_status = self.pdl.supports(performance.pdl)
+            if pdl_status.error is not None:
+                return pdl_status
+
+            if self.tile_scheduler is not None:
+                return self.tile_scheduler.supports(args)
+            elif isinstance(performance.tile_scheduler_controls, TileSchedulerControls):
+                return Status.fail(
+                    "This operator does not support user-controlled tile scheduling"
+                )
+
+            return Status.success()
+
+        if self.tile_scheduler is not None:
+            return self.tile_scheduler.supports(args)
+
+        # performance is None, ..., or an unrecognized type
+        # the base class handles those cases
+        return super(Sm100DesignMetadata, self).supports(args, target_sm)
+
     def use_fallback_cluster(self) -> bool:
         """Return True when this design uses a preferred (larger) and fallback (smaller) cluster shape."""
         return self.fallback_cluster_shape is not None
 
     def __post_init__(self):
 
-        super().__post_init__()
+        # Zero-arg super() breaks with slots=True on parent+child,
+        # so use explicit two-arg super() instead.
+        super(Sm100DesignMetadata, self).__post_init__()
 
         if prod(self.cluster_shape) > self.max_cluster_size:
             raise ValueError(
@@ -114,7 +157,6 @@ class Sm100DesignMetadata(BLASDesignMetadata):
                 f"fallback_cluster_shape {fallback_cluster_shape} must have "
                 f"the same rank as cluster_shape {cluster_shape}"
             )
-
 
         # A fallback shape equal to preferred shape is not strictly incorrect, but
         # defeats the purpose of specifying fallback cluster and so is likely unintended.

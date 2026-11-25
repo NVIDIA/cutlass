@@ -45,8 +45,11 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/atom/mma_atom.hpp"
+#include "cute/atom/copy_traits_sm107_tma.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
+
+#include "cutlass/gemm/dependency_roles.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -77,6 +80,8 @@ template <
   class SmemLayoutAtomB_,
   class SmemCopyAtomB_,
   class TransformB_
+  , ProducerRoleType ProducerRole_,
+  ConsumerRoleType ConsumerRole_
 >
 struct CollectiveMma<
     MainloopSm107TmaUmmaWarpSpecialized<
@@ -86,6 +91,8 @@ struct CollectiveMma<
       ClusterShape,
       WithBreuse_,
       arch::Sm107
+      , ProducerRole_,
+      ConsumerRole_
     >,
     TileShape_,
     ElementA_, StrideA_,
@@ -108,8 +115,27 @@ struct CollectiveMma<
                           ClusterShape,
                           WithBreuse,
                           arch::Sm107
+                          , ProducerRole_,
+                          ConsumerRole_
                          >;
   using TileShape = TileShape_;
+
+  static constexpr auto ProducerRole = ProducerRole_;
+  static constexpr auto ConsumerRole = ConsumerRole_;
+  static constexpr bool ReportValidA = ConsumerRole == ConsumerRoleType::ReportValidA;
+  static constexpr bool ReportValidB = ConsumerRole == ConsumerRoleType::ReportValidB;
+  static constexpr bool RequiresReportValid = ReportValidA || ReportValidB;
+
+  using ClusterLayout_VMNK =
+    decltype(tiled_divide(make_layout(ClusterShape{}), make_tile(typename TiledMma::AtomThrID{})));
+
+  static constexpr bool IsAMcast = not cute::is_static_v<decltype(size<2>(ClusterLayout_VMNK{}))>
+                                   || size<2>(ClusterLayout_VMNK{}) > 1;
+  static constexpr bool IsBMcast = not cute::is_static_v<decltype(size<1>(ClusterLayout_VMNK{}))>
+                                   || size<1>(ClusterLayout_VMNK{}) > 1;
+
+  static constexpr bool HasMulticast = (ReportValidA && IsAMcast) || (ReportValidB && IsBMcast);
+  static constexpr bool Is2SmMma = size(AtomThrShapeMNK{}) > 1;
 
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
 
@@ -149,10 +175,20 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
-  using MainloopPipeline = cutlass::PipelineTmaUmmaAsync<
-                             DispatchPolicy::Stages,
-                             ClusterShape,
-                             AtomThrShapeMNK>;
+  using MainloopPipeline = cute::conditional_t<
+                             RequiresReportValid,
+                             cutlass::PipelineTmaUmmaReportValidAsync<
+                               DispatchPolicy::Stages,
+                               ClusterShape,
+                               AtomThrShapeMNK,
+                               ReportValidA && ReportValidB ? cutlass::McastDirection::kRowCol
+                                 : ReportValidA ? cutlass::McastDirection::kRow
+                                 : cutlass::McastDirection::kCol>,
+                             cutlass::PipelineTmaUmmaAsync<
+                               DispatchPolicy::Stages,
+                               ClusterShape,
+                               AtomThrShapeMNK>>;
+  using MainloopPipelineRetryState = cutlass::RetryWarpPipelineState<DispatchPolicy::Stages, HasMulticast>;
   using MainloopPipelineState = typename MainloopPipeline::PipelineState;
 
   static_assert(rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtomA must be rank 2 (M,K)");
@@ -300,7 +336,7 @@ struct CollectiveMma<
     using ClusterLayout_VMNK = decltype(tiled_divide(make_layout(conditional_return<IsDynamicCluster>(make_shape(uint32_t(0), uint32_t(0), Int<1>{}), ClusterShape{})),
                                                      make_tile(typename TiledMma::AtomThrID{})));
 
-    using TMA_A = decltype(make_tma_atom_A_sm100<TmaInternalElementA>(
+    using TMA_A = decltype(make_tma_atom_A_sm107<ReportValidA, TmaInternalElementA>(
         GmemTiledCopyA{},
         make_tensor(recast_ptr<TmaInternalElementA>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
         SmemLayoutA{}(_,_,_,cute::Int<0>{}),
@@ -309,7 +345,7 @@ struct CollectiveMma<
         ClusterLayout_VMNK{})
       );
 
-    using TMA_B = decltype(make_tma_atom_B_sm100<TmaInternalElementB>(
+    using TMA_B = decltype(make_tma_atom_B_sm107<ReportValidB, TmaInternalElementB>(
         GmemTiledCopyB{},
         make_tensor(recast_ptr<TmaInternalElementB>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
         SmemLayoutB{}(_,_,_,cute::Int<0>{}),
@@ -367,7 +403,7 @@ struct CollectiveMma<
     auto cluster_shape_fallback = cutlass::detail::select_cluster_shape(ClusterShape{}, hw_info.cluster_shape_fallback);
     auto cluster_layout_vmnk_fallback = tiled_divide(make_layout(cluster_shape_fallback), make_tile(typename TiledMma::AtomThrID{}));
 
-    typename Params::TMA_A tma_load_a = make_tma_atom_A_sm100<TmaInternalElementA>(
+    typename Params::TMA_A tma_load_a = make_tma_atom_A_sm107<ReportValidA, TmaInternalElementA>(
         GmemTiledCopyA{},
         tensor_a,
         SmemLayoutA{}(_,_,_,cute::Int<0>{}),
@@ -375,7 +411,7 @@ struct CollectiveMma<
         TiledMma{},
         cluster_layout_vmnk);
 
-    typename Params::TMA_B tma_load_b = make_tma_atom_B_sm100<TmaInternalElementB>(
+    typename Params::TMA_B tma_load_b = make_tma_atom_B_sm107<ReportValidB, TmaInternalElementB>(
         GmemTiledCopyB{},
         tensor_b,
         SmemLayoutB{}(_,_,_,cute::Int<0>{}),
@@ -383,7 +419,7 @@ struct CollectiveMma<
         TiledMma{},
         cluster_layout_vmnk);
 
-    typename Params::TMA_A tma_load_a_fallback = make_tma_atom_A_sm100<TmaInternalElementA>(
+    typename Params::TMA_A tma_load_a_fallback = make_tma_atom_A_sm107<ReportValidA, TmaInternalElementA>(
         GmemTiledCopyA{},
         tensor_a,
         SmemLayoutA{}(_,_,_,cute::Int<0>{}),
@@ -391,7 +427,7 @@ struct CollectiveMma<
         TiledMma{},
         cluster_layout_vmnk_fallback);
 
-    typename Params::TMA_B tma_load_b_fallback = make_tma_atom_B_sm100<TmaInternalElementB>(
+    typename Params::TMA_B tma_load_b_fallback = make_tma_atom_B_sm107<ReportValidB, TmaInternalElementB>(
         GmemTiledCopyB{},
         tensor_b,
         SmemLayoutB{}(_,_,_,cute::Int<0>{}),
@@ -503,8 +539,8 @@ struct CollectiveMma<
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});  // (MMA,MMA_M,MMA_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});  // (MMA,MMA_N,MMA_K,PIPE)
 
-    Layout cta_layout_mnk  = make_layout(cluster_shape_);
-    Layout cta_layout_vmnk = tiled_divide(cta_layout_mnk, make_tile(typename TiledMma::AtomThrID{}));
+    cute::Layout cta_layout_mnk  = make_layout(cluster_shape_);
+    cute::Layout cta_layout_vmnk = tiled_divide(cta_layout_mnk, make_tile(typename TiledMma::AtomThrID{}));
     auto cta_coord_vmnk  = cta_layout_vmnk.get_flat_coord(block_rank_in_cluster_);
 
     auto [tAgA_mkl, tAsA] = tma_partition(*observed_tma_load_a_,
@@ -601,6 +637,171 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load_tail(MainloopPipeline mainloop_pipeline, MainloopPipelineState mainloop_pipe_producer_state) {
     mainloop_pipeline.producer_tail(mainloop_pipe_producer_state);
+  }
+
+  template <
+    class LoadParams,
+    class TileCoordMNKL
+  >
+  CUTLASS_DEVICE int
+  retry(
+    MainloopPipeline mainloop_pipeline,
+    MainloopPipelineRetryState & mainloop_pipe_consumer_state,
+    LoadParams const& load_inputs,
+    TileCoordMNKL const& cta_coord_mnkl,
+    int k_tile_count,
+    int stage_offset) {
+    if constexpr (RequiresReportValid) {
+      auto [unused_k_tiles,
+            tAgA_mkl, tBgB_nkl, tAsA, tBsB,
+            mcast_mask_a, mcast_mask_b] = load_inputs;
+
+      // slice out the work coord from partitioned tensors
+      Tensor tAgA = tAgA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
+      Tensor tBgB = tBgB_nkl(_, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
+
+      int processed_k_tiles = 0;
+
+      // Cycle over all stages buffers until all k tiles for an output tile contain valid data
+      while (processed_k_tiles < k_tile_count) {
+
+        CUTLASS_PRAGMA_UNROLL
+        for (uint32_t stage_idx = 0; stage_idx < DispatchPolicy::Stages; ++stage_idx) {
+          int k_tile_for_stage = MainloopPipelineRetryState::compute_k_tile(
+              stage_idx,
+              mainloop_pipe_consumer_state.count(stage_idx),
+              stage_offset);
+
+          if (k_tile_for_stage < k_tile_count) {
+
+            auto [tma_done, data_valid] = mainloop_pipeline.consumer_test_valid(mainloop_pipe_consumer_state, stage_idx);
+
+            if (tma_done && data_valid) {
+              mainloop_pipeline.retry_consumer_release(mainloop_pipe_consumer_state, stage_idx);
+              mainloop_pipe_consumer_state.mark_valid(stage_idx); // update stage buffer state for next k tile
+              ++processed_k_tiles;
+            }
+            else if (tma_done) {
+              // TMA finished but data is not yet valid - need to retry
+
+              // With a multicast checked operand, every CTA in the mcast group re-issues its
+              // share of the collaborative copy. Announce the invalid data to all peers (once
+              // per sync round), and hold the re-issue until every peer has announced, so no
+              // CTA re-issues while a peer's previous TMA is still in flight.
+              bool do_reissue = true;
+              if constexpr (HasMulticast) {
+                if (not mainloop_pipe_consumer_state.retry_multicast_ready(stage_idx)) {
+                  mainloop_pipeline.retry_multicast_arrive(mainloop_pipe_consumer_state, stage_idx);
+                  mainloop_pipe_consumer_state.set_retry_multicast_ready(stage_idx);
+                }
+                do_reissue = mainloop_pipeline.retry_multicast_test_wait(mainloop_pipe_consumer_state, stage_idx);
+              }
+
+              if (do_reissue) {
+                if constexpr (HasMulticast) {
+                  mainloop_pipe_consumer_state.retry_multicast_advance();
+                }
+
+                // Only the leader CTA's full barrier is updated by the 2SM TMA, but re-issue is a
+                // collaborative copy. Coordinates are published to follower CTA's smem so it also
+                // issues its copy.
+                if constexpr (Is2SmMma) {
+                  mainloop_pipeline.retry_2sm_acquire(mainloop_pipe_consumer_state.retry_2sm_phase());
+                  mainloop_pipe_consumer_state.retry_2sm_advance();
+                  mainloop_pipeline.retry_2sm_send(
+                      stage_idx,
+                      get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}),
+                      get<1>(cta_coord_mnkl),
+                      k_tile_for_stage,
+                      get<3>(cta_coord_mnkl));
+                }
+
+                auto* tma_barrier = mainloop_pipeline.producer_get_barrier(mainloop_pipe_consumer_state, stage_idx);
+
+                // Re-arm
+                static_assert(ReportValidA || ReportValidB);
+                if constexpr (ReportValidA) {
+                  mainloop_pipeline.producer_reacquire(mainloop_pipe_consumer_state, stage_idx, TmaTransactionBytesA);
+                }
+                if constexpr (ReportValidB) {
+                  mainloop_pipeline.producer_reacquire(mainloop_pipe_consumer_state, stage_idx, TmaTransactionBytesB);
+                }
+                mainloop_pipe_consumer_state.mark_invalid(stage_idx);
+
+                // Re-issue
+                if (cute::elect_one_sync()) {
+                  static_assert(ReportValidA || ReportValidB);
+                  if constexpr (ReportValidA) {
+                    copy(observed_tma_load_a_->with(*tma_barrier, mcast_mask_a), tAgA(_,k_tile_for_stage), tAsA(_,stage_idx));
+                  }
+                  if constexpr (ReportValidB) {
+                    copy(observed_tma_load_b_->with(*tma_barrier, mcast_mask_b), tBgB(_,k_tile_for_stage), tBsB(_,stage_idx));
+                  }
+                }
+              }
+            }
+          }
+        }
+
+      }
+
+      // Update stage_offset for next work tile (TMA loads continue round-robin)
+      stage_offset = (stage_offset + k_tile_count) % DispatchPolicy::Stages;
+    }
+
+    return stage_offset;
+  }
+
+  CUTLASS_DEVICE void
+  retry_tail(MainloopPipeline mainloop_pipeline, MainloopPipelineRetryState & mainloop_pipe_consumer_state) {
+    // Signal exit to follower CTA
+    if constexpr (RequiresReportValid && Is2SmMma) {
+      mainloop_pipeline.retry_2sm_acquire(mainloop_pipe_consumer_state.retry_2sm_phase());
+      mainloop_pipe_consumer_state.retry_2sm_advance();
+      mainloop_pipeline.retry_2sm_send_exit();
+      mainloop_pipeline.retry_2sm_acquire(mainloop_pipe_consumer_state.retry_2sm_phase());
+    }
+  }
+
+  // Follower CTA retry warp (2SM)
+  template <class LoadParams>
+  CUTLASS_DEVICE void
+  retry_follower(MainloopPipeline mainloop_pipeline,
+                 MainloopPipelineRetryState & mainloop_pipe_consumer_state,
+                 LoadParams const& load_inputs) {
+    if constexpr (RequiresReportValid && Is2SmMma) {
+      auto [unused_k_tiles,
+            tAgA_mkl, tBgB_nkl, tAsA, tBsB,
+            mcast_mask_a, mcast_mask_b] = load_inputs;
+
+      int32_t stage = 0;
+      CUTLASS_PRAGMA_NO_UNROLL
+      while (stage != -1) {
+        mainloop_pipeline.retry_2sm_wait(mainloop_pipe_consumer_state.retry_2sm_phase());
+        mainloop_pipe_consumer_state.retry_2sm_advance();
+        auto [stage_, coord] = mainloop_pipeline.retry_2sm_receive();
+        stage = stage_;
+        auto [m, n, k_tile_iter, l] = coord;
+
+        // orders local shared memory reads before the arrive
+        mainloop_pipeline.retry_2sm_release();
+
+        if (stage != -1) {
+          auto* tma_barrier = mainloop_pipeline.producer_get_barrier(static_cast<uint32_t>(stage));
+          if (cute::elect_one_sync()) {
+            static_assert(ReportValidA || ReportValidB);
+            if constexpr (ReportValidA) {
+              Tensor tAgA = tAgA_mkl(_, m, _, l);
+              copy(observed_tma_load_a_->with(*tma_barrier, mcast_mask_a), tAgA(_,k_tile_iter), tAsA(_,stage));
+            }
+            if constexpr (ReportValidB) {
+              Tensor tBgB = tBgB_nkl(_, n, _, l);
+              copy(observed_tma_load_b_->with(*tma_barrier, mcast_mask_b), tBgB(_,k_tile_iter), tBsB(_,stage));
+            }
+          }
+        }
+      }
+    }
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
