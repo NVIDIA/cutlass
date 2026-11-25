@@ -10,6 +10,7 @@
 # is strictly prohibited.
 
 import enum
+import re
 import types
 from functools import partial
 from typing import (
@@ -1765,6 +1766,7 @@ def _add_packed_half2_ptx(
         write_only_types=[Int32],
         read_only_args=[a, b],
         predicate=predicate,
+        has_side_effects=predicate is not None,
         loc=loc,
         ip=ip,
     )
@@ -1789,6 +1791,7 @@ def _exp2_packed_half2_ptx(
         write_only_types=[Int32],
         read_only_args=[a],
         predicate=predicate,
+        has_side_effects=predicate is not None,
         loc=loc,
         ip=ip,
     )
@@ -1882,6 +1885,7 @@ def _sub_packed_half2_ptx(
         write_only_types=[Int32],
         read_only_args=[a, b],
         predicate=predicate,
+        has_side_effects=predicate is not None,
         loc=loc,
         ip=ip,
     )
@@ -2697,7 +2701,7 @@ def _ex2_approx_ftz_f32(
             [Float32(a).ir_value(loc=loc, ip=ip)],
             "ex2.approx.ftz.f32 $0, $1;",
             "=f,f",
-            has_side_effects=True,
+            has_side_effects=False,
             is_align_stack=False,
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
@@ -2842,7 +2846,7 @@ def cvt_f32x2_bf16x2(
         ],
         "cvt.rn.satfinite.bf16x2.f32 $0, $1, $2;",
         "=r,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2924,7 +2928,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2937,7 +2941,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2950,7 +2954,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2963,7 +2967,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2974,7 +2978,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2985,7 +2989,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -2996,7 +3000,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -3007,7 +3011,7 @@ def cvt_i8x4_to_f32x4(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -3042,7 +3046,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -3055,7 +3059,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "dp4a.s32.s32 $0, $1, $2, $3;",
         "=r,r,r,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -3066,7 +3070,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -3077,7 +3081,7 @@ def cvt_i8x2_to_f32x2(
         ],
         "cvt.rn.f32.s32 $0, $1;",
         "=f,r",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -3111,7 +3115,7 @@ def prmt(
             ],
             "prmt.b32 $0, $1, $2, $3;",
             "=r,r,r,r",
-            has_side_effects=True,
+            has_side_effects=False,
             is_align_stack=False,
             asm_dialect=llvm.AsmDialect.AD_ATT,
         )
@@ -5071,7 +5075,7 @@ def cvt_f32x2_f16x2_pzo(
         ],
         "cvt.rn.pzo.f16x2.f32 $0, $1, $2;",
         "=r,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -5102,7 +5106,7 @@ def cvt_f32x2_bf16x2_pzo(
         ],
         "cvt.rn.pzo.bf16x2.f32 $0, $1, $2;",
         "=r,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -5145,6 +5149,83 @@ def cvt_f32x2_f8x2_pzo(
 # Type alias for inline_ptx argument types
 ScalarArg = Union[int, float, bool, Numeric]
 
+_PTX_OPERAND_REF = re.compile(r"\{\$(w|r)(\d+)\}")
+
+
+def _bit_width(ty: ir.Type) -> Optional[int]:
+    if isinstance(ty, ir.VectorType):
+        count = 1
+        for dim in ty.shape:
+            count *= dim
+        width = _bit_width(ty.element_type)
+        return None if width is None else width * count
+    if isinstance(ty, (ir.FloatType, ir.IntegerType)):
+        return ty.width
+    return None
+
+
+def _ptx_register_constraint(ty: ir.Type) -> str:
+    if isinstance(ty, llvm.PointerType):
+        # Shared memory is addressed with 32-bit pointers, as in nvvm.inline_ptx.
+        return "r" if ty.address_space == 3 else "l"
+    if isinstance(ty, ir.F32Type):
+        return "f"
+    if isinstance(ty, ir.F64Type):
+        return "d"
+    constraint = {1: "b", 16: "h", 32: "r", 64: "l"}.get(_bit_width(ty))
+    if constraint is None:
+        raise TypeError(f"inline_ptx has no PTX register type for {ty}")
+    return constraint
+
+
+def _inline_ptx_pure(
+    ptx_code: str,
+    write_only_types: list[Type[Numeric]],
+    read_only_args: list[Union[ir.Value, Numeric]],
+    *,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> Union[Numeric, tuple[Numeric, ...]]:
+    # nvvm.inline_ptx always lowers to a volatile llvm.inline_asm, so a pure
+    # instruction is built on llvm.inline_asm directly.
+    num_outputs = len(write_only_types)
+
+    def operand(match: re.Match) -> str:
+        index = int(match.group(2))
+        return f"${index if match.group(1) == 'w' else num_outputs + index}"
+
+    asm_string = _PTX_OPERAND_REF.sub(operand, ptx_code)
+    inputs = [
+        arg if isinstance(arg, ir.Value) else arg.ir_value(loc=loc, ip=ip)
+        for arg in read_only_args
+    ]
+    result_types = [dtype.mlir_type for dtype in write_only_types]
+    constraints = ",".join(
+        [f"={_ptx_register_constraint(ty)}" for ty in result_types]
+        + [_ptx_register_constraint(value.type) for value in inputs]
+    )
+    if num_outputs == 1:
+        result_type = result_types[0]
+    else:
+        result_type = llvm.StructType.get_literal(result_types)
+    result = llvm.inline_asm(
+        result_type,
+        inputs,
+        asm_string,
+        constraints,
+        has_side_effects=False,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+    if num_outputs == 1:
+        return write_only_types[0](result)
+    return tuple(
+        dtype(llvm.extractvalue(ty, result, [i], loc=loc, ip=ip))
+        for i, (dtype, ty) in enumerate(zip(write_only_types, result_types))
+    )
+
 
 @dsl_user_op
 def inline_ptx(
@@ -5154,6 +5235,7 @@ def inline_ptx(
     read_only_args: Optional[list[ScalarArg]] = None,
     read_write_args: Optional[list[ScalarArg]] = None,
     predicate: Optional[Boolean] = None,
+    has_side_effects: bool = True,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> Union[Numeric, tuple[Numeric, ...], None]:
@@ -5175,6 +5257,14 @@ def inline_ptx(
     :type read_write_args: list[ScalarArg], optional
     :param predicate: Optional Boolean value for conditional execution (corresponds to @$p prefix).
     :type predicate: Boolean, optional
+    :param has_side_effects: Whether the compiler must treat the PTX as volatile. When True
+                             (the default), every call is kept, in order, even if two calls
+                             compute the same value or a result is unused. Pass False for an
+                             instruction that only computes its outputs from its inputs, such
+                             as arithmetic, conversions or ``prmt``, so the compiler can CSE,
+                             hoist or delete it. A call with False needs at least one output
+                             and takes no ``predicate`` or ``read_write_args``.
+    :type has_side_effects: bool, optional
     :param loc: MLIR location (advanced use, typically None).
     :type loc: Any, optional
     :param ip: MLIR insertion point (advanced use, typically None).
@@ -5213,6 +5303,7 @@ def inline_ptx(
             "ex2.approx.ftz.f32 {$w0}, {$r0};",
             write_only_types=[Float32],
             read_only_args=[input_val],
+            has_side_effects=False,
         )
 
     Max of two Int32 values:
@@ -5225,6 +5316,7 @@ def inline_ptx(
             "max.s32 {$w0}, {$r0}, {$r1};",
             write_only_types=[Int32],
             read_only_args=[a, b],
+            has_side_effects=False,
         )
 
     Read-write operands:
@@ -5251,6 +5343,17 @@ def inline_ptx(
         read_only_args = []
     if read_write_args is None:
         read_write_args = []
+    if not has_side_effects:
+        if predicate is not None or read_write_args:
+            raise ValueError(
+                "inline_ptx with has_side_effects=False takes no predicate "
+                "or read_write_args"
+            )
+        if not write_only_types:
+            raise ValueError(
+                "inline_ptx with has_side_effects=False needs write_only_types, "
+                "since a call with no outputs and no side effects is dead code"
+            )
 
     # Convert inputs to Numeric types or pass through address/raw IR values.
     def convert_arg(arg: object) -> Union[ir.Value, Numeric]:
@@ -5266,6 +5369,15 @@ def inline_ptx(
         if isinstance(llvm_ptr, ir.Value):
             return llvm_ptr
         return as_numeric(arg)
+
+    if not has_side_effects:
+        return _inline_ptx_pure(
+            ptx_code,
+            write_only_types,
+            [convert_arg(arg) for arg in read_only_args],
+            loc=loc,
+            ip=ip,
+        )
 
     def convert_read_only_arg(arg: object) -> Union[ir.Value, Numeric]:
         """Keep Float32 inputs in registers when lowering inline PTX.
