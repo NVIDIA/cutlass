@@ -227,17 +227,29 @@ public:
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
-    FragmentCompute converted_source = source_converter(source);
-    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
-
     if (Scale == ScaleType::Nothing)
-      return destination_converter(converted_accumulator);
+      return destination_converter(accumulator_converter(accumulator));
 
     // Perform binary operations
     FragmentCompute intermediate;
 
     multiplies<FragmentCompute> mul_add_source;
     multiply_add<FragmentCompute> mul_add_accumulator;
+
+    // Avoid propagating NaNs from the accumulator when its coefficient is zero.
+    if (alpha_ == ElementCompute(0)) {
+      intermediate.clear();
+
+      if (Scale == ScaleType::NoBetaScaling)
+        intermediate = source_converter(source);
+      else if (beta_ != ElementCompute(0))
+        intermediate = mul_add_source(beta_, source_converter(source));
+
+      return destination_converter(intermediate);
+    }
+
+    FragmentCompute converted_source = source_converter(source);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     if (Scale == ScaleType::NoBetaScaling)
       intermediate = converted_source;
@@ -260,16 +272,21 @@ public:
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
-    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
-
     if (Scale == ScaleType::Nothing)
-      return destination_converter(converted_accumulator);
+      return destination_converter(accumulator_converter(accumulator));
 
     // Perform binary operations
     FragmentCompute intermediate;
+
+    // Avoid propagating NaNs from the accumulator when its coefficient is zero.
+    if (alpha_ == ElementCompute(0)) {
+      intermediate.clear();
+      return destination_converter(intermediate);
+    }
+
     multiplies<FragmentCompute> mul_accumulator;
 
-    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    intermediate = mul_accumulator(alpha_, accumulator_converter(accumulator));    // D = alpha * Accum
 
     return destination_converter(intermediate);
   }
@@ -286,15 +303,27 @@ public:
 
     // Convert to destination numeric type
 
-    ElementCompute converted_accumulator = accumulator_converter(accumulator);
     if constexpr (Scale == ScaleType::Nothing) {
-      return destination_converter(converted_accumulator);
+      return destination_converter(accumulator_converter(accumulator));
     }
 
     // Perform binary operations
     ElementCompute intermediate;
     multiplies<ElementCompute> multiply;
     multiply_add<ElementCompute> madd;
+
+    // Avoid propagating NaNs from the accumulator when its coefficient is zero.
+    if (alpha_ == ElementCompute(0)) {
+      if constexpr (Scale == ScaleType::NoBetaScaling) {
+        return destination_converter(source_converter(source));
+      }
+      else {
+        return destination_converter(
+          beta_ == ElementCompute(0) ? ElementCompute(0) : multiply(beta_, source_converter(source)));
+      }
+    }
+
+    ElementCompute converted_accumulator = accumulator_converter(accumulator);
 
     if constexpr (Scale == ScaleType::NoBetaScaling) {
       intermediate = source_converter(source);
@@ -312,18 +341,21 @@ public:
     // Convert everything to Compute type, do compute, and then store to output type
     NumericConverter<ElementCompute, ElementAccumulator, Round> accumulator_converter;
     NumericConverter<ElementD, ElementCompute, Round> destination_converter;
-    ElementCompute converted_accumulator = accumulator_converter(accumulator);
-
     // Convert to destination numeric type
     if constexpr (Scale == ScaleType::Nothing) {
-      return destination_converter(converted_accumulator);
+      return destination_converter(accumulator_converter(accumulator));
+    }
+
+    // Avoid propagating NaNs from the accumulator when its coefficient is zero.
+    if (alpha_ == ElementCompute(0)) {
+      return destination_converter(ElementCompute(0));
     }
 
     // Perform binary operations
     ElementCompute intermediate;
     multiplies<ElementCompute> multiply;
 
-    intermediate = multiply(alpha_, accumulator);    // D = alpha * Accum
+    intermediate = multiply(alpha_, accumulator_converter(accumulator));    // D = alpha * Accum
     return destination_converter(intermediate);
   }
 };
