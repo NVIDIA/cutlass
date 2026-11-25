@@ -1233,6 +1233,60 @@ template <> CUTLASS_HOST_DEVICE complex<bfloat16_t> four_minus_pi< complex<bfloa
 }
 ///////////////////////////////////////////////////////////////////////////////////
 
+//
+// Negative zero
+// Used in data-driven sync
+//
+
+namespace detail {
+template <typename T> struct negative_zero_bitpattern {
+  static_assert(sizeof(T) == 0);
+};
+template <> struct negative_zero_bitpattern<void>         { static constexpr uint32_t value = 0u; };
+template <> struct negative_zero_bitpattern<float>        { static constexpr uint32_t value = 0x80000000u; };
+template <> struct negative_zero_bitpattern<half_t>       { static constexpr uint32_t value = 0x8000u; };
+template <> struct negative_zero_bitpattern<bfloat16_t>   { static constexpr uint32_t value = 0x8000u; };
+template <> struct negative_zero_bitpattern<float_e4m3_t> { static constexpr uint32_t value = 0x80u; };
+template <> struct negative_zero_bitpattern<float_e5m2_t> { static constexpr uint32_t value = 0x80u; };
+template <> struct negative_zero_bitpattern<float_e2m1_t> { static constexpr uint32_t value = 0x8u; };
+} // namespace detail
+
+template <typename T> inline constexpr uint32_t negative_zero_bitpattern = detail::negative_zero_bitpattern<T>::value;
+
+template <typename T> CUTLASS_HOST_DEVICE T negative_zero();
+
+template <> CUTLASS_HOST_DEVICE float negative_zero<float>() {
+  uint32_t bits = negative_zero_bitpattern<float>;
+  return reinterpret_cast<float const &>(bits);
+}
+
+template <> CUTLASS_HOST_DEVICE half_t negative_zero<half_t>() {
+  uint16_t bits = uint16_t(negative_zero_bitpattern<half_t>);
+  return reinterpret_cast<half_t const &>(bits);
+}
+
+template <> CUTLASS_HOST_DEVICE bfloat16_t negative_zero<bfloat16_t>() {
+  uint16_t bits = uint16_t(negative_zero_bitpattern<bfloat16_t>);
+  return reinterpret_cast<bfloat16_t const &>(bits);
+}
+
+template <> CUTLASS_HOST_DEVICE float_e4m3_t negative_zero<float_e4m3_t>() {
+  uint8_t bits = uint8_t(negative_zero_bitpattern<float_e4m3_t>);
+  return reinterpret_cast<float_e4m3_t const &>(bits);
+}
+
+template <> CUTLASS_HOST_DEVICE float_e5m2_t negative_zero<float_e5m2_t>() {
+  uint8_t bits = uint8_t(negative_zero_bitpattern<float_e5m2_t>);
+  return reinterpret_cast<float_e5m2_t const &>(bits);
+}
+
+template <> CUTLASS_HOST_DEVICE float_e2m1_t negative_zero<float_e2m1_t>() {
+  uint8_t bits = uint8_t(negative_zero_bitpattern<float_e2m1_t>);
+  return reinterpret_cast<float_e2m1_t const &>(bits);
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+
 } // namespace constants
 } // namespace cutlass
 

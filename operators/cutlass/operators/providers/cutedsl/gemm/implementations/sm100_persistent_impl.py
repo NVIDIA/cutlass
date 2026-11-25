@@ -27,6 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from collections.abc import Callable
+from typing import Literal
 
 import cuda.bindings.driver as cuda
 
@@ -37,8 +38,6 @@ import cutlass.utils as utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.cutlass_dsl import Int32
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-
-from .operator_helpers import PersistentTileSchedulerType
 
 """
 A high-performance persistent batched dense GEMM example for the NVIDIA Blackwell SM100 architecture
@@ -82,7 +81,7 @@ The accumulator in TMEM must then be loaded to registers before writing back to 
 
 Constraints are:
 * Supported input data types: fp16, bf16, tf32, int8, uint8, fp8 (e4m3fn, e5m2),
-  see detailed valid dtype combinations in below PersistentDenseGemmOperator class documentation
+  see detailed valid dtype combinations in below Sm100PersistentDenseGemmOperator class documentation
 * A/B tensor must have the same data type
 * Mma tiler M must be 64/128 (use_2cta_instrs=False) or 128/256 (use_2cta_instrs=True)
 * Mma tiler N must be 32-256, step 32
@@ -181,8 +180,10 @@ class PersistentDenseGemmKernel:
         mma_tiler_mn: tuple[int, int],
         cluster_shape_mn: tuple[int, int],
         use_tma_store: bool,
-        persistent_tile_scheduler_type: PersistentTileSchedulerType,
+        persistent_tile_scheduler_type: Literal["clc", "static"],
         epilogue_op: Callable,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
     ):
         """Initializes the configuration for a Blackwell dense GEMM kernel.
 
@@ -210,8 +211,18 @@ class PersistentDenseGemmKernel:
         :type cluster_shape_mn: tuple[int, int]
         :param use_tma_store: Use Tensor Memory Access (TMA) or normal store for output C tensor.
         :type use_tma_store: bool
+        :param persistent_tile_scheduler_type: Persistence strategy
+        :type persistent_tile_scheduler_type: Literal["clc", "static"]
         :param epilogue_op: Elementwise lambda function to apply to the output tensor.
         :type epilogue_op: Callable
+        :param swizzle_size: Compile-time tile-swizzle band size applied by the
+            static persistent scheduler. Defaults to 1 (no swizzle). Only the
+            static scheduler honors this; the CLC scheduler currently uses
+            defaults.
+        :type swizzle_size: int
+        :param raster_along_m: Whether the static persistent scheduler rasters
+            tiles along M (True) or N (False). Defaults to True.
+        :type raster_along_m: bool
         """
         self.acc_dtype: type[cutlass.Numeric] = acc_dtype
         self.use_2cta_instrs = use_2cta_instrs
@@ -222,6 +233,8 @@ class PersistentDenseGemmKernel:
         self.use_tma_store = use_tma_store
         self.arch = "sm_100"
         self.epilogue_op = epilogue_op
+        self.swizzle_size = swizzle_size
+        self.raster_along_m = raster_along_m
 
         self.cta_group = (
             tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
@@ -235,7 +248,7 @@ class PersistentDenseGemmKernel:
 
         self.use_static_persistent_scheduler = False
         self.use_clc_dynamic_scheduler = False
-        if persistent_tile_scheduler_type is PersistentTileSchedulerType.CLC:
+        if persistent_tile_scheduler_type == "clc":
             self.use_clc_dynamic_scheduler = True
             self.sched_warp_id = 6
             self.threads_per_cta = 32 * len(
@@ -248,10 +261,7 @@ class PersistentDenseGemmKernel:
             )
             # runtime values for swizzle size and raster along not yet supported
             # and these parameters are set to use defaults
-        elif (
-            persistent_tile_scheduler_type
-            is PersistentTileSchedulerType.STATIC_PERSISTENT
-        ):
+        elif persistent_tile_scheduler_type == "static":
             self.use_static_persistent_scheduler = True
             self.threads_per_cta = 32 * len(
                 (self.mma_warp_id, self.tma_warp_id, *self.epilogue_warp_id)
@@ -259,7 +269,7 @@ class PersistentDenseGemmKernel:
         else:
             raise ValueError(
                 "Unsupported persistent tile scheduler type: "
-                f"{persistent_tile_scheduler_type!r}"
+                f"{persistent_tile_scheduler_type!r}. Expected 'clc' or 'static'."
             )
 
         # Set barrier id for cta sync, epilogue sync and tmem ptr sync
@@ -380,7 +390,7 @@ class PersistentDenseGemmKernel:
         b: cute.Tensor,
         c: cute.Tensor,
         stream: cuda.CUstream,
-        max_active_clusters: cutlass.Constexpr = None,
+        max_active_clusters: Int32,
         epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         """Execute the GEMM operation in steps:
@@ -396,8 +406,11 @@ class PersistentDenseGemmKernel:
         :type b: cute.Tensor
         :param c: Output tensor C of shape (L, M, N) or (M, N)
         :type c: cute.Tensor
-        :param max_active_clusters: Maximum number of active clusters
-        :type max_active_clusters: cutlass.Constexpr
+        :param max_active_clusters: Max active clusters. Read by the static
+            persistent scheduler and ignored by the CLC one, but always passed so
+            that both share one signature. Runtime value, so compiling needs no
+            device.
+        :type max_active_clusters: Int32
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
         :param epilogue_op: Optional elementwise lambda function to apply to the output tensor
@@ -525,6 +538,8 @@ class PersistentDenseGemmKernel:
                     self.cta_tile_shape_mnk,
                     self.cluster_shape_mn,
                     max_active_clusters,
+                    self.swizzle_size,
+                    self.raster_along_m,
                 )
             )
 
@@ -1221,7 +1236,9 @@ class PersistentDenseGemmKernel:
         c: cute.Tensor,
         cta_tile_shape_mnk: tuple[int, int, int],
         cluster_shape_mn: tuple[int, int],
-        max_active_clusters: cutlass.Constexpr,
+        max_active_clusters: Int32,
+        swizzle_size: int = 1,
+        raster_along_m: bool = True,
     ) -> tuple[utils.PersistentTileSchedulerParams, tuple[int, int, int]]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C.
 
@@ -1232,7 +1249,11 @@ class PersistentDenseGemmKernel:
         :param cluster_shape_mn: Shape of each cluster in M, N dimensions.
         :type cluster_shape_mn: tuple[int, int]
         :param max_active_clusters: Maximum number of active clusters.
-        :type max_active_clusters: cutlass.Constexpr
+        :type max_active_clusters: Int32
+        :param swizzle_size: Tile-swizzle band size. Defaults to 1 (no swizzle).
+        :type swizzle_size: int
+        :param raster_along_m: Whether to raster tiles along M (True) or N (False).
+        :type raster_along_m: bool
 
         :return: A tuple containing:
             - tile_sched_params: Parameters for the persistent tile scheduler.
@@ -1245,7 +1266,10 @@ class PersistentDenseGemmKernel:
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
         tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, cluster_shape_mnl
+            num_ctas_mnl,
+            cluster_shape_mnl,
+            swizzle_size=swizzle_size,
+            raster_along_m=raster_along_m,
         )
         grid = utils.StaticPersistentTileScheduler.get_grid_shape(
             tile_sched_params, max_active_clusters

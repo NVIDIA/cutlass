@@ -639,7 +639,7 @@ struct CollectiveMma<
       auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
 
       auto broadcast_n = make_layout(
-        make_shape(Int<size<1>(TileShapeSFB{}) / size<1>(TileShape{})>{},
+        make_shape(size<1>(TileShapeSFB{}) / size<1>(TileShape{}),
                    Int<cute::numeric_limits<int>::max()>{}),
         make_stride(_0{}, size<1>(TileShapeSFB{}) / size<1>(TileShape{})));
       Tensor gA =   gA_mkl(_,_,m_coord,_,l_coord);                                                    // (BLK_M,BLK_K,k)

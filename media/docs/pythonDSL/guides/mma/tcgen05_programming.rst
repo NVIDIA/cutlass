@@ -958,7 +958,7 @@ Reading the accumulator from TMEM
    tCtAcc = tiled_mma.make_fragment_C(mma_tiler_mnk[:2]) # (MMA, MMA_M, MMA_N) for C
    # TMEM allocation (done once, before the main loop)
    tmem = cutlass.memory.TmemAllocator(...)
-   tmem.allocate(num_cols=512)
+   tmem.allocate(num_columns=512)
    tmem_ptr = tmem.retrieve_ptr(cutlass.Float32)
    tCtAcc = cute.make_tensor(tmem_ptr, tCtAcc.layout)
 
@@ -1057,7 +1057,7 @@ Putting it all together, a typical Blackwell tcgen05 GEMM has this structure:
 
        # Allocate TMEM for the accumulator
        tmem = cutlass.memory.TmemAllocator(...)
-       tmem.allocate(num_cols=512)
+       tmem.allocate(num_columns=512)
 
        # -- Partition and make fragments --
        # (BM, BK, k)

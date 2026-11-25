@@ -52,7 +52,7 @@ from cutlass.operators.utils.dtype import (
     get_torch_to_cutlass_dtype_map,
 )
 
-from .common import reference_device
+from test_utils.common import get_cuda_device_id, reference_device
 
 
 class RNGStateManager:
@@ -292,11 +292,22 @@ class MemPool:
     memory backing the pool is expected to lead to an error.
     """
 
-    def __init__(self, device: Literal["cpu", "cuda"] = "cuda"):
+    def __init__(
+        self,
+        device: Literal["cpu", "cuda"] = "cuda",
+        device_id: int | None = None,
+    ):
         """
         :param device: The torch device to allocate pool tensors on. Defaults to "cuda".
         :type device: str
+        :param device_id: Index of the CUDA device to allocate on.
+        :type device_id: int | None
         """
+        # Bound to an index: keys are filled lazily across the session.
+        if device == "cuda" and torch.cuda.is_available():
+            device = torch.device(
+                "cuda", get_cuda_device_id() if device_id is None else device_id
+            )
         self.device = device
         self.tensors = {}
         # seed -> the key that claimed it, so a collision is caught rather than
@@ -622,3 +633,35 @@ def create(
             )
         case _:
             raise ValueError(f"Unhandled operand constraints type: {type(attr)}")
+
+
+################################################################################
+# Workspace
+################################################################################
+
+
+def allocate_and_initialize_workspace(
+    operator: ops.Operator,
+    args: ops.RuntimeArguments,
+) -> ops.workspace.Workspace | None:
+    """
+    Allocates and initializes the caller-owned workspace `operator` needs for `args`.
+
+    :param operator: The Operator to be launched
+    :type operator: cutlass.operators.Operator
+    :param args: The arguments it will be launched with
+    :type args: cutlass.operators.RuntimeArguments
+
+    :return: The initialized workspace, or None when the launch needs none
+    :rtype: cutlass.operators.workspace.Workspace | None
+    """
+    requirement = operator.get_workspace_size(args)
+    if requirement.size_bytes == 0:
+        return None
+    buffer = torch.empty(requirement.size_bytes, device="cuda", dtype=torch.uint8)
+    workspace = ops.workspace.Workspace(
+        data=buffer,
+        alignment_bytes=requirement.ptr_alignment,
+    )
+    operator.initialize_workspace(args, workspace)
+    return workspace

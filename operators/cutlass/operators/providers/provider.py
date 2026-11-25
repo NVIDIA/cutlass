@@ -34,9 +34,9 @@ from cutlass.operators.arch import TargetSm
 from cutlass.operators.base import Operator
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
-    from cutlass.operators.arguments import EpilogueArguments, RuntimeArguments
+    from cutlass.operators.arguments import EpilogueArgumentsBase, RuntimeArguments
     from cutlass.operators.metadata import OperatorMetadata
 
 
@@ -59,20 +59,20 @@ class Provider:
     def generate_operators(
         cls,
         metadata_filter: Callable[[OperatorMetadata], bool] | None = None,
-        epilogue_args: EpilogueArguments | None = None,
+        epilogue_args: EpilogueArgumentsBase | None = None,
         target_sm: TargetSm | str | None = None,
         args: RuntimeArguments | None = None,
-    ) -> list[Operator]:
+    ) -> Sequence[Operator]:
         """Return a list of operators that match the given filters.
 
         Args:
             metadata_filter (Callable[[OperatorMetadata], bool]): boolean filter function to apply to the metadata
-            epilogue_args (EpilogueArguments | None): the epilogue arguments
+            epilogue_args (EpilogueArgumentsBase | None): the epilogue arguments
             target_sm (TargetSm | str | None): compute capability of device for which operators should be compiled
             args (RuntimeArguments | None): the arguments to filter operators by. If None, all operators are considered
 
         Returns:
-            list[Operator]: list of all supported operator configurations
+            Sequence[Operator]: list of all supported operator configurations
         """
         target_sm = TargetSm.ensure(target_sm)
 

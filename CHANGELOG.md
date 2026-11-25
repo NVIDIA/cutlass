@@ -2,6 +2,249 @@
 
 # CUTLASS 4.x
 
+## [4.9.0](https://github.com/NVIDIA/cutlass/tree/main) (2026-11-13)
+
+### CuTe DSL
+* New features:
+  - Additional Rubin support focused on low-latency kernels and FP6 throughput.
+    - C++ adds support for TMA load with validity reporting.
+    - CuTe DSL/CuTe DSL extensions adds support for TMA loads with validity reporting and 2:4 structured sparsity for FP4 MMA.
+    - CuTeDSL extensions now supports automatic preferred/fallback cluster shape launch without DSL code duplication.
+    - CuTeDSL extensions pipelines support new Rubin tcgen05 commit variant to release A operand early.
+    - Primitives adds TMA loads with validity reporting, 2:4 structured sparsity for FP4 MMA, shared-memory ring buffers, early A-stage release, and densely packed FP6 MMA (K=64). 
+  - CuTe DSL extension APIs can now be used directly with `@cute.jit`, `@cute.kernel`, and `cute.compile` without an opt-in flag. Programs that do not require extension APIs can select the previous compiler path with `CUTE_DSL_USE_EXTENSION_COMPILER=0` or, per compilation, `cute.compile[cute.DisableCuteExtCompile](...)`.
+  - Expanded preferred/fallback cluster-shape support across Blackwell and Rubin GEMM examples.
+  - print_tmem_tensor` is now available to inspect the TMEM tensors. This initial implementation only supports 32-bit dtypes.
+  - Improved JAX support:
+	- Support for `jax.vmap` with with `cutlass_call`
+  	- Support CuTe DSL extensions kernels that automatically provision workspaces
+    - Support for dynamic host arguments and casting
+    - Reduce CPU overhead in launching JAX kernels
+  - The % and // operators are migrating toward Python semantics. Use `options="--divmod-semantics=python"` to select Python floor-division and modulo semantics, or `options="--divmod-semantics=legacy"` to retain the previous behavior. Legacy semantics remain the default, with migration warnings for potentially affected code. We will make Python semantics the default in a future release.
+  - Epilogue Fusion Configuration (EFC) for dense GEMM, in `examples/python/CuTeDSL/helpers/efc`:
+    - Gated linear units fused onto a single MMA: `efc_config.accum_split(num_parts)` splits the accumulator into N-interleaved parts, and `swiglu()`, `geglu()`, `reglu()` and `gated(name)` compute `up * activation(gate)` from a two-way split. The output is `num_parts` times narrower along N than the accumulator and is stored through TMA.
+    - Block-scaled MXFP8 operands on Blackwell with `DenseGemmEFCBlockScaled`: fp8 A/B with E8M0 scale factors per 32 K elements, Float32 accumulator, tile N of 64, 128, 192 or 256.
+    - Rubin support with `DenseGemmEFCSm107` (fp8 with the K=64 MMA and B collector reuse) and `DenseGemmEFCBlockScaledSm107`.
+    - `DenseGemmEFC` takes `swizzle_size` and `raster_along` for the persistent tile scheduler; the EFC examples expose them as `--swizzle_size` and `--raster_order`.
+    - Tensors using direct global-memory transport no longer require the problem size to be a multiple of the tile shape.
+    - Shared-memory and tensor-memory capacities are queried for the compilation target.
+    - Not listed in earlier release notes: per-tensor transport selection for `tensor.load()` / `tensor.store()` (TMA, direct global-memory access since 4.6, `cp.async` load since 4.7) and reductions with `tensor.reduce(value, op=...)` (scalar since 4.6, per-row and per-column since 4.7).
+
+* New example kernels added:
+ - CuTe DSL:
+    - Adds distributed JAX + NCCL4Py examples
+    - Adds Rubin dense GEMM kernel using new TMA validity reporting instruction to do low-latency, fine-grained, data-driven synchronization between kernels
+ - CUTLASS Primitives: 
+    - Rubin FP4 GEMM 
+    - Rubin FP8 GEMM for low-latency use cases
+    - Blackwell FP16/BF16/TF32/FP8 Implicit GEMM Fprop Conv
+ - CuTe extensions:
+    - Adds Rubin dense GEMM kernel using new TMA validity reporting instruction to do low-latency, fine-grained, data-driven synchronization between kernels
+    - Blackwell examples for fixed-sequence-length FMHA prefill and persistent mixed-input GEMM
+    - Rubin GEMM demonstrating split A/B TMA load pipelines with new tcgen05.commit variant.
+    - Rubin FP4 sparse blockscaled GEMM with 2:4 sparsity
+
+* Bug fixes and improvements:
+  - Breaking correctness fix: fixed TMA descriptor races in `cute_ext` grouped GEMM and pointer-array GEMM kernels by requiring explicit updates for device-dynamic TMA tensors. Affected 4.8 kernels must now call `tensor = cute_ext.tma_update(tensor)` after construction and after reconstruction with changed pointer, shape, or strides. Execute the update on the warp issuing the consuming TMA operations and use the returned tensor; implicit updates could execute on multiple warps. The affected examples have been updated in 4.9.
+  - `epilogue_tma_store` no longer drains the TMA-store pipeline on return, allowing stores to overlap across persistent tiles. Callers must call `tail()` after their final store-producing epilogue invocation.
+  - `import cutlass.cute` is about 25% faster. Import is most of the time it takes to get a first compiled kernel. NumPy is now lazily imported when a dense elements attribute (`F64`/`I32`/`I64`/`IndexElementsAttr`) is built from Python values.
+  - CUTLASS Primitives' `tensormap_replace` now keeps device-side TMA descriptor updates safe when a descriptor is shrunk below its original extent (e.g. grouped GEMM) and fixes a possible illegal memory access on Blackwell/Rubin.  This behavior can be opted out by specifying `keep_oob_fetch_window=True`. See https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-595-91-07/index.html#known-issues for more details on the known `cuTensorMapEncodeTiled` bug.
+  - EFC `gelu` now uses the erf form and matches `torch.nn.functional.gelu`; it previously used the tanh approximation. `silu` and `gelu` evaluate narrow inputs in Float32 and round once, which fixes inaccurate float16 results.
+  - EFC reductions now fold and accumulate in the destination tensor's data type, which must be 32-bit wide.
+
+* Documentation updates:
+    - Updated the CUTLASS Python [deprecation policy](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/deprecation.html). A deprecated API is now removed no earlier than four minor releases after the release that deprecated it, instead of the following minor release. Breaking changes (e.g. removing an API without an alternative) will only occur at a major version change.
+    - A deprecation goes through `silent`, `warn once`, `warn once per call site`, `warn every call`, and then `removed`, so its warning gets louder as removal approaches. A deprecation that does not warn yet starts its four-release window in the release that turns its warning on.
+    - Deprecation warnings are now shown by default, including for kernels that live in a package. Python by itself shows `DeprecationWarning` only for code in `__main__`. Each warning is a `cutlass.DSLDeprecationWarning`, a subclass of `DeprecationWarning`, and names the line in your code that uses the deprecated API.
+
+* Installation changes:
+  - The IKET host profiler (`run-iket`) is now optional and provided by the separate `nvidia-cutlass-dsl-tools` package.
+    - Previously: `pip install nvidia-cutlass-dsl` included IKET.
+    - Now: `pip install "nvidia-cutlass-dsl[tools]"` installs the DSL and matching IKET tools.
+    - For CUDA 13: use `pip install "nvidia-cutlass-dsl[cu13,tools]"`.
+    Existing `run-iket` usage is unchanged. Users who do not need IKET can continue installing `nvidia-cutlass-dsl` without the `tools` extra.
+
+* Known issues:
+  - Due to a bug in CUDA toolkit, the use of some packed instructions result in invalid code generation.  Given the nature of the instructions and how they are explicitly used, we have chosen to not silently rewrite these, but rather are flagging until the upstream compiler fixes are available.
+    - Avoid packed higher-throughput FP8 (MMA_K=128)4×FP8 subtraction via inline PTX `sub.rn.e4m3x4.e4m3x4` or `sub.rn.e5m2x4.e5m2x4`, as incorrect code generation can produce wrong results.
+    - Some CUTLASS Primitives packed mixed-input ops compile incorrectly on Rubin (sm107a/sm107f), resulting in wrong code generation. The specific patterns include:
+      - Packed mul, sub, and add ops with bf16x2 or fp16x2 result type and f32x2 input type when result is converted to fp32 later. APIs affected: `add_packed_f16x2_f32x2_f32x2`, `add_packed_bf16x2_f32x2_f32x2`, `mul_packed_f16x2_f32x2_f32x2`, `mul_packed_bf16x2_f32x2_f32x2`, `sub_packed_f16x2_f32x2_f32x2`, `sub_packed_bf16x2_f32x2_f32x2`
+        - For example:
+  	   '''
+          x = prims.mul_packed_bf16x2_f32x2_f32x2(a, b)
+          out[0], out[1] = f32(x[0]), f32(x[1])  # out[0], out[1] are wrong
+          ```
+      - Packed mul op with bf16x2 or fp16x2 result type and mixed bf16x2 and fp16x2 input types when the first operand is a compilation-time constant. APIs affected: `mul_packed_bf16x2_bf16x2_f16x2`, `mul_packed_f16x2_f16x2_bf16x2`
+        - For example: 
+   ```
+   x = prims.mul_packed_bf16x2_bf16x2_f16x2(2.0, b) # x is wrong 
+   x = prims.mul_packed_f16x2_f16x2_bf16x2(2.0, b)  # x is wrong
+   ```
+  - `cute.tile_to_shape` and similar layout algebra may have dynamic strides folded to 0 when the shape is 1 within device code and not within host code. Previously this kind of folding behaviour was default in the CuTe extensions compiler, but did not occur in CuTe programs. Users should avoid relying on strides of modes whos extents could fold in this way or opt out of the CuTe extension compiler for effected programs with `compiled = cute.compile[cute.DisableCuteExtCompile](launch_fn, *args)` or `CUTE_DSL_USE_EXTENSION_COMPILER=0 python your_program.py` see the known issues document for more information.
+  - TMA descriptor prefetches on CuTe atoms will be hoisted to warp 0. To opt out use `compiled = cute.compile[cute.DisableCuteExtCompile](launch_fn, *args)` or `CUTE_DSL_USE_EXTENSION_COMPILER=0 python your_program.py`. The team is actively working towards a fix by 4.9.0.
+
+* This release has been tested against the following packages:
+  - FlashAttention: [main (2ed4a1f)](https://github.com/Dao-AILab/flash-attention/commit/2ed4a1f0fc0e36a6ca7b861bfbf86ebb82c4c592)
+  - Quack: [main (bb0e6b22)](https://github.com/Dao-AILab/quack/commit/bb0e6b220f6b9ee6b36a638d3d6c6150d52db8d8)
+  - FlashInfer: [main (7e88829)](https://github.com/flashinfer-ai/flashinfer/commit/7e8882906592c1fba598b5683e8e257dff72a21f)
+  - cuDNN-Frontend: [develop (a45daec)](https://github.com/NVIDIA/cudnn-frontend/commit/a45daecfc36bf4de6b470e251ab8120f60cff1cd)
+  - PyTorch: [main (ca883d5)](https://github.com/pytorch/pytorch/commit/ca883d596dd5c0ce182976ed979d69d167ad706c)
+  - TensorRT-LLM: [main (43f8f70)](https://github.com/NVIDIA/TensorRT-LLM/commit/43f8f70da6415a3b06f91f9ebaa4fb7611ab62cc)
+
+### CUTLASS Operator API
+- **CUTLASS Operator API v0.4.0**
+
+* **cutlass_profiler is now available for CUTLASS Python.**
+
+  - Use it to discover, verify, and benchmark CUTLASS Python kernels. This
+    includes operators from ``nvidia-cutlass-operators``, as well as custom
+    operators you register for GEMM and grouped GEMM. See the
+    `profiler README <https://github.com/NVIDIA/cutlass/blob/main/operators/cutlass/profiler/README.md>`_
+    to get started.
+
+* **Expanded Blackwell grouped GEMM support.**
+
+  - Added MoE weight-gradient GEMM with offsets along K and optional output
+    accumulation.
+  - Added block-scaled grouped GEMMs for MXFP8, MXFP4, and NVFP4, including
+    per-expert global scales for NVFP4.
+  - Added support for row-major and column-major layouts.
+  - For block-scaled grouped GEMM, callers can express an additional 
+    ``offsets_value_divisibility`` guarantee, which allows finding more
+    optimized operators when data offsets are divisible by 128 or 64.
+  - A new
+    `block-scaled MoE grouped GEMM example <https://github.com/NVIDIA/cutlass/blob/main/operators/examples/010_moe_grouped_gemm.ipynb>`_
+    demonstrates forward and weight-gradient workloads, scale-factor layouts,
+    workspace allocation, and per-expert NVFP4 scales.
+
+* **Universal tile schedulers.** Supported Blackwell and Rubin GEMMs offer
+  combinations of non-persistent, static-persistent, and dynamic-persistent
+  scheduling; rasterization order and swizzle size; and split-K reduction.
+
+* **Programmatic Dependent Launch and data-driven synchronization.**
+  
+  - Supported operators can overlap dependent launches using PDL, including
+    same-stream dependencies and cross-stream programmatic events. Rubin also
+    supports data-driven synchronization, allowing a consumer GEMM to process
+    completed portions of a producer's output.
+  - A new
+    `PDL example <https://github.com/NVIDIA/cutlass/blob/main/operators/examples/009_programmatic_dependent_launch.ipynb>`_
+    demonstrates same-stream and cross-stream dependent launches.
+  - A new
+    `data-driven synchronization example <https://github.com/NVIDIA/cutlass/blob/main/operators/examples/011_data_driven_sync.ipynb>`_
+    demonstrates back-to-back Rubin GEMMs, including PDL and sentinel
+    initialization.
+
+* **Expanded epilogue support.**
+
+  - Custom epilogues can fuse ``swiglu``, ``geglu``, or ``reglu`` gated
+    activations into a single GEMM. The existing
+    `fused epilogue example <https://github.com/NVIDIA/cutlass/blob/main/operators/examples/001_gemm_with_fused_epilogue.ipynb>`_
+    has been updated to demonstrate the gated activations.
+  - FP8 and MXFP8 Rubin GEMMs now support custom epilogues through baseline
+    persistent operators. Future support is planned for combinations with
+    universal tile scheduling, mixed cluster shapes, and other optimizations.
+  - MXFP8 Blackwell GEMMs also support custom epilogues through a baseline
+    persistent operator.
+  - A gated activation pairs two accumulator elements into one result: ``B``
+    interleaves the gate (even N indices) and up (odd N indices) projections,
+    and ``out`` has half of B's N.
+  - Reduction destinations must be 32-bit wide (e.g. ``torch.float32``); no
+    operator is offered for a narrower destination.
+  - ``gelu`` now uses the erf form, matching ``torch.nn.functional.gelu``, and
+    ``silu`` and ``gelu`` evaluate narrow inputs in FP32 and round once, so
+    results can differ slightly from 0.3.0.
+
+* **Compile without a GPU and control occupancy.** Operators now defer compile-time GPU
+  queries, allowing GPU-free compilation with fake tensors. At
+  launch, ``DeviceProperties`` is added to supply device information and
+  allow callers to override the maximum active cluster count.
+
+* **Heuristics.** Added support for ranking Blackwell block-scaled GEMMs via
+  ``nvMatmulHeuristics``. FP6 types are not supported by the heuristic.
+
+* **Runtime performance controls.**
+
+  - Several operators now support setting ``PerformanceControls``, which allow
+    changing an operator's performance options at runtime. This includes
+    split-K buffer size, rasterization order and swizzle size, PDL, and
+    data-driven synchronization for supported operators.
+  - A new `performance controls example <https://github.com/NVIDIA/cutlass/blob/main/operators/examples/008_performance_controls.ipynb>`_
+    demonstrates requesting settings, finding compatible operators, and using
+    wildcards and exclusions.
+
+* **Improved Launch Overhead.** Optimizations have been made to ``RuntimeArguments`` to reduce the critical path before kernel
+  launch for non-EFC Operators resulting in a ~50% improvement. 
+
+* **Deprecations**
+  - ``Operator._run` now takes a keyword argument for ``DeviceProperties``. Operator subclasses that do not use this
+    will continue to work with the older signature. They will be required to change in an upcoming release.
+  -  Several operator classes and generated names were renamed for consistency. As previously documented, operator names are
+     not stable and should not be used to query or filter operators. Argument-based discovery and metadata filters remain
+     unchanged.
+  - **Upcoming behavior change.** A future version of ``get_operators()`` will
+    return a lazily evaluated ``Sequence`` instead of a ``list``, enabling
+    faster iteration and lower memory use. This version adds a warning so
+    callers can prepare.
+  - ``PersistentDenseGemmEFCOperator`` is renamed
+    ``Sm100PersistentDenseGemmEFCOperator``. The old name remains importable
+    from ``cutlass.operators.providers.cutedsl.gemm.sm100_static_persistent_efc``
+    as a deprecated alias.
+  - Custom operation classes built on the EFC kernel that do not opt into the
+    folded C/D partition modes ``((ATOM_M, MMA_M), (ATOM_N, MMA_N), ...)`` keep
+    the previous unfolded modes and get a ``DeprecationWarning``.
+
+### C++
+* Added Rubin back-to-back GEMMs with PDL vs Data-Driven Synchronization with an [example](https://github.com/NVIDIA/cutlass/tree/main/examples/121_rubin_data_driven_sync_gemm/121_rubin_data_driven_sync_gemm.cu).
+* Added CTA-reduction and mailbox tests to the Blackwell low-latency GQA [example](https://github.com/NVIDIA/cutlass/tree/main/examples/93_blackwell_low_latency_gqa/test_mailboxes.cu), and fixed the scratch-reuse, split-mailbox initialization, and TMEM-load ordering.
+* Add some new test:
+  - SIMT SM80 NN/TT cgemm and sgemm tests, and NN/TN/TT zgemm tests.
+  - An epilogue thread-map `static_assert` test.
+* All CUTLASS C++ kernels now apply the `nv_mma_throughput` pragma at the kernel entry function. The pragma enables compiler optimizations tuned for matrix multiply-accumulate operations. See https://docs.nvidia.com/cuda//cuda-programming-guide/05-appendices/cpp-language-extensions.html#mma-throughput-pragma for more details. This pragma will be required with future CUDA releases to maintain peak performance for the CUTLASS kernels.
+* Some bug fixes and improvements:
+  - Fix SIMT SM80 bank conflicts: The multistage SIMT cores (`default_mma_core_sm80.h`, `default_multistage_mma_complex_core_sm80.h`) now use `detail::simt_transpose_padding_aligned` instead of the fixed `kK/32` padding. They also static-assert that elements are at least 32 bits wide.
+  - Epilogue thread map: `OutputTileOptimalThreadMap` now has a `static_assert` that `kAccessWidth` divides the warp size. Configurations such as `kN=96` with 8 elements per access previously had lanes writing the same coordinates and gave silently wrong results.
+  - CPASYNC kernel: `sm100_gemm_cpasync_warpspecialized.hpp` and the mixed TMA+cpasync kernel adjust the CLC consumer arrive count when the epilogue load is needed.
+  - SM100 nosmem epilogue: `sm100_epilogue_nosmem.hpp` computes predicates next to their copies to shorten accumulator live ranges.
+  - `GemmUniversal::Arguments`: The `batch_stride_*` and `ld*` members are now zero-initialized.
+  - Sparse config builders (sm90, sm1xx, sm107): `TensorEAtomK` and `TensorEAtomM` are now `decltype(size<...>)`, and `cosize` is no longer wrapped in `Int<>`.
+* Various improvements and fixes from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+* Optimal code generation with CUDA toolkit versions 13.4.
+
+## [4.8.1](https://github.com/NVIDIA/cutlass/releases/tag/v4.8.1) (2026-10-15)
+
+### CuTe DSL
+* Bug fixes and improvements:
+  - Fixed an issue with `cute.extern` where functions with zero arguments would generate invalid type signatures.  Compiling such functions a second time would fail.
+  - Clear error/warning are now emitted for `CopyUniversalOp` with memory attributes specified ([!3711](https://github.com/NVIDIA/cutlass/issues/3711)).
+  - CUTLASS Primitives' `tensormap_replace` now keeps device-side TMA descriptor updates safe when a descriptor is shrunk below its original extent (e.g. grouped GEMM) and fixes a possible illegal memory access on Blackwell/Rubin.  This behavior can be opted out by specifying `keep_oob_fetch_window=True`. See https://docs.nvidia.com/datacenter/tesla/tesla-release-notes-595-91-07/index.html#known-issues for more details on the known `cuTensorMapEncodeTiled` bug.
+  - Fixed unintended `sys.path` modification that could break imports in some environments where Torch was not installed e.g. JAX.
+
+* Known issues
+  - Due to a bug in CTK, the use of some packed instructions result in invalid code generation.  Given the nature of the instructions and how they are explicitly used, we have chosen to not silently rewrite these, but rather are flagging until the upstream compiler fixes are available.
+  - Avoid packed higher-throughput FP8 (MMA_K=128) subtraction via inline PTX `sub.rn.e4m3x4.e4m3x4` or `sub.rn.e5m2x4.e5m2x4`, as incorrect code generation can produce wrong results.
+  - Some CUTLASS Primitives packed mixed-input ops compile incorrectly on Rubin (sm107a/sm107f), resulting in wrong code generation. The specific patterns include:
+    - Packed mul, sub, and add ops with bf16x2 or fp16x2 result type and f32x2 input type when result is converted to fp32 later. APIs affected: `add_packed_f16x2_f32x2_f32x2`, `add_packed_bf16x2_f32x2_f32x2`, `mul_packed_f16x2_f32x2_f32x2`, `mul_packed_bf16x2_f32x2_f32x2`, `sub_packed_f16x2_f32x2_f32x2`, `sub_packed_bf16x2_f32x2_f32x2`
+      - For example:
+  	    ```
+        x = prims.mul_packed_bf16x2_f32x2_f32x2(a, b)
+        out[0], out[1] = f32(x[0]), f32(x[1])  # out[0], out[1] are wrong
+        ```
+    - Packed mul op with bf16x2 or fp16x2 result type and mixed bf16x2 and fp16x2 input types when the first operand is a compilation-time constant. APIs affected: `mul_packed_bf16x2_bf16x2_f16x2`, `mul_packed_f16x2_f16x2_bf16x2`
+      - For example: 
+        ```
+        x = prims.mul_packed_bf16x2_bf16x2_f16x2(2.0, b) # x is wrong 
+        x = prims.mul_packed_f16x2_f16x2_bf16x2(2.0, b)  # x is wrong
+        ```
+
+* This release has been tested against the following packages:
+  - FlashAttention: [main (1fc0221)](https://github.com/Dao-AILab/flash-attention/commit/1fc0221183e799363001394a12dd9e78e15f5dda)
+  - Quack: [main (35266c32)](https://github.com/Dao-AILab/quack/commit/35266c3298f0e9bf6d5f46c30aace2eaeae517e3)
+  - FlashInfer: [main (399b6c1)](https://github.com/flashinfer-ai/flashinfer/commit/399b6c1d31a13f38dd827018f89c6a04c8487acb)
+  - cuDNN-Frontend: [deveop (986ef4d)](https://github.com/NVIDIA/cudnn-frontend/commit/986ef4d9078089ae9f0656dd65f15011309e4347)
+  - Pytorch: [main (ca883d5)](https://github.com/pytorch/pytorch/commit/ca883d596dd5c0ce182976ed979d69d167ad706c)
+  - TensorRT-LLM: [main (cc63e66)](https://github.com/NVIDIA/TensorRT-LLM/commit/cc63e66daf52644f1441e117bb7ba67d20566016)
+
 ## [4.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v4.8.0) (2026-09-17)
 
 ### CuTe DSL

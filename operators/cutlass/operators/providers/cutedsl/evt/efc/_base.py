@@ -362,13 +362,28 @@ class JIT(VariadicParameters):
         written tensor name.
 
         Return the name of the written tensor with the biggest
-        element_type.
+        element_type.  Reduce destinations are excluded: they are written
+        via atomics, not the staged TMA path, so they cannot serve as the
+        tiling reference (e.g. a bf16 D with an f32 amax destination must
+        still pick D).
 
         """
-        return max(
-            (tensor_name for tensor_name in self.efc.written_tensor_names),
+        name = max(
+            (
+                tensor_name
+                for tensor_name in self.efc.written_tensor_names
+                if self.efc.parameter_attributes[tensor_name].reduce_op is None
+            ),
             key=lambda tensor_name: self.tensor_dtype[tensor_name].width,
+            default=None,
         )
+        if name is None:
+            raise ValueError(
+                "The epilogue needs at least one stored (non-reduce) output "
+                "tensor to derive the kernel's tiling; reduce destinations "
+                "alone cannot serve as the reference."
+            )
+        return name
 
     @trace_in_mlir
     def read_tensor_name_with_bigger_element_type(self):
@@ -618,6 +633,9 @@ class EFC(typing.Generic[JITT, KernelT]):
         """
         self.operation = operation
         self.epilogue_function_configuration = epilogue_function_configuration
+        # Set by ``Configuration.accum_split`` during ParameterAnalysis, and
+        # None when the epilogue does not split the accumulator.
+        self.accum_split_factor = None
         self.analyze_epilogue(epilogue_function_configuration)
 
     def analyze_epilogue(self, epilogue_function_configuration):
@@ -677,7 +695,6 @@ class EFC(typing.Generic[JITT, KernelT]):
         self.written_tensor_names = []
         self.remapped_tensor_names = []
         for name, attributes in self.parameter_attributes.items():
-            attributes = self.parameter_attributes[name]
             if not attributes.is_tensor:
                 continue
             if attributes.is_read or attributes.is_written:

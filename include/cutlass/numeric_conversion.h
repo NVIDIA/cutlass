@@ -40,12 +40,16 @@
 #endif
 
 #include "cutlass/cutlass.h"
+#if CUTLASS_USE_CUDA_STD_CMATH
+#include CUDA_STD_HEADER(cmath)
+#endif
 #include "cutlass/numeric_types.h"
 #include "cutlass/transform/thread/unary_op.h"
 
 #include "cutlass/array.h"
 #include "cutlass/half.h"
 #include "cutlass/bfloat16.h"
+#include "cutlass/arch/config.h"
 // The FP4 conversion intrinsics (__nv_cvt_*_to_fp4x2) are declared in <cuda_fp4.h>, available since CUDA 13.
 #if defined(__CUDACC__) && (__CUDACC_VER_MAJOR__ >= 13)
 #include <cuda_fp4.h>
@@ -68,7 +72,8 @@ enum class FloatRoundStyle {
   round_toward_infinity,        ///< round toward infinity
   round_toward_neg_infinity,    ///< round toward negative infinity
   round_half_ulp_truncate,      ///< add 0.5ulp to integer representation then round toward zero
-  round_half_ulp_trunc_dntz     ///< like round_half_ulp_truncate, except denorms are rounded *toward* zero
+  round_half_ulp_trunc_dntz,    ///< like round_half_ulp_truncate, except denorms are rounded *toward* zero
+  round_to_nearest_pzo          ///< round to nearest even, canonicalize zeros to +0.0 (data-driven sync)
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -444,6 +449,32 @@ struct NumericConverter<cutlass::half_t, float, FloatRoundStyle::round_to_neares
   }
 };
 
+/// Specialization for round-to-nearest with -0.0 canonicalized to +0.0
+template <>
+struct NumericConverter<cutlass::half_t, float, FloatRoundStyle::round_to_nearest_pzo> {
+
+  using result_type = cutlass::half_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest_pzo;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & s) {
+    #if defined(CUTLASS_ARCH_MMA_SM107F_ENABLED)
+      uint16_t d;
+      asm("cvt.rn.pzo.f16.f32 %0, %1;\n" : "=h"(d) : "f"(s));
+      return cutlass::half_t::bitcast(d);
+    #else
+      // s + 0.0f canonicalizes -0.0 to +0.0 under round-to-nearest and is exact otherwise
+      return static_cast<cutlass::half_t>(s + 0.0f);
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 /// Specialization for round-toward-zero
 template <>
 struct NumericConverter<cutlass::half_t, float, FloatRoundStyle::round_toward_zero> {
@@ -555,6 +586,31 @@ struct NumericConverter<cutlass::bfloat16_t, float, FloatRoundStyle::round_to_ne
   }
 };
 
+/// Specialization for round-to-nearest with -0.0 canonicalized to +0.0
+template <>
+struct NumericConverter<cutlass::bfloat16_t, float, FloatRoundStyle::round_to_nearest_pzo> {
+  using result_type = cutlass::bfloat16_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest_pzo;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & s) {
+    #if defined(CUTLASS_ARCH_MMA_SM107F_ENABLED)
+      uint16_t d;
+      asm("cvt.rn.pzo.bf16.f32 %0, %1;\n" : "=h"(d) : "f"(s));
+      return cutlass::bfloat16_t::bitcast(d);
+    #else
+      // s + 0.0f canonicalizes -0.0 to +0.0 under round-to-nearest and is exact otherwise
+      return static_cast<cutlass::bfloat16_t>(s + 0.0f);
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 template <>
 struct NumericConverter<cutlass::bfloat16_t, float, FloatRoundStyle::round_half_ulp_truncate> {
   using result_type = cutlass::bfloat16_t;
@@ -565,15 +621,11 @@ struct NumericConverter<cutlass::bfloat16_t, float, FloatRoundStyle::round_half_
   static result_type convert(source_type const & s) {
     uint32_t x32 = reinterpret_cast<uint32_t const &>(s);
 
-    #if defined(__CUDA_ARCH__)
-    if (::isfinite(s)) {
+    // cuda::std::isfinite is a device function under every host standard
+    // library; libc++ declares ::isfinite and std::isfinite as host inlines.
+    if (CUTLASS_CMATH_NAMESPACE::isfinite(s)) {
       x32 += 0x8000;
     }
-    #else
-    if (std::isfinite(s)) {
-      x32 += 0x8000;
-    }
-    #endif
 
     uint16_t x16 = uint16_t((x32 >> 16) & 0xffff);
     return cutlass::bfloat16_t::bitcast(x16);
@@ -1162,6 +1214,66 @@ struct NumericArrayConverter<cutlass::bfloat16_t, float, N, Round> {
     }
 
     return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<half, 2> <= Array<float, 2>, round to nearest, 0.0 canonicalization
+template <>
+struct NumericArrayConverter<cutlass::half_t, float, 2, FloatRoundStyle::round_to_nearest_pzo> {
+
+  using result_type = Array<cutlass::half_t, 2>;
+  using source_type = Array<float, 2>;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest_pzo;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+    #if defined(CUTLASS_ARCH_MMA_SM107F_ENABLED)
+      unsigned d;
+      asm("cvt.rn.pzo.f16x2.f32 %0, %1, %2;\n" : "=r"(d) : "f"(source[1]), "f"(source[0]));
+      return reinterpret_cast<result_type const &>(d);
+    #else
+      // x + 0.0f canonicalizes -0.0 to +0.0 under round-to-nearest and is exact otherwise
+      NumericConverter<cutlass::half_t, float, FloatRoundStyle::round_to_nearest> convert_;
+      Array<cutlass::half_t, 2> result{};
+      result[0] = convert_(source[0] + 0.0f);
+      result[1] = convert_(source[1] + 0.0f);
+      return result;
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<cutlass::bfloat16_t, 2> <= Array<float, 2>, round to nearest, 0.0 canonicalization
+template <>
+struct NumericArrayConverter<cutlass::bfloat16_t, float, 2, FloatRoundStyle::round_to_nearest_pzo> {
+
+  using result_type = Array<cutlass::bfloat16_t, 2>;
+  using source_type = Array<float, 2>;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest_pzo;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+    #if defined(CUTLASS_ARCH_MMA_SM107F_ENABLED)
+      unsigned d;
+      asm("cvt.rn.pzo.bf16x2.f32 %0, %1, %2;\n" : "=r"(d) : "f"(source[1]), "f"(source[0]));
+      return reinterpret_cast<result_type const &>(d);
+    #else
+      // x + 0.0f canonicalizes -0.0 to +0.0 under round-to-nearest and is exact otherwise
+      NumericConverter<cutlass::bfloat16_t, float, FloatRoundStyle::round_to_nearest> convert_;
+      Array<cutlass::bfloat16_t, 2> result{};
+      result[0] = convert_(source[0] + 0.0f);
+      result[1] = convert_(source[1] + 0.0f);
+      return result;
+    #endif
   }
 
   CUTLASS_HOST_DEVICE

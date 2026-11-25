@@ -410,13 +410,8 @@ struct TestBed {
     tensor_DeltaA_cumsum.resize(sizeof(ElementDA) * size(options.layoutDeltaA()));
 
     // Limit distribution to reduce skew between hosts and devices
-    initialize_values(tensor_X, init_X, seed);
     initialize_values(tensor_DeltaA, init_DeltaA, seed + 1, Element(0.05f));
     initialize_values(tensor_Delta, init_Delta, seed + 3, Element(0.05f));
-    initialize_values(tensor_B, init_B, seed + 5);
-    initialize_values(tensor_C, init_C, seed + 7);
-    initialize_values(tensor_D, init_C, seed + 9);
-    initialize_values(tensor_Z, init_X, seed);
 
     cudaError_t result;
     result = cudaDeviceSynchronize();
@@ -424,6 +419,12 @@ struct TestBed {
       std::cerr << "Error running the Initialization kernel. Last CUDA error is: "
                 << cudaGetErrorString(result) << std::endl;
     }
+
+    initialize_values(tensor_X, init_X, seed);
+    initialize_values(tensor_B, init_B, seed + 5);
+    initialize_values(tensor_C, init_C, seed + 7);
+    initialize_values(tensor_D, init_C, seed + 9);
+    initialize_values(tensor_Z, init_X, seed);
 
     // apply cumsum(device) before kernel launch
     typename CumsumOperation::Arguments arguments{

@@ -39,14 +39,16 @@ import torch
 import cutlass
 import cutlass.cute as cute
 from cutlass import testing
+from cutlass.cutlass_dsl import Boolean, Int32
 from cutlass.cute.runtime import make_ptr
-from cutlass.cute.nvgpu import cpasync, tcgen05, OperandMajorMode
+from cutlass.cute.nvgpu import tcgen05, OperandMajorMode
 from cutlass.cute.nvgpu.tcgen05.mma import CollectorOp
 import cutlass.torch as cutlass_torch
 import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.rubin_helpers as sm107_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
+from cutlass.kernels.utils import tile_scheduler
 
 if __name__ == "__main__":
     current_dir = Path(__file__).resolve().parent
@@ -143,6 +145,12 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
     :type mma_tiler: Tuple[int, int, int]
     :param cluster_shape_mn: Cluster dimensions (M,N) for parallel processing
     :type cluster_shape_mn: Tuple[int, int]
+    :param use_tma_store: Stage C through SMEM and store it with TMA; when False,
+        C goes straight from registers to global memory with predicated stores.
+    :type use_tma_store: bool
+    :param precompute_scheduler_params: Host-prepare scheduler parameters
+        (static/affine/no-reduction only), defaults to False.
+    :type precompute_scheduler_params: bool
 
     :note: Supported combinations of A/B data types, SF data typs and SF vector size:
         - MXF8: A/B: Float8E5M2/Float8E4M3FN + SF: Float8E8M0FNU + sf_vec_size: 32
@@ -171,28 +179,37 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         ...     preferred_cluster_shape_mn=(4, 2),
         ...     fallback_cluster_shape_mn=(2, 1)
         ... )
-        >>> gemm = cute.compile(
+        >>> compiled = cute.compile(
+        ...     gemm,
         ...     a_ptr,
         ...     b_ptr,
         ...     sfa_ptr,
         ...     sfb_ptr,
         ...     c_ptr,
+        ...     workspace_ptr,
         ...     layouts,
         ...     problem_mnkl,
-        ...     preferred_max_cluster_size,
-        ...     fallback_max_cluster_size,
         ...     stream,
-        ...     epilogue_op
+        ...     Int32(1),  # placeholder for swizzle_size
+        ...     Boolean(True),  # placeholder for raster_along_m
+        ...     Int32(1),  # placeholder for max_active_clusters_fallback
+        ...     epilogue_op,
         ... )
-        >>> gemm(
-        ...     a_tensor,
-        ...     b_tensor,
-        ...     sfa_tensor,
-        ...     sfb_tensor,
-        ...     c_tensor,
-        ...     preferred_max_active_clusters,
-        ...     fallback_max_active_clusters,
-        ...     stream
+        >>> max_active_clusters = query_max_active_clusters(
+        ...     fallback_cluster_shape_mn, split_k, reduction_strategy
+        ... )
+        >>> compiled(
+        ...     a_ptr,
+        ...     b_ptr,
+        ...     sfa_ptr,
+        ...     sfb_ptr,
+        ...     c_ptr,
+        ...     workspace_ptr,
+        ...     problem_mnkl,
+        ...     stream,
+        ...     Int32(swizzle_size),
+        ...     Boolean(raster_along_m),
+        ...     Int32(max_active_clusters),
         ... )
     """
 
@@ -203,7 +220,16 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         mma_tiler: Tuple[int, int, int],
         preferred_cluster_shape_mn: Tuple[int, int],
         fallback_cluster_shape_mn: Tuple[int, int],
-        prefetch_dist: Union[int, None] = None,
+        prefetch_dist: Union[int, Literal["auto"]] = 0,
+        use_tma_store: bool = True,
+        split_k: int = 1,
+        work_strategy: Literal["grid", "static", "clc"] = "static",
+        rasterization_strategy: Literal["none", "affine"] = "affine",
+        reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"] = "none",
+        num_scheduler_stages: int = 1,
+        use_pdl: bool = False,
+        use_reduction_pdl: bool = False,
+        precompute_scheduler_params: bool = False,
     ):
         super().__init__(
             sf_vec_size,
@@ -211,11 +237,19 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
             mma_tiler,
             preferred_cluster_shape_mn,
             prefetch_dist,
+            use_tma_store=use_tma_store,
+            split_k=split_k,
+            work_strategy=work_strategy,
+            rasterization_strategy=rasterization_strategy,
+            reduction_strategy=reduction_strategy,
+            num_scheduler_stages=num_scheduler_stages,
+            use_pdl=use_pdl,
+            use_reduction_pdl=use_reduction_pdl,
+            fallback_cluster_shape_mn=fallback_cluster_shape_mn,
         )
 
-        # Providing explicit cluster shapes for preferred and fallback
         self.preferred_cluster_shape_mn = preferred_cluster_shape_mn
-        self.fallback_cluster_shape_mn = fallback_cluster_shape_mn
+        self.precompute_scheduler_params = precompute_scheduler_params
 
     def _setup_attributes(self):
         """Set up configurations that are dependent on GEMM inputs
@@ -284,22 +318,23 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
             self.mma_tiler_sfb[2],
         )
 
-        # Compute cluster layout
+        # Compute cluster layout; the K mode carries the cluster split-K ranks
+        template_params = self.tile_scheduler_template_params
         self.preferred_cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.preferred_cluster_shape_mn, 1)),
+            cute.make_layout(template_params.cluster_shape),
             (tiled_mma.thr_id.shape,),
         )
         self.preferred_cluster_layout_sfb_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.preferred_cluster_shape_mn, 1)),
+            cute.make_layout(template_params.cluster_shape),
             (tiled_mma_sfb.thr_id.shape,),
         )
 
         self.fallback_cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.fallback_cluster_shape_mn, 1)),
+            cute.make_layout(template_params.fallback_cluster_shape),
             (tiled_mma.thr_id.shape,),
         )
         self.fallback_cluster_layout_sfb_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.fallback_cluster_shape_mn, 1)),
+            cute.make_layout(template_params.fallback_cluster_shape),
             (tiled_mma_sfb.thr_id.shape,),
         )
 
@@ -323,13 +358,16 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         self.is_fallback_b_mcast = self.num_fallback_mcast_ctas_b > 1
 
         # Compute epilogue subtile
-        self.epi_tile = sm107_utils.compute_epilogue_tile_shape(
-            tiled_mma.op,
-            self.cta_tile_shape_mnk,
-            self.use_2cta_instrs,
-            self.c_layout,
-            self.c_dtype,
-        )
+        if cutlass.const_expr(self.tile_scheduler_template_params.is_cluster_splitk):
+            self.epi_tile = self.cta_tile_shape_mnk[:2]
+        else:
+            self.epi_tile = sm107_utils.compute_epilogue_tile_shape(
+                tiled_mma.op,
+                self.cta_tile_shape_mnk,
+                self.use_2cta_instrs,
+                self.c_layout,
+                self.c_dtype,
+            )
         self.epi_tile_n = cute.size(self.epi_tile[1])
 
         # Setup A/B/C stage count in shared memory and ACC stage count in tensor memory
@@ -346,6 +384,8 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
             self.smem_capacity,
             self.occupancy,
             self.enable_breuse,
+            self.use_tma_store,
+            self.tile_scheduler_template.get_smem_workspace_size(),
         )
 
         # Compute A/B/SFA/SFB/C shared memory layout
@@ -373,12 +413,14 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
             self.sf_vec_size,
             self.num_ab_stage,
         )
-        self.c_smem_layout_staged = sm100_utils.make_smem_layout_epi(
-            self.c_dtype,
-            self.c_layout,
-            self.epi_tile,
-            self.num_c_stage,
-        )
+        self.c_smem_layout_staged = None
+        if cutlass.const_expr(self.use_tma_store):
+            self.c_smem_layout_staged = sm100_utils.make_smem_layout_epi(
+                self.c_dtype,
+                self.c_layout,
+                self.epi_tile,
+                self.num_c_stage,
+            )
 
         # Compute number of TMEM columns for SFA/SFB/Accumulator
         self.tCtSFA_layout = blockscaled_utils.make_tmem_layout_sfa(
@@ -417,8 +459,8 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         )
 
         # Set prefetch distance for both initial and rolling prefetch (unified control)
-        # None = use num_ab_stage (default), 0 = disable prefetch, >0 = explicit distance
-        if self.prefetch_dist_param is None:
+        # "auto" = use num_ab_stage, 0 = disable prefetch (default), >0 = explicit distance
+        if self.prefetch_dist_param == "auto":
             self.prefetch_dist = self.num_ab_stage
         else:
             self.prefetch_dist = self.prefetch_dist_param
@@ -434,13 +476,15 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         sfa_ptr: cute.Pointer,
         sfb_ptr: cute.Pointer,
         c_ptr: cute.Pointer,
+        workspace: cute.Pointer,
         layouts: cutlass.Constexpr[
             Tuple[OperandMajorMode, OperandMajorMode, cutlass.tensor_utils.LayoutEnum]
         ],
         problem_mnkl: Tuple[int, int, int, int],
-        preferred_max_active_clusters: cutlass.Constexpr,
-        fallback_max_active_clusters: cutlass.Constexpr,
         stream: cuda.CUstream,
+        swizzle_size: Int32,
+        raster_along_m: Boolean,
+        max_active_clusters_fallback: Int32,
         epilogue_op: cutlass.Constexpr = lambda x: x,
     ):
         """Execute the GEMM operation in steps:
@@ -460,12 +504,22 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         :type sfb_tensor: cute.Tensor
         :param c_tensor: Output tensor C
         :type c_tensor: cute.Tensor
-        :param preferred_max_active_clusters: Maximum number of preferred active clusters
-        :type preferred_max_active_clusters: cutlass.Constexpr
-        :param fallback_max_active_clusters: Maximum number of fallback active clusters
-        :type fallback_max_active_clusters: cutlass.Constexpr
+        :param workspace: Base pointer of the tile scheduler's GMEM scratch;
+            schedules that need no scratch receive a null pointer.
+        :type workspace: cute.Pointer
         :param stream: CUDA stream for asynchronous execution
         :type stream: cuda.CUstream
+        :param swizzle_size: Tiles per swizzle group, a launch-time parameter so one
+            compiled kernel serves every value of it
+        :type swizzle_size: Int32
+        :param raster_along_m: Whether to rasterize along M (else N), a
+            launch-time parameter like swizzle_size
+        :type raster_along_m: Boolean
+        :param max_active_clusters_fallback: occupancy cap on concurrently
+            resident fallback clusters (launch-time value; see
+            ``query_max_active_clusters``). Only the ``static`` work strategy
+            uses it (its grid is one wave).
+        :type max_active_clusters_fallback: Int32
         :param epilogue_op: Optional elementwise lambda function to apply to the output tensor
         :type epilogue_op: cutlass.Constexpr
         :raises TypeError: If input data types are incompatible with the MMA instruction.
@@ -479,6 +533,11 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
 
         m, n, k, l = problem_mnkl
         self.a_major_mode, self.b_major_mode, self.c_layout = layouts
+
+        self.out_dtype: Type[cutlass.Numeric] = self.c_dtype
+        self.c_dtype = self.tile_scheduler_template_params.gmem_output_type(
+            self.c_dtype
+        )
 
         # Setup attributes that dependent on gemm inputs
         self._setup_attributes()
@@ -735,22 +794,31 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         ) * atom_thr_size
 
         # Setup TMA store for C
-        epi_smem_layout = cute.slice_(self.c_smem_layout_staged, (None, None, 0))
-        tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
-            cpasync.CopyBulkTensorTileS2GOp(),
+        tma_atom_c, tma_tensor_c = self.tile_scheduler_template.get_gmem_tma(
+            self.use_tma_store,
+            workspace,
             c_tensor,
-            epi_smem_layout,
+            self.c_smem_layout_staged,
             self.epi_tile,
         )
 
-        # Compute grid size
-        self.tile_sched_params, grid = self._compute_grid(
-            c_tensor,
-            self.cta_tile_shape_mnk,
-            self.preferred_cluster_shape_mn,
-            self.fallback_cluster_shape_mn,
-            preferred_max_active_clusters,
-            fallback_max_active_clusters,
+        # Reuse host-prepared scheduler state when computing the launch grid.
+        precomputed_sched_params = None
+        if cutlass.const_expr(self.precompute_scheduler_params):
+            precomputed_sched_params = (
+                self.tile_scheduler_template.prepare_sched_params(
+                    c_tensor.shape,
+                    cute.ceil_div(k, self.mma_tiler[2]),
+                    swizzle_size,
+                    raster_along_m,
+                )
+            )
+        grid = self.tile_scheduler_template.get_grid_shape(
+            c_tensor.shape,
+            swizzle_size,
+            raster_along_m,
+            max_active_clusters_fallback,
+            precomputed_sched_params=precomputed_sched_params,
         )
 
         self.buffer_align_bytes = 1024
@@ -764,13 +832,11 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
             acc_empty_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage]
             tmem_dealloc_mbar: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
-            # (EPI_TILE_M, EPI_TILE_N, STAGE)
-            sC: cute.struct.Align[
-                cute.struct.MemRange[
-                    self.c_dtype,
-                    cute.cosize(self.c_smem_layout_staged.outer),
-                ],
-                self.buffer_align_bytes,
+
+            scheduler_bytes = self.tile_scheduler_template.get_smem_workspace_size()
+            scheduler_buf: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Int8, scheduler_bytes],
+                self.tile_scheduler_template.smem_alignment,
             ]
             # (MMA, MMA_M, MMA_K, STAGE)
             sA: cute.struct.Align[
@@ -832,17 +898,34 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
             self.tCtSFB_layout,
             self.c_smem_layout_staged,
             self.epi_tile,
-            self.tile_sched_params,
+            workspace,
+            swizzle_size,
+            raster_along_m,
             epilogue_op,
+            precomputed_sched_params,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
-            cluster=(*self.preferred_cluster_shape_mn, 1),
-            fallback_cluster=(*self.fallback_cluster_shape_mn, 1),
+            cluster=(*self.tile_scheduler_template_params.cluster_shape,),
+            fallback_cluster=(
+                *self.tile_scheduler_template_params.fallback_cluster_shape,
+            ),
             stream=stream,
             min_blocks_per_mp=1,
             smem_merge_branch_allocs=True,
+            use_pdl=self.use_pdl,
         )
+
+        if cutlass.const_expr(self.tile_scheduler_template.is_gmem_splitk):
+            self.tile_scheduler_template.splitk_reduction(
+                workspace,
+                c_tensor,
+                k,
+                epilogue_op,
+                stream,
+                use_pdl=self.use_pdl,
+                use_reduction_pdl=self.use_reduction_pdl,
+            )
         return
 
     # GPU device kernel with preferred & fallback cluster sizes.
@@ -861,7 +944,7 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         mSFA_mkl: Tuple[cute.Tensor, cute.Tensor],
         tma_atom_sfb: Tuple[cute.CopyAtom, cute.CopyAtom],
         mSFB_nkl: Tuple[cute.Tensor, cute.Tensor],
-        tma_atom_c: cute.CopyAtom,
+        tma_atom_c: Optional[cute.CopyAtom],
         mC_mnl: cute.Tensor,
         cluster_layout_vmnk: Tuple[cute.Layout, cute.Layout],
         cluster_layout_sfb_vmnk: Tuple[cute.Layout, cute.Layout],
@@ -871,10 +954,14 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         sfb_smem_layout_staged: cute.Layout,
         tCtSFA_layout: cute.Layout,
         tCtSFB_layout: cute.Layout,
-        c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout],
+        c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_gmem_workspace_ptr: cute.Pointer,
+        swizzle_size: Int32,
+        raster_along_m: Boolean,
         epilogue_op: cutlass.Constexpr,
+        precomputed_sched_params: tile_scheduler.TileSchedulerPrecomputedParams
+        | None = None,
     ):
         """
         GPU device kernel performing the Persistent batched GEMM computation.
@@ -885,12 +972,20 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         """
 
         # Get cluster coordinates to determine if this is a preferred cluster
-        cbdim_x, cbdim_y, cbdim_z = cute.arch.block_in_cluster_dim()
-        is_preferred_cluster = (
-            cbdim_x == self.preferred_cluster_shape_mn[0]
-            and cbdim_y == self.preferred_cluster_shape_mn[1]
-            and cbdim_z == 1
-        )
+        if cutlass.const_expr(
+            any(
+                self.preferred_cluster_shape_mn[i] != self.fallback_cluster_shape_mn[i]
+                for i in range(2)
+            )
+        ):
+            cbdim_x, cbdim_y, cbdim_z = cute.arch.block_in_cluster_dim()
+            is_preferred_cluster = (
+                cbdim_x == self.preferred_cluster_shape_mn[0]
+                and cbdim_y == self.preferred_cluster_shape_mn[1]
+            )
+        else:
+            # Skip the block_in_cluster_dim check when mixed cluster is not needed
+            is_preferred_cluster = True
 
         # mega-kernel approach has 2 mutually exclusive code branches, only one path runs per launch,
         # specify `smem_merge_branch_allocs=True` at launch to enables shared memory reuse between two paths
@@ -920,11 +1015,14 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
                 tCtSFB_layout,
                 c_smem_layout_staged,
                 epi_tile,
-                tile_sched_params,
+                tile_sched_gmem_workspace_ptr,
+                swizzle_size,
+                raster_along_m,
                 epilogue_op,
                 self.preferred_cluster_shape_mn,
                 self.is_preferred_a_mcast,
                 self.is_preferred_b_mcast,
+                precomputed_sched_params,
             )
         else:
             self.kernel_impl(
@@ -952,108 +1050,18 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
                 tCtSFB_layout,
                 c_smem_layout_staged,
                 epi_tile,
-                tile_sched_params,
+                tile_sched_gmem_workspace_ptr,
+                swizzle_size,
+                raster_along_m,
                 epilogue_op,
                 self.fallback_cluster_shape_mn,
                 self.is_fallback_a_mcast,
                 self.is_fallback_b_mcast,
+                precomputed_sched_params,
             )
 
-    @staticmethod
-    def _compute_grid(
-        c: cute.Tensor,
-        cta_tile_shape_mnk: Tuple[int, int, int],
-        preferred_cluster_shape_mn: Tuple[int, int],
-        fallback_cluster_shape_mn: Tuple[int, int],
-        preferred_max_active_clusters: cutlass.Constexpr,
-        fallback_max_active_clusters: cutlass.Constexpr,
-    ) -> Tuple[
-        utils.PersistentTileSchedulerParams,
-        Tuple[int, int, int],
-    ]:
-        """Use persistent tile scheduler to compute the grid size for the output tensor C.
-
-        :param c: The output tensor C
-        :type c: cute.Tensor
-        :param cta_tile_shape_mnk: The shape (M, N, K) of the CTA tile.
-        :type cta_tile_shape_mnk: tuple[int, int, int]
-        :param preferred_cluster_shape_mn: Shape of each cluster in M, N dimensions.
-        :type preferred_cluster_shape_mn: tuple[int, int]
-        :param fallback_cluster_shape_mn: Shape of each cluster in M, N dimensions.
-        :type fallback_cluster_shape_mn: tuple[int, int]
-        :param preferred_max_active_clusters: Maximum number of preferred active clusters.
-        :type preferred_max_active_clusters: cutlass.Constexpr
-        :param fallback_max_active_clusters: Maximum number of fallback active clusters.
-        :type fallback_max_active_clusters: cutlass.Constexpr
-
-        :return: A tuple containing:
-            - preferred_tile_sched_params: Parameters for the preferred persistent tile scheduler.
-            - grid: Grid shape for kernel launch.
-        :rtype: Tuple[
-            utils.PersistentTileSchedulerParams,
-            tuple[int, int, int]
-        ]
-        """
-        c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
-        gc = cute.zipped_divide(c, tiler=c_shape)
-        num_ctas_mnl = gc[(0, (None, None, None))].shape
-
-        # Note that the grid calculation here is only valid for a static persistent
-        # tile scheduler.
-
-        # Tile scheduler and grid shape for the preferred cluster
-        preferred_cluster_shape_mnl = (*preferred_cluster_shape_mn, 1)
-
-        preferred_tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, preferred_cluster_shape_mnl
-        )
-        preferred_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            preferred_tile_sched_params, preferred_max_active_clusters
-        )
-
-        # Tile scheduler and grid shape for the fallback cluster
-        fallback_cluster_shape_mnl = (*fallback_cluster_shape_mn, 1)
-
-        fallback_tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, fallback_cluster_shape_mnl
-        )
-        fallback_grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            fallback_tile_sched_params, fallback_max_active_clusters
-        )
-
-        # Align preferred grid to cluster shape
-        preferred_grid = cute.round_up(preferred_grid, preferred_cluster_shape_mnl)
-
-        # Compute max preferred clusters: total blocks <= fallback total,
-        # and is multiple of cluster size
-        preferred_cluster_size_mn = (
-            preferred_cluster_shape_mn[0] * preferred_cluster_shape_mn[1]
-        )
-        max_ctas_for_fallback_cluster = (
-            fallback_grid[0] * fallback_grid[1] * fallback_grid[2]
-        )
-        # Use floor division (not ceil_div) to compute max preferred cluster count.
-        # The preferred cluster total CTA count must not exceed the fallback total,
-        # otherwise when the division is not exact, the extra partial wave of
-        # preferred clusters may force the hardware to schedule one additional wave,
-        # causing significant performance regression.
-        max_preferred_cluster_count = (
-            max_ctas_for_fallback_cluster // preferred_cluster_size_mn
-        )
-        preferred_grid = (
-            preferred_grid[0],
-            preferred_grid[1],
-            max_preferred_cluster_count,
-        )
-
-        return (
-            preferred_tile_sched_params,
-            preferred_grid,
-        )
-
-    @staticmethod
-    def can_implement(
-        mnkl: Tuple[int, int, int, int],
+    def can_compile(
+        self,
         a_dtype: Type[cutlass.Numeric],
         b_dtype: Type[cutlass.Numeric],
         sf_dtype: Type[cutlass.Numeric],
@@ -1062,22 +1070,17 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         b_major: Literal["n", "k"],
         c_major: Literal["m", "n"],
         sf_vec_size: int,
-        mma_tiler: Tuple[int, int, int],
-        mma_inst_shape: Tuple[int, int, int],
-        preferred_cluster_shape_mn: Tuple[int, int],
-        fallback_cluster_shape_mn: Tuple[int, int],
     ) -> bool:
         """
-        Check if the gemm can be implemented
-
-        :param mnkl: The problem size as a tuple (M, N, K, L).
-        :type mnkl: Tuple[int, int, int, int]
+        Check the part of the configuration the compiled kernel specializes on.
         :param a_dtype: The data type of the A operand
         :type a_dtype: Type[cutlass.Numeric]
         :param b_dtype: The data type of the B operand
         :type b_dtype: Type[cutlass.Numeric]
         :param sf_dtype: The data type of the scale factor tensor
         :type sf_dtype: Type[cutlass.Numeric]
+        :param c_dtype: The data type of the output tensor
+        :type c_dtype: Type[cutlass.Numeric]
         :param a_major: The major axis of the A tensor
         :type a_major: Literal["m", "k"]
         :param b_major: The major axis of the B tensor
@@ -1086,25 +1089,15 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
         :type c_major: Literal["m", "n"]
         :param sf_vec_size: The vector size
         :type sf_vec_size: int
-        :param c_dtype: The data type of the output tensor
-        :type c_dtype: Type[cutlass.Numeric]
-        :param mma_tiler: The (M, N, K) shape of the MMA tiler
-        :type mma_tiler: Tuple[int, int, int]
-        :param mma_inst_shape: The (M, N, K) shape of the MMA instruction
-        :type mma_inst_shape: Tuple[int, int, int]
-        :param preferred_cluster_shape_mn: The (ClusterM, ClusterN) shape of the CTA cluster
-        :type preferred_cluster_shape_mn: Tuple[int, int]
-        :param fallback_cluster_shape_mn: The (ClusterM, ClusterN) shape of the CTA cluster
-        :type fallback_cluster_shape_mn: Tuple[int, int]
-        :return: True if the gemm can be implemented, False otherwise
+        :return: True if the configuration can be compiled, False otherwise
         :rtype: bool
         """
-
         try:
-            # Most can_implement rules are the same with the base kernel
+            if self.precompute_scheduler_params:
+                self.tile_scheduler_template_params.check_precompute_support()
+            # Most rules are the same with the base kernel
             # (with preferred_cluster_shape_mn as its cluster shape)
-            if not Sm107BlockScaledPersistentDenseGemmKernel.can_implement(
-                mnkl,
+            if not super().can_compile(
                 a_dtype,
                 b_dtype,
                 sf_dtype,
@@ -1113,49 +1106,167 @@ class Sm107BlockScaledGemmUniversal(Sm107BlockScaledPersistentDenseGemmKernel):
                 b_major,
                 c_major,
                 sf_vec_size,
-                mma_tiler,
-                mma_inst_shape,
-                preferred_cluster_shape_mn,
             ):
                 return False
 
             if (
-                fallback_cluster_shape_mn[0] % (2 if mma_inst_shape[0] == 256 else 1)
+                self.fallback_cluster_shape_mn[0]
+                % (2 if self.mma_inst_shape[0] == 256 else 1)
                 != 0
             ):
                 raise testing.CantImplementError(
-                    f"Invalid fallback cluster shape for a 2CTA MMA, fallback_cluster_shape_m: {fallback_cluster_shape_mn[0]}"
+                    f"Invalid fallback cluster shape for a 2CTA MMA, fallback_cluster_shape_m: {self.fallback_cluster_shape_mn[0]}"
                 )
 
             # Check preferred is multiple of fallback
             if (
-                preferred_cluster_shape_mn[0] % fallback_cluster_shape_mn[0] != 0
-                or preferred_cluster_shape_mn[1] % fallback_cluster_shape_mn[1] != 0
+                self.preferred_cluster_shape_mn[0] % self.fallback_cluster_shape_mn[0]
+                != 0
+                or self.preferred_cluster_shape_mn[1]
+                % self.fallback_cluster_shape_mn[1]
+                != 0
             ):
                 raise testing.CantImplementError(
-                    f"Preferred cluster shape {preferred_cluster_shape_mn} must be "
-                    f"integer multiple of fallback cluster shape {fallback_cluster_shape_mn}"
-                )
-
-            # Check problem size is at least as large as the preferred cluster tile size.
-            # The mixed clusters kernel computes max_preferred_cluster_count as:
-            #   max_ctas_for_fallback_cluster // preferred_cluster_size_mn
-            # If the problem is smaller than one preferred cluster tile, this count
-            # becomes zero, resulting in an invalid grid shape.
-            m, n, k, l = mnkl
-            atom_thr_size = 2 if mma_inst_shape[0] == 256 else 1
-            cluster_tile_m = (
-                mma_tiler[0] // atom_thr_size * preferred_cluster_shape_mn[0]
-            )
-            cluster_tile_n = mma_tiler[1] * preferred_cluster_shape_mn[1]
-            if m < cluster_tile_m or n < cluster_tile_n:
-                raise testing.CantImplementError(
-                    f"Problem size ({m}, {n}) is smaller than the cluster tile size "
-                    f"({cluster_tile_m}, {cluster_tile_n})"
+                    f"Preferred cluster shape {self.preferred_cluster_shape_mn} must be "
+                    f"integer multiple of fallback cluster shape {self.fallback_cluster_shape_mn}"
                 )
         except testing.CantImplementError as e:
+            print(f"[DSL ERROR] CantImplementError: {e}")
             return False
         return True
+
+    def can_implement(
+        self,
+        mnkl: Tuple[int, int, int, int],
+        a_dtype: Type[cutlass.Numeric],
+        b_dtype: Type[cutlass.Numeric],
+        c_dtype: Type[cutlass.Numeric],
+        a_major: Literal["m", "k"],
+        b_major: Literal["n", "k"],
+        c_major: Literal["m", "n"],
+        swizzle_size: int,
+        raster_along: Literal["m", "n"],
+    ) -> bool:
+        """
+        Check if the compiled kernel can execute this launch.
+        :param mnkl: The problem size as a tuple (M, N, K, L).
+        :type mnkl: Tuple[int, int, int, int]
+        :param a_dtype: The data type of the A operand
+        :type a_dtype: Type[cutlass.Numeric]
+        :param b_dtype: The data type of the B operand
+        :type b_dtype: Type[cutlass.Numeric]
+        :param c_dtype: The data type of the output tensor
+        :type c_dtype: Type[cutlass.Numeric]
+        :param a_major: The major axis of the A tensor
+        :type a_major: Literal["m", "k"]
+        :param b_major: The major axis of the B tensor
+        :type b_major: Literal["n", "k"]
+        :param c_major: The major axis of the C tensor
+        :type c_major: Literal["m", "n"]
+        :param swizzle_size: Tiles per swizzle group for this launch
+        :type swizzle_size: int
+        :param raster_along: Rasterization order for this launch, already
+            resolved to a concrete axis by
+            ``TileSchedulerTemplate.resolve_rasterization``
+        :type raster_along: Literal["m", "n"]
+        :return: True if this launch can be executed, False otherwise
+        :rtype: bool
+        """
+        try:
+            if not super().can_implement(
+                mnkl,
+                a_dtype,
+                b_dtype,
+                c_dtype,
+                a_major,
+                b_major,
+                c_major,
+                swizzle_size,
+                raster_along,
+            ):
+                return False
+        except testing.CantImplementError:
+            return False
+        return True
+
+
+@cute.jit
+def bmm(
+    gemm_op: cutlass.Constexpr,
+    a: cute.Tensor,  # (l, m, k)
+    b: cute.Tensor,  # (l, k, n)
+    sfa_ptr: cute.Pointer,
+    sfb_ptr: cute.Pointer,
+    c: cute.Tensor,  # (l, m, n)
+    stream: cuda.CUstream,
+    workspace: cute.Pointer,
+    swizzle_size: Int32,
+    raster_along_m: Boolean,
+    max_active_clusters_fallback: Int32,
+    epilogue_op: cutlass.Constexpr = lambda x: x,
+):
+    """
+    Wrapper API for persistent block scaled GEMM kernel to follow the convention of PyTorch's batch matrix-multiply (bmm).
+
+    :param gemm_op: Kernel operation, expects (a_ptr, b_ptr, sfa_ptr, sfb_ptr, c_ptr, workspace, layouts, problem_mnkl, stream, swizzle_size, raster_along_m, epilogue_op)
+    :type gemm_op: cutlass.Constexpr
+    :param a: Input tensor of shape (l, m, k), or (m, k) when unbatched
+    :type a: cute.Tensor
+    :param b: Input tensor of shape (l, k, n), or (k, n) when unbatched
+    :type b: cute.Tensor
+    :param sfa_ptr: Pointer to the scale factors of A.
+    :type sfa_ptr: cute.Pointer
+    :param sfb_ptr: Pointer to the scale factors of B
+    :type sfb_ptr: cute.Pointer
+    :param c: Output tensor of shape (l, m, n), or (m, n) when unbatched
+    :type c: cute.Tensor
+    :param swizzle_size: Tiles per swizzle group for this launch
+    :type swizzle_size: Int32
+    :param raster_along_m: True rasterizes M-major, False N-major
+    :type raster_along_m: Boolean
+    :param max_active_clusters_fallback: Occupancy cap on concurrently resident
+        fallback clusters. Only the ``static`` work strategy uses it.
+    :type max_active_clusters_fallback: Int32
+    :param epilogue_op: Optional elementwise lambda function to apply per output element, defaults to identity
+    :type epilogue_op: cutlass.Constexpr, optional
+    """
+
+    # Give an unbatched operand a unit batch mode so the one permutation below
+    # serves both ranks.
+    a = cute.prepend_ones(a, up_to_rank=3)
+    b = cute.prepend_ones(b, up_to_rank=3)
+    c = cute.prepend_ones(c, up_to_rank=3)
+
+    # (l,m,k) -> (m,k,l)
+    a = cute.make_tensor(a.iterator, cute.select(a.layout, mode=[1, 2, 0]))
+    # (l,k,n) -> (n,k,l)
+    b = cute.make_tensor(b.iterator, cute.select(b.layout, mode=[2, 1, 0]))
+    # (l,m,n) -> (m,n,l)
+    c = cute.make_tensor(c.iterator, cute.select(c.layout, mode=[1, 2, 0]))
+
+    m, k, l = a.shape
+    n = b.shape[0]
+    layouts = (
+        cutlass.tensor_utils.LayoutEnum.from_tensor(a).mma_major_mode(),
+        cutlass.tensor_utils.LayoutEnum.from_tensor(b).mma_major_mode(),
+        cutlass.tensor_utils.LayoutEnum.from_tensor(c),
+    )
+
+    gemm_op(
+        a.iterator,
+        b.iterator,
+        sfa_ptr,
+        sfb_ptr,
+        c.iterator,
+        workspace,
+        layouts,
+        (m, n, k, l),
+        stream,
+        swizzle_size,
+        raster_along_m,
+        max_active_clusters_fallback,
+        epilogue_op,
+    )
 
 
 def run_scaled_mm_with_emulated_dtype(
@@ -1175,12 +1286,14 @@ def run_scaled_mm_with_emulated_dtype(
     tolerance: float = 1e-01,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    skip_ref_check: bool = False,
+    ref_check_device: str = "cuda",
     use_cold_l2: bool = False,
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
-    prefetch_dist: Union[int, None] = None,
+    prefetch_dist: Union[int, Literal["auto"]] = 0,
+    swizzle_size: int = 1,
+    raster_order: Literal["m", "n", "heuristic"] = "m",
     **kwargs,
 ):
     """Execute a persistent batched dense blockscaled GEMM operation on Rubin architecture with performance benchmarking (emulated dtypes).
@@ -1214,12 +1327,17 @@ def run_scaled_mm_with_emulated_dtype(
     :type warmup_iterations: int, optional
     :param iterations: Number of benchmark iterations to run, defaults to 1
     :type iterations: int, optional
-    :param skip_ref_check: Whether to skip reference result validation, defaults to False
-    :type skip_ref_check: bool, optional
+    :param ref_check_device: Device the reference check runs on, one of "cuda", "cpu" or "skipped", defaults to "cuda"
+    :type ref_check_device: str, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False
     :type use_cold_l2: bool, optional
-    :param prefetch_dist: Prefetch distance for TMA operations (None=auto uses num_ab_stage, 0=disable, >0=explicit).
-    :type prefetch_dist: Union[int, None], optional
+    :param prefetch_dist: Prefetch distance for TMA operations ("auto"=use num_ab_stage, 0=disable, >0=explicit).
+    :type prefetch_dist: Union[int, Literal["auto"]], optional
+    :param swizzle_size: Tiles per swizzle group for this launch, defaults to 1
+    :type swizzle_size: int, optional
+    :param raster_order: Rasterization order for this launch; "heuristic" lets
+        the tile scheduler pick one from the problem shape, defaults to "m"
+    :type raster_order: Literal["m", "n", "heuristic"], optional
     :raises RuntimeError: If CUDA GPU is not available
     :raises ValueError: If the configuration is invalid or unsupported by the kernel
     :return: Execution time of the GEMM kernel
@@ -1238,9 +1356,20 @@ def run_scaled_mm_with_emulated_dtype(
     print(f"Tolerance: {tolerance}")
     print(f"Warmup iterations: {warmup_iterations}")
     print(f"Iterations: {iterations}")
-    print(f"Skip reference checking: {skip_ref_check}")
+    print(f"Reference check device: {ref_check_device}")
     print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-    if prefetch_dist is None:
+    print(
+        f"Work Strategy: {gemm_obj.work_strategy}, "
+        f"Rasterization Strategy: {gemm_obj.rasterization_strategy}"
+    )
+    print(
+        f"Split K: {gemm_obj.split_k}, "
+        f"Reduction Strategy: {gemm_obj.reduction_strategy}"
+    )
+    print(
+        f"Use PDL: {gemm_obj.use_pdl}, Use Reduction PDL: {gemm_obj.use_reduction_pdl}"
+    )
+    if prefetch_dist == "auto":
         print("Prefetch distance: auto (num_ab_stage)")
     elif prefetch_dist == 0:
         print("Prefetch: Disabled")
@@ -1253,20 +1382,20 @@ def run_scaled_mm_with_emulated_dtype(
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")
 
+    # HardwareInfo needs the CUDA context torch binds when a device is selected.
+    torch.cuda.set_device(torch.cuda.current_device())
+    max_active_clusters = tile_scheduler.query_max_active_clusters(
+        gemm_obj.fallback_cluster_shape_mn,
+        gemm_obj.split_k,
+        gemm_obj.reduction_strategy,
+    )
+
     torch.manual_seed(1111)
 
     # Get current CUDA stream from PyTorch
     torch_stream = torch.cuda.current_stream()
     # Get the raw stream pointer as a CUstream
     current_stream = cuda.CUstream(torch_stream.cuda_stream)
-
-    # Check if configuration can be implemented
-    preferred_max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-        preferred_cluster_shape_mn[0] * preferred_cluster_shape_mn[1]
-    )
-    fallback_max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-        fallback_cluster_shape_mn[0] * fallback_cluster_shape_mn[1]
-    )
 
     # Construct CuTe Pointers
     a_ptr = make_ptr(a_dtype, 0, cutlass.AddressSpace.gmem, assumed_align=16)
@@ -1290,13 +1419,52 @@ def run_scaled_mm_with_emulated_dtype(
         sfa_ptr,
         sfb_ptr,
         c_ptr,
+        make_ptr(cutlass.Int8, 0, cutlass.AddressSpace.gmem, assumed_align=16),
         (a_major_mode, b_major_mode, c_layout),
         (cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0), cutlass.Int32(0)),
-        preferred_max_active_clusters,
-        fallback_max_active_clusters,
         current_stream,
+        Int32(1),  # placeholder for swizzle_size
+        Boolean(True),  # placeholder for raster_along_m
+        Int32(1),  # placeholder for max_active_clusters_fallback
         lambda x: x,
     )
+
+    workspace_bytes = gemm_obj.get_gmem_workspace_size([m, n, l])
+    # ``_workspace_tensor`` is a keepalive: dropping it dangles ``workspace_ptr``.
+    _workspace_tensor = None
+    workspace_address = 0
+    if workspace_bytes != 0:
+        _workspace_tensor = torch.empty(
+            workspace_bytes, dtype=torch.int8, device="cuda"
+        )
+        gemm_obj.initialize_workspace(_workspace_tensor, [m, n, l])
+        workspace_address = _workspace_tensor.data_ptr()
+    workspace_ptr = make_ptr(
+        cutlass.Int8, workspace_address, cutlass.AddressSpace.gmem, assumed_align=16
+    )
+
+    raster_order, swizzle_size = gemm_obj.tile_scheduler_template.resolve_rasterization(
+        raster_order,
+        swizzle_size,
+        mnkl,
+        a_element_bytes=a_dtype.width // 8,
+        b_element_bytes=b_dtype.width // 8,
+    )
+    if not gemm_obj.can_implement(
+        mnkl,
+        a_dtype,
+        b_dtype,
+        c_dtype,
+        a_major,
+        b_major,
+        c_major,
+        swizzle_size,
+        raster_order,
+    ):
+        raise testing.CantImplementError(
+            f"Unsupported launch for mnkl: {mnkl}, "
+            f"swizzle_size: {swizzle_size}, raster_order: {raster_order}"
+        )
 
     # Create Torch Tensors for A, scale factor A, B, scale factor B, C
     a_f32_ref, b_f32_ref, c, sfa_f32, sfb_f32 = create_and_init_tensors_emulated(
@@ -1329,7 +1497,7 @@ def run_scaled_mm_with_emulated_dtype(
     )
 
     # Compute reference result
-    if not skip_ref_check:
+    if ref_check_device != "skipped":
         # Execute kernel once for reference checking
         compiled_gemm(
             a_ptr,
@@ -1337,17 +1505,27 @@ def run_scaled_mm_with_emulated_dtype(
             sfa_reordered.iterator,
             sfb_reordered.iterator,
             c_ptr,
+            workspace_ptr,
             (m, n, k, l),
             current_stream,
+            Int32(swizzle_size),
+            Boolean(raster_order == "m"),
+            Int32(max_active_clusters),
         )
 
-        # The reference runs on the host.
-        res_a = torch.einsum("mkl,mkl->mkl", a_f32_ref.cpu(), sfa_f32_ref)
-        res_b = torch.einsum("nkl,nkl->nkl", b_f32_ref.cpu(), sfb_f32_ref)
+        # The reference runs on whichever device the caller asked for; the
+        # scale factors follow the operands.
+        device = ref_check_device
+        res_a = torch.einsum(
+            "mkl,mkl->mkl", a_f32_ref.to(device), sfa_f32_ref.to(device)
+        )
+        res_b = torch.einsum(
+            "nkl,nkl->nkl", b_f32_ref.to(device), sfb_f32_ref.to(device)
+        )
         ref = torch.einsum("mkl,nkl->mnl", res_a, res_b)
         c_ref = ref.to(dtype=cutlass_torch.dtype(c_dtype))
 
-        torch.testing.assert_close(c.cpu(), c_ref, atol=tolerance, rtol=tolerance)
+        torch.testing.assert_close(c.to(device), c_ref, atol=tolerance, rtol=tolerance)
 
     def generate_inputs():
         # Create Torch Tensors for A, scale factor A, B, scale factor B, C
@@ -1386,8 +1564,12 @@ def run_scaled_mm_with_emulated_dtype(
             sfa_reordered.iterator,
             sfb_reordered.iterator,
             c_ptr,
+            workspace_ptr,
             (m, n, k, l),
             current_stream,
+            Int32(swizzle_size),
+            Boolean(raster_order == "m"),
+            Int32(max_active_clusters),
         )
         # Keep references to external variables (e.g., Torch tensors when taking a view)
         jit_args.add_to_scope(
@@ -1437,16 +1619,30 @@ def run(
     tolerance: float = 1e-01,
     warmup_iterations: int = 0,
     iterations: int = 1,
-    skip_ref_check: bool = False,
+    ref_check_device: str = "cuda",
     use_cold_l2: bool = False,
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
-    prefetch_dist: Union[int, None] = None,
+    prefetch_dist: Union[int, Literal["auto"]] = 0,
+    swizzle_size: int = 1,
+    raster_order: Literal["m", "n", "heuristic"] = "m",
+    use_tma_store: bool = True,
+    split_k: int = 1,
+    reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"] = "none",
+    work_strategy: Literal["grid", "static", "clc"] = "static",
+    rasterization_strategy: Literal["none", "affine"] = "affine",
+    num_scheduler_stages: int = 1,
+    use_pdl: bool = False,
+    use_reduction_pdl: bool = False,
+    precompute_scheduler_params: bool = False,
     **kwargs,
 ):
-    """
-    Execute the appropriate GEMM function based on dtype.
+    """Execute the appropriate GEMM function based on dtype.
+
+    :param precompute_scheduler_params: Host-prepare scheduler parameters
+        (static/affine/no-reduction only), defaults to False.
+    :type precompute_scheduler_params: bool, optional
     """
     # Configure gemm kernel
     gemm = Sm107BlockScaledGemmUniversal(
@@ -1456,11 +1652,19 @@ def run(
         preferred_cluster_shape_mn,
         fallback_cluster_shape_mn,
         prefetch_dist,
+        use_tma_store=use_tma_store,
+        split_k=split_k,
+        work_strategy=work_strategy,
+        rasterization_strategy=rasterization_strategy,
+        reduction_strategy=reduction_strategy,
+        num_scheduler_stages=num_scheduler_stages,
+        use_pdl=use_pdl,
+        use_reduction_pdl=use_reduction_pdl,
+        precompute_scheduler_params=precompute_scheduler_params,
     )
 
     # Skip unsupported testcase
-    if not gemm.can_implement(
-        mnkl,
+    if not gemm.can_compile(
         a_dtype,
         b_dtype,
         sf_dtype,
@@ -1469,10 +1673,6 @@ def run(
         b_major,
         c_major,
         sf_vec_size,
-        mma_tiler,
-        mma_inst_shape,
-        preferred_cluster_shape_mn,
-        fallback_cluster_shape_mn,
     ):
         m, n, k, l = mnkl
         raise testing.CantImplementError(
@@ -1504,12 +1704,14 @@ def run(
         tolerance,
         warmup_iterations,
         iterations,
-        skip_ref_check,
+        ref_check_device,
         use_cold_l2,
         init_normal,
         normal_mean,
         normal_std,
         prefetch_dist,
+        swizzle_size=swizzle_size,
+        raster_order=raster_order,
     )
 
     print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
@@ -1580,7 +1782,11 @@ def prepare_parser():
         help="Number of iterations to run the kernel",
     )
     parser.add_argument(
-        "--skip_ref_check", action="store_true", help="Skip reference checking"
+        "--ref_check_device",
+        type=str,
+        default="cuda",
+        choices=["cuda", "cpu", "skipped"],
+        help="Device for the reference check, or 'skipped' to omit it",
     )
     parser.add_argument(
         "--use_cold_l2",
@@ -1607,9 +1813,79 @@ def prepare_parser():
     )
     parser.add_argument(
         "--prefetch_dist",
+        type=lambda v: "auto" if v == "auto" else int(v),
+        default=0,
+        help="Prefetch distance for TMA operations (default: 0=disable, 'auto'=use num_ab_stage, >0=explicit distance)",
+    )
+    parser.add_argument(
+        "--swizzle_size",
         type=int,
-        default=None,
-        help="Prefetch distance for TMA operations (default: None=auto uses num_ab_stage, 0=disable, >0=explicit distance)",
+        default=1,
+        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
+    )
+    parser.add_argument(
+        "--raster_order",
+        type=str,
+        choices=["m", "n", "heuristic"],
+        default="m",
+        help="Rasterization order of clusters ('heuristic' picks one from the problem shape)",
+    )
+    parser.add_argument(
+        "--use_tma_store",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Store C through SMEM with TMA; --no-use_tma_store stores from registers",
+    )
+    parser.add_argument(
+        "--split_k",
+        type=int,
+        default=1,
+        help="Number of K partitions; requires a --reduction_strategy other than 'none'",
+    )
+    parser.add_argument(
+        "--reduction_strategy",
+        type=str,
+        choices=["none", "gmem-splitk", "cluster-splitk"],
+        default="none",
+        help="How the K partitions are reduced: a second GMEM kernel, or in-kernel over DSMEM",
+    )
+    parser.add_argument(
+        "--work_strategy",
+        type=str,
+        choices=["grid", "static", "clc"],
+        default="static",
+        help="How output tiles are handed to CTAs",
+    )
+    parser.add_argument(
+        "--rasterization_strategy",
+        type=str,
+        choices=["none", "affine"],
+        default="affine",
+        help="How a work index is decoded into a tile coordinate",
+    )
+    parser.add_argument(
+        "--num_scheduler_stages",
+        type=int,
+        default=1,
+        help="Depth of the CLC work-fetch pipeline",
+    )
+    parser.add_argument(
+        "--use_pdl",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Launch the GEMM with programmatic dependent launch",
+    )
+    parser.add_argument(
+        "--use_reduction_pdl",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Launch the GMEM split-K reduction kernel with programmatic dependent launch",
+    )
+    parser.add_argument(
+        "--precompute_scheduler_params",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Prepare scheduler parameters on the host (requires static/affine/none)",
     )
     return parser
 
@@ -1671,11 +1947,22 @@ if __name__ == "__main__":
         args.tolerance,
         args.warmup_iterations,
         args.iterations,
-        args.skip_ref_check,
+        args.ref_check_device,
         args.use_cold_l2,
         args.init_normal,
         args.normal_mean,
         args.normal_std,
         args.prefetch_dist,
+        args.swizzle_size,
+        args.raster_order,
+        use_tma_store=args.use_tma_store,
+        split_k=args.split_k,
+        reduction_strategy=args.reduction_strategy,
+        work_strategy=args.work_strategy,
+        rasterization_strategy=args.rasterization_strategy,
+        num_scheduler_stages=args.num_scheduler_stages,
+        use_pdl=args.use_pdl,
+        use_reduction_pdl=args.use_reduction_pdl,
+        precompute_scheduler_params=args.precompute_scheduler_params,
     )
     print("PASS")

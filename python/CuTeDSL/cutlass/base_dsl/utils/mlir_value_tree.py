@@ -65,6 +65,24 @@ def is_dynamic_expression(value: object) -> bool:
     return False
 
 
+def _is_staged_membership_operand(value: Any) -> bool:
+    """Whether a membership operand (the lhs, or a member of a tuple/list/set
+    rhs) carries a run-time value, so the test has to be staged.
+
+    A type object -- ``a_dtype in (cutlass.Float16, cutlass.Float32)`` -- is a
+    trace-time fact although the dtype classes expose the MLIR-value protocol
+    their instances are tested with; ``is_dynamic_expression`` alone would call
+    them Staged and stage a comparison of two classes. Tuples and lists are
+    walked (``is_dynamic_expression`` does not look inside a set, so a set is
+    walked by the caller).
+    """
+    if isinstance(value, type):
+        return False
+    if isinstance(value, (tuple, list)):
+        return any(_is_staged_membership_operand(v) for v in value)
+    return is_dynamic_expression(value)
+
+
 def extract_mlir_values(obj: object, *, structured: bool = False) -> Any:
     """
     Given the `obj`, recursively go through it to extract all contained IR values.

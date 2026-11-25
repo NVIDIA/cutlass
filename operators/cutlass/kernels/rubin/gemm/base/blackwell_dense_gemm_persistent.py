@@ -26,86 +26,26 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import argparse
+import dataclasses
 from typing import Optional, Tuple, Type, Union, Literal
-from functools import lru_cache
 import cuda.bindings.driver as cuda
 
 import cutlass
 import cutlass.cute as cute
 from cutlass import testing
 import cutlass.utils as utils
-from cutlass.utils import is_fp8_dtype, create_cute_tensor_for_fp8
-import cutlass.pipeline as pipeline
-from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
-from cutlass.cute.nvgpu import cpasync, tcgen05
+from cutlass.utils import is_fp8_dtype
+from cutlass.cutlass_dsl import Boolean, Int32
+from cutlass.kernels.utils import tile_scheduler
+from cutlass.cute.nvgpu import tcgen05
 
 
-"""
-A high-performance persistent batched dense GEMM example for the NVIDIA Blackwell SM100 architecture
-using CUTE DSL.
-- Matrix A is MxKxL, L is batch dimension, A can be row-major("K") or column-major("M")
-- Matrix B is NxKxL, L is batch dimension, B can be row-major("N") or column-major("K")
-- Matrix C is MxNxL, L is batch dimension, C can be row-major("N") or column-major("M")
+"""Blackwell SM100 persistent dense GEMM base for the Rubin SM107 kernels.
 
-This GEMM kernel supports the following features:
-    - Utilizes Tensor Memory Access (TMA) for efficient memory operations
-    - Utilizes Blackwell's tcgen05.mma for matrix multiply-accumulate (MMA) operations (including 2cta mma instructions)
-    - Implements TMA multicast with cluster to reduce L2 memory traffic
-    - Support persistent tile scheduling to better overlap memory load/store with mma between tiles
-    - Support warp specialization to avoid explicit pipelining between mainloop load and mma
-
-This GEMM works as follows:
-1. DMA warp: Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using TMA operations.
-2. MMA warp: Perform matrix multiply-accumulate (MMA) operations using tcgen05.mma instruction.
-3. EPILOGUE warp:
-    - Load completed accumulator from tensor memory (TMEM) to registers (RMEM) using tcgen05.ld.
-    - Type convert C matrix to output type.
-    - Optionally store C matrix from registers (RMEM) to shared memory (SMEM) to global memory (GMEM) with TMA operations,
-      or directly store C matrix from registers (RMEM) to global memory (GMEM) without TMA operations.
-    - Optionally accept an elementwise lambda function epilogue_op to apply to the output tensor:
-      e.g., relu can set epilogue_op = lambda x: cute.where(x > 0, x, cute.full_like(x, 0))
-
-SM100 tcgen05.mma instructions operate as follows:
-- Read matrix A from SMEM
-- Read matrix B from SMEM
-- Write accumulator to TMEM
-The accumulator in TMEM must then be loaded to registers before writing back to GMEM.
-
-Input arguments to this example is same as dense_gemm.py.
-
-.. code-block:: bash
-
-    python examples/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py                          \
-      --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                  \
-      --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                             \
-      --mnkl 8192,8192,8192,1                                                   \
-      --use_tma_store --use_2cta_instrs
-
-To collect performance with NCU profiler:
-
-.. code-block:: bash
-
-    ncu python examples/cute/blackwell/kernel/dense_gemm/dense_gemm_persistent.py                     \
-      --ab_dtype Float16 --c_dtype Float16 --acc_dtype Float32                 \
-      --mma_tiler_mn 256,128 --cluster_shape_mn 2,1                            \
-      --mnkl 8192,8192,8192,1                                                  \
-      --use_tma_store --use_2cta_instrs                                        \
-      --warmup_iterations 1 --iterations 10 --skip_ref_check
-
-
-Constraints are same as dense_gemm.py:
-* Supported input data types: fp16, bf16, tf32, int8, uint8, fp8 (e4m3fn, e5m2),
-  see detailed valid dtype combinations in below PersistentDenseGemmKernel class documentation
-* A/B tensor must have the same data type
-* Mma tiler M must be 64/128 (use_2cta_instrs=False) or 128/256 (use_2cta_instrs=True)
-* Mma tiler N must be 32-256, step 32
-* Cluster shape M/N must be positive and power of 2, total cluster size <= 16
-* Cluster shape M must be multiple of 2 if use_2cta_instrs=True
-* The contiguous dimension of A/B/C tensors must be at least 16 bytes aligned,
-  i.e, number of elements is a multiple of 4, 8, and 16 for TFloat32,
-  Float16/BFloat16, and Int8/Uint8/Float8, respectively.
-* OOB tiles are not allowed when TMA store is disabled
+Not a runnable kernel: the standalone host/device paths were removed. Only the
+pieces the SM107 subclasses inherit or import remain -- the constructor and
+tile-scheduler template state, the pre-flight checks, the ``bmm`` traced
+entry, and the tensor/stage helpers.
 """
 
 
@@ -119,6 +59,7 @@ def _compute_stages(
     occupancy: int,
     use_tma_store: bool,
     c_smem_layout: Union[cute.Layout, None],
+    tile_scheduler_bytes: int = 0,
 ) -> Tuple[int, int, int]:
     """Computes the number of stages for A/B/C operands based on heuristics.
 
@@ -140,6 +81,10 @@ def _compute_stages(
     :type use_tma_store: bool
     :param c_smem_layout: Layout of C operand in shared memory, or None if not using TMA store.
     :type c_smem_layout: Union[cute.Layout, None]
+    :param tile_scheduler_bytes: Shared memory the tile scheduler reserves, in bytes.
+        Non-zero for the CLC work strategy (mbarriers + response slots) and for
+        cluster split-K (the DSMEM mailbox).
+    :type tile_scheduler_bytes: int
 
     :return: A tuple containing the computed number of stages for:
              (ACC stages, A/B operand stages, C stages)
@@ -172,7 +117,8 @@ def _compute_stages(
     # Subtract reserved bytes and initial C stages bytes
     # Divide remaining by bytes needed per A/B stage
     num_ab_stage = (
-        smem_capacity // occupancy - (mbar_helpers_bytes + c_bytes)
+        smem_capacity // occupancy
+        - (mbar_helpers_bytes + c_bytes + tile_scheduler_bytes)
     ) // ab_bytes_per_stage
 
     # Refine epilogue stages:
@@ -182,7 +128,7 @@ def _compute_stages(
         num_c_stage += (
             smem_capacity
             - occupancy * ab_bytes_per_stage * num_ab_stage
-            - occupancy * (mbar_helpers_bytes + c_bytes)
+            - occupancy * (mbar_helpers_bytes + c_bytes + tile_scheduler_bytes)
         ) // (occupancy * c_bytes_per_stage)
     return num_acc_stage, num_ab_stage, num_c_stage
 
@@ -229,15 +175,7 @@ class PersistentDenseGemmKernel:
         - Cluster shape M must be multiple of 2 if use_2cta_instrs=True
         - Cluster shape M/N must be positive and power of 2, total cluster size <= 16
 
-    **Example:**
-        gemm = PersistentDenseGemmKernel(
-            acc_dtype=cutlass.Float32,
-            use_2cta_instrs=True,
-            mma_tiler_mn=(128, 128),
-            cluster_shape_mn=(2, 2),
-            use_tma_store=True
-        )
-        gemm(a, b, c, max_active_clusters, stream, epilogue_op)
+    This base is not runnable; see the SM107 subclasses for usage.
     """
 
     def __init__(
@@ -247,8 +185,14 @@ class PersistentDenseGemmKernel:
         mma_tiler_mn: Tuple[int, int],
         cluster_shape_mn: Tuple[int, int],
         use_tma_store: bool,
-        swizzle_size: int = 1,
-        raster_along: Literal["m", "n"] = "m",
+        split_k: int = 1,
+        work_strategy: Literal["grid", "static", "clc"] = "static",
+        rasterization_strategy: Literal["none", "affine"] = "affine",
+        reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"] = "none",
+        num_scheduler_stages: int = 1,
+        use_pdl: bool = False,
+        use_reduction_pdl: bool = False,
+        fallback_cluster_shape_mn: Optional[Tuple[int, int]] = None,
     ):
         """Initializes the configuration for a Blackwell dense GEMM kernel.
 
@@ -276,45 +220,111 @@ class PersistentDenseGemmKernel:
         :type cluster_shape_mn: Tuple[int, int]
         :param use_tma_store: Use Tensor Memory Access (TMA) or normal store for output C tensor.
         :type use_tma_store: bool
+        :param split_k: Number of K partitions; must be 1 iff ``reduction_strategy`` is "none".
+        :type split_k: int
+        :param work_strategy: How output tiles are handed to CTAs.
+        :type work_strategy: Literal["grid", "static", "clc"]
+        :param rasterization_strategy: How a work index is decoded into a tile coordinate.
+        :type rasterization_strategy: Literal["none", "affine"]
+        :param reduction_strategy: How the K partitions are reduced.
+        :type reduction_strategy: Literal["none", "gmem-splitk", "cluster-splitk"]
+        :param num_scheduler_stages: Depth of the CLC work-fetch pipeline.
+        :type num_scheduler_stages: int
+        :param use_pdl: Launch this kernel with programmatic dependent launch.
+        :type use_pdl: bool
+        :param use_reduction_pdl: Launch the GMEM split-K reduction kernel with PDL.
+        :type use_reduction_pdl: bool
+        :param fallback_cluster_shape_mn: Tuple (ClusterM, ClusterN) shape of the
+            fallback cluster; defaults to ``cluster_shape_mn``.
+        :type fallback_cluster_shape_mn: Optional[Tuple[int, int]]
         """
 
         self.acc_dtype: Type[cutlass.Numeric] = acc_dtype
         self.use_2cta_instrs = use_2cta_instrs
         self.cluster_shape_mn = cluster_shape_mn
-        self.swizzle_size = swizzle_size
-        self.raster_along = raster_along
-        # K dimension is deferred in _setup_attributes
+        self.fallback_cluster_shape_mn = fallback_cluster_shape_mn or cluster_shape_mn
         self.mma_tiler_mn = mma_tiler_mn
         self.mma_tiler = (*mma_tiler_mn, 1)
         self.use_tma_store = use_tma_store
         self.arch = "sm_100"
+
+        self.split_k = split_k
+        self.work_strategy = work_strategy
+        self.rasterization_strategy = rasterization_strategy
+        self.reduction_strategy = reduction_strategy
+        self.num_sched_stages = num_scheduler_stages
+        self.use_pdl = use_pdl
+        self.use_reduction_pdl = use_reduction_pdl
 
         self.cta_group = (
             tcgen05.CtaGroup.TWO if use_2cta_instrs else tcgen05.CtaGroup.ONE
         )
 
         self.occupancy = 1
-        # Set specialized warp ids
         self.epilogue_warp_id = (0, 1, 2, 3)
         self.mma_warp_id = 4
         self.tma_warp_id = 5
-        self.threads_per_cta = 32 * len(
-            (self.mma_warp_id, self.tma_warp_id, *self.epilogue_warp_id)
-        )
-        # Set barrier id for cta sync, epilogue sync and tmem ptr sync
         self.epilog_sync_bar_id = 1
         self.tmem_alloc_sync_bar_id = 2
         self.tmem_dealloc_sync_bar_id = 3
 
-    def _create_tiled_mma(self):
-        return utils.sm100.make_trivial_tiled_mma(
-            self.a_dtype,
-            self.b_dtype,
-            self.a_major_mode,
-            self.b_major_mode,
-            self.acc_dtype,
-            self.cta_group,
-            self.mma_tiler[:2],
+        self.tile_scheduler_template_params = (
+            tile_scheduler.TileSchedulerTemplateParams(
+                acc_dtype=self.acc_dtype,
+                work_strategy=self.work_strategy,
+                rasterization_strategy=self.rasterization_strategy,
+                reduction_strategy=self.reduction_strategy,
+                num_scheduler_stages=self.num_sched_stages,
+                cluster_shape_mn=self.cluster_shape_mn,
+                split_k=self.split_k,
+                cta_tile_shape_mnk=(
+                    self.mma_tiler[0] // (2 if self.use_2cta_instrs else 1),
+                    self.mma_tiler[1],
+                    1,
+                ),
+                fallback_cluster_shape_mn=self.fallback_cluster_shape_mn,
+            )
+        )
+        self.tile_scheduler_template = tile_scheduler.build_tile_scheduler_template(
+            self.tile_scheduler_template_params
+        )
+        warp_ids = [self.mma_warp_id, self.tma_warp_id, *self.epilogue_warp_id]
+        # ``sched_warp_id`` is only read behind a ``requires_scheduler_warp`` guard.
+        if self.tile_scheduler_template.requires_scheduler_warp:
+            self.sched_warp_id = 6
+            warp_ids.append(self.sched_warp_id)
+        self.threads_per_cta = 32 * len(warp_ids)
+
+    def get_gmem_workspace_size(self, problem_shape_mnl) -> int:
+        """Bytes of GMEM scratch the schedule needs for ``problem_shape_mnl``.
+
+        :param problem_shape_mnl: problem extents (M, N, L) in elements
+        :type problem_shape_mnl: Sequence[int]
+        """
+        return self.tile_scheduler_template.get_gmem_workspace_size(problem_shape_mnl)
+
+    def initialize_workspace(self, workspace, problem_shape_mnl) -> None:
+        """Populate the host-side staging buffer for the GMEM workspace.
+
+        :param workspace: 1-D int8 buffer of ``get_gmem_workspace_size`` bytes
+        :param problem_shape_mnl: problem extents (M, N, L) in elements
+        """
+        self.tile_scheduler_template.initialize_workspace(workspace, problem_shape_mnl)
+
+    def lazily_set_cta_tile_shape_mnk(self, cta_tile_shape_mnk) -> None:
+        """Rebuild the scheduler template with the real CTA tile shape.
+
+        :param cta_tile_shape_mnk: the real CTA tile shape (M, N, K)
+        """
+        cta_tile_shape_mnk = tuple(cta_tile_shape_mnk)
+        if self.tile_scheduler_template_params.cta_tile_shape_mnk == cta_tile_shape_mnk:
+            return
+        self.tile_scheduler_template_params = dataclasses.replace(
+            self.tile_scheduler_template_params,
+            cta_tile_shape_mnk=cta_tile_shape_mnk,
+        )
+        self.tile_scheduler_template = tile_scheduler.build_tile_scheduler_template(
+            self.tile_scheduler_template_params
         )
 
     def _setup_attributes(self):
@@ -348,9 +358,16 @@ class PersistentDenseGemmKernel:
             self.mma_tiler[2],
         )
 
+        self.lazily_set_cta_tile_shape_mnk(self.cta_tile_shape_mnk)
+
         # Compute cluster layout
         self.cluster_layout_vmnk = cute.tiled_divide(
             cute.make_layout((*self.cluster_shape_mn, 1)),
+            (tiled_mma.thr_id.shape,),
+        )
+
+        self.clc_cluster_layout_vmnk = cute.tiled_divide(
+            cute.make_layout(self.tile_scheduler_template_params.cluster_shape),
             (tiled_mma.thr_id.shape,),
         )
 
@@ -390,6 +407,7 @@ class PersistentDenseGemmKernel:
             self.occupancy,
             self.use_tma_store,
             c_smem_layout,
+            self.tile_scheduler_template.get_smem_workspace_size(),
         )
 
         # Compute A/B/C shared memory layout
@@ -411,685 +429,7 @@ class PersistentDenseGemmKernel:
             tiled_mma, self.mma_tiler, self.num_acc_stage, self.arch
         )
 
-    @cute.jit
-    def __call__(
-        self,
-        a: cute.Tensor,
-        b: cute.Tensor,
-        c: cute.Tensor,
-        max_active_clusters: cutlass.Constexpr,
-        stream: cuda.CUstream,
-        epilogue_op: cutlass.Constexpr = lambda x: x,
-    ):
-        """Execute the GEMM operation in steps:
-        - Setup static attributes before smem/grid/tma computation
-        - Setup TMA load/store atoms and tensors
-        - Compute grid size with regard to hardware constraints
-        - Define shared storage for kernel
-        - Launch the kernel synchronously
-
-        :param a: Input tensor A
-        :type a: cute.Tensor
-        :param b: Input tensor B
-        :type b: cute.Tensor
-        :param c: Output tensor C
-        :type c: cute.Tensor
-        :param max_active_clusters: Maximum number of active clusters
-        :type max_active_clusters: cutlass.Constexpr
-        :param stream: CUDA stream for asynchronous execution
-        :type stream: cuda.CUstream
-        :param epilogue_op: Optional elementwise lambda function to apply to the output tensor
-        :type epilogue_op: cutlass.Constexpr
-        :raises TypeError: If input data types are incompatible with the MMA instruction.
-        :raises AssertionError: If OOB (Out-Of-Bounds) tiles are present when TMA store is disabled.
-        """
-        # Setup static attributes before smem/grid/tma computation
-        self.a_dtype: Type[cutlass.Numeric] = a.element_type
-        self.b_dtype: Type[cutlass.Numeric] = b.element_type
-        self.c_dtype: Type[cutlass.Numeric] = c.element_type
-        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
-            a
-        ).mma_major_mode()
-        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
-            b
-        ).mma_major_mode()
-        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
-
-        # Check if input data types are compatible with MMA instruction
-        if cutlass.const_expr(self.a_dtype != self.b_dtype):
-            raise TypeError(f"Type must match: {self.a_dtype} != {self.b_dtype}")
-
-        tiled_mma = self._create_tiled_mma()
-
-        # Setup attributes that dependent on gemm inputs
-        self._setup_attributes()
-
-        atom_thr_size = cute.size(tiled_mma.thr_id.shape)
-
-        # Setup TMA load for A
-        a_op = utils.sm100.cluster_shape_to_tma_atom_A(
-            self.cluster_shape_mn, tiled_mma.thr_id
-        )
-        a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
-        tma_atom_a, tma_tensor_a = cute.nvgpu.make_tiled_tma_atom_A(
-            a_op,
-            a,
-            a_smem_layout,
-            self.mma_tiler,
-            tiled_mma,
-            self.cluster_layout_vmnk.shape,
-            internal_type=(
-                cutlass.TFloat32 if a.element_type is cutlass.Float32 else None
-            ),
-        )
-
-        # Setup TMA load for B
-        b_op = utils.sm100.cluster_shape_to_tma_atom_B(
-            self.cluster_shape_mn, tiled_mma.thr_id
-        )
-        b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
-        tma_atom_b, tma_tensor_b = cute.nvgpu.make_tiled_tma_atom_B(
-            b_op,
-            b,
-            b_smem_layout,
-            self.mma_tiler,
-            tiled_mma,
-            self.cluster_layout_vmnk.shape,
-            internal_type=(
-                cutlass.TFloat32 if b.element_type is cutlass.Float32 else None
-            ),
-        )
-
-        a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
-        b_copy_size = cute.size_in_bytes(self.b_dtype, b_smem_layout)
-        self.num_tma_load_bytes = (a_copy_size + b_copy_size) * atom_thr_size
-
-        # Setup TMA store for C
-        tma_atom_c = None
-        tma_tensor_c = None
-        if cutlass.const_expr(self.use_tma_store):
-            epi_smem_layout = cute.select(self.c_smem_layout_staged, mode=[0, 1])
-            tma_atom_c, tma_tensor_c = cpasync.make_tiled_tma_atom(
-                cpasync.CopyBulkTensorTileS2GOp(), c, epi_smem_layout, self.epi_tile
-            )
-
-        # Compute grid size
-        self.tile_sched_params, grid = self._compute_grid(
-            c,
-            self.cta_tile_shape_mnk,
-            self.cluster_shape_mn,
-            self.swizzle_size,
-            self.raster_along,
-            max_active_clusters,
-        )
-
-        # Launch the kernel synchronously
-        self.kernel(
-            tiled_mma,
-            tma_atom_a,
-            tma_tensor_a,
-            tma_atom_b,
-            tma_tensor_b,
-            tma_atom_c,
-            tma_tensor_c if self.use_tma_store else c,
-            self.cluster_layout_vmnk,
-            self.a_smem_layout_staged,
-            self.b_smem_layout_staged,
-            self.c_smem_layout_staged,
-            self.epi_tile,
-            self.tile_sched_params,
-            epilogue_op,
-        ).launch(
-            grid=grid,
-            block=[self.threads_per_cta, 1, 1],
-            cluster=(*self.cluster_shape_mn, 1),
-            stream=stream,
-        )
-        return
-
     # GPU device kernel
-    @cute.kernel
-    def kernel(
-        self,
-        tiled_mma: cute.TiledMma,
-        tma_atom_a: cute.CopyAtom,
-        mA_mkl: cute.Tensor,
-        tma_atom_b: cute.CopyAtom,
-        mB_nkl: cute.Tensor,
-        tma_atom_c: Optional[cute.CopyAtom],
-        mC_mnl: cute.Tensor,
-        cluster_layout_vmnk: cute.Layout,
-        a_smem_layout_staged: cute.ComposedLayout,
-        b_smem_layout_staged: cute.ComposedLayout,
-        c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
-        epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
-        epilogue_op: cutlass.Constexpr,
-    ):
-        """
-        GPU device kernel performing the Persistent batched GEMM computation.
-        """
-        warp_idx = cute.arch.warp_idx()
-        warp_idx = cute.arch.make_warp_uniform(warp_idx)
-
-        #
-        # Prefetch tma desc
-        #
-        if warp_idx == self.tma_warp_id:
-            cpasync.prefetch_descriptor(tma_atom_a)
-            cpasync.prefetch_descriptor(tma_atom_b)
-            if cutlass.const_expr(self.use_tma_store):
-                cpasync.prefetch_descriptor(tma_atom_c)
-
-        use_2cta_instrs = cute.size(tiled_mma.thr_id.shape) == 2
-
-        #
-        # Setup cta/thread coordinates
-        #
-        # Coords inside cluster
-        bidx, bidy, bidz = cute.arch.block_idx()
-        mma_tile_coord_v = bidx % cute.size(tiled_mma.thr_id.shape)
-        is_leader_cta = mma_tile_coord_v == 0
-        cta_rank_in_cluster = cute.arch.make_warp_uniform(
-            cute.arch.block_idx_in_cluster()
-        )
-        block_in_cluster_coord_vmnk = cluster_layout_vmnk.get_flat_coord(
-            cta_rank_in_cluster
-        )
-        # Coord inside cta
-        tidx, _, _ = cute.arch.thread_idx()
-
-        #
-        # Alloc and init: a+b full/empty, accumulator full/empty, tensor memory dealloc barrier
-        #
-        # Define shared storage for kernel
-        @cute.struct
-        class SharedStorage:
-            ab_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage * 2]
-            acc_full_mbar_ptr: cute.struct.MemRange[
-                cutlass.Int64, self.num_acc_stage * 2
-            ]
-            tmem_dealloc_mbar: cutlass.Int64
-            tmem_holding_buf: cutlass.Int32
-
-        smem = cutlass.memory.SmemAllocator()
-        storage = smem.allocate(SharedStorage)
-
-        # Initialize mainloop ab_pipeline (barrier) and states
-        ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Warp)
-        ab_producer, ab_consumer = pipeline.PipelineTmaUmma.create(
-            barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
-            num_stages=self.num_ab_stage,
-            producer_group=ab_pipeline_producer_group,
-            consumer_group=ab_pipeline_consumer_group,
-            tx_count=self.num_tma_load_bytes,
-            cta_layout_vmnk=cluster_layout_vmnk,
-            enable_multicast_signaling=True,
-            defer_sync=True,
-        ).make_participants()
-
-        # Initialize acc_pipeline (barrier) and states
-        acc_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_acc_consumer_threads = len(self.epilogue_warp_id) * (
-            2 if use_2cta_instrs else 1
-        )
-        acc_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_acc_consumer_threads
-        )
-        acc_pipeline = pipeline.PipelineUmmaAsync.create(
-            barrier_storage=storage.acc_full_mbar_ptr.data_ptr(),
-            num_stages=self.num_acc_stage,
-            producer_group=acc_pipeline_producer_group,
-            consumer_group=acc_pipeline_consumer_group,
-            cta_layout_vmnk=cluster_layout_vmnk,
-            defer_sync=True,
-        )
-
-        tmem_alloc_barrier = pipeline.NamedBarrier(
-            barrier_id=self.tmem_alloc_sync_bar_id,
-            num_threads=32 * len((self.mma_warp_id, *self.epilogue_warp_id)),
-        )
-        tmem_dealloc_barrier = None
-        if cutlass.const_expr(not self.use_tma_store):
-            tmem_dealloc_barrier = pipeline.NamedBarrier(
-                barrier_id=self.tmem_dealloc_sync_bar_id,
-                num_threads=32 * len(self.epilogue_warp_id),
-            )
-        # Tensor memory dealloc barrier init
-        tmem = cutlass.memory.TmemAllocator(
-            storage.tmem_holding_buf.ptr,
-            barrier_for_retrieve=tmem_alloc_barrier,
-            allocator_warp_id=self.epilogue_warp_id[0],
-            is_two_cta=use_2cta_instrs,
-            two_cta_tmem_dealloc_mbar_ptr=storage.tmem_dealloc_mbar.ptr,
-        )
-
-        # Cluster arrive after barrier init
-        pipeline_init_arrive(cluster_shape_mn=self.cluster_shape_mn, is_relaxed=True)
-
-        #
-        # Setup smem tensor A/B/C
-        #
-        # (MMA, MMA_M, MMA_K, STAGE)
-        sA = smem.allocate_tensor(
-            element_type=self.a_dtype,
-            layout=a_smem_layout_staged.outer,
-            byte_alignment=128,
-            swizzle=a_smem_layout_staged.inner,
-        )
-        # (MMA, MMA_N, MMA_K, STAGE)
-        sB = smem.allocate_tensor(
-            element_type=self.b_dtype,
-            layout=b_smem_layout_staged.outer,
-            byte_alignment=128,
-            swizzle=b_smem_layout_staged.inner,
-        )
-
-        #
-        # Compute multicast mask for A/B buffer full
-        #
-        a_full_mcast_mask = None
-        b_full_mcast_mask = None
-        if cutlass.const_expr(self.is_a_mcast or self.is_b_mcast or use_2cta_instrs):
-            a_full_mcast_mask = cpasync.create_tma_multicast_mask(
-                cluster_layout_vmnk, block_in_cluster_coord_vmnk, mcast_mode=2
-            )
-            b_full_mcast_mask = cpasync.create_tma_multicast_mask(
-                cluster_layout_vmnk, block_in_cluster_coord_vmnk, mcast_mode=1
-            )
-
-        #
-        # Local_tile partition global tensors
-        #
-        # (bM, bK, RestM, RestK, RestL)
-        gA_mkl = cute.local_tile(
-            mA_mkl, cute.slice_(self.mma_tiler, (None, 0, None)), (None, None, None)
-        )
-        # (bN, bK, RestN, RestK, RestL)
-        gB_nkl = cute.local_tile(
-            mB_nkl, cute.slice_(self.mma_tiler, (0, None, None)), (None, None, None)
-        )
-        # (bM, bN, RestM, RestN, RestL)
-        gC_mnl = cute.local_tile(
-            mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
-        )
-        k_tile_cnt = cute.size(gA_mkl, mode=[3])
-
-        #
-        # Partition global tensor for TiledMMA_A/B/C
-        #
-        thr_mma = tiled_mma.get_slice(mma_tile_coord_v)
-        # (MMA, MMA_M, MMA_K, RestM, RestK, RestL)
-        tCgA = thr_mma.partition_A(gA_mkl)
-        # (MMA, MMA_N, MMA_K, RestN, RestK, RestL)
-        tCgB = thr_mma.partition_B(gB_nkl)
-        # (MMA, MMA_M, MMA_N, RestM, RestN, RestL)
-        tCgC = thr_mma.partition_C(gC_mnl)
-
-        # Coordinate tensor used to predicate SIMT stores from partial clusters.
-        idC = cute.make_identity_tensor(mC_mnl.shape)
-        cC_mnl = cute.local_tile(
-            idC, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
-        )
-        tCcC = thr_mma.partition_C(cC_mnl)
-
-        #
-        # Partition global/shared tensor for TMA load A/B
-        #
-        # TMA load A partition_S/D
-        a_cta_layout = cute.make_layout(
-            cute.slice_(cluster_layout_vmnk, (0, 0, None, 0)).shape
-        )
-        # ((atom_v, rest_v), STAGE)
-        # ((atom_v, rest_v), RestM, RestK, RestL)
-        tAsA, tAgA = cpasync.tma_partition(
-            tma_atom_a,
-            block_in_cluster_coord_vmnk[2],
-            a_cta_layout,
-            cute.group_modes(sA, 0, 3),
-            cute.group_modes(tCgA, 0, 3),
-        )
-        # TMA load B partition_S/D
-        b_cta_layout = cute.make_layout(
-            cute.slice_(cluster_layout_vmnk, (0, None, 0, 0)).shape
-        )
-        # ((atom_v, rest_v), STAGE)
-        # ((atom_v, rest_v), RestM, RestK, RestL)
-        tBsB, tBgB = cpasync.tma_partition(
-            tma_atom_b,
-            block_in_cluster_coord_vmnk[1],
-            b_cta_layout,
-            cute.group_modes(sB, 0, 3),
-            cute.group_modes(tCgB, 0, 3),
-        )
-
-        #
-        # Partition shared/tensor memory tensor for TiledMMA_A/B/C
-        #
-        # (MMA, MMA_M, MMA_K, STAGE)
-        tCrA = tiled_mma.make_fragment_A(sA)
-        # (MMA, MMA_N, MMA_K, STAGE)
-        tCrB = tiled_mma.make_fragment_B(sB)
-        # (MMA, MMA_M, MMA_N)
-        acc_shape = tiled_mma.partition_shape_C(self.mma_tiler[:2])
-        # (MMA, MMA_M, MMA_N, STAGE)
-        tCtAcc_fake = tiled_mma.make_fragment_C(
-            cute.append(acc_shape, self.num_acc_stage)
-        )
-
-        #
-        # Cluster wait before tensor memory alloc
-        #
-        pipeline_init_wait(cluster_shape_mn=self.cluster_shape_mn)
-
-        #
-        # Construct the scheduler
-        #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
-            tile_sched_params,
-            cute.arch.block_idx(),
-            cute.arch.grid_dim(),
-        )
-        work_tile = tile_sched.initial_work_tile_info()
-
-        #
-        # Specialized TMA load warp
-        #
-
-        if warp_idx == self.tma_warp_id:
-            #
-            # Persistent tile scheduling loop
-            #
-            while work_tile.is_valid_tile:
-                # Get tile coord from tile scheduler
-                cur_tile_coord = work_tile.tile_idx
-                mma_tile_coord_mnl = (
-                    cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-                    cur_tile_coord[1],
-                    cur_tile_coord[2],
-                )
-
-                #
-                # Slice to per mma tile index
-                #
-                # ((atom_v, rest_v), RestK)
-                tAgA_slice = tAgA[
-                    (None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])
-                ]
-                # ((atom_v, rest_v), RestK)
-                tBgB_slice = tBgB[
-                    (None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])
-                ]
-
-                # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt
-                ab_producer.reset()
-                peek_ab_empty_status = ab_producer.try_acquire()
-
-                #
-                # Tma load loop
-                #
-                for k_tile in cutlass.range(0, k_tile_cnt, 1, unroll=1):
-                    # Conditionally wait for AB buffer empty
-                    handle = ab_producer.acquire_and_advance(peek_ab_empty_status)
-
-                    # TMA load A/B
-                    cute.copy(
-                        tma_atom_a,
-                        tAgA_slice[(None, handle.count)],
-                        tAsA[(None, handle.index)],
-                        tma_bar_ptr=handle.barrier,
-                        mcast_mask=a_full_mcast_mask,
-                    )
-                    cute.copy(
-                        tma_atom_b,
-                        tBgB_slice[(None, handle.count)],
-                        tBsB[(None, handle.index)],
-                        tma_bar_ptr=handle.barrier,
-                        mcast_mask=b_full_mcast_mask,
-                    )
-
-                    # Peek (try_wait) AB buffer empty for k_tile = prefetch_k_tile_cnt + k_tile + 1
-                    peek_ab_empty_status = cutlass.Boolean(1)
-                    if handle.count + 1 < k_tile_cnt:
-                        peek_ab_empty_status = ab_producer.try_acquire()
-
-                #
-                # Advance to next tile
-                #
-                tile_sched.advance_to_next_work()
-                work_tile = tile_sched.get_current_work()
-
-            #
-            # Wait A/B buffer empty
-            #
-            ab_producer.tail()
-
-        #
-        # Specialized MMA warp
-        #
-        if warp_idx == self.mma_warp_id:
-            #
-            # Retrieving tensor memory ptr and make accumulator tensor
-            #
-            tmem.wait_for_alloc()
-            tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-            # (MMA, MMA_M, MMA_N, STAGE)
-            tCtAcc_base = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-
-            #
-            # Persistent tile scheduling loop
-            #
-            acc_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.num_acc_stage
-            )
-
-            while work_tile.is_valid_tile:
-                # Get tile coord from tile scheduler
-                cur_tile_coord = work_tile.tile_idx
-                mma_tile_coord_mnl = (
-                    cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-                    cur_tile_coord[1],
-                    cur_tile_coord[2],
-                )
-
-                # Set tensor memory buffer for current tile
-                # (MMA, MMA_M, MMA_N)
-                tCtAcc = tCtAcc_base[(None, None, None, acc_producer_state.index)]
-
-                # Peek (try_wait) AB buffer full for k_tile = 0
-                ab_consumer.reset()
-                peek_ab_full_status = cutlass.Boolean(1)
-                if is_leader_cta:
-                    peek_ab_full_status = ab_consumer.try_wait()
-
-                #
-                # Wait for accumulator buffer empty
-                #
-                if is_leader_cta:
-                    acc_pipeline.producer_acquire(acc_producer_state)
-
-                #
-                # Mma mainloop
-                #
-                for k_tile in range(k_tile_cnt):
-                    if is_leader_cta:
-                        # Conditionally wait for AB buffer full
-                        handle = ab_consumer.wait_and_advance(peek_ab_full_status)
-
-                        # tCtAcc += tCrA * tCrB
-                        tiled_mma.set(tcgen05.Field.ACCUMULATE, k_tile != 0)
-                        tile_crd = (None, None, None, handle.index)
-                        cute.gemm(
-                            tiled_mma, tCtAcc, tCrA[tile_crd], tCrB[tile_crd], tCtAcc
-                        )
-
-                        # Async arrive AB buffer empty
-                        handle.release()
-
-                        # Peek (try_wait) AB buffer full for k_tile = k_tile + 1
-                        peek_ab_full_status = cutlass.Boolean(1)
-                        if handle.count + 1 < k_tile_cnt:
-                            peek_ab_full_status = ab_consumer.try_wait()
-
-                #
-                # Async arrive accumulator buffer full
-                #
-                if is_leader_cta:
-                    acc_pipeline.producer_commit(acc_producer_state)
-                acc_producer_state.advance()
-
-                #
-                # Advance to next tile
-                #
-                tile_sched.advance_to_next_work()
-                work_tile = tile_sched.get_current_work()
-
-            #
-            # Wait for accumulator buffer empty
-            #
-            acc_pipeline.producer_tail(acc_producer_state)
-
-        sC = None
-        if cutlass.const_expr(self.use_tma_store):
-            # (EPI_TILE_M, EPI_TILE_N, STAGE)
-            sC = smem.allocate_tensor(
-                element_type=self.c_dtype,
-                layout=c_smem_layout_staged.outer,
-                byte_alignment=128,
-                swizzle=c_smem_layout_staged.inner,
-            )
-
-        #
-        # Specialized epilogue warps
-        #
-        if warp_idx < self.mma_warp_id:
-            #
-            # Alloc tensor memory buffer
-            #
-            tmem.allocate(self.num_tmem_alloc_cols)
-
-            #
-            # Retrieving tensor memory ptr and make accumulator tensor
-            #
-            tmem.wait_for_alloc()
-            tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
-            # (MMA, MMA_M, MMA_N, STAGE)
-            tCtAcc_base = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
-
-            #
-            # Persistent tile scheduling loop for epilogue
-            #
-            acc_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.num_acc_stage
-            )
-            if cutlass.const_expr(self.use_tma_store):
-                assert tma_atom_c is not None and sC is not None
-                c_producer_group = pipeline.CooperativeGroup(
-                    pipeline.Agent.Thread,
-                    32 * len(self.epilogue_warp_id),
-                )
-                c_pipeline = pipeline.PipelineTmaStore.create(
-                    num_stages=self.num_c_stage, producer_group=c_producer_group
-                )
-            while work_tile.is_valid_tile:
-                # Get tile coord from tile scheduler
-                cur_tile_coord = work_tile.tile_idx
-                mma_tile_coord_mnl = (
-                    cur_tile_coord[0] // cute.size(tiled_mma.thr_id.shape),
-                    cur_tile_coord[1],
-                    cur_tile_coord[2],
-                )
-                #
-                # Pre-advance to next tile
-                #
-                tile_sched.advance_to_next_work()
-                work_tile = tile_sched.get_current_work()
-
-                num_tiles_executed = tile_sched.num_tiles_executed
-                if cutlass.const_expr(self.use_tma_store):
-                    acc_consumer_state = utils.gemm.sm100.epilogue_tma_store(
-                        self,
-                        tidx,
-                        warp_idx,
-                        tma_atom_c,
-                        tCtAcc_base,
-                        sC,
-                        tCgC,
-                        epi_tile,
-                        num_tiles_executed,
-                        epilogue_op,
-                        mma_tile_coord_mnl,
-                        acc_consumer_state,
-                        acc_pipeline,
-                        c_pipeline,
-                    )
-                else:
-                    acc_consumer_state = utils.gemm.sm100.epilogue(
-                        self,
-                        tidx,
-                        tCtAcc_base,
-                        tCgC,
-                        epi_tile,
-                        epilogue_op,
-                        mma_tile_coord_mnl,
-                        acc_consumer_state,
-                        acc_pipeline,
-                        tCcC_base=tCcC,
-                        mC_mnl=mC_mnl,
-                    )
-
-            if cutlass.const_expr(self.use_tma_store):
-                # Wait for C store complete
-                c_pipeline.producer_tail()
-            else:
-                # Synchronize before TMEM dealloc (done by the caller)
-                tmem_dealloc_barrier.arrive_and_wait()
-
-            #
-            # Dealloc the tensor memory buffer
-            #
-            tmem.relinquish_alloc_permit()
-            tmem.free(tmem_ptr)
-
-    @staticmethod
-    def _compute_grid(
-        c: cute.Tensor,
-        cta_tile_shape_mnk: Tuple[int, int, int],
-        cluster_shape_mn: Tuple[int, int],
-        swizzle_size: int,
-        raster_along: Literal["m", "n"],
-        max_active_clusters: cutlass.Constexpr,
-    ) -> Tuple[utils.PersistentTileSchedulerParams, Tuple[int, int, int]]:
-        """Use persistent tile scheduler to compute the grid size for the output tensor C.
-
-        :param c: The output tensor C
-        :type c: cute.Tensor
-        :param cta_tile_shape_mnk: The shape (M, N, K) of the CTA tile.
-        :type cta_tile_shape_mnk: tuple[int, int, int]
-        :param cluster_shape_mn: Shape of each cluster in M, N dimensions.
-        :type cluster_shape_mn: tuple[int, int]
-        :param max_active_clusters: Maximum number of hardware clusters to launch
-        :type max_active_clusters: cutlass.Constexpr
-
-        :return: A tuple containing:
-            - tile_sched_params: Parameters for the persistent tile scheduler.
-            - grid: Grid shape for kernel launch.
-        :rtype: Tuple[utils.PersistentTileSchedulerParams, tuple[int, int, int]]
-        """
-        c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
-        gc = cute.zipped_divide(c, tiler=c_shape)
-        num_ctas_mnl = gc[(0, (None, None, None))].shape
-        cluster_shape_mnl = (*cluster_shape_mn, 1)
-
-        tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, cluster_shape_mnl, swizzle_size, raster_along == "m"
-        )
-        grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            tile_sched_params, max_active_clusters
-        )
-
-        return tile_sched_params, grid
 
     @staticmethod
     def _compute_num_tmem_alloc_cols(
@@ -1119,11 +459,12 @@ class PersistentDenseGemmKernel:
 
         return num_tmem_alloc_cols
 
+    @staticmethod
     def check_supported_dtypes(
-        self,
         a_dtype: Type[cutlass.Numeric],
         b_dtype: Type[cutlass.Numeric],
         c_dtype: Type[cutlass.Numeric],
+        acc_dtype: Type[cutlass.Numeric],
     ):
         """
         Check if the dtypes are valid
@@ -1151,9 +492,9 @@ class PersistentDenseGemmKernel:
                 f"Unsupported AB dtype: {a_dtype} and {b_dtype}"
             )
 
-        if self.acc_dtype not in {cutlass.Float32, cutlass.Float16, cutlass.Int32}:
+        if acc_dtype not in {cutlass.Float32, cutlass.Float16, cutlass.Int32}:
             raise testing.CantImplementError(
-                f"Unsupported accumulator dtype: {self.acc_dtype}"
+                f"Unsupported accumulator dtype: {acc_dtype}"
             )
 
         # Define compatibility mapping between accumulator type and AB type
@@ -1174,11 +515,11 @@ class PersistentDenseGemmKernel:
         }
         # Check compatibility between accumulator type and AB type
         if (
-            a_dtype not in acc_ab_compatibility[self.acc_dtype]
-            or b_dtype not in acc_ab_compatibility[self.acc_dtype]
+            a_dtype not in acc_ab_compatibility[acc_dtype]
+            or b_dtype not in acc_ab_compatibility[acc_dtype]
         ):
             raise testing.CantImplementError(
-                f"Unsupported AB dtype: {a_dtype} and {b_dtype} for accumulator dtype: {self.acc_dtype}"
+                f"Unsupported AB dtype: {a_dtype} and {b_dtype} for accumulator dtype: {acc_dtype}"
             )
 
         # Define compatibility mapping between accumulator type and C type
@@ -1207,9 +548,9 @@ class PersistentDenseGemmKernel:
             },
         }
         # Check compatibility between accumulator type and C type
-        if c_dtype not in acc_c_compatibility[self.acc_dtype]:
+        if c_dtype not in acc_c_compatibility[acc_dtype]:
             raise testing.CantImplementError(
-                f"Unsupported C dtype: {c_dtype} for accumulator dtype: {self.acc_dtype}"
+                f"Unsupported C dtype: {c_dtype} for accumulator dtype: {acc_dtype}"
             )
 
     def check_mma_tiler_and_cluster_shape(self):
@@ -1217,35 +558,66 @@ class PersistentDenseGemmKernel:
 
         :raises testing.CantImplementError: If the mma tiler and cluster shape are invalid
         """
+        self.is_valid_mma_tiler_and_cluster_shape(
+            self.mma_tiler_mn,
+            self.cluster_shape_mn,
+            self.use_2cta_instrs,
+            self.use_tma_store,
+            self.tile_scheduler_template,
+            self.tile_scheduler_template_params,
+        )
+
+    @staticmethod
+    def is_valid_mma_tiler_and_cluster_shape(
+        mma_tiler_mn: tuple[int, int],
+        cluster_shape_mn: tuple[int, int],
+        use_2cta_instrs: bool,
+        use_tma_store: bool,
+        tile_scheduler_template: tile_scheduler.TileSchedulerTemplate | None = None,
+        tile_scheduler_template_params: tile_scheduler.TileSchedulerTemplateParams
+        | None = None,
+    ):
+        """Check validity of tiler, cluster shape, and use_2cta_instrs.
+
+        :raises testing.CantImplementError: If the mma tiler and cluster shape are invalid
+        """
+
         # Skip invalid mma tile shape
         if not (
-            (not self.use_2cta_instrs and self.mma_tiler_mn[0] in [64, 128])
-            or (self.use_2cta_instrs and self.mma_tiler_mn[0] in [128, 256])
+            (not use_2cta_instrs and mma_tiler_mn[0] in [64, 128])
+            or (use_2cta_instrs and mma_tiler_mn[0] in [128, 256])
         ):
             raise testing.CantImplementError(
-                f"Invalid mma tiler & use_2cta_instrs: {self.mma_tiler_mn}, {self.use_2cta_instrs}"
+                f"Invalid mma tiler & use_2cta_instrs: {mma_tiler_mn}, {use_2cta_instrs}"
             )
-        if self.mma_tiler_mn[1] not in range(32, 257, 32):
-            raise testing.CantImplementError(
-                f"Invalid mma tiler N: {self.mma_tiler_mn[1]}"
-            )
+        if mma_tiler_mn[1] not in range(32, 257, 32):
+            raise testing.CantImplementError(f"Invalid mma tiler N: {mma_tiler_mn[1]}")
         # Skip illegal cluster shape
-        if self.cluster_shape_mn[0] % (2 if self.use_2cta_instrs else 1) != 0:
+        if cluster_shape_mn[0] % (2 if use_2cta_instrs else 1) != 0:
             raise testing.CantImplementError(
-                f"Invalid cluster shape M: {self.cluster_shape_mn[0]}"
+                f"Invalid cluster shape M: {cluster_shape_mn[0]}"
             )
         # Skip invalid cluster shape
         is_power_of_2 = lambda x: x > 0 and (x & (x - 1)) == 0
+        template_params = tile_scheduler_template_params
+        total_cluster_size = (
+            cluster_shape_mn[0]
+            * cluster_shape_mn[1]
+            * (template_params.cluster_shape[2] if template_params else 1)
+        )
         if (
-            self.cluster_shape_mn[0] * self.cluster_shape_mn[1] > 16
-            or self.cluster_shape_mn[0] <= 0
-            or self.cluster_shape_mn[1] <= 0
-            or not is_power_of_2(self.cluster_shape_mn[0])
-            or not is_power_of_2(self.cluster_shape_mn[1])
+            total_cluster_size > 16
+            or cluster_shape_mn[0] <= 0
+            or cluster_shape_mn[1] <= 0
+            or not is_power_of_2(cluster_shape_mn[0])
+            or not is_power_of_2(cluster_shape_mn[1])
         ):
             raise testing.CantImplementError(
-                f"Invalid cluster shape: {self.cluster_shape_mn}"
+                f"Invalid cluster shape: {cluster_shape_mn} with "
+                f"split_k={template_params.split_k if template_params else 'N/A'}"
             )
+        if tile_scheduler_template:
+            tile_scheduler_template.check_cluster_splitk_constraints(use_tma_store)
 
     def check_tensor_alignment(
         self,
@@ -1303,83 +675,66 @@ class PersistentDenseGemmKernel:
                 f"Invalid tensor alignment: {m}, {n}, {k}, {l}, {a_dtype}, {b_dtype}, {c_dtype}, {a_major}, {b_major}, {c_major}"
             )
 
-    def check_epilog_store_option(self, m: int, n: int):
-        """
-        Check if the epilogue store option is valid
-
-        :param m: The number of rows in the A tensor
-        :type m: int
-        :param n: The number of columns in the B tensor
-        :type n: int
-
-        :raises testing.CantImplementError: If the epilogue store option is invalid
-        """
-
-        # Non TMA store version does not have predication, can not support OOB tiles
-        cta_tile_shape_mn = (
-            self.mma_tiler_mn[0] // (2 if self.use_2cta_instrs else 1),
-            self.mma_tiler_mn[1],
-        )
-        if not self.use_tma_store:
-            if not (m % cta_tile_shape_mn[0] == 0 and n % cta_tile_shape_mn[1] == 0):
-                raise testing.CantImplementError(
-                    f"Problem shape {m}, {n} must be divisible by cta tile shape {cta_tile_shape_mn} for non TMA store"
-                )
-            # CTA swizzling improves the L2 cache utilization and reduces the number of cache misses.
-            m_per_swizzle = (m // cta_tile_shape_mn[0]) // self.cluster_shape_mn[0]
-            n_per_swizzle = (n // cta_tile_shape_mn[1]) // self.cluster_shape_mn[1]
-            if (m_per_swizzle % self.swizzle_size != 0) or (
-                n_per_swizzle % self.swizzle_size != 0
-            ):
-                raise testing.CantImplementError(
-                    f"Problem shape {m}, {n} must be divisible by swizzle size {self.swizzle_size} for non TMA store"
-                )
-
     def can_implement(
         self,
-        mnkl: Tuple[int, int, int, int],
-        a_dtype: Type[cutlass.Numeric],
-        b_dtype: Type[cutlass.Numeric],
-        c_dtype: Type[cutlass.Numeric],
-        a_major: str,
-        b_major: str,
-        c_major: str,
+        a: cute.Tensor,
+        b: cute.Tensor,
+        c: cute.Tensor,
+        swizzle_size: int,
+        raster_along: Literal["m", "n"],
     ) -> bool:
-        """
-        Determine if the given tensor configuration can be implemented by this kernel.
-
-        :param mnkl: Problem size as a tuple (M, N, K, L).
-        :type mnkl: Tuple[int, int, int, int]
-        :param a_dtype: Data type for input tensors A and B.
-        :type a_dtype: Type[cutlass.Numeric]
-        :param b_dtype: Data type for input tensors B and B.
-        :type b_dtype: Type[cutlass.Numeric]
-        :param c_dtype: Data type for output tensor C.
-        :type c_dtype: Type[cutlass.Numeric]
-        :param a_major: Major dimension of the A tensor layout ("m" or "k").
-        :type a_major: str
-        :param b_major: Major dimension of the B tensor layout ("n" or "k").
-        :type b_major: str
-        :param c_major: Major dimension of the C tensor layout ("m" or "n").
-        :type c_major: str
-        :return: True if the kernel supports the given configuration, False otherwise.
+        """Determine if the compiled kernel can execute this launch.
+        :param a: Input tensor A of shape (l, m, k).
+        :type a: cute.Tensor
+        :param b: Input tensor B of shape (l, k, n).
+        :type b: cute.Tensor
+        :param c: Output tensor C of shape (l, m, n).
+        :type c: cute.Tensor
+        :param swizzle_size: tiles per swizzle group for this launch
+        :type swizzle_size: int
+        :param raster_along: rasterization order for this launch, already
+            resolved to a concrete axis by
+            ``TileSchedulerTemplate.resolve_rasterization``.
+        :type raster_along: Literal["m", "n"]
+        :return: True if this launch can be executed.
         :rtype: bool
+
+        :raises testing.CantImplementError: If the launch is invalid.
         """
-
-        try:
-            # Skip unsupported types
-            self.check_supported_dtypes(a_dtype, b_dtype, c_dtype)
-
-            # Skip invalid mma tile shape and cluster shape
-            self.check_mma_tiler_and_cluster_shape()
-
-            m, n, k, l = mnkl
-            self.check_tensor_alignment(
-                m, n, k, l, a_dtype, b_dtype, c_dtype, a_major, b_major, c_major
+        batch, m, k = a.shape
+        n = b.shape[2]
+        a_major = "k" if a.stride[2] == 1 else "m"
+        b_major = "k" if b.stride[1] == 1 else "n"
+        c_major = "n" if c.stride[2] == 1 else "m"
+        self.check_tensor_alignment(
+            m,
+            n,
+            k,
+            batch,
+            a.element_type,
+            b.element_type,
+            c.element_type,
+            a_major,
+            b_major,
+            c_major,
+        )
+        self.check_epilog_store_option(m, n)
+        if not self.use_tma_store and self.tile_scheduler_template.visits_oob_tiles(
+            (m, n, 0, 1), swizzle_size, raster_along
+        ):
+            raise testing.CantImplementError(
+                f"problem shape {m}, {n} with swizzle_size {swizzle_size} leaves "
+                "partially-filled clusters or swizzle groups, which a non-TMA "
+                "store cannot predicate away"
             )
-            self.check_epilog_store_option(m, n)
-        except testing.CantImplementError:
-            return False
+        if not self.tile_scheduler_template.can_implement(
+            (m, n, k, batch), swizzle_size, raster_along
+        ):
+            raise testing.CantImplementError(
+                "Tile scheduler cannot implement this configuration for problem "
+                f"{(m, n, k, batch)} with swizzle_size={swizzle_size}, "
+                f"raster_along={raster_along!r}"
+            )
         return True
 
 
@@ -1389,8 +744,11 @@ def bmm(
     a: cute.Tensor,  # (l, m, k)
     b: cute.Tensor,  # (l, k, n)
     c: cute.Tensor,  # (l, m, n)
-    max_active_clusters: cutlass.Constexpr,
     stream: cuda.CUstream,
+    workspace: cute.Pointer,
+    swizzle_size: Int32,
+    raster_along_m: Boolean,
+    max_active_clusters_fallback: Int32,
     epilogue_op: cutlass.Constexpr = lambda x: x,
 ):
     """
@@ -1401,7 +759,8 @@ def bmm(
       - b: (n, k, l)
       - c: (m, n, l)
 
-    :param gemm_op: Kernel operation, expects (a, b, c, max_active_clusters, stream, epilogue_op)
+    :param gemm_op: Kernel operation, expects (a, b, c, stream, workspace, swizzle_size, raster_along_m,
+        max_active_clusters_fallback, epilogue_op)
     :type gemm_op: cutlass.Constexpr
     :param a: Input tensor of shape (l, m, k)
     :type a: cute.Tensor
@@ -1409,8 +768,14 @@ def bmm(
     :type b: cute.Tensor
     :param c: Output tensor of shape (l, m, n)
     :type c: cute.Tensor
-    :param max_active_clusters: Maximum number of hardware clusters to launch
-    :type max_active_clusters: cutlass.Constexpr
+    :param swizzle_size: Tiles per swizzle group for this launch
+    :type swizzle_size: Int32
+    :param raster_along_m: True rasterizes M-major, False N-major
+    :type raster_along_m: Boolean
+    :param max_active_clusters_fallback: occupancy cap on concurrently resident
+        fallback clusters (launch-time value; see ``query_max_active_clusters``).
+        Only the ``static`` work strategy uses it (its grid is one wave).
+    :type max_active_clusters_fallback: Int32
     :param epilogue_op: Optional elementwise lambda function to apply per output element, defaults to identity
     :type epilogue_op: cutlass.Constexpr, optional
     """
@@ -1421,10 +786,19 @@ def bmm(
     # (l,m,n) -> (m,n,l)
     c = cute.make_tensor(c.iterator, cute.select(c.layout, mode=[1, 2, 0]))
 
-    gemm_op(a, b, c, max_active_clusters, stream, epilogue_op)
+    gemm_op(
+        a,
+        b,
+        c,
+        stream,
+        workspace,
+        swizzle_size,
+        raster_along_m,
+        max_active_clusters_fallback,
+        epilogue_op,
+    )
 
 
-@lru_cache(maxsize=1)
 def prepare_tensors(
     mnkl: Tuple[int, int, int, int],
     a_dtype: Type[cutlass.Numeric],
@@ -1489,455 +863,3 @@ def prepare_tensors(
     c_storage = c_f32.to(dtype=c_storage_dtype)
 
     return (a_f32, b_f32, c_f32, a_storage, b_storage, c_storage)
-
-
-@lru_cache(maxsize=1)
-def compile_bmm(
-    mnkl: Tuple[int, int, int, int],
-    a: cute.Tensor,
-    b: cute.Tensor,
-    c: cute.Tensor,
-    acc_dtype: Type[cutlass.Numeric],
-    a_major: str,
-    b_major: str,
-    c_major: str,
-    mma_tiler: Union[Tuple[int, int], Tuple[int, int, int]] = (256, 256),
-    cluster_shape_mn: Tuple[int, int] = (2, 1),
-    max_active_clusters: cutlass.Constexpr = None,
-    use_2cta_instrs: bool = True,
-    use_tma_store: bool = True,
-    swizzle_size: int = 1,
-    raster_along: Literal["m", "n"] = "m",
-    epilogue_op: cutlass.Constexpr = lambda x: x,
-    kernel_class: cutlass.Constexpr = None,
-):
-    from cutlass.cute.runtime import make_fake_stream
-
-    # Use provided kernel class or default to PersistentDenseGemmKernel
-    KernelClass = (
-        kernel_class if kernel_class is not None else PersistentDenseGemmKernel
-    )
-
-    # Build GEMM object
-    gemm = KernelClass(
-        acc_dtype,
-        use_2cta_instrs,
-        mma_tiler,
-        cluster_shape_mn,
-        use_tma_store,
-        swizzle_size,
-        raster_along,
-    )
-
-    # Check if configuration can be implemented
-    can_implement = gemm.can_implement(
-        mnkl, a.element_type, b.element_type, c.element_type, a_major, b_major, c_major
-    )
-    if not can_implement:
-        raise testing.CantImplementError(
-            f"The current config which is invalid/unsupported: use_2cta_instrs = {use_2cta_instrs}, "
-            f"mma_tiler = {mma_tiler}, cluster_shape_mn = {cluster_shape_mn}, "
-            f"use_tma_store = {use_tma_store}, "
-            f"swizzle_size = {swizzle_size}, "
-            f"raster_along = {raster_along}"
-        )
-
-    stream = make_fake_stream()
-    return cute.compile(bmm, gemm, a, b, c, max_active_clusters, stream, epilogue_op)
-
-
-def run(
-    mnkl: Tuple[int, int, int, int],
-    ab_dtype: Type[cutlass.Numeric],
-    c_dtype: Type[cutlass.Numeric],
-    acc_dtype: Type[cutlass.Numeric],
-    a_major: str,
-    b_major: str,
-    c_major: str,
-    mma_tiler_mn: Tuple[int, int] = (256, 256),
-    cluster_shape_mn: Tuple[int, int] = (2, 1),
-    swizzle_size: int = 1,
-    raster_along: Literal["m", "n"] = "m",
-    use_2cta_instrs: bool = True,
-    use_tma_store: bool = True,
-    tolerance: float = 1e-01,
-    warmup_iterations: int = 0,
-    iterations: int = 1,
-    skip_ref_check: bool = False,
-    use_cold_l2: bool = False,
-    benchmark: str = "default",
-    init_normal: bool = False,
-    normal_mean: float = 0.0,
-    normal_std: float = 1.0,
-    **kwargs,
-):
-    """
-    Execute a persistent batched dense GEMM operation on Blackwell architecture with performance benchmarking.
-
-    Prepares input tensors, configures and launches the persistent GEMM kernel,
-    optionally performs reference validation, and benchmarks execution.
-
-    :param mnkl: Problem size as a tuple (M, N, K, L).
-    :type mnkl: Tuple[int, int, int, int]
-    :param ab_dtype: Data type for input tensors A and B.
-    :type ab_dtype: Type[cutlass.Numeric]
-    :param c_dtype: Data type for output tensor C.
-    :type c_dtype: Type[cutlass.Numeric]
-    :param acc_dtype: Accumulator data type for the matrix multiplication.
-    :type acc_dtype: Type[cutlass.Numeric]
-    :param a_major: Memory layout of tensor A.
-    :type a_major: str
-    :param b_major: Memory layout of tensor B.
-    :type b_major: str
-    :param c_major: Memory layout of tensor C.
-    :type c_major: str
-    :param mma_tiler_mn: MMA tiling size (M, N), defaults to (256, 256).
-    :type mma_tiler_mn: Tuple[int, int], optional
-    :param cluster_shape_mn: Cluster shape (M, N), defaults to (2, 1).
-    :type cluster_shape_mn: Tuple[int, int], optional
-    :param use_2cta_instrs: Whether to use 2CTA MMA instructions, defaults to True.
-    :type use_2cta_instrs: bool, optional
-    :param use_tma_store: Whether to use TMA store, defaults to True.
-    :type use_tma_store: bool, optional
-    :param tolerance: Tolerance for reference validation, defaults to 1e-01.
-    :type tolerance: float, optional
-    :param warmup_iterations: Number of warmup iterations before benchmarking, defaults to 0.
-    :type warmup_iterations: int, optional
-    :param iterations: Number of benchmark iterations to run, defaults to 1.
-    :type iterations: int, optional
-    :param skip_ref_check: Whether to skip reference result validation, defaults to False.
-    :type skip_ref_check: bool, optional
-    :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
-    :type use_cold_l2: bool, optional
-    :param benchmark: Benchmark mode - "default" uses CUDA events, "cupti" uses CUPTI profiler, defaults to "default".
-    :type benchmark: str, optional
-    :param init_normal: Whether to initialize tensors using normal distribution
-        instead of uniform random, defaults to False.
-    :type init_normal: bool, optional
-    :param normal_mean: Mean for normal distribution initialization, defaults to 0.0.
-    :type normal_mean: float, optional
-    :param normal_std: Standard deviation for normal distribution initialization,
-        defaults to 1.0.
-    :type normal_std: float, optional
-
-    :raises RuntimeError: If CUDA GPU is not available.
-    :raises ValueError: If the configuration is invalid or unsupported by the kernel.
-    :return: Execution time of the GEMM kernel.
-    :rtype: float
-    """
-    import torch
-    from cutlass.torch import dtype as torch_dtype
-
-    if not torch.cuda.is_available():
-        raise RuntimeError("GPU is required to run this example!")
-
-    # Get current CUDA stream from PyTorch
-    torch_stream = torch.cuda.current_stream()
-    # Get the raw stream pointer as a CUstream
-    current_stream = cuda.CUstream(torch_stream.cuda_stream)
-
-    # Check if configuration can be implemented
-    max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-        cluster_shape_mn[0] * cluster_shape_mn[1]
-    )
-
-    # Run and verify BMM with torch
-    a_f32, b_f32, c_f32, a_storage, b_storage, c_storage = prepare_tensors(
-        mnkl,
-        ab_dtype,
-        ab_dtype,
-        c_dtype,
-        a_major,
-        b_major,
-        c_major,
-        init_random=not init_normal,
-        normal_mean=normal_mean,
-        normal_std=normal_std,
-    )
-
-    leading_dim_a = 2 if a_major == "k" else 1
-    leading_dim_b = 1 if b_major == "k" else 2
-    leading_dim_c = 2 if c_major == "n" else 1
-
-    # Create CuTe tensors, passing float32 source for fp8 conversion
-    a_ = create_cute_tensor_for_fp8(
-        a_storage, ab_dtype, leading_dim_a, source_f32_tensor=a_f32
-    )
-    b_ = create_cute_tensor_for_fp8(
-        b_storage, ab_dtype, leading_dim_b, source_f32_tensor=b_f32
-    )
-    c_ = create_cute_tensor_for_fp8(
-        c_storage, c_dtype, leading_dim_c, source_f32_tensor=c_f32
-    )
-
-    print("Compile Blackwell Persistent Dense GEMM with:")
-    print(f"ab_dtype: {ab_dtype}, c_dtype: {c_dtype}, acc_dtype: {acc_dtype}")
-    print(f"a_major: {a_major}, b_major: {b_major}, c_major: {c_major}")
-    print(f"mma_tiler_mn: {mma_tiler_mn}, cluster_shape_mn: {cluster_shape_mn}")
-    print(f"use_2cta_instrs: {use_2cta_instrs}, use_tma_store: {use_tma_store}")
-    print(f"swizzle_size: {swizzle_size}, raster_along: {raster_along}")
-
-    compiled_fn = compile_bmm(
-        mnkl,
-        a_,
-        b_,
-        c_,
-        acc_dtype,
-        a_major,
-        b_major,
-        c_major,
-        mma_tiler_mn,
-        cluster_shape_mn,
-        max_active_clusters,
-        use_2cta_instrs,
-        use_tma_store,
-        epilogue_op=lambda x: x,
-        swizzle_size=swizzle_size,
-        raster_along=raster_along,
-    )
-
-    print("Running Blackwell Persistent Dense GEMM test with:")
-    print(f"mnkl: {mnkl}")
-    print(f"Tolerance: {tolerance}")
-    print(f"Warmup iterations: {warmup_iterations}")
-    print(f"Iterations: {iterations}")
-    print(f"Skip reference checking: {skip_ref_check}")
-    print(f"Use cold L2: {'True' if use_cold_l2 else 'False'}")
-
-    if not skip_ref_check:
-        # Use small random number for deterministic result for reference check
-        compiled_fn(a_, b_, c_, current_stream)
-
-        # Manually quantize to be comparable
-        ref = (
-            torch.bmm(a_f32, b_f32)
-            .to(dtype=torch_dtype(c_dtype))
-            .to(dtype=torch.float32)
-        )
-        torch.testing.assert_close(
-            c_storage.view(torch_dtype(c_dtype)).to(dtype=torch.float32),
-            ref,
-            atol=tolerance,
-            rtol=1e-03,
-        )
-
-    if benchmark == "none":
-        return 0
-
-    def generate_tensors():
-        # Use init_normal from outer scope, but force random init for Int8/Uint8 types
-        use_normal_init = init_normal and (
-            ab_dtype not in [cutlass.Int8, cutlass.Uint8]
-        )
-        a_f32, b_f32, c_f32, a_st, b_st, c_st = prepare_tensors(
-            mnkl,
-            ab_dtype,
-            ab_dtype,
-            c_dtype,
-            a_major,
-            b_major,
-            c_major,
-            init_random=not use_normal_init,
-            normal_mean=normal_mean,
-            normal_std=normal_std,
-        )
-        a_ = create_cute_tensor_for_fp8(
-            a_st, ab_dtype, leading_dim_a, source_f32_tensor=a_f32
-        )
-        b_ = create_cute_tensor_for_fp8(
-            b_st, ab_dtype, leading_dim_b, source_f32_tensor=b_f32
-        )
-        c_ = create_cute_tensor_for_fp8(
-            c_st, c_dtype, leading_dim_c, source_f32_tensor=c_f32
-        )
-        return testing.JitArguments(a_, b_, c_, current_stream)
-
-    workspace_count = 1
-    if use_cold_l2:
-        one_workspace_bytes = (
-            a_storage.numel() * a_storage.element_size()
-            + b_storage.numel() * b_storage.element_size()
-            + c_storage.numel() * c_storage.element_size()
-        )
-        workspace_count = testing.get_workspace_count(
-            one_workspace_bytes, warmup_iterations, iterations
-        )
-
-    # Return execution time in microseconds
-    exec_time = testing.benchmark(
-        compiled_fn,
-        workspace_generator=generate_tensors,
-        workspace_count=workspace_count,
-        stream=current_stream,
-        warmup_iterations=warmup_iterations,
-        iterations=iterations,
-        use_cupti=benchmark == "cupti",
-    )
-    print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
-    return exec_time
-
-
-
-def _parse_comma_separated_ints(s: str) -> Tuple[int, ...]:
-    try:
-        return tuple(int(x.strip()) for x in s.split(","))
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            "Invalid format. Expected comma-separated integers."
-        )
-
-
-def prepare_parser():
-    parser = argparse.ArgumentParser(
-        description="Example of Dense Persistent GEMM on Blackwell."
-    )
-
-    parser.add_argument(
-        "--mnkl",
-        type=_parse_comma_separated_ints,
-        default=(256, 256, 512, 1),
-        help="mnkl dimensions (comma-separated)",
-    )
-    parser.add_argument("--ab_dtype", type=cutlass.dtype, default=cutlass.TFloat32)
-    parser.add_argument("--c_dtype", type=cutlass.dtype, default=cutlass.Float32)
-    parser.add_argument("--acc_dtype", type=cutlass.dtype, default=cutlass.Float32)
-
-    parser.add_argument("--a_major", choices=["k", "m"], type=str, default="k")
-    parser.add_argument("--b_major", choices=["k", "n"], type=str, default="k")
-    parser.add_argument("--c_major", choices=["n", "m"], type=str, default="n")
-    parser.add_argument(
-        "--tolerance", type=float, default=1e-01, help="Tolerance for validation"
-    )
-    parser.add_argument(
-        "--benchmark",
-        type=str,
-        default="default",
-        choices=[
-            "cupti",
-            "default",
-            "none",
-        ],
-        help="Benchmark the kernel with nsight or default (cutlass.testing.benchmark) or none",
-    )
-    parser.add_argument(
-        "--skip_ref_check", action="store_true", help="Skip reference checking"
-    )
-    parser.add_argument(
-        "--warmup_iterations", type=int, default=0, help="Warmup iterations"
-    )
-    parser.add_argument(
-        "--iterations",
-        type=int,
-        default=1,
-        help="Number of iterations to run the kernel",
-    )
-    parser.add_argument(
-        "--use_cold_l2",
-        action="store_true",
-        default=False,
-        help="Use circular buffer tensor sets to ensure L2 cold cache",
-    )
-    parser.add_argument(
-        "--use_cupti",
-        action="store_true",
-        default=False,
-        help="Use cupti to measure the performance",
-    )
-    testing.add_tensor_init_args(parser, supports_int_dtypes=True)
-
-    return parser
-
-
-if __name__ == "__main__":
-    parser = prepare_parser()
-
-    # Kernel Configurations
-    parser.add_argument(
-        "--use_tma_store", action="store_true", help="Use tma store or not"
-    )
-    parser.add_argument(
-        "--cluster_shape_mn",
-        type=_parse_comma_separated_ints,
-        default=(1, 1),
-        help="Cluster shape (comma-separated)",
-    )
-
-    parser.add_argument(
-        "--use_2cta_instrs",
-        action="store_true",
-        help="Enable 2CTA MMA instructions feature",
-    )
-
-    parser.add_argument(
-        "--mma_tiler_mn",
-        type=_parse_comma_separated_ints,
-        default=(128, 128),
-        help="Mma tile shape (comma-separated)",
-    )
-
-    parser.add_argument(
-        "--swizzle_size",
-        type=int,
-        default=1,
-        help="Swizzling size in the unit of cluster for improving L2 cache hit rate",
-    )
-    parser.add_argument(
-        "--raster_order",
-        type=str,
-        choices=["m", "n"],
-        default="m",
-        help="Rasterization order of clusters",
-    )
-
-    args = parser.parse_args()
-
-    testing.validate_tensor_init_args(args, parser)
-
-    if len(args.mnkl) != 4:
-        parser.error("--mnkl must contain exactly 4 values")
-
-    if len(args.mma_tiler_mn) != 2:
-        parser.error("--mma_tiler_mn must contain exactly 2 values")
-
-    if len(args.cluster_shape_mn) != 2:
-        parser.error("--cluster_shape_mn must contain exactly 2 values")
-
-    print("[DSL INFO] Compiling Blackwell Persistent Dense GEMM with:")
-    print(
-        f"[DSL INFO] A dtype: {args.ab_dtype}, B dtype: {args.c_dtype}, C dtype: {args.acc_dtype}, Acc dtype: {args.acc_dtype}"
-    )
-    print(
-        f"[DSL INFO] Matrix majors - A: {args.a_major}, B: {args.b_major}, C: {args.c_major}"
-    )
-    print(f"[DSL INFO] Mma Tiler (M, N): {args.mma_tiler_mn}")
-    print(f"[DSL INFO] Cluster Shape (M, N): {args.cluster_shape_mn}")
-    print(
-        f"[DSL INFO] 2CTA MMA instructions: {'True' if args.use_2cta_instrs else 'False'}"
-    )
-    print(f"[DSL INFO] Use TMA Store: {'True' if args.use_tma_store else 'False'}")
-
-    run(
-        args.mnkl,
-        args.ab_dtype,
-        args.c_dtype,
-        args.acc_dtype,
-        args.a_major,
-        args.b_major,
-        args.c_major,
-        args.mma_tiler_mn,
-        args.cluster_shape_mn,
-        args.swizzle_size,
-        args.raster_order,
-        args.use_2cta_instrs,
-        args.use_tma_store,
-        args.tolerance,
-        args.warmup_iterations,
-        args.iterations,
-        args.skip_ref_check,
-        args.use_cold_l2,
-        args.benchmark,
-        args.init_normal,
-        args.normal_mean,
-        args.normal_std,
-    )
-    print("PASS")

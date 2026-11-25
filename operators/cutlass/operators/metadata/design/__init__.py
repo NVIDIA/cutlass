@@ -26,13 +26,27 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from cutlass.operators.config import GlobalOptions
+
 from .base import BLASDesignMetadata, DesignMetadata
+from .data_driven_sync import (
+    DataDrivenSyncConsumerMetadata,
+    DataDrivenSyncMetadata,
+    DataDrivenSyncProducerMetadata,
+)
+from .pdl import EarlyStartMetadata, ProgrammaticDependentLaunchMetadata
 from .sm100 import Sm100DesignMetadata
 from .sm107 import Sm107DesignMetadata
 from .tile_scheduler import (
-    CLCDynamicPersistentTileSchedulerMetadata,
-    StaticPersistentTileSchedulerMetadata,
+    CLCDynamicPersistentMetadata,
+    ClusterSplitKReductionMetadata,
+    NonPersistentMetadata,
+    NoRasterizationMetadata,
+    NoReductionMetadata,
+    SplitKReductionMetadata,
+    StaticPersistentMetadata,
     TileSchedulerMetadata,
+    TileSwizzleRasterizationMetadata,
 )
 
 __all__ = [
@@ -42,6 +56,20 @@ __all__ = [
     "Sm107DesignMetadata",
     # Tile scheduler metadata
     "TileSchedulerMetadata",
-    "CLCDynamicPersistentTileSchedulerMetadata",
-    "StaticPersistentTileSchedulerMetadata",
+    "NonPersistentMetadata",
+    "StaticPersistentMetadata",
+    "CLCDynamicPersistentMetadata",
+    "NoReductionMetadata",
+    "SplitKReductionMetadata",
+    "ClusterSplitKReductionMetadata",
+    "NoRasterizationMetadata",
+    "TileSwizzleRasterizationMetadata",
+    # PDL
+    "EarlyStartMetadata",
+    "ProgrammaticDependentLaunchMetadata",
+    # Data-driven synchronization
+    "DataDrivenSyncMetadata",
+    "DataDrivenSyncProducerMetadata",
+    "DataDrivenSyncConsumerMetadata",
 ]
+

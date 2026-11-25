@@ -472,11 +472,17 @@ class TestEdgeCasesAssertCloseWithReferenceConversion:
         )
 
     def test_clamp_mode_bool_false(self):
-        """Test that ClampMode can be converted from boolean False."""
+        """Test that ClampMode can be converted from boolean False.
+
+        With ``clamp=False`` the helper does not pre-clamp the reference; it
+        just converts ``float32 → float8_e4m3fn`` with torch. Out-of-range
+        handling for that conversion differs across torch versions (NaN on
+        torch <=2.10, saturation to the finite max on torch 2.13+), so derive
+        the expected result from the same conversion rather than hard-coding a
+        value, and compare NaN-equal so either behavior passes.
+        """
         reference = torch.tensor([1000.0, -1000.0, 1.0], dtype=torch.float32)
-        result = torch.tensor(
-            [float("nan"), -float("nan"), 1.0], dtype=torch.float8_e4m3fn
-        )
+        result = reference.to(torch.float8_e4m3fn)
         assert_close_with_reference_conversion(
             result,
             reference,

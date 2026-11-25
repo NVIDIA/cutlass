@@ -9,9 +9,10 @@
 # and related documentation outside the scope permitted by the EULA
 # is strictly prohibited.
 
+import ctypes
 from dataclasses import dataclass, field
 from numbers import Integral
-from typing import Any, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 
 import jax
@@ -54,6 +55,21 @@ CUTLASS_DTYPE_TO_JAX_DTYPE = {
 DEFAULT_CUTLASS_DEVICE_MEMSPACE = AddressSpace.gmem
 DEFAULT_CUTLASS_DEVICE_BUFFER_ALIGNMENT = 256
 _CUTE_XLA_FFI_BUFFER_ALIGNMENT = 8
+
+
+# Keep XlaFfiBuffer in sync with XLA_FFI_Buffer in OpenXLA's
+# xla/ffi/api/c_api.h.
+class XlaFfiBuffer(ctypes.Structure):
+    """Host mirror of ``XLA_FFI_Buffer`` from the XLA C API."""
+
+    _fields_ = [
+        ("struct_size", ctypes.c_size_t),
+        ("extension_start", ctypes.c_void_p),
+        ("dtype", ctypes.c_int32),
+        ("data", ctypes.c_void_p),
+        ("rank", ctypes.c_int64),
+        ("dims", ctypes.c_void_p),
+    ]
 
 
 def _llvm_pointer_type(address_space: AddressSpace = AddressSpace.generic) -> ir.Type:
@@ -123,6 +139,21 @@ class TensorSpec:
             concrete extent. Positive explicit hints take precedence over
             inferred concrete extents. If a single int is passed, it is applied
             to the leading compact dimension only, where ``layout[i] == 0``.
+        cast: Representation passed to the CuTe launcher. ``None`` or
+            ``cute.Tensor`` constructs a tensor view. ``cute.Pointer`` passes
+            the buffer's data pointer, with its array dtype and memory space.
+            ``cute.Numeric`` loads a rank-0 host scalar using its array dtype;
+            a concrete numeric type such as ``cutlass.Int32`` additionally
+            requires a matching dtype. A scalar adapter function receives that
+            loaded ``cutlass.Numeric`` and returns a CuTe-compatible launcher
+            argument. Adapters run during tracing to emit host operations, not
+            as Python callbacks during execution. They must be hashable and
+            must not capture mutable state or runtime resource addresses.
+            Scalar casts are input-only and require known host placement
+            (``pinned_host`` on CUDA). The caller must ensure host data is ready
+            before execution and referenced allocations remain alive. ``layout``
+            still constrains physical storage for every cast; ``mode`` affects
+            tensor views only. Casts do not change the physical FFI buffer ABI.
     """
 
     # Minor-to-major stride ordering in CuTeDSL convention (layout[i] = stride rank
@@ -142,6 +173,65 @@ class TensorSpec:
     divisibility: tuple[int | None, ...] | int | None = field(
         metadata=dict(static=True), default=None
     )
+    cast: type | Callable[[cutlass.Numeric], Any] | None = field(
+        metadata=dict(static=True), default=None
+    )
+
+
+def _get_memory_space(value: Any) -> Literal["device", "host"] | None:
+    """Returns known buffer placement without assuming unknown memory is host."""
+    memory_kind = getattr(getattr(value, "sharding", None), "memory_kind", None)
+    if memory_kind is not None:
+        return {
+            "device": "device",
+            "host": "host",
+            "pinned_host": "host",
+            "unpinned_host": "host",
+        }.get(memory_kind)
+    # Recent JAX tracers carry memory_space; their sharding omits memory_kind.
+    memory_space = getattr(jax.core.get_aval(value), "memory_space", None)
+    return {"Device": "device", "Host": "host"}.get(
+        getattr(memory_space, "name", None)
+    )
+
+
+def _is_value_cast(cast: type | Callable[[cutlass.Numeric], Any] | None) -> bool:
+    return cast is not None and cast not in (cute.Tensor, cute.Pointer)
+
+
+def _validate_cast(
+    shape: Sequence[Any],
+    dtype: jnp.dtype,
+    cast: type | Callable[[cutlass.Numeric], Any] | None,
+    memory_space: str | None,
+    *,
+    is_output: bool = False,
+) -> None:
+    """Rejects casts that would read inaccessible or incompatible buffer data."""
+    if not _is_value_cast(cast):
+        return
+    is_numeric_type = isinstance(cast, type) and issubclass(cast, cutlass.Numeric)
+    is_adapter = not isinstance(cast, type) and callable(cast)
+    if not (is_numeric_type or is_adapter):
+        raise TypeError(
+            "TensorSpec.cast must be cute.Tensor, cute.Pointer, a numeric type, "
+            "or a scalar adapter function"
+        )
+    if is_output:
+        raise ValueError("Scalar casts are not writable output views")
+    if memory_space != "host":
+        raise ValueError(
+            "Scalar casts require known host-resident inputs; "
+            "use pinned_host placement on CUDA and JAX with traced memory-space support"
+        )
+    if shape:
+        raise ValueError(f"Scalar casts require rank 0, got shape {shape}")
+    if (
+        is_numeric_type
+        and cast is not cutlass.Numeric
+        and cast is not jax_to_cutlass_dtype(dtype)
+    ):
+        raise ValueError(f"Scalar cast {cast} does not match array dtype {dtype}")
 
 
 def row_major_layout(shaped: Any) -> tuple[int, ...]:
@@ -373,6 +463,15 @@ def jax_to_cutlass_layout_order(
     return tuple(inv)
 
 
+def jax_to_cutlass_memory_space(
+    memory_space: Literal["device", "host"] | None,
+) -> AddressSpace:
+    """Maps normalized JAX placement to CuTe, defaulting unknown placement to device."""
+    if memory_space == "host":
+        return AddressSpace.generic
+    return DEFAULT_CUTLASS_DEVICE_MEMSPACE
+
+
 def jax_to_cutlass_dtype(dtype: Any) -> Any:
     """Gets the corresponding cutlass dtype given a jax dtype."""
     dtype = jnp.dtype(dtype)
@@ -458,7 +557,7 @@ def _validate_permutation(name: str, perm: Sequence[int], shape: Sequence[Any]) 
 class JaxArray:
     """Base class for JaxArray argument type.
 
-    JaxArray provides glue between XLA/JAX FFI tensors and cute.Tensor.
+    JaxArray describes the launcher view of an XLA/JAX FFI buffer.
 
     The following fields/properties provide control over the conversion
     to cute.Tensor as part of jax.jit lowering. These properties are
@@ -474,6 +573,8 @@ class JaxArray:
        the kernel after the compact layout is constructed.
     7. static: If True, tensor shapes and strides are compiled statically.
     8. divisibility: Optional divisibility hints in input-dimension order.
+    9. ffi_abi_version: CuTeDSL call ABI version used by the compiled wrapper.
+    10. cast: Launcher argument representation selected by TensorSpec.
     """
 
     def __init__(
@@ -486,7 +587,19 @@ class JaxArray:
         mode: tuple[int, ...] | None = None,
         static: bool = False,
         divisibility: tuple[int | None, ...] | int | None = None,
+        ffi_abi_version: int = 3,
+        cast: type | Callable[[cutlass.Numeric], Any] | None = None,
     ) -> None:
+        if (
+            not isinstance(ffi_abi_version, int)
+            or isinstance(ffi_abi_version, bool)
+            or ffi_abi_version not in (1, 2, 3)
+        ):
+            raise ValueError(
+                "Unsupported CuTeDSL FFI call ABI version "
+                f"{ffi_abi_version!r}; "
+                "expected one of: 1, 2, 3"
+            )
         self.dtype = dtype
         self.shape = tuple(shape)
         self.ndim = len(self.shape)
@@ -513,6 +626,14 @@ class JaxArray:
         self.divisibility = _normalize_divisibility(
             divisibility, self.order, self.shape
         )
+        self.ffi_abi_version = ffi_abi_version
+        _validate_cast(
+            self.shape,
+            cutlass_to_jax_dtype(dtype),
+            cast,
+            "host" if mem_space == AddressSpace.generic else "device",
+        )
+        self.cast = cast
 
 
 class JaxArrayValue(JaxArray):
@@ -536,6 +657,8 @@ class JaxArrayValue(JaxArray):
             jax_array.mode,
             jax_array.static,
             jax_array.divisibility,
+            jax_array.ffi_abi_version,
+            jax_array.cast,
         )
         self.value = ir_value
 
@@ -609,7 +732,7 @@ class JaxArrayValue(JaxArray):
         shape_array = llvm.extractvalue(
             _llvm_pointer_type(),
             ffi_buffer,
-            [1],
+            [5 if self.ffi_abi_version >= 3 else 1],
             loc=loc,
             ip=ip,
         )
@@ -636,11 +759,11 @@ class JaxArrayValue(JaxArray):
         *,
         loc: ir.Location | None = None,
         ip: ir.InsertionPoint | None = None,
-    ) -> ir.Value:
+    ) -> cute.Pointer:
         data_ptr = llvm.extractvalue(
             _llvm_pointer_type(),
             ffi_buffer,
-            [0],
+            [3 if self.ffi_abi_version >= 3 else 0],
             loc=loc,
             ip=ip,
         )
@@ -657,15 +780,76 @@ class JaxArrayValue(JaxArray):
             ip=ip,
         )
 
-    def get_tensor(
-        self, *, loc: ir.Location | None = None, ip: ir.InsertionPoint | None = None
+    def _load_ffi_buffer(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
     ) -> ir.Value:
-        ffi_buffer_type = llvm.StructType.get_literal(
-            [_llvm_pointer_type(), _llvm_pointer_type()]
-        )
+        if self.ffi_abi_version >= 3:
+            ffi_buffer_type = llvm.StructType.get_literal(
+                [
+                    ir.IntegerType.get_signless(64),
+                    _llvm_pointer_type(),
+                    ir.IntegerType.get_signless(32),
+                    _llvm_pointer_type(),
+                    ir.IntegerType.get_signless(64),
+                    _llvm_pointer_type(),
+                ]
+            )
+        else:
+            ffi_buffer_type = llvm.StructType.get_literal(
+                [_llvm_pointer_type(), _llvm_pointer_type()]
+            )
+        return llvm.load(ffi_buffer_type, self.value, loc=loc, ip=ip)
 
-        ffi_buffer = llvm.load(ffi_buffer_type, self.value, loc=loc, ip=ip)
-        pointer = self._load_pointer(ffi_buffer)
+    def get_host_scalar(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> cutlass.Numeric:
+        """Loads a rank-0 FFI buffer from CPU-addressable memory."""
+        if self.shape:
+            raise ValueError(f"Scalar FFI buffers must have rank 0, got {self.shape}")
+        if self.mem_space != AddressSpace.generic:
+            raise ValueError("Scalar FFI buffers must use generic address space")
+        ffi_buffer = self._load_ffi_buffer(loc=loc, ip=ip)
+        pointer = self._load_pointer(ffi_buffer, loc=loc, ip=ip)
+        return pointer.load(loc=loc, ip=ip)
+
+    def get_pointer(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> cute.Pointer:
+        """Returns the buffer's data pointer without loading its contents."""
+        ffi_buffer = self._load_ffi_buffer(loc=loc, ip=ip)
+        return self._load_pointer(ffi_buffer, loc=loc, ip=ip)
+
+    def get_value(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> Any:
+        """Returns the launcher argument selected by ``TensorSpec.cast``."""
+        if self.cast is None or self.cast is cute.Tensor:
+            return self.get_tensor(loc=loc, ip=ip)
+        if self.cast is cute.Pointer:
+            return self.get_pointer(loc=loc, ip=ip)
+        scalar = self.get_host_scalar(loc=loc, ip=ip)
+        return scalar if isinstance(self.cast, type) else self.cast(scalar)
+
+    def get_tensor(
+        self,
+        *,
+        loc: ir.Location | None = None,
+        ip: ir.InsertionPoint | None = None,
+    ) -> cute.Tensor:
+        ffi_buffer = self._load_ffi_buffer(loc=loc, ip=ip)
+        pointer = self._load_pointer(ffi_buffer, loc=loc, ip=ip)
 
         if self.static:
             shape = tuple(self.shape)
@@ -700,18 +884,42 @@ class JaxTracedArray(cute.Pointer):
 
     XLA passes each FFI buffer descriptor as a generic pointer. ``dtype``,
     ``memspace``, and ``alignment`` describe that ABI pointer. The contained
-    :class:`JaxArray` describes the typed, aligned device pointer loaded from
-    the descriptor.
+    :class:`JaxArray` describes the typed, aligned data pointer loaded from
+    the descriptor and its host or device placement.
 
-    Inside the traced function, :meth:`__new_from_mlir_values__` replaces this
-    placeholder with a :class:`JaxArrayValue`, so pointer operations are never
-    exposed on the host placeholder itself.
+    Concrete placeholders also own a host-side FFI descriptor containing their
+    shape. Compiled query functions for compiler-managed device workspaces can
+    inspect that descriptor without accessing device data. Inside the traced
+    function, :meth:`__new_from_mlir_values__` replaces the placeholder with a
+    :class:`JaxArrayValue`.
     """
 
     def __init__(self, jax_array: JaxArray) -> None:
         self._jax_array = jax_array
-        self._ffi_buffer_pointer = cute.runtime.nullptr(
+        self._runtime_shape: ctypes.Array | None = None
+        self._runtime_buffer: XlaFfiBuffer | None = None
+
+        if any(jax.export.is_symbolic_dim(dim) for dim in jax_array.shape):
+            descriptor_address = 0
+        else:
+            shape = tuple(int(dim) for dim in jax_array.shape)
+            self._runtime_shape = (ctypes.c_int64 * len(shape))(*shape)
+            shape_address = (
+                ctypes.addressof(self._runtime_shape) if self._runtime_shape else 0
+            )
+            self._runtime_buffer = XlaFfiBuffer(
+                ctypes.sizeof(XlaFfiBuffer),
+                None,
+                0,
+                None,
+                len(shape),
+                shape_address,
+            )
+            descriptor_address = ctypes.addressof(self._runtime_buffer)
+
+        self._ffi_buffer_pointer = cute.runtime.make_ptr(
             cutlass.Int8,
+            descriptor_address,
             AddressSpace.generic,
             assumed_align=_CUTE_XLA_FFI_BUFFER_ALIGNMENT,
         )

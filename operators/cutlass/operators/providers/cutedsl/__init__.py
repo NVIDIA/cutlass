@@ -28,6 +28,7 @@
 
 import logging
 
+from cutlass.operators.config import GlobalOptions
 from cutlass.operators.providers import register_provider
 from cutlass.operators.providers.provider import Provider
 
@@ -60,6 +61,8 @@ if available:
 
     # Imports for side effects (Operator registration)
     import cutlass.operators.providers.cutedsl.gemm  # noqa: F401
+
+    import cutlass.operators.providers.cutedsl.index_ptr_grouped_gemm  # noqa: F401
 
     from .operator import CuteDslOperator
 

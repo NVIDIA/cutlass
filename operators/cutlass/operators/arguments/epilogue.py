@@ -30,12 +30,18 @@ from __future__ import annotations
 
 import enum
 import typing
+from abc import ABC, abstractmethod
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from cutlass.operators.arguments.base import (
+    _convert_to_internal_types as _convert_argument_types,
+)
+from cutlass.operators.arguments.operand import DenseTensor, _dense_tensor
 from cutlass.operators.fusion import EmptyTensor, trace, trace_in_out
 from cutlass.operators.fusion.ir.store_nodes import ScalarReductionImpl
+from cutlass.operators.typing import SupportsConversionToInternalTypes
 from cutlass.operators.utils.layout import LayoutType
 from cutlass.operators.utils.tensor import TensorWrapper, is_torch_tensor
 
@@ -45,8 +51,27 @@ if TYPE_CHECKING:
     import cutlass.cute as cute
     from cutlass.cute.typing import Numeric
 
+    from cutlass.operators.typing import TensorLike
 
-class EpilogueArguments:
+
+class EpilogueArgumentsBase(ABC, SupportsConversionToInternalTypes):
+    """Common interface for custom and fixed epilogue arguments."""
+
+    @classmethod
+    def _tensor_like_field_names(cls) -> tuple[str, ...]:
+        return ()
+
+    @classmethod
+    def _numeric_like_field_names(cls) -> tuple[str, ...]:
+        return ()
+
+    @abstractmethod
+    def copy(self) -> EpilogueArgumentsBase:
+        """Return an independent epilogue-argument wrapper."""
+        raise NotImplementedError
+
+
+class EpilogueArguments(EpilogueArgumentsBase):
     """Describes a user-defined epilogue that is fused on top of the operation described by the primary RuntimeArguments.
 
     An epilogue fusion is a custom function that performs tensor-level transformations on the
@@ -113,8 +138,27 @@ class EpilogueArguments:
     * Elementwise functions: ``relu``, ``tanh``, ``sigmoid``, ``silu``,
       ``hardswish``, ``gelu``, ``exp``, ``maximum``, ``minimum``,
       ``multiply_add``, ``identity``.
+    * Gated linear units: ``swiglu``, ``geglu``, ``reglu`` (see below).
     * Layout: ``permute``, ``reshape``.
     * Reductions: ``sum``, ``max`` and ``min`` (see below).
+
+    **Gated linear units**
+
+    ``swiglu``, ``geglu`` and ``reglu`` compute ``up * activation(gate)``
+    from a *single* matmul whose ``B`` interleaves the gate and up
+    projections along N -- gate at the even N indices, up at the odd ones:
+
+    .. code-block:: python
+
+        def swiglu_epi(accum):
+            D = swiglu(accum)
+            return D
+
+    They pair two accumulator elements into one result, so unlike every
+    other epilogue the output is not the accumulator's shape: ``D`` (and
+    therefore the operation's ``out``) has **half** of B's N.  Nothing
+    else in the epilogue changes shape, so a gated result may be scaled or
+    combined with a tensor of its own half-width N.
 
     **Reductions**
 
@@ -140,6 +184,9 @@ class EpilogueArguments:
     initialise it to the operation's identity (``0`` for ``sum``, ``-inf``
     for ``max``, ``+inf`` for ``min``), or to an existing partial result to
     accumulate into it.
+    Reduction destinations must be 32-bit wide (e.g. ``torch.float32``): the
+    fold and the atomics run in the destination's dtype, and discovery
+    offers no operator for a narrower destination.
     Batch axes are folded into the same destination; per-batch reduction
     outputs are not supported yet.
 
@@ -358,6 +405,80 @@ class EpilogueArguments:
         self.traced_epilogue = trace(
             self.epilogue_fn, tensors_for_tracing, requires_conversion_to_tree=False
         )
+
+
+@dataclass
+class PerGroupScaleEpilogueArguments(EpilogueArgumentsBase):
+    """A fixed epilogue that applies scale factors to each grouped GEMM result.
+
+    It describes a fixed epilogue that, for each group ``g``, computes
+    ``scaled_accum_g = accum_g * global_scale_a[g] * global_scale_b[g]`` before
+    output conversion. Either ``global_scale_a`` or ``global_scale_b`` may be
+    omitted, but not both. The converted result overwrites that group's output
+    slice, or is added to the existing slice when the grouped operation requests
+    output accumulation.
+
+    This is a fixed epilogue with operator-specific implementation. Unlike
+    :class:`EpilogueArguments`, it does not support arbitrary transformations.
+    """
+
+    global_scale_a: DenseTensor | None = field(
+        default=None, metadata={"alignment_bytes": 4}
+    )
+    """Optional contiguous rank-1 FP32 scale tensor for A; None skips this scaling."""
+
+    global_scale_b: DenseTensor | None = field(
+        default=None, metadata={"alignment_bytes": 4}
+    )
+    """Optional contiguous rank-1 FP32 scale tensor for B; None skips this scaling."""
+
+    def __init__(
+        self,
+        global_scale_a: TensorLike | DenseTensor | None = None,
+        global_scale_b: TensorLike | DenseTensor | None = None,
+    ):
+        if global_scale_a is None and global_scale_b is None:
+            raise ValueError("global_scale_a and global_scale_b cannot both be None")
+        self.global_scale_a = (
+            None
+            if global_scale_a is None
+            else _dense_tensor(global_scale_a, name="global_scale_a").copy()
+        )
+        self.global_scale_b = (
+            None
+            if global_scale_b is None
+            else _dense_tensor(global_scale_b, name="global_scale_b").copy()
+        )
+        for scale_name, global_scale in (
+            ("global_scale_a", self.global_scale_a),
+            ("global_scale_b", self.global_scale_b),
+        ):
+            if global_scale is not None and len(global_scale.shape) != 1:
+                raise ValueError(
+                    f"{scale_name} must be a rank-1 tensor, got {global_scale.shape}"
+                )
+        if (
+            self.global_scale_a is not None
+            and self.global_scale_b is not None
+            and self.global_scale_a.shape != self.global_scale_b.shape
+        ):
+            raise ValueError(
+                "global_scale_a and global_scale_b must have the same shape, got "
+                f"{self.global_scale_a.shape} and {self.global_scale_b.shape}"
+            )
+
+    def copy(self) -> PerGroupScaleEpilogueArguments:
+        """Return an independent wrapper around the same scale tensors."""
+        return self.__copy__()
+
+    def __copy__(self) -> PerGroupScaleEpilogueArguments:
+        return PerGroupScaleEpilogueArguments(
+            None if self.global_scale_a is None else self.global_scale_a.copy(),
+            None if self.global_scale_b is None else self.global_scale_b.copy(),
+        )
+
+    def _convert_to_internal_types(self, metadata: dict | None = None) -> None:
+        _convert_argument_types(self, metadata=metadata)
 
 
 # Per-tensor transport descriptors, kept after ``EpilogueArguments`` so the

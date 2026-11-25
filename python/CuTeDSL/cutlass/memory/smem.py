@@ -11,7 +11,7 @@
 
 from enum import IntEnum
 from typing import Any, Callable, Optional, Type, Union, overload
-from typing_extensions import deprecated
+from cutlass.base_dsl.common import _deprecated
 import inspect
 
 import cutlass.cute as cute
@@ -23,6 +23,7 @@ from cutlass.cutlass_dsl import (
     Boolean,
     Int8,
     Int32,
+    Int64,
     Numeric,
     NumericMeta,
     dsl_user_op,
@@ -48,7 +49,7 @@ def _extract_struct_fields(struct_type: cute.struct) -> list[tuple[str, int, int
             size = member.size_in_bytes
         elif isinstance(member, struct):
             size = member.__sizeof__()
-        else:
+        else:  # pragma: no cover
             continue
         fields.append((name, size, offset))
     return fields
@@ -203,7 +204,7 @@ class SmemAllocator:
         )
 
     @property
-    @deprecated(
+    @_deprecated(
         "Private attribute `_allocated_bytes` is deprecated, use public API `arch.dynamic_smem_size()` instead."
     )
     def _allocated_bytes(self) -> Int32:
@@ -404,6 +405,8 @@ class SmemAllocator:
             )
 
         element_width = element_type.width if element_type is not Boolean else 8
+        if cute.is_static(num_elems) and (element_width * num_elems) % 8 != 0:
+            raise ValueError("invalid allocation that is not byte-aligned")
         byte_alignment = max(byte_alignment, element_width // 8)
         ptr = self.allocate(
             element_width * num_elems // 8,
@@ -513,7 +516,7 @@ def get_kernel_smem_size(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> int:
+) -> Int64:
     """Get the total static shared memory allocation in bytes for a kernel.
 
     Uses ``cute.kernel_smem_size`` to query the total smem bytes that will be
@@ -528,7 +531,7 @@ def get_kernel_smem_size(
         retrieved automatically from state stored by the DSL after ``.launch()``.
     :type kernel: Callable
     :return: Total shared memory allocated by the kernel, in bytes.
-    :rtype: int (i64 MLIR value during tracing)
+    :rtype: Int64
     """
     if not callable(kernel):
         raise TypeError(
@@ -545,4 +548,4 @@ def get_kernel_smem_size(
             f"get_kernel_smem_size: kernel '{kernel.__name__}' has not been "
             "traced yet — call .launch() before get_kernel_smem_size()."
         )
-    return _cute_ir.kernel_smem_size(kernel_name=sym, loc=loc, ip=ip)
+    return Int64(_cute_ir.kernel_smem_size(kernel_name=sym, loc=loc, ip=ip))

@@ -1,4 +1,6 @@
 # PyCache files
 __pycache__/
 cutlass_library.egg-info/
+cutlass_cicd/pytest/plugins/*.egg-info/
 /build*
+/python/CuTeDSL/build/

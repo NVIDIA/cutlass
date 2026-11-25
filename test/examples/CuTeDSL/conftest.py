@@ -28,6 +28,7 @@
 
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 import logging
 import hashlib
@@ -50,7 +51,7 @@ utils_path = project_root / "test" / "utils"
 # JAX-availability check (which does a bare `import jax`) incorrectly returns
 # True, and the subsequent `import jax.numpy` fails with ModuleNotFoundError.
 # Importing cutlass here, while sys.path is still clean, avoids that race.
-import cutlass  # noqa: E402  (intentional early import)
+import cutlass  # noqa: E402,F401  (intentional early import)
 
 sys.path.append(str(cute_example_path))
 sys.path.append(str(example_path))
@@ -101,7 +102,22 @@ class ImmutableSysPath(list):
 
 sys.path = ImmutableSysPath(list(sys.path))
 
-pytest_plugins = ["test_sharding"]
+try:
+    distribution("cutlass-pytest-plugins")
+except PackageNotFoundError:
+    pytest_plugins = ["test_sharding"]
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config):
+    if not hasattr(config, "ci_default_arch"):
+        config.ci_default_arch = {}
+
+    # The 4.7 sharding plugin infers sm_* directories directly. Register only
+    # semantic directory names that do not encode an architecture themselves.
+    config.ci_default_arch[__file__] = {
+        "hopper": "90a",
+    }
 
 
 def pytest_addoption(parser):

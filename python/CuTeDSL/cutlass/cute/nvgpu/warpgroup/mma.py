@@ -12,11 +12,10 @@
 import enum
 from dataclasses import dataclass
 from typing import Any, Optional, Type, Union, cast
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 
 from cutlass import base_dsl
 from cutlass.cutlass_dsl import DSLUserCodeError, BaseDSL, T, DSLRuntimeError
-from typing_extensions import deprecated
 
 from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
@@ -59,7 +58,7 @@ class WarpGroupMmaOp(AtomMmaOp):
     pass
 
 
-@deprecated(
+@_deprecated(
     "warpgroup.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead"
 )
 class OperandMajorMode(enum.Enum):
@@ -177,10 +176,9 @@ class MmaOp(WarpGroupMmaOp):
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            warnings.warn(
+            _warn_deprecated(
                 "warpgroup.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
-                DeprecationWarning,
-                stacklevel=2,
+                user_input=True,
             )
             # Normalize the major modes to the new enum type
             # Since this is a frozen dataclass, we need to use the object.__setattr__ method to set the attributes
@@ -287,12 +285,14 @@ class MmaTraits(Trait):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> Boolean:
         field_ir_name = self._normalize_field_name(field)
         trait_ir_val = self.value
         attr = _cute_nvgpu_ir.resolve_atom_field_attr(trait_ir_val, field_ir_name)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, trait_ir_val, attr, loc=loc, ip=ip
+        return Boolean(
+            _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, trait_ir_val, attr, loc=loc, ip=ip
+            )
         )
 
 

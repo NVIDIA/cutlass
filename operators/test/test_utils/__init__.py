@@ -26,7 +26,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from . import allocation, gemm  # noqa: F401
+from cutlass.operators.config import GlobalOptions
+
+from . import allocation, gemm
 from .common import get_test_level, reference_device, skip_if_unsupported_target
 from .reference_check import assert_close_with_reference_conversion
 
@@ -38,3 +40,4 @@ __all__ = [
     "skip_if_unsupported_target",
     "assert_close_with_reference_conversion",
 ]
+

@@ -10,7 +10,7 @@
 # is strictly prohibited.
 
 import enum
-import warnings
+from cutlass.base_dsl.common import _warn_deprecated, _deprecated
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple, Type, Union, cast
 
@@ -21,7 +21,6 @@ from cutlass._mlir import ir
 import cutlass._mlir.dialects.cute as _cute_ir
 import cutlass._mlir.dialects.cute_nvgpu as _cute_nvgpu_ir
 import cutlass._mlir.dialects.vector as vector_d
-from typing_extensions import deprecated
 
 from ..common import normalize_field_to_ir_name
 from ..common import OperandMajorMode as _OperandMajorMode
@@ -153,7 +152,7 @@ class Tcgen05MmaOp(atom.MmaOp):
     pass
 
 
-@deprecated(
+@_deprecated(
     "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead"
 )
 class OperandMajorMode(enum.Enum):
@@ -469,10 +468,9 @@ class MmaOp(Tcgen05MmaOp):
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            warnings.warn(
+            _warn_deprecated(
                 "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
-                DeprecationWarning,
-                stacklevel=2,
+                user_input=True,
             )
             # Normalize the major modes to the new enum type
             # Since this is a frozen dataclass, we need to use the object.__setattr__ method to set the attributes
@@ -603,7 +601,7 @@ class Sm100MmaTraits(Trait):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> Boolean:
         field_ir = normalize_field_to_ir_name(field, self.admissible_fields)
         if field_ir == Field.DISABLE_OUTPUT_LANE._to_ir_field_name():
             raise ValueError(
@@ -611,8 +609,10 @@ class Sm100MmaTraits(Trait):
                 "cute.nvgpu.tcgen05.Field.DISABLE_OUTPUT_LANE and pass through cute.gemm/mma_atom_call"
             )
         attr = _cute_nvgpu_ir.resolve_atom_field_attr(self.value, field_ir)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+        return Boolean(
+            _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
         )
 
     def unpack(
@@ -695,10 +695,9 @@ class BlockScaledMmaOp(Tcgen05MmaOp):
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            warnings.warn(
+            _warn_deprecated(
                 "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
-                DeprecationWarning,
-                stacklevel=2,
+                user_input=True,
             )
         # Verify the instruction shape
         shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
@@ -831,15 +830,17 @@ class BlockScaledMmaTraits(Trait):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> Boolean:
         # Only boolean-returning fields supported for get. Derive from admissible_fields.
         gettable_fields = [
             f for f in self.admissible_fields if f not in (Field.SFA, Field.SFB)
         ]
         field_ir = normalize_field_to_ir_name(field, gettable_fields)
         attr = _cute_nvgpu_ir.resolve_atom_field_attr(self.value, field_ir)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+        return Boolean(
+            _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
         )
 
     def unpack(
@@ -908,10 +909,9 @@ class SparseMmaOp(Tcgen05MmaOp):
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            warnings.warn(
+            _warn_deprecated(
                 "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
-                DeprecationWarning,
-                stacklevel=2,
+                user_input=True,
             )
 
         if not isinstance(self.sparse_metadata_format, SparseMetadataFormat):
@@ -1050,13 +1050,15 @@ class SparseMmaTraits(Trait):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> Boolean:
         # Only boolean-returning fields supported for get. Derive from admissible_fields.
         gettable_fields = [f for f in self.admissible_fields if f is not Field.METADATA]
         field_ir = normalize_field_to_ir_name(field, gettable_fields)
         attr = _cute_nvgpu_ir.resolve_atom_field_attr(self.value, field_ir)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+        return Boolean(
+            _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
         )
 
 
@@ -1113,10 +1115,9 @@ class BlockScaledSparseMmaOp(Tcgen05MmaOp):
         if isinstance(self.a_major_mode, OperandMajorMode) or isinstance(
             self.b_major_mode, OperandMajorMode
         ):
-            warnings.warn(
+            _warn_deprecated(
                 "tcgen05.OperandMajorMode is deprecated, use cute.nvgpu.OperandMajorMode instead",
-                DeprecationWarning,
-                stacklevel=2,
+                user_input=True,
             )
         if not isinstance(self.sparse_metadata_format, SparseMetadataFormat):
             raise DSLUserCodeError(
@@ -1251,7 +1252,7 @@ class BlockScaledSparseMmaTraits(Trait):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Any:
+    ) -> Boolean:
         # Only boolean-returning fields supported for get. Derive from admissible_fields.
         gettable_fields = [
             f
@@ -1260,8 +1261,10 @@ class BlockScaledSparseMmaTraits(Trait):
         ]
         field_ir = normalize_field_to_ir_name(field, gettable_fields)
         attr = _cute_nvgpu_ir.resolve_atom_field_attr(self.value, field_ir)
-        return _cute_nvgpu_ir.atom_get_value(
-            Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+        return Boolean(
+            _cute_nvgpu_ir.atom_get_value(
+                Boolean.mlir_type, self.value, attr, loc=loc, ip=ip
+            )
         )
 
     def unpack(
@@ -1850,6 +1853,108 @@ class MmaFP8SparseTrait(SparseMmaTraits):
     pass
 
 
+
+@dataclass(frozen=True)
+class MmaTF32SparseOp(SparseMmaOp):
+    """
+    TF32 tcgen05 Sparse MMA Operation.
+    """
+
+    descriptive_name = "tcgen05 TF32 Sparse MMA Operation"
+
+    def __init__(
+        self,
+        ab_dtype: Type[Numeric],
+        acc_dtype: Type[Numeric],
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+        a_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        b_major_mode: Union[_OperandMajorMode, OperandMajorMode],
+        sparse_metadata_format: SparseMetadataFormat,
+    ) -> None:
+        super().__init__(
+            ab_dtype,
+            ab_dtype,
+            acc_dtype,
+            instruction_shape,
+            cta_group,
+            a_src,
+            a_major_mode,
+            b_major_mode,
+            sparse_metadata_format,
+        )
+        self._verify()
+
+    def _verify(self) -> None:
+        if self.a_dtype not in [TFloat32]:
+            raise DSLUserCodeError(
+                "expects the 'ab_dtype' Op parameter to be one of TFloat32",
+            )
+        assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
+        if self.acc_dtype not in [Float16, Float32]:
+            raise DSLUserCodeError(
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
+            )
+        instruction_k = 16
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
+            raise DSLUserCodeError(
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {shape_mnk_tuple[2]}",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "MmaTF32SparseTrait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM100UMMASparseType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            T.ui8(),
+            self.sparse_metadata_format._to_ir(),
+            self.a_src._to_ir(),
+            0,  # cScaleExp
+        )
+
+        return MmaTF32SparseTrait(
+            make_atom(
+                ty,
+                [
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    core.make_ptr(
+                        Uint8,
+                        0,
+                        _cute_ir.AddressSpace.tmem,
+                        assumed_align=8,
+                        loc=loc,
+                        ip=ip,
+                    ).value,
+                ],
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+class MmaTF32SparseTrait(SparseMmaTraits):
+    pass
+
+
 #
 # I8 MMA
 #
@@ -1993,7 +2098,7 @@ class MmaI8Trait(Sm100MmaTraits):
 #
 
 
-@deprecated("MmaFP8Op is deprecated, use MmaF8F6F4Op instead")
+@_deprecated("MmaFP8Op is deprecated, use MmaF8F6F4Op instead")
 @dataclass(frozen=True)
 class MmaFP8Op(MmaOp):
     """
@@ -2466,11 +2571,612 @@ class SM107MmaFP8Trait(Sm100MmaTraits):
 
 
 #
+# SM107 (Rubin) F16/BF16 Sparse MMA
+#
+
+
+@dataclass(frozen=True)
+class SM107MmaF16BF16SparseOp(SparseMmaOp):
+    """
+    F16/BF16 SM107 (Rubin) Sparse MMA Operation.
+
+    This MMA operation is specifically designed for SM107 architecture (Rubin),
+    with support for sparse matrix multiplication on Float16/BFloat16 data types
+    and collector operations.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma-sp>`__.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+-------+
+    | A Data Type | B Data Type | Acc Type | Mma-K |
+    +=============+=============+==========+=======+
+    | F16         | F16         | F16, F32 | 32    |
+    +-------------+-------------+----------+-------+
+    | BF16        | BF16        | F32      | 32    |
+    +-------------+-------------+----------+-------+
+
+    **Supported architectures:** sm_107a
+
+    **Constraints:**
+
+    * CtaGroup.ONE: Mma-M in {64, 128}; 8 <= Mma-N <= 256, step 8
+    * CtaGroup.TWO: Mma-M in {128, 256}; 16 <= Mma-N <= 256, step 16
+    * A and B support both K-major and MN-major (transpose), except with
+      128B swizzling with 32B swizzle-atomicity. Transpose A requires
+      a_src=SMEM. When a_src=TMEM, A is always K-major.
+
+    **Execution Model:**
+
+    * ``cute.gemm(...)`` (PTX: ``tcgen05.mma``) is asynchronous. Issue granularity is
+      single-thread (for ``.cta_group::1``) or single-thread in a CTA pair
+      (for ``.cta_group::2``), per PTX issue rules.
+    * In user code, issue ``cute.gemm(...)`` as warp-uniform and do not wrap it in
+      ``elect_one()``, as ``elect_one()`` insertion is handled by the compiler.
+    * For sparse MMA, pass A with metadata in ``cute.gemm(...)`` as ``[a, e]``.
+    * To observe/sequence MMA completion for dependent non-pipelined operations, call
+      ``cute.nvgpu.tcgen05.commit(...)`` (PTX: ``tcgen05.commit``) and follow the
+      corresponding completion wait/synchronization path.
+
+    .. code-block:: python
+
+        # CORRECT: warp-uniform tcgen05 MMA
+        cute.gemm(mma_atom, d, [a, e], b, c)
+
+        # Signal completion of prior tcgen05 MMA operations
+        with cute.arch.elect_one():
+            cute.nvgpu.tcgen05.commit(mbar_ptr, None, cta_group)
+
+    """
+
+    descriptive_name = "tcgen05 SM107 F16/BF16 Sparse MMA Operation"
+
+    # Dataclass fields must have default values when parent fields don't
+    a_collector_op: CollectorOp = CollectorOp.DISCARD
+    b_collector_op: CollectorOp = CollectorOp.DISCARD
+
+    # Only allow SM107 architectures (not SM110/SM120)
+    admissible_archs = [
+        base_dsl.Arch.sm_107,
+        base_dsl.Arch.sm_107a,
+        base_dsl.Arch.sm_107f,
+    ]
+
+    def __init__(
+        self,
+        ab_dtype: Type[Numeric],
+        acc_dtype: Type[Numeric],
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+        a_major_mode: _OperandMajorMode,
+        b_major_mode: _OperandMajorMode,
+        sparse_metadata_format: SparseMetadataFormat = SparseMetadataFormat.TID,
+        a_collector_op: CollectorOp | str = CollectorOp.DISCARD,
+        b_collector_op: CollectorOp | str = CollectorOp.DISCARD,
+    ) -> None:
+        # Convert string collector ops to CollectorOp enums
+        if isinstance(a_collector_op, str):
+            a_collector_op = CollectorOp(a_collector_op)
+        if isinstance(b_collector_op, str):
+            b_collector_op = CollectorOp(b_collector_op)
+
+        # Initialize parent class fields first
+        super().__init__(
+            ab_dtype,
+            ab_dtype,
+            acc_dtype,
+            instruction_shape,
+            cta_group,
+            a_src,
+            a_major_mode,
+            b_major_mode,
+            sparse_metadata_format,
+        )
+        # Set collector ops after parent initialization (required for frozen dataclass)
+        object.__setattr__(self, "a_collector_op", a_collector_op)
+        object.__setattr__(self, "b_collector_op", b_collector_op)
+
+        # Additional SM107-specific verification
+        self._verify()
+
+    def _verify(self) -> None:
+        # Input data type verification
+        if self.a_dtype not in [Float16, BFloat16]:
+            raise DSLUserCodeError(
+                "expects the 'ab_dtype' Op parameter to be one of Float16 or BFloat16",
+            )
+        assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
+        # Accumulator data type verification
+        if self.acc_dtype not in [Float16, Float32]:
+            raise DSLUserCodeError(
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
+            )
+        # Verify collector ops
+        if not isinstance(self.a_collector_op, CollectorOp):
+            raise DSLUserCodeError(
+                "expects the 'a_collector_op' Op parameter to be a CollectorOp instance",
+            )
+        if not isinstance(self.b_collector_op, CollectorOp):
+            raise DSLUserCodeError(
+                "expects the 'b_collector_op' Op parameter to be a CollectorOp instance",
+            )
+        # Instruction shape verification
+        instruction_k = 32  # For sparse F16/BF16, K is 32
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
+            raise DSLUserCodeError(
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {shape_mnk_tuple[2]}",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "SM107MmaF16BF16SparseTrait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM107UMMASparseType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            T.ui8(),
+            self.sparse_metadata_format._to_ir(),
+            self.a_src._to_ir(),
+            0,  # cScaleExp
+            self.a_collector_op._to_ir(),
+            self.b_collector_op._to_ir(),
+        )
+
+        return SM107MmaF16BF16SparseTrait(
+            make_atom(
+                ty,
+                [
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    core.make_ptr(
+                        Uint8,
+                        0,
+                        AddressSpace.tmem,
+                        assumed_align=8,
+                        loc=loc,
+                        ip=ip,
+                    ).value,
+                ],
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+class SM107MmaF16BF16SparseTrait(SparseMmaTraits):
+    pass
+
+
+#
+# SM107 (Rubin) FP8 Sparse MMA
+#
+
+
+@dataclass(frozen=True)
+class SM107MmaFP8SparseOp(SparseMmaOp):
+    """
+    FP8 SM107 (Rubin) Sparse MMA Operation.
+
+    This MMA operation is specifically designed for SM107 architecture (Rubin),
+    with support for sparse matrix multiplication on Float8E4M3FN/Float8E5M2 data types
+    and collector operations.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma-sp>`__.
+    This Operation corresponds to the ``.kind::f8f6f4`` qualifier with sparse support.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+----------+-------+
+    | A Data Type | B Data Type | Acc Type | Mma-K |
+    +=============+=============+==========+=======+
+    | E4M3, E5M2  | E4M3, E5M2  | F16, F32 | 64    |
+    +-------------+-------------+----------+-------+
+
+    **Supported architectures:** sm_107a
+
+    **Constraints:**
+
+    * A and B data types must be the same
+    * CtaGroup.ONE: Mma-M in {64, 128}; 8 <= Mma-N <= 256, step 8
+    * CtaGroup.TWO: Mma-M in {128, 256}; 16 <= Mma-N <= 256, step 16
+    * With B-major=MN: Mma-N step doubles (16 for CG1, 32 for CG2)
+    * A and B support both K-major and MN-major (transpose), except with
+      128B swizzling with 32B swizzle-atomicity. Transpose A requires
+      a_src=SMEM. When a_src=TMEM, A is always K-major.
+    * With 8-bit B transpose (MN-major): N step changes to 16 for CG1, 32 for CG2.
+
+    **Execution Model:**
+
+    * ``cute.gemm(...)`` (PTX: ``tcgen05.mma``) is asynchronous. Issue granularity is
+      single-thread (for ``.cta_group::1``) or single-thread in a CTA pair
+      (for ``.cta_group::2``), per PTX issue rules.
+    * In user code, issue ``cute.gemm(...)`` as warp-uniform and do not wrap it in
+      ``elect_one()``, as ``elect_one()`` insertion is handled by the compiler.
+    * For sparse MMA, pass A with metadata in ``cute.gemm(...)`` as ``[a, e]``.
+    * To observe/sequence MMA completion for dependent non-pipelined operations, call
+      ``cute.nvgpu.tcgen05.commit(...)`` (PTX: ``tcgen05.commit``) and follow the
+      corresponding completion wait/synchronization path.
+
+    .. code-block:: python
+
+        # CORRECT: warp-uniform tcgen05 sparse MMA
+        cute.gemm(mma_atom, d, [a, e], b, c)
+
+        # Signal completion of prior tcgen05 MMA operations
+        with cute.arch.elect_one():
+            cute.nvgpu.tcgen05.commit(mbar_ptr, None, cta_group)
+
+    """
+
+    descriptive_name = "tcgen05 SM107 FP8 Sparse MMA Operation"
+
+    a_collector_op: CollectorOp = CollectorOp.DISCARD
+    b_collector_op: CollectorOp = CollectorOp.DISCARD
+
+    admissible_archs = [
+        base_dsl.Arch.sm_107,
+        base_dsl.Arch.sm_107a,
+        base_dsl.Arch.sm_107f,
+    ]
+
+    def __init__(
+        self,
+        ab_dtype: Type[Numeric],
+        acc_dtype: Type[Numeric],
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+        a_major_mode: _OperandMajorMode,
+        b_major_mode: _OperandMajorMode,
+        sparse_metadata_format: SparseMetadataFormat = SparseMetadataFormat.TID,
+        a_collector_op: CollectorOp | str = CollectorOp.DISCARD,
+        b_collector_op: CollectorOp | str = CollectorOp.DISCARD,
+    ) -> None:
+        if isinstance(a_collector_op, str):
+            a_collector_op = CollectorOp(a_collector_op)
+        if isinstance(b_collector_op, str):
+            b_collector_op = CollectorOp(b_collector_op)
+
+        super().__init__(
+            ab_dtype,
+            ab_dtype,
+            acc_dtype,
+            instruction_shape,
+            cta_group,
+            a_src,
+            a_major_mode,
+            b_major_mode,
+            sparse_metadata_format,
+        )
+        object.__setattr__(self, "a_collector_op", a_collector_op)
+        object.__setattr__(self, "b_collector_op", b_collector_op)
+
+        self._verify()
+
+    def _verify(self) -> None:
+        if self.a_dtype not in [Float8E5M2, Float8E4M3FN]:
+            raise DSLUserCodeError(
+                "expects the 'ab_dtype' Op parameter to be one of Float8E5M2 or Float8E4M3FN",
+            )
+        assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
+        if self.acc_dtype not in [Float16, Float32]:
+            raise DSLUserCodeError(
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
+            )
+        if not isinstance(self.a_collector_op, CollectorOp):
+            raise DSLUserCodeError(
+                "expects the 'a_collector_op' Op parameter to be a CollectorOp instance",
+            )
+        if not isinstance(self.b_collector_op, CollectorOp):
+            raise DSLUserCodeError(
+                "expects the 'b_collector_op' Op parameter to be a CollectorOp instance",
+            )
+        instruction_k = 64
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
+            raise DSLUserCodeError(
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {shape_mnk_tuple[2]}",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "SM107MmaFP8SparseTrait":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM107UMMASparseType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            T.ui8(),
+            self.sparse_metadata_format._to_ir(),
+            self.a_src._to_ir(),
+            0,  # cScaleExp
+            self.a_collector_op._to_ir(),
+            self.b_collector_op._to_ir(),
+        )
+
+        return SM107MmaFP8SparseTrait(
+            make_atom(
+                ty,
+                [
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    Boolean(False).ir_value(loc=loc, ip=ip),
+                    core.make_ptr(
+                        Uint8,
+                        0,
+                        AddressSpace.tmem,
+                        assumed_align=8,
+                        loc=loc,
+                        ip=ip,
+                    ).value,
+                ],
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+class SM107MmaFP8SparseTrait(SparseMmaTraits):
+    pass
+
+
+#
+# SM107 (Rubin) FP4 Ultra Sparse MMA
+#
+
+
+@dataclass(frozen=True)
+class SM107MmaMXF4NVF4BlockScaledSparseOp(BlockScaledSparseMmaOp):
+    """
+    FP4 Ultra SM107 (Rubin) Sparse MMA Operation.
+
+    This MMA operation is specifically designed for SM107 architecture (Rubin),
+    with support for FP4 Ultra sparse matrix multiplication and collector operations.
+
+    See the `PTX documentation <https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-instructions-mma-sp>`__.
+
+    **Supported data type combinations:**
+
+    +-------------+-------------+--------------------+----------+-------+-------------+
+    | A Data Type | B Data Type | SF Data Type       | Acc Type | Mma-K | SF Vec Size |
+    +=============+=============+====================+==========+=======+=============+
+    | E2M1        | E2M1        | UE8M0, UE4M3       | F16, F32 | 192   | 32, 64      |
+    +-------------+-------------+--------------------+----------+-------+-------------+
+
+    **Supported architectures:** sm_107a
+
+    **Constraints:**
+
+    * CtaGroup.ONE: Mma-M = 128; 8 <= Mma-N <= 256, step 8
+    * CtaGroup.TWO: Mma-M in {128, 256}; 16 <= Mma-N <= 256, step 16
+    * Transpose (MN-major) is not supported. Both A and B must be K-major.
+
+    **Execution Model:**
+
+    * ``cute.gemm(...)`` (PTX: ``tcgen05.mma``) is asynchronous. Issue granularity is
+      single-thread (for ``.cta_group::1``) or single-thread in a CTA pair
+      (for ``.cta_group::2``), per PTX issue rules.
+    * In user code, issue ``cute.gemm(...)`` as warp-uniform and do not wrap it in
+      ``elect_one()``, as ``elect_one()`` insertion is handled by the compiler.
+    * For block-scaled sparse MMA, pass paired operands in ``cute.gemm(...)`` as
+      ``[a, sfa, e]`` and ``[b, sfb]``.
+    * To observe/sequence MMA completion for dependent non-pipelined operations, call
+      ``cute.nvgpu.tcgen05.commit(...)`` (PTX: ``tcgen05.commit``) and follow the
+      corresponding completion wait/synchronization path.
+
+    .. code-block:: python
+
+        # CORRECT: warp-uniform tcgen05 MMA
+        cute.gemm(mma_atom, d, [a, sfa, e], [b, sfb], c)
+
+        # Signal completion of prior tcgen05 MMA operations
+        with cute.arch.elect_one():
+            cute.nvgpu.tcgen05.commit(mbar_ptr, None, cta_group)
+
+    """
+
+    descriptive_name = "tcgen05 SM107 FP4 Ultra Block Scaled Sparse MMA Operation"
+
+    # Dataclass fields must have default values when parent fields don't
+    a_collector_op: CollectorOp = CollectorOp.DISCARD
+    b_collector_op: CollectorOp = CollectorOp.DISCARD
+
+    # Only allow SM107 architectures (not SM110/SM120)
+    admissible_archs = [
+        base_dsl.Arch.sm_107,
+        base_dsl.Arch.sm_107a,
+        base_dsl.Arch.sm_107f,
+    ]
+
+    def __init__(
+        self,
+        ab_dtype: Type[Numeric],
+        acc_dtype: Type[Numeric],
+        sf_dtype: Type[Numeric],
+        sf_vec_size: int,
+        instruction_shape: Shape,
+        cta_group: CtaGroup,
+        a_src: OperandSource,
+        a_major_mode: _OperandMajorMode = _OperandMajorMode.K,
+        b_major_mode: _OperandMajorMode = _OperandMajorMode.K,
+        sparse_metadata_format: SparseMetadataFormat = SparseMetadataFormat.TID,
+        a_collector_op: CollectorOp | str = CollectorOp.DISCARD,
+        b_collector_op: CollectorOp | str = CollectorOp.DISCARD,
+    ) -> None:
+        # Convert string collector ops to CollectorOp enums
+        if isinstance(a_collector_op, str):
+            a_collector_op = CollectorOp(a_collector_op)
+        if isinstance(b_collector_op, str):
+            b_collector_op = CollectorOp(b_collector_op)
+
+        # Initialize parent class fields first
+        super().__init__(
+            ab_dtype,
+            ab_dtype,
+            acc_dtype,
+            sf_dtype,
+            sf_vec_size,
+            instruction_shape,
+            cta_group,
+            a_src,
+            a_major_mode,
+            b_major_mode,
+            sparse_metadata_format,
+        )
+        # Set collector ops after parent initialization (required for frozen dataclass)
+        object.__setattr__(self, "a_collector_op", a_collector_op)
+        object.__setattr__(self, "b_collector_op", b_collector_op)
+
+        # Additional SM107-specific verification
+        self._verify()
+
+    def _verify(self) -> None:
+        # Input data type verification
+        if self.a_dtype not in [Float4E2M1FN]:
+            raise DSLUserCodeError(
+                "expects the 'ab_dtype' Op parameter to be one of Float4E2M1FN",
+            )
+        assert self.b_dtype == self.a_dtype, "a_dtype and b_dtype must be the same"
+        # Accumulator data type verification
+        if self.acc_dtype not in [Float16, Float32]:
+            raise DSLUserCodeError(
+                "expects the 'acc_dtype' Op parameter to be one of Float16 or Float32",
+            )
+        # Scale factor data type verification
+        if self.sf_dtype not in [
+            Float8E8M0FNU,
+            Float8E4M3FN,
+            FloatNV8E5M3FNU,
+        ]:
+            raise DSLUserCodeError(
+                "expects the 'sf_dtype' Op parameter to be one of Float8E8M0FNU, Float8E4M3FN"
+            )
+        if self.sf_vec_size not in [32, 64]:
+            raise DSLUserCodeError(
+                "expects the 'sf_vec_size' Op parameter to be one of 32 or 64",
+            )
+        # Verify collector ops
+        if not isinstance(self.a_collector_op, CollectorOp):
+            raise DSLUserCodeError(
+                "expects the 'a_collector_op' Op parameter to be a CollectorOp instance",
+            )
+        if not isinstance(self.b_collector_op, CollectorOp):
+            raise DSLUserCodeError(
+                "expects the 'b_collector_op' Op parameter to be a CollectorOp instance",
+            )
+        # Instruction shape verification
+        # For sparse FP4 Ultra, K is 192
+        instruction_k = 192
+        shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
+        if rank(shape_mnk_tuple) == 2:
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            shape_mnk_tuple = cast(Any, self.shape_mnk)
+        if shape_mnk_tuple[2] != instruction_k:
+            raise DSLUserCodeError(
+                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"but got {shape_mnk_tuple[2]}",
+            )
+
+    def _make_trait(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+        **kwargs: Any,
+    ) -> "SM107MmaMXF4NVF4SparseOp":
+        shape_mnk = _pack_shape(self.shape_mnk, loc=loc, ip=ip)
+        ty = _cute_nvgpu_ir.MmaAtomSM107UMMABlockScaledSparseType.get(
+            shape_mnk.type.attribute,
+            self.cta_group.value,
+            self.a_major_mode._to_ir(),
+            self.b_major_mode._to_ir(),
+            self.a_dtype.mlir_type,
+            self.b_dtype.mlir_type,
+            self.acc_dtype.mlir_type,
+            self.sf_dtype.mlir_type,
+            self.sparse_metadata_format._to_ir(),
+            self.a_src._to_ir(),
+            self.sf_vec_size,
+            self.a_collector_op._to_ir(),
+            self.b_collector_op._to_ir(),
+        )
+
+        return SM107MmaMXF4NVF4SparseOp(
+            make_atom(
+                ty,
+                [
+                    Boolean(False).ir_value(loc=loc, ip=ip),  # accum_c
+                    Boolean(False).ir_value(loc=loc, ip=ip),  # neg_a
+                    Boolean(False).ir_value(loc=loc, ip=ip),  # neg_b
+                    core.make_ptr(
+                        self.sf_dtype,
+                        0,
+                        AddressSpace.tmem,
+                        assumed_align=8,
+                        loc=loc,
+                        ip=ip,
+                    ).value,  # sf_a
+                    core.make_ptr(
+                        self.sf_dtype,
+                        0,
+                        AddressSpace.tmem,
+                        assumed_align=8,
+                        loc=loc,
+                        ip=ip,
+                    ).value,  # sf_b
+                    core.make_ptr(
+                        Uint8,
+                        0,
+                        AddressSpace.tmem,
+                        assumed_align=8,
+                        loc=loc,
+                        ip=ip,
+                    ).value,  # e (metadata)
+                ],
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+
+class SM107MmaMXF4NVF4SparseOp(BlockScaledSparseMmaTraits):
+    pass
+
+
+#
 # MXF8F6F4 MMA
 #
 
 
-@deprecated("MmaMXF8Op is deprecated, use MmaMXF8F6F4Op instead")
+@_deprecated("MmaMXF8Op is deprecated, use MmaMXF8F6F4Op instead")
 @dataclass(frozen=True)
 class MmaMXF8Op(BlockScaledMmaOp):
     """
@@ -2759,6 +3465,7 @@ class MmaMXF8F6F4Op(BlockScaledMmaOp):
 
 class MmaMXF8F6F4Trait(BlockScaledMmaTraits):
     pass
+
 
 
 #
@@ -3313,11 +4020,11 @@ class SM107MmaMXF4NVF4Op(BlockScaledMmaOp):
 
     **Supported data type combinations:**
 
-    +-------------+-------------+-----------------------+----------+-------+-------------+
-    | A Data Type | B Data Type | SF Data Type          | Acc Type | Mma-K | SF Vec Size |
-    +=============+=============+=======================+==========+=======+=============+
-    | E2M1        | E2M1        | UE8M0, UE4M3, NV8E5M3 | F32      | 128   | 16, 32      |
-    +-------------+-------------+-----------------------+----------+-------+-------------+
+    +-------------+-------------+-----------------------+----------+--------------+-------------+
+    | A Data Type | B Data Type | SF Data Type          | Acc Type | Mma-K        | SF Vec Size |
+    +=============+=============+=======================+==========+==============+=============+
+    | E2M1        | E2M1        | UE8M0, UE4M3, NV8E5M3 | F32      | 64, 96, 128  | 16, 32      |
+    +-------------+-------------+-----------------------+----------+--------------+-------------+
 
     **Supported architectures:** sm_107a
 
@@ -3417,14 +4124,14 @@ class SM107MmaMXF4NVF4Op(BlockScaledMmaOp):
             )
 
         # Instruction shape verification
-        instruction_k = 128
+        instruction_k_list = [64, 96, 128]
         shape_mnk_tuple: Any = cast(Any, self.shape_mnk)
         if rank(shape_mnk_tuple) == 2:
-            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, instruction_k))
+            object.__setattr__(self, "shape_mnk", (*shape_mnk_tuple, 128))
             shape_mnk_tuple = cast(Any, self.shape_mnk)
-        if shape_mnk_tuple[2] != instruction_k:
+        if shape_mnk_tuple[2] not in instruction_k_list:
             raise DSLUserCodeError(
-                f"expects the instruction extent in the K-mode to be {instruction_k}, "
+                f"expects the instruction extent in the K-mode to be one of {instruction_k_list}, "
                 f"but got {shape_mnk_tuple[2]}",
             )
 
@@ -3482,7 +4189,6 @@ class SM107MmaMXF4NVF4Op(BlockScaledMmaOp):
 
 class SM107MmaMXF4NVF4Trait(BlockScaledMmaTraits):
     pass
-
 
 
 @dataclass(frozen=True)

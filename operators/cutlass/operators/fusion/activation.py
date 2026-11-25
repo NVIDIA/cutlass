@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -37,7 +36,7 @@ Helpers for common activation functions
 import ctypes
 
 from cutlass.operators.fusion.ir.c_types import dtype2ctype, to_ctype_value
-from cutlass.operators.fusion.library import ActivationOp
+from cutlass.operators.fusion.library import ActivationOp, GatedOp
 from cutlass.operators.utils.common import is_torch_available, is_numpy_available
 from cutlass.operators.utils.tensor import is_numpy_tensor, is_torch_tensor
 
@@ -231,3 +230,50 @@ class geluMeta(ActivationMeta):
 
 class gelu(ActivationFunctor, metaclass=geluMeta):
     binding_type = ActivationOp.Gelu
+
+
+##############################################################################
+# Gated linear units
+#
+# A gated op splits its input into two N-interleaved parts -- ``gate`` at the
+# even N indices and ``up`` at the odd ones -- and returns
+# ``up * activation(gate)``.  The output therefore has half the input's N.
+# The interleave, not a ``[gate | up]`` concatenation, is what lets a single
+# MMA produce both halves: see the EFC ``accum_split`` design notes.
+class GatedMeta(ActivationMeta):
+    """Reference for a gated unit, parameterised by the gate activation."""
+
+    #: Activation applied to the gate part; set by each subclass.
+    gate_activation = None
+
+    @classmethod
+    def numpy(cls, x):
+        return x[..., 1::2] * cls.gate_activation.numpy(x[..., 0::2])
+
+    @classmethod
+    def torch(cls, x):
+        return x[..., 1::2] * cls.gate_activation.torch(x[..., 0::2])
+
+
+class swigluMeta(GatedMeta):
+    gate_activation = siluMeta
+
+
+class swiglu(ActivationFunctor, metaclass=swigluMeta):
+    binding_type = GatedOp.SwiGLU
+
+
+class gegluMeta(GatedMeta):
+    gate_activation = geluMeta
+
+
+class geglu(ActivationFunctor, metaclass=gegluMeta):
+    binding_type = GatedOp.GeGLU
+
+
+class regluMeta(GatedMeta):
+    gate_activation = reluMeta
+
+
+class reglu(ActivationFunctor, metaclass=regluMeta):
+    binding_type = GatedOp.ReGLU

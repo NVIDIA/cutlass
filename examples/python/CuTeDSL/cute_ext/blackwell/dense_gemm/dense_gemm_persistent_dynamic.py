@@ -38,7 +38,6 @@ from cutlass.cute import experimental as cute_ext
 from cutlass.base_dsl.typing import Numeric
 from cutlass import cute as cute
 from cutlass.cute.typing import Int128
-from cutlass import utils
 from cutlass import torch as cutlass_torch
 import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass import testing
@@ -48,6 +47,10 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.join(current_dir, "../../../"))
 
 from helpers import cli_helper as cli
+from helpers.dynamic_persistent_tile_scheduler import (
+    ClcDynamicPersistentTileScheduler,
+    ClcDynamicPersistentTileSchedulerParams,
+)
 
 
 """
@@ -189,7 +192,7 @@ class PersistentDenseGemmKernel:
             )
         self.use_tma_multicast = self.use_tma_multicast or fallback_use_tma_multicast
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(self, mA: cute.Tensor, mB: cute.Tensor, mD: cute.Tensor):
         _tile_mn = cute.core._pack_shape((*self.mn_tiler, 1))
 
@@ -243,16 +246,15 @@ class PersistentDenseGemmKernel:
             block=(224, 1, 1),  # 7 warps: 4 epi + 1 mma + 1 tma + 1 sched
             cluster=self.cluster_shape,
             fallback_cluster=self.fallback_cluster_shape,
-            smem=cute.Int64(smem_capacity),
         )
 
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         mA: cute.Tensor,
         mB: cute.Tensor,
         mD: cute.Tensor,
-        tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams,
+        tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
     ):
         # Determine CTA group based on 2-CTA mode
         if cutlass.const_expr(self.use_2cta_instrs):
@@ -299,11 +301,12 @@ class PersistentDenseGemmKernel:
         is_leader_cta = mma_tile_coord_v == 0
         thr_mma = tiled_mma.get_slice(mma_tile_coord_v)
 
-        # Cluster layout for 2-CTA coordination. Reading the cluster shape via
-        # ``block_in_cluster_dim()`` lets the same source specialize per
-        # body-clone branch under mixed-cluster (see the mixed-cluster expansion pass).
+        # Cluster layout for 2-CTA coordination.
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout(cute.arch.block_in_cluster_dim()),
+            cute.make_layout(cluster_shape),
             cute.core._pack_shape((cute.size(tiled_mma.thr_id.shape),)),
         )
         cluster_layout_v_size = cute.size(cluster_layout_vmnk.shape[0])
@@ -362,7 +365,7 @@ class PersistentDenseGemmKernel:
         )
 
         # Construct the CLC scheduler
-        tile_sched = utils.ClcDynamicPersistentTileScheduler.create(
+        tile_sched = ClcDynamicPersistentTileScheduler.create(
             tile_sched_params,
             cute.arch.block_idx(),
             cute.arch.grid_dim(),
@@ -403,14 +406,13 @@ class PersistentDenseGemmKernel:
         )
 
         # UMMA -> Load to tensor memory pipeline
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer.release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         # Scheduler -> All
@@ -557,11 +559,7 @@ class PersistentDenseGemmKernel:
                 # Advance to next tile using CLC fetch
                 clc_pipe.producer_acquire()
                 clc_pipe.issue_next()
-                clc_pipe.producer_commit()
-
-                clc_pipe.producer_state = cute_ext.pipeline_advance_iterator(
-                    clc_pipe.raw_pipeline, clc_pipe.producer_state
-                )
+                clc_pipe.producer_commit_and_advance()
 
                 clc_pipe.consumer_wait()
                 work_tile = tile_sched.get_current_work()
@@ -629,6 +627,10 @@ class PersistentDenseGemmKernel:
                 work_tile = tile_sched.get_current_work()
                 clc_pipe.consumer_release_and_advance()
 
+            # Stage reuse across CTA tiles is protected by acquire_sync(), so
+            # the pipeline is drained once here instead of per CTA tile.
+            tma_store_pipe.tail()
+
     @staticmethod
     def _compute_grid(
         c: cute.Tensor,
@@ -637,20 +639,20 @@ class PersistentDenseGemmKernel:
         fallback_cluster_shape: Tuple[int, int, int],
         swizzle_size: int,
         raster_along: str,
-    ) -> Tuple[utils.ClcDynamicPersistentTileSchedulerParams, Tuple[int, int, int]]:
+    ) -> Tuple[ClcDynamicPersistentTileSchedulerParams, Tuple[int, int, int]]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C."""
         c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
         gc = cute.zipped_divide(c, tiler=c_shape)
         num_ctas_mnl = gc[(0, (None, None, None))].shape
 
-        tile_sched_params = utils.ClcDynamicPersistentTileSchedulerParams(
+        tile_sched_params = ClcDynamicPersistentTileSchedulerParams(
             num_ctas_mnl,
             cluster_shape,
             swizzle_size,
             raster_along == "m",
             fallback_cluster_shape_mnk=fallback_cluster_shape,
         )
-        grid = utils.ClcDynamicPersistentTileScheduler.get_grid_shape(tile_sched_params)
+        grid = ClcDynamicPersistentTileScheduler.get_grid_shape(tile_sched_params)
 
         return tile_sched_params, grid
 
@@ -699,7 +701,9 @@ def create_tensors(
 
 
 def compare(a_torch_cpu, b_torch_cpu, c_torch_gpu, c_dtype, tolerance):
-    ref = torch.einsum("mkl,nkl->mnl", a_torch_cpu, b_torch_cpu)
+    ref = torch.einsum(
+        "mkl,nkl->mnl", a_torch_cpu.to(torch.float32), b_torch_cpu.to(torch.float32)
+    )
 
     _, ref_torch_gpu = cutlass_torch.cute_tensor_like(
         ref, c_dtype, is_dynamic_layout=True, assumed_align=16
@@ -807,7 +811,7 @@ def run(
         fallback_cluster_shape_mn=fallback_cluster_shape_mn,
     )
 
-    compiled_dense_gemm = cute_ext.compile(dense_gemm, a_tensor, b_tensor, c_tensor)
+    compiled_dense_gemm = cute.compile(dense_gemm, a_tensor, b_tensor, c_tensor)
     compiled_dense_gemm.engine.initialize()
 
     compiled_dense_gemm(a_tensor, b_tensor, c_tensor)

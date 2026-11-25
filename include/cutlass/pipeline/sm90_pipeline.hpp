@@ -285,12 +285,12 @@ PipelineState<Pipeline::Stages> make_producer_start_state() {
 // Assumptions : Constructor is visible Cluster-wide (as it needs a Cluster-Sync)
 // We have exactly one thread elected in the Producer as the "leader"
 // Currently, it is optional to elect a leader for the Consumers
-template <int Stages_>
+template <int Stages_, class FullBarrier_ = cutlass::arch::ClusterTransactionBarrier>
 class PipelineTmaAsync {
 public:
-  using FullBarrier = cutlass::arch::ClusterTransactionBarrier;
+  using FullBarrier = FullBarrier_;
   using EmptyBarrier = cutlass::arch::ClusterBarrier;
-  using ProducerBarrierType = FullBarrier::ValueType;
+  using ProducerBarrierType = typename FullBarrier::ValueType;
   using ConsumerBarrierType = EmptyBarrier::ValueType;
   static constexpr uint32_t Stages = Stages_;
   using PipelineState = cutlass::PipelineState<Stages>;

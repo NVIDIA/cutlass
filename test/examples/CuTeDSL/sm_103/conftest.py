@@ -27,4 +27,5 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 def pytest_configure(config):
-    config.default_SMs[__file__] = "103f"
+    if hasattr(config, "default_SMs"):
+        config.default_SMs[__file__] = "103f"

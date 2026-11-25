@@ -18,6 +18,8 @@ decorators most kernels need directly:
 ``domain_loop`` and ``work_tile_loop``
     Context managers for the runtime domain loop and optional persistent
     work-tile loop.
+``while_true_loop``
+    Context manager for a dynamic loop that exits through ``break_loop()``.
 ``consumer_work`` and ``producer_work``
     Decorators for resource methods that read from or write into a resource.
 ``WorkAttr``
@@ -28,15 +30,19 @@ from .enums import (
     Every,
     IterationPredicate,
     OpaqueCondition,
+    StateRole,
     WorkAttr,
 )
 from . import pipeline
 from .resources import consumer_work, producer_work
 from .schedule_builder import (
     domain_loop,
+    PipelineStateRef,
     schedule,
+    StateAdvance,
     when_false,
     when_true,
+    while_true_loop,
     work_tile_loop,
 )
 
@@ -47,11 +53,15 @@ __all__ = [
     "Every",
     "IterationPredicate",
     "OpaqueCondition",
+    "PipelineStateRef",
     "pipeline",
     "producer_work",
     "schedule",
+    "StateAdvance",
+    "StateRole",
     "when_false",
     "when_true",
+    "while_true_loop",
     "WorkAttr",
     "work_tile_loop",
 ]

@@ -39,8 +39,21 @@ from cutlass.utils import is_fp8_dtype, create_cute_tensor_for_fp8
 import cutlass.pipeline as pipeline
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 from cutlass.cute.nvgpu import cpasync, tcgen05
-from cutlass.cute.arch.smem import map_dsmem_ptr
-from cutlass.cute.nvgpu.cpasync import CopyDsmemStoreOp
+from pathlib import Path
+
+import sys
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.dynamic_persistent_tile_scheduler import (
+    ClcDynamicPersistentTileScheduler,
+    ClcDynamicPersistentTileSchedulerParams,
+)
 
 
 """
@@ -415,7 +428,7 @@ class PersistentDenseGemmKernel:
                 self.c_dtype, self.c_layout, self.epi_tile, 1
             )
 
-        self.smem_capacity = utils.get_smem_capacity_in_bytes()
+        self.smem_capacity = cutlass.memory.get_smem_capacity_in_bytes()
 
         # Reserve SMEM for DSMEM mailbox when using split-K
         dsmem_mailbox_bytes = 0
@@ -493,9 +506,13 @@ class PersistentDenseGemmKernel:
         self.a_dtype: Type[cutlass.Numeric] = a.element_type
         self.b_dtype: Type[cutlass.Numeric] = b.element_type
         self.c_dtype: Type[cutlass.Numeric] = c.element_type
-        self.a_major_mode = utils.LayoutEnum.from_tensor(a).mma_major_mode()
-        self.b_major_mode = utils.LayoutEnum.from_tensor(b).mma_major_mode()
-        self.c_layout = utils.LayoutEnum.from_tensor(c)
+        self.a_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            a
+        ).mma_major_mode()
+        self.b_major_mode = cutlass.tensor_utils.LayoutEnum.from_tensor(
+            b
+        ).mma_major_mode()
+        self.c_layout = cutlass.tensor_utils.LayoutEnum.from_tensor(c)
 
         # Check if input data types are compatible with MMA instruction
         if cutlass.const_expr(self.a_dtype != self.b_dtype):
@@ -609,7 +626,7 @@ class PersistentDenseGemmKernel:
         b_smem_layout_staged: cute.ComposedLayout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.ClcDynamicPersistentTileSchedulerParams,
+        tile_sched_params: ClcDynamicPersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
         """
@@ -686,15 +703,12 @@ class PersistentDenseGemmKernel:
                 cutlass.Float32, self._mailbox_total_elems
             ]
 
-        smem = utils.SmemAllocator()
+        smem = cutlass.memory.SmemAllocator()
         storage = smem.allocate(SharedStorage)
 
         # Initialize mainloop ab_pipeline (barrier) and states
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
-        num_tma_producer = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_tma_producer
-        )
+        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Warp)
         ab_producer, ab_consumer = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
@@ -705,6 +719,7 @@ class PersistentDenseGemmKernel:
             # block_idx_in_cluster -> get_flat_coord() mappings remain valid when split_k>1.
             # The actual TMA multicast masks still use the MN-only cluster layout below.
             cta_layout_vmnk=clc_cluster_layout_vmnk,
+            enable_multicast_signaling=True,
             defer_sync=True,
         ).make_participants()
 
@@ -756,7 +771,7 @@ class PersistentDenseGemmKernel:
                 num_threads=32 * len(self.epilogue_warp_id),
             )
         # Tensor memory dealloc barrier init
-        tmem = utils.TmemAllocator(
+        tmem = cutlass.memory.TmemAllocator(
             storage.tmem_holding_buf.ptr,
             barrier_for_retrieve=tmem_alloc_barrier,
             allocator_warp_id=self.epilogue_warp_id[0],
@@ -918,7 +933,7 @@ class PersistentDenseGemmKernel:
         #
         # Construct the scheduler
         #
-        tile_sched = utils.ClcDynamicPersistentTileScheduler.create(
+        tile_sched = ClcDynamicPersistentTileScheduler.create(
             tile_sched_params,
             cute.arch.block_idx(),
             cute.arch.grid_dim(),
@@ -1187,10 +1202,8 @@ class PersistentDenseGemmKernel:
                     (128, shard_ept_static, max(self.split_k - 1, 1)),
                     stride=(1, 128, 128 * shard_ept_static),
                 )
-                dsmem_store_atom = cute.make_copy_atom(
-                    CopyDsmemStoreOp(), cutlass.Float32
-                )
-                scatter_val = cute.make_rmem_tensor(
+                dsmem_payload = cute.dsmem.B32PayloadCodec([("value", cutlass.Float32)])
+                dsmem_payload_value = cute.make_rmem_tensor(
                     cute.make_layout(1), cutlass.Float32
                 )
 
@@ -1277,24 +1290,17 @@ class PersistentDenseGemmKernel:
                                     * block_in_cluster_y
                                     + cutlass.Int32(peer * mn_cluster_size)
                                 )
-                                remote_mbar = map_dsmem_ptr(
-                                    dsmem_mailbox_full_mbar, peer_rank
-                                )
                                 for i in range(shard_ept):
-                                    scatter_val[0] = tTR_rAcc[peer * shard_ept + i]
-                                    remote_ptr = map_dsmem_ptr(
+                                    dsmem_payload_value[0] = tTR_rAcc[
+                                        peer * shard_ept + i
+                                    ]
+                                    cute.dsmem.store_to_peer(
                                         dsmem_mailbox_ptr
                                         + mailbox_layout((tidx, i, sender_idx)),
+                                        dsmem_payload_value,
+                                        dsmem_payload,
+                                        dsmem_mailbox_full_mbar,
                                         peer_rank,
-                                    )
-                                    dst = cute.make_tensor(
-                                        remote_ptr, cute.make_layout(1)
-                                    )
-                                    cute.copy(
-                                        dsmem_store_atom,
-                                        scatter_val,
-                                        dst,
-                                        mbar_ptr=remote_mbar,
                                     )
 
                         # Do not let local FULL waits move ahead of this CTA's
@@ -1420,7 +1426,7 @@ class PersistentDenseGemmKernel:
         swizzle_size: int,
         raster_along: Literal["m", "n"],
         split_k: int = 1,
-    ) -> Tuple[utils.ClcDynamicPersistentTileSchedulerParams, Tuple[int, int, int]]:
+    ) -> Tuple[ClcDynamicPersistentTileSchedulerParams, Tuple[int, int, int]]:
         """Use persistent tile scheduler to compute the grid size for the output tensor C.
 
         :param c: The output tensor C
@@ -1435,7 +1441,7 @@ class PersistentDenseGemmKernel:
         :return: A tuple containing:
             - tile_sched_params: Parameters for the persistent tile scheduler.
             - grid: Grid shape for kernel launch.
-        :rtype: Tuple[utils.ClcDynamicPersistentTileSchedulerParams, tuple[int, int, int]]
+        :rtype: Tuple[ClcDynamicPersistentTileSchedulerParams, tuple[int, int, int]]
         """
         c_shape = cute.slice_(cta_tile_shape_mnk, (None, None, 0))
         gc = cute.zipped_divide(c, tiler=c_shape)
@@ -1451,10 +1457,10 @@ class PersistentDenseGemmKernel:
         )
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
-        tile_sched_params = utils.ClcDynamicPersistentTileSchedulerParams(
+        tile_sched_params = ClcDynamicPersistentTileSchedulerParams(
             num_ctas_mnl_expanded, cluster_shape_mnl, swizzle_size, raster_along == "m"
         )
-        grid = utils.ClcDynamicPersistentTileScheduler.get_grid_shape(tile_sched_params)
+        grid = ClcDynamicPersistentTileScheduler.get_grid_shape(tile_sched_params)
 
         return tile_sched_params, grid
 
@@ -1480,7 +1486,9 @@ class PersistentDenseGemmKernel:
         """
         acc_shape = tiled_mma.partition_shape_C(mma_tiler[:2])
         tCtAcc_fake = tiled_mma.make_fragment_C(cute.append(acc_shape, num_acc_stage))
-        num_tmem_alloc_cols = utils.get_num_tmem_alloc_cols(tCtAcc_fake, arch=arch)
+        num_tmem_alloc_cols = cutlass.memory.get_num_tmem_alloc_cols(
+            tCtAcc_fake, arch=arch
+        )
 
         return num_tmem_alloc_cols
 
@@ -1804,7 +1812,6 @@ def bmm(
     gemm_op(a, b, c, stream, epilogue_op)
 
 
-@lru_cache(maxsize=1)
 def prepare_tensors(
     mnkl: Tuple[int, int, int, int],
     a_dtype: Type[cutlass.Numeric],
@@ -1942,11 +1949,12 @@ def run(
     iterations: int = 1,
     skip_ref_check: bool = False,
     use_cold_l2: bool = False,
-    benchmark: bool = False,
     init_normal: bool = False,
     normal_mean: float = 0.0,
     normal_std: float = 1.0,
     split_k: int = 1,
+    *,
+    benchmark: str = "none",
     **kwargs,
 ):
     """
@@ -1987,8 +1995,9 @@ def run(
     :type skip_ref_check: bool, optional
     :param use_cold_l2: Whether to use circular buffer strategy to ensure cold L2 cache, defaults to False.
     :type use_cold_l2: bool, optional
-    :param benchmark: Whether to only benchmark the kernel, defaults to False.
-    :type benchmark: bool, optional
+    :param benchmark: Benchmark mode. "none" disables benchmarking, "default" uses
+        CUDA events, and "cupti" uses CUPTI profiler.
+    :type benchmark: str, optional
     :param init_normal: Whether to initialize tensors using normal distribution
         instead of uniform random, defaults to False.
     :type init_normal: bool, optional
@@ -2095,7 +2104,7 @@ def run(
             rtol=1e-03,
         )
 
-    if not benchmark:
+    if benchmark == "none":
         return 0
 
     def generate_tensors():
@@ -2145,6 +2154,7 @@ def run(
         stream=current_stream,
         warmup_iterations=warmup_iterations,
         iterations=iterations,
+        use_cupti=benchmark == "cupti",
     )
     print(f"[DSL INFO] Execution time: {exec_time} microseconds per iteration")
     return exec_time
@@ -2186,10 +2196,11 @@ def prepare_parser():
         type=str,
         default="default",
         choices=[
+            "cupti",
             "default",
             "none",
         ],
-        help="Benchmark the kernel with nsight or default (cutlass.testing.benchmark) or none",
+        help="Benchmark the kernel with nsight, cupti, default (cutlass.testing.benchmark), or none",
     )
     parser.add_argument(
         "--skip_ref_check", action="store_true", help="Skip reference checking"
@@ -2308,10 +2319,10 @@ if __name__ == "__main__":
         args.iterations,
         args.skip_ref_check,
         args.use_cold_l2,
-        args.benchmark == "default",
         args.init_normal,
         args.normal_mean,
         args.normal_std,
         args.cluster_split_k,
+        benchmark=args.benchmark,
     )
     print("PASS")

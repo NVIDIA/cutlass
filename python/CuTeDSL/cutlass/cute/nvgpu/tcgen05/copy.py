@@ -41,6 +41,7 @@ class TmemLoadRedOp(enum.Enum):
         return f"<{self.__class__.__name__}.{self.name}>"
 
 
+
 class Repetition(enum.Enum):
     """
     An enumeration for the number of repetitions of a given TMEM copy within the instruction.
@@ -562,7 +563,8 @@ class LdSPCompress32x32bOp(_LdBase):
         :return: A trait object for this load operation
         :rtype: LdSPCompress32x32bTrait
         """
-        ty = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType.get(
+        spcompress_type = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType
+        ty = spcompress_type.get(
             copy_internal_type.mlir_type,
             32,
             32,
@@ -612,7 +614,8 @@ class LdRedSPCompress32x32bOp(_LdBase):
         :return: A trait object for this load operation
         :rtype: LdRedSPCompress32x32bTrait
         """
-        ty = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType.get(
+        spcompress_type = _cute_nvgpu_ir.CopyAtomSM107TmemLoadSPCompressType
+        ty = spcompress_type.get(
             copy_internal_type.mlir_type,
             32,
             32,
@@ -878,7 +881,7 @@ class _S2TCopyBase(CopyOp):
 
     :param cta_group: Cooperative Thread Array (CTA) group configuration
     :type cta_group: CtaGroup
-    :raises DSLUserCodeError: If the current architecture is not SM100f or SM110f
+    :raises DSLUserCodeError: If the current architecture is not sm_100f or sm_110f
         family or if invalid parameters are provided
     """
 
@@ -887,7 +890,7 @@ class _S2TCopyBase(CopyOp):
     def __post_init__(self) -> None:
         # base_dsl.Arch verification
         arch = BaseDSL._get_dsl().get_arch_enum()
-        # S2T tcgen05 copy encodings are valid on both SM100 and Thor SM110.
+        # S2T tcgen05 copy encodings are valid on both sm_100 and sm_110.
         if not (
             arch.is_family_of(base_dsl.Arch.sm_100f)
             or arch.is_family_of(base_dsl.Arch.sm_110f)
