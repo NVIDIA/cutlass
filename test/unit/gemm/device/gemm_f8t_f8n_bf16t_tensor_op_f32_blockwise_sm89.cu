@@ -60,7 +60,6 @@ using LayoutScale = cutlass::layout::RowMajor;
 
 int const kM = 256;
 int const kN = 256;
-int const kK = 128;
 int const kScaleBlock = 128;
 
 using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
@@ -76,16 +75,18 @@ using Gemm = cutlass::gemm::device::GemmBlockwise<
     EpilogueOutputOp, ThreadblockSwizzle, 3, 16, 16, false,
     cutlass::arch::OpMultiplyAdd>;
 
-template <typename ThreadblockSwizzle>
+template <typename ThreadblockSwizzle, int k_blocks = 1>
 ::testing::AssertionResult run_blockwise_gemm() {
+  static_assert(k_blocks == 1 || k_blocks == 2, "Fixture defines one or two scale blocks");
   using Operator = Gemm<ThreadblockSwizzle>;
+  int const kK = k_blocks * kScaleBlock;
 
   cutlass::HostTensor<ElementA, LayoutA> tensor_a({kM, kK});
   cutlass::HostTensor<ElementB, LayoutB> tensor_b({kK, kN});
   cutlass::HostTensor<ElementOutput, LayoutC> tensor_c({kM, kN});
   cutlass::HostTensor<ElementOutput, LayoutC> tensor_d({kM, kN});
-  cutlass::HostTensor<float, LayoutScale> scale_a({kM / kScaleBlock, 1});
-  cutlass::HostTensor<float, LayoutScale> scale_b({kN / kScaleBlock, 1});
+  cutlass::HostTensor<float, LayoutScale> scale_a({kM / kScaleBlock, k_blocks});
+  cutlass::HostTensor<float, LayoutScale> scale_b({kN / kScaleBlock, k_blocks});
 
   cutlass::reference::host::TensorFill(tensor_a.host_view(), ElementA(1));
   cutlass::reference::host::TensorFill(tensor_b.host_view(), ElementB(1));
@@ -93,10 +94,22 @@ template <typename ThreadblockSwizzle>
   cutlass::reference::host::TensorFill(tensor_d.host_view(), ElementOutput(0));
 
   // Powers-of-two scales keep the expected BF16 outputs exactly representable.
-  scale_a.host_view().at({0, 0}) = 1.0f;
-  scale_a.host_view().at({1, 0}) = 4.0f;
-  scale_b.host_view().at({0, 0}) = 2.0f;
-  scale_b.host_view().at({1, 0}) = 8.0f;
+  float const scale_a_values[2][2] = {{1, 2}, {4, 1}};
+  float const scale_b_values[2][2] = {{2, 16}, {8, 2}};
+  for (int block = 0; block < k_blocks; ++block) {
+    for (int row = 0; row < kM / kScaleBlock; ++row) {
+      scale_a.host_view().at({row, block}) = scale_a_values[row][block];
+    }
+    for (int col = 0; col < kN / kScaleBlock; ++col) {
+      scale_b.host_view().at({col, block}) = scale_b_values[col][block];
+    }
+  }
+  // Give the second K block twice the unscaled dot product of the first.
+  for (int m = 0; m < kM; ++m) {
+    for (int k = kScaleBlock; k < kK; ++k) {
+      tensor_a.host_view().at({m, k}) = ElementA(2);
+    }
+  }
 
   tensor_a.sync_device();
   tensor_b.sync_device();
@@ -106,9 +119,9 @@ template <typename ThreadblockSwizzle>
   scale_b.sync_device();
 
   typename Operator::TensorRefScale scale_a_ref(
-      scale_a.device_data(), LayoutScale(1));
+      scale_a.device_data(), LayoutScale(k_blocks));
   typename Operator::TensorRefScale scale_b_ref(
-      scale_b.device_data(), LayoutScale(1));
+      scale_b.device_data(), LayoutScale(k_blocks));
   typename Operator::Arguments arguments(
       {kM, kN, kK}, {tensor_a.device_data(), kK},
       {tensor_b.device_data(), kK}, {tensor_c.device_data(), kN},
@@ -147,13 +160,15 @@ template <typename ThreadblockSwizzle>
   int first_n = -1;
   float first_expected = 0;
   float first_observed = 0;
-  float const scale_a_values[] = {1.0f, 4.0f};
-  float const scale_b_values[] = {2.0f, 8.0f};
 
   for (int m = 0; m < kM; ++m) {
     for (int n = 0; n < kN; ++n) {
-      float expected = float(kK) * scale_a_values[m / kScaleBlock] *
-                       scale_b_values[n / kScaleBlock];
+      float expected = 0;
+      for (int block = 0; block < k_blocks; ++block) {
+        expected += float(kScaleBlock * (block + 1)) *
+                    scale_a_values[m / kScaleBlock][block] *
+                    scale_b_values[n / kScaleBlock][block];
+      }
       float observed = float(tensor_d.host_view().at({m, n}));
       if (observed != expected) {
         if (!mismatches) {
@@ -192,6 +207,13 @@ TEST(SM89_Device_GemmBlockwise_fe4m3t_fe4m3n_bf16t_tensor_op_f32,
   using Swizzle =
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>;
   EXPECT_TRUE(run_blockwise_gemm<Swizzle>());
+}
+
+TEST(SM89_Device_GemmBlockwise_fe4m3t_fe4m3n_bf16t_tensor_op_f32,
+     distinct_k_block_scales_256x256x256) {
+  using Swizzle =
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>;
+  EXPECT_TRUE((run_blockwise_gemm<Swizzle, 2>()));
 }
 
 #endif  // CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED

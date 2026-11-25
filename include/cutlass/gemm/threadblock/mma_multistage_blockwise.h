@@ -37,6 +37,7 @@
 #pragma once
 
 #include "cutlass/aligned_buffer.h"
+#include "cutlass/arch/config.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
@@ -211,6 +212,12 @@ public:
       int block_m_idx, ///< threadblock index along M dimension (row)
       int block_n_idx) ///< threadblock index along N dimension (col)
   {
+#if defined(CUTLASS_ARCH_MMA_SM120_ENABLED)
+    constexpr bool kFuseBlockScale = Detail::kStagedAccumulation;
+#else
+    constexpr bool kFuseBlockScale = false;
+#endif
+
     // Unroll the warp-level MMA tiles of a threadblock's mainloop iteration
     CUTLASS_PRAGMA_UNROLL
     for (int warp_mma_k = 0; warp_mma_k < Base::kWarpGemmIterations;
@@ -249,32 +256,49 @@ public:
       float scale_factor = scale_A.at({block_m_idx, k_block_idx}) *
                            scale_B.at({block_n_idx, k_block_idx});
 
-      // Perform MMA into a temporary fragment (unscaled)
-      FragmentC delta;
-      FragmentC zero_frag;
-      zero_frag.clear();
-
-      warp_mma_(delta, pipe_state.warp_transformed_frag_A_[warp_mma_k % 2],
-                pipe_state.warp_transformed_frag_B_[warp_mma_k % 2], zero_frag);
-
-      // Apply dequantization scaling
-      CUTLASS_PRAGMA_UNROLL
-      for (int el = 0; el < FragmentC::kElements; ++el) {
-        delta[el] *= scale_factor;
-      }
-
-      // Accumulate the scaled contribution
       plus<FragmentC> plus_accum;
+      if constexpr (kFuseBlockScale) {
+        // The warp tiles share a scale within each threadblock K tile.
+        warp_mma_(pipe_state.tmp_accum_,
+                  pipe_state.warp_transformed_frag_A_[warp_mma_k % 2],
+                  pipe_state.warp_transformed_frag_B_[warp_mma_k % 2],
+                  pipe_state.tmp_accum_);
 
-      if (Detail::kStagedAccumulation) {
-        pipe_state.tmp_accum_ = plus_accum(pipe_state.tmp_accum_, delta);
+        if (warp_mma_k + 1 == Base::kWarpGemmIterations) {
+          CUTLASS_PRAGMA_UNROLL
+          for (int el = 0; el < FragmentC::kElements; ++el) {
+            pipe_state.tmp_accum_[el] *= scale_factor;
+          }
 
-        if (warp_mma_k == 0) {
           accum = plus_accum(accum, pipe_state.tmp_accum_);
           pipe_state.tmp_accum_.clear();
         }
       } else {
-        accum = plus_accum(accum, delta);
+        // Perform MMA into a temporary fragment (unscaled)
+        FragmentC delta;
+        FragmentC zero_frag;
+        zero_frag.clear();
+
+        warp_mma_(delta, pipe_state.warp_transformed_frag_A_[warp_mma_k % 2],
+                  pipe_state.warp_transformed_frag_B_[warp_mma_k % 2], zero_frag);
+
+        // Apply dequantization scaling
+        CUTLASS_PRAGMA_UNROLL
+        for (int el = 0; el < FragmentC::kElements; ++el) {
+          delta[el] *= scale_factor;
+        }
+
+        // Accumulate the scaled contribution
+        if (Detail::kStagedAccumulation) {
+          pipe_state.tmp_accum_ = plus_accum(pipe_state.tmp_accum_, delta);
+
+          if (warp_mma_k == 0) {
+            accum = plus_accum(accum, pipe_state.tmp_accum_);
+            pipe_state.tmp_accum_.clear();
+          }
+        } else {
+          accum = plus_accum(accum, delta);
+        }
       }
 
       // Except for the last warp-tile, all warp-tiles issue their share of
