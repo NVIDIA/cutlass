@@ -82,10 +82,10 @@ class gen_device:
         if sm_cap == 75 or sm_cap == 80 or sm_cap == 86:
             self.arch = "cutlass::arch::Sm" + str(sm_cap)
 
-        if mma_tp is 'hmma1688':
+        if mma_tp == 'hmma1688':
             self.mma_shape = [16, 8, 8]
             self.mma_tp = 'hmma'
-        elif mma_tp is 'imma8816':
+        elif mma_tp == 'imma8816':
             self.mma_tp = 'imma'
             self.mma_shape = [8, 8, 16]
         else:
