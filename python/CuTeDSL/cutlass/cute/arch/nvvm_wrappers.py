@@ -5075,7 +5075,7 @@ def cvt_f32x2_f16x2_pzo(
         ],
         "cvt.rn.pzo.f16x2.f32 $0, $1, $2;",
         "=r,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
@@ -5106,7 +5106,7 @@ def cvt_f32x2_bf16x2_pzo(
         ],
         "cvt.rn.pzo.bf16x2.f32 $0, $1, $2;",
         "=r,f,f",
-        has_side_effects=True,
+        has_side_effects=False,
         is_align_stack=False,
         asm_dialect=llvm.AsmDialect.AD_ATT,
     )
