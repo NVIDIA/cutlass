@@ -31,7 +31,35 @@
 import pytest
 import torch
 
+import cutlass
+
 import cutlass.operators as ops
+
+
+@pytest.mark.parametrize(
+    "enum_type, value, label",
+    [
+        (ops.ScaleMode, ops.ScaleMode.Blockwise1x16, "1x16"),
+        (ops.ScaleMode, ops.ScaleMode.Blockwise1x32, "1x32"),
+        (ops.ScaleSwizzleMode, ops.ScaleSwizzleMode.SwizzleNone, "none"),
+        (ops.ScaleSwizzleMode, ops.ScaleSwizzleMode.Swizzle32x4x4, "32x4x4"),
+    ],
+)
+def test_scale_enum_string_round_trip(enum_type, value, label):
+    assert str(value) == label
+    assert enum_type.from_string(label.upper()) is value
+
+
+@pytest.mark.parametrize(
+    "enum_type, error",
+    [
+        (ops.ScaleMode, "Invalid scale mode"),
+        (ops.ScaleSwizzleMode, "Unsupported scale swizzle"),
+    ],
+)
+def test_scale_enum_from_string_rejects_unknown_value(enum_type, error):
+    with pytest.raises(ValueError, match=error):
+        enum_type.from_string("invalid")
 
 
 class TestNumelScale:
@@ -155,6 +183,20 @@ class TestNumelScale:
 
 
 
+class TestDenseTensor:
+    def test_is_tensor_like(self):
+        # Callers pass DenseTensor and unwrapped tensors interchangeably, so the
+        # argument helpers' isinstance(x, TensorLike) gate must accept both.
+        assert isinstance(ops.DenseTensor(torch.zeros(2)), ops.TensorLike)
+
+    def test_forwards_dlpack(self):
+        # Satisfying the protocol is not enough: a DLPack consumer must reach
+        # the wrapped tensor through DenseTensor.
+        tensor = torch.zeros(2)
+        assert torch.from_dlpack(ops.DenseTensor(tensor)).shape == tensor.shape
+
+
+
 class TestGroupedGemmArgumentsCompatibility:
     def test_delegates_to_m_offset_arguments(self, fixture_enable_tvm_ffi):
         A = torch.empty((8, 4), dtype=torch.float16)
@@ -200,6 +242,39 @@ class TestIndexPtrGroupedGemmArguments:
         assert isinstance(args.A, ops.DenseTensor)
         assert isinstance(args.offsets, ops.DenseTensor)
         assert args.offsets_along == offsets_along
+        assert args.offsets_value_divisibility == 1
+        assert not args.accumulate_on_output
+
+    def test_accepts_offsets_value_divisibility(self, fixture_enable_tvm_ffi):
+        args = ops.IndexPtrGroupedGemmArguments(
+            A=torch.empty((8, 4), dtype=torch.float16),
+            B=torch.empty((2, 4, 16), dtype=torch.float16),
+            out=torch.empty((8, 16), dtype=torch.float16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([4, 8], dtype=torch.int32),
+            offsets_along="m",
+            offsets_value_divisibility=4,
+        )
+
+        assert args.offsets_value_divisibility == 4
+
+    def test_epilogue_may_change_output_shape(self, fixture_enable_tvm_ffi):
+        epilogue = ops.EpilogueArguments(
+            "def epi(accum): D = reshape(accum, new_shape=(8, 8)); return D",
+            D=torch.empty((8, 8), dtype=torch.float16),
+        )
+
+        args = ops.IndexPtrGroupedGemmArguments(
+            A=torch.empty((8, 4), dtype=torch.float16),
+            B=torch.empty((2, 4, 16), dtype=torch.float16),
+            out=torch.empty((8, 8), dtype=torch.float16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([4, 8], dtype=torch.int32),
+            offsets_along="m",
+            epilogue=epilogue,
+        )
+
+        assert args.out.shape == (8, 8)
 
     def test_accepts_operand_inputs(self, fixture_enable_tvm_ffi):
         A = ops.ScaledOperand(
@@ -218,6 +293,192 @@ class TestIndexPtrGroupedGemmArguments:
         )
 
         assert isinstance(args.A, ops.ScaledOperand)
+
+    @pytest.mark.parametrize("scales", ["a", "b", "ab"])
+    def test_accepts_per_group_scale_epilogue(self, scales, fixture_toggle_tvm_ffi):
+        operand_a = ops.ScaledOperand(
+            quantized=torch.empty((8, 32), dtype=torch.float16),
+            scale=torch.empty((8, 1), dtype=torch.float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        operand_b = ops.ScaledOperand(
+            quantized=torch.empty((2, 32, 16), dtype=torch.float16),
+            scale=torch.empty((2, 16), dtype=torch.float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        epilogue = ops.PerGroupScaleEpilogueArguments(
+            global_scale_a=(
+                torch.ones(2, dtype=torch.float32) if "a" in scales else None
+            ),
+            global_scale_b=(
+                torch.ones(2, dtype=torch.float32) if "b" in scales else None
+            ),
+        )
+
+        args = ops.IndexPtrGroupedGemmArguments(
+            A=operand_a,
+            B=operand_b,
+            out=torch.empty((8, 16), dtype=torch.float16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([4, 8], dtype=torch.int32),
+            offsets_along="m",
+            offsets_value_divisibility=4,
+            epilogue=epilogue,
+        )
+
+        assert isinstance(args.epilogue, ops.PerGroupScaleEpilogueArguments)
+        for name in ("a", "b"):
+            scale = getattr(args.epilogue, f"global_scale_{name}")
+            if name in scales:
+                assert scale.shape == (2,)
+                assert scale is not getattr(epilogue, f"global_scale_{name}")
+            else:
+                assert scale is None
+        assert args.offsets_value_divisibility == 4
+
+    @pytest.mark.parametrize("scale_name", ["global_scale_a", "global_scale_b"])
+    def test_per_group_scale_epilogue_defaults_other_scale_to_none(
+        self, scale_name, fixture_toggle_tvm_ffi
+    ):
+        epilogue = ops.PerGroupScaleEpilogueArguments(
+            **{scale_name: torch.ones(2, dtype=torch.float32)}
+        )
+        assert getattr(epilogue, scale_name).shape == (2,)
+        other_name = (
+            "global_scale_b" if scale_name == "global_scale_a" else "global_scale_a"
+        )
+        assert getattr(epilogue.copy(), other_name) is None
+
+    @pytest.mark.parametrize(
+        "kwargs", [{}, {"global_scale_a": None, "global_scale_b": None}]
+    )
+    def test_per_group_scale_epilogue_requires_a_scale(self, kwargs):
+        with pytest.raises(ValueError, match="cannot both be None"):
+            ops.PerGroupScaleEpilogueArguments(**kwargs)
+
+    @pytest.mark.parametrize(
+        "global_scale_a_shape,global_scale_b_shape,error",
+        [
+            ((2, 1), (2,), "rank-1"),
+            ((2, 1), None, "rank-1"),
+            (None, (2, 1), "rank-1"),
+            ((2,), (3,), "same shape"),
+        ],
+    )
+    def test_per_group_scale_epilogue_validates_scale_shapes(
+        self,
+        global_scale_a_shape,
+        global_scale_b_shape,
+        error,
+        fixture_enable_tvm_ffi,
+    ):
+        with pytest.raises(ValueError, match=error):
+            ops.PerGroupScaleEpilogueArguments(
+                global_scale_a=(
+                    None
+                    if global_scale_a_shape is None
+                    else torch.ones(global_scale_a_shape, dtype=torch.float32)
+                ),
+                global_scale_b=(
+                    None
+                    if global_scale_b_shape is None
+                    else torch.ones(global_scale_b_shape, dtype=torch.float32)
+                ),
+            )
+
+    @pytest.mark.parametrize("scales", ["a", "b", "ab"])
+    def test_rejects_mismatched_per_group_scale_shape(
+        self, scales, fixture_enable_tvm_ffi
+    ):
+        operand_a = ops.ScaledOperand(
+            quantized=torch.empty((8, 32), dtype=torch.float16),
+            scale=torch.empty((8, 1), dtype=torch.float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        operand_b = ops.ScaledOperand(
+            quantized=torch.empty((2, 32, 16), dtype=torch.float16),
+            scale=torch.empty((2, 16), dtype=torch.float16),
+            mode=ops.ScaleMode.Blockwise1x32,
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+
+        with pytest.raises(
+            ValueError, match=f"global_scale_{scales[0]} must have shape"
+        ):
+            ops.IndexPtrGroupedGemmArguments(
+                A=operand_a,
+                B=operand_b,
+                out=torch.empty((8, 16), dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along="m",
+                epilogue=ops.PerGroupScaleEpilogueArguments(
+                    global_scale_a=(
+                        torch.ones(3, dtype=torch.float32) if "a" in scales else None
+                    ),
+                    global_scale_b=(
+                        torch.ones(3, dtype=torch.float32) if "b" in scales else None
+                    ),
+                ),
+            )
+
+    @pytest.mark.parametrize("divisibility", [0, -1, 1.5, True, False])
+    def test_rejects_invalid_offsets_value_divisibility(
+        self, divisibility, fixture_enable_tvm_ffi
+    ):
+        with pytest.raises(ValueError, match="positive integer"):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty((8, 4), dtype=torch.float16),
+                B=torch.empty((2, 4, 16), dtype=torch.float16),
+                out=torch.empty((8, 16), dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along="m",
+                offsets_value_divisibility=divisibility,
+            )
+
+    def test_accumulation_requires_k_offsets(self, fixture_enable_tvm_ffi):
+        with pytest.raises(ValueError, match="only supported for offsets_along='k'"):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty((8, 4), dtype=torch.float16),
+                B=torch.empty((2, 4, 16), dtype=torch.float16),
+                out=torch.empty((8, 16), dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along="m",
+                accumulate_on_output=True,
+            )
+
+    def test_accepts_blockwise_scaled_operands(self, fixture_enable_tvm_ffi):
+        # Blockwise fp8 scales at a granularity with no ScaleMode member, so the
+        # mode is given as a bare block-shape tuple.
+        A = ops.ScaledOperand(
+            quantized=torch.empty((256, 256), dtype=torch.float8_e4m3fn),
+            scale=torch.empty((256, 2), dtype=torch.float32),
+            mode=(1, 1, 128),
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        B = ops.ScaledOperand(
+            quantized=torch.empty((2, 256, 128), dtype=torch.float8_e4m3fn),
+            scale=torch.empty((2, 2, 1), dtype=torch.float32),
+            mode=(1, 128, 128),
+            swizzle=ops.ScaleSwizzleMode.SwizzleNone,
+        )
+        args = ops.IndexPtrGroupedGemmArguments(
+            A=A,
+            B=B,
+            out=torch.empty((256, 128), dtype=torch.bfloat16),
+            accumulator_type=torch.float32,
+            offsets=torch.tensor([128, 256], dtype=torch.int32),
+            offsets_along="m",
+        )
+
+        assert isinstance(args.A, ops.ScaledOperand)
+        assert isinstance(args.B, ops.ScaledOperand)
+        assert args.B.mode == (1, 128, 128)
 
     @pytest.mark.parametrize(
         "offsets, offsets_along, error",
@@ -301,6 +562,67 @@ class TestIndexPtrGroupedGemmArguments:
             ValueError,
             match=rf"{bad_operand} is a 3D operand and must be laid out",
         ):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty(A_shape, dtype=torch.float16),
+                B=torch.empty(B_shape, dtype=torch.float16),
+                out=torch.empty(out_shape, dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along=offsets_along,
+            )
+
+    @pytest.mark.parametrize(
+        "offsets_along, A_shape, B_shape, out_shape",
+        [
+            ("m", (8, 4), (0, 4, 16), (8, 16)),
+            ("n", (0, 8, 4), (4, 16), (8, 16)),
+            ("k", (8, 4), (4, 16), (0, 8, 16)),
+        ],
+    )
+    def test_rejects_empty_group_list(self, offsets_along, A_shape, B_shape, out_shape):
+        with pytest.raises(
+            ValueError, match="At least one grouped GEMM problem is required"
+        ):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty(A_shape, dtype=torch.float16),
+                B=torch.empty(B_shape, dtype=torch.float16),
+                out=torch.empty(out_shape, dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.empty((0,), dtype=torch.int32),
+                offsets_along=offsets_along,
+            )
+
+    @pytest.mark.parametrize(
+        "offsets_along, A_shape, B_shape, out_shape",
+        [
+            ("m", (8, 4), (2, 5, 16), (8, 16)),
+            ("n", (2, 8, 4), (5, 16), (8, 16)),
+            ("k", (8, 4), (5, 16), (2, 8, 16)),
+        ],
+    )
+    def test_rejects_mismatched_k(self, offsets_along, A_shape, B_shape, out_shape):
+        with pytest.raises(ValueError, match="A and B must have the same K"):
+            ops.IndexPtrGroupedGemmArguments(
+                A=torch.empty(A_shape, dtype=torch.float16),
+                B=torch.empty(B_shape, dtype=torch.float16),
+                out=torch.empty(out_shape, dtype=torch.float16),
+                accumulator_type=torch.float32,
+                offsets=torch.tensor([4, 8], dtype=torch.int32),
+                offsets_along=offsets_along,
+            )
+
+    @pytest.mark.parametrize(
+        "offsets_along, A_shape, B_shape, out_shape",
+        [
+            ("m", (8, 4), (2, 4, 16), (7, 16)),
+            ("n", (2, 8, 4), (4, 16), (8, 15)),
+            ("k", (8, 4), (4, 16), (2, 7, 16)),
+        ],
+    )
+    def test_rejects_mismatched_output_shape(
+        self, offsets_along, A_shape, B_shape, out_shape
+    ):
+        with pytest.raises(ValueError, match="out must have shape"):
             ops.IndexPtrGroupedGemmArguments(
                 A=torch.empty(A_shape, dtype=torch.float16),
                 B=torch.empty(B_shape, dtype=torch.float16),

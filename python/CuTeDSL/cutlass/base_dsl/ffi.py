@@ -68,10 +68,20 @@ class ConstValue:
 @dataclass(frozen=True)
 class BitCode:
     """
-    Specifies an external bitcode file to link when compiling.
+    Specifies an external device library to link when compiling.
+
+    Attach one to an FFI declaration via ``extern(source=BitCode(...))`` (or
+    the CuTe ``ffi(source=...)`` wrapper) to link the implementation of the
+    external symbol into the generated device code. The path is recorded in the
+    module's ``link-libraries`` attribute and de-duplicated, so a path shared by
+    several declarations is linked exactly once.
 
     Attributes:
-        path: Filesystem path to the .bc (LLVM bitcode) file.
+        path: Path to the link file. Used **verbatim** -- absolute paths open
+            directly, relative paths resolve against the compiler's current
+            working directory (there is no library search path). The file must
+            be LLVM bitcode (``.bc``); the format is detected from the file's
+            content, not its extension.
     """
 
     path: str
@@ -371,7 +381,8 @@ class ExternCallHandler:
         else:
             raise DSLRuntimeError("multiple return types not supported")
 
-        key = tuple(params_types)
+        # Zero-argument signatures have no input type identifying their context.
+        key = (ir.Context.current, tuple(params_types), return_type)
         if key not in self.ffis:
             self.ffis[key] = FFI(
                 name=self.name,

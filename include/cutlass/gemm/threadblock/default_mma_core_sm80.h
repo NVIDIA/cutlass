@@ -55,6 +55,7 @@
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm80.h"
 
 #include "cutlass/gemm/threadblock/default_mma_core.h"
+#include "cutlass/gemm/threadblock/default_mma_core_simt.h"
 #include "cutlass/gemm/threadblock/default_multistage_mma_complex_core.h"
 #include "cutlass/gemm/threadblock/default_multistage_mma_complex_core_sm80.h"
 #include "cutlass/gemm/threadblock/mma_multistage_blockwise.h"
@@ -2061,8 +2062,12 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static const int LaneM = cutlass::const_min(numElementsA, ThreadTileM);
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
 
-  static_assert(!((Shape::kK / 32) % LaneN),
-                "Padding must be divisible by Lane");
+  /// Skew the transposed B tile so a warp's cp.async stores spread across shared memory banks
+  static_assert(sizeof_bits<ElementB>::value >= 32,
+                "SM80 multistage SIMT mainloops store one element per cp.async, "
+                "which requires elements of at least 32 bits.");
+  static int const kPaddingN = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementB>::value, LaneN);
 
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
@@ -2090,7 +2095,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
     MatrixShape<0, 0>,
-    MatrixShape<0, Shape::kK / 32>,
+    MatrixShape<0, kPaddingN>,
     WarpCount::kK>;
 };
 
@@ -2373,8 +2378,15 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static const int LaneM = cutlass::const_min(numElementsA, ThreadTileM);
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
 
-  static_assert(!((Shape::kK / 32) % LaneM) && !((Shape::kK / 32) % LaneN),
-                "Padding must be divisible by Lane");
+  /// Skew the transposed A and B tiles so a warp's cp.async stores spread across shared
+  /// memory banks
+  static_assert(sizeof_bits<ElementA>::value >= 32 && sizeof_bits<ElementB>::value >= 32,
+                "SM80 multistage SIMT mainloops store one element per cp.async, "
+                "which requires elements of at least 32 bits.");
+  static int const kPaddingM = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementA>::value, LaneM);
+  static int const kPaddingN = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementB>::value, LaneN);
 
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
@@ -2401,8 +2413,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
-    MatrixShape<Shape::kK / 32, 0>,
-    MatrixShape<0, Shape::kK / 32>,
+    MatrixShape<kPaddingM, 0>,
+    MatrixShape<0, kPaddingN>,
     WarpCount::kK>;
 };
 
@@ -2530,8 +2542,12 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static const int LaneM = cutlass::const_min(numElementsA, ThreadTileM);
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
 
-  static_assert(!((Shape::kK / 32) % LaneM),
-                "Padding must be divisible by Lane");
+  /// Skew the transposed A tile so a warp's cp.async stores spread across shared memory banks
+  static_assert(sizeof_bits<ElementA>::value >= 32,
+                "SM80 multistage SIMT mainloops store one element per cp.async, "
+                "which requires elements of at least 32 bits.");
+  static int const kPaddingM = detail::simt_transpose_padding_aligned(
+      kWarpSize, Shape::kK, sizeof_bits<ElementA>::value, LaneM);
 
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
@@ -2558,7 +2574,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
-    MatrixShape<Shape::kK / 32, 0>,
+    MatrixShape<kPaddingM, 0>,
     MatrixShape<0, 0>,
     WarpCount::kK>;
 };

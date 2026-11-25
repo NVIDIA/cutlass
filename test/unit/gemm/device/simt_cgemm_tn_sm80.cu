@@ -51,7 +51,7 @@
 #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_simt_cf32, 32x64x8_32x64x1) {
+TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_simt_cf32, 32x64x8_32x32x1) {
   
   using Element = cutlass::complex<float>;
 
@@ -257,6 +257,36 @@ TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_simt_cf32, 128x256x8_64x64x1) {
     3,
     cutlass::ComplexTransform::kConjugate,
     cutlass::ComplexTransform::kConjugate
+  >;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmComplex<Gemm>());
+}
+
+// kK = 16: the raw transpose padding of 1 element must round up to the 2-element LDS vector width.
+TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_simt_cf32, 32x64x16_16x32x1) {
+  
+  using Element = cutlass::complex<float>;
+
+  using Gemm = cutlass::gemm::device::GemmComplex<
+    Element, 
+    cutlass::layout::RowMajor,
+    Element, 
+    cutlass::layout::ColumnMajor,
+    Element,
+    cutlass::layout::RowMajor, 
+    Element,
+    cutlass::arch::OpClassSimt, 
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 64, 16>,
+    cutlass::gemm::GemmShape<16, 32, 16>, 
+    cutlass::gemm::GemmShape<1, 1, 1>,
+    cutlass::epilogue::thread::LinearCombination<
+        Element, 
+        1,
+        Element, 
+        Element>,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 
+    4
   >;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemmComplex<Gemm>());

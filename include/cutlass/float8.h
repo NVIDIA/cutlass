@@ -97,7 +97,7 @@
 
 #if defined(__CUDACC_RTC__)
 
-#include "cutlass/floating_point_nvrtc.h"
+#include "cutlass/detail/fp_category.h"
 
 #else
 //

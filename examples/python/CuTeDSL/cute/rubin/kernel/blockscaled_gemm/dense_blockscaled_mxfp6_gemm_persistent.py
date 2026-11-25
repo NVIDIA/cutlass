@@ -44,6 +44,19 @@ from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 import cutlass.utils.blackwell_helpers as sm100_utils
 import cutlass.utils.rubin_helpers as sm107_utils
 import cutlass.utils.blockscaled_layout as blockscaled_utils
+from pathlib import Path
+
+if __name__ == "__main__":
+    # `helpers` sits at the examples/CuTeDSL root; running this file as a
+    # script only puts its own directory on sys.path.
+    cutedsl_dir = str(Path(__file__).resolve().parents[4])
+    if cutedsl_dir not in sys.path:
+        sys.path.insert(0, cutedsl_dir)
+
+from helpers.static_persistent_tile_scheduler import (
+    PersistentTileSchedulerParams,
+    StaticPersistentTileScheduler,
+)
 
 # Make sibling and ancestor example directories importable.
 # From this file's location (cute/rubin/kernel/blockscaled_gemm/):
@@ -113,7 +126,7 @@ FP6 x FP6:
 
 .. code-block:: bash
 
-    python dense_blockscaled_mxfp6_gemm_persistent.py                                               \
+    python examples/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_mxfp6_gemm_persistent.py   \
         --a_dtype Float6E3M2FN --b_dtype Float6E3M2FN                                               \
         --sf_dtype Float8E8M0FNU --sf_vec_size 32                                                   \
         --c_dtype Float16                                                                           \
@@ -125,7 +138,7 @@ FP8 x FP6 (A=FP8, B=FP6):
 
 .. code-block:: bash
 
-    python dense_blockscaled_mxfp6_gemm_persistent.py                                               \
+    python examples/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_mxfp6_gemm_persistent.py   \
         --a_dtype Float8E4M3FN --b_dtype Float6E3M2FN                                               \
         --sf_dtype Float8E8M0FNU --sf_vec_size 32                                                   \
         --c_dtype Float16                                                                           \
@@ -137,7 +150,7 @@ FP6 x FP8 (A=FP6, B=FP8):
 
 .. code-block:: bash
 
-    python dense_blockscaled_mxfp6_gemm_persistent.py                                               \
+    python examples/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_mxfp6_gemm_persistent.py   \
         --a_dtype Float6E3M2FN --b_dtype Float8E4M3FN                                               \
         --sf_dtype Float8E8M0FNU --sf_vec_size 32                                                   \
         --c_dtype Float16                                                                           \
@@ -149,7 +162,7 @@ FP4 x FP6 (A=FP4, B=FP6):
 
 .. code-block:: bash
 
-    python dense_blockscaled_mxfp6_gemm_persistent.py                                               \
+    python examples/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_mxfp6_gemm_persistent.py   \
         --a_dtype Float4E2M1FN --b_dtype Float6E3M2FN                                               \
         --sf_dtype Float8E8M0FNU --sf_vec_size 32                                                   \
         --c_dtype Float16                                                                           \
@@ -161,7 +174,7 @@ FP6 x FP4 (A=FP6, B=FP4):
 
 .. code-block:: bash
 
-    python dense_blockscaled_mxfp6_gemm_persistent.py                                               \
+    python examples/cute/rubin/kernel/blockscaled_gemm/dense_blockscaled_mxfp6_gemm_persistent.py   \
         --a_dtype Float6E3M2FN --b_dtype Float4E2M1FN                                               \
         --sf_dtype Float8E8M0FNU --sf_vec_size 32                                                   \
         --c_dtype Float16                                                                           \
@@ -958,23 +971,21 @@ class Sm107Mxfp6BlockScaledPersistentDenseGemmKernel(
         self._setup_attributes()
 
         # Construct A/B/C tensors from pointers and layouts
-        a_layout = cute.make_ordered_layout((m, cute.assume(k, 32), l), order=(0, 1, 2))
+        cute.assume(m, 32)
+        cute.assume(n, 32)
+        cute.assume(k, 32)
+
+        a_layout = cute.make_ordered_layout((m, k, l), order=(0, 1, 2))
         if cutlass.const_expr(self.a_major_mode == OperandMajorMode.K):
-            a_layout = cute.make_ordered_layout(
-                (cute.assume(m, 32), k, l), order=(1, 0, 2)
-            )
-        b_layout = cute.make_ordered_layout((n, cute.assume(k, 32), l), order=(0, 1, 2))
+            a_layout = cute.make_ordered_layout((m, k, l), order=(1, 0, 2))
+        b_layout = cute.make_ordered_layout((n, k, l), order=(0, 1, 2))
         if cutlass.const_expr(self.b_major_mode == OperandMajorMode.K):
-            b_layout = cute.make_ordered_layout(
-                (cute.assume(n, 32), k, l), order=(1, 0, 2)
-            )
-        c_layout = cute.make_ordered_layout((cute.assume(m, 32), n, l), order=(0, 1, 2))
+            b_layout = cute.make_ordered_layout((n, k, l), order=(1, 0, 2))
+        c_layout = cute.make_ordered_layout((m, n, l), order=(0, 1, 2))
         if cutlass.const_expr(
             self.c_layout == cutlass.tensor_utils.LayoutEnum.ROW_MAJOR
         ):
-            c_layout = cute.make_ordered_layout(
-                (m, cute.assume(n, 32), l), order=(1, 0, 2)
-            )
+            c_layout = cute.make_ordered_layout((m, n, l), order=(1, 0, 2))
         a_tensor = cute.make_tensor(a_ptr, a_layout)
         b_tensor = cute.make_tensor(b_ptr, b_layout)
         c_tensor = cute.make_tensor(c_ptr, c_layout)
@@ -1285,7 +1296,7 @@ class Sm107Mxfp6BlockScaledPersistentDenseGemmKernel(
         tCtSFB_layout: cute.Layout,
         c_smem_layout_staged: Union[cute.Layout, cute.ComposedLayout, None],
         epi_tile: cute.Tile,
-        tile_sched_params: utils.PersistentTileSchedulerParams,
+        tile_sched_params: PersistentTileSchedulerParams,
         epilogue_op: cutlass.Constexpr,
     ):
         """
@@ -1580,7 +1591,7 @@ class Sm107Mxfp6BlockScaledPersistentDenseGemmKernel(
         #
         # Construct the scheduler
         #
-        tile_sched = utils.StaticPersistentTileScheduler.create(
+        tile_sched = StaticPersistentTileScheduler.create(
             tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
         )
         work_tile = tile_sched.initial_work_tile_info()
@@ -2267,7 +2278,7 @@ class Sm107Mxfp6BlockScaledPersistentDenseGemmKernel(
             )
         b_tensor = cute.make_tensor(b_desc, cute.make_layout(1, stride=0))
 
-        return cute.mma_atom_call(
+        cute.mma_atom_call(
             tiled_mma,
             d,
             [a_tensor, cute.group_modes(sfA, 0, cute.rank(sfA))],

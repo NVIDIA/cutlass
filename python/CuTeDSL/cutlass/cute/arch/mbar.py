@@ -21,8 +21,9 @@ from typing import Literal, overload
 
 from cutlass._mlir import ir
 from cutlass._mlir.dialects import nvvm as _nvvm, llvm
-from cutlass._mlir.ir import AttrBuilder
 from ..typing import Optional, Pointer, Int, Boolean, Int32, AddressSpace
+
+from .features import supports_report_valid
 
 
 def _mbarrier_primary_result_type(has_report: bool) -> ir.Type:
@@ -97,7 +98,7 @@ def mbarrier_init(
     Initializes a mbarrier with the specified thread arrival count.
 
     **Single-Thread Execution Required**: This operation **must** be executed by only one thread
-    per CTA. Use :func:`cute.arch.elect_one` to ensure proper synchronization:
+    per CTA. Use :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` to ensure proper synchronization:
 
     .. code-block:: python
 
@@ -114,8 +115,8 @@ def mbarrier_init(
     :type cnt:       Int
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - Required wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_expect_tx` - Also requires elect_one
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - Required wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Also requires elect_one
        - PTX ISA documentation on ``mbarrier.init``
     """
 
@@ -126,6 +127,33 @@ def mbarrier_init(
         ip=ip,
     )
 
+
+@dsl_user_op
+def mbarrier_v1_init(
+    mbar_ptr: Pointer,
+    cnt: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Initializes the v1 variant of the mbarrier with the specified thread arrival count.
+    This is how the mbarrier must be initialized if it is being used with the sm107 TMA report_valid load feature (data-driven synchronization).
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    :param cnt:      The arrival count of the mbarrier
+    :type cnt:       Int
+    """
+    BaseDSL._get_dsl().check_arch(supports_report_valid)
+
+    _nvvm.mbarrier_init(
+        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        Int32(cnt).ir_value(loc=loc, ip=ip),
+        layout=_nvvm.MBarrierLayout.V1,
+        loc=loc,
+        ip=ip,
+    )
 
 
 @dsl_user_op
@@ -158,7 +186,7 @@ def mbarrier_arrive_and_expect_tx(
     the specified byte count and then performs an arrive-on operation, which
     decrements the pending arrival count by 1.
 
-    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one`.
+    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`.
 
     .. code-block:: python
 
@@ -183,9 +211,9 @@ def mbarrier_arrive_and_expect_tx(
     :param scope:                    Scope of threads participating in the arrive/wait operations.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - Required wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_init` - Also requires elect_one
-       - :func:`cute.arch.mbarrier_expect_tx` - Expect_tx without arrive
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - Required wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - Also requires elect_one
+       - :func:`cute.arch.mbarrier_expect_tx <cutlass.cute.arch.mbarrier_expect_tx>` - Expect_tx without arrive
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= base_dsl.Arch.sm_90)
 
@@ -226,7 +254,7 @@ def mbarrier_expect_tx(
     Each thread that executes this operation increases the mbarrier tx-count by
     the specified byte count.
 
-    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one`.
+    To ensure proper synchronization, most calls to this function should be wrapped in :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>`.
 
     .. code-block:: python
 
@@ -249,9 +277,9 @@ def mbarrier_expect_tx(
                                      Defaults to CTA for local barriers and CLUSTER for remote CTA targets.
 
     .. seealso::
-       - :func:`cute.arch.elect_one` - Recommended wrapper for single-thread execution
-       - :func:`cute.arch.mbarrier_init` - initialize mbarrier
-       - :func:`cute.arch.mbarrier_arrive_and_expect_tx` - Combined arrive and expect_tx
+       - :func:`cute.arch.elect_one <cutlass.cute.arch.elect_one>` - Recommended wrapper for single-thread execution
+       - :func:`cute.arch.mbarrier_init <cutlass.cute.arch.mbarrier_init>` - initialize mbarrier
+       - :func:`cute.arch.mbarrier_arrive_and_expect_tx <cutlass.cute.arch.mbarrier_arrive_and_expect_tx>` - Combined arrive and expect_tx
     """
     BaseDSL._get_dsl().check_arch(lambda arch: arch >= base_dsl.Arch.sm_90)
 
@@ -280,6 +308,208 @@ def mbarrier_expect_tx(
         ip=ip,
     )
 
+
+@dsl_user_op
+def mbarrier_try_wait_primary(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> tuple[Boolean, Boolean] | tuple[Boolean, Boolean, Int32]:
+    """
+    Potentially blocking try-wait on a v1 mbarrier with primary phase.
+
+    Waits on a dual-phase mbarrier's primary phase, with a timeout.
+    Calling this function on an mbarrier that was not initialized with mbarrier_v1_init will result in undefined behavior.
+
+    For SM > 107: Returns ``(wait_complete, report_seen, report)``.
+    For SM107:    Returns ``(wait_complete, report_seen)``.
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    :param phase:    The phase to wait for (either 0 or 1)
+    :type phase:     Int
+    """
+    BaseDSL._get_dsl().check_arch(supports_report_valid)
+
+    arch = BaseDSL._get_dsl().get_arch_enum()
+
+    has_report = arch > base_dsl.Arch.sm_107
+
+    results = _nvvm.mbarrier_try_wait(
+        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        Int32(phase).ir_value(loc=loc, ip=ip),
+        mbarrier_phase=_nvvm.MBarrierPhase.PRIMARY,
+        results=[_mbarrier_primary_result_type(has_report)],
+        loc=loc,
+        ip=ip,
+    )
+
+    return _extract_mbarrier_primary_result(results, has_report, loc=loc, ip=ip)
+
+
+@dsl_user_op
+def mbarrier_wait_primary(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> tuple[Boolean, Boolean] | tuple[Boolean, Boolean, Int32]:
+    """
+    Blocking wait on a v1 mbarrier with primary phase.
+    Spins calling :func:`mbarrier_try_wait_primary` until the wait completes.
+
+    For SM > 107: Returns ``(wait_complete, report_seen, report)``.
+    For SM107:    Returns ``(wait_complete, report_seen)``.
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    :param phase:    The phase to wait for (either 0 or 1)
+    :type phase:     Int
+    """
+    BaseDSL._get_dsl().check_arch(supports_report_valid)
+
+    arch = BaseDSL._get_dsl().get_arch_enum()
+
+    timeout_ns = 10_000_000
+    has_report = arch > base_dsl.Arch.sm_107
+    init_vals: list[Boolean | Int32] = [Boolean(False), Boolean(False)]
+    if has_report:
+        init_vals.append(Int32(0))
+
+    while_loop = while_generate(
+        init_vals,
+        lambda wait_complete, *_: wait_complete == False,
+        loc=loc,
+        ip=ip,
+    )
+    with while_loop:
+        results = _nvvm.mbarrier_try_wait(
+            mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+            Int32(phase).ir_value(loc=loc, ip=ip),
+            ticks=Int32(timeout_ns).ir_value(loc=loc, ip=ip),
+            mbarrier_phase=_nvvm.MBarrierPhase.PRIMARY,
+            results=[_mbarrier_primary_result_type(has_report)],
+            loc=loc,
+            ip=ip,
+        )
+        yield_out(
+            list(_extract_mbarrier_primary_result(results, has_report, loc=loc, ip=ip)),
+            loc=loc,
+            ip=ip,
+        )
+
+    return while_loop.results  # type: ignore[return-value]
+
+
+@dsl_user_op
+def mbarrier_try_wait_conditional(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> Boolean:
+    """
+    Attempts to wait on a mbarrier with a specified conditional phase. This uses
+    PTX ``mbarrier.try_wait``, which may suspend the executing thread if the
+    phase is incomplete.
+    Calling this function on an mbarrier that was not initialized with mbarrier_v1_init will result in undefined behavior.
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    :param phase:    The phase to wait for (either 0 or 1)
+    :type phase:     Int
+    :return:         A boolean indicating whether the conditional phase was completed (requires that both phase is complete AND data is valid).
+    :rtype:          Boolean
+    """
+    BaseDSL._get_dsl().check_arch(supports_report_valid)
+
+    return Boolean(
+        _nvvm.mbarrier_try_wait(
+            mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+            Int32(phase).ir_value(loc=loc, ip=ip),
+            mbarrier_phase=_nvvm.MBarrierPhase.CONDITIONAL,
+            loc=loc,
+            ip=ip,
+        )
+    )
+
+
+@dsl_user_op
+def mbarrier_test_wait_primary(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> tuple[Boolean, Boolean]:
+    """
+    Tests if a mbarrier with a specified primary phase is complete (non-blocking, no timeout spin).
+    Calling this function on an mbarrier that was not initialized with mbarrier_v1_init will result in undefined behavior.
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    :param phase:    The phase to wait for (either 0 or 1)
+    :type phase:     Int
+    :return:         A tuple of booleans, where the first element indicates whether the primary phase was completed and the second element indicates whether the data was "invalid", according to the validatePattern specified by the TMA load operation.
+    :rtype:          Tuple[Boolean, Boolean]
+    """
+    BaseDSL._get_dsl().check_arch(supports_report_valid)
+
+    results = _nvvm.mbarrier_test_wait(
+        mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+        Int32(phase).ir_value(loc=loc, ip=ip),
+        mbarrier_phase=_nvvm.MBarrierPhase.PRIMARY,
+        results=[_mbarrier_primary_result_type(has_report=False)],
+        loc=loc,
+        ip=ip,
+    )
+
+    phase_complete, invalid = _extract_mbarrier_primary_result(
+        results, has_report=False, loc=loc, ip=ip
+    )
+
+    return phase_complete, invalid
+
+
+@dsl_user_op
+def mbarrier_wait_conditional(
+    mbar_ptr: Pointer,
+    phase: Int,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> None:
+    """
+    Blocking wait on a mbarrier's conditional phase (TMA complete AND data valid).
+    Calling this function on an mbarrier that was not initialized with mbarrier_v1_init will result in undefined behavior.
+
+    :param mbar_ptr: A pointer to the mbarrier in SMEM
+    :type mbar_ptr:  Pointer
+    :param phase:    The phase to wait for (either 0 or 1)
+    :type phase:     Int
+    """
+    BaseDSL._get_dsl().check_arch(supports_report_valid)
+
+    p = Boolean(False)
+    timeout_ns = 10_000_000
+    while_loop = while_generate([p], lambda p: p == False, loc=loc, ip=ip)
+    with while_loop as [p]:  # type: ignore[assignment]
+        p = Boolean(
+            _nvvm.mbarrier_try_wait(
+                mbar_ptr.to_llvm_ptr(loc=loc, ip=ip),
+                Int32(phase).ir_value(loc=loc, ip=ip),
+                ticks=Int32(timeout_ns).ir_value(loc=loc, ip=ip),
+                mbarrier_phase=_nvvm.MBarrierPhase.CONDITIONAL,
+                loc=loc,
+                ip=ip,
+            )
+        )
+
+        yield_out([p], loc=loc, ip=ip)
 
 
 @dsl_user_op

@@ -19,7 +19,7 @@ RuntimeArguments
 
 .. automodule:: cutlass.operators.arguments.base
    :members:
-   :exclude-members: Operand
+   :exclude-members: Operand, PerformanceControls
    :show-inheritance:
 
 .. automodule:: cutlass.operators.arguments.gemm
@@ -34,6 +34,21 @@ RuntimeArguments
    :members:
    :show-inheritance:
 
+PerformanceControls
+~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: cutlass.operators.arguments.base.PerformanceControls
+   :members:
+   :show-inheritance:
+
+.. automodule:: cutlass.operators.arguments.pdl
+   :members:
+   :show-inheritance:
+
+.. automodule:: cutlass.operators.arguments.data_driven_sync
+   :members:
+   :show-inheritance:
+
 
 Operands
 --------
@@ -45,6 +60,16 @@ Operands
 .. automodule:: cutlass.operators.arguments.operand
    :members:
    :show-inheritance:
+
+
+Layout markers
+--------------
+
+Normalized major-mode markers.
+
+.. autofunction:: cutlass.operators.utils.layout.normalized_row_major
+
+.. autofunction:: cutlass.operators.utils.layout.normalized_col_major
 
 
 Type markers

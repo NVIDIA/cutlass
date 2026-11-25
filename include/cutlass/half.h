@@ -40,9 +40,11 @@
 #define CUTLASS_ENABLE_F16C 0
 #endif
 
-#if defined(__CUDACC_RTC__)
+// fp_category / cutlass::fpclassify must be visible in every compilation mode,
+// not only NVRTC: the host build no longer gets these from <cmath>'s FP_* macros.
+#include "cutlass/detail/fp_category.h"
 
-#include "cutlass/floating_point_nvrtc.h"
+#if defined(__CUDACC_RTC__)
 
 // F16C extensions are not meaningful when compiling for NVRTC which only accommodates device code.
 #undef CUTLASS_ENABLE_F16C
@@ -529,26 +531,26 @@ bool isnormal(cutlass::half_t const& h) {
 }
 
 CUTLASS_HOST_DEVICE
-int fpclassify(cutlass::half_t const& h) {
+fp_category fpclassify(cutlass::half_t const& h) {
   int exp = h.exponent_biased();
   int mantissa = h.mantissa();
   if (exp == 0x1f) {
     if (mantissa) {
-      return FP_NAN;
+      return fp_category::nan;
     }
     else {
-      return FP_INFINITE;
+      return fp_category::infinite;
     }
   }
   else if (!exp) {
     if (mantissa) {
-      return FP_SUBNORMAL;
+      return fp_category::subnormal;
     }
     else {
-      return FP_ZERO;
+      return fp_category::zero;
     }
   }
-  return FP_NORMAL;
+  return fp_category::normal;
 }
 
 CUTLASS_HOST_DEVICE

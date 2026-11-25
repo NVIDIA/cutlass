@@ -1,0 +1,149 @@
+<svg width="1024" height="552" viewBox="0 0 1024 552" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="background" cx="52%" cy="52%" r="78%">
+      <stop offset="0%" stop-color="#f2f2f2"/>
+      <stop offset="72%" stop-color="#fbfbfb"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </radialGradient>
+    <linearGradient id="qFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6b6b" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#ff6b6b" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="qBandFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6b6b" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#ff6b6b" stop-opacity="0.44"/>
+    </linearGradient>
+    <linearGradient id="kFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8fd0ff" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#8fd0ff" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="vFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c7a7ff" stop-opacity="0.34"/>
+      <stop offset="100%" stop-color="#c7a7ff" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="spFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a7f2d3" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#a7f2d3" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="spBandFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#10a66b" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#10a66b" stop-opacity="0.24"/>
+    </linearGradient>
+    <linearGradient id="oFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd38b" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffd38b" stop-opacity="0.09"/>
+    </linearGradient>
+    <linearGradient id="oBandFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd38b" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#ffd38b" stop-opacity="0.36"/>
+    </linearGradient>
+    <filter id="softShadow" x="-12%" y="-12%" width="130%" height="140%">
+      <feDropShadow dx="4" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+    <style>
+      svg { font-family: "DejaVu Sans", Arial, sans-serif; }
+      .outer {
+        fill: #ffffff;
+        fill-opacity: 0.35;
+        stroke: #62aee0;
+        stroke-width: 5;
+        stroke-dasharray: 6 7;
+      }
+      .box {
+        stroke-width: 2;
+      }
+      .qBox { stroke: #ff3755; }
+      .kBox { stroke: #0b78ff; }
+      .vBox { stroke: #7b4dff; }
+      .spBox { stroke: #10a66b; }
+      .oBox { stroke: #ff8a16; }
+      .divider {
+        stroke: #68717a;
+        stroke-width: 1.5;
+        opacity: 0.8;
+      }
+      .cta-label {
+        font: 700 48px Arial, sans-serif;
+        fill: #2f72bd;
+      }
+      .matrix-label {
+        font: 800 50px Arial, sans-serif;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .tile-label {
+        font: 800 24px Arial, sans-serif;
+        fill: #171b20;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .dim-label {
+        font: 700 23px Arial, sans-serif;
+        fill: #171b20;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+    </style>
+  </defs>
+
+  <rect width="1024" height="552" fill="url(#background)"/>
+  <rect class="outer" x="14" y="17" width="994" height="520"/>
+
+  <text class="cta-label" x="88" y="112">CTA</text>
+
+  <g filter="url(#softShadow)">
+    <rect class="box kBox" x="435" y="162" width="349" height="108" rx="17" fill="url(#kFill)"/>
+    <rect class="box vBox" x="815" y="51" width="135" height="218" rx="22" fill="url(#vFill)"/>
+    <rect class="box qBox" x="263" y="290" width="136" height="218" rx="22" fill="url(#qFill)"/>
+    <rect class="box spBox" x="424" y="291" width="365" height="216" rx="35" fill="url(#spFill)"/>
+    <rect class="box oBox" x="817" y="277" width="132" height="236" rx="22" fill="url(#oFill)"/>
+  </g>
+
+  <clipPath id="qClip">
+    <rect x="263" y="290" width="136" height="218" rx="22"/>
+  </clipPath>
+  <clipPath id="spClip">
+    <rect x="424" y="291" width="365" height="216" rx="35"/>
+  </clipPath>
+  <clipPath id="oClip">
+    <rect x="817" y="277" width="132" height="236" rx="22"/>
+  </clipPath>
+
+  <g clip-path="url(#qClip)">
+    <rect x="263" y="327" width="136" height="41" fill="url(#qBandFill)"/>
+    <rect x="263" y="368" width="136" height="41" fill="url(#qBandFill)"/>
+    <line class="divider" x1="263" y1="327" x2="399" y2="327"/>
+    <line class="divider" x1="263" y1="368" x2="399" y2="368"/>
+    <line class="divider" x1="263" y1="409" x2="399" y2="409"/>
+  </g>
+
+  <g clip-path="url(#spClip)">
+    <rect x="424" y="327" width="365" height="39" fill="url(#spBandFill)"/>
+    <rect x="424" y="366" width="365" height="38" fill="url(#spBandFill)"/>
+    <line class="divider" x1="424" y1="327" x2="789" y2="327"/>
+    <line class="divider" x1="424" y1="366" x2="789" y2="366"/>
+    <line class="divider" x1="424" y1="404" x2="789" y2="404"/>
+  </g>
+
+  <g clip-path="url(#oClip)">
+    <rect x="817" y="327" width="132" height="35" fill="url(#oBandFill)"/>
+    <rect x="817" y="362" width="132" height="36" fill="url(#oBandFill)"/>
+    <line class="divider" x1="817" y1="327" x2="949" y2="327"/>
+    <line class="divider" x1="817" y1="362" x2="949" y2="362"/>
+    <line class="divider" x1="817" y1="398" x2="949" y2="398"/>
+  </g>
+
+  <text class="matrix-label" x="610" y="216" fill="#062f87">K<tspan font-size="23" baseline-shift="super">T</tspan></text>
+  <text class="matrix-label" x="882" y="164" fill="#25126d">V</text>
+  <text class="matrix-label" x="331" y="466" fill="#8f1424">Q</text>
+  <text class="matrix-label" x="606" y="465" fill="#075f3d">S/P</text>
+  <text class="matrix-label" x="883" y="465" fill="#b74400">O</text>
+
+  <text class="tile-label" x="331" y="348">Q0</text>
+  <text class="tile-label" x="331" y="389">Q1</text>
+  <text class="tile-label" x="883" y="347">O0</text>
+  <text class="tile-label" x="883" y="382">O1</text>
+
+  <path d="M249 334 H236 V405 H249" fill="none" stroke="#2d6f9f" stroke-width="2"/>
+  <text class="dim-label" x="164" y="373">2 x tile_m</text>
+</svg>

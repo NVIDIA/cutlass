@@ -31,6 +31,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cutlass.operators.utils.tensor import TensorWrapper
+
 if TYPE_CHECKING:
     from cutlass.operators.typing import TensorLike
 
@@ -42,13 +44,49 @@ class Workspace:
     A workspace is a user-provided, contiguous block of memory some Operators may use to store intermediate results,
     which may be used by the underlying kernel for any temporary storage, book keeping, intermediate results, semaphores etc.
     The workspace is typically allocated by the user and passed to the Operator via the :meth:`Operator.run` method.
+    Its size and pointer alignment must satisfy the :class:`AllocationRequirement`
+    returned by :meth:`Operator.get_workspace_size`.
     """
 
-    data: TensorLike | int
-    """Tensor holding workspace data, or an integer address of the start of the workspace."""
+    data: TensorLike
+    """Tensor holding workspace data, converted to a :class:`TensorWrapper`."""
+
+    alignment_bytes: int = 1
+    """Minimum byte alignment guaranteed by the caller for ``data``'s pointer."""
 
     leading_zero_bytes: int = 0
     """Number of bytes from the beginning of the workspace have been set to zero by user."""
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.alignment_bytes, bool)
+            or not isinstance(self.alignment_bytes, int)
+            or self.alignment_bytes <= 0
+        ):
+            raise ValueError(
+                "alignment_bytes must be a positive integer, got "
+                f"{self.alignment_bytes!r}"
+            )
+        if (
+            isinstance(self.leading_zero_bytes, bool)
+            or not isinstance(self.leading_zero_bytes, int)
+            or self.leading_zero_bytes < 0
+        ):
+            raise ValueError(
+                "leading_zero_bytes must be a nonnegative integer, got "
+                f"{self.leading_zero_bytes!r}"
+            )
+
+        if not isinstance(self.data, TensorWrapper):
+            self.data = TensorWrapper(
+                self.data,
+                alignment_bytes=self.alignment_bytes,
+            )
+        if self.data.data_ptr % self.alignment_bytes:
+            raise ValueError(
+                f"Workspace data pointer must be {self.alignment_bytes}B-aligned, "
+                f"got address {self.data.data_ptr}."
+            )
 
 
 @dataclass

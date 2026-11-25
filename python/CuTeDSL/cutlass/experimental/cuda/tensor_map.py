@@ -51,6 +51,7 @@ from cutlass.base_dsl.typing import (
 import cutlass.cute as cute
 from cutlass.cute.core import ScaledBasis, depth, leading_dim
 from cutlass.base_dsl.common import DSLUserCodeError
+from cutlass.base_dsl.diagnostics import DiagId
 
 import cutlass._mlir.ir as ir
 from cutlass._mlir.dialects import cuda as cuda_dialect
@@ -75,6 +76,23 @@ def _stride_to_tma_units(
     if isinstance(stride, int):
         return stride * element_type.width // 128
     return Int64(stride) * element_type.width // 128
+
+
+def _validate_stride_order(stride_order: Sequence[int], rank: int) -> list[int]:
+    """Validate that *stride_order* is a permutation of ``[0, rank)``.
+
+    An explicit *stride_order* indexes ``tensor_shapes`` / ``tensor_strides``
+    directly, so a malformed value silently builds wrong ``global_dims`` /
+    ``global_strides`` (duplicate/missing indices) or fails with an opaque
+    ``IndexError`` (out-of-range index). Reject those up front.
+    """
+
+    order = list(stride_order)
+    if len(order) != rank or sorted(order) != list(range(rank)):
+        raise ValueError(
+            f"Expected stride_order to be a permutation of [0..{rank - 1}], got {order}"
+        )
+    return order
 
 
 def _product(values: Sequence[Int8 | int]) -> Int32 | int:
@@ -305,6 +323,7 @@ class TensorMapInterleave(IntEnum):
         return self.name
 
 
+
 class TensorMapL2Promotion(IntEnum):
     """Enumerated type describing tensor map L2 promotion sizes"""
 
@@ -341,8 +360,12 @@ class TensorMapSwizzle(IntEnum):
          - 64-byte XOR swizzle
        * - ``s128b``
          - 3
-         - 128-byte XOR swizzle — **required** for
-           ``tcgen05.mma kind::f16`` on SM100
+         - 128-byte XOR swizzle — the usual choice for
+           ``tcgen05.mma`` on SM100. Not required: every swizzling mode,
+           including no-swizzle, is legal. What matters is that this
+           value matches the swizzle encoded in the consuming MMA
+           descriptor and applied by whatever wrote the SMEM tile;
+           a mismatch corrupts the result silently.
        * - ``s128b_atom_32b``
          - 4
          - 128B XOR with 32B atomic sub-partition
@@ -507,6 +530,16 @@ _PADDED_SUBBYTE_SWIZZLES = {
     TensorMapSwizzle.s128b_atom_64b,
 }
 
+_FLOAT_TENSORMAP_ENCODINGS = {
+    _TensorMapEncoding.FLOAT16,
+    _TensorMapEncoding.FLOAT32,
+    _TensorMapEncoding.FLOAT64,
+    _TensorMapEncoding.BFLOAT16,
+    _TensorMapEncoding.F32_FTZ,
+    _TensorMapEncoding.TFLOAT32,
+    _TensorMapEncoding.TF32_FTZ,
+}
+
 _SWIZZLE_SPAN_BYTES = {
     TensorMapSwizzle.s32b: 32,
     TensorMapSwizzle.s64b: 64,
@@ -517,8 +550,17 @@ _SWIZZLE_SPAN_BYTES = {
 }
 
 
+class _TensorMapConstraintValueError(DSLUserCodeError, ValueError):
+    """TensorMap user diagnostic that remains catchable as ``ValueError``."""
+
+
 def _static_int(value: object) -> int | None:
     """Return a Python int for statically known values; otherwise None."""
+    if isinstance(value, Integer):
+        try:
+            return value.to(int)
+        except ValueError:
+            return None
     if is_dynamic_expression(value):
         return None
     try:
@@ -533,95 +575,307 @@ def _format_byte_count(bits: int) -> str:
     return f"{bits}/8B"
 
 
+def _raise_tensormap_constraint(detail: str) -> None:
+    """Raise a source-framed compile-time TensorMap constraint diagnostic."""
+    raise _TensorMapConstraintValueError(
+        DiagId.TENSOR_MAP_INVALID_DESCRIPTOR,
+        detail=detail,
+    )
+
+
+def _require_tensormap_range(
+    value: Integer | int,
+    *,
+    name: str,
+    minimum: int,
+    maximum: int,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
+) -> None:
+    """Validate a CUDA TensorMap range statically or with a debug assertion."""
+    static_value = _static_int(value)
+    message = f"TensorMap {name} must be between {minimum} and {maximum} inclusive"
+    if static_value is not None:
+        if not minimum <= static_value <= maximum:
+            _raise_tensormap_constraint(f"{message}, got {static_value}")
+        return
+
+def _require_tensormap_multiple(
+    value: Integer | int,
+    *,
+    name: str,
+    multiple: int,
+    unit: str = "",
+    message: str | None = None,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
+) -> None:
+    """Validate TensorMap alignment statically or with a debug assertion."""
+    static_value = _static_int(value)
+    message = message or f"TensorMap {name} must be a multiple of {multiple}{unit}"
+    if static_value is not None:
+        if static_value % multiple != 0:
+            _raise_tensormap_constraint(f"{message}, got {static_value}{unit}")
+        return
+
+
+def _require_tensormap_equal(
+    value: Integer | int,
+    *,
+    name: str,
+    expected: int,
+    unit: str = "",
+    message: str | None = None,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
+) -> None:
+    """Validate a fixed TensorMap value statically or with a debug assertion."""
+    static_value = _static_int(value)
+    message = message or f"TensorMap {name} must be exactly {expected}{unit}"
+    if static_value is not None:
+        if static_value != expected:
+            _raise_tensormap_constraint(f"{message}, got {static_value}{unit}")
+        return
+
 def _validate_tensormap_constraints(
     *,
     dtype: Type[Numeric],
     tma_format: TensorMapDataFormat,
+    tma_encoding: _TensorMapEncoding,
     global_address: Int64 | int,
     global_dims: Sequence[Int32 | int],
     global_strides: Sequence[Int64 | int],
-    box_dims: Sequence[Int8 | int],
+    box_dims: Sequence[Integer | int],
+    traversal_strides: Sequence[Int8 | int] | None,
     interleave: TensorMapInterleave,
     swizzle: TensorMapSwizzle,
     oob_fill: TensorMapFloatOOBFill,
+    tiled: bool,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
 ) -> None:
-    """Reject statically visible TensorMap configurations disallowed by PTX.
+    """Reject invalid static fields and assert dynamic CUDA TensorMap fields.
 
-    See PTX ISA 9.7.9.26.5.1, "Restriction on Tensor Copy instructions".
-    Runtime TMA coordinates and copy direction are validated by the caller,
-    but descriptor fields known at construction time can fail early here.
+    These are the documented ``cuTensorMapEncodeTiled`` and
+    ``cuTensorMapEncodeIm2col`` constraints. Static violations are compiler
+    errors. Dynamic checks become debug-only host runtime constraints and run
+    before the CUDA driver descriptor-encoding call.
     """
 
+    rank = len(global_dims)
+    if interleave != TensorMapInterleave.none and rank < 3:
+        _raise_tensormap_constraint(
+            "TensorMap interleave modes require tensor rank to be at least 3, "
+            f"got {rank}"
+        )
+    if interleave == TensorMapInterleave.i32b and swizzle != TensorMapSwizzle.s32b:
+        _raise_tensormap_constraint(
+            f"TensorMap 32B interleave requires the 32B swizzle mode, got {swizzle}"
+        )
     if (
-        tma_format in _SUBBYTE_TENSORMAP_FORMATS
+        tma_encoding == _TensorMapEncoding.B6X16_P32
+        and interleave != TensorMapInterleave.none
+    ):
+        _raise_tensormap_constraint(
+            "TensorMap B6X16_P32 format does not support interleave"
+        )
+
+    if (
+        tma_encoding not in _FLOAT_TENSORMAP_ENCODINGS
         and oob_fill == TensorMapFloatOOBFill.nan_request_zero_fma
     ):
-        raise ValueError(f"TensorMap format {tma_format} does not support OOB-NaN fill")
+        _raise_tensormap_constraint(
+            f"TensorMap format {tma_format} does not support OOB-NaN fill"
+        )
 
     lane_dtype = _derive_tensormap_global_tx_dtype(dtype, tma_format)
-    box_dim0 = _static_int(box_dims[0])
-    swizzle_span_bytes = _SWIZZLE_SPAN_BYTES.get(swizzle)
+    address_alignment = 16
     if (
-        interleave == TensorMapInterleave.none
-        and swizzle_span_bytes is not None
-        and box_dim0 is not None
+        interleave == TensorMapInterleave.i32b
+        or tma_format in _PADDED_SUBBYTE_BOX_BYTES
     ):
-        box_bits = box_dim0 * lane_dtype.width
-        if box_bits > swizzle_span_bytes * 8:
-            raise ValueError(
-                f"TensorMap swizzle {swizzle} requires the bounding-box inner "
-                f"dimension to be at most {swizzle_span_bytes}B, got "
-                f"{_format_byte_count(box_bits)}"
+        address_alignment = 32
+    _require_tensormap_multiple(
+        global_address,
+        name="global_address",
+        multiple=address_alignment,
+        unit="B",
+        message=f"TensorMap global_address must be {address_alignment}B aligned",
+        loc=loc,
+        ip=ip,
+    )
+
+    for dim, extent in enumerate(global_dims):
+        _require_tensormap_range(
+            extent,
+            name=f"global_dims[{dim}]",
+            minimum=1,
+            maximum=1 << 32,
+            loc=loc,
+            ip=ip,
+        )
+
+    for dim, stride_16b in enumerate(global_strides):
+        # The public API expresses these byte strides in 16-byte units.
+        _require_tensormap_range(
+            stride_16b,
+            name=f"global_strides[{dim}] (16B units)",
+            minimum=0,
+            maximum=(1 << 36) - 1,
+            loc=loc,
+            ip=ip,
+        )
+        if address_alignment == 32:
+            _require_tensormap_multiple(
+                stride_16b,
+                name=f"global_strides[{dim}]",
+                multiple=2,
+                unit=" x 16B",
+                message=f"TensorMap global_strides[{dim}] must be 32B aligned",
+                loc=loc,
+                ip=ip,
             )
+
+    if traversal_strides is not None:
+        for dim, stride in enumerate(traversal_strides):
+            _require_tensormap_range(
+                stride,
+                name=f"traversal_strides[{dim}]",
+                minimum=1,
+                maximum=8,
+                loc=loc,
+                ip=ip,
+            )
+
+    if tiled:
+        for dim, box_extent in enumerate(box_dims):
+            _require_tensormap_range(
+                box_extent,
+                name=f"box_dims[{dim}]",
+                minimum=1,
+                maximum=256,
+                loc=loc,
+                ip=ip,
+            )
+
+    swizzle_span_bytes = _SWIZZLE_SPAN_BYTES.get(swizzle)
+    if interleave == TensorMapInterleave.none and swizzle_span_bytes is not None:
+        box_bits = box_dims[0] * lane_dtype.width
+        static_box_bits = _static_int(box_bits)
+        message = (
+            f"TensorMap swizzle {swizzle} requires the bounding-box inner "
+            f"dimension to be at most {swizzle_span_bytes}B"
+        )
+        if static_box_bits is not None:
+            if static_box_bits > swizzle_span_bytes * 8:
+                _raise_tensormap_constraint(
+                    f"{message}, got {_format_byte_count(static_box_bits)}"
+                )
+    if tma_format == TensorMapDataFormat.B4X16:
+        _require_tensormap_multiple(
+            global_dims[0],
+            name="global_dims[0]",
+            multiple=2,
+            loc=loc,
+            ip=ip,
+        )
 
     required_box_bytes = _PADDED_SUBBYTE_BOX_BYTES.get(tma_format)
     if required_box_bytes is None:
+        if tiled and interleave == TensorMapInterleave.none:
+            _require_tensormap_multiple(
+                box_dims[0] * lane_dtype.width,
+                name="box_dims[0] element span",
+                multiple=128,
+                unit=" bits",
+                loc=loc,
+                ip=ip,
+            )
         return
 
     format_name = str(tma_format)
     required_bits = required_box_bytes * 8
-
-    if box_dim0 is not None:
-        box_bits = box_dim0 * lane_dtype.width
-        if box_bits != required_bits:
-            raise ValueError(
-                f"TensorMap format {format_name} requires Box-Size[0] to be "
-                f"exactly {required_box_bytes}B, got "
-                f"{_format_byte_count(box_bits)}"
-            )
-
-    tensor_dim0 = _static_int(global_dims[0])
-    if tensor_dim0 is not None:
-        tensor_bits = tensor_dim0 * lane_dtype.width
-        if tensor_bits % required_bits != 0:
-            raise ValueError(
-                f"TensorMap format {format_name} requires Tensor-Size[0] to "
-                f"be a multiple of {required_box_bytes}B, got "
-                f"{_format_byte_count(tensor_bits)}"
-            )
-
-    base_address = _static_int(global_address)
-    if base_address is not None and base_address % 32 != 0:
-        raise ValueError(
-            f"TensorMap format {format_name} requires global_address to be "
-            f"32B aligned, got {base_address}"
-        )
-
-    for dim, stride in enumerate(global_strides, start=1):
-        stride_16b = _static_int(stride)
-        if stride_16b is not None and stride_16b % 2 != 0:
-            raise ValueError(
-                f"TensorMap format {format_name} requires tensor stride for "
-                f"dimension {dim} to be 32B aligned, got "
-                f"{stride_16b * 16}B"
-            )
+    _require_tensormap_equal(
+        box_dims[0] * lane_dtype.width,
+        name=f"format {format_name} Box-Size[0]",
+        expected=required_bits,
+        unit=" bits",
+        message=(
+            f"TensorMap format {format_name} requires Box-Size[0] to be "
+            f"exactly {required_box_bytes}B"
+        ),
+        loc=loc,
+        ip=ip,
+    )
+    _require_tensormap_multiple(
+        global_dims[0] * lane_dtype.width,
+        name=f"format {format_name} Tensor-Size[0]",
+        multiple=required_bits,
+        unit=" bits",
+        message=(
+            f"TensorMap format {format_name} requires Tensor-Size[0] to be "
+            f"a multiple of {required_box_bytes}B"
+        ),
+        loc=loc,
+        ip=ip,
+    )
 
     if swizzle not in _PADDED_SUBBYTE_SWIZZLES:
         allowed = ", ".join(str(mode) for mode in sorted(_PADDED_SUBBYTE_SWIZZLES))
-        raise ValueError(
+        _raise_tensormap_constraint(
             f"TensorMap format {format_name} supports only none or 128B "
             f"swizzle modes, got {swizzle}; allowed: {allowed}"
         )
+
+
+def _validate_im2col_tensormap_constraints(
+    *,
+    rank: int,
+    lower_corner: Sequence[Int32 | int],
+    upper_corner: Sequence[Int32 | int],
+    channels_per_pixel: Int32 | int,
+    pixels_per_column: Int32 | int,
+    loc: ir.Location | None,
+    ip: ir.InsertionPoint | None,
+) -> None:
+    """Validate fields specific to ``cuTensorMapEncodeIm2col``."""
+    corner_limits = {3: (-32768, 32767), 4: (-128, 127), 5: (-16, 15)}
+    corner_minimum, corner_maximum = corner_limits[rank]
+    for field_name, corners in (
+        ("lower_corner", lower_corner),
+        ("upper_corner", upper_corner),
+    ):
+        for dim, corner in enumerate(corners):
+            _require_tensormap_range(
+                corner,
+                name=f"{field_name}[{dim}] for rank {rank}",
+                minimum=corner_minimum,
+                maximum=corner_maximum,
+                loc=loc,
+                ip=ip,
+            )
+
+    # CUDA defines these as offsets from opposite sides of the pixel box:
+    # lower_corner is relative to top/left/front, while upper_corner is
+    # relative to bottom/right/back. They are not endpoints in one coordinate
+    # system, so comparing them elementwise would reject valid descriptors.
+
+    _require_tensormap_range(
+        channels_per_pixel,
+        name="channels_per_pixel",
+        minimum=1,
+        maximum=256,
+        loc=loc,
+        ip=ip,
+    )
+    _require_tensormap_range(
+        pixels_per_column,
+        name="pixels_per_column",
+        minimum=1,
+        maximum=1024,
+        loc=loc,
+        ip=ip,
+    )
 
 
 def get_dsl_type_to_tensormap_type(dsl_type: Type[Numeric]) -> TensorMapDataType:
@@ -719,11 +973,22 @@ class TensorMap:
     ``@cute.kernel`` to obtain a pointer suitable for TMA intrinsics.  The
     host-side wrapper also retains static metadata chosen at descriptor
     construction time: the logical CUTLASS element ``dtype`` when known, the
-    consumer-facing :class:`TensorMapDataFormat`, the TMA-order ``box_dims``,
-    and the :class:`TensorMapSwizzle` mode. For descriptors built from a
-    ``cute.Tensor``, ``box_dims`` are stored after the builder's TMA-order
-    reordering; use the stored metadata inside kernels rather than passing a
-    second copy of the box or byte count.
+    consumer-facing :class:`TensorMapDataFormat`, the descriptor rank, the
+    TMA-order ``box_dims``, and the :class:`TensorMapSwizzle` mode. For
+    descriptors built from a ``cute.Tensor``, ``box_dims`` are stored after the
+    builder's TMA-order reordering; use the stored metadata inside kernels
+    rather than passing a second copy of the box or byte count. Im2col
+    descriptors retain their rank even though they have no explicit
+    ``box_dims``.
+
+    At descriptor construction, ``traversal_strides`` means CUDA's
+    ``elementStrides``: the coordinate step TMA takes while walking each
+    dimension. It is neither the tensor's physical memory stride
+    (``global_strides``) nor the tile extent (``box_dims``). Dense traversal
+    uses one in every dimension. For example, a 128-element tile uses
+    ``box_dims=[128, ...]`` and ``traversal_strides=[1, ...]``;
+    ``traversal_strides=[128, ...]`` is invalid because each traversal stride
+    must be between 1 and 8.
 
     The shared-memory storage dtype, shared storage byte count, and TMA global
     transaction byte count for one TMA box are derived from that metadata.
@@ -760,6 +1025,57 @@ class TensorMap:
     dtype: Constexpr = None
     tma_format: Constexpr[TensorMapDataFormat] = TensorMapDataFormat.DEFAULT
     box_dims: Constexpr[Tuple[Int8 | int, ...]] = ()
+    descriptor_rank: Constexpr[int | None] = None
+
+    def __post_init__(self) -> None:
+        """Infer legacy tiled-descriptor rank metadata from ``box_dims``."""
+        if self.descriptor_rank is None and self.box_dims:
+            object.__setattr__(self, "descriptor_rank", len(self.box_dims))
+        elif (
+            self.descriptor_rank is not None
+            and self.box_dims
+            and self.descriptor_rank != len(self.box_dims)
+        ):
+            raise ValueError(
+                "Expected descriptor_rank to match box_dims rank "
+                f"(={len(self.box_dims)}), got {self.descriptor_rank}"
+            )
+
+    def override_addr(self, address: Pointer | cute.Pointer) -> "TensorMapOverride":
+        """Return a lazy tensor-map view with a different global address.
+
+        The returned object records the override without emitting IR. Pass it
+        to a TMA tensor operation; that operation selects the Rubin descriptor-
+        override instruction and materializes the captured operands. Add
+        runtime dimensions and strides with ``TensorMapOverride.override_dims``
+        and ``TensorMapOverride.override_strides``.
+
+        The fluent calls are target-independent. The consuming TMA operation
+        checks its exact override form and mode against the active compilation
+        target and raises before emitting IR when that combination is not
+        supported.
+
+        ``TensorMapOverride`` is an implementation value returned by this
+        interface. It cannot be constructed directly.
+
+        The replacement address must be a pointer. If a ``cutlass.Array``
+        contains the complete replacement tensor-map descriptor, pass that
+        array directly to the consuming TMA operation instead of wrapping it
+        in this address-override interface.
+
+        :param address: Replacement global-memory base address.
+        :type address: cutlass.Pointer or cutlass.cute.Pointer
+        :return: Lazy descriptor override rooted at this tensor map.
+        :rtype: TensorMapOverride
+
+        .. code-block:: python
+
+            overridden = desc.override_addr(gmem_ptr)
+            prims.cp_async_bulk_tensor_shared_cta_global(
+                smem_ptr, overridden, coordinates, mbar
+            )
+        """
+        return _create_tensor_map_override(self, address)
 
     @property
     def element_type(self) -> Type[Numeric] | None:
@@ -845,6 +1161,165 @@ class TensorMap:
         return Pointer._from_raw_ptr(llvm_ptr)
 
 
+@dataclass(frozen=True, eq=False, init=False)
+class TensorMapOverride:
+    """Lazy override returned by :meth:`TensorMap.override_addr`.
+
+    This type snapshots semantic tensor-map overrides until a consuming TMA
+    operation materializes them. Dimensions are ordinary tensor sizes. Strides
+    use the same 16-byte units and TMA dimension order as
+    ``create_tensor_map_tiled``. The materializer caps dimensions at 256,
+    encodes them as ``size - 1``, and splits each stride into its low 32 bits
+    and packed upper nibble for the Rubin instruction.
+
+    Start every override through :meth:`TensorMap.override_addr`; direct class
+    construction is intentionally unavailable. The original
+    ``TensorMap`` remains the sole owner of descriptor metadata and the
+    ``!cuda.tensor_map`` value. The captured replacement address is always a
+    pointer; an array containing a complete replacement descriptor is passed
+    directly to the consuming TMA operation instead.
+    """
+
+    tensor_map: TensorMap = field(repr=False)
+    address: Pointer | cute.Pointer = field(repr=False)
+    global_dims: tuple[Int32 | int, ...] = ()
+    global_strides: tuple[Int64 | int, ...] = ()
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> "TensorMapOverride":
+        del args, kwargs
+        raise TypeError(
+            "TensorMapOverride cannot be constructed directly; use "
+            "TensorMap.override_addr(...)"
+        )
+
+    def override_dims(self, global_dims: Sequence[Int32 | int]) -> "TensorMapOverride":
+        """Return an override with replacement global dimensions.
+
+        Values are semantic sizes, not the instruction's ``size - 1``
+        encoding. Calling this method after ``override_strides`` clears the
+        old strides so the returned state remains coherent. For rank greater
+        than one, this is an intermediate state: call
+        ``override_strides`` before passing it to a TMA operation. Rank one
+        has no inter-dimension strides and can be consumed directly.
+
+        :param global_dims: One to five positive sizes in TMA dimension order.
+        :type global_dims: Sequence[Int32 or int]
+        :return: A new lazy override with the captured dimensions.
+        :rtype: TensorMapOverride
+        """
+        dims = tuple(global_dims)
+        _validate_override_dims(self.tensor_map, dims)
+        return _create_tensor_map_override(
+            self.tensor_map,
+            self.address,
+            global_dims=dims,
+        )
+
+    def override_strides(
+        self, global_strides: Sequence[Int64 | int]
+    ) -> "TensorMapOverride":
+        """Return an override with replacement inter-dimension strides.
+
+        Strides are measured in 16-byte units, matching
+        ``create_tensor_map_tiled``, and omit the implicit contiguous-mode
+        stride. Dimensions must have been captured first because the hardware
+        does not permit a stride-only override.
+
+        :param global_strides: Positive strides in 16-byte units, with length
+            ``rank - 1``.
+        :type global_strides: Sequence[Int64 or int]
+        :return: A new lazy override with dimensions and strides.
+        :rtype: TensorMapOverride
+        :raises ValueError: If dimensions have not been captured or the stride
+            rank/value is invalid.
+        """
+        if not self.global_dims:
+            raise ValueError(
+                "TensorMapOverride.override_strides requires override_dims(...) first"
+            )
+        strides = tuple(global_strides)
+        expected = len(self.global_dims) - 1
+        if len(strides) != expected:
+            raise ValueError(
+                "Expected global_strides rank to match global_dims rank - 1 "
+                f"(={expected}), got {len(strides)}"
+            )
+        for stride in strides:
+            if isinstance(stride, int) and not 0 < stride < (1 << 36):
+                raise ValueError(
+                    "Tensor-map override strides must be positive 36-bit "
+                    f"values in 16-byte units, got {stride}"
+                )
+        return _create_tensor_map_override(
+            self.tensor_map,
+            self.address,
+            global_dims=self.global_dims,
+            global_strides=strides,
+        )
+
+    def _encode_attributes(
+        self,
+    ) -> tuple[tuple[Int16, ...], tuple[Int32, ...], Int16 | None]:
+        """Encode captured dimensions and strides for a consuming operation."""
+        tensor_size = tuple(
+            Int16(min(dim, 256) - 1)
+            if isinstance(dim, int)
+            else Int16(cutlass.min(Int32(dim), Int32(256)) - 1)
+            for dim in self.global_dims
+        )
+        lower_stride = tuple(Int32(Int64(stride)) for stride in self.global_strides)
+        upper_stride = None
+        if self.global_strides:
+            packed_upper = Int64(0)
+            for index, stride in enumerate(self.global_strides):
+                upper_nibble = (Int64(stride) >> 32) & Int64(0xF)
+                packed_upper = packed_upper | (upper_nibble << (4 * index))
+            upper_stride = Int16(packed_upper)
+        return tensor_size, lower_stride, upper_stride
+
+
+def _create_tensor_map_override(
+    tensor_map: TensorMap,
+    address: Pointer | cute.Pointer,
+    *,
+    global_dims: tuple[Int32 | int, ...] = (),
+    global_strides: tuple[Int64 | int, ...] = (),
+) -> TensorMapOverride:
+    """Construct an override for TensorMap's fluent interface only."""
+    if not isinstance(address, (Pointer, cute.Pointer)):
+        raise TypeError(
+            "TensorMap.override_addr expects a Pointer replacement address; "
+            "pass an Array containing a complete tensor-map descriptor "
+            "directly to the consuming TMA operation"
+        )
+    result = object.__new__(TensorMapOverride)
+    object.__setattr__(result, "tensor_map", tensor_map)
+    object.__setattr__(result, "address", address)
+    object.__setattr__(result, "global_dims", global_dims)
+    object.__setattr__(result, "global_strides", global_strides)
+    return result
+
+
+def _validate_override_dims(
+    tensor_map: TensorMap, global_dims: tuple[Int32 | int, ...]
+) -> None:
+    rank = len(global_dims)
+    if not 1 <= rank <= 5:
+        raise ValueError(
+            f"Expected tensor-map override rank to be between 1 and 5, got {rank}"
+        )
+    if tensor_map.descriptor_rank is not None and rank != tensor_map.descriptor_rank:
+        raise ValueError(
+            "Expected global_dims rank to match the TensorMap rank "
+            f"(={tensor_map.descriptor_rank}), got {rank}"
+        )
+    for dim in global_dims:
+        if isinstance(dim, int) and dim <= 0:
+            raise ValueError(
+                f"Tensor-map override dimensions must be positive, got {dim}"
+            )
+
+
 @dsl_user_op
 def create_tensor_map_tiled(
     global_address: Int64 | int,
@@ -871,7 +1346,7 @@ def create_tensor_map_tiled(
 
     Pass the logical CUTLASS ``Numeric`` type explicitly via *dtype*.
     The descriptor builder maps that logical dtype to both a consumer-facing
-    :class:`TensorMapDataFormat` and the required CUDA-driver encoding
+    ``TensorMapDataFormat`` and the required CUDA-driver encoding
     internally when the mapping is unambiguous.
 
     Use ``TensorMapDataFormat`` when you need to describe the *transfer
@@ -888,6 +1363,16 @@ def create_tensor_map_tiled(
     * ``B6X16_P32`` → PTX ``.b6x16_p32`` for loads and ``.b6p2x16`` for
       stores, both backed by CUDA's packed-FP6 descriptor encoding
 
+    ``traversal_strides`` is a sampling step in **elements**, not a shape or
+    byte stride. For dimension ``i`` with ``box_dims[i] = B`` and
+    ``traversal_strides[i] = S``, TMA visits element coordinates
+    ``0, S, 2*S, ... < B`` and transfers ``ceil(B / S)`` elements. To transfer
+    ``N`` sampled elements at step ``S``, set ``box_dims[i] = N * S``. Every
+    supplied stride must be in ``[1, 8]``; ``None`` means all ones. With
+    ``interleave=none``, CUDA does not apply the dimension-zero stride, but the
+    supplied value must still be valid, so use 1. In particular, put a tile
+    width such as 128 in ``box_dims``, never in ``traversal_strides``.
+
     Example — 2-D fp16 ``(M=1024, K=64)`` row-major tensor, 128×64 tile,
     128-byte swizzle:
 
@@ -899,6 +1384,7 @@ def create_tensor_map_tiled(
             global_dims=[64, 1024],              # [K, M] — K is innermost
             global_strides=[64 * 2 // 16],       # row stride in 16-B units: 8
             box_dims=[64, 128],                  # box: 64 in K, 128 in M
+            traversal_strides=[1, 1],            # dense; coordinate step, not shape
             swizzle=TensorMapSwizzle.s128b,
         )
 
@@ -967,8 +1453,14 @@ def create_tensor_map_tiled(
     :param box_dims: Tile (box) dimensions for TMA, one per dimension,
         in the same column-major order as *global_dims*.
     :type box_dims: Sequence[Int8 or int]
-    :param traversal_strides: Element strides within each box dimension,
-        defaults to None (all-ones).
+    :param traversal_strides: Coordinate sampling step, in elements, for each
+        box dimension (CUDA ``elementStrides``). This is not a physical memory
+        stride and not a tile extent. Each value must be between 1 and 8;
+        defaults to None, meaning dense traversal with all ones. For example,
+        use ``box_dims=[128, 64]`` with ``traversal_strides=[1, 1]`` for a
+        dense 128x64 box, not ``traversal_strides=[128, 1]``. A value ``S > 1``
+        intentionally samples every S-th coordinate and transfers
+        ``ceil(box_dims[i] / S)`` elements along dimension ``i``.
     :type traversal_strides: Sequence[Int8 or int], optional
     :param interleave: Interleave mode, defaults to None (``none``).
     :type interleave: TensorMapInterleave, optional
@@ -992,7 +1484,10 @@ def create_tensor_map_tiled(
     :type tma_format: TensorMapDataFormat, optional
     :raises ValueError: If tensor rank is not between 1 and 5, or if
         *box_dims*, *global_strides*, or *traversal_strides* have
-        inconsistent lengths.
+        inconsistent lengths, or if a statically known descriptor field
+        violates the CUDA TensorMap contract. Dynamic descriptor fields are
+        checked before the CUDA driver call when runtime checks are enabled
+        (for example, with ``CUTE_DSL_COMPILER_OPT=debug``).
     :return: A :class:`TensorMap` wrapping the created ``!cuda.tensor_map`` and
         retaining the selected static *dtype*, *tma_format*, *box_dims*, and
         *swizzle* metadata on the Python object. The shared-memory storage dtype
@@ -1036,13 +1531,18 @@ def create_tensor_map_tiled(
     _validate_tensormap_constraints(
         dtype=dtype,
         tma_format=resolved_tma_format,
+        tma_encoding=tma_format_encoding,
         global_address=global_address,
         global_dims=global_dims,
         global_strides=global_strides,
         box_dims=box_dims,
+        traversal_strides=traversal_strides,
         interleave=interleave,
         swizzle=swizzle,
         oob_fill=oob_fill,
+        tiled=True,
+        loc=loc,
+        ip=ip,
     )
 
     # Convert global_address to !ptr.ptr<#ptr.generic_space>
@@ -1106,6 +1606,7 @@ def create_tensor_map_tiled(
         dtype=dtype,
         tma_format=resolved_tma_format,
         box_dims=tuple(box_dims),
+        descriptor_rank=rank,
     )
 
 
@@ -1297,7 +1798,7 @@ def create_tensor_map_tiled_from_view(
     box_dims_list = list(box_dims)
 
     if stride_order is not None:
-        order = list(stride_order)
+        order = _validate_stride_order(stride_order, rank)
     else:
         # A unique order requires all strides to be static and distinct.
         # Dynamic strides have unknown values; duplicate strides (common
@@ -1353,6 +1854,478 @@ def create_tensor_map_tiled_from_view(
     )
 
 
+@dsl_user_op
+def create_tensor_map_im2col(
+    global_address: Int64 | int,
+    dtype: Type[Numeric],
+    global_dims: Sequence[Int32 | int],
+    global_strides: Sequence[Int64 | int],
+    lower_corner: Sequence[Int32 | int],
+    upper_corner: Sequence[Int32 | int],
+    channels_per_pixel: Int32 | int,
+    pixels_per_column: Int32 | int,
+    *,
+    traversal_strides: Sequence[Int8 | int] | None = None,
+    interleave: TensorMapInterleave | None = None,
+    swizzle: TensorMapSwizzle | None = None,
+    l2_promotion: TensorMapL2Promotion | None = None,
+    oob_fill: TensorMapFloatOOBFill | None = None,
+    tma_format: TensorMapDataFormat | TensorMapDataType | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> TensorMap:
+    """Build an im2col TMA descriptor from explicit parameters.
+
+    Counterpart of :func:`create_tensor_map_tiled` for convolution-style
+    loads where the descriptor encodes pixel-window corners and per-column
+    channel/pixel counts instead of a static box. Wraps the CUDA driver
+    function ``cuTensorMapEncodeIm2col``.
+
+    TMA uses **column-major** dimension ordering: ``global_dims[0]`` is the
+    fastest-varying (innermost, contiguous) axis. For NDHWC activations the
+    canonical mapping is ``global_dims = [C, W, H, D, N]``.
+
+    *lower_corner* / *upper_corner* describe the spatial pixel-window relative
+    to opposite sides of the load anchor; they have ``rank - 2`` entries (one
+    per spatial dimension) in the same column-major order as the spatial slice
+    of ``global_dims``. ``lower_corner`` is relative to the top/left/front side
+    and ``upper_corner`` to the bottom/right/back side, so they are not ordered
+    endpoints and must not be compared elementwise. They are computed as
+    ``lower_corner = -lower_padding`` and
+    ``upper_corner = upper_padding - (filter - 1) * dilation``. For a 2-D R×S
+    filter with symmetric padding ``(pad_h, pad_w)`` and unit dilation, pass
+    ``lower_corner = [-pad_w, -pad_h]`` and
+    ``upper_corner = [pad_w - (S - 1), pad_h - (R - 1)]``.
+
+    *channels_per_pixel* must equal the C tile size; *pixels_per_column*
+    must equal the product of spatial-tile extents that collapse into a
+    single SMEM column.
+
+    ``traversal_strides`` has the same meaning as CUDA ``elementStrides``: it
+    is the per-dimension coordinate sampling step, in elements. It does not
+    describe the activation's physical layout (use ``global_strides`` for
+    that) or the im2col window size (use ``channels_per_pixel``,
+    ``pixels_per_column``, and the corner arguments). Leave it as ``None`` for
+    ordinary dense convolution traversal. If explicit, it must contain one
+    value per tensor dimension and every value must be in ``[1, 8]``. With
+    ``interleave=none``, use 1 for dimension zero even though hardware does not
+    apply that entry.
+
+    :param global_address: Device pointer (as ``Int64`` or integer) to the
+        first element of the global activation tensor.
+    :type global_address: Int64 or int
+    :param dtype: Logical CUTLASS element dtype such as ``cutlass.Float16``.
+        The descriptor retains this logical dtype even when the backing TMA
+        encoding uses a different storage container.
+    :type dtype: CUTLASS dtype
+    :param global_dims: Activation shape in TMA (column-major) order:
+        ``global_dims[0]`` is the contiguous channel axis. Rank must be
+        between 3 and 5. For NDHWC activations the canonical mapping is
+        ``[C, W, H, D, N]``.
+    :type global_dims: Sequence[Int32 or int]
+    :param global_strides: Inter-dimension strides in **16-byte units**,
+        length ``rank - 1`` (the innermost stride is implicit/unused).
+    :type global_strides: Sequence[Int64 or int]
+    :param lower_corner: Lowest filter taps the pixel window may reach, with
+        ``rank - 2`` entries (one per spatial dimension) in the same
+        column-major order as the spatial slice of *global_dims*. Equals
+        ``-lower_padding``.
+    :type lower_corner: Sequence[Int32 or int]
+    :param upper_corner: Highest filter taps the pixel window may reach, with
+        ``rank - 2`` entries in spatial column-major order. Equals
+        ``upper_padding - (filter - 1) * dilation``.
+    :type upper_corner: Sequence[Int32 or int]
+    :param channels_per_pixel: Number of channels per pixel; must equal the C
+        tile size.
+    :type channels_per_pixel: Int32 or int
+    :param pixels_per_column: Number of pixels collapsed into a single SMEM
+        column; must equal the product of spatial-tile extents.
+    :type pixels_per_column: Int32 or int
+    :param traversal_strides: Coordinate sampling step in elements for each
+        tensor dimension (CUDA ``elementStrides``), not a memory stride or
+        window extent. Each value must be between 1 and 8; defaults to None,
+        meaning dense traversal with all ones. Use values greater than one only
+        to intentionally subsample coordinates.
+    :type traversal_strides: Sequence[Int8 or int], optional
+    :param interleave: Interleave mode, defaults to None (``none``).
+    :type interleave: TensorMapInterleave, optional
+    :param swizzle: Shared-memory swizzle mode, defaults to None (``none``).
+        Accepts :class:`TensorMapSwizzle` or a canonical swizzle descriptor that
+        can be converted to a tensor-map encoding.
+        With no interleave, the inner box byte width (``channels_per_pixel`` ×
+        ``sizeof(elem)``, i.e. ``Box-Size[0]``) must not exceed the selected
+        swizzle span: 32B for ``s32b``, 64B for ``s64b``, and 128B for the
+        ``s128b`` modes. Padded sub-byte formats have stricter requirements
+        validated at construction: ``B4X16_P64`` requires ``Box-Size[0] == 64B``
+        and ``B6X16_P32`` requires ``Box-Size[0] == 96B``.
+    :type swizzle: TensorMapSwizzle or compatible swizzle descriptor, optional
+    :param l2_promotion: L2 promotion hint, defaults to None (``none``).
+    :type l2_promotion: TensorMapL2Promotion, optional
+    :param oob_fill: Out-of-bounds fill mode, defaults to None (``none``).
+    :type oob_fill: TensorMapFloatOOBFill, optional
+    :param tma_format: Optional consumer-facing transfer-layout override or
+        FTZ variant. Leave as None to derive the default layout from *dtype*.
+    :type tma_format: TensorMapDataFormat, optional
+    :raises ValueError: If tensor rank is not between 3 and 5, or if
+        *global_strides* (expected ``rank - 1``), *lower_corner* /
+        *upper_corner* (expected ``rank - 2``), or *traversal_strides*
+        (expected ``rank``) have inconsistent lengths, or if a statically
+        known descriptor field violates the CUDA TensorMap contract. Dynamic
+        descriptor fields are checked before the CUDA driver call when runtime
+        checks are enabled (for example, with
+        ``CUTE_DSL_COMPILER_OPT=debug``).
+    :return: A :class:`TensorMap` wrapping the created ``!cuda.tensor_map`` and
+        retaining the selected static *dtype*, *tma_format*, and *swizzle*
+        metadata on the Python object.
+    :rtype: TensorMap
+
+    .. code-block:: python
+
+        desc = create_tensor_map_im2col(
+            global_address=activation.iterator.toint(),
+            dtype=cutlass.Float16,
+            global_dims=[64, 64, 64, 1],     # [C, W, H, N]
+            global_strides=[8, 512, 32768], # 16-B units
+            lower_corner=[-1, -1],
+            upper_corner=[-1, -1],
+            channels_per_pixel=64,
+            pixels_per_column=1,
+            traversal_strides=[1, 1, 1, 1], # dense coordinate traversal
+            swizzle=TensorMapSwizzle.s128b,
+        )
+    """
+
+    rank = len(global_dims)
+    if rank < 3 or rank > 5:
+        raise ValueError(
+            f"Expected im2col tensor rank to be between 3 and 5, got {rank}"
+        )
+    if len(global_strides) != rank - 1:
+        raise ValueError(
+            f"Expected rank(global_strides) to match rank(global_dims) - 1"
+            f"(={rank - 1}), got {len(global_strides)}"
+        )
+    if len(lower_corner) != rank - 2:
+        raise ValueError(
+            f"Expected rank(lower_corner) to match rank(global_dims) - 2"
+            f"(={rank - 2}), got {len(lower_corner)}"
+        )
+    if len(upper_corner) != rank - 2:
+        raise ValueError(
+            f"Expected rank(upper_corner) to match rank(global_dims) - 2"
+            f"(={rank - 2}), got {len(upper_corner)}"
+        )
+    if traversal_strides is not None and len(traversal_strides) != rank:
+        raise ValueError(
+            f"Expected rank(traversal_strides) to match rank(global_dims)"
+            f" (={rank}), got {len(traversal_strides)}"
+        )
+
+    resolved_tma_format, tma_format_encoding = _derive_tensormap_encoding(
+        dtype, tma_format
+    )
+    if swizzle is not None and hasattr(swizzle, "to"):
+        swizzle = swizzle.to(TensorMapSwizzle)  # type: ignore[assignment]
+    interleave = interleave if interleave is not None else TensorMapInterleave.none
+    swizzle = swizzle if swizzle is not None else TensorMapSwizzle.none
+    l2_promotion = (
+        l2_promotion if l2_promotion is not None else TensorMapL2Promotion.none
+    )
+    oob_fill = oob_fill if oob_fill is not None else TensorMapFloatOOBFill.none
+    # im2col has no explicit box_dims; its innermost (channel) box extent is
+    # channels_per_pixel, which is the Box-Size[0] the padded sub-byte PTX
+    # constraints validate.
+    _validate_tensormap_constraints(
+        dtype=dtype,
+        tma_format=resolved_tma_format,
+        tma_encoding=tma_format_encoding,
+        global_address=global_address,
+        global_dims=global_dims,
+        global_strides=global_strides,
+        box_dims=[channels_per_pixel],
+        traversal_strides=traversal_strides,
+        interleave=interleave,
+        swizzle=swizzle,
+        oob_fill=oob_fill,
+        tiled=False,
+        loc=loc,
+        ip=ip,
+    )
+    _validate_im2col_tensormap_constraints(
+        rank=rank,
+        lower_corner=lower_corner,
+        upper_corner=upper_corner,
+        channels_per_pixel=channels_per_pixel,
+        pixels_per_column=pixels_per_column,
+        loc=loc,
+        ip=ip,
+    )
+
+    addr_i64 = Int64(global_address).ir_value()
+    ptr_ptr_type = ir.Type.parse("!ptr.ptr<#ptr.generic_space>")
+    global_address_ptr = cuda_dialect.cast(ptr_ptr_type, addr_i64)
+
+    global_dims_arr: cutlass.Array = cutlass.Array(
+        Int64, rank, space=cutlass.AddressSpace.rmem
+    )
+    for i, dim in enumerate(global_dims):
+        global_dims_arr[i] = dim
+
+    strides_size = len(global_strides)
+    global_strides_arr: cutlass.Array = cutlass.Array(
+        Int64, max(strides_size, 1), space=cutlass.AddressSpace.rmem
+    )
+    for i, stride in enumerate(global_strides):
+        global_strides_arr[i] = Int64(stride) * Int64(16)
+
+    spatial_rank = rank - 2
+    lower_corner_arr: cutlass.Array = cutlass.Array(
+        Int32, max(spatial_rank, 1), space=cutlass.AddressSpace.rmem
+    )
+    upper_corner_arr: cutlass.Array = cutlass.Array(
+        Int32, max(spatial_rank, 1), space=cutlass.AddressSpace.rmem
+    )
+    for i in range(spatial_rank):
+        lower_corner_arr[i] = Int32(lower_corner[i])
+        upper_corner_arr[i] = Int32(upper_corner[i])
+
+    element_strides_arr: cutlass.Array = cutlass.Array(
+        Int32, rank, space=cutlass.AddressSpace.rmem
+    )
+    if traversal_strides is None:
+        for i in range(rank):
+            element_strides_arr[i] = 1
+    else:
+        for i, traversal_stride in enumerate(traversal_strides):
+            element_strides_arr[i] = traversal_stride
+
+    cuda_result_ty = cuda_dialect.ResultType.get()
+    tensor_map_ty = TensorMap._get_mlir_type()
+    results = cuda_dialect.tensor_map_encode_im2col(
+        Int32(int(tma_format_encoding)).ir_value(),
+        Int32(rank).ir_value(),
+        global_address_ptr,
+        global_dims_arr.ir_value(),
+        global_strides_arr.ir_value(),
+        lower_corner_arr.ir_value(),
+        upper_corner_arr.ir_value(),
+        Int32(channels_per_pixel).ir_value(),
+        Int32(pixels_per_column).ir_value(),
+        element_strides_arr.ir_value(),
+        Int32(interleave).ir_value(),
+        Int32(swizzle).ir_value(),
+        Int32(l2_promotion).ir_value(),
+        Int32(oob_fill).ir_value(),
+        results=[cuda_result_ty, tensor_map_ty],
+        loc=loc,
+        ip=ip,
+    )
+    cuda_result, tensor_map = results
+    cuda_dialect.result_assert_success(cuda_result, loc=loc, ip=ip)
+    return TensorMap(
+        tensor_map,
+        swizzle=swizzle,
+        dtype=dtype,
+        tma_format=resolved_tma_format,
+        descriptor_rank=rank,
+    )
+
+
+@dsl_user_op
+def create_tensor_map_im2col_from_view(
+    tensor: cute.Tensor,
+    lower_corner: Sequence[Int32 | int],
+    upper_corner: Sequence[Int32 | int],
+    channels_per_pixel: Int32 | int,
+    pixels_per_column: Int32 | int,
+    *,
+    stride_order: Tuple[int, ...] | None = None,
+    traversal_strides: Sequence[Int8 | int] | None = None,
+    interleave: TensorMapInterleave | None = None,
+    swizzle: TensorMapSwizzle | None = None,
+    l2_promotion: TensorMapL2Promotion | None = None,
+    oob_fill: TensorMapFloatOOBFill | None = None,
+    dtype: Type[Numeric] | None = None,
+    tma_format: TensorMapDataFormat | TensorMapDataType | None = None,
+    loc: ir.Location | None = None,
+    ip: ir.InsertionPoint | None = None,
+) -> TensorMap:
+    """Build an im2col TMA descriptor from a ``cute.Tensor`` or ``cutlass.Array`` view.
+
+    Convenience wrapper around :func:`create_tensor_map_im2col` that
+    auto-detects the global address, dtype, global dims, and global strides
+    from *tensor*, which may be either a layout-carrying ``cute.Tensor`` or a
+    bare-metal ``cutlass.Array`` view over the same memory. Caller still passes
+    the convolution-specific *lower_corner*, *upper_corner*,
+    *channels_per_pixel*, and
+    *pixels_per_column* because they cannot be inferred from a generic
+    activation tensor without filter / tile metadata.
+
+    The leading (stride-1) dimension is treated as the channel axis (TMA
+    column-major: ``global_dims[0] == C``); the next ``rank - 2`` modes are
+    the spatial axes and the trailing mode is the batch axis. Override the
+    detection by supplying *stride_order* explicitly.
+
+    :param tensor: A ``cute.Tensor`` with a flattened (depth-1) layout whose
+        leading (stride-1) mode is the channel axis, or a ``cutlass.Array``
+        view over the same memory. Both expose the shape / stride /
+        element-type / base-pointer facts the TMA builder needs.
+    :type tensor: cute.Tensor or cutlass.Array
+    :param lower_corner: Lowest filter taps the pixel window may reach, one
+        entry per spatial dimension (``rank - 2`` entries). See
+        :func:`create_tensor_map_im2col`.
+    :type lower_corner: Sequence[Int32 or int]
+    :param upper_corner: Highest filter taps the pixel window may reach, one
+        entry per spatial dimension (``rank - 2`` entries). See
+        :func:`create_tensor_map_im2col`.
+    :type upper_corner: Sequence[Int32 or int]
+    :param channels_per_pixel: Number of channels per pixel; must equal the C
+        tile size.
+    :type channels_per_pixel: Int32 or int
+    :param pixels_per_column: Number of pixels collapsed into a single SMEM
+        column; must equal the product of spatial-tile extents.
+    :type pixels_per_column: Int32 or int
+    :param stride_order: Explicit dimension order from innermost to outermost,
+        as a permutation of ``[0, rank)``. When provided the automatic stride
+        sort is skipped. E.g. ``(0, 1, 2, 3)`` means mode 0 is innermost.
+    :type stride_order: tuple[int, ...], optional
+    :param traversal_strides: Coordinate sampling step in elements for each
+        tensor dimension, holding CUDA's ``elementStrides``. Each value must be
+        between 1 and 8; defaults to None, meaning dense traversal with all ones.
+    :type traversal_strides: Sequence[Int8 or int], optional
+    :param interleave: Interleave mode, defaults to None (``none``).
+    :type interleave: TensorMapInterleave, optional
+    :param swizzle: Shared-memory swizzle mode, defaults to None (``none``).
+    :type swizzle: TensorMapSwizzle, optional
+    :param l2_promotion: L2 promotion hint, defaults to None (``none``).
+    :type l2_promotion: TensorMapL2Promotion, optional
+    :param oob_fill: Out-of-bounds fill mode, defaults to None (``none``).
+    :type oob_fill: TensorMapFloatOOBFill, optional
+    :param dtype: Optional logical element dtype override; defaults to None
+        (inferred from the tensor's element type).
+    :type dtype: CUTLASS dtype, optional
+    :param tma_format: Optional consumer-facing transfer-layout or FTZ
+        override. Leave as None to derive the default layout from the
+        tensor's element type.
+    :type tma_format: TensorMapDataFormat, optional
+    :raises DSLUserCodeError: If *tensor* is neither a ``cute.Tensor`` nor a
+        ``cutlass.Array``.
+    :raises ValueError: If the tensor layout is not flattened (depth > 1),
+        has no leading (stride-1) dimension, *stride_order* is not a
+        permutation of ``[0, rank)``, or (without *stride_order*) the strides
+        are dynamic or non-unique so a unique order cannot be inferred.
+    :return: A :class:`TensorMap` wrapping the created ``!cuda.tensor_map`` and
+        retaining the selected static *dtype*, *tma_format*, and *swizzle*
+        metadata on the Python object.
+    :rtype: TensorMap
+    """
+    # Accept either a layout-carrying ``cute.Tensor`` or a bare-metal ``cutlass.Array``
+    # (the host-entry type the cutlass DSL tutorials use; a host param annotated
+    # ``cutlass.Array`` arrives here as one). ``cute.Tensor`` is an ABC that both the
+    # eager ``from_dlpack`` tensor and the traced tensor subclass, while a
+    # ``cutlass.Array`` is not -- so ``isinstance`` discriminates them cleanly. Both carry
+    # the shape / stride / element-type / base-pointer facts the TMA builder needs, spelled
+    # differently: a ``cute.Tensor`` uses ``.stride`` / ``.element_type`` / ``.iterator``
+    # and a (possibly nested) ``.layout``; a ``cutlass.Array`` uses ``.strides`` /
+    # ``.dtype`` / ``.data_ptr()`` and is a flat dense view. Normalize here so the rest of
+    # the builder is type-agnostic.
+    if isinstance(tensor, cute.Tensor):
+        if depth(tensor) > 1:
+            raise ValueError(
+                f"Expected tensor to have flattened layout, got {tensor.layout}"
+            )
+        tensor_shape = tensor.shape
+        tensor_stride = tensor.stride
+        element_type = tensor.element_type
+        global_address = cast(cute.Pointer, tensor.iterator).toint()
+        layout_repr = str(tensor.layout)
+    elif isinstance(tensor, cutlass.Array):  # bare-metal flat dense view
+        # The param is annotated cute.Tensor, so read the Array's
+        # shape/stride/dtype/pointer via Any to satisfy the type checker.
+        arr = cast(Any, tensor)
+        tensor_shape = tuple(arr.shape)
+        tensor_stride = tuple(arr.strides)
+        element_type = arr.dtype
+        global_address = arr.data_ptr().toint()
+        layout_repr = f"shape={tensor_shape}, strides={tensor_stride}"
+    else:
+        raise DSLUserCodeError(
+            "`create_tensor_map_im2col_from_view` needs a `cute.Tensor` or a "
+            "`cutlass.Array` (it reads the tensor's shape/stride layout to program the "
+            f"TMA copy engine), but got `{type(tensor).__qualname__}`."
+        )
+
+    tensor_shapes = list(cast(tuple[Int32 | int, ...], tensor_shape))
+    tensor_strides = list(cast(tuple[Integer | int, ...], tensor_stride))
+    rank = len(tensor_shapes)
+
+    leading_mode = leading_dim(tensor_shape, tensor_stride)
+    if leading_mode is None or not isinstance(leading_mode, int):
+        raise ValueError(
+            "Expected tensor to have a leading (stride-1) dimension, but got "
+            f"tensor layout {layout_repr}"
+        )
+
+    if stride_order is not None:
+        order = _validate_stride_order(stride_order, rank)
+    else:
+        if any(is_dynamic_expression(s) for s in tensor_strides):
+            raise ValueError(
+                f"Cannot infer a unique stride order from tensor strides "
+                f"{tensor_strides} due to dynamic strides. Please provide "
+                "`stride_order` explicitly."
+            )
+        if len(set(tensor_strides)) < rank:
+            raise ValueError(
+                f"Cannot infer a unique stride order from tensor strides "
+                f"{tensor_strides} due to duplicate strides. Please provide "
+                "`stride_order` explicitly."
+            )
+        order = sorted(range(rank), key=lambda i: tensor_strides[i])
+
+    # Pass the CUTLASS dtype through when inferred so the TensorMap keeps the exact
+    # logical element type, including FP8 variants that TMA encodes as uint8.
+    resolved_dtype = (
+        dtype
+        if dtype is not None
+        else _canonicalize_tensor_element_type_for_tma(element_type)
+    )
+    resolved_tma_format, _ = _derive_tensormap_encoding(resolved_dtype, tma_format)
+    stride_dtype = _derive_tensormap_stride_dtype(resolved_dtype, resolved_tma_format)
+
+    global_dims = [tensor_shapes[order[j]] for j in range(rank)]
+    # Convert tensor-element strides → the unit expected by the TMA encoder.
+    # Explicit sub-byte scalar-lane formats over packed xN tensors use scalar
+    # lane width while preserving the packed pointer dtype in descriptor metadata.
+    global_strides = [
+        _stride_to_tma_units(tensor_strides[order[i + 1]], stride_dtype)
+        for i in range(rank - 1)
+    ]
+
+    return create_tensor_map_im2col(
+        global_address=global_address,
+        dtype=resolved_dtype,
+        global_dims=global_dims,
+        global_strides=global_strides,
+        lower_corner=lower_corner,
+        upper_corner=upper_corner,
+        channels_per_pixel=channels_per_pixel,
+        pixels_per_column=pixels_per_column,
+        traversal_strides=traversal_strides,
+        interleave=interleave,
+        swizzle=swizzle,
+        l2_promotion=l2_promotion,
+        oob_fill=oob_fill,
+        tma_format=tma_format,
+        loc=loc,
+        ip=ip,
+    )
+
+
+# Swizzle modes the CUDA driver accepts for ``cuTensorMapEncodeIm2colWide``.
+# The W modes always swizzle: the PTX ISA forbids "no swizzle" and the 128B
+# swizzle with the 8B flip for ``im2col::w`` / ``im2col_no_offs::w``.
+
 __all__ = [
     # Enums
     "TensorMapDataType",
@@ -1363,8 +2336,11 @@ __all__ = [
     "TensorMapSwizzle",
     # TMA descriptor types and functions
     "TensorMap",
+    "TensorMapOverride",
     "create_tensor_map_tiled",
     "create_tensor_map_tiled_from_view",
+    "create_tensor_map_im2col",
+    "create_tensor_map_im2col_from_view",
     "get_dsl_type_to_tensormap_type",
     "get_tensormap_type_to_dsl_type",
 ]

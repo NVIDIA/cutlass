@@ -14,6 +14,7 @@
 parse ONCE at decoration/preprocess scope, never inside a trace-time walk."""
 
 import ast
+import functools
 import hashlib
 import inspect
 import os
@@ -55,13 +56,42 @@ def _receiver_attr_write_names(
     """``(attr_names, enumerable)``: attribute names *fn* assigns on its
     first-parameter receiver, nested defs included (a nested impl's write
     attributes to the enclosing callable).  ``enumerable`` is False when a
-    write target is a deep receiver-rooted path (``self.sub.n``)."""
+    write target is a deep receiver-rooted path (``self.sub.n``) or when the
+    receiver escapes the syntactic scan: bound to another name, returned,
+    stored in a container, subscripted, called, handed to a dynamic-access
+    builtin, or reached through ``__dict__`` -- a write through any of those
+    spellings is invisible here, so the set must not claim completeness."""
     args = fn.args.posonlyargs + fn.args.args
     if not args:
         return frozenset(), True
     recv = args[0].arg
     found: "set[str]" = set()
     enumerable = True
+    # Receiver uses the scan accounts for: the base of a receiver-rooted
+    # attribute access and a plain call argument (the call edge is a
+    # ``_def_call_shapes`` fact).  Every other Load or a Store of the name
+    # is an escape.
+    accounted: "set[int]" = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.value, ast.Name) and node.value.id == recv:
+                accounted.add(id(node.value))
+                if node.attr == "__dict__":
+                    enumerable = False
+        elif isinstance(node, ast.Call):
+            dynamic = (
+                isinstance(node.func, ast.Name)
+                and node.func.id in _SURFACE_OPAQUE_CALLS
+            )
+            for a in [*node.args, *(kw.value for kw in node.keywords)]:
+                if isinstance(a, ast.Name) and a.id == recv:
+                    if dynamic:
+                        enumerable = False
+                    accounted.add(id(a))
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Name) and node.id == recv and id(node) not in accounted:
+            enumerable = False
+            break
     for node in ast.walk(fn):
         targets: "list[ast.expr]" = []
         if isinstance(node, ast.Assign):
@@ -404,7 +434,7 @@ def literal_attr_write_fact(func: Any, attr: str) -> "tuple[tuple, tuple] | None
 # never pickle). Keyed by the exact source text the parser would see, so an
 # edited module can never be served stale rows; unconfigured or disabled
 # processes always parse. Bump the format when the collectors change shape.
-_FACTS_CACHE_FORMAT = 1
+_FACTS_CACHE_FORMAT = 2
 # None: not configured yet; "": configured off; else the cache directory.
 _FACTS_CACHE_DIR: "list[str | None]" = [None]
 
@@ -892,6 +922,126 @@ def setattr_storage_transparent(fn: Any) -> bool:
     return all(_stmt_ok(s) for s in node.body)
 
 
+# (cls, property name) -> backing attribute name, or None; a class-protocol
+# fact memoized like the definer facts above (the parse rows never re-parse).
+_TRANSPARENT_PROPERTY_FACTS: "dict[tuple[type, str], Optional[str]]" = {}
+
+
+def _resolve_property(cls: type, name: str) -> "tuple[type, property] | None":
+    """The ``property`` descriptor *name* resolves to on *cls* (mro-exact) and
+    the class defining it; ``None`` for storage attributes and every other
+    descriptor kind."""
+    for klass in cls.__mro__:
+        if name in vars(klass):
+            desc = vars(klass)[name]
+            return (klass, desc) if isinstance(desc, property) else None
+    return None
+
+
+def _mangle_private_name(definer: type, attr: str) -> str:
+    """The storage key of ``self.<attr>`` spelled inside *definer*'s body:
+    a private name (``__x``, not dunder) is mangled to ``_Definer__x``
+    (LangRef 6.2.1; leading underscores of the class name stripped, an
+    all-underscore class name mangles nothing)."""
+    if not attr.startswith("__") or attr.endswith("__"):
+        return attr
+    stripped = definer.__name__.lstrip("_")
+    if not stripped:
+        return attr
+    return f"_{stripped}{attr}"
+
+
+def _body_sans_docstring(node: "ast.FunctionDef") -> "list[ast.stmt]":
+    body = list(node.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    return body
+
+
+def _receiver_attr_of(expr: "ast.expr", recv: str) -> "Optional[str]":
+    """``self.<attr>`` spelled on the bare receiver name, else ``None``."""
+    if (
+        isinstance(expr, ast.Attribute)
+        and isinstance(expr.value, ast.Name)
+        and expr.value.id == recv
+    ):
+        return expr.attr
+    return None
+
+
+def transparent_property_backing(cls: type, name: str) -> "Optional[str]":
+    """The instance-storage attribute a STORAGE-TRANSPARENT property *name*
+    on *cls* is a spelling of: its getter is exactly ``return self.<a>`` and
+    its setter exactly ``self.<a> = <value param>`` (docstrings allowed), for
+    one and the same ``<a>``.  ``None`` for a plain storage attribute, a
+    setter-less property, or any accessor that transforms, guards, or has
+    other effects.
+
+    Only such a pair may be treated as an alias of its backing leaf: the
+    write choke re-binds the target through the accessors (a pre-store
+    refresh and a post-store write-back), so every re-bind must store the
+    bare value and every read must return the stored binding unchanged --
+    a transforming accessor would apply its transform once per re-bind.
+    """
+    key = (cls, name)
+    if key in _TRANSPARENT_PROPERTY_FACTS:
+        return _TRANSPARENT_PROPERTY_FACTS[key]
+    backing: "Optional[str]" = None
+    resolved = _resolve_property(cls, name)
+    definer, desc = resolved if resolved is not None else (None, None)
+    if desc is not None and desc.fget is not None and desc.fset is not None:
+        get_node = _surface_def_ast(desc.fget)
+        set_node = _surface_def_ast(desc.fset)
+        if (
+            get_node is not None
+            and set_node is not None
+            and not get_node.args.posonlyargs
+            and not set_node.args.posonlyargs
+            and len(get_node.args.args) == 1
+            and len(set_node.args.args) == 2
+            and get_node.args.vararg is None
+            and set_node.args.vararg is None
+            and not get_node.args.kwonlyargs
+            and not set_node.args.kwonlyargs
+        ):
+            get_body = _body_sans_docstring(get_node)
+            set_body = _body_sans_docstring(set_node)
+            get_attr = None
+            if (
+                len(get_body) == 1
+                and isinstance(get_body[0], ast.Return)
+                and get_body[0].value is not None
+            ):
+                get_attr = _receiver_attr_of(
+                    get_body[0].value, get_node.args.args[0].arg
+                )
+            set_attr = None
+            if (
+                len(set_body) == 1
+                and isinstance(set_body[0], ast.Assign)
+                and len(set_body[0].targets) == 1
+                and isinstance(set_body[0].value, ast.Name)
+                and set_body[0].value.id == set_node.args.args[1].arg
+            ):
+                set_attr = _receiver_attr_of(
+                    set_body[0].targets[0], set_node.args.args[0].arg
+                )
+            if (
+                definer is not None
+                and get_attr is not None
+                and get_attr == set_attr
+                and get_attr != name
+            ):
+                backing = _mangle_private_name(definer, get_attr)
+    _TRANSPARENT_PROPERTY_FACTS[key] = backing
+    return backing
+
+
 # (def identity key, receiver type or None) -> (attr_writes, complete);
 # memoized like the definer facts above (the substrate tables never re-parse).
 _TRANSITIVE_WRITE_CACHE: "dict[tuple[tuple[str, str, int], Optional[type]], tuple[frozenset[str], bool]]" = {}
@@ -985,11 +1135,184 @@ def transitive_write_facts(callee: Any) -> "tuple[frozenset[str], bool]":
     return result
 
 
+# Attribute-touch facts of a plain def: (touched attribute names, opaque).
+# ``opaque`` is set when the def can reach an attribute the walk cannot name
+# (reflection, ``__dict__``, or a call into code other than a whitelisted
+# builtin), so a consumer must assume any attribute may be read.
+_ATTR_TOUCH_FACTS: "dict[Any, Optional[tuple[frozenset, bool]]]" = {}
+_ATTR_TOUCH_ABSENT: Any = _Sentinel("attr touch fact absent")
+# Builtins whose call cannot run user code or read attributes of its
+# arguments beyond the numeric protocol (which the wrapper arms witness).
+_ATTR_TOUCH_PURE_BUILTINS = frozenset(
+    (
+        "int",
+        "float",
+        "bool",
+        "abs",
+        "round",
+        "min",
+        "max",
+        "len",
+        "range",
+        "print",
+        "isinstance",
+        "type",
+        "tuple",
+        "list",
+        "divmod",
+        "pow",
+        "sum",
+    )
+)
+_ATTR_TOUCH_REFLECTION = frozenset(
+    ("getattr", "hasattr", "vars", "eval", "exec", "attrgetter", "__getattribute__")
+)
+
+
+def def_attr_touch_facts(func: Any) -> "Optional[tuple[frozenset, bool]]":
+    """Class-fact of a plain callable: every attribute NAME its own def
+    touches (any ``x.<name>`` node, reads and writes) and whether the def is
+    opaque (reflection or a call the walk cannot follow).  ``None`` when the
+    callable has no plain def to parse (a builtin, a C type, a lambda source
+    that cannot be located): the consumer fails closed.  Memoized per exact
+    def identity; the source is parsed, never executed."""
+    target = getattr(func, "__func__", func)
+    if isinstance(target, type):
+        target = target.__dict__.get("__init__", None)
+        target = getattr(target, "__func__", target)
+    if isinstance(target, functools.partial):
+        target = target.func
+    key = _def_fact_key(target)
+    if key is None:
+        return None
+    cached = _ATTR_TOUCH_FACTS.get(key, _ATTR_TOUCH_ABSENT)
+    if cached is not _ATTR_TOUCH_ABSENT:
+        return cached
+    node = _surface_def_ast(inspect.unwrap(target) if callable(target) else target)
+    result: "Optional[tuple[frozenset, bool]]" = None
+    if node is not None:
+        names: "set[str]" = set()
+        opaque = False
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Attribute):
+                names.add(sub.attr)
+                if sub.attr in ("__dict__", "__getattribute__"):
+                    opaque = True
+            elif isinstance(sub, ast.Call):
+                fn = sub.func
+                if isinstance(fn, ast.Name):
+                    if fn.id in _ATTR_TOUCH_REFLECTION:
+                        opaque = True
+                    elif fn.id not in _ATTR_TOUCH_PURE_BUILTINS:
+                        opaque = True  # user code the walk cannot follow
+                elif isinstance(fn, ast.Attribute):
+                    if fn.attr in _ATTR_TOUCH_REFLECTION:
+                        opaque = True
+                    # A method call runs code on some object: any attribute
+                    # of the reachable graph may be read inside it.
+                    opaque = True
+                else:
+                    opaque = True
+        result = (frozenset(names), opaque)
+    _ATTR_TOUCH_FACTS[key] = result
+    return result
+
+
+_PRESENCE_PROBE_FACTS: "dict[Any, Optional[dict[str, tuple[str, int]]]]" = {}
+_PRESENCE_PROBE_ABSENT: Any = _Sentinel("presence probe fact absent")
+
+
+def _presence_probe_spelling(node: ast.AST) -> "Optional[tuple[str, str]]":
+    """``(attribute name, probe spelling)`` when *node* probes the PRESENCE of
+    a literally named attribute: ``hasattr(o, "k")``, a default-taken
+    ``getattr(o, "k", d)``, or ``"k" in vars(o)`` / ``"k" not in vars(o)``.
+    A ``__dict__`` spelling is the dict channel's fact, not this one."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        args = node.args
+        if (
+            node.func.id == "hasattr"
+            and len(args) == 2
+            and isinstance(args[1], ast.Constant)
+            and isinstance(args[1].value, str)
+        ):
+            return args[1].value, "`hasattr`"
+        if (
+            node.func.id == "getattr"
+            and len(args) == 3
+            and isinstance(args[1], ast.Constant)
+            and isinstance(args[1].value, str)
+        ):
+            return args[1].value, "a default-taken `getattr`"
+        return None
+    if (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], (ast.In, ast.NotIn))
+        and isinstance(node.left, ast.Constant)
+        and isinstance(node.left.value, str)
+        and isinstance(node.comparators[0], ast.Call)
+        and isinstance(node.comparators[0].func, ast.Name)
+        and node.comparators[0].func.id == "vars"
+    ):
+        return node.left.value, "`in vars(...)`"
+    return None
+
+
+def def_presence_probe_facts(func: Any) -> "Optional[dict[str, tuple[str, int]]]":
+    """Class-fact of a plain callable: ``{attribute name: (probe spelling,
+    absolute source line)}`` for every literally named attribute whose
+    PRESENCE its own def probes (see ``_presence_probe_spelling``; the first
+    probe of a name wins).  ``None`` when the callable has no plain def to
+    parse: the consumer fails open (the fact names no probe).  Memoized per
+    exact def identity; the source is parsed, never executed."""
+    target = getattr(func, "__func__", func)
+    if isinstance(target, type):
+        target = target.__dict__.get("__init__", None)
+        target = getattr(target, "__func__", target)
+    if isinstance(target, functools.partial):
+        target = target.func
+    key = _def_fact_key(target)
+    if key is None:
+        return None
+    cached = _PRESENCE_PROBE_FACTS.get(key, _PRESENCE_PROBE_ABSENT)
+    if cached is not _PRESENCE_PROBE_ABSENT:
+        return cached
+    unwrapped = inspect.unwrap(target) if callable(target) else target
+    node = _surface_def_ast(unwrapped)
+    result: "Optional[dict[str, tuple[str, int]]]" = None
+    if node is not None:
+        # ``inspect.getsource`` starts at the def's first line (decorators
+        # included), so a parsed line offsets from ``co_firstlineno``.
+        base = getattr(getattr(unwrapped, "__code__", None), "co_firstlineno", 1) - 1
+        probes: "dict[str, tuple[str, int]]" = {}
+        for sub in ast.walk(node):
+            hit = _presence_probe_spelling(sub)
+            if hit is not None and hit[0] not in probes:
+                probes[hit[0]] = (hit[1], base + getattr(sub, "lineno", 1))
+        result = probes
+    _PRESENCE_PROBE_FACTS[key] = result
+    return result
+
+
+def callee_may_read_attr(callee: Any, attr: Any) -> bool:
+    """Whether *callee* may read attribute *attr* of an object it reaches:
+    True unless its def is parseable, names no such attribute and calls
+    nothing but pure builtins."""
+    if not isinstance(attr, str):
+        return True
+    facts = def_attr_touch_facts(callee)
+    if facts is None:
+        return True
+    names, opaque = facts
+    return opaque or attr in names
+
+
 # Static export surface (regenerate with scripts/gen_pyir_all.py): the
 # module's OWN names -- its namespace minus what lower chain modules
 # already export and minus the generator's INTERNAL_ONLY registry.
 __all__ = [
     "ast",
+    "functools",
     "hashlib",
     "inspect",
     "os",
@@ -1022,5 +1345,21 @@ __all__ = [
     "class_storage_items",
     "_PURE_GUARD_CALLS",
     "setattr_storage_transparent",
+    "_TRANSPARENT_PROPERTY_FACTS",
+    "_resolve_property",
+    "_mangle_private_name",
+    "_body_sans_docstring",
+    "_receiver_attr_of",
+    "transparent_property_backing",
     "transitive_write_facts",
+    "_ATTR_TOUCH_FACTS",
+    "_ATTR_TOUCH_ABSENT",
+    "_ATTR_TOUCH_PURE_BUILTINS",
+    "_ATTR_TOUCH_REFLECTION",
+    "def_attr_touch_facts",
+    "_PRESENCE_PROBE_FACTS",
+    "_PRESENCE_PROBE_ABSENT",
+    "_presence_probe_spelling",
+    "def_presence_probe_facts",
+    "callee_may_read_attr",
 ]

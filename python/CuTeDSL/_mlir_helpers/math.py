@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 - 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
 #
 # Use of this software is governed by the terms and conditions of the
@@ -62,11 +62,11 @@ from typing import Any, Optional, Union
 from .._mlir import ir
 from .._mlir.extras import types as T
 from .._mlir.dialects import arith, math as math_dialect, llvm, nvgpu, nvvm
-from .arith import ArithValue, is_float_type, element_type, expand_ipowi
+from .arith import ArithValue, const, is_float_type, element_type, expand_ipowi
 from .op import dsl_user_op
 from .vector import Vector
 
-from ..base_dsl.typing import Numeric, Float32, Int32
+from ..base_dsl.typing import Boolean, Numeric, Float32, Int32, as_numeric
 
 # =============================================================================
 # Type alias
@@ -240,12 +240,24 @@ def _wrap_result(original: MathOperand, result_ir: ir.Value) -> MathOperand:
             return original._wrap_like(result_ir)
         return Vector(result_ir, dtype=original._dtype)
     if isinstance(original, ArithValue):
-        return result_ir  # ArithValue IS an ir.Value
+        return as_numeric(result_ir)
     # Coerce Python literals so we return a Numeric subclass instance instead
     # of attempting to construct e.g. ``float(ir.Value)``.
     original = _coerce_operand(original)
     # Numeric — wrap in the same Numeric subclass
     return type(original)(result_ir)
+
+
+def _wrap_predicate(
+    original: MathOperand, result_ir: ir.Value
+) -> Union[Boolean, ir.Value]:
+    """Wrap the i1 result of a floating-point class test.
+
+    A scalar operand gives a ``Boolean``; a ``Vector`` operand keeps the raw i1 vector.
+    """
+    if isinstance(original, Vector):
+        return result_ir
+    return Boolean(result_ir)
 
 
 def _get_fastmath_flag(fastmath: bool) -> arith.FastMathFlags:
@@ -1825,6 +1837,88 @@ def div(
 
 
 @dsl_user_op
+def floordiv(
+    x: MathOperand,
+    y: MathOperand,
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> MathOperand:
+    """Element-wise floor division with Python's ``//`` semantics.
+
+    Supports floating-point, signed integer, and unsigned integer operands.
+    The floating-point quotient is derived from the remainder and corrected
+    for rounding error, so ``floordiv(1.0, 0.1)`` returns ``9.0``.
+    A zero quotient takes the sign of ``x / y``.
+
+    Operands must have the same numeric type and shape. ``fastmath`` applies
+    only to floating-point operands and is ignored for integers.
+
+    :param x: Dividend operand
+    :type x: MathOperand
+    :param y: Divisor operand, with the same numeric type and shape as x
+    :type y: MathOperand
+    :param fastmath: Enable floating-point fast math optimizations, defaults
+        to False; ignored for integer operands
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[ir.Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[ir.InsertionPoint]
+    :return: Result containing the floor quotient of each element
+    :rtype: MathOperand
+
+    Example:
+
+    .. code-block::
+
+        q = floordiv(x, y)  # Compute x // y element-wise
+        q = floordiv(-7, 3)  # -3
+        q = floordiv(1.0, 0.1)  # 9.0
+    """
+    _check_vector_consistency("floordiv", x, y)
+    _validate_same_numeric_type("floordiv", x, y)
+    x_ir = _get_ir_value(x, ip=ip)
+    y_ir = _get_ir_value(y, ip=ip)
+    if is_float_type(element_type(x_ir.type)):
+        fastmath_flag = _get_fastmath_flag(fastmath)
+        q = arith.divf(x_ir, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+        r = arith.remf(x_ir, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+        zero = const(0.0, r.type, loc=loc, ip=ip)
+        one = const(1.0, r.type, loc=loc, ip=ip)
+        half = const(0.5, r.type, loc=loc, ip=ip)
+        numerator = arith.subf(x_ir, r, fastmath=fastmath_flag, loc=loc, ip=ip)
+        div = arith.divf(numerator, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+
+        r_neg = arith.cmpf(arith.CmpFPredicate.OLT, r, zero, loc=loc, ip=ip)
+        y_neg = arith.cmpf(arith.CmpFPredicate.OLT, y_ir, zero, loc=loc, ip=ip)
+        r_nonzero = arith.cmpf(arith.CmpFPredicate.ONE, r, zero, loc=loc, ip=ip)
+        different_sign = arith.xori(r_neg, y_neg, loc=loc, ip=ip)
+        fix = arith.andi(different_sign, r_nonzero, loc=loc, ip=ip)
+        stepped = arith.subf(div, one, fastmath=fastmath_flag, loc=loc, ip=ip)
+        div = arith.select(fix, stepped, div, loc=loc, ip=ip)
+
+        floored = math_dialect.floor(div, fastmath=fastmath_flag, loc=loc, ip=ip)
+        fraction = arith.subf(div, floored, fastmath=fastmath_flag, loc=loc, ip=ip)
+        round_up = arith.cmpf(arith.CmpFPredicate.OGT, fraction, half, loc=loc, ip=ip)
+        rounded_up = arith.addf(floored, one, fastmath=fastmath_flag, loc=loc, ip=ip)
+        floored = arith.select(round_up, rounded_up, floored, loc=loc, ip=ip)
+        div_nonzero = arith.cmpf(arith.CmpFPredicate.UNE, div, zero, loc=loc, ip=ip)
+        signed_zero = math_dialect.copysign(zero, q, loc=loc, ip=ip)
+        result = arith.select(div_nonzero, floored, signed_zero, loc=loc, ip=ip)
+
+        y_zero = arith.cmpf(arith.CmpFPredicate.OEQ, y_ir, zero, loc=loc, ip=ip)
+        q_floor = math_dialect.floor(q, fastmath=fastmath_flag, loc=loc, ip=ip)
+        result = arith.select(y_zero, q_floor, result, loc=loc, ip=ip)
+    elif getattr(x, "signed", True) is False:
+        result = arith.divui(x_ir, y_ir, loc=loc, ip=ip)
+    else:
+        result = arith.floordivsi(x_ir, y_ir, loc=loc, ip=ip)
+    return _wrap_result(x, result)
+
+
+@dsl_user_op
 def rcp(
     x: MathOperand,
     fastmath: bool = False,
@@ -2123,11 +2217,16 @@ def isnan(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> MathOperand:
-    """Test if value is NaN. Returns i1."""
+) -> Union[Boolean, ir.Value]:
+    """Test if value is NaN.
+
+    Returns a ``Boolean`` for a scalar and an i1 vector for a ``Vector``.
+    """
     x_ir = _get_ir_value(x, ip=ip)
     fastmath_flag = _get_fastmath_flag(fastmath)
-    return math_dialect.isnan(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    return _wrap_predicate(
+        x, math_dialect.isnan(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    )
 
 
 @dsl_user_op
@@ -2137,11 +2236,16 @@ def isinf(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> MathOperand:
-    """Test if value is infinite. Returns i1."""
+) -> Union[Boolean, ir.Value]:
+    """Test if value is infinite.
+
+    Returns a ``Boolean`` for a scalar and an i1 vector for a ``Vector``.
+    """
     x_ir = _get_ir_value(x, ip=ip)
     fastmath_flag = _get_fastmath_flag(fastmath)
-    return math_dialect.isinf(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    return _wrap_predicate(
+        x, math_dialect.isinf(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    )
 
 
 @dsl_user_op
@@ -2151,11 +2255,16 @@ def isfinite(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> MathOperand:
-    """Test if value is finite. Returns i1."""
+) -> Union[Boolean, ir.Value]:
+    """Test if value is finite.
+
+    Returns a ``Boolean`` for a scalar and an i1 vector for a ``Vector``.
+    """
     x_ir = _get_ir_value(x, ip=ip)
     fastmath_flag = _get_fastmath_flag(fastmath)
-    return math_dialect.isfinite(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    return _wrap_predicate(
+        x, math_dialect.isfinite(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    )
 
 
 @dsl_user_op
@@ -2165,11 +2274,16 @@ def isnormal(
     *,
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
-) -> MathOperand:
-    """Test if value is normal (not zero, subnormal, inf, or NaN). Returns i1."""
+) -> Union[Boolean, ir.Value]:
+    """Test if value is normal (not zero, subnormal, inf, or NaN).
+
+    Returns a ``Boolean`` for a scalar and an i1 vector for a ``Vector``.
+    """
     x_ir = _get_ir_value(x, ip=ip)
     fastmath_flag = _get_fastmath_flag(fastmath)
-    return math_dialect.isnormal(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    return _wrap_predicate(
+        x, math_dialect.isnormal(x_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    )
 
 
 # =============================================================================
@@ -2219,11 +2333,128 @@ def rem(
     loc: Optional[ir.Location] = None,
     ip: Optional[ir.InsertionPoint] = None,
 ) -> MathOperand:
-    """Floating-point remainder."""
+    """Element-wise remainder with division truncated toward zero.
+
+    Supports floating-point, signed integer, and unsigned integer operands.
+    A nonzero signed remainder has the dividend's sign: ``rem(-7, 3)`` is
+    ``-1`` and ``rem(7, -3)`` is ``1``. This matches C-style remainder and
+    ``torch.fmod``; Python's ``%`` instead uses floor division.
+
+    Operands must have the same numeric type and shape. Python literals
+    are promoted to ``Int32`` / ``Float32``. ``fastmath`` applies only to
+    floating-point operands and is ignored for integers.
+
+    :param x: Dividend operand
+    :type x: MathOperand
+    :param y: Divisor operand, with the same numeric type and shape as x
+    :type y: MathOperand
+    :param fastmath: Enable floating-point fast math optimizations, defaults
+        to False; ignored for integer operands
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[ir.Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[ir.InsertionPoint]
+    :return: Result containing the remainder of each element, with a nonzero
+        signed remainder taking the dividend's sign
+    :rtype: MathOperand
+
+    Example:
+
+    .. code-block::
+
+        r = rem(x, y)  # Compute the C-style remainder element-wise
+        r = rem(-7, 3)  # -1
+        r = rem(7, -3)  # 1
+    """
+    _check_vector_consistency("rem", x, y)
+    _validate_same_numeric_type("rem", x, y)
     x_ir = _get_ir_value(x, ip=ip)
     y_ir = _get_ir_value(y, ip=ip)
-    fastmath_flag = _get_fastmath_flag(fastmath)
-    result = arith.remf(x_ir, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    if is_float_type(element_type(x_ir.type)):
+        fastmath_flag = _get_fastmath_flag(fastmath)
+        result = arith.remf(x_ir, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+    elif getattr(x, "signed", True) is False:
+        result = arith.remui(x_ir, y_ir, loc=loc, ip=ip)
+    else:
+        result = arith.remsi(x_ir, y_ir, loc=loc, ip=ip)
+    return _wrap_result(x, result)
+
+
+# =============================================================================
+# Python-style modulo
+# =============================================================================
+
+
+@dsl_user_op
+def mod(
+    x: MathOperand,
+    y: MathOperand,
+    fastmath: bool = False,
+    *,
+    loc: Optional[ir.Location] = None,
+    ip: Optional[ir.InsertionPoint] = None,
+) -> MathOperand:
+    """Element-wise modulo with Python's ``%`` semantics.
+
+    Supports floating-point, signed integer, and unsigned integer operands.
+    A nonzero result has the divisor's sign: ``mod(-7, 3)`` is ``2`` and
+    ``mod(7, -3)`` is ``-2``. Floating-point zero also takes the divisor's sign.
+
+    Operands must have the same numeric type and shape. ``fastmath`` applies
+    only to floating-point operands and is ignored for integers.
+
+    :param x: Dividend operand
+    :type x: MathOperand
+    :param y: Divisor operand, with the same numeric type and shape as x
+    :type y: MathOperand
+    :param fastmath: Enable floating-point fast math optimizations, defaults
+        to False; ignored for integer operands
+    :type fastmath: bool, optional
+    :param loc: Source location information, defaults to None
+    :type loc: Optional[ir.Location]
+    :param ip: Insertion point for IR generation, defaults to None
+    :type ip: Optional[ir.InsertionPoint]
+    :return: Result containing the Python-style modulo of each element,
+        taking the divisor's sign
+    :rtype: MathOperand
+
+    Example:
+
+    .. code-block::
+
+        r = mod(x, y)  # Compute x % y element-wise
+        r = mod(-7, 3)  # 2
+        r = mod(7, -3)  # -2
+    """
+    _check_vector_consistency("mod", x, y)
+    _validate_same_numeric_type("mod", x, y)
+    x_ir = _get_ir_value(x, ip=ip)
+    y_ir = _get_ir_value(y, ip=ip)
+    if is_float_type(element_type(x_ir.type)):
+        fastmath_flag = _get_fastmath_flag(fastmath)
+        r = arith.remf(x_ir, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+        zero = const(0.0, r.type, loc=loc, ip=ip)
+        r_neg = arith.cmpf(arith.CmpFPredicate.OLT, r, zero, loc=loc, ip=ip)
+        y_neg = arith.cmpf(arith.CmpFPredicate.OLT, y_ir, zero, loc=loc, ip=ip)
+        r_nonzero = arith.cmpf(arith.CmpFPredicate.ONE, r, zero, loc=loc, ip=ip)
+        different_sign = arith.xori(r_neg, y_neg, loc=loc, ip=ip)
+        fix = arith.andi(different_sign, r_nonzero, loc=loc, ip=ip)
+        adjusted = arith.addf(r, y_ir, fastmath=fastmath_flag, loc=loc, ip=ip)
+        r = arith.select(fix, adjusted, r, loc=loc, ip=ip)
+        result = math_dialect.copysign(r, y_ir, loc=loc, ip=ip)
+    elif getattr(x, "signed", True) is False:
+        result = arith.remui(x_ir, y_ir, loc=loc, ip=ip)
+    else:
+        r = arith.remsi(x_ir, y_ir, loc=loc, ip=ip)
+        zero = const(0, r.type, loc=loc, ip=ip)
+        r_neg = arith.cmpi(arith.CmpIPredicate.slt, r, zero, loc=loc, ip=ip)
+        y_neg = arith.cmpi(arith.CmpIPredicate.slt, y_ir, zero, loc=loc, ip=ip)
+        r_nonzero = arith.cmpi(arith.CmpIPredicate.ne, r, zero, loc=loc, ip=ip)
+        different_sign = arith.xori(r_neg, y_neg, loc=loc, ip=ip)
+        fix = arith.andi(different_sign, r_nonzero, loc=loc, ip=ip)
+        adjusted = arith.addi(r, y_ir, loc=loc, ip=ip)
+        result = arith.select(fix, adjusted, r, loc=loc, ip=ip)
     return _wrap_result(x, result)
 
 
@@ -2297,6 +2528,8 @@ __all__ = [
     "sub",
     "mul",
     "div",
+    "floordiv",
     "rem",
+    "mod",
     "rcp",
 ]

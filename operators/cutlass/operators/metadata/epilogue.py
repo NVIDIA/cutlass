@@ -28,8 +28,11 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cutlass.operators.arguments import PerGroupScaleEpilogueArguments
 from cutlass.operators.status import Status
 
 if TYPE_CHECKING:
@@ -40,9 +43,19 @@ if TYPE_CHECKING:
         EpilogueArguments,
         RuntimeArguments,
     )
+    from cutlass.operators.metadata.operand_constraints import DenseTensorConstraints
 
 
-class EpilogueMetadata:
+class EpilogueMetadataBase(ABC):
+    """Common metadata interface for custom and fixed epilogues."""
+
+    @abstractmethod
+    def supports(self, args: RuntimeArguments) -> Status:
+        """Check whether runtime arguments satisfy this epilogue metadata."""
+        raise NotImplementedError
+
+
+class EpilogueMetadata(EpilogueMetadataBase):
     """Describes properties related to custom EpilogueArguments that an Operator may support."""
 
     def __init__(self, epilogue_args: EpilogueArguments):
@@ -71,4 +84,31 @@ class EpilogueMetadata:
 
     def supports(self, args: RuntimeArguments) -> Status:
         """Checks if the provided EpilogueArguments are supported by the Operator."""
+        return Status.success()
+
+
+@dataclass
+class PerGroupScaleEpilogueMetadata(EpilogueMetadataBase):
+    """Constraints for a :class:`PerGroupScaleEpilogueArguments` fixed epilogue."""
+
+    global_scale_a: DenseTensorConstraints | None = None
+    """Constraints for A's per-group scale, or None when the scale is omitted."""
+    global_scale_b: DenseTensorConstraints | None = None
+    """Constraints for B's per-group scale, or None when the scale is omitted."""
+
+    def supports(self, args: RuntimeArguments) -> Status:
+        """Check whether runtime arguments provide compatible per-group scales."""
+        epilogue = getattr(args, "epilogue", None)
+        if not isinstance(epilogue, PerGroupScaleEpilogueArguments):
+            return Status.fail(
+                "Expected PerGroupScaleEpilogueArguments, "
+                f"got {type(epilogue).__name__}"
+            )
+        for name in ("global_scale_a", "global_scale_b"):
+            constraints = getattr(self, name)
+            scale = getattr(epilogue, name)
+            if (constraints is not None) != (scale is not None):
+                return Status.fail(f"{name} presence must match the metadata.")
+            if constraints is not None and not (status := constraints.supports(scale)):
+                return Status.fail(f"{name} is unsupported: {status.error}")
         return Status.success()

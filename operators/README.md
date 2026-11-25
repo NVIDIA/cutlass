@@ -19,6 +19,8 @@ It views kernels as end-to-end "Operators" that execute an operation (like a GEM
 2. a **registry** of officially maintained CUTLASS kernels exposed through that interface.
 
 
+It also provides a `cutlass_profiler` for CUTLASS Python (see [profiler README](https://github.com/NVIDIA/cutlass/blob/main/operators/cutlass/profiler/README.md))
+
 Example
 -------
 
@@ -87,10 +89,11 @@ How to use it?
 Installation
 ------------
 
-To use with PyTorch, install the ``nvidia-cutlass-operators[torch]`` package:
+Install the ``nvidia-cutlass-operators`` package from PyPI. Most users should
+include the ``torch`` and ``heuristics`` extras:
 
 ```bash
-pip install nvidia-cutlass-operators[torch]
+pip install "nvidia-cutlass-operators[torch,heuristics]"
 ```
 
 Alternatively, choose which dependencies to install:
@@ -100,15 +103,20 @@ Alternatively, choose which dependencies to install:
 pip install nvidia-cutlass-operators
 
 # Install all dependencies to develop, run tests, etc.
-pip install nvidia-cutlass-operators[dev]
+pip install "nvidia-cutlass-operators[dev]"
 ```
+
+The same installations also work with `uv pip install`.
 
 Next steps
 ----------
 
-- [Basic GEMM tutorial](examples/000_gemm.ipynb) — a guided tour of the core interface concepts to run a minimal GEMM.
-- More guided notebook tutorials in [examples/](examples/).
-- [Full API reference](https://docs.nvidia.com/cutlass/latest/media/docs/operators/tutorials/index.html) for ``cutlass.operators``.
+- [Basic GEMM tutorial](https://github.com/NVIDIA/cutlass/blob/main/operators/examples/000_gemm.ipynb) — a guided tour of the core interface concepts to run a minimal GEMM.
+- More guided notebook tutorials in [examples/](https://github.com/NVIDIA/cutlass/tree/main/operators/examples).
+- [Full API reference](https://docs.nvidia.com/cutlass/latest/media/docs/operators/api_reference/index.html) for ``cutlass.operators``.
+- [Profiler](https://github.com/NVIDIA/cutlass/blob/main/operators/cutlass/profiler/README.md) — the wheel installs a ``cutlass_profiler``
+  executable that benchmarks and verifies operators from the command line, e.g.
+  ``cutlass_profiler run --operation gemm --M 1024 --N 1024 --K 512``.
 
 
 Supported and Upcoming Features
@@ -121,25 +129,26 @@ CUTLASS Operator API will support a wide range of functionality, configurations,
 - Kernel coverage
 
   - Dense GEMMs for Rubin, Blackwell, Hopper, Ampere
-    - FP8 for Rubin, with more in future. Various combinations of F32, F16, BF16, FP8, INT8 for Blackwell and older.
+    - F16, BF16, FP8 for Rubin. Various combinations of F32, F16, BF16, FP8, INT8 for Blackwell and older.
     - Preferred and fallback cluster shapes
-    - Static and dynamic scheduling
+    - Non-persistent, static, and dynamic scheduling
   - Block-scaled GEMMs (NVFP4, MXFP4, MXFP8, mixed input precision) for Rubin and Blackwell
-  - Grouped GEMM (Contiguous offset) for Blackwell
+  - Grouped GEMM (Contiguous offset, MoE forward and weight-gradient, block-scaled) for Blackwell
+  - Block-scaled grouped GEMM (Contiguous offset) for Rubin
   - Low-latency TGV GEMM for Blackwell
 
-- Custom epilogue fusions for Blackwell
+- Custom epilogue fusions for Blackwell, and FP8/MXFP8 GEMMs on Rubin
 
-  - Activations, elementwise ops, auxiliary tensor load/store
+  - Activations (including gated ``swiglu`` / ``geglu`` / ``reglu``), elementwise ops, auxiliary tensor load/store
   - Row/column broadcasts
-  - Scalar and row/column reductions (``sum`` / ``max`` / ``min``) fused with the GEMM store
+  - Scalar and row/column reductions (``sum`` / ``max`` / ``min``) into 32-bit destinations, fused with the GEMM store
   - Per-tensor data-transport selection (TMA, direct GMEM, ``cp.async``)
 
 - CUDA Graph support
 - Native support for PyTorch and other DLPack tensors
 - Bring-your-own-kernel
-- Operator ranking via nvMatmulHeuristics (``heuristic=NvMatmulHeuristics(gpu=...)``)
-  for dense SM100 GEMM
+- Performance controls for split-K, rasterization, Programmatic Dependent Launch, and data-driven synchronization (Rubin)
+- Operator ranking via nvMatmulHeuristics for dense and block-scaled SM100 GEMM
 
 **Upcoming support:**
 

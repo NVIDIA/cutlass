@@ -12,7 +12,7 @@
 from .mma import *
 from .helpers import *
 
-import warnings as _warnings
+from cutlass.base_dsl.common import _warn_deprecated
 from typing import Any
 
 _deprecated_names = {
@@ -27,7 +27,7 @@ del OperandMajorMode
 def __getattr__(name: str) -> Any:
     if name in _deprecated_names:
         obj, msg = _deprecated_names[name]
-        _warnings.warn(msg, DeprecationWarning, stacklevel=2)
+        _warn_deprecated(msg)
         return obj
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

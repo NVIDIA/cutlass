@@ -33,6 +33,9 @@ from cutlass._mlir.dialects.cute import (
 )
 from cutlass._mlir_helpers.vector import Vector
 from cutlass.base_dsl.typing import Pointer as _BasePointer
+from cutlass.base_dsl.pyir_state import (
+    _PYIR_CANDIDATE_REGISTRY_ACTIVE as _pyir_registry_active,
+)
 
 from .typing import (
     Numeric,
@@ -43,7 +46,10 @@ from .typing import (
     Int32,
     FloatNV8E5M3FNU,
     BFloat16,
+    Float16,
     Float32,
+    Float8E4M3FN,
+    Float8E5M2,
     IntTuple,
     Coord,
     Shape,
@@ -92,6 +98,10 @@ from .arch import (
     cvt_i8_bf16_intrinsic,
     cvt_i4_bf16_intrinsic,
     cvt_f32x4_to_fnv8e5m3x4,
+    cvt_f32x2_f16x2_pzo,
+    cvt_f32x2_bf16x2_pzo,
+    cvt_f32x2_f8x2_pzo,
+    supports_pzo_convert,
 )
 
 from cutlass._mlir_helpers.dominance import value_reaches_current_ip
@@ -117,6 +127,40 @@ __all__ = [
     "any_",
     "all_",
 ]
+
+
+def _pyir_deferred_insertion_point(
+    ctor_ip: ir.InsertionPoint, value: ir.Value
+) -> Optional[ir.InsertionPoint]:
+    """Where an op deferred from construction point ``ctor_ip`` goes so that it
+    lands where the eager path put it. ``ctor_ip`` itself when it sits before
+    an op. When it was the end of its block: right after the op defining
+    ``value`` if that op is in the block (a wrapper is built as soon as its
+    value is), else the current point if that is in the block, else the point
+    in the block right before the op enclosing the current point. ``None`` when
+    the block does not enclose the current point (the wrapper left its region),
+    so the caller emits in place. Walks the region nesting only; never scans a
+    block."""
+    if ctor_ip.ref_operation is not None:
+        return ctor_ip
+    home = ctor_ip.block
+    owner = value.owner
+    if not isinstance(owner, ir.Block):
+        op = owner.operation
+        if op.parent is not None and op.block == home:
+            return ir.InsertionPoint.after(op)
+    cur = ir.InsertionPoint.current
+    block = cur.block
+    if block == home:
+        return cur
+    while True:
+        op = block.owner.operation
+        if op.parent is None:
+            return None
+        parent = op.block
+        if parent == home:
+            return ir.InsertionPoint(op)
+        block = parent
 
 
 @ir.register_value_caster(_cute_ir.MemRefType.get_static_typeid(), replace=True)
@@ -152,6 +196,11 @@ class _Tensor(Tensor):
     """
 
     _dtype: Union[Type[Numeric], Type[IntTuple], None]
+    _iterator_cache: Union[Pointer, IntTuple, ir.Value, None]
+    # PyIR only: where the wrapper was built. The deferred ``cute.get_iter``
+    # is emitted back there, so it lands where the eager path would put it.
+    _pyir_ctor_ip: Optional[ir.InsertionPoint]
+    _pyir_ctor_loc: Optional[ir.Location]
 
     # A ``_Tensor`` is a compound value with a single MLIR leaf (its memref
     # ``value``).  Setting this flag lets the staged-tracking layer's
@@ -160,6 +209,11 @@ class _Tensor(Tensor):
     # scf result / iter_arg) instead of being rejected as an opaque container
     # replacement.
     _pyir_ref_supported = True
+
+    # Under PyIR the iterator is derived on first use (see ``_iterator``), so
+    # the instance storage does not always show that staged sub-field; declare
+    # the compound shape instead of letting the tracker infer it from the fields.
+    _pyir_compound_single_leaf = True
 
     @dsl_user_op
     def __init__(
@@ -191,6 +245,11 @@ class _Tensor(Tensor):
         else:
             raise TypeError(f"Expected ir.Value or _Tensor, got {type(value)}")
 
+        # PyIR trace only: a plain memref or coord tensor defers ``cute.get_iter``
+        # to the first ``iterator`` use. Legacy tracing keeps the eager path.
+        if _pyir_registry_active[0] and self._pyir_lazy_init(loc=loc, ip=ip):
+            return
+
         # Set iterator
         self._iterator = self._derive_iterator(loc=loc, ip=ip)
 
@@ -205,6 +264,65 @@ class _Tensor(Tensor):
                 self._dtype = None
             else:
                 raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
+
+    def _pyir_lazy_init(
+        self,
+        *,
+        loc: Optional[ir.Location] = None,
+        ip: Optional[ir.InsertionPoint] = None,
+    ) -> bool:
+        """Settle ``_dtype`` from the memref type alone, record the construction
+        point and leave the iterator underived; ``False`` keeps the eager path
+        (special element and view types, a block argument, or no insertion
+        point to record)."""
+        if isinstance(self.value.owner, ir.Block):
+            # A block argument (kernel parameter, loop-carried value) has no
+            # defining op to anchor the deferred op to; emit it now, in place.
+            return False
+        if ip is None:
+            try:
+                ip = ir.InsertionPoint.current
+            except ValueError:
+                return False
+        ty = self.value.type
+        if isinstance(ty, _cute_ir.CoordTensorType):
+            if self._dtype is None:
+                self._dtype = IntTuple  # type: ignore[assignment]
+        elif isinstance(ty, _cute_ir.MemRefType):
+            if self._dtype is None:
+                et = ty.value_type
+                if isinstance(et, _SparseElemType):
+                    return False
+                try:
+                    dtype = Numeric.from_mlir_type(et)
+                except Exception:
+                    return False
+                if not (isclass(dtype) and issubclass(dtype, Numeric)):
+                    return False
+                self._dtype = dtype
+        else:
+            return False
+        self._pyir_ctor_ip = ip
+        self._pyir_ctor_loc = loc
+        self._iterator_cache = None
+        return True
+
+    def _pyir_derive_deferred(self) -> Union[Pointer, IntTuple, ir.Value]:
+        """Emit the deferred ``cute.get_iter`` at the recorded construction point
+        (see ``_pyir_deferred_insertion_point``); at the current point when that
+        point no longer encloses the use, as the eager path's re-derivation does."""
+        target = None
+        ctor_ip = getattr(self, "_pyir_ctor_ip", None)
+        if ctor_ip is not None:
+            try:
+                target = _pyir_deferred_insertion_point(ctor_ip, self.value)
+            except (RuntimeError, ValueError):
+                # The construction point was erased or there is no current point.
+                target = None
+        if target is None:
+            return self._derive_iterator()
+        with target:
+            return self._derive_iterator(loc=self._pyir_ctor_loc)
 
     def _derive_iterator(
         self,
@@ -276,6 +394,26 @@ class _Tensor(Tensor):
             values[0] if isinstance(values[0], ir.Value) else values[0].value,
             dtype=self.element_type,
         )
+
+    def __pyir_reconstruct__(
+        self, values: List[Union["_Tensor", ir.Value]]
+    ) -> "_Tensor":
+        # PyIR cell reload only (``_wrap_ir_like``): the memref alone rebuilds the
+        # wrapper; the iterator is deferred or emitted here by the same rule as in
+        # ``__init__``. The new wrapper is registered as a candidate holder, as a
+        # constructed one would be.
+        from cutlass.base_dsl.pyir_core import _pyir_register_candidate_holder
+
+        assert len(values) == 1, f"Expected 1 value, but got {len(values)}"
+        t = _Tensor.__new__(_Tensor)
+        t.value = values[0] if isinstance(values[0], ir.Value) else values[0].value
+        t._dtype = self._dtype
+        if not t._pyir_lazy_init():
+            t._pyir_ctor_ip = None
+            t._pyir_ctor_loc = None
+            t._iterator_cache = t._derive_iterator()
+        _pyir_register_candidate_holder(t)
+        return t
 
     @dsl_user_op
     def __getitem__(
@@ -481,14 +619,28 @@ class _Tensor(Tensor):
         return self.value.type
 
     @property
+    def _iterator(self) -> Union[Pointer, IntTuple, ir.Value]:
+        # Derived cache of ``value``: filled at construction by legacy tracing,
+        # on first use under PyIR (emitted back at the construction point).
+        it = self._iterator_cache
+        if it is None:
+            it = self._iterator_cache = self._pyir_derive_deferred()
+        return it
+
+    @_iterator.setter
+    def _iterator(self, it: Union[Pointer, IntTuple, ir.Value]) -> None:
+        self._iterator_cache = it
+
+    @property
     @lru_cache_ir()
     def iterator(self) -> Union[Pointer, IntTuple]:
-        if not value_reaches_current_ip(self._iterator):
+        it = self._iterator
+        if not value_reaches_current_ip(it):
             # Minted in a region this use site cannot reach.  ``self.value`` is
             # the tensor's anchor and does dominate, so re-derive rather than
             # hand back an operand that would fail the dominance verifier.
-            self._iterator = self._derive_iterator()
-        return self._iterator
+            it = self._iterator = self._derive_iterator()
+        return it  # type: ignore[return-value]
 
     @property
     @dsl_user_op
@@ -1309,6 +1461,15 @@ def print_tensor(
         tmp.store(tensor)
         tensor = tmp
 
+    if (
+        isinstance(tensor.type, _cute_ir.MemRefType)  # type: ignore[union-attr]
+        and tensor.memspace == AddressSpace.tmem
+    ):
+        raise ValueError(
+            "print_tensor cannot read TMEM; call cute.nvgpu.tcgen05.print_tmem_tensor "
+            "from all 128 threads of the owning warpgroup instead"
+        )
+
     if isinstance(tensor.type, _cute_ir.MemRefType):  # type: ignore[union-attr]
         elem_type = tensor.element_type
         if issubclass(elem_type, Integer):
@@ -1455,6 +1616,63 @@ def _infer_broadcast_shape(*shapes: Shape) -> Shape:
     ext_shapes = tuple([append(shape, 1, up_to_rank=max_rank) for shape in shapes])
     res_shape = transform_leaf(_broadcast, *ext_shapes)
     return res_shape
+
+
+def _convert_fp32_vec_pzo(
+    src: ir.Value,
+    src_dtype: Type[Numeric],
+    dst_dtype: Type[Numeric],
+    n: int,
+    loc: Optional[ir.Location],
+    ip: Optional[ir.InsertionPoint],
+) -> ir.Value:
+    """f32 -> f16/bf16/f8 .pzo convert (-0.0 -> +0.0), N lanes. sm_107+.
+
+    ``.pzo`` conversions only exist in the x2 form, so convert the source lanes
+    two at a time and concatenate the halves back into one N-lane vector.
+    """
+    # HW pzo only supported on Rubin+
+    BaseDSL._get_dsl().check_arch(supports_pzo_convert)
+    # f6/f4 excluded: no clean f6 (i12) carrier and no caller needs them.
+    assert (
+        src_dtype == Float32
+        and dst_dtype in (Float16, BFloat16, Float8E4M3FN, Float8E5M2)
+        and n % 2 == 0
+    ), (
+        f".pzo convert requires f32 -> f16/bf16/f8 with an even element count, "
+        f"got {src_dtype} -> {dst_dtype}, n={n}"
+    )
+
+    f32x2_ty = ir.VectorType.get([2], Float32.mlir_type, loc=loc)
+    carrier = ir.IntegerType.get_signless(2 * dst_dtype.width)
+
+    def convert_pair(lo: ir.Value, hi: ir.Value) -> ir.Value:
+        pair = vector.from_elements(f32x2_ty, [lo, hi], loc=loc, ip=ip)
+        if dst_dtype is Float16:
+            res = cvt_f32x2_f16x2_pzo(pair, loc=loc, ip=ip)
+        elif dst_dtype is BFloat16:
+            res = cvt_f32x2_bf16x2_pzo(pair, loc=loc, ip=ip)
+        else:  # f8: e4m3 / e5m2
+            res = cvt_f32x2_f8x2_pzo(pair, dst_dtype, loc=loc, ip=ip)
+        return llvm.bitcast(carrier, res, loc=loc, ip=ip)
+
+    # Example: src = <a, b, c, d> : <4 x f32>, dst = f16, carrier = i32.
+    # lanes = [a, b, c, d]
+    lanes = [
+        vector.extract(src, dynamic_position=[], static_position=[i], loc=loc, ip=ip)
+        for i in range(n)
+    ]
+    # packed = [cvt(<a, b>: <2x f32>), cvt(<c, d>: <2x f32>)]  (each carrier packs 2 dst lanes)
+    packed = [convert_pair(lo, hi) for lo, hi in zip(lanes[::2], lanes[1::2])]
+
+    # packed_vec = <cvt(a, b), cvt(c, d)> : <2 x i32>
+    packed_vec = vector.from_elements(
+        ir.VectorType.get([n // 2], carrier, loc=loc), packed, loc=loc, ip=ip
+    )
+    # return = <a', b', c', d'> : <4 x f16>  (same bits as packed_vec)
+    return llvm.bitcast(
+        ir.VectorType.get([n], dst_dtype.mlir_type, loc=loc), packed_vec, loc=loc, ip=ip
+    )
 
 
 class TensorSSA(Vector):
@@ -2456,13 +2674,42 @@ class TensorSSA(Vector):
 
             # Slice access
             sliced = frg[(3, None)]  # Returns fragment slice
+
+            # Python slice over the linear element order (same order as frg[i])
+            sliced = frg[2:6]  # Returns elements 2, 3, 4, 5 as a 1-D fragment
         """
+        # A Python slice reads a run of elements in the linear order that
+        # ``frg[i]`` uses, like ``Vector`` slicing. Bounds must be static ints.
+        if isinstance(crd, slice):
+            start, _stop, step, positions = Vector._normalize_static_slice(
+                crd, self._count, error_context=""
+            )
+            n = len(positions)
+            res_ty = ir.VectorType.get([n], self.type.element_type)
+            if step == 1:
+                res_val = vector.extract_strided_slice(
+                    res_ty, self, [start], [n], [1], loc=loc, ip=ip
+                )
+            else:
+                res_val = vector.shuffle(self, self, positions, loc=loc, ip=ip)
+            return TensorSSA(res_val, (n,), self.dtype, loc=loc, ip=ip)
+        if isinstance(crd, tuple) and any(
+            isinstance(c, slice) for c in flatten_to_tuple(crd)
+        ):
+            raise TypeError(
+                "Python slices inside a coordinate are not supported for "
+                "TensorSSA; use None to keep a mode, e.g. frg[(None, 1)], or "
+                "slice the flat fragment with frg[a:b]"
+            )
+
         # short-cut to no-op
         if crd is None:
             return self
 
         if not has_underscore(crd):
-            if self._layout is None:
+            # The cached layout op may sit in a region that does not dominate
+            # this use (e.g. built inside one if body, indexed from another).
+            if self._layout is None or not value_reaches_current_ip(self._layout):
                 self._layout = make_layout(self._shape, loc=loc, ip=ip)
             idx = crd2idx(crd, self._layout, loc=loc, ip=ip)
             assert not isinstance(idx, tuple), "index must be scalar"
@@ -2516,6 +2763,7 @@ class TensorSSA(Vector):
         self,
         dtype: Type[Numeric],
         *,
+        pzo: bool = False,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
     ) -> "TensorSSA":
@@ -2523,6 +2771,9 @@ class TensorSSA(Vector):
 
         :param dtype: The target numeric type to cast to.
         :type dtype: Type[Numeric]
+        :param pzo: Emit a .pzo narrowing convert (forces -0.0 -> +0.0). Only
+            f32 -> f16/bf16/f8, even lane count, sm_107a-only (caller arch-gates).
+        :type pzo: bool
         :return: A new tensor with the same shape but with elements cast to the target type.
         :rtype: TensorSSA
         :raises TypeError: If dtype is not a subclass of Numeric.
@@ -2554,6 +2805,13 @@ class TensorSSA(Vector):
                     and dst_dtype == FloatNV8E5M3FNU
                 ):
                     return cvt_f32x4_to_fnv8e5m3x4(src, loc=loc, ip=ip)
+                if pzo:
+                    assert self.dtype == Float32, (
+                        f".pzo convert requires a Float32 source, got {self.dtype}"
+                    )
+                    return _convert_fp32_vec_pzo(
+                        src, self.dtype, dst_dtype, size(self.shape), loc, ip
+                    )
                 return cutlass_arith.cvtf(src, dst_dtype.mlir_type, loc=loc, ip=ip)
 
             res_vect = convert_fp_to_fp(src, dtype, loc, ip)
@@ -2662,7 +2920,7 @@ class TensorSSA(Vector):
         *,
         loc: Optional[ir.Location] = None,
         ip: Optional[ir.InsertionPoint] = None,
-    ) -> Union["TensorSSA", ir.Value]:
+    ) -> Union["TensorSSA", Numeric]:
         """
         Perform reduce on selected modes with given predefined reduction op.
 
@@ -2673,8 +2931,8 @@ class TensorSSA(Vector):
         :param reduction_profile: Specifies which dimensions to reduce. Dimensions marked with `None` are kept.
         :type reduction_profile: Coord
 
-        :return: The reduced tensor
-        :rtype: TensorSSA
+        :return: The reduced tensor, or an element-type scalar for a full reduction
+        :rtype: Union[TensorSSA, Numeric]
 
         **Examples:**
 
@@ -2721,8 +2979,12 @@ class TensorSSA(Vector):
         )
 
         if depth(reduction_profile) == 0:
-            return vector.reduction(
-                elem_type.mlir_type, red_kind, self, acc=init_val, loc=loc, ip=ip
+            return elem_type(
+                vector.reduction(
+                    elem_type.mlir_type, red_kind, self, acc=init_val, loc=loc, ip=ip
+                ),
+                loc=loc,
+                ip=ip,
             )
 
         flat_shp, flat_prof = self._flatten_shape_and_coord(

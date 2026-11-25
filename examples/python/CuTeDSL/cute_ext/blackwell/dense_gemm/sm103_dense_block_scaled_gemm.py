@@ -29,7 +29,7 @@
 import argparse
 import os
 import sys
-from typing import Type, Tuple
+from typing import Optional, Type, Tuple
 
 import cutlass
 import cutlass.cute as cute
@@ -67,6 +67,7 @@ class SM103BlockScaledDenseGemmKernel:
         sf_dtype: Type[cutlass.Numeric],
         sf_vec_size: int,
         cluster_shape_mn: Tuple[int, int],
+        fallback_cluster_shape_mn: Optional[Tuple[int, int]] = None,
         epilogue_op=lambda x: x,
     ):
         self.a_dtype = a_dtype
@@ -78,7 +79,7 @@ class SM103BlockScaledDenseGemmKernel:
         self.mma_per_k_tile = 8
         self.mma_tiler = (*mma_inst_mn, self.mma_per_k_tile * self.mma_inst_k)
 
-        self.cluster_shape_mn = cluster_shape_mn
+        self.cluster_shape = (*cluster_shape_mn, 1)
         self.use_2cta_instrs = mma_inst_mn[0] == 256
         self.cta_group = (
             tcgen05.CtaGroup.TWO if self.use_2cta_instrs else tcgen05.CtaGroup.ONE
@@ -86,6 +87,15 @@ class SM103BlockScaledDenseGemmKernel:
         num_mma_ctas = 2 if self.use_2cta_instrs else 1
         cluster_shape_mn_selfcast = (num_mma_ctas, 1)
         self.use_tma_multicast = cluster_shape_mn != cluster_shape_mn_selfcast
+
+        # Optional distinct fallback cluster for mixed-cluster launches.
+        # ``None`` keeps fallback == preferred, which collapses to a plain
+        # single-cluster launch downstream.
+        self.fallback_cluster_shape = cute_ext.resolve_fallback_cluster_shape(
+            cluster_shape_mn,
+            fallback_cluster_shape_mn,
+            cta_group_m=num_mma_ctas,
+        )
 
         self.cta_tile_shape_mnk = (
             self.mma_tiler[0] // num_mma_ctas,
@@ -148,7 +158,7 @@ class SM103BlockScaledDenseGemmKernel:
 
         self._compute_stages()
 
-    @cute.experimental.jit
+    @cute.jit
     def __call__(
         self,
         mA: cute.Tensor,
@@ -162,24 +172,26 @@ class SM103BlockScaledDenseGemmKernel:
 
         self._setup_attributes()
 
+        # Rounding up to the preferred cluster shape also makes the grid
+        # divisible by the fallback shape.
         grid = cute.round_up(
             (
                 cute.ceil_div(mD.layout.shape[0], self.cta_tile_shape_mnk[0]),
                 cute.ceil_div(mD.layout.shape[1], self.cta_tile_shape_mnk[1]),
                 mD.layout.shape[2],
             ),
-            self.cluster_shape_mn,
+            self.cluster_shape[:2],
         )
 
         self.kernel(self.tiled_mma, mA, mSFA, mB, mSFB, mD, self.epi_tile).launch(
             grid=grid,
             block=(224, 1, 1),
-            cluster=(*self.cluster_shape_mn, 1),
-            smem=self.smem_capacity,
+            cluster=self.cluster_shape,
+            fallback_cluster=self.fallback_cluster_shape,
         )
 
     # GPU device kernel
-    @cute.experimental.kernel
+    @cute.kernel
     def kernel(
         self,
         tiled_mma: cute.TiledMma,
@@ -193,12 +205,15 @@ class SM103BlockScaledDenseGemmKernel:
         # ========================================================================
         # Cluster and thread setup
         # ========================================================================
+        cluster_shape = cute_ext.get_cluster_shape(
+            self.cluster_shape, self.fallback_cluster_shape
+        )
         cluster_layout_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.cluster_shape_mn, 1)),
+            cute.make_layout(cluster_shape),
             (tiled_mma.thr_id.shape,),
         )
         cluster_layout_sfb_vmnk = cute.tiled_divide(
-            cute.make_layout((*self.cluster_shape_mn, 1)),
+            cute.make_layout(cluster_shape),
             (1,),
         )
 
@@ -445,14 +460,13 @@ class SM103BlockScaledDenseGemmKernel:
         )
 
         # UMMA -> Load to tensor memory pipeline (accumulator to register memory)
-        # For 2-CTA MMA, warpgroup from both peer and leader CTA consumer.release
-        acc_pipe_consumer_arv_count = 256 if self.use_2cta_instrs else 128
+        # All epilogue warps release each stage; the arrival-count query
+        # derives the CTA-pair fan-in for 2-CTA MMA from the pipeline type.
         acc_pipe = cute_ext.UMMAtoAsyncPipeline.create(
             num_stages=self.acc_stage,
             mma_operation_type=mma_operation_type,
             consumer=cute_ext.OperationTypeEnum.SM100_COPY_T2R,
-            consumer_arv_count=acc_pipe_consumer_arv_count,
-            cluster_layout_vmnk=cluster_layout_vmnk,
+            consumer_release_threads_per_cta=128,
         )
 
         # store to smem -> TMA store to global pipeline (store to global memory)
@@ -507,6 +521,8 @@ class SM103BlockScaledDenseGemmKernel:
                     else:
                         mainloop_pipe.producer_commit_and_advance()
 
+            mainloop_pipe.producer_tail()
+
         if warp_idx == self.tma_sf_warp_id:
             for k_tile in cutlass.range(0, k_tile_cnt, 1, unroll=1):
                 gSFA_k = cute.zipped_divide(
@@ -557,6 +573,8 @@ class SM103BlockScaledDenseGemmKernel:
                     else:
                         sf_pipe.producer_commit_and_advance()
 
+            sf_pipe.producer_tail()
+
         if warp_idx == self.mma_warp_id and is_leader_cta:
             _, acc_stage_idx = acc_pipe.producer_acquire_and_get_stage()
 
@@ -570,7 +588,11 @@ class SM103BlockScaledDenseGemmKernel:
 
             k_slice_idx = 0
             for k_tile in cutlass.range(0, k_tile_cnt, 1, unroll=1):
-                for k_iter in cutlass.range(0, self.mma_per_k_tile, 1, unroll=1):
+                # Expose the fixed scale-factor access pattern and MMA sequence
+                # to compiler optimization.
+                for k_iter in cutlass.range(
+                    0, self.mma_per_k_tile, 1, unroll_full=True
+                ):
                     # Conditionally load SFA/SFB depending on sf_vec_size
                     if k_iter % self.mma_per_sf_buffer == 0:
                         _, sf_consumer_stage_idx = sf_pipe.consumer_wait_and_get_stage()
@@ -636,6 +658,9 @@ class SM103BlockScaledDenseGemmKernel:
                     mainloop_pipe.consumer_release_and_advance()
 
             acc_pipe.producer_commit_and_advance()
+            # Wait for both CTAs' final consumer releases before the leader
+            # retires the accumulator pipeline's SMEM mbarriers.
+            acc_pipe.producer_tail()
 
         if warp_idx < self.mma_warp_id:
             _, acc_stage_idx = acc_pipe.consumer_wait_and_get_stage()
@@ -652,12 +677,15 @@ class SM103BlockScaledDenseGemmKernel:
                 self.tma_store_warp_id,
                 self.epilogue_op,
             )
+            # Single output tile: drain the TMA store pipeline here since the
+            # helper no longer drains it.
+            tma_store_pipe.tail()
 
             acc_pipe.consumer_release_and_advance()
 
-        if cute.size(self.cluster_shape_mn) > 1:
-            cute.arch.cluster_arrive()
-            cute.arch.cluster_wait()
+        # The input and accumulator producer tails keep SMEM mbarriers alive
+        # until multicast work and cross-CTA consumer releases complete.
+        # No exit cluster barrier is needed.
 
     def _compute_stages(self):
         self.tma_store_stage = 2
@@ -799,6 +827,7 @@ def run(
     use_cold_l2: bool = False,
     tolerance: float = 1e-01,
     skip_ref_check: bool = False,
+    fallback_cluster_shape_mn: Optional[Tuple[int, int]] = None,
     **kwargs,
 ) -> float:
     """Run and benchmark the SM103 block-scaled dense GEMM D = (A*SFA) @ (B*SFB).
@@ -807,6 +836,8 @@ def run(
         mnkl: Problem size (M, N, K, L).
         mma_tiler_mn: MMA instruction shape (M, N).
         cluster_shape_mn: Launch cluster shape (M, N).
+        fallback_cluster_shape_mn: Optional. When provided and different
+            from cluster_shape_mn, the kernel runs in mixed-cluster mode.
         a_dtype/b_dtype: Narrow operand types (e.g. Float4E2M1FN).
         sf_dtype/sf_vec_size: Scale-factor type and block vector size.
         c_dtype: Output type.
@@ -826,8 +857,10 @@ def run(
         Execution time in microseconds per iteration.
 
     Raises:
-        ValueError: If a_dtype != b_dtype, if acc_dtype is not Float32, or if
-            a 256-wide MMA tile is paired with an odd cluster_shape_mn[0].
+        ValueError: If a_dtype != b_dtype, if acc_dtype is not Float32, if
+            a 256-wide MMA tile is paired with an odd cluster-M (preferred
+            or fallback), or if fallback_cluster_shape_mn does not divide
+            cluster_shape_mn.
         AssertionError: If reference checking is enabled and the output does
             not match the decoded reference exactly.
     """
@@ -849,6 +882,8 @@ def run(
         majors={"A": a_major, "B": b_major, "C": c_major},
     )
     print(f"Mma Tiler (M, N): {mma_tiler_mn}, Cluster (M, N): {cluster_shape_mn}")
+    if fallback_cluster_shape_mn is not None:
+        print(f"Fallback Cluster Shape (M, N): {fallback_cluster_shape_mn}")
     cli.print_benchmark_config(
         tolerance=tolerance,
         warmup_iterations=warmup_iterations,
@@ -896,9 +931,10 @@ def run(
         sf_dtype=sf_dtype,
         sf_vec_size=sf_vec_size,
         cluster_shape_mn=cluster_shape_mn,
+        fallback_cluster_shape_mn=fallback_cluster_shape_mn,
     )
 
-    compiled_kernel = cute_ext.compile(
+    compiled_kernel = cute.compile(
         block_scaled_gemm,
         tb.a_tensor,
         tb.sfa_tensor,
@@ -969,6 +1005,7 @@ if __name__ == "__main__":
         help="Mma instruction shape (comma-separated)",
     )
     cli.add_cluster_shape_arg(parser, default=(4, 4), strict_length=True)
+    cli.add_fallback_cluster_shape_arg(parser)
     cli.add_dtype_args(parser, c=cutlass.Float8E5M2)
     cli.add_major_args(parser)
     cli.add_benchmark_args(parser)
@@ -999,5 +1036,6 @@ if __name__ == "__main__":
         args.use_cold_l2,
         args.tolerance,
         args.skip_ref_check,
+        fallback_cluster_shape_mn=args.fallback_cluster_shape_mn,
     )
     print("PASS")

@@ -704,7 +704,7 @@ def is_shuffle_a(
         and mma_dtype == cutlass.BFloat16
         and scale_granularity_k >= 8
     )
-    # shuffle is supported since CTK 13.1
+    # shuffle is supported since CUDA 13.1
     shuffle_supported = cutlass.target_version(min_version="13.1")
     return shuffle_a and shuffle_supported
 
