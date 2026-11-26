@@ -4574,7 +4574,7 @@ def recast_layout(
             # Recast the layout to a different data type
             L_recast = cute.recast_layout(16, 8, L)
             print(L_recast)
-        foo()  # Expected output: (2, 3, 4)
+        foo()  # Expected output: (1,3,4):(1,1,3)
     """
     if not isinstance(new_type_bits, int):
         raise TypeError(
