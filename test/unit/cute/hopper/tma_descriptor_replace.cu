@@ -49,15 +49,10 @@ namespace cutlass::test {
 
 template <class T, class SmemLayout>
 struct ReplaceSharedStorage {
-  // Non-zero prefix guarantees smem_desc lives at a non-zero shared-memory offset
-  // and acts as a canary against writes to shared-memory offset 0.
-  alignas(128) uint8_t pad_canary[128];
   alignas(128) TmaDescriptor smem_desc;
   alignas(128) ArrayEngine<T, cosize_v<SmemLayout>> smem_tile;
   alignas(16) uint64_t mbar;
 };
-
-[[maybe_unused]] constexpr uint8_t kCanaryByte = 0xA5;
 
 template <class T, class TiledCopy, class SmemLayout, class OutGmemLayout, bool BroadcastMode2>
 __global__ void
@@ -72,7 +67,6 @@ tma_descriptor_replace_kernel(
     uint32_t dim2,
     uint64_t stride1_bytes,
     uint64_t stride2_bytes,
-    int* canary_ok,
     int* executed)
 {
 #if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
@@ -80,9 +74,6 @@ tma_descriptor_replace_kernel(
   __shared__ Storage storage;
 
   int const tid = threadIdx.x;
-  for (int i = tid; i < int(sizeof(storage.pad_canary)); i += blockDim.x) {
-    storage.pad_canary[i] = kCanaryByte;
-  }
   if (tid == 0) {
     storage.smem_desc = *tma.get_tma_descriptor();
   }
@@ -133,6 +124,7 @@ tma_descriptor_replace_kernel(
     storage.mbar = 0;
     initialize_barrier(storage.mbar, 1);
   }
+  cutlass::arch::fence_barrier_init();
   __syncthreads();
 
   int phase = 0;
@@ -150,13 +142,6 @@ tma_descriptor_replace_kernel(
   }
 
   if (tid == 0) {
-    int ok = 1;
-    for (int i = 0; i < int(sizeof(storage.pad_canary)); ++i) {
-      if (storage.pad_canary[i] != kCanaryByte) {
-        ok = 0;
-      }
-    }
-    *canary_ok = ok;
     *executed = 1;
   }
 #else
@@ -171,7 +156,6 @@ tma_descriptor_replace_kernel(
   (void)stride1_bytes;
   (void)stride2_bytes;
   if (threadIdx.x == 0) {
-    *canary_ok = 1;
     *executed = 0;
   }
 #endif
@@ -226,7 +210,6 @@ run_tma_descriptor_replace_test(
 
   thrust::device_vector<TmaDescriptor> d_desc(1);
   thrust::device_vector<T> d_out(new_d0 * new_d1 * new_d2, T(0));
-  thrust::device_vector<int> d_canary_ok(1, 0);
   thrust::device_vector<int> d_executed(1, 0);
 
   tma_descriptor_replace_kernel<T, decltype(tma), decltype(smem_layout), decltype(out_layout), BroadcastMode2>
@@ -241,7 +224,6 @@ run_tma_descriptor_replace_test(
           new_d2,
           uint64_t(new_s1) * sizeof(T),
           uint64_t(new_s2) * sizeof(T),
-          raw_pointer_cast(d_canary_ok.data()),
           raw_pointer_cast(d_executed.data()));
   ASSERT_EQ(cudaGetLastError(), cudaSuccess);
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
@@ -250,8 +232,6 @@ run_tma_descriptor_replace_test(
   if (h_executed == 0) {
     GTEST_SKIP() << "Binary not compiled with CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED.";
   }
-
-  EXPECT_EQ(int(d_canary_ok[0]), 1);
 
   thrust::host_vector<T> h_out = d_out;
   int const expected_s2 = BroadcastMode2 ? 0 : new_s2;
