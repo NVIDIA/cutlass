@@ -17,7 +17,8 @@ Unit tests for ``cute.arch.load`` / ``cute.arch.store`` with narrow float types.
 the NVVM backend (``LLVM Translation failed for operation:
 builtin.unrealized_conversion_cast``), an fp8 vector load crashed the
 compiler, and f16/bf16/fp8 scalars were rejected by the op verifier. The
-wrappers now move such values through a same-width integer bitcast.
+wrappers now move such values through a same-width integer bitcast. tf32 is
+moved as 32 bits (its MLIR type reports the 19-bit precision as its width).
 """
 
 import unittest
@@ -34,6 +35,7 @@ from cutlass import (
     Float8E4M3FN,
     Float8E5M2,
     Float8E8M0FNU,
+    TFloat32,
     Uint8,
 )
 from cutlass._mlir import ir
@@ -146,6 +148,7 @@ class TestArchLoadStoreNarrowFloat(unittest.TestCase):
             Float4E2M1FN,
             Float16,
             BFloat16,
+            TFloat32,
         ):
             with self.subTest(dtype=dtype.__name__):
                 inp = torch.randint(
@@ -160,7 +163,7 @@ class TestArchLoadStoreNarrowFloat(unittest.TestCase):
                 self.assertTrue(torch.equal(inp, out))
 
     def test_scalar_roundtrip(self):
-        for dtype in (Float8E4M3FN, Float8E5M2, Float16, BFloat16):
+        for dtype in (Float8E4M3FN, Float8E5M2, Float16, BFloat16, TFloat32):
             with self.subTest(dtype=dtype.__name__):
                 inp = torch.randint(
                     0,

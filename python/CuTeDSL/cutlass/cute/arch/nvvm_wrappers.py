@@ -3649,7 +3649,8 @@ def _ext_mem_op_storage_type(ty: ir.Type) -> ir.Type:
         return ty
     if ir.F32Type.isinstance(elem_ty) or ir.F64Type.isinstance(elem_ty):
         return ty
-    width = ir.FloatType(elem_ty).width
+    # tf32 reports its 19-bit precision as its width but occupies 32 bits in memory.
+    width = 32 if ir.FloatTF32Type.isinstance(elem_ty) else ir.FloatType(elem_ty).width
     if is_vector:
         if ir.F16Type.isinstance(elem_ty) or ir.BF16Type.isinstance(elem_ty):
             return ty
@@ -3679,6 +3680,18 @@ def _bitcast_for_ext_mem_op(
     """Bitcast ``val`` to ``target_ty`` (vector or scalar); no-op if the types already match."""
     if val.type == target_ty:
         return val
+    src_elem, dst_elem = (
+        ir.VectorType(t).element_type if ir.VectorType.isinstance(t) else t
+        for t in (val.type, target_ty)
+    )
+    if ir.FloatTF32Type.isinstance(src_elem) or ir.FloatTF32Type.isinstance(dst_elem):
+        # arith/vector.bitcast compare the reported (19-bit) width of tf32, and
+        # llvm.bitcast only takes tf32 inside a vector.
+        if ir.VectorType.isinstance(target_ty):
+            return llvm.bitcast(target_ty, val, loc=loc, ip=ip)
+        vec = vector.from_elements(ir.VectorType.get([1], val.type), [val], loc=loc, ip=ip)
+        vec = llvm.bitcast(ir.VectorType.get([1], target_ty), vec, loc=loc, ip=ip)
+        return vector.extract(vec, dynamic_position=[], static_position=[0], loc=loc, ip=ip)
     if ir.VectorType.isinstance(target_ty):
         return vector.bitcast(target_ty, val, loc=loc, ip=ip)
     return arith.bitcast(target_ty, val, loc=loc, ip=ip)
