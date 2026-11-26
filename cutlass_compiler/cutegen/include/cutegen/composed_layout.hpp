@@ -596,10 +596,92 @@ auto slice_and_offset(const TCoord&                       crd,
     return std::make_tuple(std::move(l), off_t(0));
 }
 
+inline uint64_t bits_at_or_below(uint64_t value)
+{
+    for(size_t shift = 1; shift < std::numeric_limits<uint64_t>::digits; shift <<= 1)
+        value |= value >> shift;
+    return value;
+}
+
+/**
+ * @brief Conservatively determines the bits that values in a static layout's codomain may set.
+ *
+ * For a layout with non-negative strides, every codomain value is in [0, max], where
+ * `max = sum((shape_i - 1) * stride_i)`. Therefore every possibly active bit is at or below the
+ * most significant bit of max. This interval mask can contain false positives, due for example to
+ * sparse strides, but it cannot miss a bit made active by overlapping strides or addition carries.
+ * Negative strides and arithmetic overflow conservatively activate every bit.
+ *
+ * The second result says that every mode contributes a disjoint run of bits and additions between
+ * modes cannot carry. That stronger property is needed only by the affine-decay path; active-bit
+ * collision detection itself always uses the first result.
+ */
+template <class TDynTraits>
+std::tuple<uint64_t, bool> codomain_bits(const layout_t<TDynTraits>& lay)
+{
+    const auto flat_lay = flatten(lay);
+    const auto n        = rank(flat_lay.shape());
+
+    uint64_t exact_bits = 0;
+    uint64_t max_value  = 0;
+    bool     independent_bits = true;
+    for(size_t i = 0; i < n; i++)
+    {
+        const auto& shape_i  = flat_lay.shape()[i];
+        const auto& stride_i = flat_lay.stride()[i];
+        if(!holds_int(shape_i) || !holds_int(stride_i))
+            return {std::numeric_limits<uint64_t>::max(), false};
+
+        const int64_t shape_val  = shape_i.as_int64();
+        const int64_t stride_val = stride_i.as_int64();
+        if(shape_val <= 0)
+            return {std::numeric_limits<uint64_t>::max(), false};
+        if(stride_val == 0 || shape_val == 1)
+            continue;
+        // A negative codomain value has high bits set in two's-complement representation.
+        if(stride_val < 0)
+            return {std::numeric_limits<uint64_t>::max(), false};
+
+        const uint64_t extent = static_cast<uint64_t>(shape_val - 1);
+        const uint64_t stride = static_cast<uint64_t>(stride_val);
+        if(stride > std::numeric_limits<uint64_t>::max() / extent)
+            return {std::numeric_limits<uint64_t>::max(), false};
+        const uint64_t contribution = extent * stride;
+        if(max_value > std::numeric_limits<uint64_t>::max() - contribution)
+            return {std::numeric_limits<uint64_t>::max(), false};
+        max_value += contribution;
+
+        if(!is_pow_2(stride_val))
+        {
+            independent_bits = false;
+            continue;
+        }
+
+        // A power-of-two stride shifts the bits of the mode coordinate. The union of the bits set
+        // by coordinates [0, shape_val) is all bits at or below shape_val - 1; shape_val itself
+        // need not be a power of two. Reject overlap between modes because their sum could carry.
+        const uint64_t coordinate_bits = bits_at_or_below(extent);
+        if(stride > std::numeric_limits<uint64_t>::max() / coordinate_bits)
+        {
+            independent_bits = false;
+            continue;
+        }
+        const uint64_t mode_bits = coordinate_bits * stride;
+        if((exact_bits & mode_bits) != 0)
+            independent_bits = false;
+        exact_bits |= mode_bits;
+    }
+
+    if(independent_bits)
+        return {exact_bits, true};
+    return {bits_at_or_below(max_value), false};
+}
+
 /**
  * @brief Computes a sliced layout and its offset for swizzled layouts.
  *
- * @pre @p lay_b is static, normal, with stride elements that are powers of 2
+ * @pre @p lay_b is static and normal (non-power-of-two and negative strides conservatively disable
+ *      affine decay when their bit behavior cannot be proven safe)
  * @pre @p off is a scalar
  * @pre @p crd is not empty and has at least one underscore
  *
@@ -626,7 +708,6 @@ auto slice_and_offset(const TCoord&                       crd,
     // To disambiguate with the one in the detail namespace
     using ::cutegen::composition;
 
-    // lay_b must be static, normal, with pow-2 stride elements
     if(!is_static(lay_b) || has_scaled_basis(lay_b.stride()))
         return std::make_tuple(composed_layout_t(cg_error_t{}), offset_t(0));
     // The offset of the composed layout must be a (shape) scalar
@@ -639,58 +720,66 @@ auto slice_and_offset(const TCoord&                       crd,
     if(is_underscore_only(crd))
         return std::make_tuple(composed_layout_t(sw_a, off, slice(crd, lay_b)), offset_t(0));
 
-    const auto     M = sw_a.num_base();
-    const auto     B = sw_a.num_bits();
-    const auto     S = sw_a.num_shift();
-    const layout_t projection_layout(shape_t(1 << M, 1 << B, 1 << (std::abs(S) - B), 1 << B, 1));
-    const layout_t projection_layout_anti_zy(
-        projection_layout.shape(),
-        stride_t(projection_layout.stride()[0], 0, projection_layout.stride()[2], 0, rec_var_cast<stride_t>(size(projection_layout))));
-    const layout_t projection_layout_only_zy(
-        projection_layout.shape(),
-        stride_t(0, projection_layout.stride()[1], 0, projection_layout.stride()[3], 0));
-
     const layout_t sliced_layout = slice(crd, lay_b);
     // A layout that is a slice of a static layout is also static
     assert(is_static(sliced_layout));
-    const layout_t sliced_layout_only_zy = composition(projection_layout_only_zy, sliced_layout);
-    assert(is_static(sliced_layout_only_zy));
 
-    const auto swizzle_active_bits = sliced_layout_only_zy(static_size(sliced_layout_only_zy) - 1);
-    using index_t                  = decltype(swizzle_active_bits);
+    // The bits of the codomain of sliced_layout that the swizzle acts upon. Previously this was
+    // obtained by composing sliced_layout with a power-of-2 projection layout and evaluating the
+    // largest resulting index, which required sliced_layout to satisfy composition's divisibility
+    // conditions. Computing the bits directly lifts that restriction.
+    const auto [sliced_bits, independent_bits] = codomain_bits(sliced_layout);
+
+    const layout_t diced_layout = dice(crd, lay_b);
+    const TCoord   diced_crd    = dice(crd, crd);
+
+    const uint64_t swizzle_code       = static_cast<uint64_t>(sw_a.swizzle_code());
+    const auto     idx_of_diced_coord = diced_layout(diced_crd);
+    assert(holds_int_or_dynamic_int(idx_of_diced_coord));
+
+    // Keep the complete base inside the composed layout unless all additions below are proven
+    // carry-free. Splitting off and diced_index independently is not equivalent to splitting their
+    // sum: either addition can carry into or out of a swizzle-active bit.
+    const auto full_offset = scalar_add<offset_t>(off, idx_of_diced_coord);
+    auto       keep_composed = [&]() {
+        return std::make_tuple(composed_layout_t(sw_a, full_offset, sliced_layout), offset_t(0));
+    };
+
+    // A conservative mask is sufficient for collision detection: false positives merely preserve
+    // the composed layout, while false negatives could incorrectly decay it.
+    const uint64_t swizzle_active_bits = sliced_bits & swizzle_code;
     // Some elements of the co-domain of sliced_layout are affected by sw_a if and only if they have
     // active Y-bits and Z-bits that would interact via sw_a. In order to determine if that's the
     // case, we take the bitwise AND between
-    // 1. the largest element of the codomain of sliced_layout projected onto the Y and Z-bits, swizzle_active_bits
+    // 1. the bits of the codomain of sliced_layout projected onto the Y and Z-bits, swizzle_active_bits
     // 2. the bitwise NOT of sw_a(swizzle_active_bits)
     // The result is non-zero if and only if some elements of the co-domain of lay_b are affected by
     // sw_a. We convert that to a boolean.
-    const auto intersection = scalar_bitwise_and<index_t>(swizzle_active_bits,
-                                                          scalar_bitwise_not<index_t>(sw_a(swizzle_active_bits)));
-    assert(holds_int(intersection));
-    //const bool z_and_y_collide = swizzle_active_bits & ~sw_a(swizzle_active_bits);
-    const bool z_and_y_collide = (intersection != 0);
+    const uint64_t y_bits_of_active = swizzle_active_bits & static_cast<uint64_t>(sw_a.y_mask());
+    const uint64_t shifted_y_bits   = (sw_a.num_shift() >= 0)
+                                       ? (y_bits_of_active >> sw_a.num_shift())
+                                       : (y_bits_of_active << -sw_a.num_shift());
+    const uint64_t swizzled_active_bits = swizzle_active_bits ^ shifted_y_bits;
+    const bool    z_and_y_collide      = (0 != (swizzle_active_bits & ~swizzled_active_bits));
 
-    const layout_t diced_layout         = dice(crd, lay_b);
-    const TCoord   diced_crd            = dice(crd, crd);
-    const layout_t diced_layout_only_zy = composition(projection_layout_only_zy, diced_layout);
-    const layout_t diced_layout_anti_zy = composition(projection_layout_anti_zy, diced_layout);
+    // The affine construction additionally requires independent codomain bits and a static,
+    // non-negative full base whose addition to every sliced-layout value is carry-free.
+    if(z_and_y_collide || !independent_bits || !holds_int(full_offset))
+        return keep_composed();
 
-    const auto idx_of_diced_coord_only_zy = diced_layout_only_zy(diced_crd);
-    assert(holds_int_or_dynamic_int(idx_of_diced_coord_only_zy));
-    // Assuming that idx_of_diced_coord_only_zy is not static, the following bitwise XOR creates
-    // a dynamic offset. In case we can degenerate the sliced swizzled layout into an affine layout,
-    // the latter is doomed to be partially dynamic. CuTe-C++ further optimizes this by tracking
-    // statically known bits with a statically known partition between static and dynamic bits,
-    // making it possible to degenerate into a fully static affine layout. That optimization is not
-    // implemented yet in cutegen. The performance benefits of such optimization is unknown.
-    const auto offset_only_zy = scalar_bitwise_xor<offset_t>(off, idx_of_diced_coord_only_zy);
-    const auto offset_anti_zy = diced_layout_anti_zy(diced_crd);
+    const int64_t full_offset_value = full_offset.as_int64();
+    if(full_offset_value < 0 ||
+       0 != (sliced_bits & static_cast<uint64_t>(full_offset_value)))
+        return keep_composed();
 
-    // We cannot decay into an affine layout if there is some collision
-    if(z_and_y_collide)
-        return std::make_tuple(composed_layout_t(sw_a, offset_only_zy, sliced_layout), offset_anti_zy);
+    // Once full_offset + sliced_layout(c) is known to be carry-free, its Y/Z and non-Y/Z parts may
+    // be separated. The latter is returned as a pointer offset; the former remains under swizzle.
+    const auto offset_only_zy = scalar_bitwise_and<offset_t>(full_offset, swizzle_code);
+    const auto offset_anti_zy = scalar_bitwise_and<offset_t>(full_offset, ~swizzle_code);
 
+    const auto M = sw_a.num_base();
+    const auto B = sw_a.num_bits();
+    const auto S = sw_a.num_shift();
     // With two's complement, this retrieves the lowest bit in the mask
     // Ex: 0b0000111000
     //  -> 0b0000001000
@@ -698,8 +787,8 @@ auto slice_and_offset(const TCoord&                       crd,
     const auto lowest_y_bit = sw_a.y_mask() & -sw_a.y_mask();
     // At this point, we know that
     // 1. elements of the codomain of sliced_layout are not affected by sw_a
-    // 2. pow-2 stride elements in lay_b implies that the set of bits to which each mode contributes
-    //    are strictly disjoint with one another
+    // 2. independent mode bits imply that the set of bits to which each mode contributes are
+    //    strictly disjoint with one another
     // 2 => elements of the codomain of sliced_layout and offset_only_zy/offset_anti_zy (stemming
     // from diced_layout) are disjoint bitwise.
     // Therefore,
@@ -792,7 +881,14 @@ auto slice_and_offset(const TCoord&                       crd,
         cat_tuple(shape_t(1 << M), shape_lo_hi, shape_t(1 << (std::abs(S) - B)), shape_lo_hi, shape_t(1)),
         cat_tuple(stride_t(1),     stride_lo,   stride_t(1 << (M + B)),          stride_hi,   stride_t(1 << (M + B + std::abs(S)))));
     // clang-format on
-    return std::make_tuple(composed_layout_t(composition(swizzle_layout, sliced_layout)),
+    // The affine construction itself still has composition divisibility requirements that are
+    // independent of the bit-safety checks above. If they are not met, preserve the exact composed
+    // representation instead of propagating an error layout to callers.
+    auto affine_layout = composition(swizzle_layout, sliced_layout);
+    if(!is_valid(affine_layout))
+        return keep_composed();
+
+    return std::make_tuple(composed_layout_t(std::move(affine_layout)),
                            scalar_add<offset_t>(sw_a(offset_only_zy), offset_anti_zy));
 }
 } // namespace detail
