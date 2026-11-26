@@ -33,6 +33,7 @@ add_custom_target(
   cutlass_test_unit_cute_hopper_stsm
   cutlass_test_unit_cute_hopper_tma_load
   cutlass_test_unit_cute_hopper_tma_store
+  cutlass_test_unit_cute_hopper_tma_descriptor_replace
   cutlass_test_unit_cute_hopper_bulk_load
   cutlass_test_unit_cute_hopper_bulk_store
 )
@@ -43,6 +44,7 @@ add_custom_target(
   test_unit_cute_hopper_stsm
   test_unit_cute_hopper_tma_load
   test_unit_cute_hopper_tma_store
+  test_unit_cute_hopper_tma_descriptor_replace
   test_unit_cute_hopper_bulk_load
   test_unit_cute_hopper_bulk_store
 )
@@ -70,6 +72,11 @@ cutlass_test_unit_add_executable(
 cutlass_test_unit_add_executable(
   cutlass_test_unit_cute_hopper_tma_store
   tma_store.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_cute_hopper_tma_descriptor_replace
+  tma_descriptor_replace.cu
 )
 
 cutlass_test_unit_add_executable(
