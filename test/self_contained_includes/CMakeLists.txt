@@ -53,6 +53,7 @@ set(header_files_to_check
     cute/tensor.hpp
     cute/tensor_impl.hpp
     cute/underscore.hpp
+    cute/util/print_tensor.hpp
     # cute/algorithm
     cute/algorithm/axpby.hpp
     cute/algorithm/clear.hpp
@@ -275,4 +276,3 @@ endforeach()
 
 # build all generated .cu files into a single library
 cutlass_add_library(test_self_contained_includes MODULE ${_gen_source_files})
-
