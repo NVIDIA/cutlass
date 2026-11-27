@@ -1211,6 +1211,7 @@ struct CollectiveMma<
 
       });
 
+      cutlass::arch::fence_view_async_shared_read();
       cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
 
@@ -1253,6 +1254,7 @@ struct CollectiveMma<
         });
       });
 
+      cutlass::arch::fence_view_async_shared_read();
       cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
 
@@ -1286,6 +1288,7 @@ struct CollectiveMma<
         });
       });
 
+      cutlass::arch::fence_view_async_shared_read();
       cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
 

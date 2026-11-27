@@ -28,6 +28,7 @@
 
 set(PIPELINE_SOURCES
   pipeline_tma_async.cu
+  pipeline_tma_async_generic_read_fence.cu
   pipeline_tma_async_warp_specialized.cu
   pipeline_tma_async_warp_specialized_persistent.cu
   pipeline_async.cu

@@ -522,6 +522,7 @@ struct CollectiveMma<
         auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
 
         if (k_block == K_BLOCK_MAX - 1) {
+          cutlass::arch::fence_view_async_shared_read();
           cutlass::arch::NamedBarrier::sync(
             thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
           pipeline.consumer_release(smem_pipe_read);
@@ -542,6 +543,7 @@ struct CollectiveMma<
       auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
 
       if (k_block == K_BLOCK_MAX - 1) {
+        cutlass::arch::fence_view_async_shared_read();
         cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
         pipeline.consumer_release(smem_pipe_read);

@@ -156,6 +156,10 @@ constexpr bool     synclog_enable_fence_view_async_shared = true;
 constexpr uint32_t synclog_header_fence_view_async_shared = 17;
 constexpr uint32_t synclog_length_fence_view_async_shared = synclog_length_prefix + 0;
 
+constexpr bool     synclog_enable_fence_view_async_shared_read = true;
+constexpr uint32_t synclog_header_fence_view_async_shared_read = 40;
+constexpr uint32_t synclog_length_fence_view_async_shared_read = synclog_length_prefix + 0;
+
 constexpr bool     synclog_enable_fence_view_shared = true;
 constexpr uint32_t synclog_header_fence_view_shared = 39;
 constexpr uint32_t synclog_length_fence_view_shared = synclog_length_prefix + 0;
@@ -642,6 +646,19 @@ void synclog_emit_fence_view_async_shared(uint32_t line) {
 }
 
 CUTLASS_DEVICE
+void synclog_emit_fence_view_async_shared_read(uint32_t line) {
+  #if defined(CUTLASS_ENABLE_SYNCLOG)
+  if constexpr (!synclog_enable_fence_view_async_shared_read) return;
+  if (!synclog_condition_emit()) return;
+  uint32_t* to = synclog_alloc(synclog_length_fence_view_async_shared_read);
+  if (to == nullptr) return;
+  synclog_emit_prefix(to, synclog_header_fence_view_async_shared_read, line);
+  #else
+  CUTLASS_UNUSED(line);
+  #endif // defined(CUTLASS_ENABLE_SYNCLOG)
+}
+
+CUTLASS_DEVICE
 void synclog_emit_fence_view_shared(uint32_t line) {
   #if defined(CUTLASS_ENABLE_SYNCLOG)
   if constexpr (!synclog_enable_fence_view_shared) return;
@@ -1104,6 +1121,14 @@ void synclog_print() {
       if (header == synclog_header_fence_view_async_shared) {
         synclog_print_prefix("fence_view_async_shared", at);
         at += synclog_length_fence_view_async_shared;
+        printf("\n");
+        continue;
+      }
+    }
+    if constexpr (synclog_enable_fence_view_async_shared_read) {
+      if (header == synclog_header_fence_view_async_shared_read) {
+        synclog_print_prefix("fence_view_async_shared_read", at);
+        at += synclog_length_fence_view_async_shared_read;
         printf("\n");
         continue;
       }
