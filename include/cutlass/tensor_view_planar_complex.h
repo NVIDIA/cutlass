@@ -137,7 +137,7 @@ class TensorViewPlanarComplex : public TensorRefPlanarComplex<Element_, Layout_>
     TensorCoord const &extent             ///< size of the view in logical coordinates
   ):
     Base(ptr, layout, imaginary_stride), extent_(extent) {
-  
+
   }
 
   /// Constructs a TensorView object
@@ -147,7 +147,7 @@ class TensorViewPlanarComplex : public TensorRefPlanarComplex<Element_, Layout_>
     TensorCoord const &extent             ///< logical size of tensor
   ):
     Base(ref), extent_(extent) {
-  
+
   }
 
   /// Converting constructor from TensorRef to non-constant data.
@@ -159,14 +159,14 @@ class TensorViewPlanarComplex : public TensorRefPlanarComplex<Element_, Layout_>
 
   /// Updates the pointer and layout object
   CUTLASS_HOST_DEVICE
-  void reset(Element* ptr, Layout const &layout, LongIndex imaginary_stride, TensorCoord size) {
+  void reset(Element* ptr, Layout const &layout, LongIndex imaginary_stride, TensorCoord const &extent) {
     Base::reset(ptr, layout, imaginary_stride);
-    this->resize(extent_);
+    this->resize(extent);
   }
 
   /// Changes the size of the view without affecting pointer or layout
   CUTLASS_HOST_DEVICE
-  void resize(TensorCoord extent) {
+  void resize(TensorCoord const &extent) {
     this->extent_ = extent;
   }
 
@@ -217,7 +217,7 @@ class TensorViewPlanarComplex : public TensorRefPlanarComplex<Element_, Layout_>
 
     TensorViewPlanarComplex result(this->ref(), extent.clamp(extent_ - location));
     result.add_coord_offset(location);
-    return result; 
+    return result;
   }
 
   /// Returns the number of scalar elements needed to store tensor.
@@ -253,7 +253,7 @@ class TensorViewPlanarComplex : public TensorRefPlanarComplex<Element_, Layout_>
     TensorCoord const& b            ///< offset in the logical coordinate space of the tensor
   ) const {
 
-    TensorRef result(*this);
+    TensorViewPlanarComplex result(*this);
     result.add_pointer_offset(-this->offset(b));
     return result;
   }
@@ -289,7 +289,7 @@ template <
   typename Layout
 >
 CUTLASS_HOST_DEVICE TensorViewPlanarComplex<Element, Layout> make_TensorViewPlanarComplex(
-  Element *ptr, 
+  Element *ptr,
   Layout const &layout,
   typename Layout::LongIndex imaginary_stride,
   typename Layout::TensorCoord const &extent) {
