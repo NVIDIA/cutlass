@@ -38,6 +38,7 @@
 #include <cute/algorithm/functional.hpp>
 #include <cute/numeric/integer_sequence.hpp>
 #include <cute/numeric/integral_constant.hpp>
+#include <cute/underscore.hpp>
 
 /// @file tuple_algorithms.hpp
 /// @brief Common algorithms on (hierarchical) tuples
@@ -1022,13 +1023,14 @@ zip(T0 const& t0, T1 const& t1, Ts const&... ts)
 
 namespace detail {
 
-template <class T, class TG, int... Is, int... Js>
+template <class T, class TG, class X, int... Is, int... Js>
 CUTE_HOST_DEVICE constexpr
 auto
-zip2_by(T const& t, TG const& guide, seq<Is...>, seq<Js...>)
+zip2_by(T const& t, TG const& guide, X const& underscore_identity,
+        seq<Is...>, seq<Js...>)
 {
   // zip2_by produces the modes like ((A,a),(B,b),...)
-  auto split = cute::make_tuple(zip2_by(get<Is>(t), get<Is>(guide))...);
+  auto split = cute::make_tuple(zip2_by(get<Is>(t), get<Is>(guide), underscore_identity)...);
 
   // Rearrange and append missing modes from t to make ((A,B,...),(a,b,...,x,y))
   return cute::make_tuple(cute::make_tuple(get<0>(get<Is>(split))...),
@@ -1037,16 +1039,18 @@ zip2_by(T const& t, TG const& guide, seq<Is...>, seq<Js...>)
 
 } // end namespace detail
 
-template <class T, class TG>
+template <class T, class TG, class X>
 CUTE_HOST_DEVICE constexpr
 auto
-zip2_by(T const& t, TG const& guide)
+zip2_by(T const& t, TG const& guide, X const& underscore_identity)
 {
-  if constexpr (is_tuple<TG>::value) {
+  if constexpr (is_underscore<TG>::value) {
+    return cute::make_tuple(underscore_identity, t);
+  } else if constexpr (is_tuple<TG>::value) {
     constexpr int TR = tuple_size<T>::value;
     constexpr int GR = tuple_size<TG>::value;
     static_assert(TR >= GR, "Mismatched ranks");
-    return detail::zip2_by(t, guide,
+    return detail::zip2_by(t, guide, underscore_identity,
                            make_range< 0, GR>{},
                            make_range<GR, TR>{});
   } else {
@@ -1055,6 +1059,14 @@ zip2_by(T const& t, TG const& guide)
   }
 
   CUTE_GCC_UNREACHABLE;
+}
+
+template <class T, class TG>
+CUTE_HOST_DEVICE constexpr
+auto
+zip2_by(T const& t, TG const& guide)
+{
+  return zip2_by(t, guide, Int<1>{});
 }
 
 /// @return A tuple of the elements of @c t in reverse order.
