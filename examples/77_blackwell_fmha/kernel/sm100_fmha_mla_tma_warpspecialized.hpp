@@ -1048,7 +1048,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
       ++pipeline_acquire_state;
       ++pipeline_offset;
 
-      if (pipeline_offset == StagesPV - 1) {
+      if (pipeline_offset == StagesPV) {
         cutlass::arch::cp_async_wait<StagesPV - 1>();
         pipeline_load.producer_commit(pipeline_commit_state);
         ++pipeline_commit_state;
