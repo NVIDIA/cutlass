@@ -191,8 +191,8 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static constexpr int kStagesComputeSmem = 1;
   using PipelineLoadMmaQ = PipelineTmaUmmaAsync<2, ClusterShape>;
   using PipelineLoadMmaDO = PipelineTmaUmmaAsync<1, ClusterShape>;
-  using PipelineLoadComputeLSE = PipelineAsync<1>;
-  using PipelineLoadComputeSumOdO = PipelineAsync<1>;
+  using PipelineLoadComputeLSE = PipelineTmaAsync<1>;
+  using PipelineLoadComputeSumOdO = PipelineTmaAsync<1>;
   using PipelineMmaComputeS = PipelineUmmaAsync<1>;
   using PipelineMmaComputeDP = PipelineUmmaAsync<1>;
   using PipelineMmaReduceDQ = PipelineUmmaAsync<1>;
@@ -529,24 +529,21 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     ++pipeline_load_mma_q_producer_state;
 
     pipeline_load_compute_lse.producer_acquire(pipeline_load_compute_lse_producer_state);
+    auto lse_barrier = pipeline_load_compute_lse.producer_get_barrier(pipeline_load_compute_lse_producer_state);
 
-    // load LSE
-    // 32 threads loading 128 values of 32b each
-    // so 4*32b=128b
-
-    int thread_idx = threadIdx.x % NumThreadsPerWarp;
-    int smem_idx = TileShapeQ{} * pipeline_load_compute_lse_producer_state.index() + thread_idx * 4;
-    int gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
+    // load LSE using SM90_BULK_COPY_G2S
     auto mLSE = make_tensor(mainloop_args.ptr_lse, make_shape(Q, HB), mainloop_args.stride_lse);
-    for (int i = 0; i < 4; i++) {
-      cutlass::arch::cp_async_zfill<4>(
-          shared_tensors.smem_lse.begin() + smem_idx + i,
-          &mLSE(gmem_idx + i, blk_coord_batch),
-          gmem_idx + i < Q
+
+    // Collective bulk copy operation - one thread loads full tile
+    if (cute::elect_one_sync()) {
+      SM90_BULK_COPY_G2S::copy(
+          &mLSE(TileShapeQ{} * iter_index, blk_coord_batch),
+          lse_barrier,
+          shared_tensors.smem_lse.begin() + TileShapeQ{} * pipeline_load_compute_lse_producer_state.index(),
+          TileShapeQ{} * sizeof(ElementAcc)
       );
     }
 
-    pipeline_load_compute_lse.producer_commit(pipeline_load_compute_lse_producer_state, cutlass::arch::cpasync_barrier_arrive);
     ++pipeline_load_compute_lse_producer_state;
 
 
@@ -576,20 +573,21 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     ++pipeline_load_mma_do_producer_state;
 
     pipeline_load_compute_sum_odo.producer_acquire(pipeline_load_compute_sum_odo_producer_state);
+    auto sum_odo_barrier = pipeline_load_compute_sum_odo.producer_get_barrier(pipeline_load_compute_sum_odo_producer_state);
 
-    // load sum_OdO
-    smem_idx = TileShapeQ{} * pipeline_load_compute_sum_odo_producer_state.index() + thread_idx * 4;
-    gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
+    // load sum_OdO using SM90_BULK_COPY_G2S
     auto mSumOdO = make_tensor(mainloop_args.ptr_sum_odo, make_shape(Q, HB), mainloop_args.stride_sum_odo);
-    for (int i = 0; i < 4; i++) {
-      cutlass::arch::cp_async_zfill<4>(
-          shared_tensors.smem_sum_odo.begin() + smem_idx + i,
-          &mSumOdO(gmem_idx + i, blk_coord_batch),
-          gmem_idx + i < Q
+
+    // Collective bulk copy operation - one thread loads full tile
+    if (cute::elect_one_sync()) {
+      SM90_BULK_COPY_G2S::copy(
+          &mSumOdO(TileShapeQ{} * iter_index, blk_coord_batch),
+          sum_odo_barrier,
+          shared_tensors.smem_sum_odo.begin() + TileShapeQ{} * pipeline_load_compute_sum_odo_producer_state.index(),
+          TileShapeQ{} * sizeof(ElementAcc)
       );
     }
 
-    pipeline_load_compute_sum_odo.producer_commit(pipeline_load_compute_sum_odo_producer_state, cutlass::arch::cpasync_barrier_arrive);
     ++pipeline_load_compute_sum_odo_producer_state;
 
     iter_count -= 1;
@@ -616,19 +614,18 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       ++pipeline_load_mma_q_producer_state;
 
       pipeline_load_compute_lse.producer_acquire(pipeline_load_compute_lse_producer_state);
+      lse_barrier = pipeline_load_compute_lse.producer_get_barrier(pipeline_load_compute_lse_producer_state);
 
-      // load LSE
-      smem_idx = TileShapeQ{} * pipeline_load_compute_lse_producer_state.index() + thread_idx * 4;
-      gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
-      for (int i = 0; i < 4; i++) {
-        cutlass::arch::cp_async_zfill<4>(
-            shared_tensors.smem_lse.begin() + smem_idx + i,
-            &mLSE(gmem_idx + i, blk_coord_batch),
-            gmem_idx + i < Q
+      // load LSE using SM90_BULK_COPY_G2S
+      if (cute::elect_one_sync()) {
+        SM90_BULK_COPY_G2S::copy(
+            &mLSE(TileShapeQ{} * iter_index, blk_coord_batch),
+            lse_barrier,
+            shared_tensors.smem_lse.begin() + TileShapeQ{} * pipeline_load_compute_lse_producer_state.index(),
+            TileShapeQ{} * sizeof(ElementAcc)
         );
       }
 
-      pipeline_load_compute_lse.producer_commit(pipeline_load_compute_lse_producer_state, cutlass::arch::cpasync_barrier_arrive);
       ++pipeline_load_compute_lse_producer_state;
 
       pipeline_load_mma_do.producer_acquire(pipeline_load_mma_do_producer_state);
@@ -646,19 +643,18 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
       ++pipeline_load_mma_do_producer_state;
 
       pipeline_load_compute_sum_odo.producer_acquire(pipeline_load_compute_sum_odo_producer_state);
+      sum_odo_barrier = pipeline_load_compute_sum_odo.producer_get_barrier(pipeline_load_compute_sum_odo_producer_state);
 
-      // load sum_OdO
-      smem_idx = TileShapeQ{} * pipeline_load_compute_sum_odo_producer_state.index() + thread_idx * 4;
-      gmem_idx = TileShapeQ{} * iter_index + thread_idx * 4;
-      for (int i = 0; i < 4; i++) {
-        cutlass::arch::cp_async_zfill<4>(
-            shared_tensors.smem_sum_odo.begin() + smem_idx + i,
-            &mSumOdO(gmem_idx + i, blk_coord_batch),
-            gmem_idx + i < Q
+      // load sum_OdO using SM90_BULK_COPY_G2S
+      if (cute::elect_one_sync()) {
+        SM90_BULK_COPY_G2S::copy(
+            &mSumOdO(TileShapeQ{} * iter_index, blk_coord_batch),
+            sum_odo_barrier,
+            shared_tensors.smem_sum_odo.begin() + TileShapeQ{} * pipeline_load_compute_sum_odo_producer_state.index(),
+            TileShapeQ{} * sizeof(ElementAcc)
         );
       }
 
-      pipeline_load_compute_sum_odo.producer_commit(pipeline_load_compute_sum_odo_producer_state, cutlass::arch::cpasync_barrier_arrive);
       ++pipeline_load_compute_sum_odo_producer_state;
 
       iter_count -= 1;
@@ -1008,7 +1004,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
         make_coord(blk_coord_k * TileShapeK{}, _0{}),
         make_identity_tensor(take<0,2>(TileShapePDO{}))
     );
-    
+
     for (int i = threadIdx.x; i < size(gDK); i += blockDim.x) {
       if (elem_less(cDK(i), select<1,2>(problem_shape))) {
         gDK(i) = Element(0);
@@ -1561,13 +1557,14 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     if (role == WarpRole::Compute) {
       pipeline_load_compute_lse_params.role = PipelineLoadComputeLSE::ThreadCategory::Consumer;
     }
-    pipeline_load_compute_lse_params.producer_arv_count = NumThreadsPerWarp;
-    pipeline_load_compute_lse_params.consumer_arv_count = kNumComputeWarps * NumThreadsPerWarp;
+    pipeline_load_compute_lse_params.is_leader = lane_predicate && (role == WarpRole::Load);
+    pipeline_load_compute_lse_params.transaction_bytes = TileShapeQ{} * sizeof(ElementAcc);
+    pipeline_load_compute_lse_params.num_consumers = kNumComputeWarps * NumThreadsPerWarp;
     pipeline_load_compute_lse_params.initializing_warp = initializing_warp++;
     PipelineLoadComputeLSE pipeline_load_compute_lse(
       shared_storage.pipelines.load_compute_lse,
-      pipeline_load_compute_lse_params,
-      /*barrier init*/ cute::true_type{});
+      pipeline_load_compute_lse_params, ClusterShape{},
+      /*barrier init*/ cute::true_type{}, /*mask calc*/cute::true_type{});
 
     typename PipelineLoadComputeSumOdO::Params pipeline_load_compute_sum_odo_params;
     if (role == WarpRole::Load) {
@@ -1576,13 +1573,14 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
     if (role == WarpRole::Compute) {
       pipeline_load_compute_sum_odo_params.role = PipelineLoadComputeSumOdO::ThreadCategory::Consumer;
     }
-    pipeline_load_compute_sum_odo_params.producer_arv_count = NumThreadsPerWarp;
-    pipeline_load_compute_sum_odo_params.consumer_arv_count = kNumComputeWarps * NumThreadsPerWarp;
+    pipeline_load_compute_sum_odo_params.is_leader = lane_predicate && (role == WarpRole::Load);
+    pipeline_load_compute_sum_odo_params.transaction_bytes = TileShapeQ{} * sizeof(ElementAcc);
+    pipeline_load_compute_sum_odo_params.num_consumers = kNumComputeWarps * NumThreadsPerWarp;
     pipeline_load_compute_sum_odo_params.initializing_warp = initializing_warp++;
     PipelineLoadComputeSumOdO pipeline_load_compute_sum_odo(
       shared_storage.pipelines.load_compute_sum_odo,
-      pipeline_load_compute_sum_odo_params,
-      /*barrier init*/ cute::true_type{});
+      pipeline_load_compute_sum_odo_params, ClusterShape{},
+      /*barrier init*/ cute::true_type{}, /*mask calc*/cute::true_type{});
 
     typename PipelineMmaComputeS::Params pipeline_mma_compute_s_params;
     if (role == WarpRole::Mma) {
