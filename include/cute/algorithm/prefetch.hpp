@@ -37,6 +37,13 @@
 namespace cute
 {
 
+// See the note in cute/algorithm/copy.hpp: the include above is part of a cycle rooted in
+// cute/atom/copy_atom.hpp, so Copy_Atom is not always declared by the time this header is
+// parsed. The definition still arrives from copy_atom.hpp before any instantiation.
+
+template <class... Args>
+struct Copy_Atom;
+
 //
 // Prefetch global tensors into L2
 //

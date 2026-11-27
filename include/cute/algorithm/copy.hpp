@@ -37,6 +37,24 @@
 namespace cute
 {
 
+// Forward declarations of the atoms the algorithms below dispatch on.
+//
+// The include above is a cycle: cute/atom/copy_atom.hpp pulls this header back in through
+// cute/atom/mma_atom.hpp -> ... -> cute/atom/partitioner.hpp -> cute/tensor.hpp, and it does so
+// from its own include list, before it declares anything. A translation unit whose first cute
+// include is copy_atom.hpp therefore parses the overloads below with the include above a no-op.
+// Declaring the class templates here keeps those overloads valid; the definitions still arrive
+// from copy_atom.hpp before anything can instantiate them.
+
+template <class... Args>
+struct Copy_Atom;
+
+template <class Copy_Atom, class LayoutCopy_TV, class ShapeTiler_MN>
+struct TiledCopy;
+
+template <class TiledCopy, class ThrIdx>
+struct ThrCopy;
+
 //
 // copy_if -- Predicated Copy
 //
