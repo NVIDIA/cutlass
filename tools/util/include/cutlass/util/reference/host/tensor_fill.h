@@ -160,6 +160,8 @@ struct RandomGaussianFunc {
   double pi;
   double pnz;
   bool exclude_zero;
+  mutable std::mt19937 bernoulli_rnd;
+  mutable std::bernoulli_distribution bernoulli_dist;
 
   //
   // Methods
@@ -172,7 +174,9 @@ struct RandomGaussianFunc {
     double pnz_ = 1.0,
     bool exclude_zero_ = false
   ):
-    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)), pnz(pnz_), exclude_zero(exclude_zero_) {
+    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)), pnz(pnz_), exclude_zero(exclude_zero_),
+    bernoulli_rnd{static_cast<std::mt19937::result_type>(seed_)},
+    bernoulli_dist(pnz_) {
       std::srand((unsigned)seed);
   }
 
@@ -190,10 +194,6 @@ struct RandomGaussianFunc {
     // Scale and convert final result
     Element result;
 
-    // Sample from the Bernoulli distribution, and use the result to sample from the Gaussian
-    std::random_device rnd_device;
-    std::mt19937 bernoulli_rnd(rnd_device());
-    std::bernoulli_distribution bernoulli_dist(pnz);
     bool bernoulli_result = bernoulli_dist(bernoulli_rnd);
 
     // Sample from the Gaussian distribution for a nonzero element
@@ -235,6 +235,8 @@ struct RandomGaussianFunc<complex<Element> > {
   double pi;
   double pnz;
   bool exclude_zero;
+  mutable std::mt19937 bernoulli_rnd;
+  mutable std::bernoulli_distribution bernoulli_dist;
 
   //
   // Methods
@@ -247,7 +249,9 @@ struct RandomGaussianFunc<complex<Element> > {
     double pnz_ = 1.0,
     bool exclude_zero_ = false
   ):
-    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)), pnz(pnz_), exclude_zero(exclude_zero_) {
+    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)), pnz(pnz_), exclude_zero(exclude_zero_),
+    bernoulli_rnd{static_cast<std::mt19937::result_type>(seed_)},
+    bernoulli_dist(pnz_) {
       std::srand((unsigned)seed);
   }
 
@@ -260,10 +264,6 @@ struct RandomGaussianFunc<complex<Element> > {
     detail::BoxMullerFunc func;
     func(rnd, mean, stddev, pi);
 
-    // Sample from the Bernoulli distribution, and use the result to sample from the Gaussian
-    std::random_device rnd_device;
-    std::mt19937 bernoulli_rnd(rnd_device());
-    std::bernoulli_distribution bernoulli_dist(pnz);
     bool bernoulli_result = bernoulli_dist(bernoulli_rnd);
 
     // Sample from the Gaussian distribution for a nonzero element
@@ -312,6 +312,8 @@ struct RandomGaussianFunc<Quaternion<Element> > {
   double pi;
   double pnz;
   bool exclude_zero;
+  mutable std::mt19937 bernoulli_rnd;
+  mutable std::bernoulli_distribution bernoulli_dist;
 
   //
   // Methods
@@ -324,7 +326,9 @@ struct RandomGaussianFunc<Quaternion<Element> > {
     double pnz_ = 1.0,
     bool exclude_zero_ = false
   ):
-    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)), pnz(pnz_), exclude_zero(exclude_zero_) {
+    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)), pnz(pnz_), exclude_zero(exclude_zero_),
+    bernoulli_rnd{static_cast<std::mt19937::result_type>(seed_)},
+    bernoulli_dist(pnz_) {
       std::srand((unsigned)seed);
   }
 
@@ -339,10 +343,6 @@ struct RandomGaussianFunc<Quaternion<Element> > {
     func(rnd1, mean, stddev, pi);
     func(rnd2, mean, stddev, pi);
 
-    // Sample from the Bernoulli distribution, and use the result to sample from the Gaussian
-    std::random_device rnd_device;
-    std::mt19937 bernoulli_rnd(rnd_device());
-    std::bernoulli_distribution bernoulli_dist(pnz);
     bool bernoulli_result = bernoulli_dist(bernoulli_rnd);
 
     // Sample from the Gaussian distribution for a nonzero element
@@ -1002,16 +1002,14 @@ struct TensorFillPadDiagonalRandomUniformFunc {
 
   /// Compute random value and update RNG state
   void operator()(Coord<Layout::kRank> const &coord) {
-    // Fill half of matrix based on FillMode
-    if (Layout::kRank == 2 && 
-        (fill_mode == cutlass::FillMode::kLower) &&
-        (coord[0] >= coord[1]) || 
-        ((coord[1] - coord[0]) >= alignment)) {
+    // Fill the triangle outside a zero padded diagonal band of width alignment.
+    if (Layout::kRank == 2 &&
+        fill_mode == cutlass::FillMode::kLower &&
+        (coord[0] - coord[1]) >= alignment) {
       view.at(coord) = func();
-    } else if (Layout::kRank == 2 && 
+    } else if (Layout::kRank == 2 &&
         fill_mode == cutlass::FillMode::kUpper &&
-        (coord[0] <= coord[1]) ||
-        ((coord[0] - coord[1]) >= alignment)) {
+        (coord[1] - coord[0]) >= alignment) {
       view.at(coord) = func();
     }
   }
