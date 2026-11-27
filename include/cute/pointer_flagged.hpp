@@ -80,6 +80,10 @@ CUTE_HOST_DEVICE constexpr
 auto
 downcast(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
+  // The flag carries the bit width of one element. A downcast<N> divides that
+  // width by N, thus N must divide B. Without this condition the integer
+  // division truncates, and an N larger than B gives a flag of zero bits.
+  static_assert(B % N == 0, "downcast<N> of a flagged layout needs N to divide the flag bit count.");
   return composition(layout.layout_a(), smem_ptr_flag_bits<B/N>{}, downcast<N>(layout.layout_b()));
 }
 
