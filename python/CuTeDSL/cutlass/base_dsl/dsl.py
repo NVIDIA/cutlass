@@ -538,7 +538,7 @@ class BaseDSL(metaclass=DSLSingletonMeta):
         """Create the environment manager for this DSL's prefix."""
         return self._env_class(self.name)
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=None)
     def print_warning_once(self, message: str) -> None:
         if self.envar.warnings_ignore:
             return
