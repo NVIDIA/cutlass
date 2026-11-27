@@ -485,6 +485,20 @@ class CopyG2RTrait(atom.Trait):
     ) -> ir.Value:
         if cache_policy is None:
             return self.value
+        # The ``invariant`` flag is baked into the atom type (e.g.
+        # ``!cute_nvgpu.atom.g2r<bf16 copy_bits = 256 invariant = true>``) and is not
+        # exposed by the ``CopyAtomG2RType`` Python binding, so it is read back from
+        # the type's textual form. The trait is reconstructed through ``with_`` /
+        # ``__new_from_mlir_values__``, so a flag stored on the trait would not survive.
+        if "invariant = true" in str(self.value.type):
+            raise ValueError(
+                "cute.copy(..., cache_policy=...) is not supported for a CopyG2ROp atom "
+                "created with invariant=True: the lowering emits a plain non-coherent "
+                "load (ld.global.nc) and silently drops the L2 cache policy. Either "
+                "create the atom with invariant=False to apply the cache policy, or "
+                "omit the cache_policy argument to keep the invariant (non-coherent) "
+                "load."
+            )
         cache_policy_attr_str = (
             f"#cute_nvgpu.atom_copy_field_g2r<{COPY_CACHE_POLICY_FIELD_NAME}>"
         )
