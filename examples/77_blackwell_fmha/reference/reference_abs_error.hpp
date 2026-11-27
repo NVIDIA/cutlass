@@ -160,7 +160,7 @@ void reference_abs_diff(
 
   dim3 block(256, 1, 1);
   dim3 grid(1024, 1, 1);
-  reference_abs_diff_kernel<<<block, grid>>>(
+  reference_abs_diff_kernel<<<grid, block>>>(
       data.get(), data_ref.get(), data.size(),
       result.get(), result.get() + 1, kPrintDiff);
 
@@ -256,7 +256,7 @@ void reference_rel_diff(
 
   dim3 block(256, 1, 1);
   dim3 grid(1024, 1, 1);
-  reference_rel_diff_kernel<<<block, grid>>>(
+  reference_rel_diff_kernel<<<grid, block>>>(
       data.get(), data_ref.get(), data.size(),
       result.get(), result.get() + 1, kPrintDiff);
 

@@ -618,7 +618,7 @@ Result profile_convolution(Options const &options) {
       output_workspace << "Reference = \n" << tensor_ref_d.host_view() << "\n\n";
     }
 
-    output_workspace << "Computed = \n" << tensor_c.host_view() << std::endl;
+    output_workspace << "Computed = \n" << tensor_d.host_view() << std::endl;
 
     std::cout << "Results written to '" << ss.str() << "'." << std::endl;
   }
