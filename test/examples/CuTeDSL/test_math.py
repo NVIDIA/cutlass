@@ -115,3 +115,38 @@ def test_binary_ops():
     torch.cuda.synchronize()
 
     assert torch.equal(out, expected)
+
+
+@cute.kernel
+def _sqrt_ops_kernel(
+    inp: cute.Tensor,
+    out: cute.Tensor,
+):
+    tidx, _, _ = cute.arch.thread_idx()
+    out[tidx] = cute.math.sqrt(inp[tidx])
+
+
+@cute.jit
+def _sqrt_ops_host(
+    inp: cute.Tensor,
+    out: cute.Tensor,
+):
+    _sqrt_ops_kernel(inp, out).launch(
+        grid=[1, 1, 1], block=[inp.shape[0], 1, 1]
+    )
+
+
+def test_sqrt_ops():
+    inp = torch.tensor([1.0, 4.0, 9.0, 16.0], device="cuda", dtype=torch.float32)
+    expected = torch.tensor([1.0, 2.0, 3.0, 4.0], device="cuda", dtype=torch.float32)
+    out = torch.zeros(4, device="cuda", dtype=torch.float32)
+
+    inp_cute = from_dlpack(inp)
+    out_cute = from_dlpack(out)
+
+    args = (inp_cute, out_cute)
+
+    cute.compile(_sqrt_ops_host, *args)(*args)
+    torch.cuda.synchronize()
+
+    assert torch.equal(out, expected)
