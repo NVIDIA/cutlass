@@ -289,6 +289,9 @@ public:
   }
 
   static Status can_implement(Arguments const &args) {
+    if (ProblemVisitor::kRequiresPrecomputation && args.host_problem_sizes == nullptr) {
+      return Status::kErrorInvalidProblem;
+    }
     return Status::kSuccess;
   }
  
