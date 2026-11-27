@@ -477,6 +477,52 @@ TEST(CuTe_core, Composition)
   //   test_composition(a, b);
   // }
 
+  // Stride does not divide the mode, but the rhs fits within it: (2-1)*4 < 6
+  {
+    auto a = make_layout(Shape<_6,_8>{}, Stride<_1,_10>{});
+    auto b = make_layout(_2{}, _4{});
+
+    test_composition(a, b);
+  }
+
+  {
+    auto a = make_layout(make_shape(6,8), make_stride(1,10));
+    auto b = make_layout(2, 4);
+
+    test_composition(a, b);
+  }
+
+  // Stride does not divide the mode, but the rhs fits within it: (3-1)*5 < 12
+  {
+    auto a = make_layout(Shape<_12,_8>{}, Stride<_1,_128>{});
+    auto b = make_layout(_3{}, _5{});
+
+    test_composition(a, b);
+  }
+
+  // Stride divides the first mode, then the rhs fits within the second mode: (2-1)*4 < 6
+  {
+    auto a = make_layout(Shape<_4,_6,_8>{}, Stride<_1,_10,_128>{});
+    auto b = make_layout(_2{}, _16{});
+
+    test_composition(a, b);
+  }
+
+  // Size-1 rhs is always valid, whatever its stride
+  {
+    auto a = make_layout(Shape<_6,_8>{}, Stride<_1,_10>{});
+    auto b = make_layout(_1{}, _7{});
+
+    test_composition(a, b);
+  }
+
+  // Should fail to a static stride divisibility condition: (4-1)*4 >= 6, needs offsets 0,4,12,20
+  // {
+  //   auto a = make_layout(Shape<_6,_8>{}, Stride<_1,_10>{});
+  //   auto b = make_layout(_4{}, _4{});
+  //   test_composition(a, b);
+  // }
+
   {
     auto a = make_layout(3, _1{});
     auto b = make_layout(_4{}, _1{});
@@ -551,6 +597,14 @@ TEST(CuTe_core, Composition)
   {
     auto a = make_layout(Shape<_4,_4>{}, Stride<_m1,_1>{});
     auto b = make_layout(Shape<_2,_4,_2>{}, Stride<_1,_4,_2>{});
+
+    test_composition(a, b);
+  }
+
+  // Negative rhs stride that does not divide the mode, but fits within it: (2-1)*|-4| < 6
+  {
+    auto a = make_layout(Shape<_6,_8>{}, Stride<_1,_10>{});
+    auto b = make_layout(_2{}, Int<-4>{});
 
     test_composition(a, b);
   }

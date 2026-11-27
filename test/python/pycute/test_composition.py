@@ -209,5 +209,37 @@ class TestComposition(unittest.TestCase):
     layoutB = Layout(6,12)
     self.helper_test_composition(layoutA, layoutB)
 
+  def test_composition_stride_fits_in_mode(self):
+    # Stride divisibility condition: the RHS stride need not divide a mode (or be divided by it)
+    # of the LHS if all remaining RHS offsets fit within that mode, (rest_shape-1)*rest_stride < curr_shape.
+    cases = [
+      # (layoutA,                     layoutB,          expected)
+      (Layout((6,8),(1,10)),          Layout(2,4),      Layout(2,4)),     # 4 < 6
+      (Layout((12,8),(1,100)),        Layout(3,5),      Layout(3,5)),     # 2*5 < 12
+      (Layout((8,8),(8,1)),           Layout(3,3),      Layout(3,24)),    # 2*3 < 8
+      (Layout((4,6,8),(1,10,100)),    Layout(2,16),     Layout(2,40)),    # 16 % 4 == 0, then 4 < 6
+      (Layout((6,8),(1,10)),          Layout(1,7),      Layout(1,20)),    # size-1 RHS always fits
+    ]
+    for layoutA, layoutB, expected in cases:
+      layoutR = composition(layoutA, layoutB)
+      self.assertEqual(layoutR, expected, f"{layoutA} o {layoutB}")
+      self.assertEqual(size(layoutR), size(layoutB))
+      for i in range(size(layoutB)):
+        self.assertEqual(layoutR(i), layoutA(layoutB(i)))
+
+  def test_composition_stride_invalid(self):
+    # Stride divisibility condition: the RHS stride neither divides nor is divided by a mode of
+    # the LHS and the RHS does not fit within that mode, so the offsets wrap around the mode
+    # non-uniformly. E.g., (6,8):(1,10) o 4:4 needs offsets 0,4,12,20, which no layout can represent.
+    for layoutA, layoutB in [
+      (Layout((6,8),(1,10)),       Layout(4,4)),
+      (Layout((6,8),(1,10)),       Layout(2,7)),
+      (Layout((12,8),(1,100)),     Layout(4,5)),
+      (Layout((4,6,8),(1,10,100)), Layout(4,16)),
+      (Layout((6,8),(0,10)),       Layout(4,4)),   # stride-0 mode
+    ]:
+      with self.assertRaises(AssertionError, msg=f"{layoutA} o {layoutB}"):
+        composition(layoutA, layoutB)
+
 if __name__ == "__main__":
   unittest.main()
