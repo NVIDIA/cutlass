@@ -286,3 +286,8 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 89)
 
 endif()
 
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_conv_device_validation
+  conv_validation_and_update.cu
+)
