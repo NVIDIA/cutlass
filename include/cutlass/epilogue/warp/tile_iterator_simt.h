@@ -610,6 +610,9 @@ private:
   /// Thread offset
   MatrixCoord thread_offset_;
 
+  /// Tile id 
+  Index tile_offset_id_;
+
 public:
 
   /// Default constructor
@@ -625,7 +628,8 @@ public:
     pointer_(reinterpret_cast<AccessType *>(ref.data())),
     layout_(ref.stride()[0] / AccessType::kElements),
     divisible_(true),
-    extent_(WarpShape::kM, WarpShape::kN) { 
+    extent_(WarpShape::kM, WarpShape::kN),
+    tile_offset_id_(0) { 
 
     auto lane_layout = Policy::MmaSimtPolicy::get_lane_layout();
     MatrixCoord lane_offset = lane_layout.inverse(lane_id);
@@ -651,7 +655,8 @@ public:
     pointer_(reinterpret_cast<AccessType *>(ref.data())),
     layout_(ref.stride()[0] / AccessType::kElements),
     divisible_(false),
-    extent_(extent) { 
+    extent_(extent),
+    tile_offset_id_(0) { 
 
     auto lane_layout = Policy::MmaSimtPolicy::get_lane_layout();
     MatrixCoord lane_offset = lane_layout.inverse(lane_id);
@@ -768,7 +773,13 @@ public:
 
   CUTLASS_HOST_DEVICE
   TileIteratorSimtCanonical & operator++() {
-    return add_tile_offset({1, 0});
+    tile_offset_id_++;
+    int offset = 1;
+    if(tile_offset_id_ %   Policy::MmaSimtPolicy::LaneMmaShape::kM == 0)
+    {
+      offset +=  (Policy::MmaSimtPolicy::WarpShape::kRow-1) * Policy::MmaSimtPolicy::LaneMmaShape::kM;
+    }
+    return add_tile_offset({offset, 0});
   }
 
   /// Set smem base address
