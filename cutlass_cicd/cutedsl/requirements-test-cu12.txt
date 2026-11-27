@@ -26,7 +26,7 @@ nvshmem4py-cu12==0.2.1; python_version <= "3.13" and sys_platform != "win32"
 nvtx==0.2.14
 psutil==7.2.1
 pyyaml
-pytest==9.0.2
+pytest==9.0.3
 pytest-xdist==3.8.0
 pytest-memray==1.8.0; sys_platform != "win32"
 pytest-benchmark==5.1.0
