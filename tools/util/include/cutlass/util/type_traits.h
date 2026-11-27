@@ -103,7 +103,7 @@ struct TypeTraits<unsigned> {
 
 template <>
 struct TypeTraits<int64_t> {
-  static cudaDataType_t const cublas_type = CUDA_R_8I;
+  static cudaDataType_t const cublas_type = CUDA_R_64I;
   typedef int64_t host_type;
   typedef int64_t device_type;
   typedef int64_t integer_type;
@@ -115,7 +115,7 @@ struct TypeTraits<int64_t> {
 
 template <>
 struct TypeTraits<uint64_t> {
-  static cudaDataType_t const cublas_type = CUDA_R_8I;
+  static cudaDataType_t const cublas_type = CUDA_R_64I;
   typedef uint64_t host_type;
   typedef uint64_t device_type;
   typedef uint64_t integer_type;
