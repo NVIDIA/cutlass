@@ -412,7 +412,12 @@ class CopyG2STileNonExecBaseTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -636,7 +641,12 @@ class CopyG2STileMulticastNonExecBaseTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -909,7 +919,12 @@ class CopyBulkTensorIm2ColG2SNonExecTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, cast(Any, tma_bar_ptr).value, loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -1051,7 +1066,12 @@ class CopyBulkTensorIm2ColG2SMulticastNonExecTrait(TmaTrait):
         exec_value = _cute_nvgpu_ir.atom_set_value(
             exec_value, attr, Int16(mcast_mask).ir_value(loc=loc, ip=ip), loc=loc, ip=ip
         )
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = f"#cute_nvgpu.atom_copy_field_tmaload<{TMA_DESC_PTR_FIELD_NAME}>"
             attr = ir.Attribute.parse(attr_str)
             exec_value = _cute_nvgpu_ir.atom_set_value(
@@ -1166,7 +1186,12 @@ class CopyBulkTensorTileS2GNonExecTrait(TmaTrait):
         Custom implementation of unpack for non-executable TMAs.
         """
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_DESC_PTR_FIELD_NAME}>"
             )
@@ -1340,7 +1365,12 @@ class CopyReduceBulkTensorTileS2GNonExecTrait(TmaTrait):
         Custom implementation of unpack for non-executable TMAs.
         """
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmareduce<{TMA_DESC_PTR_FIELD_NAME}>"
             )
@@ -1727,7 +1757,12 @@ class CopyBulkTensorIm2ColS2GNonExecTrait(TmaTrait):
         Custom implementation of unpack for non-executable TMAs.
         """
         exec_value = _cute_nvgpu_ir.atom_make_exec_tma(self.value, loc=loc, ip=ip)
-        if isinstance(tma_desc_ptr, Pointer):
+        if tma_desc_ptr is not None:
+            if not isinstance(tma_desc_ptr, Pointer):
+                raise ValueError(
+                    "expects a `cute.Pointer` to be provided via the tma_desc_ptr kw argument, "
+                    f"but got {type(tma_desc_ptr).__module__}.{type(tma_desc_ptr).__qualname__}"
+                )
             attr_str = (
                 f"#cute_nvgpu.atom_copy_field_tmastore<{TMA_DESC_PTR_FIELD_NAME}>"
             )
