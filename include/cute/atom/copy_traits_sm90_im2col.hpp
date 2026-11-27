@@ -409,6 +409,10 @@ make_im2col_tma_copy_desc(
 
   constexpr uint32_t num_total_modes   = LayoutA::rank;
   constexpr int      num_spatial_modes = num_total_modes - 2;
+  // gmem_prob_shape, gmem_prob_stride and tma_traversal_strides below each hold
+  // 5 elements, and the loops that fill them index by the tensor rank.
+  static_assert(num_total_modes >= 3 && num_total_modes <= 5,
+                "im2col TMA needs a tensor of rank 3, 4 or 5: C, 1 to 3 spatial modes, and N.");
 
   // Gmem starting address
   void* gmem_address = (void*) raw_pointer_cast(tensor_cwhdn.data());
