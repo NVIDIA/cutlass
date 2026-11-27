@@ -549,7 +549,7 @@ struct VisitorRowReduction {
   private:
 
     template <int FragmentSize>
-    CUTLASS_DEVICE ElementCompute
+    CUTLASS_DEVICE void
     reduction(Array<ElementCompute, FragmentSize>& reduce_buffer, Array<ElementCompute, FragmentSize> const& result) {
       using ReduceInput = RegReduceFn<ElementCompute>;
       ReduceInput reduce_input{};
