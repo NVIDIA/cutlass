@@ -71,7 +71,7 @@ Programming massively parallel systems with various layers of logical thread and
 ## Reducing the number of named types and iterator concepts
 
 CUTLASS 2.x design preferred introducing bespoke named types for each
-architecture specific thread and data layout. For instance, `gemm::treadblock` namespace
+architecture specific thread and data layout. For instance, `gemm::threadblock` namespace
 contains implementation for `MmaMultistage`, `MmaPlanarComplexMultistage`, `MmaPipelined` etc.
 despite them providing mainloops for GEMMs. To spell these types the same way in generic code,
 CUTLASS 2.x provides aliases through its `default_x_configuration.h` files, however,
