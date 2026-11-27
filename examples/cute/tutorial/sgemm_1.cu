@@ -138,7 +138,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   Tensor tCsA = local_partition(sA, tC, threadIdx.x, Step<_1, X>{});   // (THR_M,BLK_K)
   // Partition sB (BLK_N, BLK_K) by the cols of tC
   Tensor tCsB = local_partition(sB, tC, threadIdx.x, Step< X,_1>{});   // (THR_N,BLK_K)
-  // Partition gC (M,N) by the tile of tC
+  // Partition gC (BLK_M, BLK_N) by the tile of tC
   Tensor tCgC = local_partition(gC, tC, threadIdx.x, Step<_1,_1>{});   // (THR_M,THR_N)
 
   // Allocate the accumulators -- same shape/layout as the partitioned data
