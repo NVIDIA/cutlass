@@ -810,6 +810,7 @@ struct CollectiveMma<
           cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
           // UNLOCK smem_pipe_read, done _computing_ on it
+          cutlass::arch::fence_view_async_shared_read();
           pipeline.consumer_release(smem_pipe_read);
           ++smem_pipe_read;
           read_stage = smem_pipe_read.index();
@@ -841,6 +842,7 @@ struct CollectiveMma<
         cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
         // UNLOCK smem_pipe_read, done _computing_ on it
+        cutlass::arch::fence_view_async_shared_read();
         pipeline.consumer_release(smem_pipe_read);
         ++smem_pipe_read;
       }

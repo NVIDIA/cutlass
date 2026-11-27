@@ -885,6 +885,7 @@ struct CollectiveMma<
 
       cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      cutlass::arch::fence_view_async_shared_read();
 
       // Advance consumer pipeline mk/nk
       release_advance_mk();
@@ -922,6 +923,7 @@ struct CollectiveMma<
 
       cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      cutlass::arch::fence_view_async_shared_read();
 
       // Advance consumer pipeline_nk
       release_advance_nk();
@@ -949,6 +951,7 @@ struct CollectiveMma<
 
       cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      cutlass::arch::fence_view_async_shared_read();
 
       // Advance consumer pipeline mk/nk
       release_advance_mk();

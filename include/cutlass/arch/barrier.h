@@ -65,6 +65,7 @@ namespace arch {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 CUTLASS_DEVICE void fence_view_async_shared();
+CUTLASS_DEVICE void fence_view_async_shared_read();
 
 namespace detail { // namespace detail begin
 
@@ -793,6 +794,33 @@ void fence_view_async_shared() {
         "}"
         ::
         : "memory");
+#else
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+}
+
+// Order prior generic-proxy shared-memory reads (e.g. ldmatrix / ld.shared)
+// before a subsequent async-proxy write (e.g. TMA load) synchronized through
+// a barrier / mbarrier release.
+CUTLASS_DEVICE
+void fence_view_async_shared_read() {
+#if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_fence_view_async_shared_read(__LINE__);
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 4))
+    asm volatile (
+        "{\n\t"
+        "fence.proxy.async::generic.release.sync_restrict::shared::cluster::read.cluster; \n"
+        "}"
+        ::
+        : "memory");
+#else
+    asm volatile (
+        "{\n\t"
+        "fence.proxy.async.shared::cta; \n"
+        "}"
+        ::
+        : "memory");
+#endif
 #else
     CUTLASS_NOT_IMPLEMENTED();
 #endif
