@@ -806,7 +806,7 @@ CUTLASS_DEVICE
 void fence_view_async_shared_read() {
 #if CUDA_BARRIER_ENABLED
     cutlass::arch::synclog_emit_fence_view_async_shared_read(__LINE__);
-#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 4))
+#if !defined(CUTLASS_CLANG_CUDA) && (__CUDACC_VER_MAJOR__ > 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 4))
     asm volatile (
         "{\n\t"
         "fence.proxy.async::generic.release.sync_restrict::shared::cluster::read.cluster; \n"
