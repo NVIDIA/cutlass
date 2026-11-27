@@ -37,7 +37,9 @@
 
 #include "cutlass/array.h"
 #include "cutlass/util/device_memory.h"
+#if defined(_MSC_VER)
 #pragma warning( disable : 4800)
+#endif
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace test {

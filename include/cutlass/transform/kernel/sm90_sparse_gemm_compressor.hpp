@@ -407,7 +407,13 @@ private:
         }
       }
       // No negative zero: return all bits set to 1 (no masking needed)
-      return (1u << ElementAMmaRawNumBits) - 1;
+      if constexpr (ElementAMmaRawNumBits >= 32) {
+        // Shifting a 32-bit value by 32 is undefined
+        return ~uint32_t(0);
+      }
+      else {
+        return (1u << ElementAMmaRawNumBits) - 1;
+      }
     }();
     
     // Construct ElementAMmaRawUnit from the compile-time computed mask value
@@ -445,7 +451,7 @@ private:
             if constexpr (has_negative_zero_v<ElementA>) {
               // For sub-bytes, LSB will contain valid bits.
               // e.g. for float_e2m1_t, tAsA_i is stored in uint8_t with 0x0000yyyy where yyyy denote valid bits.
-              tAsA_i_negzero_masked_out = tAsA_i & negzero_mask_out_sign_mask;
+              tAsA_i_negzero_masked_out = ElementAMmaRawUnit(tAsA_i & negzero_mask_out_sign_mask);
             }
 
             // Record this ElmentAMma if it's none zero

@@ -306,7 +306,6 @@ struct CollectiveMma<
   to_underlying_arguments(ProblemShape const& problem_shapes, Arguments const& args, void* workspace) {
     (void) workspace;
 
-    auto init_shape = repeat_like(typename ProblemShape::UnderlyingProblemShape{}, int32_t(1));
     constexpr int tma_alignment_bits = 128;
     auto init_M = tma_alignment_bits;
     auto init_N = tma_alignment_bits;

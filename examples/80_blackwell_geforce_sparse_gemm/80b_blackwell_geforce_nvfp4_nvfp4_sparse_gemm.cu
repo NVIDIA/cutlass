@@ -446,7 +446,6 @@ bool verify(const Options &options) {
   Tensor tensor_SFA = make_tensor(block_SFA.host_data(), layout_SFA);
   Tensor tensor_B = make_tensor(make_iterator(block_B.host_data()), layout_B);
   Tensor tensor_SFB = make_tensor(block_SFB.host_data(), layout_SFB);
-  Tensor tensor_E = make_tensor(make_iterator(block_E.host_data()), layout_E);
 
   cutlass::reference::host::GettBlockScalingMainloopParams<
       ElementAccumulator,                 // ElementAccumulator

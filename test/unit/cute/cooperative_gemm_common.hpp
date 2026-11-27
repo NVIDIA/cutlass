@@ -416,7 +416,17 @@ void test_cooperative_gemm(GMemALayout     gmem_a_layout,
   thrust::device_vector<TA> d_a(h_a);
   thrust::device_vector<TB> d_b(h_b);
   thrust::device_vector<TC> d_c(h_c);
-  thrust::device_vector<TC> d_c_out(h_c_out.size(), TC(float(-1)));
+  // Sentinel fill value for the output. Converting -1.0f to an unsigned type is undefined,
+  // so unsigned outputs use the (well-defined) integer conversion of -1 instead.
+  TC const c_out_init = [] {
+    if constexpr (std::is_unsigned_v<TC>) {
+      return TC(-1);
+    }
+    else {
+      return TC(float(-1));
+    }
+  }();
+  thrust::device_vector<TC> d_c_out(h_c_out.size(), c_out_init);
 
   constexpr uint32_t copy_max_vec_bytes = CopyMaxVecBits / 8;
 

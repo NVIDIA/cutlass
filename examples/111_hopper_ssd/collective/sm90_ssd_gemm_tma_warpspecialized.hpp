@@ -201,7 +201,6 @@ struct SsdMainloopTmaWarpSpecialized {
   static Params to_underlying_arguments(ProblemShape const& problem_size, Arguments const& args, void* workspace) {
 
     using X = Underscore;
-    auto [G, B, EH, C, L, D, N] = problem_size;
 
     Tensor tensor_x = make_tensor(make_gmem_ptr(args.ptr_X), args.layout_X);
     Tensor tensor_b = make_tensor(make_gmem_ptr(args.ptr_B), args.layout_B);

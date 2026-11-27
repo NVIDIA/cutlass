@@ -129,7 +129,9 @@ copy_if(AutoCopyAsync                const& cpy,
         Tensor<SrcEngine, SrcLayout> const& src,
         Tensor<DstEngine, DstLayout>      & dst)
 {
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
   using SrcElemWithConst = remove_reference_t<typename SrcEngine::reference>;
+#endif
   using SrcType = typename SrcEngine::value_type;
   using DstType = typename DstEngine::value_type;
 

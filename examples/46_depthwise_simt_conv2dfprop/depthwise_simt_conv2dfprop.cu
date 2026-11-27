@@ -389,7 +389,6 @@ struct Result {
       out << options.tag << ",";
     }
 
-    cutlass::Tensor4DCoord output_size = options.output_size();
     out << "conv_" << idx << "," << options.input_size.n() << "," << options.input_size.h() << ","
         << options.input_size.w() << "," << options.input_size.c() << ","
 

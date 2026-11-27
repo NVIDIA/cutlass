@@ -140,7 +140,6 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
     typename ProblemShape::UnderlyingProblemShape problem_shape = args.problem_shape.get_host_problem_shape();
 
     KernelHardwareInfo hw_info{args.hw_info.device_id, args.hw_info.sm_count};
-    auto problem_shape_MNKL = append<4>(args.problem_shape, Int<1>{});
 
     return {
       args.mode,
@@ -158,7 +157,6 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Shape don't meet the requirements.\n");
       return implementable;
     }
-    typename ProblemShape::UnderlyingProblemShape problem_shape = args.problem_shape.get_host_problem_shape();
     implementable &= TileScheduler::can_implement(args.scheduler, args.hw_info);
     return implementable;
   }

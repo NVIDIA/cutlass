@@ -650,10 +650,8 @@ struct TestBed {
     // C       [b,  g, n, c, l]
     // y       [b, eh, d, c, l]
     // fstate  [b, eh, d, n]
-    auto mY_ref_0 = cute::make_tensor(tensor_Y_ref_0.data().get(), options.layoutY());
     auto mY_ref_1 = cute::make_tensor(tensor_Y_ref_1.data().get(), options.layoutY());
     auto mY_res   = cute::make_tensor(tensor_Y.data().get(),       options.layoutY());
-    auto mF_ref_0 = cute::make_tensor(tensor_F_ref_0.data().get(), options.layoutF());
     auto mF_ref_1 = cute::make_tensor(tensor_F_ref_1.data().get(), options.layoutF());
     auto mF_res   = cute::make_tensor(tensor_F.data().get(),       options.layoutF());
     auto mX       = cute::make_tensor(tensor_X.data().get(),       options.layoutX());

@@ -90,7 +90,7 @@ struct GemmWithBiasReluReferenceOp {
     }
 
     Z = ElementZ(z_full);
-    T = ElementT(conditional);
+    T = ElementT(static_cast<int>(conditional));
   }
 };
 

@@ -297,7 +297,9 @@ struct Testbed3xTensorBroadcast {
     cutlass::multiplies<ElementCompute> mul;
 
     // Compute broadcast operations atop the reference
+#if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
+#endif
     for (int64_t l = 0; l < cute::size<2>(A.layout()); ++l) {
       for (int64_t m = 0; m < cute::size<0>(A.layout()); ++m) {
         for (int64_t n = 0; n < cute::size<0>(B.layout()); ++n) {

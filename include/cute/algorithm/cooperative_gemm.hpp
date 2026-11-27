@@ -66,7 +66,6 @@ epilogue_predication(ThrMMA<Args...>    const& thr_mma,
                      CLoadTransformOp   const& sC_load_op,  // transforms C values before use in GEMM
                      CStoreTransformOp  const& sC_store_op) // transforms results before they are stored to C
 {
-  using InputTypeC   = typename TSC::value_type;
   using ComputeTypeC = typename ThrMMA<Args...>::ValTypeC;
   CUTE_STATIC_ASSERT(CUTE_STL_NAMESPACE::is_same_v<ComputeTypeC, typename TRC::value_type>);
 
@@ -117,7 +116,6 @@ epilogue_no_predication(uint32_t                   thread_idx,
                         SmemCopyStOpC      const& sC_copy_st_op)
 {
   using InputTypeC   = typename TSC::value_type;
-  using ComputeTypeC = typename TRC::value_type;
 
   const bool isBetaZero = [&] () {
     if constexpr (is_complex<Beta>::value) {
@@ -172,12 +170,8 @@ cooperative_gemm_predication(ThrMMA<Args...>     const& thr_mma,
                              ALoadTransformOp    const& sA_load_op,  // transforms A values before use in GEMM
                              BLoadTransformOp    const& sB_load_op)  // transforms B values before use in GEMM
 {
-  using InputTypeA        = typename TA::value_type;
-  using InputTypeB        = typename TB::value_type;
-  using InputTypeC        = typename TC::value_type;
   using ComputeTypeA = typename ThrMMA<Args...>::ValTypeA;
   using ComputeTypeB = typename ThrMMA<Args...>::ValTypeB;
-  using ComputeTypeC = typename ThrMMA<Args...>::ValTypeC;
 
   //
   // MMA Partitioning
@@ -290,10 +284,6 @@ cooperative_gemm_no_predication(uint32_t                   thread_idx,
 {
   using InputTypeA        = typename TA::value_type;
   using InputTypeB        = typename TB::value_type;
-  using InputTypeC        = typename TC::value_type;
-  using ComputeTypeA = typename ThrMMA<Args...>::ValTypeA;
-  using ComputeTypeB = typename ThrMMA<Args...>::ValTypeB;
-  using ComputeTypeC = typename ThrMMA<Args...>::ValTypeC;
 
 
   //
@@ -392,12 +382,6 @@ cooperative_gemm(uint32_t                   thread_idx,
   CUTE_STATIC_ASSERT_V(size<0>(sB) == size<1>(sC));  // BN == CN
   CUTE_STATIC_ASSERT_V(size<1>(sA) == size<1>(sB));  // AK == BK
 
-  using InputTypeA        = typename TA::value_type;
-  using InputTypeB        = typename TB::value_type;
-  using InputTypeC        = typename TC::value_type;
-  using ComputeTypeA = typename TiledMMA<Args...>::ValTypeA;
-  using ComputeTypeB = typename TiledMMA<Args...>::ValTypeB;
-  using ComputeTypeC = typename TiledMMA<Args...>::ValTypeC;
 
   auto compat = evenly_divides(make_shape(size<0>(sA), size<0>(sB), size<1>(sA)),
                                tile_shape(TiledMMA<Args...>{}));
@@ -451,12 +435,6 @@ cooperative_gemm(uint32_t                   thread_idx,
 
   CUTE_STATIC_ASSERT_V(size<1>(sA) == size<1>(sB));  // AK == BK
 
-  using InputTypeA        = typename TA::value_type;
-  using InputTypeB        = typename TB::value_type;
-  using InputTypeC        = typename TC::value_type;
-  using ComputeTypeA = typename TiledMMA<Args...>::ValTypeA;
-  using ComputeTypeB = typename TiledMMA<Args...>::ValTypeB;
-  using ComputeTypeC = typename TiledMMA<Args...>::ValTypeC;
 
   // Check if input C fragment is compatible with thr_mma and problem size
   using ref_c_frag = decltype(partition_shape_C(tiled_mma, make_shape(size<0>(sA), size<0>(sB))));

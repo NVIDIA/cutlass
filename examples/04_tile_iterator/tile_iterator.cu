@@ -70,7 +70,9 @@
 // cutlass::reference::host::TensorFillBlockSequential()
 #include "cutlass/util/reference/host/tensor_fill.h"
 
+#if defined(_MSC_VER)
 #pragma warning( disable : 4503)
+#endif
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Define PredicatedTileIterators to load and store a M-by-K tile, in column major layout.

@@ -372,7 +372,6 @@ public:
   static dim3
   get_grid_shape(Params const& params) {
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, params.hw_info.cluster_shape);
-    auto blk_shape = CtaShape_MNK{};
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
     return TileScheduler::get_grid_shape(
         params.scheduler,

@@ -173,7 +173,6 @@ void fmha_mla_reference(
   using namespace cute;
 
   auto [H, K, D, B] = problem_shape;
-  auto [D_latent, D_rope] = D;
 
   dim3 grid(H, B, 1);
   dim3 block(256);

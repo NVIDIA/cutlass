@@ -1096,7 +1096,6 @@ struct HostCollectiveDefaultEpilogue {
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(batch), 1);
     L = std::max(problem_shapes.groups(), L);
 
-    auto coord_0 = cutlass::make_Coord(0);
     auto C = cute::make_tensor(detail::make_iterator(tensors_C[batch].host_data()),
         cute::make_layout(cute::make_shape(M, N, 1), stride_c_host[batch]));
     auto D = cute::make_tensor(detail::make_iterator(references_D[batch].host_data()),

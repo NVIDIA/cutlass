@@ -151,6 +151,16 @@ endif()
 
 set(CUTLASS_TEST_UNIT_ENABLE_WARNINGS OFF CACHE BOOL "Enable warnings on waived unit tests.")
 
+# Warnings are treated as errors for CUTLASS's own targets (tests, examples, tools) when
+# CUTLASS is the top-level project. Builds with newer or untested host compilers can opt out.
+# These flags are never added to the exported CUTLASS INTERFACE target.
+if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
+  set(CUTLASS_WARNINGS_AS_ERRORS_INIT ON)
+else()
+  set(CUTLASS_WARNINGS_AS_ERRORS_INIT OFF)
+endif()
+set(CUTLASS_WARNINGS_AS_ERRORS ${CUTLASS_WARNINGS_AS_ERRORS_INIT} CACHE BOOL "Treat compiler warnings in CUTLASS tests, examples, and tools as errors")
+
 set(CUTLASS_ENABLE_EXAMPLES ${CUTLASS_ENABLE_EXAMPLES_INIT} CACHE BOOL "Enable CUTLASS Examples")
 set(CUTLASS_ENABLE_TOOLS ${CUTLASS_ENABLE_TOOLS_INIT} CACHE BOOL "Enable CUTLASS Tools")
 set(CUTLASS_ENABLE_LIBRARY ${CUTLASS_ENABLE_LIBRARY_INIT} CACHE BOOL "Enable CUTLASS Library")
@@ -267,6 +277,7 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DCUTLASS_VERSIONS_GENERATED")
 
 if (WIN32)
   # Enable more warnings.  Add "-Xcompiler=/WX" to enable warnings as errors.
+  # CUTLASS_WARNINGS_AS_ERRORS does not add /WX yet: the MSVC build has not been checked for warnings.
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/W3)
 
   # Disable warning on Unicode characters
@@ -545,7 +556,18 @@ if (CUTLASS_ENABLE_OPENMP_TESTS)
 endif()
 
 if(UNIX)
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wall,-Wextra)
+  # The host compilation pass sees the arch-guarded wrappers in cute/arch and cutlass/arch,
+  # whose parameters are only used inside `#if defined(__CUDA_ARCH__)` branches. Suppress
+  # this one, as is already done for Clang host builds below.
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wno-unused-parameter)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wconversion)
+  # Host-only (CXX) sources of CUTLASS targets, e.g. the library manifest and the profiler.
+  set(CUTLASS_CXX_WARNING_FLAGS -Wall -Wextra -Wno-unused-parameter)
+  if (CUTLASS_WARNINGS_AS_ERRORS)
+    list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Werror)
+    list(APPEND CUTLASS_CXX_WARNING_FLAGS -Werror)
+  endif()
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-fno-strict-aliasing)
 endif()
 
@@ -688,6 +710,7 @@ set(__CUTLASS_CUDA_NVCC_FLAGS ${CUTLASS_CUDA_NVCC_FLAGS} CACHE INTERNAL "")
 set(__CUTLASS_CUDA_NVCC_FLAGS_RELEASE ${CUTLASS_CUDA_NVCC_FLAGS_RELEASE} CACHE INTERNAL "")
 set(__CUTLASS_CUDA_NVCC_FLAGS_RELWITHDEBINFO ${CUTLASS_CUDA_NVCC_FLAGS_RELWITHDEBINFO} CACHE INTERNAL "")
 set(__CUTLASS_CUDA_NVCC_FLAGS_DEBUG ${CUTLASS_CUDA_NVCC_FLAGS_DEBUG} CACHE INTERNAL "")
+set(__CUTLASS_CXX_WARNING_FLAGS ${CUTLASS_CXX_WARNING_FLAGS} CACHE INTERNAL "")
 
 function(cutlass_apply_standard_compile_options TARGET)
 
@@ -710,6 +733,7 @@ function(cutlass_apply_standard_compile_options TARGET)
   target_compile_options(
     ${TARGET}
     PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:${__CUTLASS_CXX_WARNING_FLAGS}>
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:${_FLAGS}>
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:$<$<CONFIG:RELEASE>:${_FLAGS_RELEASE}>>
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:$<$<CONFIG:RELWITHDEBINFO>:${_FLAGS_RELWITHDEBINFO}>>
