@@ -40,6 +40,7 @@
 #include "cutlass/array_subbyte.h"
 #include "cutlass/library/library.h"
 #include "library_internal.h"
+#include "gemm_schedule_description.hpp"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/mixed_dtype_utils.hpp"
@@ -134,6 +135,8 @@ public:
     description_.split_k_mode = SplitKMode::kNone;
     description_.transform_A = ComplexTransformMap<Operator::kTransformA>::kId;
     description_.transform_B = ComplexTransformMap<Operator::kTransformB>::kId;
+
+    initialize_gemm_schedule_description<Operator>(description_);
   }
 
   /// Returns the description of the GEMM operation

@@ -121,6 +121,48 @@ python/
 When CMake is executed, the CUTLASS Instance Library generator scripts are executed to construct a set of
 instantiations in `build/tools/library/generated/`.
 
+### Runtime GEMM schedule metadata
+
+The instance library exposes the selected CUTLASS 3.x mainloop and epilogue strategies
+through `GemmDescription`. These fields describe the resolved collective policies,
+including when the kernel was constructed with `KernelScheduleAuto` or
+`EpilogueScheduleAuto`:
+
+| Field | Meaning |
+| --- | --- |
+| `mainloop_schedule` | Multistage, TMA, warp-specialized, ping-pong, cooperative, or Blackwell 1-SM / 2-SM execution |
+| `mainloop_load` | `cp.async`, TMA, or mixed TMA / `cp.async` operand loads |
+| `epilogue_schedule` | Direct stores without shared memory, or a TMA epilogue |
+| `accumulation_kind` | Default accumulation or the opt-in Hopper FP8 fast-accumulation policy |
+
+For example, a client can select cooperative Hopper kernels without parsing their names:
+
+```cpp
+using namespace cutlass::library;
+auto const& description = static_cast<GemmDescription const&>(operation.description());
+if (description.mainloop_schedule == MainloopScheduleKind::kWarpSpecializedCooperative &&
+    description.accumulation_kind == AccumulationKind::kDefault) {
+  // Consider this kernel for the application's dispatch table.
+}
+```
+
+Use the description type matching the operation kind. `BlockScaledGemmDescription`
+and `BlockwiseGemmDescription` expose the same fields; grouped operations expose them
+through `GroupedGemmDescription::gemm`. The 1-SM / 2-SM distinction comes from the
+selected MMA atom's CTA group, rather than the cluster size.
+
+Unrecognized custom policies and descriptions populated by older operation wrappers
+retain `kUnknown` fields. Clients should handle `kUnknown` explicitly. In particular,
+the pre-Hopper `KernelMultistage` tag alone does not distinguish synchronous loads
+from `cp.async`, so its load kind is unknown. Existing constructor arguments are
+unchanged; rebuild the instance library and its clients together when updating the
+public description structures.
+
+The `cutlass_test_unit_library` target checks this metadata using real collective
+builders and operation descriptions. It requires a CUDA toolkit for compilation but
+runs on the host without launching kernels or requiring a GPU. Architecture-specific
+cases are enabled according to the toolkit's support for the respective builders.
+
 ### CUTLASS Profiler
 
 The CUTLASS Profiler is designed to load the CUTLASS Instance Library and execute all operations contained therein.
