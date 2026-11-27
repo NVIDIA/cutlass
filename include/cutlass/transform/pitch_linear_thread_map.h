@@ -699,7 +699,7 @@ struct PitchLinearWarpStripedThreadMap {
 
     static int const kWarpsContiguous =
       (kWarpCount > WarpAccessIterations::kStrided ?
-        WarpAccessIterations::kContiguous / kWarpsStrided : 1);
+        (kWarpCount / kWarpsStrided) : 1);
 
     /// Arrangement of warps within a threadblock-scoped tile
     using WarpArrangement = layout::PitchLinearShape<
