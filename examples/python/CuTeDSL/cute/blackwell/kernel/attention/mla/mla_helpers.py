@@ -42,6 +42,7 @@ class MLAStaticTileSchedulerParams:
         problem_shape_s: cute.Int32,
         cluster_shape_mnk: cute.Shape,
         split_kv: cutlass.Int32,
+        split_pv: int = 1,
         *,
         problem_shape_b_fdd: cute.FastDivmodDivisor = None,
         problem_shape_s_fdd: cute.FastDivmodDivisor = None,
@@ -60,6 +61,8 @@ class MLAStaticTileSchedulerParams:
         :param cluster_shape_mnk: The shape of the cluster
         :type cluster_shape_mnk: cute.Shape
         :param split_kv: The scalar factor for split KV
+        :param split_pv: The number of splits along PV N dimension (compile-time constant)
+        :type split_pv: int
         """
         self.is_persistent = is_persistent
         self.problem_shape_b = problem_shape_b
@@ -69,6 +72,7 @@ class MLAStaticTileSchedulerParams:
         self.cluster_shape_mnk = cluster_shape_mnk
         self.split_kv = split_kv
         self.split_kv_fdd = split_kv_fdd
+        self.split_pv = split_pv
         if cutlass.const_expr(problem_shape_b_fdd is None):
             self.problem_shape_b_fdd = cute.fast_divmod_create_divisor(
                 problem_shape_b, loc=loc, ip=ip
@@ -114,6 +118,7 @@ class MLAStaticTileSchedulerParams:
             problem_shape_s,
             self.cluster_shape_mnk,
             split_kv,
+            self.split_pv,
             problem_shape_b_fdd=problem_shape_b_fdd,
             problem_shape_s_fdd=problem_shape_s_fdd,
             split_kv_fdd=split_kv_fdd,
@@ -127,9 +132,15 @@ def create_mla_static_tile_scheduler_params(
     problem_shape_s: cute.Int32,
     cluster_shape_mnk: cute.Shape,
     split_kv: cutlass.Int32,
+    split_pv: int = 1,
 ) -> MLAStaticTileSchedulerParams:
     return MLAStaticTileSchedulerParams(
-        is_persistent, problem_shape_b, problem_shape_s, cluster_shape_mnk, split_kv
+        is_persistent,
+        problem_shape_b,
+        problem_shape_s,
+        cluster_shape_mnk,
+        split_kv,
+        split_pv,
     )
 
 
@@ -256,7 +267,7 @@ class MLAStaticTileScheduler:
 
             blk_coord = (cluster_idx, s_idx, b_idx, split_kv_idx)
         else:
-            s_idx, b_idx = divmod(self.blk_coord[1], self.params.problem_shape_b_fdd)
+            b_idx, s_idx = divmod(self.blk_coord[1], self.params.problem_shape_s_fdd)
             blk_coord = (self.blk_coord[0], s_idx, b_idx, self.blk_coord[2])
 
         return WorkTileInfo(blk_coord, is_valid)
