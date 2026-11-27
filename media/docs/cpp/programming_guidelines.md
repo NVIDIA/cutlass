@@ -56,7 +56,7 @@ its first argument.
 ### Composable Shared Memory
 
 Shared memory requires explicit effort by the programmer to allocate and de-allocate. CUTLASS follows the paradigm
-introduced by [CUB](https://nvlabs.github.io/cub/) to define composed structures for storing data intended to be held
+introduced by [CUB](https://nvidia.github.io/cccl/unstable/cub/) to define composed structures for storing data intended to be held
 in shared memory. Any object requiring shared memory storage for itself or its data members should define a child
 structure called `SharedStorage`. This holds data needed by the class and also instantiates `SharedStorage`
 objects for each data member.
@@ -680,7 +680,7 @@ Members within classes and structures should be organized as follows:
 4. Other methods
 
 This convention follows the
-[CUB library](https://nvlabs.github.io/cub/)
+[CUB library](https://nvidia.github.io/cccl/unstable/cub/)
 and is also described by
 [Howard Hinnant](https://howardhinnant.github.io/classdecl.html).
 It also approximates the usual ordering of chapters
