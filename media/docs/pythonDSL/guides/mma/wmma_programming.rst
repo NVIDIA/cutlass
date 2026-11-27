@@ -568,8 +568,8 @@ BN, and BK are each subdivided into MMA-sized blocks:
         |  0  |  1  |  |  perm_M=32                 |  0   |  1   |  2   |  3   | | perm_N
         +-----+-----+  v                            |      |      |      |      | v  =32
         |  0  |  1  |  ^                            +------+------+------+------+
-        |     |     |  |  perm_M=32                   MMA_N = BN/perm_N = 4
-        +-----+-----+  v
+        |     |     |  |  perm_M=32                   MMA_N = 2 x BN/perm_N = 8
+        +-----+-----+  v                              (2 atoms per warp in each block)
         |  0  |  1  |  ^                           sB: partition into (MMA, MMA_N, MMA_K, PIPE)
         |     |     |  |
         +-----+-----+  v                           gC: partition into (MMA, MMA_M, MMA_N)
@@ -582,8 +582,11 @@ BN, and BK are each subdivided into MMA-sized blocks:
 After partition (per thread, e.g. thread ``tidx``):
 
 - ``tCsA: (MMA, MMA_M, MMA_K, PIPE) = (MMA, 4, 2, 4)`` — MMA_M = BM/perm_M = 128/32 = 4, MMA_K = BK/perm_K = 32/16 = 2
-- ``tCsB: (MMA, MMA_N, MMA_K, PIPE) = (MMA, 4, 2, 4)`` — MMA_N = BN/perm_N = 128/32 = 4, MMA_K = BK/perm_K = 32/16 = 2
-- ``tCgC: (MMA, MMA_M, MMA_N) = (MMA, 4, 4)`` — MMA_M = 128/32 = 4, MMA_N = 128/32 = 4
+- ``tCsB: (MMA, MMA_N, MMA_K, PIPE) = (MMA, 8, 2, 4)`` — MMA_N = 2 × BN/perm_N = 2 × 128/32 = 8, MMA_K = BK/perm_K = 32/16 = 2
+- ``tCgC: (MMA, MMA_M, MMA_N) = (MMA, 4, 8)`` — MMA_M = 128/32 = 4, MMA_N = 2 × 128/32 = 8
+
+The factor 2 in ``MMA_N`` is the N doubling: each warp repeats its atom
+twice inside every ``perm_N`` block.
 
 The first mode ``MMA`` contains the atom's **thread × value** layout — it
 encodes which registers within a single thread hold which matrix
@@ -677,10 +680,10 @@ Continuing the running example from `Partitioning Tensors`_ (F16
 .. code-block:: text
 
    tCsA: (MMA, MMA_M=4, MMA_K=2, PIPE=4)
-   tCsB: (MMA, MMA_N=4, MMA_K=2, PIPE=4)
+   tCsB: (MMA, MMA_N=8, MMA_K=2, PIPE=4)
 
    make_fragment_A(tCsA[..., stage]) -> tCrA: (MMA, 4, 2)
-   make_fragment_B(tCsB[..., stage]) -> tCrB: (MMA, 4, 2)
+   make_fragment_B(tCsB[..., stage]) -> tCrB: (MMA, 8, 2)
 
 Each element of ``tCrA`` / ``tCrB`` is a register value owned by the current
 thread. Together, the 32 threads in the warp hold the full operand fragment
@@ -702,8 +705,8 @@ For the same running example:
 
 .. code-block:: text
 
-   tCgC: (MMA, MMA_M=4, MMA_N=4)
-   make_fragment_C(tCgC) -> tCrC: (MMA, 4, 4)
+   tCgC: (MMA, MMA_M=4, MMA_N=8)
+   make_fragment_C(tCgC) -> tCrC: (MMA, 4, 8)
 
 ``tCrC`` stays in registers for the entire main loop and serves as both the
 input C and output D argument of ``cute.gemm()``.
