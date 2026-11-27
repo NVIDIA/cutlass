@@ -110,7 +110,7 @@ To get started quickly - please refer :
     - Some CUTLASS Primitives packed mixed-input ops compile incorrectly on Rubin (sm107a/sm107f), resulting in wrong code generation. The specific patterns include:
       - Packed mul, sub, and add ops with bf16x2 or fp16x2 result type and f32x2 input type when result is converted to fp32 later. APIs affected: `add_packed_f16x2_f32x2_f32x2`, `add_packed_bf16x2_f32x2_f32x2`, `mul_packed_f16x2_f32x2_f32x2`, `mul_packed_bf16x2_f32x2_f32x2`, `sub_packed_f16x2_f32x2_f32x2`, `sub_packed_bf16x2_f32x2_f32x2`
         - For example:
-  	   '''
+  	      ```
           x = prims.mul_packed_bf16x2_f32x2_f32x2(a, b)
           out[0], out[1] = f32(x[0]), f32(x[1])  # out[0], out[1] are wrong
           ```
