@@ -392,7 +392,7 @@ public:
     TensorRef const &ref,
     unsigned lane_id
   ):
-    stride_(ref.stride()[0] / AccessType::kElements) { 
+    stride_(size_t(ref.stride()[0]) / AccessType::kElements) {
 
     int quad_id = (lane_id / Detail::kLanesInQuad); 
     int lane_in_quad = (lane_id % Detail::kLanesInQuad);
@@ -587,7 +587,7 @@ public:
     TensorRef const &ref,
     unsigned lane_id
   ):
-    stride_(ref.stride()[0] / AccessType::kElements) { 
+    stride_(size_t(ref.stride()[0]) / AccessType::kElements) {
 
     int quad_id = (lane_id / Detail::kLanesInQuad); 
     int lane_in_quad = (lane_id % Detail::kLanesInQuad);
@@ -782,7 +782,7 @@ public:
     TensorRef const &ref,
     unsigned lane_id
   ):
-    stride_(ref.stride()[0] / AccessType::kElements) {
+    stride_(size_t(ref.stride()[0]) / AccessType::kElements) {
 
     int quad_id = (lane_id / Detail::kLanesInQuad);
     int lane_in_quad = (lane_id % Detail::kLanesInQuad);
@@ -971,7 +971,7 @@ public:
     TensorRef const &ref,
     unsigned lane_id
   ):
-    stride_(ref.stride()[0] / AccessType::kElements) {
+    stride_(size_t(ref.stride()[0]) / AccessType::kElements) {
 
     int quad_id = (lane_id / Detail::kLanesInQuad);
     int lane_in_quad = (lane_id % Detail::kLanesInQuad);
