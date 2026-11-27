@@ -1386,7 +1386,7 @@ public:
     // Filling in the thread arguments
     if constexpr (FlatArgs) {
       auto epilogue_args = host_reference.get_flatten_arguments();
-      std::memcpy(&arguments.epilogue.thread, &epilogue_args, sizeof(epilogue_args));
+      std::memcpy(static_cast<void*>(&arguments.epilogue.thread), &epilogue_args, sizeof(epilogue_args));
 
       arguments.epilogue.ptr_C = static_cast<ElementC*>(host_reference.get_tensor_C_ptr());
       arguments.epilogue.dC = impl_.collective_epilogue.stride_c;
@@ -1396,7 +1396,7 @@ public:
     } 
     else {
       auto epilogue_args = host_reference.get_arguments();
-      std::memcpy(&arguments.epilogue, &epilogue_args, sizeof(epilogue_args));
+      std::memcpy(static_cast<void*>(&arguments.epilogue), &epilogue_args, sizeof(epilogue_args));
     }
 
     Gemm gemm_op;
@@ -1640,7 +1640,7 @@ public:
 
     // Filling in the thread arguments
     typename EVTModule::Arguments epilogue_args = host_reference.get_arguments();
-    std::memcpy(&arguments.epilogue.thread, &epilogue_args.arg, sizeof(epilogue_args.arg));
+    std::memcpy(static_cast<void*>(&arguments.epilogue.thread), &epilogue_args.arg, sizeof(epilogue_args.arg));
 
     Gemm gemm_op;
 

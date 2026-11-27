@@ -226,10 +226,6 @@ public:
     CUTLASS_TRACE_HOST("Universal::initialize_split() - workspace_sum_OdO=" 
 		    << workspace_sum_OdO << "stream: " << (stream ? "non-null" : "null"));
 
-    auto [Q_, K, D, D_VO, HB] = args.problem_shape;
-    auto [H, B] = product_each(HB);
-    D = cutlass::round_up(D, 8);  // Alignment
-    int Q = cutlass::round_up(static_cast<int>(Q_), 8);  // Alignment
     ElementAccumulator* sum_OdO = reinterpret_cast<ElementAccumulator*>(workspace_sum_OdO);
     ElementAccumulator* scaled_lse = reinterpret_cast<ElementAccumulator*>(workspace_scaled_lse);
     auto args_sum_OdO = to_sum_OdO_arguments(args, sum_OdO, scaled_lse);

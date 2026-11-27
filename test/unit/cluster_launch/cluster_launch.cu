@@ -84,7 +84,7 @@ public:
   scalar(float value) : value_host_(value)
   {
     float* ptr_gpu_raw = nullptr;
-    auto err = cudaMalloc(&ptr_gpu_raw, num_bytes);
+    [[maybe_unused]] auto err = cudaMalloc(&ptr_gpu_raw, num_bytes);
     assert(err == cudaSuccess);
 
     scalar_device_pointer ptr_gpu{ptr_gpu_raw, scalar_deleter{}};
@@ -97,7 +97,7 @@ public:
 
   float sync_to_host()
   {
-    auto err = cudaMemcpy(&value_host_, ptr_gpu_.get(),
+    [[maybe_unused]] auto err = cudaMemcpy(&value_host_, ptr_gpu_.get(),
                           num_bytes, cudaMemcpyDeviceToHost);
     assert(err == cudaSuccess);
     return value_host_;
@@ -107,7 +107,7 @@ private:
   void upload_device_pointer()
   {
     float* ptr_raw = ptr_gpu_.get();
-    auto err = cudaMemcpyToSymbol(scalar_ptr_gpu, &ptr_raw, sizeof(float*));
+    [[maybe_unused]] auto err = cudaMemcpyToSymbol(scalar_ptr_gpu, &ptr_raw, sizeof(float*));
     assert(err == cudaSuccess);
   }
 

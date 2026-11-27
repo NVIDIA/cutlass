@@ -115,7 +115,9 @@
 // Defines cutlass::reference::host::Gemm()
 #include "cutlass/util/reference/host/gemm.h"
 
+#if defined(_MSC_VER)
 #pragma warning( disable : 4503)
+#endif
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Define a CUTLASS GEMM template and launch a GEMM kernel.

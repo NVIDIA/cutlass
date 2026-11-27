@@ -59,12 +59,12 @@ TEST(CuTe_core_msvc_compilation, TupleAssignment)
   CUTLASS_TRACE_HOST("cute::tuple creation and assignment");
   CUTLASS_TRACE_HOST("-------------------------------");
 
-  using forty_two_type = IC<int, 42>;
-  using forty_three_type = IC<size_t, 43>;
+  using forty_two_type [[maybe_unused]] = IC<int, 42>;
+  using forty_three_type [[maybe_unused]] = IC<size_t, 43>;
 
-  int val41 = ConvertibleTo{41};
+  [[maybe_unused]] int val41 = ConvertibleTo{41};
   assert(val41 == 41);
-  size_t val43 = ConvertibleTo{size_t(43u)};
+  [[maybe_unused]] size_t val43 = ConvertibleTo{size_t(43u)};
   assert(val43 == size_t{43u});
 
   using tuple_0d_type = cute::tuple<>;

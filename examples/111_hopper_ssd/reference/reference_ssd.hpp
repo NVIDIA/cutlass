@@ -125,7 +125,6 @@ auto cumsum(
   auto C = shape<0>(tensor);
   auto L = shape<1>(tensor);
   auto cum_sum              = make_tensor<float>(make_shape(C,L));
-  auto cum_sum_out          = make_tensor<Element>(make_shape(C,L));
   auto cum_sum_exp_out      = make_tensor<float>(make_shape(C, L));
   auto cum_sum_exp_out_last = make_tensor<float>(make_shape(C, L));
   auto last_column          = make_tensor<float>(make_shape(C));

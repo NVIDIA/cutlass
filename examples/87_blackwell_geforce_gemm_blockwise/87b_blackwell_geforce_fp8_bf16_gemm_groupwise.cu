@@ -294,8 +294,6 @@ struct Result {
 void initialize(const Options &options) {
   using namespace cute;
 
-  auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
-
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, options.l));
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(options.m, options.n, options.l));

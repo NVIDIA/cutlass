@@ -256,9 +256,6 @@ struct CollectiveMma<
     Arguments const& args,
     [[maybe_unused]] void* workspace,
     cutlass::KernelHardwareInfo const& hw_info = cutlass::KernelHardwareInfo{}) {
-    // Optionally append 1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(problem_shape, 1);
-    auto [M,N,K,L] = problem_shape_MNKL;
     auto ptr_A = recast_ptr<ElementAMma>(args.ptr_A);
     auto ptr_B = recast_ptr<ElementBMma>(args.ptr_B);
 

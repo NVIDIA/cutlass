@@ -175,7 +175,6 @@ struct SsdEpilogue {
   static Params to_underlying_arguments(ProblemShape const& problem_size, Arguments const& args, void* workspace = nullptr) {
     
     using X = Underscore;
-    auto [G, B, EH, C, L, D, N] = problem_size;
 
     auto tensor_y = make_tensor(make_gmem_ptr(args.ptr_Y), args.layout_Y);
     auto tensor_p = make_tensor(make_gmem_ptr(args.ptr_P), args.layout_P);

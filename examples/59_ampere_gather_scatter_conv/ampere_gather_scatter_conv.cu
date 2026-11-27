@@ -124,7 +124,6 @@ int ampere_dense_conv_fprop(
     make_shape( K,   make_shape( N,   Z,   P,   Q)),
     make_tuple(_0{}, make_tuple(_4{},_3{},_2{},_1{})));
 
-  Tensor mActivation = make_tensor(make_gmem_ptr(activations), activation_layout);
   Tensor mXformedAct = make_tensor(make_gmem_ptr(activations), xformed_act_layout);
   Tensor mFilter     = make_tensor(make_gmem_ptr(filter), filter_layout);
   Tensor mOutput     = make_tensor(make_gmem_ptr(output), output_layout); // (K, (N,Z,P,Q))

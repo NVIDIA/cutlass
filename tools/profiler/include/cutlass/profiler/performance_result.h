@@ -96,10 +96,10 @@ struct PerformanceResult {
   /// Ctor
   PerformanceResult(): 
     problem_index(0),
+    provider(library::Provider::kInvalid),
     op_kind(library::OperationKind::kInvalid),
-    provider(library::Provider::kInvalid), 
-    disposition(Disposition::kNotRun),
     status(Status::kInvalid),
+    disposition(Disposition::kNotRun),
     bytes(0), 
     flops(0), 
     runtime(0)

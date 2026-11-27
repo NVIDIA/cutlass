@@ -862,7 +862,6 @@ struct HostCollectiveMainloopSparse
 
   bool compare_reference(
       cute::Shape<int,int,int,int> problem_shape_MNKL) {
-    auto [M, N, K, L] = problem_shape_MNKL;
 
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
@@ -1160,7 +1159,6 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaled
 
   bool compare_reference(
       cute::Shape<int,int,int,int> problem_shape_MNKL) {
-    auto [M, N, K, L] = problem_shape_MNKL;
 
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
@@ -1573,7 +1571,6 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelSparseTmaWarpSpecializedBlock
 
   bool compare_reference(
       cute::Shape<int,int,int,int> problem_shape_MNKL) {
-    auto [M, N, K, L] = problem_shape_MNKL;
 
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
@@ -1802,7 +1799,6 @@ struct HostCollectiveDefaultEpilogue {
       cute::Shape<int,int,int,int> problem_shape_MNKL,
       ElementScalar alpha,
       ElementScalar beta) {
-    auto [M, N, K, L] = problem_shape_MNKL;
 
     tensor_D.sync_host();
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
@@ -1849,7 +1845,6 @@ struct HostCollectiveDefaultEpilogue {
     auto N = cute::get<1>(problem_shape_MNKL);
     auto K = cute::get<2>(problem_shape_MNKL);
     auto L = cute::get<3>(problem_shape_MNKL);
-    auto coord_0 = cutlass::make_Coord(0);
     auto C = cute::make_tensor(detail::make_iterator(tensor_C.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), stride_c));
     auto D = cute::make_tensor(detail::make_iterator(reference_D.host_data()),

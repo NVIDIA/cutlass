@@ -37,7 +37,9 @@
 #include "cutlass/gemm/device/gemm_array.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 
+#if defined(_MSC_VER)
 #pragma warning( disable : 4503)
+#endif
 
 /*
 This example demonstrates how to use cutlass to compute a batched strided gemm in two different ways:

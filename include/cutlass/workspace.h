@@ -51,7 +51,7 @@ namespace cutlass {
 static constexpr int MinWorkspaceAlignment = 16;
 
 #if !defined(__CUDACC_RTC__)
-static Status
+inline Status
 zero_workspace(
     void* workspace,
     size_t workspace_size,

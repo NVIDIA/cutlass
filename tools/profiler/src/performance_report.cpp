@@ -72,7 +72,7 @@ PerformanceReport::PerformanceReport(
   std::vector<std::string> const &argument_names,
   library::OperationKind const &op_kind
 ):
-  options_(options), argument_names_(argument_names), problem_index_(0), good_(true), op_kind_(op_kind) {
+  options_(options), op_kind_(op_kind), good_(true), argument_names_(argument_names), problem_index_(0) {
 
   // Strip '.csv' if present
   std::string base_path = options_.report.output_path;

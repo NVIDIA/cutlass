@@ -863,7 +863,6 @@ fill_tma_gmem_shape_stride(Tensor<GEngine,GLayout>   const& gtensor,           /
   static_assert(is_tuple<TmaGmemBasisStride>::value);
   static_assert(is_same<uint32_t, ShapeT>::value || is_same<uint64_t, ShapeT>::value);
 
-  using TmaInternalType = typename GEngine::value_type;
   constexpr int tma_rank = decltype(rank(tma_gbasis_stride))::value;
   static_assert(TmaRank >= tma_rank);
 

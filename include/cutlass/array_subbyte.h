@@ -130,7 +130,14 @@ struct Array<T, N, false> {
 #  pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
-      Storage item = (reinterpret_cast<Storage const &>(x) & kMask);
+      // Reinterpret x through an integer of its own size: Storage may be wider than T,
+      // and reading sizeof(Storage) bytes from x would read past the end of x.
+      using ItemBits = typename platform::conditional<
+        (sizeof(T) == 1),
+        uint8_t,
+        typename platform::conditional<(sizeof(T) == 2), uint16_t, uint32_t>::type
+      >::type;
+      Storage item = Storage(Storage(platform::bit_cast<ItemBits>(x)) & kMask);
 
       Storage kUpdateMask = Storage(~(kMask << (idx_ * sizeof_bits<T>::value)));
 

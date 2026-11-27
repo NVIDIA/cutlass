@@ -145,8 +145,8 @@ struct ConvProblemShape {
     CUTLASS_ASSERT(stride_flt[RankT - 1] == 1);
     CUTLASS_ASSERT(stride_xformed_act[RankT - 1] == 1);
 
-    auto stride_act_packed = packed_stride_right_major(shape_act);
-    auto stride_flt_packed = packed_stride_right_major(shape_flt);
+    [[maybe_unused]] auto stride_act_packed = packed_stride_right_major(shape_act);
+    [[maybe_unused]] auto stride_flt_packed = packed_stride_right_major(shape_flt);
     auto [shape_xformed_act, stride_xformed_act_packed] = calculate_xformed_act(shape_act, shape_flt);
 
     CUTLASS_PRAGMA_UNROLL
@@ -260,8 +260,8 @@ struct ConvProblemShape {
     CUTLASS_ASSERT(stride_flt[RankT - 1] == 1);
     CUTLASS_ASSERT(stride_xformed_act[RankT - 1] == 1);
 
-    auto stride_act_packed = packed_stride_right_major(shape_act);
-    auto stride_flt_packed = packed_stride_right_major(shape_flt);
+    [[maybe_unused]] auto stride_act_packed = packed_stride_right_major(shape_act);
+    [[maybe_unused]] auto stride_flt_packed = packed_stride_right_major(shape_flt);
     auto [shape_xformed_act, stride_xformed_act_packed] = calculate_xformed_act(shape_act, shape_flt);
 
     CUTLASS_PRAGMA_UNROLL

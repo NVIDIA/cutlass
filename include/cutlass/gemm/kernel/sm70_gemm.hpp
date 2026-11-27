@@ -135,7 +135,6 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
     (void) workspace;
 
     KernelHardwareInfo hw_info{args.hw_info.device_id, args.hw_info.sm_count};
-    auto problem_shape_MNKL = append<4>(args.problem_shape, Int<1>{});
 
     return {
       args.mode,

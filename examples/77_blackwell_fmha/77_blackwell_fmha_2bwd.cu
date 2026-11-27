@@ -472,7 +472,6 @@ struct BwdRunner {
   //
   bool verify(const ProblemShape& problem_shape) {
     auto [Q, K, D, D_VO, HB] = problem_shape;
-    auto [H, B] = HB;
 
     Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()),
       select<0,2,4>(problem_shape),

@@ -53,6 +53,13 @@
 
 #include "gemm_testbed_3x.hpp"
 
+// The *_Legacy test below intentionally exercises the deprecated
+// TmaWarpSpecializedCooperativeBiasElementwise schedule. GCC re-reports that deprecation at later
+// instantiation points in this file, outside the push/pop region around that test, so silence
+// it for the whole file.
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 

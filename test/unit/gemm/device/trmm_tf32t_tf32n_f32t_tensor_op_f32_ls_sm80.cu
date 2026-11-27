@@ -52,7 +52,7 @@
 
 ////////////////////////////////////////////Test name//////////////////////////////////////////////////
 //                             
-// SM80_Device_Trmm_{ElementA}{LayoutA}_{ElementB}{LayoutB}_{ElementC}{LayoutC}_{SideMode}_{FillMode}\
+// SM80_Device_Trmm_{ElementA}{LayoutA}_{ElementB}{LayoutB}_{ElementC}{LayoutC}_{SideMode}_{FillMode}
 //    _{DiagType}_tensor_op_{ElementAccumulator}_align{AlignmentA}_align{AlignmentB}
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////////////

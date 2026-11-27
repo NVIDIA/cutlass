@@ -469,7 +469,6 @@ struct BwdRunner {
   //
   bool verify(const ProblemShape& problem_shape) {
     auto [Q, K, D, D_VO, HB] = problem_shape;
-    auto [H, B] = HB;
 
     Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()), make_shape(Q, D, HB), stride_Q);
     Tensor mK = make_tensor(make_gmem_ptr(block_K.get()), make_shape(K, D, HB), stride_K);

@@ -30,12 +30,20 @@
  **************************************************************************************************/
 
 #pragma once
+#if defined(_MSC_VER)
 #pragma warning (disable : 4068 ) /* disable unknown pragma warnings for visual studio */
+#endif
 
+#if defined(__CUDACC__)
 #pragma nv_diag_suppress boolean_controlling_expr_is_constant
+#endif
 #include <gtest/gtest.h>
+#if defined(__CUDACC__)
 #pragma nv_diag_warning boolean_controlling_expr_is_constant
+#endif
+#if defined(_MSC_VER)
 #pragma warning( disable : 4503)
+#endif
 
 #include <cstdlib>
 #include <string>
