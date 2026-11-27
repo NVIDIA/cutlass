@@ -36,3 +36,8 @@ cutlass_example_add_executable(
   cute_tutorial_wgmma_tma_sm90
   wgmma_tma_sm90.cu
 )
+
+cutlass_example_add_executable(
+  cute_tutorial_conv2d_fprop_tma_sm90
+  conv2d_fprop_tma_sm90.cu
+)
