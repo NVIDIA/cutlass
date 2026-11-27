@@ -80,12 +80,12 @@ cudaError_t CutlassSgemmNN(
   int M,
   int N,
   int K,
-  float alpha,
+  float alpha, // Scalars used in the Epilogue
   float const *A,
   int lda,
   float const *B,
   int ldb,
-  float beta,
+  float beta, // Scalars used in the Epilogue
   float *C,
   int ldc) {
 
